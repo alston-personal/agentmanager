@@ -65,3 +65,28 @@ AgentOS status/reporting must distinguish:
 - "production verified"
 
 This contract applies across all products and Persona Agent capabilities.
+
+
+## Runtime ownership acceptance
+
+Persistent services MUST have exactly one canonical process-manager owner.
+
+A deployment or migration is not complete merely because the intended service unit is
+`active`. Acceptance must prove that the live listener belongs to the intended owner.
+
+For each persistent runtime, verify:
+
+1. expected process manager and service/unit identity,
+2. live listener PID for the target port/socket,
+3. listener parent/cgroup ownership,
+4. working directory or immutable release identity,
+5. absence of a competing resurrection mechanism such as PM2/systemd/supervisor,
+6. target-specific health and functional acceptance.
+
+When migrating process managers (for example PM2 -> systemd), the old owner must be
+disabled/deleted and that retirement must be persisted before the new owner is started.
+Killing only the child process is insufficient because a supervisor may immediately
+resurrect it.
+
+Canonical machine-readable policy:
+`governance/runtime-service-ownership.json`.
