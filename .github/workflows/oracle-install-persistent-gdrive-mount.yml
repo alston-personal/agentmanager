@@ -61,3 +61,5 @@ jobs:
           loginctl show-user "$(id -un)" -p Linger 2>/dev/null || true
           echo 'persistent_gdrive_mount=PASS'
           REMOTE
+
+# storage-incident-trigger 2026-10-01T09:30+08:00
