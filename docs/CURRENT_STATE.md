@@ -132,6 +132,16 @@ Pricing and settlement are separate concerns. Stable action identifiers resolve 
 
 Usage receipts use schema `milkcat.credit-usage-receipt/v1` and are idempotent by account plus operation ID. A loopback-first server-to-server HTTP boundary is provided by `agent_core/credit_http.py`; it exposes health, quote, usage receipt, and account usage-summary operations and can require a bearer token. It does not establish user identity itself. A service integration must not trust a browser-supplied account identity as authorization; the account/subject must come from the platform's trusted identity/session boundary, except for explicitly anonymous shadow subjects during pre-login observation. Zero-cost actions remain zero-cost in enforce mode. Current Fengshui prices are seed values for observation, not a claim of final commercial pricing.
 
+## Governed content publishing
+
+Cross-project social/content publication is moving behind the reusable `content.publish` capability. The caller supplies a versioned Content Artifact, platform, `account_ref`, authority and write intent; it does not supply platform tokens, cookies, arbitrary endpoints, shell commands, browser JavaScript, or filesystem paths.
+
+`content.publish` is a facade and resolver, not a second Social Runtime. Existing AgentOS Social Runtime account binding, acceptance fencing, receipts and `write_intent_id` semantics remain the preferred lower layer for Threads and other supported social transports. Platform/provider health is explicit and independent from node health.
+
+The initial X transport policy is side-effect conservative: a read-only identity probe may verify OAuth credential presence and authenticated account identity, but write/media entitlement remains `UNKNOWN` unless a provider can prove it without publishing. If X API is not usable and a governed web-assist session is READY, resolution may return `HUMAN_CONFIRM_REQUIRED`; unattended GUI posting is not the fallback contract.
+
+Provider credentials and browser profiles remain node-local under the owning runtime identity. A runner or project must not bypass file permissions to read another runtime user's credential store merely to satisfy a probe.
+
 ## Important invariants
 
 ### Newer user intent must never be rolled back
