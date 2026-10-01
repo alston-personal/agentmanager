@@ -34,16 +34,16 @@ except ValueError:
     raise SystemExit(3)
 age=max(0.0,(datetime.now(timezone.utc)-ts).total_seconds())
 sessions=[x for x in (doc.get('sessions') or []) if isinstance(x,dict)]
-if age > 20 or not sessions:
+if age > 20:
     raise SystemExit(3)
 
 preferred=next((x for x in sessions if x.get('state')=='READY'),None)
 if preferred is None:
     preferred=next((x for x in sessions if x.get('state')=='LOGIN_REQUIRED'),None)
-if preferred is None:
+if preferred is None and sessions:
     preferred=sessions[0]
-state=str(preferred.get('state') or 'UNKNOWN')
-parsed=urlparse(str(preferred.get('url') or ''))
+state=str((preferred or {}).get('state') or ('NO_SESSION' if not sessions else 'UNKNOWN'))
+parsed=urlparse(str((preferred or {}).get('url') or ''))
 host=(parsed.hostname or '').lower()
 path=parsed.path or '/'
 result={
@@ -52,7 +52,7 @@ result={
     'state':state,
     'host':host,
     'path_class':'app' if path.startswith('/app') else ('auth' if host.endswith('accounts.google.com') else 'other'),
-    'composer_visible':bool(preferred.get('composer_visible')),
+    'composer_visible':bool((preferred or {}).get('composer_visible')),
     'persistent_context':True,
     'cdp':True,
     'source':'bridge_snapshot',
@@ -65,7 +65,7 @@ tmp.replace(state_path)
 state_path.chmod(0o600)
 print('gemini_web_probe=PASS')
 print('gemini_web_session_state='+state)
-print('gemini_web_composer_visible='+str(bool(preferred.get('composer_visible'))).lower())
+print('gemini_web_composer_visible='+str(bool((preferred or {}).get('composer_visible'))).lower())
 print('gemini_web_persistent_profile=true')
 print('gemini_web_cdp=true')
 print('gemini_web_probe_source=bridge_snapshot')
