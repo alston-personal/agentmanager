@@ -73,3 +73,5 @@ PY
             echo dump_missing
           fi
           REMOTE
+
+# trigger: inspect-pm2-managed-apps-now
