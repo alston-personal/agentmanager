@@ -16,7 +16,68 @@ test -x "$PY"
 mkdir -p "$STATE_ROOT"
 chmod 700 "$STATE_ROOT"
 
-"$PY" - "$CDP_URL" "$STATE" <<'PY'
+BRIDGE_ROOT="$HOME/.local/share/agentos/gemini-web/bridge"
+if [ -s "$BRIDGE_ROOT/bridge.json" ] && [ -s "$BRIDGE_ROOT/sessions.json" ]; then
+  if "$PY" - "$BRIDGE_ROOT/sessions.json" "$STATE" <<'PY'
+from __future__ import annotations
+import json,sys
+from datetime import datetime,timezone
+from pathlib import Path
+from urllib.parse import urlparse
+
+sessions_path,state_path=Path(sys.argv[1]),Path(sys.argv[2])
+doc=json.loads(sessions_path.read_text(encoding='utf-8-sig'))
+observed=str(doc.get('observed_at') or '')
+try:
+    ts=datetime.fromisoformat(observed.replace('Z','+00:00')).astimezone(timezone.utc)
+except ValueError:
+    raise SystemExit(3)
+age=max(0.0,(datetime.now(timezone.utc)-ts).total_seconds())
+sessions=[x for x in (doc.get('sessions') or []) if isinstance(x,dict)]
+if age > 20 or not sessions:
+    raise SystemExit(3)
+
+preferred=next((x for x in sessions if x.get('state')=='READY'),None)
+if preferred is None:
+    preferred=next((x for x in sessions if x.get('state')=='LOGIN_REQUIRED'),None)
+if preferred is None:
+    preferred=sessions[0]
+state=str(preferred.get('state') or 'UNKNOWN')
+parsed=urlparse(str(preferred.get('url') or ''))
+host=(parsed.hostname or '').lower()
+path=parsed.path or '/'
+result={
+    'schema':'agentos.gemini-web-probe/v1',
+    'observed_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+    'state':state,
+    'host':host,
+    'path_class':'app' if path.startswith('/app') else ('auth' if host.endswith('accounts.google.com') else 'other'),
+    'composer_visible':bool(preferred.get('composer_visible')),
+    'persistent_context':True,
+    'cdp':True,
+    'source':'bridge_snapshot',
+    'bridge_snapshot_age_seconds':round(age,3),
+}
+tmp=state_path.with_suffix('.tmp')
+tmp.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+tmp.chmod(0o600)
+tmp.replace(state_path)
+state_path.chmod(0o600)
+print('gemini_web_probe=PASS')
+print('gemini_web_session_state='+state)
+print('gemini_web_composer_visible='+str(bool(preferred.get('composer_visible'))).lower())
+print('gemini_web_persistent_profile=true')
+print('gemini_web_cdp=true')
+print('gemini_web_probe_source=bridge_snapshot')
+PY
+  then
+    exit 0
+  fi
+fi
+
+# Compatibility/bootstrap fallback only. Keep it bounded so one bad browser
+# surface cannot monopolize the oracle-gui scheduler lane for two minutes.
+timeout 45s "$PY" - "$CDP_URL" "$STATE" <<'PY'
 from __future__ import annotations
 import json,re,sys
 from datetime import datetime,timezone
