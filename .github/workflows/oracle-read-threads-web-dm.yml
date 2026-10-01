@@ -1,6 +1,7 @@
 name: Oracle Read Threads Web DM
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - core/integration
