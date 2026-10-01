@@ -50,6 +50,7 @@ AgentOS now treats reusable work as a capability, not a project-specific side ef
 | Capability | Provider | Status | Notes |
 | :--- | :--- | :--- | :--- |
 | **Video Indexing Hub** | `video-indexing` | 🧠 Proposed | Central visual indexing, transcript grounding, and scene-map artifact producer for all video-aware projects. |
+| **Governed Content Publish** | `capability://content.publish` → `service://content.publish` | 🧪 Implemented candidate | Versioned Content Artifact / batch facade over the existing Core #154/#267 Social Runtime and other registered platform providers; provider resolution never grants publish authority. |
 
 ### Governance Capability
 
