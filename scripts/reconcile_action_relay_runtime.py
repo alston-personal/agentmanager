@@ -16,6 +16,19 @@ SERVICE = "agentos-action-relay.service"
 RECONCILE_TIMER = "agentos-action-relay-reconcile.timer"
 SHARED_GROUP = "agentos"
 GROUP_REEXEC_GUARD = "AGENTOS_ACTION_RELAY_RECONCILE_GROUP_REEXEC"
+EXPECTED_ACTIONS = {
+    "agentos.executor.job",
+    "agentos.runtime.converge",
+    "agentos.content.x.auth.inspect",
+    "agentos.content.social.bootstrap",
+    "agentos.content.social.inspect",
+}
+EXPECTED_NODE_CAPABILITIES = {
+    "node.runtime.converge",
+    "content.publish.x.auth.inspect",
+    "content.publish.social.bootstrap",
+    "content.publish.social.inspect",
+}
 
 
 def _run(argv: list[str], *, cwd: Path, env: dict[str, str] | None = None, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -49,8 +62,8 @@ def _marker_current(marker: Path, *, source_commit: str) -> bool:
         and payload.get("schema") == MARKER_SCHEMA
         and payload.get("source_ref") == SOURCE_REF
         and payload.get("source_commit") == source_commit
-        and "agentos.runtime.converge" in set(payload.get("actions") or [])
-        and "node.runtime.converge" in set(payload.get("node_capabilities") or [])
+        and set(payload.get("actions") or []) == EXPECTED_ACTIONS
+        and set(payload.get("node_capabilities") or []) == EXPECTED_NODE_CAPABILITIES
     )
 
 
