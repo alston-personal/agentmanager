@@ -38,9 +38,10 @@ jobs:
           RELEASE="$ROOT/releases/$SHA"
           EVIDENCE=/home/ubuntu/agent-data/evidence/colab
           WORK=/home/ubuntu/agent-data/tmp/colab-h3-smoke-$RUN_ID
-          OUT="$WORK/outputs"
+          ARTIFACT_ROOT=/home/ubuntu/agent-data/artifacts/colab/h3-smoke-$RUN_ID
+          OUT="$ARTIFACT_ROOT/outputs"
           mkdir -p "$WORK" "$OUT" "$EVIDENCE"
-          chmod 700 "$WORK" "$EVIDENCE"
+          chmod 700 "$WORK" "$ARTIFACT_ROOT" "$EVIDENCE"
           trap 'rm -rf "$WORK"' EXIT
 
           test -f "$RELEASE/scripts/runner.py"
@@ -121,9 +122,9 @@ jobs:
           USAGE_AFTER="$WORK/usage-after.txt"
           colab --auth=adc usage > "$USAGE_AFTER" 2>&1 || true
 
-          python3 - "$EVIDENCE/h3-smoke-$RUN_ID.json" "$SHA" "$RC" "$OUT" "$USAGE_BEFORE" "$USAGE_AFTER" "$WORK/progress.json" "$WORK/runner.log" "$USAGE_BEFORE_RC" <<'PY'
+          python3 - "$EVIDENCE/h3-smoke-$RUN_ID.json" "$SHA" "$RC" "$OUT" "$ARTIFACT_ROOT" "$USAGE_BEFORE" "$USAGE_AFTER" "$WORK/progress.json" "$WORK/runner.log" "$USAGE_BEFORE_RC" <<'PY'
           import hashlib,json,os,re,sys,datetime,glob
-          dst,sha,rc,out,before,after,progress,runner_log,usage_before_rc=sys.argv[1:]
+          dst,sha,rc,out,artifact_root,before,after,progress,runner_log,usage_before_rc=sys.argv[1:]
           def parse_usage(path):
               try: text=open(path,encoding='utf-8',errors='replace').read()
               except Exception: return {}
@@ -156,10 +157,10 @@ jobs:
               "capability":"capability://media.video.generate.minimax-h3",
               "timestamp_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "upstream":{"repository":"killkli/minimax-h3-colab-skill","commit":sha},
-              "smoke":{"duration_seconds":4,"requested_gpu":"A100","high_mem":True},
+              "smoke":{"duration_seconds":4,"requested_gpu":"A100","high_mem_requested":True},
               "usage":{"before":parse_usage(before),"before_returncode":int(usage_before_rc),"after":parse_usage(after)},
               "runner":{"returncode":int(rc),"progress":prog,"sanitized_tail":runner_tail},
-              "result":{"status":"PASS" if int(rc)==0 and outputs else "FAIL","outputs":outputs}
+              "result":{"status":"PASS" if int(rc)==0 and outputs else "FAIL","artifact_root":artifact_root,"outputs":outputs}
           }
           with open(dst+'.tmp','w',encoding='utf-8') as f:
               json.dump(payload,f,ensure_ascii=False,indent=2); f.write('\n')
@@ -170,4 +171,5 @@ jobs:
 
           echo "minimax_h3_colab_smoke=PASS"
           echo "receipt=$EVIDENCE/h3-smoke-$RUN_ID.json"
+          echo "artifact_root=$ARTIFACT_ROOT"
           REMOTE
