@@ -266,9 +266,20 @@ assert 'http://' + '${' not in s
 print('route_guard=PASS')
 PY
 
-LOCAL_BODY=$(curl -fsS --max-time 3 "$LOCAL")
-printf '%s' "$LOCAL_BODY" | grep -q 'agentos.one-health/v0.1'
-printf '%s' "$LOCAL_BODY" | grep -q 'realm-alston'
+LOCAL_BODY=""
+for i in $(seq 1 12); do
+  LOCAL_BODY=$(curl -fsS --max-time 3 "$LOCAL" 2>/dev/null || true)
+  if printf '%s' "$LOCAL_BODY" | grep -q 'agentos.one-health/v0.1' && printf '%s' "$LOCAL_BODY" | grep -q 'realm-alston'; then
+    break
+  fi
+  sleep 2
+done
+if ! printf '%s' "$LOCAL_BODY" | grep -q 'agentos.one-health/v0.1' || ! printf '%s' "$LOCAL_BODY" | grep -q 'realm-alston'; then
+  echo "ERROR: local Realm health did not recover" >&2
+  systemctl --user list-units --type=service --all --no-pager | grep -Ei 'realm|agentos|one' >&2 || true
+  ss -ltnp 2>/dev/null | grep ':8780' >&2 || true
+  exit 6
+fi
 echo "local_realm_health=PASS"
 
 rm -rf "$DASH/.next"
