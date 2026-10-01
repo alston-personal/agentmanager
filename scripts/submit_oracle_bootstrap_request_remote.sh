@@ -32,7 +32,7 @@ EXTRA_PARAMS_B64="$(printf '%s' "$EXTRA_PARAMS_JSON" | base64 | tr -d '\n')"
 # request is atomically materialized, so a later network interruption cannot
 # cancel or ambiguously re-run the governed action.
 ssh "${SSH_OPTS[@]}" "$DEPLOY_USER@$ORACLE_HOST" \
-  bash -s -- "$ACTION" "$REQUEST_ID" "$SOURCE_COMMIT" "$EXTRA_PARAMS_B64" <<'REMOTE'
+  bash -s -- "$ACTION" "$REQUEST_ID" "$SOURCE_COMMIT" "$EXTRA_PARAMS_B64" <<'REMOTE' >&2
 set -euo pipefail
 ACTION="$1"
 REQUEST_ID="$2"
