@@ -4,6 +4,10 @@ on:
   push:
     paths:
       - 'agentos_node/thin_client.py'
+      - 'tests/test_thin_client_transport.py'
+      - 'tests/test_node_onboarding_lifecycle.py'
+      - 'agentos_node/node_adapter.py'
+      - 'agentos_node/onboarding.py'
       - 'agentos_node/thin_client_transport.py'
       - 'agentos_node/client_cli.py'
       - 'scripts/install_thin_client_windows.ps1'
@@ -37,6 +41,7 @@ jobs:
           Push-Location $env:RUNNER_TEMP
           try {
             python -c "import agentos_node.thin_client as t; import pathlib; p=pathlib.Path(t.__file__).resolve(); root=pathlib.Path(r'$env:RUNNER_TEMP')/'AgentOS'; assert str(p).lower().startswith(str(root.resolve()).lower()), (p,root); print('installed_import='+str(p))"
+            python -c "import agentos_node.onboarding as o, agentos_node.node_adapter as a; print('installed_onboarding='+str(o.__file__)); print('installed_adapter='+str(a.__file__))"
             python -c "from agentos_node.thin_client import ThinClient,ThinClientPolicy,NodeIdentity; from pathlib import Path; p=ThinClientPolicy(allowed_executables={'python'},readable_roots=(Path(r'$env:RUNNER_TEMP'),)); c=ThinClient(NodeIdentity('test-realm','windows-ci'),p); m=c.capability_manifest(); assert m['platform']=='Windows'; assert 'shell.exec' in m['capabilities']; print('windows_thin_client=PASS')"
           } finally {
             Pop-Location
