@@ -189,3 +189,17 @@ Historical or compatibility surfaces must not be described as current canonical 
 `README.md`, `ONBOARDING.md`, `AGENTS.md`, `docs/CURRENT_STATE.md`, and `docs/CORE_CONTROL_ROOM.md` are authoritative entry points. Architecture-sensitive implementation changes must update at least one appropriate canonical document in the same change set.
 
 When implementation contradicts this file, fix the file immediately; do not preserve an obsolete narrative for continuity's sake.
+
+## Low-latency interactive GUI execution
+
+The Windows Thin Client now has an explicit low-latency interactive execution path in addition to single-step desktop actions.
+
+- `/v1/tasks` accepts bounded `wait_seconds` long polling so an enrolled Node does not need to sleep for the historical five-second polling interval before seeing work.
+- the Thin Client keeps heartbeat cadence independent from task delivery and waits for work through the long-poll channel;
+- Windows manifests advertise `desktop.plan.execute`;
+- `desktop.plan.execute` runs a bounded, allowlisted desktop plan locally on the Node and returns one structured receipt containing per-step status, elapsed time and the failed step when applicable;
+- non-ASCII or long `desktop.keyboard` input uses Unicode clipboard paste so GUI execution does not depend on the user's active IME;
+- GitHub Actions remains a deployment/governance/audit mechanism and is not the intended per-click interactive runtime.
+
+This is not yet a claim of fully human-equivalent desktop autonomy. WebSocket/SSE transport, desktop session leasing/mutex, cancellation, durable plan checkpoints, semantic Gemini/Threads skills and vision fallback for canvas/WebGL remain follow-up work. See `docs/LOW_LATENCY_GUI_AGENT.md`.
+
