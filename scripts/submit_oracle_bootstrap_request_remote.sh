@@ -19,7 +19,13 @@ printf '%s' "$TIMEOUT_SECONDS" | grep -Eq '^[0-9]{1,4}$'
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d,dict)' "$EXTRA_PARAMS_JSON"
 
 EXTRA_PARAMS_B64="$(printf '%s' "$EXTRA_PARAMS_JSON" | base64 | tr -d '\n')"
-ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$DEPLOY_SSH_PORT" "$DEPLOY_USER@$ORACLE_HOST" \
+ssh \
+  -o StrictHostKeyChecking=accept-new \
+  -o ConnectTimeout="${AGENTOS_SSH_CONNECT_TIMEOUT_SECONDS:-25}" \
+  -o ConnectionAttempts="${AGENTOS_SSH_CONNECTION_ATTEMPTS:-3}" \
+  -o ServerAliveInterval=15 \
+  -o ServerAliveCountMax=4 \
+  -p "$DEPLOY_SSH_PORT" "$DEPLOY_USER@$ORACLE_HOST" \
   bash -s -- "$ACTION" "$REQUEST_ID" "$SOURCE_COMMIT" "$EXTRA_PARAMS_B64" "$TIMEOUT_SECONDS" <<'REMOTE'
 set -euo pipefail
 ACTION="$1"
