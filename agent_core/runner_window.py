@@ -36,6 +36,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("mio.dm", "decide", bc.ACTION_RUN_MIO_DM_DECISION, frozenset({"source_run_id", "username"})),
     RunnerWindowIntent("persona.runtime", "oursong.activate", bc.ACTION_ACTIVATE_OURSONG_PERSONA),
     RunnerWindowIntent("persona.runtime", "oursong.status", bc.ACTION_PROBE_OURSONG_PERSONA),
+    RunnerWindowIntent("persona.runtime", "pdca.origin.probe", bc.ACTION_PROBE_PERSONA_PDCA_RUNTIME),
 )
 
 _BY_PUBLIC_KEY = {(item.capability, item.operation): item for item in INTENTS}
