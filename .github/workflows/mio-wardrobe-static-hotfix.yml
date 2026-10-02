@@ -1,0 +1,76 @@
+name: Mio Wardrobe Static Hotfix
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-wardrobe-static-hotfix.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      STUDIO_SHA: 7864fd8822c52327831bda374ddec513921819f1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Build exact Studio Web and replace wardrobe route
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$STUDIO_SHA" "${{ github.run_id }}" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RUN="$2"
+          LIVE=/home/ubuntu/zeus-writer/website/dist/personas/mio/wardrobe
+          TMP="$(mktemp -d /tmp/mio-wardrobe-static-XXXXXX)"
+          SRC="$TMP/studio-web"
+          BACKUP="/home/ubuntu/agent-data/releases/studio-web/mio-wardrobe/${SHA:0:12}-$RUN"
+          NEW="/home/ubuntu/zeus-writer/website/dist/personas/mio/.wardrobe-$RUN"
+          cleanup(){ rm -rf "$TMP" "$NEW"; }
+          trap cleanup EXIT
+          /usr/bin/gh repo clone alston-personal/studio-web "$SRC" -- --no-checkout >/dev/null
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$SHA"
+          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$SHA"
+          cd "$SRC"
+          npm install --no-package-lock --ignore-scripts >/dev/null
+          npm run build >/dev/null
+          ROUTE="$SRC/dist/personas/mio/wardrobe"
+          test -f "$ROUTE/index.html"
+          grep -Fq 'milkcat.mio.wardrobe.runtime/v1' "$ROUTE/index.html"
+          grep -Fq 'milkcat.mio.pwaHandoff/v1' "$ROUTE/index.html"
+          grep -Fq "window.open('about:blank'" "$ROUTE/index.html"
+          grep -Fq '735109_400_002E799BDE889B2.jpg' "$ROUTE/index.html"
+          mkdir -p "$BACKUP" "$(dirname "$NEW")"
+          if [ -d "$LIVE" ]; then cp -a "$LIVE" "$BACKUP/wardrobe.previous"; fi
+          cp -a "$ROUTE" "$NEW"
+          find "$NEW" -type d -exec chmod 0755 {} +
+          find "$NEW" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE"
+          mv "$NEW" "$LIVE"
+          curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org/personas/mio/wardrobe/?_=$RUN" -o "$TMP/live"
+          grep -Fq 'milkcat.mio.wardrobe.runtime/v1' "$TMP/live"
+          grep -Fq 'milkcat.mio.pwaHandoff/v1' "$TMP/live"
+          grep -Fq "window.open('about:blank'" "$TMP/live"
+          grep -Fq '735109_400_002E799BDE889B2.jpg' "$TMP/live"
+          printf 'source_sha=%s\nrun_id=%s\nscope=/personas/mio/wardrobe/\nok=true\n' "$SHA" "$RUN" > "$BACKUP/receipt.txt"
+          echo "mio_wardrobe_static_release=PASS source_sha=$SHA"
+          REMOTE
+      - name: Public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 6 --retry-delay 2 'https://studio.milkcat.org/personas/mio/wardrobe/?_=${{ github.run_id }}' -o /tmp/wardrobe
+          grep -Fq 'milkcat.mio.wardrobe.runtime/v1' /tmp/wardrobe
+          grep -Fq 'milkcat.mio.pwaHandoff/v1' /tmp/wardrobe
+          grep -Fq "window.open('about:blank'" /tmp/wardrobe
+          grep -Fq '735109_400_002E799BDE889B2.jpg' /tmp/wardrobe
+          echo 'mio_wardrobe_public_frontend=PASS'
