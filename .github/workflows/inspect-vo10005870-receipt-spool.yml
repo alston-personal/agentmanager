@@ -1,0 +1,59 @@
+name: Inspect VO10005870 Receipt Spool
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/inspect-vo10005870-receipt-spool.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect spool and logs
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore(); tid='inspect-receipt-spool-20261002-1636'
+          ps=r'''$root=Join-Path $env:LOCALAPPDATA 'AgentOS\state'
+          Write-Output '===PROC==='
+          Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^pythonw?\.exe$' -and $_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' } | Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress
+          Write-Output '===SPOOL==='
+          $sp=Join-Path $root 'pending-receipts'
+          if(Test-Path $sp){Get-ChildItem $sp | ForEach-Object { Write-Output ('FILE='+$_.FullName+' bytes='+$_.Length); Get-Content -Raw -LiteralPath $_.FullName }}
+          Write-Output '===LEASE==='
+          Get-Content -Raw -LiteralPath (Join-Path $root 'heartbeat-lease.json') -ErrorAction SilentlyContinue
+          Write-Output '===LOG==='
+          $candidates=@((Join-Path $env:LOCALAPPDATA 'AgentOS\thin-client.log'),(Join-Path $env:LOCALAPPDATA 'AgentOS\logs\thin-client.log'))
+          foreach($p in $candidates){if(Test-Path $p){Write-Output ('LOGFILE='+$p);Get-Content -LiteralPath $p -Tail 100}}'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':['demo://receipt-spool/20261002']})
+          for _ in range(35):
+              r=f.get_receipt(tid)
+              if r:
+                  print(r.get('stdout') or '')
+                  print('ERROR='+str(r.get('error') or ''))
+                  break
+              time.sleep(1)
+          else: raise SystemExit('spool_inspect_receipt_missing')
+          PY
+          REMOTE
