@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           out="$(mktemp)"
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE' >"$out" 2>&1 || true
           set -u
           echo "=== host/time ==="
           hostname
@@ -63,7 +63,6 @@ jobs:
 
           echo "mio_wardrobe_live_diagnostic=PASS"
           REMOTE
-          ) >"$out" 2>&1 || true
           cat "$out"
           {
             echo '### Mio Wardrobe live diagnostic'
