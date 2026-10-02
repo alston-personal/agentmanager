@@ -27,5 +27,6 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet pytest
       - run: python3 -m pytest -q tests/test_runner_pool_https_ingress.py
       - run: bash -n scripts/submit_agentos_scheduler_request_https.sh
