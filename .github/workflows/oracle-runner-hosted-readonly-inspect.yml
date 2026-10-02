@@ -34,7 +34,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          LOG="$RUNNER_TEMP/oracle-runner-readonly-inspect.log"
+          set +e
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$LOG" 2>&1 <<'REMOTE'
           set -euo pipefail
 
           echo "oracle_runner_inspect=BEGIN"
