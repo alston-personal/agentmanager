@@ -25,18 +25,40 @@ $running = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object { $_.CommandLine -match 'agentos_node\.client_cli.*run|agentos-client(?:\.exe)?.*run' } |
   Select-Object -First 1
 
-$leaseCandidates = @()
-if ($ClientHome) { $leaseCandidates += (Join-Path $ClientHome "heartbeat-lease.json") }
-if ($env:AGENTOS_CLIENT_HOME) { $leaseCandidates += (Join-Path $env:AGENTOS_CLIENT_HOME "heartbeat-lease.json") }
-$leaseCandidates += (Join-Path $env:LOCALAPPDATA "AgentOS\state\heartbeat-lease.json")
-$leaseCandidates += (Join-Path $env:USERPROFILE ".agentos\heartbeat-lease.json")
-$leaseFile = $leaseCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+$clientHomeCandidates = @()
+if ($ClientHome) { $clientHomeCandidates += $ClientHome }
+if ($env:AGENTOS_CLIENT_HOME) { $clientHomeCandidates += $env:AGENTOS_CLIENT_HOME }
+$clientHomeCandidates += (Join-Path $env:LOCALAPPDATA "AgentOS\state")
+$clientHomeCandidates += (Join-Path $env:USERPROFILE ".agentos")
+$clientHomeCandidates = $clientHomeCandidates | Where-Object { $_ } | Select-Object -Unique
+
+$livenessFile = $null
+foreach ($home in $clientHomeCandidates) {
+  $candidate = Join-Path $home "daemon-liveness.json"
+  if (Test-Path $candidate) { $livenessFile = $candidate; break }
+}
+
+$leaseFile = $null
+foreach ($home in $clientHomeCandidates) {
+  $candidate = Join-Path $home "heartbeat-lease.json"
+  if (Test-Path $candidate) { $leaseFile = $candidate; break }
+}
 
 $heartbeatStale = $false
 $heartbeatAgeSeconds = $null
-if ($leaseFile) {
+$healthSource = $null
+$healthPath = $null
+if ($livenessFile) {
+  $healthSource = "daemon_liveness"
+  $healthPath = $livenessFile
+} elseif ($leaseFile) {
+  $healthSource = "heartbeat_lease"
+  $healthPath = $leaseFile
+}
+
+if ($healthPath) {
   try {
-    $lease = Get-Content -Raw -LiteralPath $leaseFile | ConvertFrom-Json
+    $lease = Get-Content -Raw -LiteralPath $healthPath | ConvertFrom-Json
     if ($lease.recorded_at_unix) {
       $leaseUtc = [DateTimeOffset]::FromUnixTimeSeconds([int64]$lease.recorded_at_unix)
       $heartbeatAgeSeconds = ([DateTimeOffset]::UtcNow - $leaseUtc).TotalSeconds
@@ -45,15 +67,15 @@ if ($leaseFile) {
       }
     } else {
       $heartbeatStale = $true
-      Write-Log ("heartbeat_lease_missing_timestamp path={0}" -f $leaseFile)
+      Write-Log ("liveness_missing_timestamp source={0} path={1}" -f $healthSource,$healthPath)
     }
   } catch {
     $heartbeatStale = $true
-    Write-Log ("heartbeat_lease_parse_error path={0} error={1}" -f $leaseFile,$_.Exception.Message)
+    Write-Log ("liveness_parse_error source={0} path={1} error={2}" -f $healthSource,$healthPath,$_.Exception.Message)
   }
 } elseif ($running) {
   $heartbeatStale = $true
-  Write-Log ("heartbeat_lease_missing candidates={0}" -f ([string]::Join(';',$leaseCandidates)))
+  Write-Log ("liveness_missing client_homes={0}" -f ([string]::Join(';',$clientHomeCandidates)))
 }
 
 if ($running -and -not $heartbeatStale) {
@@ -61,7 +83,7 @@ if ($running -and -not $heartbeatStale) {
 }
 
 if ($running -and $heartbeatStale) {
-  Write-Log ("heartbeat_stale pid={0} age_seconds={1:n1} threshold={2}" -f $running.ProcessId,$heartbeatAgeSeconds,$HeartbeatStaleSeconds)
+  Write-Log ("daemon_stale pid={0} source={1} age_seconds={2:n1} threshold={3}" -f $running.ProcessId,$healthSource,$heartbeatAgeSeconds,$HeartbeatStaleSeconds)
   try {
     Stop-Process -Id $running.ProcessId -Force -ErrorAction Stop
     Start-Sleep -Milliseconds 500
