@@ -6,6 +6,7 @@ if [ "$(id -un)" != "ubuntu" ]; then
   exit 2
 fi
 
+SOURCE_SHA="${1:-}"
 REPO="/home/ubuntu/agentmanager"
 MAIN_ENV="$REPO/.env"
 ROOT="$HOME/.local/share/mio-tryon"
@@ -42,8 +43,15 @@ test -n "$HF_TOKEN_VALUE" || { echo "mio_tryon_deploy=HF_TOKEN_EMPTY" >&2; exit 
 
 mkdir -p "$ROOT" "$BIN" "$CFG" "$UNIT_DIR"
 
-git -C "$REPO" fetch origin main >/dev/null
-WORKER_COMMIT="$(git -C "$REPO" rev-parse origin/main)"
+if [ -n "$SOURCE_SHA" ]; then
+  [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "mio_tryon_deploy=INVALID_SOURCE_SHA" >&2; exit 4; }
+  git -C "$REPO" fetch --no-tags origin "$SOURCE_SHA" >/dev/null
+  git -C "$REPO" cat-file -e "$SOURCE_SHA^{commit}"
+  WORKER_COMMIT="$SOURCE_SHA"
+else
+  git -C "$REPO" fetch origin core/integration >/dev/null
+  WORKER_COMMIT="$(git -C "$REPO" rev-parse origin/core/integration)"
+fi
 git -C "$REPO" show "$WORKER_COMMIT:scripts/tryon_render_worker.py" > "$WORKER.tmp"
 install -m 755 "$WORKER.tmp" "$WORKER"
 rm -f "$WORKER.tmp"
