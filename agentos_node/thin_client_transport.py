@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -227,13 +228,32 @@ class ThinClientTransport:
             receipts.append(receipt)
         return receipts
 
+    def _heartbeat_forever(self, delay: float) -> None:
+        while True:
+            try:
+                self.heartbeat()
+            except Exception as exc:
+                print(f'[agentos-client] heartbeat error: {exc}', flush=True)
+            time.sleep(delay)
+
     def run_forever(self) -> None:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         delay = max(1.0, float(self.config.poll_seconds))
+        heartbeat_thread = threading.Thread(
+            target=self._heartbeat_forever,
+            args=(delay,),
+            name='agentos-heartbeat',
+            daemon=True,
+        )
+        heartbeat_thread.start()
         while True:
             try:
-                self.run_once()
+                receipts: list[dict[str, Any]] = []
+                for task in self.pull_tasks():
+                    receipt = self.client.execute(task)
+                    self.submit_receipt(receipt)
+                    receipts.append(receipt)
             except Exception as exc:
                 print(f'[agentos-client] transport error: {exc}', flush=True)
             time.sleep(delay)
