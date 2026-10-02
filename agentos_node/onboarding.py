@@ -335,14 +335,15 @@ def install_linux_node_supervisor(*, install_root: Path | None = None, launcher:
     unit = linux_thin_client_unit_path()
     unit.parent.mkdir(parents=True, exist_ok=True)
     root.mkdir(parents=True, exist_ok=True)
-    if not client_launcher.exists():
-        python_bin = Path(sys.executable).absolute()
-        client_launcher.write_text(
-            '#!/usr/bin/env bash\n'
-            + 'set -euo pipefail\n'
-            + f'exec "{python_bin}" -m agentos_node.client_cli "$@"\n',
-            encoding='utf-8',
-        )
+    python_bin = Path(sys.executable).absolute()
+    launcher_payload = (
+        '#!/usr/bin/env bash\n'
+        + 'set -euo pipefail\n'
+        + f'exec "{python_bin}" -m agentos_node.client_cli "$@"\n'
+    )
+    current_launcher = client_launcher.read_text(encoding='utf-8') if client_launcher.exists() else None
+    if current_launcher != launcher_payload:
+        client_launcher.write_text(launcher_payload, encoding='utf-8')
         client_launcher.chmod(0o700)
     payload = f'''[Unit]
 Description=AgentOS Thin Client Node
