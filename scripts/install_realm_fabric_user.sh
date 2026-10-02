@@ -77,6 +77,8 @@ After=network.target
 Type=simple
 WorkingDirectory=$LOGIC_ROOT
 EnvironmentFile=$ENV_FILE
+EnvironmentFile=-$HOME/.config/agentos/controller.env
+EnvironmentFile=-$HOME/.agentos.secrets
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
 Environment=PYTHONPATH=$LOGIC_ROOT
 ExecStart=/usr/bin/sg agentos -c '$PYTHON_BIN -m agent_core.realm_cli serve --host 127.0.0.1 --port $PORT'
