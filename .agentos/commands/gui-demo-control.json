@@ -1,11 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "hardened-smoke-start-20261002-0046",
-  "action": "desktop.demo.start",
+  "nonce": "hardened-smoke-stage-20261002-0047",
+  "action": "desktop.demo.stage",
   "payload": {
-    "label": "AgentOS Hardened Smoke",
-    "stage": "start",
-    "max_seconds": 60
+    "stage": "mid-smoke / stage-history"
   }
 }
