@@ -36,10 +36,34 @@ jobs:
           data=json.load(open(sys.argv[1],encoding='utf-8'))
           assert data.get('schema') == 'agentos.participant-command/v1', data
           action=str(data.get('action') or '')
-          assert action in {'noop','participant.join.request'}, action
+          assert action in {'noop','participant.join.request','participant.join.inspect_pending'}, action
           print(action)
           PY
             )
+            if [ "$ACTION" = "participant.join.inspect_pending" ]; then
+              AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$PWD" \
+              python3 - "$PARTICIPANT_CMD" "$PARTICIPANT_OUT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          cmd=json.load(open(sys.argv[1],encoding='utf-8'))
+          manifest=dict(cmd.get('manifest') or {})
+          participant_id=str((manifest.get('participant') or {}).get('id') or '')
+          safe=participant_id.replace('://','__').replace('/','_')
+          state_path=Path('/home/ubuntu/agent-data/runtime/participant-enrollment') / f'{safe}-pending.json'
+          state=json.load(open(state_path,encoding='utf-8'))
+          assert state.get('participant_id') == participant_id, state
+          public={k:v for k,v in state.items() if k != 'claim_secret'}
+          Path(sys.argv[2]).write_text(json.dumps(public,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('participant_pending_inspect=PASS')
+          print('participant_id='+participant_id)
+          print('request_id='+str(state.get('request_id')))
+          print('user_code='+str(state.get('user_code')))
+          print('negotiated_protocol='+str(state.get('negotiated_protocol')))
+          print('expires_at='+str(state.get('expires_at')))
+          print('challenge='+str(state.get('challenge')))
+          PY
+              exit 0
+            fi
             if [ "$ACTION" = "participant.join.request" ]; then
               AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$PWD" \
               python3 - "$PARTICIPANT_CMD" "$PARTICIPANT_OUT" <<'PY'
