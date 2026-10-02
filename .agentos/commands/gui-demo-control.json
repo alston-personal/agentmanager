@@ -1,7 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "e2e3-postfail-windows-20261002-0054",
-  "action": "desktop.windows.inspect",
-  "payload": {}
+  "nonce": "e2e3-postfail-downloads-20261002-0055",
+  "action": "shell.exec",
+  "payload": {
+    "executable": "powershell",
+    "argv": [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$d=Join-Path $env:USERPROFILE 'Downloads'; Get-ChildItem $d -File | Where-Object {$_.Extension -match '^\\.(png|jpg|jpeg|webp)$'} | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 10 Name,Length,@{n='MTimeUtc';e={$_.LastWriteTimeUtc.ToString('o')}},@{n='SHA256';e={(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()}} | ConvertTo-Json -Depth 3 -Compress"
+    ],
+    "timeout_seconds": 30
+  }
 }
