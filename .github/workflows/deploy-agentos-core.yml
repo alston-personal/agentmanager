@@ -190,6 +190,8 @@ jobs:
             if [ "$rc" -ne 0 ]; then
               echo "Deployment failed; attempting immutable runtime rollback" >&2
               if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
+                # Revoke the converger advertisement before restoring the prior Realm.
+                # ONE cannot claim a capability whose rollback state is ambiguous.
                 rm -f "$CAPABILITY_MARKER" || true
               fi
               if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
