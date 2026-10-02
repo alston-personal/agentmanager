@@ -43,5 +43,11 @@ jobs:
           done
           echo "=== chromium profile processes ==="
           ps -eo pid,ppid,stat,wchan:32,%cpu,%mem,rss,etime,cmd | grep '/home/ubuntu/.local/share/agentos/gui-worker/chromium-profile' | grep -v grep || true
+          echo "=== gui browser unit definition ==="
+          systemctl --user cat agentos-gui-browser.service || true
+          echo "=== candidate source files ==="
+          grep -RIn --exclude-dir=.git --exclude-dir=node_modules \
+            -E 'agentos-gui-browser|MemoryHigh=|MemoryMax=|start-browser\.sh' \
+            /home/ubuntu/agentmanager /home/ubuntu/.config/systemd/user 2>/dev/null | head -200 || true
           echo "oracle_gui_cgroup_diagnostic=PASS"
           REMOTE
