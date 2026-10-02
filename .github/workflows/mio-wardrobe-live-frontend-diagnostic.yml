@@ -1,0 +1,49 @@
+name: Mio Wardrobe Live Frontend Diagnostic
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-wardrobe-live-frontend-diagnostic.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect live HTML and NET image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          HTML=/home/ubuntu/zeus-writer/website/dist/personas/mio/wardrobe/index.html
+          test -f "$HTML"
+          echo '=== frontend markers ==='
+          grep -F 'milkcat.mio.wardrobe.runtime/v1' "$HTML" >/dev/null && echo runtime_state=present || echo runtime_state=missing
+          grep -F 'milkcat.mio.pwaHandoff/v1' "$HTML" >/dev/null && echo pwa_handoff=present || echo pwa_handoff=missing
+          grep -F "window.open('about:blank'" "$HTML" >/dev/null && echo sync_popup=present || echo sync_popup=missing
+          echo '=== image probe ==='
+          URL='https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570'
+          curl -sSIL --max-time 12 "$URL" | sed -n '1,12p' || true
+          code=$(curl -sS -L -o /tmp/net-43774.jpg -w '%{http_code}' --max-time 20 "$URL" || true)
+          type=$(file -b --mime-type /tmp/net-43774.jpg 2>/dev/null || true)
+          bytes=$(wc -c < /tmp/net-43774.jpg 2>/dev/null || echo 0)
+          echo "image_http=$code image_type=$type image_bytes=$bytes"
+          REMOTE
+          cat "$out"
+          { echo '### Mio live frontend diagnostic'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
