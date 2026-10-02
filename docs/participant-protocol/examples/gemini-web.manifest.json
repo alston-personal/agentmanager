@@ -1,0 +1,60 @@
+{
+  "participant": {
+    "id": "participant://agent/gemini-web",
+    "instance_id": "gemini-web-unenrolled",
+    "roles": ["agent", "model-provider", "browser-surface-client"]
+  },
+  "adapter": {
+    "name": "agentos-gemini-web-adapter",
+    "version": "0.1.0"
+  },
+  "protocol": {
+    "name": "agentos-participant",
+    "supported": ["1.0"],
+    "negotiated": null
+  },
+  "methods": {
+    "describe": {"implemented": false, "available": false, "verified": false, "unavailable_reason": "ADAPTER_NOT_BUILT"},
+    "probe": {"implemented": false, "available": false, "verified": false, "unavailable_reason": "ADAPTER_NOT_BUILT"},
+    "invoke": {"implemented": false, "available": false, "verified": false, "unavailable_reason": "ADAPTER_NOT_BUILT"},
+    "status": {"implemented": false, "available": false, "verified": false, "unavailable_reason": "ADAPTER_NOT_BUILT"},
+    "receipt": {"implemented": false, "available": false, "verified": false, "unavailable_reason": "ADAPTER_NOT_BUILT"},
+    "shutdown": {"implemented": false, "available": false, "verified": false, "unavailable_reason": "ADAPTER_NOT_BUILT"}
+  },
+  "capabilities": {
+    "llm.reason": {
+      "supported_versions": ["1"],
+      "available": false,
+      "verified": false,
+      "unavailable_reason": "PENDING_ADAPTER_AND_CONFORMANCE"
+    },
+    "agent.review": {
+      "supported_versions": ["1"],
+      "available": false,
+      "verified": false,
+      "unavailable_reason": "PENDING_ADAPTER_AND_CONFORMANCE"
+    }
+  },
+  "features": {},
+  "requirements": [
+    {
+      "id": "gemini.web.session",
+      "status": "SATISFIED",
+      "detail": "Expected to be supplied by an existing logged-in browser surface; must be re-probed at runtime."
+    },
+    {
+      "id": "agentos.one.transport",
+      "status": "FAILED",
+      "detail": "Adapter must discover and prove an allowed ONE transport during onboarding."
+    }
+  ],
+  "relationships": [],
+  "health": {
+    "observable": false,
+    "state": "ADAPTING",
+    "last_probe_at": null
+  },
+  "receipt": {
+    "supported": true
+  }
+}

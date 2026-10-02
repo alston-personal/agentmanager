@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.local/contracts/participant/1.0/participant.schema.json",
+  "title": "AgentOS Participant Manifest v1.0",
+  "type": "object",
+  "required": ["participant", "adapter", "protocol", "methods", "capabilities", "features", "requirements", "relationships", "health", "receipt"],
+  "properties": {
+    "participant": {
+      "type": "object",
+      "required": ["id", "instance_id", "roles"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "instance_id": {"type": "string", "minLength": 1},
+        "roles": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true}
+      },
+      "additionalProperties": true
+    },
+    "adapter": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+].*)?$"}
+      },
+      "additionalProperties": true
+    },
+    "protocol": {
+      "type": "object",
+      "required": ["name", "supported"],
+      "properties": {
+        "name": {"const": "agentos-participant"},
+        "supported": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "negotiated": {"type": ["string", "null"], "pattern": "^[0-9]+\\.[0-9]+$"}
+      },
+      "additionalProperties": true
+    },
+    "methods": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/runtimeSupport"}
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["supported_versions"],
+        "properties": {
+          "supported_versions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "available": {"type": "boolean"},
+          "verified": {"type": "boolean"},
+          "unavailable_reason": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/runtimeSupport"}
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "status": {
+            "enum": ["SATISFIED", "INSTALLABLE", "HUMAN_REQUIRED", "POLICY_DENIED", "UNSUPPORTED", "FAILED"]
+          },
+          "detail": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "participant_id"],
+        "properties": {
+          "type": {"enum": ["hosted_by", "depends_on", "contains", "peer_of"]},
+          "participant_id": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "health": {
+      "type": "object",
+      "required": ["observable"],
+      "properties": {
+        "observable": {"type": "boolean"},
+        "state": {"type": "string"},
+        "last_probe_at": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "receipt": {
+      "type": "object",
+      "required": ["supported"],
+      "properties": {
+        "supported": {"const": true}
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "runtimeSupport": {
+      "type": "object",
+      "required": ["implemented", "available", "verified"],
+      "properties": {
+        "implemented": {"type": "boolean"},
+        "available": {"type": "boolean"},
+        "verified": {"type": "boolean"},
+        "unavailable_reason": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
