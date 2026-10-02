@@ -1,14 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "e2e4-cdp-probe-20261002-0932",
+  "nonce": "vopc5750-lan-fast-probe-20261002-0935",
   "action": "shell.exec",
   "payload": {
-    "executable": "python",
+    "executable": "powershell",
     "argv": [
-      "-c",
-      "import urllib.request,json; u='http://127.0.0.1:9222/json/list';\ntry:\n d=json.load(urllib.request.urlopen(u,timeout=2)); print(json.dumps([{'url':x.get('url'),'title':x.get('title'),'type':x.get('type'),'ws':bool(x.get('webSocketDebuggerUrl'))} for x in d],ensure_ascii=False))\nexcept Exception as e: print(type(e).__name__+':'+str(e)); raise"
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$ErrorActionPreference='Continue'; Write-Output ('PROBE_FROM='+$env:COMPUTERNAME); Write-Output '=== PING ==='; cmd.exe /c 'ping -4 -n 1 -w 1000 VOPC5750'; Write-Output '=== TCP ==='; foreach($p in @(135,445,5985,3389)){;   $c=New-Object System.Net.Sockets.TcpClient;   try {;     $ar=$c.BeginConnect('VOPC5750',$p,$null,$null);     $ok=$ar.AsyncWaitHandle.WaitOne(1500,$false);     if($ok -and $c.Connected){ $c.EndConnect($ar); Write-Output ('PORT_'+$p+'=OPEN') } else { Write-Output ('PORT_'+$p+'=CLOSED_OR_TIMEOUT') };   } catch { Write-Output ('PORT_'+$p+'=ERROR '+$_.Exception.Message) } finally { $c.Close() }; }"
     ],
-    "timeout_seconds": 10
+    "timeout_seconds": 20
   }
 }
