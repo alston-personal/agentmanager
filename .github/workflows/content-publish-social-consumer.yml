@@ -6,6 +6,9 @@ on:
     paths:
       - 'config/content_publish_accounts.json'
       - 'agentos_node/content_publish_social_action_relay.py'
+      - 'agentos_node/content_publish_social_executor.py'
+      - 'runtime_core/content_publish_social.py'
+      - 'tests/test_content_publish_social_executor.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/runtime_converge_action_relay.py'
       - 'agent_core/runtime_converge_capability.py'
@@ -43,6 +46,7 @@ jobs:
       - run: >-
           python -m pytest -q
           tests/test_content_publish_social_action_relay.py
+          tests/test_content_publish_social_executor.py
           tests/test_runtime_converge_capability.py
           tests/test_action_relay_generation_reconcile.py
 
