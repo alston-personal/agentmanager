@@ -1,0 +1,124 @@
+name: Oracle Runner Hosted Readonly Inspect
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-runner-hosted-readonly-inspect.yml'
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-runner-hosted-readonly-inspect.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect Oracle runner and scheduler read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          echo "oracle_runner_inspect=BEGIN"
+          echo "hostname=$(hostname)"
+          echo "observer_user=$(id -un)"
+          echo "observed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "=== github runner processes ==="
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          rows=[]
+          for entry in Path('/proc').iterdir():
+              if not entry.name.isdigit():
+                  continue
+              try:
+                  cmd=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+                  if 'Runner.Listener' not in cmd and 'Runner.Worker' not in cmd and 'runsvc.sh' not in cmd:
+                      continue
+                  status=(entry/'status').read_text(encoding='utf-8',errors='replace').splitlines()
+                  uid=next((line.split()[1] for line in status if line.startswith('Uid:')), '?')
+                  state=next((line.split(':',1)[1].strip() for line in status if line.startswith('State:')), '?')
+                  rows.append((int(entry.name),uid,state,cmd[:220]))
+              except (OSError,PermissionError,ProcessLookupError):
+                  continue
+          if not rows:
+              print('github_runner_processes=NONE')
+          for pid,uid,state,cmd in sorted(rows):
+              print(f'github_runner_process=pid:{pid}:uid:{uid}:state:{state}:cmd:{cmd}')
+          PY
+
+          echo "=== github runner service units ==="
+          systemctl list-units --type=service --all --no-legend 'actions.runner.*.service' 2>/dev/null             | sed -n '1,20p' || true
+          systemctl list-unit-files --type=service --no-legend 'actions.runner.*.service' 2>/dev/null             | sed -n '1,20p' || true
+
+          echo "=== runner installation metadata ==="
+          for root in /home/agentos-node/runner /home/ubuntu/actions-runner /home/ubuntu/runner; do
+            if [ -d "$root" ]; then
+              echo "runner_root=$root"
+              stat -c 'runner_root_owner=%U:%G mode=%a mtime=%y' "$root" 2>/dev/null || true
+              if [ -f "$root/.runner" ]; then
+                echo "runner_registration_file=present"
+                stat -c 'runner_registration_owner=%U:%G mode=%a mtime=%y size=%s' "$root/.runner" 2>/dev/null || true
+              else
+                echo "runner_registration_file=absent"
+              fi
+              if [ -x "$root/bin/Runner.Listener" ]; then
+                "$root/bin/Runner.Listener" --version 2>/dev/null | tail -1 | sed 's/^/runner_version=/' || true
+              fi
+              if [ -d "$root/_diag" ]; then
+                latest="$(find "$root/_diag" -maxdepth 1 -type f -name 'Runner_*.log' -printf '%T@ %f\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+                echo "runner_diag_latest=${latest:-none}"
+              fi
+            fi
+          done
+
+          echo "=== agentos scheduler snapshot ==="
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          p=Path('/home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json')
+          if not p.is_file():
+              print('bootstrap_scheduler_status=missing')
+          else:
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+              except Exception as exc:
+                  print('bootstrap_scheduler_status=invalid:'+type(exc).__name__)
+              else:
+                  print('bootstrap_scheduler_status=present')
+                  print('bootstrap_scheduler_queue_depth='+json.dumps(d.get('queue_depth') or {},sort_keys=True,separators=(',',':')))
+                  for worker,row in sorted((d.get('workers') or {}).items()):
+                      if not isinstance(row,dict):
+                          continue
+                      current=row.get('current_job') if isinstance(row.get('current_job'),dict) else {}
+                      print(
+                          'bootstrap_scheduler_worker='
+                          +str(worker)+':role='+str(row.get('role'))
+                          +':state='+str(row.get('state'))
+                          +':action='+str(current.get('action') or '')
+                      )
+          PY
+
+          echo "oracle_runner_inspect=PASS"
+          REMOTE
