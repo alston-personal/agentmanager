@@ -1,10 +1,6 @@
 name: Oracle MBPR Screen Capture Probe
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-screen-capture-probe.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

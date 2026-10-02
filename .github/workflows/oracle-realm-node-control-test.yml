@@ -1,10 +1,7 @@
 name: Oracle Realm Node Control Test
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-node-control-test.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

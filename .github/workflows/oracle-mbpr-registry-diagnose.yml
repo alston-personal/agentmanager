@@ -1,10 +1,5 @@
 name: Oracle MBPR Registry Diagnose
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-mbpr-registry-diagnose.yml'
   workflow_dispatch:
 permissions:
   contents: read

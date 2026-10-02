@@ -1,8 +1,6 @@
 name: Oracle MBPR CDP Client Diagnose
 on:
-  push:
-    branches: [core/integration]
-    paths: ['.agentos/commands/mbpr-cdp-client-diagnose.json']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

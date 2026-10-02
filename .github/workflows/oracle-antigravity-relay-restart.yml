@@ -1,10 +1,7 @@
 name: Oracle Antigravity Relay Restart
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/antigravity-relay-restart.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

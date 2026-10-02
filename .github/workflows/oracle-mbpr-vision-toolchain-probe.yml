@@ -1,10 +1,6 @@
 name: Oracle MBPR Vision Toolchain Probe
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-vision-toolchain-probe.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

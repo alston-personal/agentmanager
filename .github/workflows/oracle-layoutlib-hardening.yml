@@ -2,20 +2,6 @@ name: Oracle Validate LayoutLib Hardening
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-layoutlib-hardening.yml'
-      - 'scripts/bootstrap_layoutlib.py'
-      - 'scripts/bootstrap_layoutlib_web.py'
-      - 'scripts/bootstrap_layoutlib_hardening.py'
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/oracle-layoutlib-hardening.yml'
-      - 'scripts/bootstrap_layoutlib.py'
-      - 'scripts/bootstrap_layoutlib_web.py'
-      - 'scripts/bootstrap_layoutlib_hardening.py'
-
 permissions:
   contents: write
 

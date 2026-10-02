@@ -1,11 +1,6 @@
 name: Oracle Diagnose vopc5750 Live State
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/oracle-diagnose-vopc5750-live-state.yml'
   workflow_dispatch:
 
 permissions:

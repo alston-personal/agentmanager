@@ -1,11 +1,6 @@
 name: AgentOS Core Generation 6 Continuation Index
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/oracle-core-generation6-continuation-index.yml'
   workflow_dispatch:
 
 permissions:

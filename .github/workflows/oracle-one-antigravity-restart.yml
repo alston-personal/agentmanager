@@ -1,10 +1,7 @@
 name: Oracle ONE Refresh via Antigravity
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-one-antigravity-restart.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

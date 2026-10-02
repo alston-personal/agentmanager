@@ -1,10 +1,6 @@
 name: Oracle MBPR Threads Native Probe
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-threads-native-probe.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

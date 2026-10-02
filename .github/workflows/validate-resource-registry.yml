@@ -2,16 +2,6 @@ name: Validate AgentOS Resource Registry
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'agentos_node/resource_registry.py'
-      - 'agentos_node/cli.py'
-      - 'agentos_node/inspector.py'
-      - 'agentos_node/__init__.py'
-      - 'tests/test_resource_registry.py'
-      - 'docs/RESOURCE_REGISTRY.md'
-      - '.github/workflows/validate-resource-registry.yml'
-
 permissions:
   contents: write
 

@@ -2,11 +2,7 @@ name: Oracle Inspect Oursong Insights
 # rerun: 2026-09-30T09:17+08:00
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-inspect-oursong-insights.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

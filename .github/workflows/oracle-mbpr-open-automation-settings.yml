@@ -1,10 +1,6 @@
 name: Oracle MBPR Open Automation Settings
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-open-automation-settings.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

@@ -1,10 +1,7 @@
 name: Oracle Approve Realm Enrollment
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-enrollment-approval.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

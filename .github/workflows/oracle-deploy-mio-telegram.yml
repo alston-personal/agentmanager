@@ -1,16 +1,7 @@
 name: Oracle Mio Telegram Exact-Source Deployment
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-deploy-mio-telegram.yml'
-      - 'scripts/deploy_mio_telegram_user.sh'
-      - 'scripts/install_mio_telegram_user.sh'
-      - 'scripts/mio_telegram_user.py'
-      - 'tests/test_mio_telegram_user.py'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

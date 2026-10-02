@@ -2,10 +2,6 @@ name: Diagnose Stalled Studio Audit Capsule
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-diagnose-studio-audit-capsule.yml'
-
 permissions:
   contents: write
 

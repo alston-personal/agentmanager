@@ -1,11 +1,7 @@
 name: Oracle Inspect Social Bindings
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-inspect-social-bindings.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

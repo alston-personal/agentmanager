@@ -2,11 +2,7 @@ name: Oracle Inspect Oursong Threads
 # rerun: 2026-09-30T09:36+08:00
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-inspect-oursong-threads.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

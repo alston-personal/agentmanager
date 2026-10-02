@@ -2,14 +2,6 @@ name: Oracle Install Mio Observer Timer
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-install-mio-observer-timer.yml'
-      - 'scripts/install_mio_observer_timer_user.sh'
-      - 'agentos_node/bootstrap_control.py'
-
 permissions:
   contents: read
 

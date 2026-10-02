@@ -1,12 +1,7 @@
 name: Oracle Probe Mio Canva Render
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-probe-mio-canva-render.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

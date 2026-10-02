@@ -1,13 +1,7 @@
 name: Oracle Pause Mio Auto Replies Keep Monitor
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-pause-mio-autoreply.yml'
-      - 'scripts/pause_mio_autoreply_keep_monitor_user.sh'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

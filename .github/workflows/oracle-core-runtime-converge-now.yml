@@ -1,8 +1,6 @@
 name: Oracle Core Runtime Converge Now
 on:
-  push:
-    branches: [core/integration]
-    paths: ['.github/workflows/oracle-core-runtime-converge-now.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

@@ -1,14 +1,7 @@
 name: Oracle Probe Mio Threads Image Container
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-probe-mio-image-container.yml'
-      - 'scripts/probe_mio_threads_image_container_user.sh'
-      - 'agentos_node/bootstrap_control.py'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

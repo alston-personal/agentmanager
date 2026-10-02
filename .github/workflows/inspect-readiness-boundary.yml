@@ -1,12 +1,7 @@
 name: Inspect Realm Readiness Boundary
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/inspect-readiness-boundary.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

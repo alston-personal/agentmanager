@@ -2,10 +2,6 @@ name: Diagnose Studio Web Server
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-diagnose-studio-webserver.yml'
-
 permissions:
   contents: write
 

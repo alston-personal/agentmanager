@@ -1,10 +1,7 @@
 name: Oracle Realm Node Probe
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-node-probe.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

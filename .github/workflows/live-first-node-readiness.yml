@@ -1,16 +1,7 @@
 name: Live First Node Readiness
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/live-first-node-readiness.yml'
-      - 'agent_core/realm_server.py'
-      - 'agent_core/realm_fabric.py'
-      - 'agent_core/node_registry.py'
-      - 'agentos_node/thin_client.py'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

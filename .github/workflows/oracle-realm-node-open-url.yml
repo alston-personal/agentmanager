@@ -1,10 +1,7 @@
 name: Oracle Realm Node Open URL
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-node-open-url.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

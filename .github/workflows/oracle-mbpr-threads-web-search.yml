@@ -1,11 +1,7 @@
 name: Oracle MBPR Threads Web Search
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.agentos/commands/mbpr-threads-web-search.json'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

@@ -2,12 +2,6 @@ name: Oracle Ensure Studio Web Remote via Action Relay
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-ensure-studio-web-remote-action-relay.yml'
-      - 'scripts/ensure_studio_web_remote_via_action_relay.py'
-      - 'agentos_node/action_relay.py'
-
 permissions:
   contents: write
 

@@ -1,10 +1,6 @@
 name: Oracle Mio DM Send
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mio-dm-send.json'
+  workflow_dispatch:
 permissions:
   contents: read
   actions: write

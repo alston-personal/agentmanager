@@ -1,11 +1,6 @@
 name: AgentOS Core Generation 5 Resume Release
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/oracle-core-generation5-resume-release.yml'
   workflow_dispatch:
 
 permissions:

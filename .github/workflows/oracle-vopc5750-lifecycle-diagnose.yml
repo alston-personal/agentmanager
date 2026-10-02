@@ -1,11 +1,6 @@
 name: Oracle vopc5750 Lifecycle Diagnose
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/oracle-vopc5750-lifecycle-diagnose.yml'
   workflow_dispatch:
 
 permissions:

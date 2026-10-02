@@ -1,12 +1,7 @@
 name: Oracle Repair Mio Seaside Asset
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-repair-mio-seaside-asset.yml'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

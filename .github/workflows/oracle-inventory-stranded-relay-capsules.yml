@@ -2,10 +2,6 @@ name: Inventory Stranded Relay Capsules
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-inventory-stranded-relay-capsules.yml'
-
 permissions:
   contents: write
 

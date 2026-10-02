@@ -1,10 +1,6 @@
 name: Oracle MBPR Supervisor Recovery Proof
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-supervisor-recovery-proof.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

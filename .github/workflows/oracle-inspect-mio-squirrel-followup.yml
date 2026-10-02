@@ -1,13 +1,7 @@
 name: Oracle Inspect Mio Squirrel Follow-up (Read Only)
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-inspect-mio-squirrel-followup.yml'
-      - 'scripts/inspect_mio_squirrel_followup_user.sh'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

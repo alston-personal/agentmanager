@@ -1,11 +1,7 @@
 name: Oracle Reply Oursong Current Comments
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-reply-oursong-current.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

@@ -2,11 +2,6 @@ name: Oracle Audit Studio Web Migration
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-audit-studio-web-migration.yml'
-      - 'scripts/audit_studio_web_migration.py'
-
 permissions:
   contents: write
 

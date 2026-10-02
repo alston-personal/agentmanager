@@ -1,11 +1,7 @@
 name: Oracle Publish Oursong Approved Post
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - 'social/oursong/approved/oursong-post-*.txt'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

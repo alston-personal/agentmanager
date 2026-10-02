@@ -1,10 +1,6 @@
 name: Oracle MBPR Threads Existing Session Probe
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-threads-existing-session-probe.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

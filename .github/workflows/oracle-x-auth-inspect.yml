@@ -1,34 +1,6 @@
 name: Content Publish V1 Verify
 
 on:
-  pull_request:
-    branches:
-      - core/integration
-    paths:
-      - 'runtime_core/content_publish.py'
-      - 'runtime_core/x_auth_probe.py'
-      - 'agentos_node/content_publish_action_relay.py'
-      - 'agentos_node/executor_job_action_relay.py'
-      - 'tests/test_content_publish.py'
-      - 'tests/test_content_publish_action_relay.py'
-      - 'config/content_publish_providers.json'
-      - 'scripts/x_auth_inspect.py'
-      - 'capabilities/content_publish/**'
-      - '.github/workflows/oracle-x-auth-inspect.yml'
-  push:
-    branches:
-      - core/integration
-    paths:
-      - 'runtime_core/content_publish.py'
-      - 'runtime_core/x_auth_probe.py'
-      - 'agentos_node/content_publish_action_relay.py'
-      - 'agentos_node/executor_job_action_relay.py'
-      - 'tests/test_content_publish.py'
-      - 'tests/test_content_publish_action_relay.py'
-      - 'config/content_publish_providers.json'
-      - 'scripts/x_auth_inspect.py'
-      - 'capabilities/content_publish/**'
-      - '.github/workflows/oracle-x-auth-inspect.yml'
   workflow_dispatch:
     inputs:
       expected_username:

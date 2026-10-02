@@ -2,14 +2,6 @@ name: Oracle Deploy LayoutLib Web UI
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-deploy-layoutlib-web.yml'
-      - 'scripts/bootstrap_layoutlib.py'
-      - 'scripts/bootstrap_layoutlib_web.py'
-      - 'scripts/bootstrap_layoutlib_hardening.py'
-      - 'scripts/core_services/port_manager.py'
-
 permissions:
   contents: write
 

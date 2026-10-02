@@ -1,11 +1,6 @@
 name: Capture vopc5750 Live Discovery
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - .github/workflows/vopc5750-live-discovery.yml
   workflow_dispatch:
 
 permissions:

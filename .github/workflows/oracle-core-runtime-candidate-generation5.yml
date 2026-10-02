@@ -1,11 +1,6 @@
 name: AgentOS Core Runtime Candidate Generation 5
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/oracle-core-runtime-candidate-generation5.yml'
   workflow_dispatch:
 
 permissions:

@@ -1,10 +1,6 @@
 name: Oracle Mio DM Decision
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mio-dm-decision.json'
+  workflow_dispatch:
 permissions:
   contents: read
   actions: write

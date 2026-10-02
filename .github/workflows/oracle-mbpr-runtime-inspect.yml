@@ -1,10 +1,6 @@
 name: Oracle MBPR Runtime Inspect
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-runtime-inspect.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

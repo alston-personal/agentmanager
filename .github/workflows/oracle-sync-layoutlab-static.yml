@@ -2,10 +2,6 @@ name: Oracle Sync Layout Lab Static Page
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-sync-layoutlab-static.yml'
-
 permissions:
   contents: write
 

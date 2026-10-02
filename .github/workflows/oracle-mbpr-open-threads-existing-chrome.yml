@@ -1,10 +1,6 @@
 name: Oracle MBPR Open Threads Existing Chrome
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-open-threads-existing-chrome.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
