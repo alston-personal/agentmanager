@@ -95,16 +95,46 @@ jobs:
               except Exception as e:
                   return {"present":True,"error":type(e).__name__}
 
+          def summarize_runtime(root):
+              root=Path(root or "/home/ubuntu/agent-data/employee-runtime")
+              def docs(rel, allowed, limit=40):
+                  d=root/rel
+                  if not d.is_dir(): return []
+                  out=[]
+                  files=sorted(d.glob("*.json"), key=lambda p:p.stat().st_mtime if p.exists() else 0)[-limit:]
+                  for p in files:
+                      try:
+                          obj=json.loads(p.read_text(encoding="utf-8"))
+                          item={"file":p.name}
+                          for key in allowed:
+                              if key in obj:
+                                  item[key]=obj.get(key)
+                          out.append(item)
+                      except Exception as e:
+                          out.append({"file":p.name,"error":type(e).__name__})
+                  return out
+              return {
+                  "root":str(root),
+                  "employees":docs("employees",["employee_id","display_name","role_ids"]),
+                  "assignments":docs("assignments",["assignment_id","employee_id","state","role_id","skill_id","updated_at","created_at"]),
+                  "leases":docs("lifecycle/leases",["assignment_id","employee_id","status","generation","expires_at","last_checkpoint_at"]),
+                  "deliveries":docs("supervisor/deliveries",["schema","intent_id","assignment_id","employee_id","state","status","blocker_code","updated_at","attempted_at","queued_at","claimed_at"],20),
+              }
+
           senv=supervisor_env()
-          runtime_root=senv.get("AGENTOS_EMPLOYEE_RUNTIME_ROOT")
+          runtime_root=senv.get("AGENTOS_EMPLOYEE_RUNTIME_ROOT") or "/home/ubuntu/agent-data/employee-runtime"
           result={
             "schema":"agentos.governance-autonomy-inspection/v0.2",
             "supervisor_env":senv,
             "processes":run("ps -eo pid,user,lstart,args | grep -E 'core_supervisor_daemon|employee_worker_host|lobster.py|completion|work_completion|watchdog' | grep -v grep || true"),
             "repo_generation":run("git -C /home/ubuntu/agentmanager rev-parse --abbrev-ref HEAD 2>/dev/null; git -C /home/ubuntu/agentmanager rev-parse HEAD 2>/dev/null; git -C /home/ubuntu/agentmanager status --porcelain=v1 2>/dev/null | head -80"),
             "role_registry":run("grep -E '^(role_set_version:|  - id:|    name:|    status:)' /home/ubuntu/agentmanager/.agent/roles/registry.yaml 2>/dev/null | head -160"),
+            "core_live_pointer":run("readlink -f /home/ubuntu/agent-data/runtime/core/current 2>/dev/null || true; ls -ld /home/ubuntu/agent-data/runtime/core/current /home/ubuntu/agent-data/runtime/core 2>/dev/null || true"),
             "completion_live_pointer":run("readlink -f /home/ubuntu/agent-data/runtime/agentos-lobster/current 2>/dev/null || true; find /home/ubuntu/agent-data/releases/agentos-lobster -maxdepth 2 -type f -name 'release.json' -print 2>/dev/null | tail -5"),
+            "completion_ledger_stat":run("stat -c '%U %G %a %n' /home/ubuntu/agent-data/governance /home/ubuntu/agent-data/governance/work-items.json 2>/dev/null || true"),
             "completion_ledger":read_json(DATA/"governance"/"work-items.json"),
+            "runtime_summary":summarize_runtime(runtime_root),
+            "user_unit_files":run("ls -l /home/ubuntu/.config/systemd/user 2>/dev/null | grep -E 'supervisor|employee|lobster|completion' || true"),
             "employee_runtime":list_runtime(runtime_root),
             "wake_inbox":run("for d in /home/ubuntu/agent-data/employee-wake-inbox /home/ubuntu/agent-data/runtime/employee-wake-inbox; do if [ -d \"$d\" ]; then echo ROOT=$d; ls -lt \"$d\" 2>/dev/null | head -80; fi; done"),
           }
