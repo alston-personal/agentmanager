@@ -1,0 +1,42 @@
+name: Auth Duplicate Cookie Hotfix
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/auth-duplicate-cookie-hotfix.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      TARGET_SHA: 912814b0c38c69b95838ff99f7e96e24d8974ce5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy exact auth fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$TARGET_SHA' && git show '$TARGET_SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh' > /tmp/deploy-auth-cookie-fix.sh && chmod 700 /tmp/deploy-auth-cookie-fix.sh && /tmp/deploy-auth-cookie-fix.sh '$TARGET_SHA' '${{ github.run_id }}'"
+      - name: Verify release
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          live="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          echo "live=$live"
+          echo "$live" | grep -F '912814b0c38c69b95838ff99f7e96e24d8974ce5'
+          code="$(curl -sS -o /tmp/session -w '%{http_code}' http://127.0.0.1:3000/dashboard/api/auth/session)"
+          test "$code" = 200
+          echo 'auth_duplicate_cookie_release=PASS'
+          REMOTE
