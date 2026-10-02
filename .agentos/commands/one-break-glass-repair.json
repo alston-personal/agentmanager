@@ -1,0 +1,5 @@
+{
+  "schema": "agentos.break-glass/v1",
+  "action": "one.health.repair",
+  "nonce": "20261002T1000"
+}
