@@ -1,8 +1,8 @@
 {
   "schema": "agentos.participant-command/v1",
-  "action": "participant.join.inspect_pending",
+  "action": "participant.join.request",
   "host_runtime_id": "participant://host/browser-bridge",
-  "expires_minutes": 10,
+  "expires_minutes": 30,
   "manifest": {
     "participant": {
       "id": "participant://agent/gemini-web",
@@ -105,6 +105,5 @@
     "receipt": {
       "supported": true
     }
-  },
-  "inspection_revision": "challenge-read-v1"
+  }
 }
