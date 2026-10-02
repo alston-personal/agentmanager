@@ -1,0 +1,54 @@
+name: Next Route Definition Diagnostic
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/next-route-definition-diagnostic.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Compare compiled route definitions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          live=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)
+          cd "$live"
+          node - <<'NODE'
+          const files={
+            auth:'./.next/server/app/api/auth/session/route.js',
+            handoff:'./.next/server/app/api/wardrobe/auth-handoff/route.js',
+            catalog:'./.next/server/app/api/wardrobe/catalog/route.js',
+            render:'./.next/server/app/api/wardrobe/tryon/render/route.js',
+          };
+          for(const [name,file] of Object.entries(files)){
+            try{
+              const m=require(file);
+              const d=m.routeModule?.definition || m.default?.routeModule?.definition || null;
+              console.log(name,'keys=',Object.keys(m));
+              console.log(name,'definition=',JSON.stringify(d));
+            }catch(e){console.log(name,'ERR',e.stack||String(e));}
+          }
+          NODE
+          REMOTE
+          cat "$out"
+          { echo '### Next route definitions'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
