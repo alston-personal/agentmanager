@@ -1,7 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "recording-window-inspect-013",
-  "action": "desktop.windows.inspect",
-  "payload": {}
+  "nonce": "desktop-demo-install-ffmpeg-016",
+  "action": "shell.exec",
+  "payload": {
+    "executable": "powershell",
+    "argv": [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "& winget install --id Gyan.FFmpeg --exact --silent --accept-source-agreements --accept-package-agreements --disable-interactivity; exit $LASTEXITCODE"
+    ],
+    "timeout_seconds": 240
+  }
 }
