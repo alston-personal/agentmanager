@@ -134,7 +134,7 @@ EVENTS=[
  {"id":"serendipity","category":"serendipity","text":"偶然遇到一個讓她很感興趣的東西","effects":{"energy_delta":1,"mood_delta":0.16,"initiative_modifier":1.2},"hours":4}
 ]
 
-def maybe_generate_event(path:Path, config:dict[str,Any], event_log:Path, now:datetime|None=None, temporal:dict[str,Any]|None=None)->dict[str,Any]|None:
+def maybe_generate_event(path:Path, config:dict[str,Any], event_log:Path, now:datetime|None=None, temporal:dict[str,Any]|None=None, persona_id:str='sunlake-milkcat-ai-001')->dict[str,Any]|None:
     now=now or _utc_now()
     if life_phase(now,temporal) in {"sleep","rest"}: return None
     state=_load(path,{"schema":SCHEMA,"energy":72,"last_energy_update_at":_iso(now),"events_today":[]})
@@ -169,7 +169,7 @@ def maybe_generate_event(path:Path, config:dict[str,Any], event_log:Path, now:da
     template=rng.choice(eligible)
     event={
       "schema":"agentos.persona-stochastic-event/v1","event_id":f"life-{now.strftime('%Y%m%dT%H%M%SZ')}-{seed:x}",
-      "persona_id":"sunlake-milkcat-ai-001","world":"persona_world","category":template["category"],
+      "persona_id":str(persona_id),"world":"persona_world","category":template["category"],
       "template_id":template["id"],"summary":template["text"],"created_at":_iso(now),
       "random_seed":seed,"generator_version":"persona-life/v0.1","eligibility_context":{"energy":round(energy,2)},
       "effects":template["effects"],"duration_hours":template["hours"],"growth_evidence":False
