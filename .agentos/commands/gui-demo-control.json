@@ -1,10 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-fresh-smoke-start-20261002-0039",
-  "action": "desktop.demo.start",
+  "nonce": "desktop-demo-fresh-smoke-stop-20261002-0040",
+  "action": "desktop.demo.stop",
   "payload": {
-    "label": "AgentOS Recorder Smoke",
-    "stage": "Fresh smoke / recording"
+    "final_stage": "Fresh smoke / verified"
   }
 }
