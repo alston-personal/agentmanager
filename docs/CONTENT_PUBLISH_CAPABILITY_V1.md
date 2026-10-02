@@ -100,6 +100,32 @@ the normal Shared Social Runtime `identity.read` route. Authentication success
 does not by itself prove Threads publish entitlement; that remains `UNKNOWN`
 until a separately authorized write acceptance/E2E proves it.
 
+## Threads execution authority boundary
+
+The live Threads adapter is intentionally split into projection and execution.
+
+`runtime_core/content_publish_social.py` projects a canonical
+`agentos.content-publish/v1` request plus Content Artifact and host-resolved
+account binding into the exact `agentos.social-request/v1` accepted by Shared
+Social Runtime. The projection is pure and cannot issue write authority.
+
+`agentos_node/content_publish_social_executor.py` is an ubuntu-local
+preaccepted executor. It is **not** registered as an Action Relay action. The
+Social Runtime one-shot acceptance ID is authority material and must not be
+persisted in the shared relay spool. The executor can consume only a separately
+issued acceptance whose exact product/platform/operation/account/write-intent
+scope is enforced by Social Runtime.
+
+The caller's `authority=approved-content-publish` field is necessary intent
+evidence but is not, by itself, runtime authorization. Core must never convert
+that string into its own acceptance.
+
+Unresolved `asset://` media fails closed with
+`content_publish_media_resolution_required`; the executor will not silently
+turn host filesystem paths into public media URLs. An ambiguous transport
+failure is returned as `UNKNOWN` with `reconcile_required=true`; blind retry
+of the same write intent is forbidden.
+
 ## Resolution
 
 1. Match platform and account.
