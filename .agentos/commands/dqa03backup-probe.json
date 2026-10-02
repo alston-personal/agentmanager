@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.probe",
   "node_id": "dqa03backup",
-  "nonce": "verify-after-venv-linger-fix-20261002T0938"
+  "nonce": "verify-after-launcher-convergence-timeout-retry-20261002T0940"
 }
