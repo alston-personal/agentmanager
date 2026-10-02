@@ -55,6 +55,23 @@ the historical Social Runtime patrol workflow on `core/integration`. Do not
 infer live PDCA acceptance from a manual patrol run or from either branch head.
 
 `persona_pdca_tick.py` now queues `social.threads.observe` as `pending_external`.
+Follow-up candidate: each active, sufficiently energized PDCA heartbeat also
+plans a read when the last successful, receipt-linked read would exceed the
+freshness goal before the next heartbeat. `social_observation.max_age_minutes`
+defaults to `heartbeat_minutes` (60 if omitted); periodic observation can be
+disabled with `social_observation.enabled=false`. Invalid interval policy does
+not schedule a supplemental read. This environmental input does not replace
+the randomly selected creative/reflection intent or compel a public reply.
+Sleep/rest and energy below 15 defer periodic reads; an existing candidate or
+in-progress read prevents duplicates, and a blocked read prevents supplemental
+retry until repair. An explicitly selected observe remains a separate decision.
+If all 12 pending slots hold unfinished work, supplemental observation is
+deferred with `pending_capacity`; only terminal entries may be evicted for it.
+The passive read cost is accounted in energy, and the existing worker prioritizes
+the queued observation over a public write candidate. No new timer is introduced.
+Freshness is a planning goal sampled at heartbeats, not a wall-clock SLA through
+rest, adapter outages or worker backlog. This follow-up is source-tested only;
+merge/deployment and a real autonomous read receipt remain required.
 The existing short-cycle `run_persona_social_actions_user.sh` consumes that
 durable intent through `persona_social_executor.py` and the existing Social
 Runtime `post.read` / `replies.read` boundary. It never uses Threads Web DM.

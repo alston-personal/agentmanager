@@ -206,9 +206,13 @@ def main():
         if not nb: return True
         try: return datetime.fromisoformat(nb.replace("Z","+00:00")) <= now_dt
         except Exception: return False
-    target=next((x for x in pending if isinstance(x,dict) and x.get("status")=="candidate" and due(x) and x.get("capability") in (
+    ready=[x for x in pending if isinstance(x,dict) and x.get("status")=="candidate" and due(x) and x.get("capability") in (
         "social.threads.observe","social.reply.review","social.reply.send","social.post.publish"
-    )),None)
+    )]
+    # Due environmental reads precede existing write candidates; cognition still
+    # decides whether any public reply or post is appropriate.
+    target=next((x for x in ready if x.get("capability")=="social.threads.observe"),
+                ready[0] if ready else None)
     now=now_dt.isoformat().replace("+00:00","Z")
     if not target:
         result={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"NO_ACTION","timestamp":now}

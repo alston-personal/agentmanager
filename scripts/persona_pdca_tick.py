@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, hashlib, json, os, random
+import argparse, hashlib, json, math, os, random
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -42,6 +42,37 @@ def local_phase(now_local):
     if in_range(19,30,22,30): return "creative_social"
     if in_range(22,30,24,0) or in_range(0,0,0,30): return "late"
     return "idle"
+
+def social_observation_plan(cfg, state, phase, energy, now):
+    """Plan a bounded read in this heartbeat, independently of creative choice."""
+    policy=cfg.get("social_observation") or {}
+    if not isinstance(policy,dict): policy={"enabled":False}
+    interval=policy.get("max_age_minutes",cfg.get("heartbeat_minutes",60))
+    heartbeat=cfg.get("heartbeat_minutes",60)
+    valid=all(isinstance(x,(int,float)) and not isinstance(x,bool)
+              and math.isfinite(x) and x>0 for x in (interval,heartbeat))
+    plan={"due":False,"max_age_minutes":interval if valid else None,"age_minutes":None}
+    if not valid: return {**plan,"reason":"invalid_observation_policy"}
+    if policy.get("enabled",True) is not True:
+        return {**plan,"reason":"periodic_observation_disabled"}
+    if phase in ("sleep","rest") or energy<15:
+        return {**plan,"reason":"recovery_window"}
+    reads=[x for x in state.get("pending_external_actions",[]) if isinstance(x,dict)
+           and x.get("capability") in ("social.threads.observe","social.reply.review")]
+    if any(x.get("status")=="blocked" for x in reads):
+        return {**plan,"reason":"blocked_read_requires_repair"}
+    if any(x.get("status") in ("candidate","in_progress") for x in reads):
+        return {**plan,"reason":"read_already_pending"}
+    last=state.get("last_social_observation") or {}
+    verified=isinstance(last,dict) and last.get("read_status")=="PASS" and last.get("receipt_ref")
+    ts=parse_ts(str(last.get("observed_at") or "")) if verified else None
+    if ts is not None and ts.tzinfo is not None:
+        age=(now-ts.astimezone(timezone.utc)).total_seconds()/60
+        if age>=0:
+            plan["age_minutes"]=round(age,2)
+            # Schedule before the next heartbeat would pass the freshness goal.
+            if age+heartbeat<interval: return {**plan,"reason":"successful_read_fresh"}
+    return {**plan,"due":True,"reason":"successful_read_due"}
 
 def read_events(path):
     events = []
@@ -207,6 +238,28 @@ def main():
     if selected=="observe":
         do["action_id"]=external["action_id"]
 
+    observation_plan=social_observation_plan(cfg,{**state,"pending_external_actions":pending},phase,energy,now_utc)
+    observation_candidate=None
+    if observation_plan["due"]:
+        # Never evict a live action merely to add supplemental observation.
+        if len(pending)>=12:
+            terminal=next((i for i,x in enumerate(pending) if isinstance(x,dict)
+                           and x.get("status") in ("completed","cancelled","superseded")),None)
+            if terminal is not None: pending.pop(terminal)
+        if len(pending)<12:
+            observation_candidate={"action_id":f"mio-pdca-c{cycle}-social-observe","cycle":cycle,
+                "capability":"social.threads.observe","status":"candidate",
+                "created_at":now_utc.isoformat().replace("+00:00","Z"),
+                "reason":"PDCA successful social read is due",
+                "requires_real_adapter_receipt":True}
+            pending.append(observation_candidate)
+            read_cost=min(energy_after,max(0.0,float(costs.get("observe_passive",0.2))))
+            energy_after-=read_cost
+            do["social_observation_energy_cost"]=read_cost
+        else:
+            observation_plan["reason"]="pending_capacity"
+    observation_plan["queued"]=observation_candidate is not None
+
     noop=selected in ("sleep","rest","observe") and not unseen
     noops=int(state.get("consecutive_noops",0))+1 if noop else 0
     focus={"review_social_feedback":"relationships","content_ideation":"creative_output",
@@ -218,14 +271,16 @@ def main():
              "local_time":now_local.isoformat(),"phase":phase,"ir_id":ir.get("ir_id"),"seed":seed,"trigger":args.trigger,
              "plan":{"energy":round(energy,2),"unseen_events":len(unseen),"event_counts":counts,
                      "growth":{"enabled":growth_enabled,"posts_today":len(todays_posts),"target":target,"max":max_posts,"gap_minutes":round(post_gap_min,1) if post_gap_min is not None else None,"gap_ok":gap_ok},
-                     "candidates":[{"intent":n,"weight":w} for n,w in candidates],"selected_intent":selected},
+                     "candidates":[{"intent":n,"weight":w} for n,w in candidates],"selected_intent":selected,
+                     "social_observation":observation_plan},
              "do":do,
              "check":{"internal_action_verified":selected!="observe","external_action_completed":False,
                       "new_event_counts":counts,"unseen_events":len(unseen),
                       "energy_before":round(energy,2),"energy_after":round(energy_after,2),
                       "policy_boundary_respected":True},
              "act":{"next_focus":focus,"consecutive_noops":noops,
-                    "pending_external_actions":len(pending),"external_candidate":external},
+                    "pending_external_actions":len(pending),"external_candidate":external,
+                    "observation_candidate":observation_candidate},
              "truth_boundary":{"fabricated_external_completion":False,"external_receipt_required":True}}
 
     day=now_local.strftime("%Y-%m-%d")
