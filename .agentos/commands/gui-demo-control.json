@@ -1,11 +1,19 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "e2e3-record-start-20261002-0051",
-  "action": "desktop.demo.start",
+  "nonce": "e2e3-benchmark-run-20261002-0052",
+  "action": "shell.exec",
   "payload": {
-    "label": "AgentOS E2E Benchmark #3",
-    "stage": "Ready / starting benchmark",
-    "max_seconds": 300
+    "executable": "powershell",
+    "argv": [
+      "-STA",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "C:\\Users\\alston.huang\\AgentOS\\agentos_gui_demo_benchmark.ps1"
+    ],
+    "timeout_seconds": 180
   }
 }
