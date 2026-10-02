@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(".github/workflows")
-BASELINE = Path(".agentos/governance/legacy-direct-oracle-workflows.txt")
-BREAK_GLASS = {
-    ".github/workflows/oracle-one-break-glass-repair.yml",
-    ".github/workflows/oracle-runner-recovery.yml",
+ALLOW = {
+    "oracle-one-break-glass-repair.yml",
+    "oracle-runner-recovery.yml",
 }
 
 pattern = re.compile(
@@ -15,26 +16,41 @@ pattern = re.compile(
     re.IGNORECASE,
 )
 
-legacy = {
-    line.strip()
-    for line in BASELINE.read_text(encoding="utf-8").splitlines()
-    if line.strip() and not line.lstrip().startswith("#")
-}
-current = {
-    str(path)
-    for path in sorted(ROOT.glob("*.yml"))
-    if pattern.search(path.read_text(encoding="utf-8", errors="replace"))
-}
-new_direct = sorted(current - legacy - BREAK_GLASS)
-retired = sorted(legacy - current)
 
-print(f"direct_oracle_legacy_current={len(current & legacy)}")
-print(f"direct_oracle_legacy_retired={len(retired)}")
-print(f"direct_oracle_break_glass={len(current & BREAK_GLASS)}")
-if new_direct:
+def changed_workflows() -> list[Path]:
+    base_ref = os.environ.get("GITHUB_BASE_REF", "").strip()
+    if not base_ref:
+        return sorted(ROOT.glob("*.yml"))
+    subprocess.run(
+        ["git", "fetch", "--no-tags", "origin", base_ref],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD", "--", str(ROOT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [
+        Path(line.strip())
+        for line in result.stdout.splitlines()
+        if line.strip().endswith((".yml", ".yaml"))
+    ]
+
+
+violations = []
+for path in changed_workflows():
+    if not path.exists() or path.name in ALLOW:
+        continue
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if pattern.search(text):
+        violations.append(str(path))
+
+if violations:
     print("direct_oracle_self_hosted_guard=FAIL")
-    for item in new_direct:
-        print("new_violation=" + item)
+    for item in violations:
+        print("violation=" + item)
     raise SystemExit(2)
 
 print("direct_oracle_self_hosted_guard=PASS")
