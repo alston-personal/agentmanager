@@ -1,0 +1,73 @@
+name: Read Clean VO10005870 Watchdog Log
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/read-clean-vo10005870-watchdog-log.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read watchdog log via RealmFabric
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tid='clean-watchdog-log-20261002-1600'
+          ps=r'''$root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          Write-Output '===PIDS==='
+          Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -match '-m agentos_node\.client_cli run' } | ForEach-Object { Write-Output ("PID="+$_.ProcessId+" CREATED="+$_.CreationDate+" CMD="+$_.CommandLine) }
+          Write-Output '===STATE_FILES==='
+          Get-ChildItem (Join-Path $root 'state') -ErrorAction SilentlyContinue | ForEach-Object { Write-Output ($_.FullName+" bytes="+$_.Length+" mtime="+$_.LastWriteTimeUtc.ToString('o')) }
+          Write-Output '===DAEMON_LIVENESS==='
+          $live=Join-Path $root 'state\daemon-liveness.json'
+          if(Test-Path $live){Get-Content -Raw -LiteralPath $live}
+          Write-Output '===HEARTBEAT_LEASE==='
+          $lease=Join-Path $root 'state\heartbeat-lease.json'
+          if(Test-Path $lease){Get-Content -Raw -LiteralPath $lease}
+          Write-Output '===WATCHDOG_LOG==='
+          $log=Join-Path $root 'watchdog\watchdog.log'
+          if(Test-Path $log){Get-Content -LiteralPath $log -Tail 120}
+          Write-Output '===SPOOL==='
+          $sp=Join-Path $root 'state\pending-receipts'
+          if(Test-Path $sp){Get-ChildItem $sp | ForEach-Object { Write-Output ($_.FullName+" bytes="+$_.Length+" mtime="+$_.LastWriteTimeUtc.ToString('o')) }}'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                  'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,
+                  'cognition_ids_used':['demo://watchdog-debug/20261002'],
+              })
+          for _ in range(35):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  print(r.get('stdout') or '')
+                  print('ERROR='+str(r.get('error') or ''))
+                  print('RC='+str(r.get('returncode')))
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('clean_watchdog_log_receipt_missing')
+          PY
+          REMOTE
