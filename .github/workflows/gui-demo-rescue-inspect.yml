@@ -56,6 +56,8 @@ jobs:
             'deploy-receipt-spool-20261002-1552',
             'verify-receipt-spool-runtime-20261002-1552',
             'targeted-uia-probe-gemini-20261002-1332',
+            'minimal-gemini-uia-probe-20261002-1622',
+            'probe-edge-cdp-flag-20261002-1620',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
           PY
@@ -82,3 +84,5 @@ jobs:
 # formal-e2e-live-inspect-1548
 
 # receipt-spool-live-check-1552
+
+# executor-queue-postcheck-20261002-1625
