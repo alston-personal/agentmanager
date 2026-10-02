@@ -17,6 +17,7 @@ from typing import Any
 SCHEMA = "agentos.bootstrap-request/v1"
 RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
+ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
 ACTION_RECONCILE_CONTENT_SOCIAL = "agentos.content_social.reconcile"
@@ -55,6 +56,7 @@ ACTION_DEPLOY_STUDIO_WEB_MIO = "agentos.studio_web_mio.deploy"
 ACTION_INSTALL_MIO_OBSERVER_TIMER = "agentos.mio_observer.timer.install"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
+    ACTION_RUNNER_WINDOW_PROBE,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
     ACTION_RECONCILE_CONTENT_SOCIAL,
@@ -327,6 +329,12 @@ def _run_canonical_script(
 
 
 def _execute(action: str, source_commit: str | None, post_key: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    if action == ACTION_RUNNER_WINDOW_PROBE:
+        return {
+            "ok": True,
+            "source_commit": source_commit,
+            "steps": [{"step": "runner_window_probe", "returncode": 0, "stdout": "runner_window_probe=PASS\n", "stderr": ""}],
+        }
     if action == ACTION_REPAIR_TRANSPORT:
         env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
         if source_commit:

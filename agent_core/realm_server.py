@@ -387,7 +387,9 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             raw = json.loads(receipt_path.read_text(encoding='utf-8'))
             action = str(raw.get('action') or '')
             safe_prefixes: tuple[str, ...] = ()
-            if action == bootstrap_control.ACTION_DEPLOY_SOCIAL_RUNTIME:
+            if action == bootstrap_control.ACTION_RUNNER_WINDOW_PROBE:
+                safe_prefixes = ('runner_window_probe=',)
+            elif action == bootstrap_control.ACTION_DEPLOY_SOCIAL_RUNTIME:
                 safe_prefixes = (
                     'social_runtime_deploy=',
                     'social_runtime_service_identity=',
