@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "watchdog-log-text-20261002-0057",
+  "nonce": "watchdog-hotfix-deploy-20261002-0058",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,8 +9,8 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$root=Join-Path $env:LOCALAPPDATA 'AgentOS\\watchdog'; $state=Join-Path $root 'state.json'; $log=Join-Path $root 'watchdog.log'; Write-Output '===STATE==='; if(Test-Path $state){Get-Content -Raw $state}else{Write-Output 'NONE'}; Write-Output '===LOG==='; if(Test-Path $log){Get-Content $log -Tail 20}else{Write-Output 'NONE'}"
+      "$dst=Join-Path $env:LOCALAPPDATA 'AgentOS\\scripts\\thin_client_watchdog.ps1'; Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/fix/windows-thin-client-watchdog/scripts/windows/thin_client_watchdog.ps1' -OutFile $dst; Write-Output ('updated='+$dst); Get-ScheduledTask -TaskName 'AgentOS Thin Client' | Select-Object TaskName,State | ConvertTo-Json -Compress"
     ],
-    "timeout_seconds": 20
+    "timeout_seconds": 30
   }
 }
