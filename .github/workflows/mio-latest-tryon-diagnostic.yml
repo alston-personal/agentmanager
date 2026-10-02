@@ -1,0 +1,51 @@
+name: Mio Latest Tryon Diagnostic
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-latest-tryon-diagnostic.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect recent try-on jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(mktemp)"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' >"$out" 2>&1 <<'PY'
+          import json, pathlib
+          root=pathlib.Path('/home/ubuntu/agent-data/projects/dressup-simulator/render_jobs/runtime')
+          rows=sorted(root.glob('*.json'), key=lambda p:p.stat().st_mtime, reverse=True)[:8]
+          for p in rows:
+              try:
+                  j=json.loads(p.read_text(encoding='utf-8'))
+              except Exception as e:
+                  print(p.name,'parse_error'); continue
+              out=j.get('output') or {}
+              err=j.get('error') or {}
+              print('JOB',p.name)
+              print(' status=',j.get('status'),' requestedAt=',j.get('requestedAt'))
+              print(' selectedLayers=',j.get('selectedLayers'))
+              print(' renderedLayers=',out.get('renderedLayers'),' pendingLayers=',out.get('pendingLayers'))
+              print(' error=',err.get('code'),err.get('message'))
+          PY
+          cat "$out"
+          { echo '### Mio latest try-on jobs'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
