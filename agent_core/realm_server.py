@@ -409,6 +409,20 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'galaxy_day1_image_readback=',
                     'galaxy_day1_image_asset=',
                 )
+            elif action == bootstrap_control.ACTION_RECONCILE_CONTENT_SOCIAL:
+                safe_prefixes = (
+                    'content_social_converge=',
+                    'action_relay_generation=',
+                    'content_social_bootstrap_status=',
+                    'content_social_bootstrap_username=',
+                    'content_social_product_registration=',
+                    'content_social_bootstrap=',
+                    'content_social_inspect_status=',
+                    'content_social_username=',
+                    'content_social_write_entitlement=',
+                    'content_social_account_inspect=',
+                    'content_social_reconcile=',
+                )
             evidence: list[str] = []
             if safe_prefixes:
                 for step in raw.get('steps') or []:
