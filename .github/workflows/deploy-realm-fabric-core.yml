@@ -213,3 +213,5 @@ jobs:
           REMOTE
 
 # deploy-trigger: oidc-scheduler-20261002
+
+# recovery-trigger: 2026-10-02T03:50Z intermittent-8780-upstream
