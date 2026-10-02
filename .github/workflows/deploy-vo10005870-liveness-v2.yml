@@ -1,0 +1,101 @@
+name: Deploy VO10005870 Liveness V2
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/deploy-vo10005870-liveness-v2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy liveness transport and watchdog
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tid='deploy-liveness-v2-20261002-1430'
+          ps=r'''$ErrorActionPreference='Stop'
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $transport=Join-Path $root 'agentos_node\thin_client_transport.py'
+          $watchdog=Join-Path $root 'scripts\thin_client_watchdog.ps1'
+          $transportTmp=$transport+'.new'
+          $watchdogTmp=$watchdog+'.new'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/feat/desktop-demo-recorder/agentos_node/thin_client_transport.py' -OutFile $transportTmp
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/fix/windows-thin-client-watchdog/scripts/windows/thin_client_watchdog.ps1' -OutFile $watchdogTmp
+          Stop-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Move-Item -Force -LiteralPath $watchdogTmp -Destination $watchdog
+          Move-Item -Force -LiteralPath $transportTmp -Destination $transport
+          $script=@'
+          Stop-ScheduledTask -TaskName "AgentOS Thin Client" -ErrorAction SilentlyContinue
+          Get-CimInstance Win32_Process |
+            Where-Object { $_.CommandLine -match 'agentos_node\.client_cli.*run|agentos-client(?:\.exe)?.*run' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          Start-Sleep -Seconds 2
+          Start-ScheduledTask -TaskName "AgentOS Thin Client"
+          Start-Sleep -Seconds 5
+          Start-ScheduledTask -TaskName "AgentOS Thin Client Watchdog"
+          '@
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$script)
+          [pscustomobject]@{transport_bytes=(Get-Item $transport).Length;watchdog_bytes=(Get-Item $watchdog).Length;reload='scheduled'}|ConvertTo-Json -Compress'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                  'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,
+                  'cognition_ids_used':['demo://liveness-v2/20261002'],
+              })
+          for _ in range(45):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  print('DEPLOY='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0, r
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('deploy_receipt_missing')
+
+          time.sleep(15)
+          vid='verify-liveness-v2-20261002-1430'
+          code="import os,json,time,pathlib,agentos_node.thin_client_transport as m; p=m._liveness_lease_path(); a=json.loads(p.read_text(encoding='utf-8')) if p.exists() else None; time.sleep(3); b=json.loads(p.read_text(encoding='utf-8')) if p.exists() else None; print(json.dumps({'path':str(p),'first':a,'second':b,'advanced':bool(a and b and int(b['recorded_at_unix'])>int(a['recorded_at_unix']))},ensure_ascii=False))"
+          if f.get_receipt(vid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':vid,'action':'shell.exec',
+                  'executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe',
+                  'argv':['-c',code],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,
+                  'cognition_ids_used':['demo://liveness-v2/20261002'],
+              })
+          for _ in range(45):
+              r=f.get_receipt(vid)
+              if r is not None:
+                  print('VERIFY='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0, r
+                  assert '"advanced": true' in (r.get('stdout') or '').lower(), r
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('verify_receipt_missing')
+          PY
+          REMOTE
