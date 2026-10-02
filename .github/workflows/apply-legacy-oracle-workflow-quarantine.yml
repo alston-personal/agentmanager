@@ -1,0 +1,57 @@
+name: Apply Legacy Oracle Workflow Quarantine
+
+on:
+  push:
+    branches: [ops/quarantine-legacy-direct-oracle-20261002]
+    paths:
+      - 'scripts/quarantine_legacy_direct_oracle_workflows.py'
+      - '.agentos/governance/legacy-direct-oracle-workflows.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/quarantine-legacy-direct-oracle-20261002
+          fetch-depth: 0
+      - name: Quarantine legacy direct Oracle workflows
+        run: python3 scripts/quarantine_legacy_direct_oracle_workflows.py
+      - name: Validate generated workflow triggers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          baseline=Path('.agentos/governance/legacy-direct-oracle-workflows.txt')
+          paths=[Path(x.strip()) for x in baseline.read_text().splitlines() if x.strip() and not x.lstrip().startswith('#')]
+          bad=[]
+          for p in paths:
+              if not p.exists():
+                  continue
+              text=p.read_text(encoding='utf-8')
+              head=text.split('jobs:',1)[0]
+              if '  push:' in head or '  pull_request:' in head or '  schedule:' in head:
+                  bad.append(str(p))
+              if 'workflow_dispatch' not in head:
+                  bad.append(str(p)+':no_workflow_dispatch')
+          assert not bad,bad[:20]
+          print('legacy_direct_oracle_manual_only=PASS')
+          PY
+      - name: Commit generated quarantine
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .github/workflows; then
+            echo 'legacy_quarantine_changes=NONE'
+            exit 0
+          fi
+          git config user.name 'AgentOS Runner Pool'
+          git config user.email 'register@milkcat.org'
+          git add .github/workflows
+          git commit -m 'ops(runner-pool): quarantine legacy direct Oracle workflows'
+          git push origin HEAD:ops/quarantine-legacy-direct-oracle-20261002
