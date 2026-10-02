@@ -1,0 +1,71 @@
+name: Verify VO10005870 Heartbeat During Long Task
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/verify-vo10005870-heartbeat-during-task.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run long task while checking heartbeat
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          f=RealmFabricStore()
+          tid='heartbeat-isolation-long-task-20261002-1403'
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                  'executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe',
+                  'argv':['-c','import time; time.sleep(45); print("LONG_TASK_DONE")'],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':60,
+                  'cognition_ids_used':['demo://heartbeat-isolation/20261002'],
+              })
+
+          samples=[]
+          for i in range(6):
+              time.sleep(10)
+              node=next((n for n in (NodeRegistry().node_map().get('nodes') or []) if str(n.get('node_id') or '')=='VO10005870'),None)
+              sample={'t':(i+1)*10,'status':node.get('status') if node else None,'heartbeat_age_seconds':node.get('heartbeat_age_seconds') if node else None,'uptime_seconds':node.get('uptime_seconds') if node else None}
+              samples.append(sample)
+              print('SAMPLE='+json.dumps(sample,separators=(',',':')),flush=True)
+              if not node or node.get('status')!='online':
+                  raise SystemExit('heartbeat_isolation_failed:'+json.dumps(samples))
+
+          r=f.get_receipt(tid)
+          if r is None:
+              for _ in range(15):
+                  time.sleep(1)
+                  r=f.get_receipt(tid)
+                  if r is not None:
+                      break
+          print('RECEIPT='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+          assert r and r.get('ok') is True and int(r.get('returncode') or 0)==0, r
+          assert 'LONG_TASK_DONE' in str(r.get('stdout') or ''), r
+          print('HEARTBEAT_ISOLATION=PASS')
+          PY
+          REMOTE
