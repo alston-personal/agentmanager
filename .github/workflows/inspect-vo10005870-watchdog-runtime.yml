@@ -34,11 +34,12 @@ jobs:
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='inspect-watchdog-runtime-20261002-1525'
+          tid='inspect-watchdog-runtime-20261002-1536'
           ps=r'''$ErrorActionPreference='Stop'
           $candidates=@(
             (Join-Path $env:USERPROFILE '.agentos\heartbeat-lease.json'),
             (Join-Path $env:LOCALAPPDATA 'AgentOS\heartbeat-lease.json'),
+            (Join-Path $env:LOCALAPPDATA 'AgentOS\state\heartbeat-lease.json'),
             (Join-Path $env:LOCALAPPDATA 'AgentOS\.agentos\heartbeat-lease.json')
           )
           $leases=@()
