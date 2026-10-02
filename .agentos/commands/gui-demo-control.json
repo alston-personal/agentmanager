@@ -1,16 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "watchdog-long-task-proof-20261002-0059",
-  "action": "shell.exec",
-  "payload": {
-    "executable": "powershell",
-    "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "Write-Output 'LONG_TASK_BEGIN'; Start-Sleep -Seconds 75; Write-Output 'LONG_TASK_PASS'"
-    ],
-    "timeout_seconds": 100
-  }
+  "nonce": "watchdog-recovery-verify-20261002-0927",
+  "action": "desktop.session.inspect",
+  "payload": {}
 }
