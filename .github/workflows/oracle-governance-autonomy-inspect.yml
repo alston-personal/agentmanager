@@ -1,0 +1,60 @@
+name: Oracle Governance Autonomy Inspect
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/governance-autonomy-inspect.json'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect autonomous governance chain read-only
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          DATA = Path(os.environ["AGENT_DATA_ROOT"])
+          REPO = Path("/home/ubuntu/agentmanager")
+
+          def run(cmd):
+              p=subprocess.run(["bash","-lc",cmd],text=True,capture_output=True,timeout=15,check=False)
+              return {"returncode":p.returncode,"stdout":p.stdout[-16000:],"stderr":p.stderr[-4000:]}
+
+          def read_json(path):
+              try:
+                  p=Path(path)
+                  if not p.is_file():
+                      return {"present":False}
+                  d=json.loads(p.read_text(encoding="utf-8"))
+                  return {"present":True,"schema":d.get("schema"),"generation":d.get("generation"),"item_count":len(d.get("items",{})) if isinstance(d.get("items"),dict) else None,
+                          "active_items":[{"work_id":k,"status":v.get("status"),"owner":v.get("owner"),"next_action":bool(v.get("next_action")),"blocker":bool(v.get("blocker"))}
+                                          for k,v in (d.get("items",{}) or {}).items() if isinstance(v,dict) and v.get("status") not in {"done","cancelled"}][:30]}
+              except Exception as e:
+                  return {"present":True,"error":type(e).__name__}
+
+          result={
+            "schema":"agentos.governance-autonomy-inspection/v0.1",
+            "processes":run("ps -eo pid,user,lstart,args | grep -E 'core_supervisor_daemon|employee_worker_host|lobster.py|completion|work_completion|watchdog' | grep -v grep || true"),
+            "repo_generation":run("git -C /home/ubuntu/agentmanager rev-parse --abbrev-ref HEAD 2>/dev/null; git -C /home/ubuntu/agentmanager rev-parse HEAD 2>/dev/null; git -C /home/ubuntu/agentmanager status --porcelain=v1 2>/dev/null | head -80"),
+            "role_registry":run("grep -E '^(role_set_version:|  - id:|    name:|    status:)' /home/ubuntu/agentmanager/.agent/roles/registry.yaml 2>/dev/null | head -160"),
+            "completion_live_pointer":run("readlink -f /home/ubuntu/agent-data/runtime/agentos-lobster/current 2>/dev/null || true; find /home/ubuntu/agent-data/releases/agentos-lobster -maxdepth 2 -type f -name 'release.json' -print 2>/dev/null | tail -5"),
+            "completion_ledger":read_json(DATA/"governance"/"work-items.json"),
+            "supervisor_state_files":run("find /home/ubuntu/agent-data -maxdepth 5 -type f \\( -path '*/supervisor/state.json' -o -path '*/supervisor/leader.json' -o -path '*/supervisor/deliveries/*.json' \\) -printf '%TY-%Tm-%TdT%TH:%TM:%TS %p\n' 2>/dev/null | sort | tail -80"),
+            "employee_runtime_files":run("find /home/ubuntu/agent-data -maxdepth 5 -type f \\( -path '*/employees/*.json' -o -path '*/assignments/*.json' -o -path '*/lifecycle/leases/*.json' \\) -printf '%TY-%Tm-%TdT%TH:%TM:%TS %p\n' 2>/dev/null | sort | tail -120"),
+            "wake_inbox":run("find /home/ubuntu/agent-data/employee-wake-inbox -maxdepth 2 -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TS %p\n' 2>/dev/null | sort | tail -80"),
+          }
+          print(json.dumps(result,ensure_ascii=False,indent=2,sort_keys=True))
+          PY
