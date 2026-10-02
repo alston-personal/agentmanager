@@ -43,6 +43,11 @@ jobs:
           type=$(file -b --mime-type /tmp/net-43774.jpg 2>/dev/null || true)
           bytes=$(wc -c < /tmp/net-43774.jpg 2>/dev/null || echo 0)
           echo "image_http=$code image_type=$type image_bytes=$bytes"
+          NEW_URL='https://net.wimg.tw/files/1/products/735109_400_002E799BDE889B2.jpg?v=32582'
+          new_code=$(curl -sS -L -o /tmp/net-43774-full.jpg -w '%{http_code}' --max-time 20 "$NEW_URL" || true)
+          new_type=$(file -b --mime-type /tmp/net-43774-full.jpg 2>/dev/null || true)
+          new_bytes=$(wc -c < /tmp/net-43774-full.jpg 2>/dev/null || echo 0)
+          echo "full_image_http=$new_code full_image_type=$new_type full_image_bytes=$new_bytes"
           echo '=== product image candidates ==='
           curl -sSL --max-time 20 'https://www.net-fashion.net/product/736366' -o /tmp/net-product.html || true
           grep -Eo 'https?://[^"[:space:]<>]+\.(jpg|jpeg|png|webp)(\?[^"[:space:]<>]*)?' /tmp/net-product.html 2>/dev/null | grep -Ei '736366|43774|735109' | head -40 || true
