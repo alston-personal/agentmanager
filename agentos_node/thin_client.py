@@ -475,11 +475,42 @@ class ThinClient:
         if self.policy.readable_roots and not self.policy.can_read(cwd):
             raise PermissionError(f'cwd outside readable roots: {cwd}')
         timeout = min(int(task.get('timeout_seconds') or self.policy.max_timeout_seconds), self.policy.max_timeout_seconds)
-        completed = subprocess.run([resolved, *argv], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False)
+        if platform.system() == 'Windows':
+            creationflags = int(getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+            proc = subprocess.Popen(
+                [resolved, *argv],
+                cwd=str(cwd),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=creationflags,
+            )
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+                returncode = int(proc.returncode or 0)
+            except subprocess.TimeoutExpired:
+                # Kill the complete Windows process tree. Some GUI/UIA providers
+                # can leave descendants alive after the direct child is killed,
+                # which otherwise wedges the persistent Thin Client daemon.
+                subprocess.run(
+                    ['taskkill', '/PID', str(proc.pid), '/T', '/F'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                except Exception:
+                    stdout, stderr = '', ''
+                raise TimeoutError(f'shell.exec timed out after {timeout}s and process tree was terminated')
+        else:
+            completed = subprocess.run([resolved, *argv], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False)
+            returncode, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
         return {
-            'returncode': completed.returncode,
-            'stdout': completed.stdout[-30000:],
-            'stderr': completed.stderr[-10000:],
+            'returncode': returncode,
+            'stdout': stdout[-30000:],
+            'stderr': stderr[-10000:],
             'execution': {'executable': resolved, 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': timeout},
         }
 
