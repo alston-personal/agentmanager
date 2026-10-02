@@ -208,7 +208,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
         request_path = requests / f'{request_id}.request.json'
         if request_path.exists():
             return {'ok': True, 'state': 'queued', 'request_id': request_id}
-        for inflight in (root / 'inflight').glob(f'*/{request_id}.request.json') if (root / 'inflight').exists() else []:
+        for inflight in ((root / 'inflight').glob(f'*/{request_id}.request.json') if (root / 'inflight').exists() else []):
             if inflight.exists():
                 return {'ok': True, 'state': 'running', 'request_id': request_id}
         rejected_path = rejected / f'{request_id}.request.json'
