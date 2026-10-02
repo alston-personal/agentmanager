@@ -94,7 +94,10 @@ def main():
     if intent=="wardrobe_plan": result=wardrobe_plan(root,cycle,now)
     elif intent=="reflect": result=reflect(root,receipt)
     elif intent=="content_ideation": result=content_ideation(root,receipt)
-    elif intent=="observe": result=observe(root,receipt)
+    elif intent=="observe":
+        result={"activity":intent,"result":"delegated_to_social_executor",
+                "status":"pending_external","external_action":True,
+                "action_id":receipt.get("do",{}).get("action_id")}
     elif intent in ("rest","sleep"): result=rest(intent)
     elif intent=="review_social_feedback":
         result={"activity":intent,"result":"delegated_to_social_executor"}
@@ -113,7 +116,8 @@ def main():
     write_json(root/"pdca/state.json",state)
     with open(root/"events/events.jsonl","a",encoding="utf-8") as f:
         f.write(json.dumps({
-          "id":f"pdca-activity-c{cycle}-{intent}","type":"pdca.activity.completed","timestamp":now,
+          "id":f"pdca-activity-c{cycle}-{intent}",
+          "type":"pdca.activity.delegated" if intent=="observe" else "pdca.activity.completed","timestamp":now,
           "source":"persona_internal_activity_executor","cycle":cycle,"intent":intent,
           "receipt_ref":str(out.relative_to(root)),"result":activity.get("result")
         },ensure_ascii=False,separators=(",",":"))+"\n")

@@ -48,6 +48,37 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 
 ## Canonical Project Identity contract
 
+### Mio PDCA social observation (#814 candidate)
+
+The currently deployed Persona PDCA sources are on `main`, separately from
+the historical Social Runtime patrol workflow on `core/integration`. Do not
+infer live PDCA acceptance from a manual patrol run or from either branch head.
+
+`persona_pdca_tick.py` now queues `social.threads.observe` as `pending_external`.
+The existing short-cycle `run_persona_social_actions_user.sh` consumes that
+durable intent through `persona_social_executor.py` and the existing Social
+Runtime `post.read` / `replies.read` boundary. It never uses Threads Web DM.
+No read, failed required reads, or malformed adapter result cannot produce a
+completed observation. The executor stores action/cycle-bound receipts, a
+cursor, and a separate last-observation summary. It queues `social.reply.review`
+only after fresh externally authored replies are observed. Newest five posts
+are read even when `has_replies=false`; the bounded scan covers at most 20 posts
+and newly eligible replies at most 42 hours old. It does not prove exhaustive
+historical/paginated coverage or successful autonomous reply delivery.
+
+Read failure records BLOCKED plus an open, sanitized Persona incident in the
+data layer; the heartbeat and other work continue. These local incidents are
+pending repair, not proof that GitHub Incident/repair routing completed.
+The public activity projection exposes the last actual read status/time/counts
+separately from the heartbeat without comment text, binding IDs or credentials.
+
+This candidate uses the existing Oracle-local social worker lane. The unified
+AgentOS scheduler route, owner Observer parity, automatic repair routing and
+live new-comment acceptance in #814 remain pending. Offline tests prove only
+the source contract. Merge approval and exact-generation Oracle deployment
+must precede any live-restored claim.
+
+
 Project identity is explicitly separated from repository, checkout path, runtime path, deployment target, and state storage.
 
 The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.
@@ -229,4 +260,3 @@ Every successful Realm heartbeat writes a local non-secret liveness marker at `s
 This watchdog is an immediate reliability layer, not the final machine lifecycle architecture. The intended next boundary is to separate a machine-level AgentOS Node Daemon (heartbeat, transport, recovery, OTA and health) from the interactive session adapter (desktop, GUI Worker, Antigravity, Codex, Claude and Gemini). Loss of the interactive user session must eventually degrade only interactive capabilities, not make the entire Node disappear from the Realm.
 
 Windows Node Ready therefore requires recovery acceptance in addition to enrollment: process termination and intentional Scheduled Task stop must self-recover without human intervention, fresh heartbeat must return, and a governed task receipt must succeed after recovery.
-
