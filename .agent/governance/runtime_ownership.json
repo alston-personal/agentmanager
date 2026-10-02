@@ -1,0 +1,79 @@
+{
+  "schema": "agentos.runtime-ownership/v1",
+  "policy_version": "2026.10.02.1",
+  "shared_source_checkout": {
+    "path": "/home/ubuntu/agentmanager",
+    "role": "source-cache-only",
+    "production_runtime_allowed": false,
+    "mutable_deploy_operations_forbidden": [
+      "checkout",
+      "switch",
+      "pull",
+      "reset --hard",
+      "clean",
+      "copy-over-live-runtime"
+    ]
+  },
+  "services": {
+    "dashboard": {
+      "owner": "role://release-controller.dashboard",
+      "port": 3000,
+      "legacy_runtime_path": "/home/ubuntu/agentmanager/dashboard",
+      "release_root": "/home/ubuntu/agent-data/releases/dashboard",
+      "live_pointer": "/home/ubuntu/agent-data/runtime/dashboard/current",
+      "lock": "production/dashboard",
+      "migration_state": "candidate",
+      "process_name": "agentos-dashboard",
+      "runtime_controller": "scripts/deploy_dashboard_release.sh",
+      "config_path": "/home/ubuntu/.config/milkcat/dashboard.env.local"
+    },
+    "agentos-core": {
+      "owner": "role://release-controller.core",
+      "release_root": "/home/ubuntu/agent-data/releases/core",
+      "live_pointer": "/home/ubuntu/agent-data/runtime/core/current",
+      "lock": "production/agentos-core",
+      "migration_state": "source_ready_live_migration_pending",
+      "authority_contract": "docs/CORE_DEPLOYMENT_AUTHORITY.md"
+    },
+    "fengshui": {
+      "owner": "role://release-controller.fengshui",
+      "port": 8868,
+      "legacy_runtime_path": "/opt/milkcat/fengshui",
+      "release_root": "/home/ubuntu/agent-data/releases/fengshui",
+      "live_pointer": "/home/ubuntu/agent-data/runtime/fengshui/current",
+      "lock": "production/fengshui",
+      "migration_state": "partial"
+    },
+    "leopardcat-tarot": {
+      "owner": "role://release-controller.tarot",
+      "port": 8088,
+      "legacy_runtime_path": "/home/ubuntu/leopardcat-tarot/website",
+      "release_root": "/home/ubuntu/agent-data/releases/leopardcat-tarot",
+      "live_pointer": "/home/ubuntu/agent-data/runtime/leopardcat-tarot/current",
+      "lock": "production/leopardcat-tarot",
+      "migration_state": "partial"
+    },
+    "social": {
+      "owner": "role://release-controller.social",
+      "release_root": "/home/ubuntu/agent-data/releases/social",
+      "live_pointer": "/home/ubuntu/agent-data/runtime/social/current",
+      "lock": "production/social",
+      "migration_state": "required"
+    },
+    "completion-executor": {
+      "owner": "role://release-controller.completion",
+      "release_root": "/home/ubuntu/agent-data/releases/agentos-lobster",
+      "live_pointer": "/home/ubuntu/agent-data/runtime/agentos-lobster/current",
+      "lock": "production/completion-executor",
+      "migration_state": "active",
+      "live_receipt": "github-actions:36130001931"
+    }
+  },
+  "invariants": [
+    "a production service is deployed from an immutable release directory, never inferred from shared checkout HEAD",
+    "only the declared release controller may switch a service live pointer",
+    "one service lock cannot be held by two deployment generations",
+    "cross-service changes require explicit impact declaration and consumer acceptance",
+    "rollback changes only the affected service live pointer/release, never another service checkout"
+  ]
+}

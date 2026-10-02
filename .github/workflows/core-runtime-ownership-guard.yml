@@ -1,0 +1,43 @@
+name: Core Runtime Ownership Guard
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.agent/governance/runtime_ownership.json'
+      - '.github/workflows/deploy-agentos-core.yml'
+      - 'scripts/check_runtime_ownership.py'
+      - 'tests/test_core_runtime_ownership.py'
+      - '.github/workflows/core-runtime-ownership-guard.yml'
+  push:
+    branches:
+      - 'fix/core-runtime-ownership-p0-20261002-0137'
+    paths:
+      - '.agent/governance/runtime_ownership.json'
+      - '.github/workflows/deploy-agentos-core.yml'
+      - 'scripts/check_runtime_ownership.py'
+      - 'tests/test_core_runtime_ownership.py'
+      - '.github/workflows/core-runtime-ownership-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ownership:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch comparison base
+        if: github.event_name == 'pull_request'
+        run: git fetch origin core/integration
+      - name: Validate immutable Core contract
+        run: python3 -m unittest -v tests.test_core_runtime_ownership
+      - name: Enforce shared-checkout non-runtime policy
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check_runtime_ownership.py origin/core/integration HEAD

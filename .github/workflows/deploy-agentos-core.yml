@@ -134,9 +134,8 @@ jobs:
           test -f "$ROOT/.env" || { echo "Missing $ROOT/.env"; exit 2; }
           cd "$ROOT"
           if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-            echo "Refusing deployment: tracked local changes exist in $ROOT"
+            echo "INFO: shared checkout has tracked local changes; immutable release deployment will not mutate it:"
             git status --short --untracked-files=no
-            exit 2
           fi
           test -f "$HOME/.agentos.secrets" || echo "WARN: ~/.agentos.secrets does not exist"
           systemctl --user --version >/dev/null
@@ -166,22 +165,42 @@ jobs:
           BOOTSTRAP_CONVERGER="$4"
           cd "$ROOT"
 
-          PREVIOUS_SHA="$(git rev-parse HEAD)"
+          SHARED_SHA="$(git rev-parse HEAD)"
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
           CAPABILITY_MARKER="$DATA_ROOT/runtime/action-relay/capabilities.json"
+          RELEASE_ROOT="$DATA_ROOT/releases/core"
+          CURRENT_LINK="$DATA_ROOT/runtime/core/current"
+          mkdir -p "$RELEASE_ROOT" "$DATA_ROOT/runtime/core"
+
+          PREVIOUS_RELEASE=""
+          if [ -L "$CURRENT_LINK" ]; then
+            PREVIOUS_RELEASE="$(readlink -f "$CURRENT_LINK")"
+          fi
+          if [ -z "$PREVIOUS_RELEASE" ]; then
+            FALLBACK_RELEASE="$RELEASE_ROOT/$SHARED_SHA"
+            if [ ! -e "$FALLBACK_RELEASE/.git" ]; then
+              git worktree add --detach "$FALLBACK_RELEASE" "$SHARED_SHA"
+            fi
+            [ -e "$FALLBACK_RELEASE/.env" ] || ln -s "$ROOT/.env" "$FALLBACK_RELEASE/.env"
+            PREVIOUS_RELEASE="$FALLBACK_RELEASE"
+          fi
+
           rollback() {
             rc=$?
             if [ "$rc" -ne 0 ]; then
-              echo "Deployment failed; attempting rollback to $PREVIOUS_SHA" >&2
-              git checkout --detach "$PREVIOUS_SHA" || true
-              python3 -m pip install -e . || true
-              python3 scripts/install_services.py || true
+              echo "Deployment failed; attempting immutable runtime rollback" >&2
               if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-                # A carrier candidate may already have been installed. Remove its
-                # advertisement before restoring the previous Realm generation so
+                # Revoke the converger advertisement before restoring the prior Realm.
                 # ONE cannot claim a capability whose rollback state is ambiguous.
                 rm -f "$CAPABILITY_MARKER" || true
-                bash scripts/install_realm_fabric_user.sh || true
+              fi
+              if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
+                [ -e "$PREVIOUS_RELEASE/.env" ] || ln -s "$ROOT/.env" "$PREVIOUS_RELEASE/.env" || true
+                PYTHONPATH="$PREVIOUS_RELEASE" python3 "$PREVIOUS_RELEASE/scripts/install_services.py" --project-root "$PREVIOUS_RELEASE" --data-root "$DATA_ROOT" || true
+                if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
+                  (cd "$PREVIOUS_RELEASE" && bash scripts/install_realm_fabric_user.sh || true)
+                fi
+                ln -sfn "$PREVIOUS_RELEASE" "$CURRENT_LINK" || true
               fi
               curl -fsS http://127.0.0.1:8765/health || true
             fi
@@ -199,15 +218,21 @@ jobs:
             [ "$REF" = "core/integration" ] || { echo "Converger bootstrap ref mismatch" >&2; exit 2; }
             [ "$TARGET_SHA" = "$EXPECTED" ] || { echo "Converger bootstrap exact-SHA mismatch" >&2; exit 2; }
           fi
-          echo "Deploying $TARGET_SHA from $REF (previous $PREVIOUS_SHA)"
-          git checkout --detach "$TARGET_SHA"
 
-          python3 -m pip install -e .
-          bash -n scripts/install_systemd_user.sh
+          RELEASE="$RELEASE_ROOT/$TARGET_SHA"
+          if [ ! -e "$RELEASE/.git" ]; then
+            git worktree add --detach "$RELEASE" "$TARGET_SHA"
+          fi
+          test "$(git -C "$RELEASE" rev-parse HEAD)" = "$TARGET_SHA"
+          [ -e "$RELEASE/.env" ] || ln -s "$ROOT/.env" "$RELEASE/.env"
+
+          echo "Deploying immutable AgentOS Core release $TARGET_SHA from $REF"
+          echo "Shared checkout remains at $SHARED_SHA and is source-cache-only."
+          bash -n "$RELEASE/scripts/install_systemd_user.sh"
 
           set -a
           # shellcheck disable=SC1091
-          source .env
+          source "$ROOT/.env"
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
 
@@ -224,18 +249,25 @@ jobs:
             exit 2
           fi
 
-          python3 scripts/install_services.py
+          INSTALL_JSON="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          printf '%s\n' "$INSTALL_JSON"
+          printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("mode")=="systemd"'
           systemctl --user is-active --quiet agentos-control-plane.service
+          systemctl --user is-active --quiet agentos-core-supervisor.service
+          if [ "${AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE:-0}" = "1" ]; then
+            systemctl --user is-active --quiet agentos-employee-worker-host.service
+          fi
           curl -fsS http://127.0.0.1:8765/health
           echo
-          systemctl --user --no-pager --full status agentos-control-plane.service | head -n 30
 
           if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-            bash scripts/bootstrap_runtime_converger_oracle.sh "$REF" "$TARGET_SHA"
+            (cd "$RELEASE" && bash scripts/bootstrap_runtime_converger_oracle.sh "$REF" "$TARGET_SHA")
           fi
 
-          mkdir -p "$DATA_ROOT/runtime"
-          printf '%s\n' "$PREVIOUS_SHA" > "$DATA_ROOT/runtime/previous-agentos-core-sha"
+          ln -sfn "$RELEASE" "$CURRENT_LINK"
+          printf '%s\n' "$SHARED_SHA" > "$DATA_ROOT/runtime/previous-agentos-core-sha"
+          printf '%s\n' "$TARGET_SHA" > "$DATA_ROOT/runtime/bootstrapped-agentos-core-sha"
+          printf '%s\n' "$RELEASE" > "$DATA_ROOT/runtime/bootstrapped-agentos-core-release"
           trap - EXIT
           REMOTE
 
