@@ -1,0 +1,81 @@
+name: Mio V5 Slice Deploy
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-v5-slice-deploy.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DASHBOARD_SHA: 8fa645d9ff8536719f3e0755950f2d83a14ea4cb
+      STUDIO_SHA: 875b245f4590966ca94a793c8cc5ba982df50cbb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy Dashboard exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$DASHBOARD_SHA' && git show '$DASHBOARD_SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh' > /tmp/deploy-mio-v5-dashboard.sh && chmod 700 /tmp/deploy-mio-v5-dashboard.sh && /tmp/deploy-mio-v5-dashboard.sh '$DASHBOARD_SHA' '${{ github.run_id }}'"
+      - name: Deploy Studio Mio exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$STUDIO_SHA" "${{ github.run_id }}" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RUN="$2"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/mio-v5-studio-XXXXXXXX)
+          SRC="$TMP/studio-web"
+          ROUTE="$SRC/dist/personas/mio"
+          NEW="$LIVE/personas/.mio-v5-$RUN"
+          cleanup(){ rm -rf "$TMP" "$NEW" 2>/dev/null || true; }
+          trap cleanup EXIT
+          /usr/bin/gh repo clone alston-personal/studio-web "$SRC" -- --no-checkout >/dev/null
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$SHA"
+          cd "$SRC"
+          npm install --no-package-lock --ignore-scripts >/dev/null
+          npm run build >/dev/null
+          HTML="$ROUTE/wardrobe/index.html"
+          test -f "$HTML"
+          grep -Fq 'data-image-lightbox' "$HTML"
+          grep -Fq 'data-tryon-progress' "$HTML"
+          grep -Fq '只顯示 renderer 實際回報的階段' "$HTML"
+          if [ -f "$LIVE/personas/mio/activity.json" ] && [ ! -f "$ROUTE/activity.json" ]; then cp "$LIVE/personas/mio/activity.json" "$ROUTE/activity.json"; fi
+          cp -a "$ROUTE" "$NEW"
+          find "$NEW" -type d -exec chmod 0755 {} +
+          find "$NEW" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE/personas/mio"
+          mv "$NEW" "$LIVE/personas/mio"
+          curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org/personas/mio/wardrobe/?_=$RUN" -o "$TMP/live.html"
+          grep -Fq 'data-image-lightbox' "$TMP/live.html"
+          grep -Fq 'data-tryon-progress' "$TMP/live.html"
+          echo "mio_v5_frontend=PASS source_sha=$SHA"
+          REMOTE
+      - name: Verify live Dashboard V5 contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          live=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)
+          echo "dashboard_live=$live"
+          echo "$live" | grep -F '8fa645d9ff8536719f3e0755950f2d83a14ea4cb'
+          code=$(curl -sS -o /tmp/catalog -w '%{http_code}' --max-time 5 'http://127.0.0.1:3000/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001')
+          test "$code" = 200
+          code=$(curl -sS -o /tmp/render -w '%{http_code}' --max-time 5 -X POST -H 'Content-Type: application/json' --data '{"characterId":"sunlake-milkcat-ai-001","selectedLayers":{"lower_main":"net-32235-711"}}' 'http://127.0.0.1:3000/dashboard/api/wardrobe/tryon/render')
+          test "$code" = 401
+          echo 'mio_v5_dashboard=PASS'
+          REMOTE
