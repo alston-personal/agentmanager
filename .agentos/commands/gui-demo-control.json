@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-install-ffmpeg-016",
+  "nonce": "desktop-demo-find-ffmpeg-017",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,8 +9,8 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "& winget install --id Gyan.FFmpeg --exact --silent --accept-source-agreements --accept-package-agreements --disable-interactivity; exit $LASTEXITCODE"
+      "$c=@(\"$env:LOCALAPPDATA\\Microsoft\\WinGet\\Links\\ffmpeg.exe\",\"$env:LOCALAPPDATA\\Microsoft\\WinGet\\Packages\"); $out=@(); if(Test-Path $c[0]){$out+=Get-Item $c[0] | Select-Object FullName,Length,LinkType,Target}; if(Test-Path $c[1]){$out+=Get-ChildItem $c[1] -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 5 FullName,Length}; $out | ConvertTo-Json -Depth 3 -Compress"
     ],
-    "timeout_seconds": 240
+    "timeout_seconds": 30
   }
 }
