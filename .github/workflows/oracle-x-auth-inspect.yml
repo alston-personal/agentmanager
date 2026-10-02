@@ -129,21 +129,24 @@ jobs:
             raise SystemExit("runtime_converge_timeout")
           PY
 
-      - name: Reconcile ubuntu-owned Action Relay generation
+      - name: Wait for ubuntu-owned Action Relay reconcile timer
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user start agentos-action-relay-reconcile.service
-
-          for i in $(seq 1 120); do
+          echo "action_relay_reconcile_trigger=ubuntu-owned-timer"
+          for i in $(seq 1 420); do
             if python3 - "$SOURCE_COMMIT" <<'PY'
           import json,sys
           from pathlib import Path
           p=Path("/home/ubuntu/agent-data/runtime/action-relay/capabilities.json")
           if not p.is_file():
               raise SystemExit(1)
-          x=json.loads(p.read_text(encoding="utf-8"))
-          raise SystemExit(0 if x.get("source_commit")==sys.argv[1] else 1)
+          try:
+              x=json.loads(p.read_text(encoding="utf-8"))
+          except Exception:
+              raise SystemExit(1)
+          ok=x.get("source_commit")==sys.argv[1] and "agentos.content.x.auth.inspect" in set(x.get("actions") or [])
+          raise SystemExit(0 if ok else 1)
           PY
             then
               echo "action_relay_generation=PASS"
