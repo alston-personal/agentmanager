@@ -123,12 +123,16 @@ def main():
     todays_posts.sort()
     last_post_ts=todays_posts[-1] if todays_posts else None
     post_gap_min=((now_utc-last_post_ts).total_seconds()/60.0) if last_post_ts else None
-    target=int(growth.get("daily_post_target",1))
-    max_posts=int(growth.get("daily_post_max",2))
-    min_gap=int(growth.get("minimum_post_gap_minutes",240))
+    target_raw=growth.get("daily_post_target")
+    max_raw=growth.get("daily_post_max")
+    gap_raw=growth.get("minimum_post_gap_minutes")
+    target=int(target_raw) if isinstance(target_raw,(int,float)) and not isinstance(target_raw,bool) else None
+    max_posts=int(max_raw) if isinstance(max_raw,(int,float)) and not isinstance(max_raw,bool) else None
+    min_gap=int(gap_raw) if isinstance(gap_raw,(int,float)) and not isinstance(gap_raw,bool) else None
     growth_enabled=bool(growth.get("enabled")) and growth.get("phase")=="reach_first"
-    gap_ok=(post_gap_min is None or post_gap_min>=min_gap)
-    under_max=len(todays_posts)<max_posts
+    gap_ok=(min_gap is None or post_gap_min is None or post_gap_min>=min_gap)
+    under_max=(max_posts is None or len(todays_posts)<max_posts)
+    target_unmet=(target is not None and len(todays_posts)<target)
 
     if phase=="sleep": candidates=[("sleep",1.0)]
     elif phase=="rest": candidates=[("rest",1.0)]
@@ -140,7 +144,7 @@ def main():
         if phase in ("high_focus","afternoon","social","creative_social","late") and energy>=40:
             base_content=1.3 if posted==0 else 0.75
             if growth_enabled and under_max and gap_ok:
-                if len(todays_posts)<target:
+                if target_unmet:
                     base_content=max(base_content,2.2 if phase=="creative_social" else 1.65)
                 elif phase=="creative_social":
                     base_content=max(base_content,1.15)
@@ -173,9 +177,15 @@ def main():
                   "reason":f"{observed} newly observed replies since last PDCA cursor",
                   "policy":"public_conversation=autonomous_with_policy","requires_real_adapter_receipt":True}
     elif selected=="content_ideation" and energy_after>=30 and (not growth_enabled or (under_max and gap_ok)):
+        if growth_enabled and target_unmet:
+            post_reason="reach_first growth experiment: post target not met"
+        elif growth_enabled:
+            post_reason="reach_first energy-led content opportunity"
+        else:
+            post_reason="active creative window with sufficient energy"
         external={"action_id":f"mio-pdca-c{cycle}-social-post-consider","cycle":cycle,
                   "capability":"social.post.consider","status":"candidate",
-                  "reason":("reach_first growth experiment: post target not met" if growth_enabled and len(todays_posts)<target else "active creative window with sufficient energy"),
+                  "reason":post_reason,
                   "policy":"routine_posts=autonomous_with_policy","requires_real_adapter_receipt":True}
     if external and not any(
         x.get("capability")==external["capability"] and x.get("status") in ("candidate","in_progress")
