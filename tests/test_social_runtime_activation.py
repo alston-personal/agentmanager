@@ -274,6 +274,18 @@ def test_acceptance_cannot_be_reused_for_different_write_intent():
         rt.execute_write(original, issued["acceptance_id"])
 
 
+def test_acceptance_cannot_be_reused_for_substituted_content_same_intent():
+    rt, vault, _transport = runtime()
+    original = publish_request()
+    vault.bind(AccountBinding(original.account_binding_id, original.product_id, "threads", "42", "cat"), "provider-token")
+    issued = rt.issue_acceptance(original, "control-key")
+    changed = publish_request(primary_text="substituted after approval")
+    with pytest.raises(PermissionError, match="request_digest_mismatch"):
+        rt.execute_write(changed, issued["acceptance_id"])
+    with pytest.raises(PermissionError, match="invalid_or_consumed"):
+        rt.execute_write(original, issued["acceptance_id"])
+
+
 def test_control_token_is_independent_from_product_auth():
     rt, _vault, _transport = runtime()
     with pytest.raises(PermissionError, match="control_auth_failed"):

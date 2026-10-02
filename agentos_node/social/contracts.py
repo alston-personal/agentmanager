@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import hashlib
+import json
 from typing import Any, Mapping
 
 
@@ -124,6 +126,22 @@ class SocialRequest:
             if not value.startswith("/") or value.startswith("//"):
                 raise ValueError("unsafe_oauth_return_route")
         return self
+
+
+def social_request_digest(request: SocialRequest) -> str:
+    """Stable digest of the exact validated provider-neutral request.
+
+    This binds runtime write acceptance to content, media, target, operation and
+    write intent rather than only to broad account/operation scope.
+    """
+    request.validate()
+    payload = json.dumps(
+        asdict(request),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 @dataclass
