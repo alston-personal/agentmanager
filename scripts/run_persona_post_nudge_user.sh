@@ -8,7 +8,10 @@ SOCIAL_EXECUTOR="${AGENTOS_PERSONA_SOCIAL_EXECUTOR:-$HOME/.local/lib/agentos/per
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
 exec 9>"$LOCK"
-flock -n 9 || { echo "persona_post_nudge=BUSY"; exit 3; }
+if ! flock -w 120 9; then
+  echo "persona_post_nudge=LOCK_TIMEOUT"
+  exit 3
+fi
 
 DATA_REPO="$(mktemp -d /tmp/persona-post-nudge-XXXXXX)"
 cleanup(){ rm -rf "$DATA_REPO"; }
