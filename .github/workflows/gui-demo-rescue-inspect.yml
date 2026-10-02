@@ -44,6 +44,7 @@ jobs:
             'gui-demo-uia-edge-tree-python312-20261002-1103',
             'gui-demo-uia-semantic-fast-20261002-1105',
             'gui-demo-uia-hosted-fast-20261002-1112',
+            'gui-demo-open-gemini-targeted-uia-20261002-1120',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
           PY
