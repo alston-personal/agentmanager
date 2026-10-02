@@ -12,38 +12,23 @@ permissions:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
-    env:
-      ORACLE_HOST: 161.33.24.170
-      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
       - name: Dispatch GUI demo task
         shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
         run: |
           set -euo pipefail
-          payload="$(python3 - <<'PY'
-          import base64, pathlib
-          p=pathlib.Path('.agentos/commands/gui-demo-control.json').read_bytes()
-          print(base64.b64encode(p).decode())
-          PY
-          )"
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$payload" <<'REMOTE'
-          set -euo pipefail
-          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
-          export PYTHONPATH=/home/ubuntu/agentmanager
-          cd /home/ubuntu/agentmanager
-          PAYLOAD_B64="$1" python3 - <<'PY'
-          import base64, json, os, time
+          export PYTHONPATH="$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import json, pathlib, time
           from agent_core.node_registry import NodeRegistry
           from agent_core.realm_fabric import RealmFabricStore
 
-          cmd=json.loads(base64.b64decode(os.environ['PAYLOAD_B64']).decode('utf-8'))
+          cmd=json.loads(pathlib.Path('.agentos/commands/gui-demo-control.json').read_text(encoding='utf-8'))
           if cmd.get('schema')!='agentos.gui-demo-command/v0.1':
               raise SystemExit('invalid_schema')
           node_id=str(cmd.get('node_id') or '')
@@ -78,10 +63,7 @@ jobs:
           if action not in caps:
               raise SystemExit('capability_missing:'+action)
           if not roots:
-              # Demo branch compatibility for the enrolled VO10005870 Windows node.
-              # Keep shell cwd bounded to the known AgentOS workspace rather than
-              # broadening authority to arbitrary filesystem locations.
-              roots=[r'C:\\Users\\alston.huang\\AgentOS']
+              roots=[r'C:\Users\alston.huang\AgentOS']
 
           task={
               'schema':'agentos.node-task/v0.1',
@@ -116,4 +98,3 @@ jobs:
           if action == 'shell.exec' and int(receipt.get('returncode') or 0) != 0:
               raise SystemExit('shell_failed_rc:'+str(receipt.get('returncode'))+':'+str(receipt.get('stderr') or '')[-1000:])
           PY
-          REMOTE
