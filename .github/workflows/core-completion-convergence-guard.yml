@@ -1,0 +1,39 @@
+name: Core Completion Convergence Guard
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'scripts/work_completion.py'
+      - 'scripts/lobster.py'
+      - 'tests/test_work_completion.py'
+      - '.github/workflows/core-completion-convergence-guard.yml'
+  push:
+    branches:
+      - 'fix/governance-autonomy-convergence-20261002'
+    paths:
+      - 'scripts/work_completion.py'
+      - 'scripts/lobster.py'
+      - 'tests/test_work_completion.py'
+      - '.github/workflows/core-completion-convergence-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  completion-convergence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile completion integration
+        run: python3 -m py_compile scripts/work_completion.py scripts/lobster.py
+      - name: Run durable completion regressions
+        run: python3 -m unittest -v tests.test_work_completion
+      - name: Self-audit fresh ledger
+        run: |
+          tmp="$(mktemp -d)"
+          AGENT_DATA_ROOT="$tmp" python3 scripts/work_completion.py audit
