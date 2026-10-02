@@ -98,6 +98,15 @@ jobs:
           echo "realm_current=$(readlink -f /home/ubuntu/.local/share/agentos/realm-fabric/current 2>/dev/null || true)"
           echo '=== REALM JOURNAL ==='
           journalctl --user -u agentos-realm-fabric.service -n 120 --no-pager || true
+          echo '=== TARGET RECEIPT ==='
+          AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 - <<'PY' || true
+          import json
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id='executor-reconcile-ota-1790913302'
+          r=RealmFabricStore().get_receipt(task_id)
+          print('target_task_id='+task_id)
+          print('target_receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True) if r else 'target_receipt=MISSING')
+          PY
           echo '=== LIVE CHECKOUT ==='
           LIVE=/home/ubuntu/agentmanager
           test -d "$LIVE/.git" && git -C "$LIVE" rev-parse HEAD || true
