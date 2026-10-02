@@ -75,6 +75,7 @@ def test_linux_supervisor_install_contract(monkeypatch, tmp_path):
 
     monkeypatch.setattr(onboarding.platform, "system", lambda: "Linux")
     monkeypatch.setattr(onboarding, "linux_thin_client_unit_path", lambda: unit)
+    monkeypatch.setattr(onboarding, "_ensure_linux_linger", lambda: True)
 
     calls = []
 
@@ -108,6 +109,7 @@ def test_linux_supervisor_creates_launcher_when_missing(monkeypatch, tmp_path):
 
     monkeypatch.setattr(onboarding.platform, "system", lambda: "Linux")
     monkeypatch.setattr(onboarding, "linux_thin_client_unit_path", lambda: unit)
+    monkeypatch.setattr(onboarding, "_ensure_linux_linger", lambda: True)
 
     class Result:
         def __init__(self, returncode=0, stdout="", stderr=""):
@@ -141,6 +143,7 @@ def test_linux_launcher_preserves_venv_interpreter(monkeypatch, tmp_path):
 
     monkeypatch.setattr(onboarding.platform, "system", lambda: "Linux")
     monkeypatch.setattr(onboarding, "linux_thin_client_unit_path", lambda: unit)
+    monkeypatch.setattr(onboarding, "_ensure_linux_linger", lambda: True)
     monkeypatch.setattr(onboarding.sys, "executable", str(fake_venv_python))
 
     class Result:
@@ -160,6 +163,35 @@ def test_linux_launcher_preserves_venv_interpreter(monkeypatch, tmp_path):
     assert result["supervisor_ready"] is True
     launcher = (tmp_path / "agentos-client").read_text(encoding="utf-8")
     assert str(fake_venv_python) in launcher
+
+
+def test_linux_supervisor_requires_linger_for_persistence(monkeypatch, tmp_path):
+    import agentos_node.onboarding as onboarding
+
+    launcher = tmp_path / "agentos-client"
+    launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+    unit = tmp_path / "agentos-thin-client.service"
+
+    monkeypatch.setattr(onboarding.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(onboarding, "linux_thin_client_unit_path", lambda: unit)
+    monkeypatch.setattr(onboarding, "_ensure_linux_linger", lambda: False)
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv, **kwargs):
+        if argv[:3] == ["systemctl", "--user", "is-active"]:
+            return Result(0, "active\n", "")
+        return Result(0, "", "")
+
+    monkeypatch.setattr(onboarding.subprocess, "run", fake_run)
+    result = onboarding.install_linux_node_supervisor(install_root=tmp_path, launcher=launcher)
+
+    assert result["supervisor_ready"] is False
+    assert result["linger_enabled"] is False
 
 
 def test_linux_supervisor_selected_by_generic_installer(monkeypatch):
