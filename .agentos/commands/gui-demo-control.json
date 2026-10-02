@@ -1,16 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-recording-inspect-010",
-  "action": "shell.exec",
-  "payload": {
-    "executable": "powershell",
-    "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'ffmpeg|obs|python|powershell|GameBar|Xbox' -or $_.CommandLine -match 'desktop_demo|gdigrab|record|capture|agentos' } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine; $p | ConvertTo-Json -Depth 3 -Compress"
-    ],
-    "timeout_seconds": 30
-  }
+  "nonce": "recording-window-inspect-013",
+  "action": "desktop.windows.inspect",
+  "payload": {}
 }
