@@ -36,16 +36,7 @@ jobs:
           f=RealmFabricStore()
           seed='seed-spool-transport-20261002-1659'
           synthetic='synthetic-timeout-receipt-20261002-1659'
-          py=r'''import json,hashlib,pathlib,os,datetime
-task='synthetic-timeout-receipt-20261002-1659'
-root=pathlib.Path(os.environ['LOCALAPPDATA'])/'AgentOS'/'state'/'pending-receipts'
-root.mkdir(parents=True,exist_ok=True)
-name=hashlib.sha256(task.encode()).hexdigest()+'.json'
-now=datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
-obj={'schema':'agentos.node-receipt/v0.1','realm_id':'realm-alston','node_id':'VO10005870','task_id':task,'action':'shell.exec','started_at':now,'completed_at':now,'ok':False,'cognition_ids_used':['demo://receipt-spool/20261002'],'error':'synthetic spool transport proof'}
-p=root/name
-p.write_text(json.dumps(obj,ensure_ascii=False,separators=(',',':'))+'\\n',encoding='utf-8')
-print(str(p),p.stat().st_size)'''
+          py="import json,hashlib,pathlib,os,datetime; task='synthetic-timeout-receipt-20261002-1659'; root=pathlib.Path(os.environ['LOCALAPPDATA'])/'AgentOS'/'state'/'pending-receipts'; root.mkdir(parents=True,exist_ok=True); name=hashlib.sha256(task.encode()).hexdigest()+'.json'; now=datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'); obj={'schema':'agentos.node-receipt/v0.1','realm_id':'realm-alston','node_id':'VO10005870','task_id':task,'action':'shell.exec','started_at':now,'completed_at':now,'ok':False,'cognition_ids_used':['demo://receipt-spool/20261002'],'error':'synthetic spool transport proof'}; p=root/name; p.write_text(json.dumps(obj,ensure_ascii=False,separators=(',',':'))+'\\\\n',encoding='utf-8'); print(str(p),p.stat().st_size)"
           if f.get_receipt(seed) is None:
               f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':seed,'action':'shell.exec','executable':r'C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.exe','argv':['-c',py],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':['demo://receipt-spool/20261002']})
           for _ in range(30):
