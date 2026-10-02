@@ -1,6 +1,6 @@
 {
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.gateway.repair-hosted",
-  "reason": "recover public ONE 502 before vopc5750 executor reconcile",
-  "nonce": "realm-gateway-502-repair-20261002-1135"
+  "reason": "recover missing dashboard listener on port 3000 after recurrent nginx 502",
+  "nonce": "realm-gateway-3000-repair-20261002-1347"
 }
