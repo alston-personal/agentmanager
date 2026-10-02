@@ -1,15 +1,17 @@
-name: Oracle Approve Realm Enrollment
+name: Oracle Realm Enrollment Control
 
 on:
   push:
+    branches: [main]
     paths:
       - '.agentos/commands/realm-enrollment-approval.json'
+      - '.agentos/commands/participant-enrollment-command.json'
 
 permissions:
   contents: write
 
 concurrency:
-  group: oracle-realm-enrollment-approval
+  group: oracle-realm-enrollment-control
   cancel-in-progress: false
 
 jobs:
@@ -20,12 +22,122 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate and execute fixed Realm command
+      - name: Validate and execute governed enrollment command
         shell: bash
         run: |
           set -euo pipefail
-          CMD=.agentos/commands/realm-enrollment-approval.json
+          NODE_CMD=.agentos/commands/realm-enrollment-approval.json
+          PARTICIPANT_CMD=.agentos/commands/participant-enrollment-command.json
           OUT=/tmp/realm-enrollment-approval-result.json
+          PARTICIPANT_OUT=/tmp/participant-enrollment-public-result.json
+
+          if [ -f "$PARTICIPANT_CMD" ]; then
+            ACTION=$(python3 - "$PARTICIPANT_CMD" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert data.get('schema') == 'agentos.participant-command/v1', data
+          action=str(data.get('action') or '')
+          assert action in {'noop','participant.join.request','participant.join.inspect_pending'}, action
+          print(action)
+          PY
+            )
+            if [ "$ACTION" = "participant.join.inspect_pending" ]; then
+              AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$PWD" \
+              python3 - "$PARTICIPANT_CMD" "$PARTICIPANT_OUT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          cmd=json.load(open(sys.argv[1],encoding='utf-8'))
+          manifest=dict(cmd.get('manifest') or {})
+          participant_id=str((manifest.get('participant') or {}).get('id') or '')
+          safe=participant_id.replace('://','__').replace('/','_')
+          state_path=Path('/home/ubuntu/agent-data/runtime/participant-enrollment') / f'{safe}-pending.json'
+          state=json.load(open(state_path,encoding='utf-8'))
+          assert state.get('participant_id') == participant_id, state
+          public={k:v for k,v in state.items() if k != 'claim_secret'}
+          Path(sys.argv[2]).write_text(json.dumps(public,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('participant_pending_inspect=PASS')
+          print('participant_id='+participant_id)
+          print('request_id='+str(state.get('request_id')))
+          print('user_code='+str(state.get('user_code')))
+          print('negotiated_protocol='+str(state.get('negotiated_protocol')))
+          print('expires_at='+str(state.get('expires_at')))
+          print('challenge='+str(state.get('challenge')))
+          PY
+              exit 0
+            fi
+            if [ "$ACTION" = "participant.join.request" ]; then
+              AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$PWD" \
+              python3 - "$PARTICIPANT_CMD" "$PARTICIPANT_OUT" <<'PY'
+          import grp,json,os,sys,urllib.request
+          from pathlib import Path
+
+          cmd=json.load(open(sys.argv[1],encoding='utf-8'))
+          manifest=dict(cmd.get('manifest') or {})
+          participant=dict(manifest.get('participant') or {})
+          participant_id=str(participant.get('id') or '')
+          assert participant_id.startswith('participant://'), participant_id
+          host_runtime_id=str(cmd.get('host_runtime_id') or '')
+          assert host_runtime_id.startswith('participant://host/'), host_runtime_id
+          payload=json.dumps({
+              'manifest': manifest,
+              'host_runtime_id': host_runtime_id,
+              'expires_minutes': int(cmd.get('expires_minutes') or 10),
+          }, ensure_ascii=False).encode('utf-8')
+          req=urllib.request.Request(
+              'http://127.0.0.1:8780/v1/participants/join/request',
+              data=payload,
+              headers={'Content-Type':'application/json'},
+              method='POST',
+          )
+          with urllib.request.urlopen(req, timeout=10) as resp:
+              result=json.loads(resp.read().decode('utf-8'))
+          assert result.get('ok') is True, result
+          assert result.get('schema') == 'agentos.participant-join-request/v1', result
+          assert result.get('participant_id') == participant_id, result
+          secret=str(result.get('claim_secret') or '')
+          assert secret, result
+
+          runtime=Path('/home/ubuntu/agent-data/runtime/participant-enrollment')
+          runtime.mkdir(parents=True,exist_ok=True)
+          agentos_gid=grp.getgrnam('agentos').gr_gid
+          os.chown(runtime,-1,agentos_gid)
+          os.chmod(runtime,0o750)
+          safe=participant_id.replace('://','__').replace('/','_')
+          secret_path=runtime / f'{safe}-pending.json'
+          secret_payload={
+              'schema':'agentos.participant-hosted-enrollment-state/v1',
+              'participant_id':participant_id,
+              'host_runtime_id':host_runtime_id,
+              'request_id':result['request_id'],
+              'claim_secret':secret,
+              'challenge':result['challenge'],
+              'user_code':result['user_code'],
+              'negotiated_protocol':result['negotiated_protocol'],
+              'expires_at':result['expires_at'],
+              'status':result['status'],
+          }
+          tmp=secret_path.with_suffix(secret_path.suffix+'.tmp')
+          tmp.write_text(json.dumps(secret_payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          os.chown(tmp,-1,agentos_gid); os.chmod(tmp,0o640)
+          tmp.replace(secret_path)
+          os.chown(secret_path,-1,agentos_gid); os.chmod(secret_path,0o640)
+
+          public={k:v for k,v in result.items() if k != 'claim_secret'}
+          public['host_runtime_id']=host_runtime_id
+          public['secret_state_path']=str(secret_path)
+          Path(sys.argv[2]).write_text(json.dumps(public,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('participant_join_request=PASS')
+          print('participant_id='+participant_id)
+          print('request_id='+str(result['request_id']))
+          print('user_code='+str(result['user_code']))
+          print('negotiated_protocol='+str(result['negotiated_protocol']))
+          PY
+              exit 0
+            fi
+          fi
+
+          CMD="$NODE_CMD"
+          test -f "$CMD"
           ACTION=$(python3 - "$CMD" <<'PY'
           import json,re,sys
           data=json.load(open(sys.argv[1],encoding='utf-8'))
@@ -57,17 +169,15 @@ jobs:
           print('user_code='+str(r.get('user_code')))
           PY
 
-      - name: Publish non-secret approval evidence
+      - name: Report non-secret enrollment result
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          test -f /tmp/realm-enrollment-approval-result.json || exit 0
-          mkdir -p .agentos/evidence
-          cp /tmp/realm-enrollment-approval-result.json .agentos/evidence/realm-enrollment-approval-current.json
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/realm-enrollment-approval-current.json
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): record Realm enrollment approval'
-          git push origin HEAD:main
+          if [ -f /tmp/participant-enrollment-public-result.json ]; then
+            cat /tmp/participant-enrollment-public-result.json
+          elif [ -f /tmp/realm-enrollment-approval-result.json ]; then
+            cat /tmp/realm-enrollment-approval-result.json
+          else
+            echo '{"ok":false,"status":"no_result"}'
+          fi

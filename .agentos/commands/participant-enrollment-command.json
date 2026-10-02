@@ -1,0 +1,109 @@
+{
+  "schema": "agentos.participant-command/v1",
+  "action": "participant.join.request",
+  "host_runtime_id": "participant://host/browser-bridge",
+  "expires_minutes": 30,
+  "manifest": {
+    "participant": {
+      "id": "participant://agent/gemini-web",
+      "instance_id": "gemini-web-session-20261002",
+      "roles": [
+        "agent",
+        "model_provider"
+      ]
+    },
+    "adapter": {
+      "name": "agentos-hosted-web-participant-adapter",
+      "version": "0.1.0"
+    },
+    "protocol": {
+      "name": "agentos-participant",
+      "supported": [
+        "1.0"
+      ],
+      "negotiated": null
+    },
+    "methods": {
+      "describe": {
+        "implemented": true,
+        "available": true,
+        "verified": false,
+        "unavailable_reason": null
+      },
+      "probe": {
+        "implemented": true,
+        "available": true,
+        "verified": false,
+        "unavailable_reason": null
+      },
+      "invoke": {
+        "implemented": true,
+        "available": true,
+        "verified": false,
+        "unavailable_reason": null
+      },
+      "status": {
+        "implemented": true,
+        "available": true,
+        "verified": false,
+        "unavailable_reason": null
+      },
+      "receipt": {
+        "implemented": true,
+        "available": true,
+        "verified": false,
+        "unavailable_reason": null
+      },
+      "shutdown": {
+        "implemented": false,
+        "available": false,
+        "verified": false,
+        "unavailable_reason": "Gemini Web reported no shutdown method"
+      }
+    },
+    "capabilities": {
+      "llm.reason": {
+        "supported_versions": [
+          "v1"
+        ],
+        "available": true,
+        "verified": false,
+        "unavailable_reason": null
+      },
+      "web.browse": {
+        "supported_versions": [
+          "v1"
+        ],
+        "available": false,
+        "verified": false,
+        "unavailable_reason": "Gemini Web reported external URL access restrictions"
+      }
+    },
+    "features": {},
+    "requirements": [
+      {
+        "id": "host-runtime-transport",
+        "status": "SATISFIED",
+        "detail": "Enrollment transport is carried by AgentOS hosted Participant control lane"
+      }
+    ],
+    "relationships": [
+      {
+        "type": "hosted_by",
+        "participant_id": "participant://host/browser-bridge"
+      },
+      {
+        "type": "depends_on",
+        "participant_id": "participant://surface/google-gemini-session"
+      }
+    ],
+    "health": {
+      "observable": true,
+      "state": "available",
+      "last_probe_at": null
+    },
+    "receipt": {
+      "supported": true
+    }
+  }
+}
