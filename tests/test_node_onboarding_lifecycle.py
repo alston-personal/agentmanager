@@ -131,6 +131,37 @@ def test_linux_supervisor_creates_launcher_when_missing(monkeypatch, tmp_path):
     assert "-m agentos_node.client_cli" in text
 
 
+def test_linux_launcher_preserves_venv_interpreter(monkeypatch, tmp_path):
+    import agentos_node.onboarding as onboarding
+
+    unit = tmp_path / "agentos-thin-client.service"
+    fake_venv_python = tmp_path / "venv" / "bin" / "python3"
+    fake_venv_python.parent.mkdir(parents=True)
+    fake_venv_python.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(onboarding.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(onboarding, "linux_thin_client_unit_path", lambda: unit)
+    monkeypatch.setattr(onboarding.sys, "executable", str(fake_venv_python))
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv, **kwargs):
+        if argv[:3] == ["systemctl", "--user", "is-active"]:
+            return Result(0, "active\n", "")
+        return Result(0, "", "")
+
+    monkeypatch.setattr(onboarding.subprocess, "run", fake_run)
+    result = onboarding.install_linux_node_supervisor(install_root=tmp_path)
+
+    assert result["supervisor_ready"] is True
+    launcher = (tmp_path / "agentos-client").read_text(encoding="utf-8")
+    assert str(fake_venv_python) in launcher
+
+
 def test_linux_supervisor_selected_by_generic_installer(monkeypatch):
     import agentos_node.onboarding as onboarding
 
