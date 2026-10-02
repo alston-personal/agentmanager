@@ -47,6 +47,30 @@ jobs:
           echo '=== services ==='
           systemctl --no-pager --type=service --all 2>/dev/null | grep -Ei 'agentos|studio|dashboard|wardrobe|try.?on|render' | head -100 || true
           systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'agentos|studio|dashboard|wardrobe|try.?on|render' | head -100 || true
+          echo '=== dashboard unit/process ==='
+          systemctl --user cat agentos-dashboard.service 2>/dev/null || systemctl cat agentos-dashboard.service 2>/dev/null || true
+          dashpid="$(systemctl --user show agentos-dashboard.service -p MainPID --value 2>/dev/null || true)"
+          if [ -n "$dashpid" ] && [ "$dashpid" != "0" ]; then
+            echo "dashboard_pid=$dashpid"
+            readlink -f "/proc/$dashpid/cwd" || true
+            tr '\0' ' ' < "/proc/$dashpid/cmdline" 2>/dev/null; echo
+          fi
+          echo '=== tryon worker unit/process ==='
+          systemctl --user cat agentos-mio-tryon-render-worker.service 2>/dev/null || systemctl cat agentos-mio-tryon-render-worker.service 2>/dev/null || true
+          trypid="$(systemctl --user show agentos-mio-tryon-render-worker.service -p MainPID --value 2>/dev/null || true)"
+          if [ -n "$trypid" ] && [ "$trypid" != "0" ]; then
+            echo "tryon_pid=$trypid"
+            readlink -f "/proc/$trypid/cwd" || true
+            tr '\0' ' ' < "/proc/$trypid/cmdline" 2>/dev/null; echo
+          fi
+          echo '=== local dashboard probes ==='
+          for port in 3000 3001 3100 3200 4321 8787; do
+            code="$(curl -sS -o /tmp/mio-local -w '%{http_code}' --max-time 2 "http://127.0.0.1:$port/dashboard/api/wardrobe/tryon/render" || true)"
+            if [ "$code" != "000" ]; then echo "$port $code $(head -c 180 /tmp/mio-local | tr '\n' ' ')"; fi
+          done
+          echo '=== dashboard errors ==='
+          tail -n 200 /home/ubuntu/.pm2/logs/agentos-dashboard-error.log 2>/dev/null || true
+          journalctl --user -u agentos-dashboard.service --since '3 hours ago' --no-pager 2>/dev/null | tail -n 200 || true
           echo '=== source hits ==='
           for root in /home/ubuntu/agentmanager /home/ubuntu/agent-data /opt /srv /var/www; do
             [ -d "$root" ] || continue
