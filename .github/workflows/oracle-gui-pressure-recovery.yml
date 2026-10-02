@@ -1,0 +1,70 @@
+name: Oracle GUI Pressure Recovery
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-gui-pressure-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Recover Oracle GUI browser pressure
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          PROFILE='/home/ubuntu/.local/share/agentos/gui-worker/chromium-profile'
+          echo "=== PRE ==="
+          uptime
+          free -h
+          cat /proc/pressure/memory || true
+          systemctl --user show agentos-gui-browser.service -p ActiveState -p MainPID -p MemoryCurrent -p MemoryHigh -p MemoryMax -p TasksCurrent || true
+          echo "profile_pid_count=$(pgrep -af -- "--user-data-dir=$PROFILE" | wc -l || true)"
+
+          echo "=== STOP OWNER ==="
+          systemctl --user stop agentos-gui-browser.service || true
+          sleep 5
+
+          echo "=== TERM PROFILE TREE ==="
+          pids="$(pgrep -f -- "--user-data-dir=$PROFILE" || true)"
+          if [ -n "$pids" ]; then
+            echo "$pids" | xargs -r kill -TERM || true
+            sleep 8
+          fi
+          pids="$(pgrep -f -- "--user-data-dir=$PROFILE" || true)"
+          if [ -n "$pids" ]; then
+            echo "profile_tree_term_survivors=$pids"
+            echo "$pids" | xargs -r kill -KILL || true
+            sleep 3
+          fi
+
+          echo "=== AFTER CLEANUP ==="
+          free -h
+          cat /proc/pressure/memory || true
+          echo "profile_pid_count_after_cleanup=$(pgrep -af -- "--user-data-dir=$PROFILE" | wc -l || true)"
+
+          echo "=== RESTART CLEAN BROWSER ==="
+          systemctl --user start agentos-gui-browser.service
+          sleep 8
+          systemctl --user show agentos-gui-browser.service -p ActiveState -p SubState -p MainPID -p MemoryCurrent -p MemoryHigh -p MemoryMax -p TasksCurrent
+          free -h
+          cat /proc/pressure/memory || true
+          echo "profile_pid_count_after_restart=$(pgrep -af -- "--user-data-dir=$PROFILE" | wc -l || true)"
+          echo "oracle_gui_pressure_recovery=PASS"
+          REMOTE
