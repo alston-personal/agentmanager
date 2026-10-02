@@ -30,6 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           out=$(mktemp)
+          set +e
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$STUDIO_SHA" "${{ github.run_id }}" >"$out" 2>&1 <<'REMOTE'
           set -euo pipefail
           SHA="$1"; RUN="$2"
@@ -71,6 +72,9 @@ jobs:
           print('catalog_parity=' + ('PASS' if all(g in ids for g in wanted) else 'FAIL'))
           PY
           REMOTE
+          rc=$?
+          set -e
           cat "$out"
           { echo '### Mio V5 live deploy + catalog parity'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/parity.md
           gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/parity.md
+          exit "$rc"
