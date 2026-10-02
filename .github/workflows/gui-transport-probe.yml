@@ -1,0 +1,56 @@
+name: GUI Transport Probe
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/gui-transport-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe transport
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id='gui-demo-transport-probe-20261002-1107'
+          f=RealmFabricStore()
+          if f.get_receipt(task_id) is None:
+              f.queue_task('VO10005870', {
+                  'schema':'agentos.node-task/v0.1',
+                  'task_id':task_id,
+                  'action':'desktop.session.inspect',
+                  'cognition_ids_used':['demo://transport-probe/20261002'],
+              })
+          for i in range(20):
+              r=f.get_receipt(task_id)
+              if r is not None:
+                  print('RECEIPT='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  break
+              time.sleep(1)
+          else:
+              data=f.load()
+              print('PENDING='+json.dumps((data.get('tasks') or {}).get('VO10005870') or [],ensure_ascii=False,separators=(',',':')))
+              raise SystemExit('transport_probe_no_receipt')
+          PY
+          REMOTE
