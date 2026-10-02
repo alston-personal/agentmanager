@@ -1,0 +1,99 @@
+name: Mio PWA Auth Live E2E
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-pwa-auth-live-e2e.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      TARGET_SHA: b5aaf3c90de164e37ba4f899b3a10f827002e6cc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy exact backend SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$TARGET_SHA' && git show '$TARGET_SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh' > /tmp/deploy-mio-pwa-auth.sh && chmod 700 /tmp/deploy-mio-pwa-auth.sh && /tmp/deploy-mio-pwa-auth.sh '$TARGET_SHA' '${{ github.run_id }}'"
+      - name: Verify separate Safari and PWA cookie jars
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          case "$LIVE" in *b5aaf3c90de164e37ba4f899b3a10f827002e6cc*) ;; *) echo "wrong_live=$LIVE"; exit 2;; esac
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          ADMIN=/home/ubuntu/.config/milkcat/admin-identities
+          JWT_SECRET_VALUE="$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          for raw in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line: continue
+              k,v=line.split('=',1)
+              if k.strip()=='JWT_SECRET': print(v.strip().strip('"').strip("'")); break
+          PY
+          )"
+          ADMIN_KEY="$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN" | head -n1 | tr -d '\r')"
+          export JWT_SECRET_VALUE ADMIN_KEY
+          TOKEN="$(cd "$LIVE" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          const key=process.env.ADMIN_KEY||'', secret=process.env.JWT_SECRET_VALUE||'';
+          let provider='',subject='',username='e2e-admin'; const marker=':username:';
+          if(key.includes(marker)){const i=key.indexOf(marker);provider=key.slice(0,i);username=key.slice(i+marker.length);subject='e2e-probe-subject';}
+          else {const i=key.indexOf(':');if(i<1)process.exit(3);provider=key.slice(0,i);subject=key.slice(i+1);}
+          process.stdout.write(jwt.sign({username,provider,subject,exp:Math.floor(Date.now()/1000)+900},secret));
+          NODE
+          )"
+          unset JWT_SECRET_VALUE ADMIN_KEY
+          BASE=https://studio.milkcat.org
+          RESOLVE='--resolve studio.milkcat.org:443:127.0.0.1'
+          START=/tmp/pwa-start-$$.json
+          code="$(curl --noproxy '*' -k -sS -o "$START" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 -X POST "$BASE/dashboard/api/wardrobe/auth-handoff?action=start")"
+          test "$code" = 200
+          H="$(python3 - "$START" <<'PY'
+          import json,sys; print(json.load(open(sys.argv[1]))['handoffId'])
+          PY
+          )"
+          test -n "$H"
+          # Safari/Google context completes the handoff with its own auth cookie.
+          code="$(curl --noproxy '*' -k -sS -o /tmp/pwa-complete-$$.html -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 -H "Cookie: auth_token=$TOKEN" "$BASE/dashboard/api/wardrobe/auth-handoff?handoff=$H")"
+          test "$code" = 200
+          grep -q '登入完成' /tmp/pwa-complete-$$.html
+          # Independent PWA cookie jar has no Safari auth cookie.
+          PWA=/tmp/mio-pwa-cookie-$$.txt
+          EX=/tmp/pwa-exchange-$$.json
+          code="$(curl --noproxy '*' -k -sS -c "$PWA" -b "$PWA" -o "$EX" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 -X POST -H 'Content-Type: application/json' --data "{\"handoffId\":\"$H\"}" "$BASE/dashboard/api/wardrobe/auth-handoff?action=exchange")"
+          test "$code" = 200
+          python3 - "$EX" <<'PY'
+          import json,sys; j=json.load(open(sys.argv[1])); assert j.get('ready') is True; assert j.get('cookieScope')=='host-only'; print('pwa_exchange=PASS')
+          PY
+          grep -q $'studio.milkcat.org\tFALSE\t/\tTRUE' "$PWA"
+          SESSION=/tmp/pwa-session-$$.json
+          code="$(curl --noproxy '*' -k -sS -b "$PWA" -o "$SESSION" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 "$BASE/dashboard/api/auth/session")"
+          test "$code" = 200
+          python3 - "$SESSION" <<'PY'
+          import json,sys; j=json.load(open(sys.argv[1])); assert j.get('loggedIn') is True, j; assert j.get('role')=='admin', j; print('pwa_admin_session=PASS')
+          PY
+          ACK=/tmp/pwa-ack-$$.json
+          code="$(curl --noproxy '*' -k -sS -b "$PWA" -o "$ACK" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 -X POST -H 'Content-Type: application/json' --data "{\"handoffId\":\"$H\"}" "$BASE/dashboard/api/wardrobe/auth-handoff?action=ack")"
+          test "$code" = 200
+          python3 - "$ACK" <<'PY'
+          import json,sys; j=json.load(open(sys.argv[1])); assert j.get('acknowledged') is True; print('pwa_ack=PASS')
+          PY
+          code="$(curl --noproxy '*' -k -sS -b "$PWA" -o /tmp/pwa-after-ack-$$ -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 -X POST -H 'Content-Type: application/json' --data "{\"handoffId\":\"$H\"}" "$BASE/dashboard/api/wardrobe/auth-handoff?action=exchange")"
+          test "$code" = 404
+          echo 'mio_pwa_auth_live_e2e=PASS'
+          REMOTE
