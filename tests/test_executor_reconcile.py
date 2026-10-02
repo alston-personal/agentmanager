@@ -1,78 +1,145 @@
 import json
 
 from agentos_node import executor_reconcile
+from agentos_node import executor_provider_registry
 
 
-def test_discovery_distinguishes_ready_discovered_and_unavailable(monkeypatch):
-    binaries = {
-        "claude": "C:/tools/claude.exe",
-        "codex": "C:/tools/codex.exe",
-        "gemini": None,
-        "antigravity": None,
-    }
+class ReadyProvider:
+    executor_id = "demo"
+    provider_id = "demo-provider"
+    executor_class = "demo-class"
 
-    def fake_find(candidates):
-        return binaries.get(candidates[0])
+    def capabilities(self):
+        return ["agent.chat"]
 
-    def fake_bridge(provider):
-        if provider == "claude-code":
-            return {
-                "bridge_ready": True,
-                "bridge_capabilities": ["agent.session.inspect"],
-            }
+    def discover(self):
+        return {"installed": True}
+
+    def health(self):
         return {
-            "bridge_ready": False,
-            "bridge_capabilities": [],
+            "reachable": True,
+            "authorized": True,
+            "routable": True,
+            "healthy": True,
+            "classification": "READY",
         }
 
-    monkeypatch.setattr(executor_reconcile, "_find_binary", fake_find)
-    monkeypatch.setattr(executor_reconcile, "_bridge_state", fake_bridge)
-    monkeypatch.setattr(
-        executor_reconcile,
-        "_probe_version",
-        lambda path: {"version_probe_ok": True, "version": "test-version"},
+    def invoke(self, request):
+        return {"ok": True}
+
+    def cancel(self, invocation_id):
+        return {"ok": True}
+
+    def receipt(self, invocation_id):
+        return {"ok": True}
+
+
+def _profile(adapter_module=None):
+    return {
+        "schema": "agentos.executor-provider-profile/v0.1",
+        "executor_id": "demo",
+        "provider_id": "demo-provider",
+        "executor_class": "demo-class",
+        "modes": ["cli"],
+        "capabilities": ["agent.chat"],
+        "discovery": {
+            "strategy": ["provider_adapter"],
+            "provider_owned_allowlists_only": True,
+            "credential_access": False,
+        },
+        "readiness": {
+            "dimensions": ["installed", "reachable", "authorized", "routable", "healthy"],
+            "ready_requires": ["installed", "reachable", "authorized", "routable", "healthy"],
+        },
+        "invocation": {
+            "bounded_semantic_requests_only": True,
+            "caller_supplied_executable": False,
+            "caller_supplied_argv": False,
+            "caller_supplied_env": False,
+        },
+        "cancellation": {"supported": True, "strategy": "provider-defined"},
+        "concurrency": {"model": "single", "mutex_scope": "demo"},
+        "receipt": {"required": True, "secrets_allowed": False},
+        "smoke": {"required": True, "kind": "bounded", "expected_safe_evidence": []},
+        "adoption": {"reinstall_by_default": False, "preserve_existing_identity": True},
+        "implementation": {
+            "adapter_module": adapter_module,
+            "notes": "test",
+        },
+    }
+
+
+def test_profile_without_adapter_is_registration_required(tmp_path):
+    root = tmp_path / "profiles"
+    root.mkdir()
+    (root / "demo.json").write_text(json.dumps(_profile()), encoding="utf-8")
+
+    inventory = executor_reconcile.discover_executor_inventory(profile_root=root)
+    assert inventory["schema"] == executor_reconcile.SCHEMA
+    assert len(inventory["executors"]) == 1
+    item = inventory["executors"][0]
+    assert item["executor_id"] == "demo"
+    assert item["state"] == "REGISTRATION_REQUIRED"
+    assert item["routable"] is False
+
+
+def test_registered_provider_can_be_ready(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    root.mkdir()
+    (root / "demo.json").write_text(
+        json.dumps(_profile("tests.fake_demo_provider")),
+        encoding="utf-8",
     )
 
-    inventory = executor_reconcile.discover_executor_inventory()
-    states = {item["executor_id"]: item for item in inventory["executors"]}
+    monkeypatch.setattr(
+        executor_provider_registry,
+        "_load_symbol",
+        lambda spec: ReadyProvider(),
+    )
 
-    assert states["claude-code"]["state"] == "READY"
-    assert states["claude-code"]["routable"] is True
-    assert states["codex"]["state"] == "DISCOVERED"
-    assert states["codex"]["routable"] is False
-    assert states["gemini"]["state"] == "UNAVAILABLE"
+    inventory = executor_reconcile.discover_executor_inventory(profile_root=root)
+    item = inventory["executors"][0]
+    assert item["state"] == "READY"
+    assert item["routable"] is True
+    assert item["authorized"] is True
+    assert item["healthy"] is True
 
 
-def test_reconcile_persists_adoption_state_atomically(tmp_path, monkeypatch):
+def test_reconcile_persists_state_counts(tmp_path, monkeypatch):
     monkeypatch.setattr(
         executor_reconcile,
         "discover_executor_inventory",
-        lambda: {
+        lambda **kwargs: {
             "schema": executor_reconcile.SCHEMA,
+            "provider_profile_schema": "agentos.executor-provider-profile/v0.1",
             "executors": [
                 {
-                    "executor_id": "claude-code",
+                    "executor_id": "ready",
+                    "provider_id": "p1",
+                    "executor_class": "c1",
                     "state": "READY",
                     "adoptable": True,
                     "routable": True,
-                    "bridge_capabilities": ["agent.session.inspect"],
-                    "version": "1.0",
+                    "profile_valid": True,
+                    "adapter_registered": True,
+                    "discovered": True,
+                    "authorized": True,
+                    "healthy": True,
+                    "capabilities": ["agent.chat"],
                 },
                 {
-                    "executor_id": "codex",
-                    "state": "DISCOVERED",
-                    "adoptable": True,
-                    "routable": False,
-                    "bridge_capabilities": [],
-                    "version": "2.0",
-                },
-                {
-                    "executor_id": "gemini",
-                    "state": "UNAVAILABLE",
+                    "executor_id": "missing-adapter",
+                    "provider_id": "p2",
+                    "executor_class": "c2",
+                    "state": "REGISTRATION_REQUIRED",
                     "adoptable": False,
                     "routable": False,
-                    "bridge_capabilities": [],
-                    "version": None,
+                    "profile_valid": True,
+                    "adapter_registered": False,
+                    "discovered": False,
+                    "authorized": False,
+                    "healthy": False,
+                    "capabilities": [],
                 },
             ],
         },
@@ -84,7 +151,10 @@ def test_reconcile_persists_adoption_state_atomically(tmp_path, monkeypatch):
     persisted = json.loads((tmp_path / "executor-adoption.json").read_text(encoding="utf-8"))
     assert persisted["schema"] == executor_reconcile.ADOPTION_SCHEMA
     assert persisted["summary"] == {
+        "total": 2,
         "ready": 1,
-        "discovered": 1,
-        "unavailable": 1,
+        "by_state": {
+            "READY": 1,
+            "REGISTRATION_REQUIRED": 1,
+        },
     }
