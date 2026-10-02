@@ -16,6 +16,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: persona-pdca-runtime-origin-probe
+  cancel-in-progress: true
+
 jobs:
   probe:
     runs-on: ubuntu-latest
