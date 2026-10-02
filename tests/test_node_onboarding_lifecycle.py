@@ -101,6 +101,36 @@ def test_linux_supervisor_install_contract(monkeypatch, tmp_path):
     assert ["systemctl", "--user", "enable", "--now", "agentos-thin-client.service"] in calls
 
 
+def test_linux_supervisor_creates_launcher_when_missing(monkeypatch, tmp_path):
+    import agentos_node.onboarding as onboarding
+
+    unit = tmp_path / "agentos-thin-client.service"
+
+    monkeypatch.setattr(onboarding.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(onboarding, "linux_thin_client_unit_path", lambda: unit)
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv, **kwargs):
+        if argv[:3] == ["systemctl", "--user", "is-active"]:
+            return Result(0, "active\n", "")
+        return Result(0, "", "")
+
+    monkeypatch.setattr(onboarding.subprocess, "run", fake_run)
+    result = onboarding.install_linux_node_supervisor(install_root=tmp_path)
+
+    launcher = tmp_path / "agentos-client"
+    assert result["supervisor_ready"] is True
+    assert launcher.exists()
+    assert launcher.stat().st_mode & 0o100
+    text = launcher.read_text(encoding="utf-8")
+    assert "-m agentos_node.client_cli" in text
+
+
 def test_linux_supervisor_selected_by_generic_installer(monkeypatch):
     import agentos_node.onboarding as onboarding
 
