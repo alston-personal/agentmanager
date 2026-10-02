@@ -6,6 +6,12 @@ on:
       source_commit:
         description: Immutable candidate commit
         required: true
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/realm-node-transactional-ota.json'
+      - '.github/workflows/oracle-vopc5750-transactional-ota.yml'
 permissions:
   contents: read
 
