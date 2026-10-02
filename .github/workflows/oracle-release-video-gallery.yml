@@ -25,7 +25,7 @@ jobs:
       receipt_schema: studio-web.video-gallery-release/v1
       acceptance_anchors: |-
         Milkcat World · Video Library
-        AgentOS · Generated Films
+        AGENTOS · GENERATED FILMS
         澪 · 台北雨夜
         /videos/assets/mio-taipei-rain-10s.mp4
       node_asset_source: /home/ubuntu/agent-data/artifacts/colab/mio-taipei-rain-36977321582/outputs/mio-taipei-rain-10s_mio-taipei-rain-10s.mp4
