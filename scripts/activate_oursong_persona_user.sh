@@ -26,13 +26,14 @@ if [[ ! -d "${RELEASE}" ]]; then
   mkdir -p "${STAGE}"
   trap 'rm -rf "${STAGE:-}"' EXIT
   git -C "${REPO}" archive "${SOURCE_COMMIT}" | tar -x -C "${STAGE}"
-  python3 -m py_compile     "${STAGE}/scripts/bootstrap_oursong_persona_user.py"     "${STAGE}/scripts/mio_persona_social_loop_user.py"     "${STAGE}/scripts/sync_persona_pdca_social_outcome_user.py"     "${STAGE}/agentos_node/persona_life.py"
+  python3 -m py_compile     "${STAGE}/scripts/bootstrap_oursong_persona_user.py"     "${STAGE}/scripts/persona_pdca_tick_user.py"     "${STAGE}/scripts/mio_persona_social_loop_user.py"     "${STAGE}/scripts/sync_persona_pdca_social_outcome_user.py"     "${STAGE}/agentos_node/persona_life.py"
   bash -n "${STAGE}/scripts/install_persona_social_timer_user.sh"
   mv "${STAGE}" "${RELEASE}"
   trap - EXIT
 fi
 
 test -f "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"
+test -f "${RELEASE}/scripts/persona_pdca_tick_user.py"
 test -f "${RELEASE}/scripts/mio_persona_social_loop_user.py"
 test -f "${RELEASE}/scripts/sync_persona_pdca_social_outcome_user.py"
 test -f "${RELEASE}/scripts/install_persona_social_timer_user.sh"
@@ -50,6 +51,7 @@ AGENTOS_PERSONA_DISPLAY=oursong_alstonhuang
 AGENTOS_PERSONA_PROJECT_ID=oursong-alstonhuang-persona-social
 AGENTOS_PERSONA_WRITE_PREFIX=oursong
 AGENTOS_PERSONA_THREADS_HANDLES=oursong_alstonhuang
+AGENTOS_PERSONA_PDCA_TICK_SCRIPT=${RELEASE}/scripts/persona_pdca_tick_user.py
 AGENTOS_PERSONA_SOCIAL_LOOP_SCRIPT=${RELEASE}/scripts/mio_persona_social_loop_user.py
 AGENTOS_PERSONA_PDCA_SYNC_SCRIPT=${RELEASE}/scripts/sync_persona_pdca_social_outcome_user.py
 EOF
@@ -59,6 +61,10 @@ ln -sfn "${RELEASE}" "${HOME}/.local/share/agentos/persona-social/current-ourson
 
 systemctl --user daemon-reload
 systemctl --user enable --now agentos-persona-social@oursong_alstonhuang.timer
+systemctl --user start agentos-persona-social@oursong_alstonhuang.service
+systemctl --user is-active --quiet agentos-persona-social@oursong_alstonhuang.timer
+
+echo "oursong_cycle1_service=PASS"
 
 echo "oursong_source_commit=${SOURCE_COMMIT}"
 echo "oursong_runtime_release=${RELEASE}"
