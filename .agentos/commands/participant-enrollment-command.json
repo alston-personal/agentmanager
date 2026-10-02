@@ -1,6 +1,6 @@
 {
   "schema": "agentos.participant-command/v1",
-  "action": "participant.join.request",
+  "action": "participant.join.inspect_pending",
   "host_runtime_id": "participant://host/browser-bridge",
   "expires_minutes": 10,
   "manifest": {
