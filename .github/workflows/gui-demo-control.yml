@@ -94,9 +94,12 @@ jobs:
               task.setdefault('cwd', str(roots[0]))
           fabric=RealmFabricStore()
           existing=fabric.get_receipt(task['task_id'])
-          if existing is None:
+          receipt_only=bool(cmd.get('receipt_only'))
+          if existing is None and not receipt_only:
               fabric.queue_task(node_id,task)
               print('queued=PASS',flush=True)
+          elif existing is None and receipt_only:
+              print('receipt_only_wait=PASS',flush=True)
           receipt=existing
           requested_timeout=int((cmd.get('payload') or {}).get('timeout_seconds') or 120)
           receipt_wait_seconds=max(120,min(requested_timeout+60,360))
