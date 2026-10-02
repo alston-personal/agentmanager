@@ -8,6 +8,7 @@ on:
       - 'agentos_node/content_publish_social_action_relay.py'
       - 'agentos_node/content_publish_social_executor.py'
       - 'runtime_core/content_publish_social.py'
+      - 'runtime_core/content_publish_media.py'
       - 'tests/test_content_publish_social_executor.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/runtime_converge_action_relay.py'
