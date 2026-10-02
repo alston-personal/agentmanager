@@ -13,6 +13,10 @@ on:
       - 'scripts/install_control_inbox_bridge_user.sh'
       - 'scripts/install_chatgpt_continuation_projection_user.sh'
       - 'scripts/repair_control_inbox_github_auth_user.sh'
+      - 'scripts/control_inbox_service_repair.py'
+      - 'tests/test_control_inbox_service_repair.py'
+      - 'docs/CONTROL_INBOX_SERVICE_REPAIR.md'
+      - '.github/workflows/oracle-control-inbox-service-repair.yml'
       - 'tests/test_active_continuation.py'
       - 'tests/test_realm_resolve_endpoint.py'
       - 'tests/test_control_inbox_bridge.py'
@@ -36,6 +40,10 @@ on:
       - 'scripts/install_control_inbox_bridge_user.sh'
       - 'scripts/install_chatgpt_continuation_projection_user.sh'
       - 'scripts/repair_control_inbox_github_auth_user.sh'
+      - 'scripts/control_inbox_service_repair.py'
+      - 'tests/test_control_inbox_service_repair.py'
+      - 'docs/CONTROL_INBOX_SERVICE_REPAIR.md'
+      - '.github/workflows/oracle-control-inbox-service-repair.yml'
       - 'tests/test_active_continuation.py'
       - 'tests/test_realm_resolve_endpoint.py'
       - 'tests/test_control_inbox_bridge.py'
@@ -64,9 +72,9 @@ jobs:
       - name: Install test dependency
         run: python -m pip install --disable-pip-version-check pytest
       - name: Run Control Inbox bridge regressions
-        run: python -m pytest tests/test_control_inbox_bridge.py tests/test_active_continuation.py tests/test_realm_resolve_endpoint.py tests/test_control_inbox_runtime_installer.py tests/test_chatgpt_continuation_projection.py -q
+        run: python -m pytest tests/test_control_inbox_bridge.py tests/test_active_continuation.py tests/test_realm_resolve_endpoint.py tests/test_control_inbox_runtime_installer.py tests/test_chatgpt_continuation_projection.py tests/test_control_inbox_service_repair.py -q
       - name: Compile bootstrap and bridge modules
-        run: python -m py_compile agent_core/control_inbox_bridge.py agent_core/chatgpt_continuation_projection.py agentos_node/bootstrap_control.py
+        run: python -m py_compile agent_core/control_inbox_bridge.py agent_core/chatgpt_continuation_projection.py agentos_node/bootstrap_control.py scripts/control_inbox_service_repair.py
       - name: Validate governed runtime installers
         run: |
           bash -n scripts/install_control_inbox_bridge_user.sh
