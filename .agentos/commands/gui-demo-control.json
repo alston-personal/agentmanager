@@ -1,14 +1,11 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "e2e4-preimage-snapshot-20261002-0930",
-  "action": "shell.exec",
+  "nonce": "e2e4-rec-start-20261002-0931",
+  "action": "desktop.demo.start",
   "payload": {
-    "executable": "python",
-    "argv": [
-      "-c",
-      "from pathlib import Path; import hashlib,json,time; d=Path.home()/'Downloads'; rows=[]; exts={'.jpg','.jpeg','.png','.webp'}; [rows.append({'path':str(p),'mtime':p.stat().st_mtime,'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}) for p in d.iterdir() if p.is_file() and p.suffix.lower() in exts]; print(json.dumps({'benchmark_start_epoch':time.time(),'images':rows},ensure_ascii=False))"
-    ],
-    "timeout_seconds": 30
+    "label": "AgentOS E2E Benchmark #4",
+    "stage": "Benchmark start / open Gemini",
+    "max_seconds": 300
   }
 }
