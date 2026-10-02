@@ -57,3 +57,4 @@ jobs:
           else: raise SystemExit('spool_inspect_receipt_missing')
           PY
           REMOTE
+# inspect-clean-spool-20261002-1700
