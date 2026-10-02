@@ -1,0 +1,108 @@
+name: Mio Canonical Registry Live Deploy
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-canonical-registry-live-deploy.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      TARGET_SHA: 3666a367ab6f34a8e211a368171c9b2c0d7b8ab2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy exact dashboard and verify live registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          set +e
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$TARGET_SHA" "${{ github.run_id }}" >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RUN="$2"
+          cd /home/ubuntu/agentmanager
+          git fetch --no-tags origin "$SHA"
+          git show "$SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh" >/tmp/deploy-mio-registry.sh
+          chmod 700 /tmp/deploy-mio-registry.sh
+          /tmp/deploy-mio-registry.sh "$SHA" "$RUN"
+
+          BASE=https://studio.milkcat.org
+          RESOLVE=(--noproxy '*' -k --resolve studio.milkcat.org:443:127.0.0.1)
+          CAT=/tmp/mio-catalog-$RUN.json
+          code=$(curl "${RESOLVE[@]}" -sS -o "$CAT" -w '%{http_code}' --max-time 10 "$BASE/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001")
+          echo "catalog_http=$code"
+          test "$code" = 200
+          python3 - "$CAT" <<'PY'
+          import json,sys
+          wanted=['net-32235-711','net-43774-002','net-42761-201','net-40832-002','net-40793-003','net-40685-003']
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=j.get('garments') or []
+          ids={str(x.get('garmentId') or '') for x in rows if isinstance(x,dict)}
+          print('catalog_count='+str(len(ids)))
+          for g in wanted:
+              print(f'catalog_{g}=' + ('PRESENT' if g in ids else 'MISSING'))
+          assert all(g in ids for g in wanted), ids
+          print('catalog_seeded_parity=PASS')
+          PY
+
+          LIVE=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          ADMIN=/home/ubuntu/.config/milkcat/admin-identities
+          JWT_SECRET_VALUE=$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          for raw in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line: continue
+              k,v=line.split('=',1)
+              if k.strip()=='JWT_SECRET':
+                  print(v.strip().strip('"').strip("'")); break
+          PY
+          )
+          ADMIN_KEY=$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN" | head -n1 | tr -d '\r')
+          export JWT_SECRET_VALUE ADMIN_KEY
+          TOKEN=$(cd "$LIVE" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          const key=process.env.ADMIN_KEY||'', secret=process.env.JWT_SECRET_VALUE||'';
+          let provider='',subject='',username='e2e-admin';
+          const marker=':username:';
+          if(key.includes(marker)){ const i=key.indexOf(marker); provider=key.slice(0,i); username=key.slice(i+marker.length); subject='e2e-probe-subject'; }
+          else { const i=key.indexOf(':'); if(i<1) process.exit(3); provider=key.slice(0,i); subject=key.slice(i+1); }
+          process.stdout.write(jwt.sign({username,provider,subject,exp:Math.floor(Date.now()/1000)+600},secret));
+          NODE
+          )
+          unset JWT_SECRET_VALUE ADMIN_KEY
+
+          BODY=/tmp/mio-create-$RUN.json
+          code=$(curl "${RESOLVE[@]}" -sS -o "$BODY" -w '%{http_code}' --max-time 10 -X POST -H 'Content-Type: application/json' -H "Cookie: auth_token=$TOKEN" --data '{"characterId":"sunlake-milkcat-ai-001","view":"front","pose":"neutral_standing","selectedLayers":{"lower_main":"net-32235-711"}}' "$BASE/dashboard/api/wardrobe/tryon/render")
+          echo "render_create_http=$code"
+          cat "$BODY"
+          echo
+          test "$code" = 201 -o "$code" = 200
+          python3 - "$BODY" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert j.get('success') is True, j
+          assert j.get('jobId'), j
+          print('render_create=PASS')
+          PY
+          REMOTE
+          rc=$?
+          set -e
+          cat "$out"
+          { echo '### Mio canonical registry live'; echo; echo '~~~text'; cat "$out"; echo '~~~'; } >/tmp/live.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/live.md
+          exit "$rc"
