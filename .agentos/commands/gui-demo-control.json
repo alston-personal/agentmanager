@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "e2e3-postfail-downloads-20261002-0055",
+  "nonce": "watchdog-log-audit-20261002-0056",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,7 +9,7 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$d=Join-Path $env:USERPROFILE 'Downloads'; Get-ChildItem $d -File | Where-Object {$_.Extension -match '^\\.(png|jpg|jpeg|webp)$'} | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 10 Name,Length,@{n='MTimeUtc';e={$_.LastWriteTimeUtc.ToString('o')}},@{n='SHA256';e={(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()}} | ConvertTo-Json -Depth 3 -Compress"
+      "$root=Join-Path $env:LOCALAPPDATA 'AgentOS\\watchdog'; $state=Join-Path $root 'state.json'; $log=Join-Path $root 'watchdog.log'; [pscustomobject]@{state=if(Test-Path $state){Get-Content -Raw $state}else{$null};log=if(Test-Path $log){@(Get-Content $log -Tail 30)}else{@()};task=(Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction SilentlyContinue | Select-Object TaskName,State)} | ConvertTo-Json -Depth 5 -Compress"
     ],
     "timeout_seconds": 30
   }
