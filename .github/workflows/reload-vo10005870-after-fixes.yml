@@ -74,3 +74,5 @@ jobs:
               raise SystemExit('verify_receipt_timeout')
           PY
           REMOTE
+
+# reload-after-pinned-liveness-v2-20261002-1448
