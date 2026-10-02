@@ -30,7 +30,12 @@ jobs:
           out=$(mktemp)
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
           set -euo pipefail
+          live=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current 2>/dev/null || true)
+          echo "live=$live"
+          [ -f "$live/RELEASE_RECEIPT" ] && cat "$live/RELEASE_RECEIPT" || true
           systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStartTimestamp --no-pager
+          echo '=== wardrobe route manifest ==='
+          if [ -f "$live/.next/server/app-paths-manifest.json" ]; then grep -o '"/api/wardrobe[^" ]*"' "$live/.next/server/app-paths-manifest.json" | sort -u || true; fi
           for i in 1 2 3 4 5; do
             code=$(curl -sS -o /tmp/mio-health -w '%{http_code}' --max-time 5 http://127.0.0.1:3000/dashboard/api/auth/session || true)
             echo "probe=$i http=$code"
