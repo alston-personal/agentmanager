@@ -168,7 +168,7 @@ Implemented endpoints:
 - `POST /v1/participants/join/claim`
 - `GET /v1/participants/describe?participant_id=...` with Participant bearer credential
 
-ONE negotiates the highest common supported Participant Protocol version from the currently supported set (`1.0`). Enrollment uses a pending request + operator approval + claim flow. Operator approval is available through `agentos-one participant-approve --code ...`. Claimed enrollment records stable Participant identity separately from `host_runtime_id` and issues a Participant credential to the Host Runtime.
+ONE negotiates the highest common supported Participant Protocol version from the currently supported set (`1.0`). Enrollment uses a pending request + correlated Participant challenge response + operator approval + claim flow. The challenge response must echo the ONE-issued `request_id`, stable `participant_id`, exact challenge, negotiated protocol, and `ack: ACCEPT`; claim is rejected until ONE records challenge verification. Operator approval is available through `agentos-one participant-approve --code ...`. Claimed enrollment records stable Participant identity separately from `host_runtime_id` and issues a Participant credential to the Host Runtime.
 
 Enrollment/negotiation may advance a Participant to A3 only. Core conformance, capability verification, ONE-routed execution, correlated receipts, and A7 READY remain separate runtime work and must not be inferred from successful enrollment. Missing required v1.0 methods (for example `shutdown`) are preserved explicitly after enrollment.
 
