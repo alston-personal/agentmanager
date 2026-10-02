@@ -53,6 +53,8 @@ jobs:
             'formal-e2e-rec-start-20261002-1548',
             'formal-e2e-run-20261002-1548',
             'formal-e2e-rec-stop-20261002-1548',
+            'deploy-receipt-spool-20261002-1552',
+            'verify-receipt-spool-runtime-20261002-1552',
             'targeted-uia-probe-gemini-20261002-1332',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
@@ -78,3 +80,5 @@ jobs:
 # post-targeted-uia-1538
 
 # formal-e2e-live-inspect-1548
+
+# receipt-spool-live-check-1552
