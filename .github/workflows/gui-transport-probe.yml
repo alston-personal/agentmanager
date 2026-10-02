@@ -33,7 +33,7 @@ jobs:
           python3 - <<'PY'
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
-          task_id='gui-demo-uia-hosted-fast-20261002-1110'
+          task_id='gui-demo-uia-hosted-fast-20261002-1112'
           f=RealmFabricStore()
           if f.get_receipt(task_id) is None:
               f.queue_task('VO10005870', {
@@ -43,6 +43,7 @@ jobs:
                   'executable':r'C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
                   'argv':['-c',"import sys,json\nsys.stdout.reconfigure(encoding='utf-8')\nfrom pywinauto import Desktop\nkeys=('gemini','threads','傳送','貼文','下載','訊息','prompt','post','send','download','text')\nrows=[]\nfor w in Desktop(backend='uia').windows():\n    title=(w.window_text() or '')\n    if 'Edge' not in title and 'Gemini' not in title and 'Threads' not in title:\n        continue\n    for typ in ('Button','Edit','Document','Text'):\n        for c in w.descendants(control_type=typ)[:250]:\n            txt=(c.window_text() or '').strip()\n            aid=str(getattr(c.element_info,'automation_id','') or '')\n            blob=(txt+' '+aid).lower()\n            if any(k in blob for k in keys):\n                rows.append({'window':title[:140],'text':txt[:180],'type':typ,'automation_id':aid[:140]})\nprint(json.dumps(rows[:120],ensure_ascii=False))"],
                   'timeout_seconds':25,
+                  'cwd':r'C:\\Users\\alston.huang\\AgentOS',
                   'cognition_ids_used':['demo://transport-probe/20261002'],
               })
           for i in range(35):
