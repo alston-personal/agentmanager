@@ -57,7 +57,7 @@ jobs:
           if(Test-Path $lease){$content=Get-Content -Raw -LiteralPath $lease}
           [pscustomobject]@{pid=$proc.ProcessId;lease_path=$lease;lease_exists=(Test-Path $lease);lease=$content}|ConvertTo-Json -Compress'''
 
-          r1=run_task('watchdog-stability-before-20261002-1540',ps)
+          r1=run_task('watchdog-stability-before-20261002-1546',ps)
           print('BEFORE='+r1.get('stdout','').strip(),flush=True)
           before=json.loads(r1.get('stdout') or '{}')
           assert before.get('pid'), before
@@ -65,14 +65,20 @@ jobs:
 
           time.sleep(70)
 
-          r2=run_task('watchdog-stability-after-20261002-1540',ps)
+          r2=run_task('watchdog-stability-after-20261002-1546',ps)
           print('AFTER='+r2.get('stdout','').strip(),flush=True)
           after=json.loads(r2.get('stdout') or '{}')
           assert after.get('pid')==before.get('pid'), {'before':before,'after':after}
           assert after.get('lease_exists') is True, after
 
-          lb=json.loads(before.get('lease') or '{}')
-          la=json.loads(after.get('lease') or '{}')
+          def lease_doc(v):
+              if isinstance(v,dict) and 'value' in v:
+                  v=v.get('value')
+              if isinstance(v,dict):
+                  return v
+              return json.loads(v or '{}')
+          lb=lease_doc(before.get('lease'))
+          la=lease_doc(after.get('lease'))
           assert int(la.get('recorded_at_unix') or 0) > int(lb.get('recorded_at_unix') or 0), {'before':lb,'after':la}
           print('WATCHDOG_STABILITY=PASS pid='+str(after.get('pid')),flush=True)
           PY
