@@ -1,0 +1,66 @@
+name: Mio Explicit Tryon Frontend Deploy
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-explicit-tryon-frontend-deploy.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      STUDIO_SHA: 31b635dc0b5e92b70d5642ba93f9fc9d218f3970
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Build and publish exact Studio Web SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$STUDIO_SHA" "${{ github.run_id }}" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RUN="$2"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/mio-explicit-tryon-XXXXXXXX)
+          SRC="$TMP/studio-web"
+          ROUTE="$SRC/dist/personas/mio"
+          NEW="$LIVE/personas/.mio-$RUN"
+          cleanup(){ rm -rf "$TMP" "$NEW" 2>/dev/null || true; }
+          trap cleanup EXIT
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone alston-personal/studio-web "$SRC" -- --no-checkout >/dev/null
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$SHA"
+          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$SHA"
+          cd "$SRC"
+          npm install --no-package-lock --ignore-scripts >/dev/null
+          npm run build >/dev/null
+          HTML="$ROUTE/wardrobe/index.html"
+          test -f "$HTML"
+          grep -Fq 'data-tryon-action' "$HTML"
+          grep -Fq 'data-mobile-tryon-action' "$HTML"
+          grep -Fq '試穿排隊中 · 正在等待 renderer' "$HTML"
+          grep -Fq 'AI 生成中 · 正在把目前整套搭配套到澪身上' "$HTML"
+          grep -Fq 'render-truth[data-state="queued"]' "$HTML"
+          if [ -f "$LIVE/personas/mio/activity.json" ] && [ ! -f "$ROUTE/activity.json" ]; then cp "$LIVE/personas/mio/activity.json" "$ROUTE/activity.json"; fi
+          cp -a "$ROUTE" "$NEW"
+          find "$NEW" -type d -exec chmod 0755 {} +
+          find "$NEW" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE/personas/mio"
+          mv "$NEW" "$LIVE/personas/mio"
+          curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org/personas/mio/wardrobe/?_=$RUN" -o "$TMP/live.html"
+          grep -Fq 'data-tryon-action' "$TMP/live.html"
+          grep -Fq 'data-mobile-tryon-action' "$TMP/live.html"
+          grep -Fq '試穿排隊中 · 正在等待 renderer' "$TMP/live.html"
+          grep -Fq 'render-truth[data-state="queued"]' "$TMP/live.html"
+          echo "mio_explicit_tryon_frontend=PASS source_sha=$SHA"
+          REMOTE
