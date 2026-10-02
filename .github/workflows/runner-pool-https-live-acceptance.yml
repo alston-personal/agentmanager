@@ -6,7 +6,7 @@ on:
     paths:
       - 'agent_core/realm_server.py'
       - 'agent_core/runner_window.py'
-      - 'dashboard/app/api/agentos/[...path]/route.ts'
+      - 'dashboard/app/api/agentos/**'
       - 'scripts/agentos_dispatch.sh'
       - '.github/workflows/runner-pool-https-live-acceptance.yml'
   workflow_dispatch:
