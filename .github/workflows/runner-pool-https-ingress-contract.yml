@@ -28,5 +28,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 -m pip install --quiet pytest
-      - run: python3 -m pytest -q tests/test_runner_pool_https_ingress.py
+      - run: python3 -m pytest -q tests/test_runner_pool_https_ingress.py tests/test_realm_scheduler_oidc.py
       - run: bash -n scripts/submit_agentos_scheduler_request_https.sh
