@@ -1,0 +1,40 @@
+name: Mio Render Quality Review CI
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'dashboard/lib/tryon-jobs.ts'
+      - 'dashboard/app/api/wardrobe/tryon/jobs/**'
+      - 'scripts/tryon_render_worker.py'
+      - '.github/workflows/mio-render-quality-review-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Build dashboard
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run build
+      - name: Verify worker and quality contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/tryon_render_worker.py
+          test -f 'dashboard/app/api/wardrobe/tryon/jobs/[jobId]/quality/route.ts'
+          grep -Fq 'manual_visual_review' dashboard/lib/tryon-jobs.ts
+          grep -Fq 'qualityAccepted' dashboard/lib/tryon-jobs.ts
+          grep -Fq 'existing_meta.get("qualityAccepted") is not True' scripts/tryon_render_worker.py
+          grep -Fq "request.cookies.getAll('auth_token')" 'dashboard/app/api/wardrobe/tryon/jobs/[jobId]/quality/route.ts'
+          echo 'mio_render_quality_contract=PASS'
