@@ -27,6 +27,7 @@ from agent_core.realm_fabric import RealmFabricStore
 from agent_core.resolve_facade import resolve_continuation
 from agent_core.active_continuation import resolve_active_continuation, active_continuation_identity
 from agent_core.runtime_converge_capability import installed_core_capabilities
+from agent_core.runner_window import catalog as runner_window_catalog, public_intent_for_action, resolve_intent
 from agentos_node import bootstrap_control as bootstrap_control
 from agentos_node.bootstrap_scheduler import policy_for as bootstrap_policy_for
 
@@ -247,6 +248,69 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             return None
         return _verify_github_scheduler_oidc(supplied)
 
+    def _runner_window_submit(self, body: dict[str, Any]) -> dict[str, Any]:
+        if body.get('schema') != 'agentos.runner-window-dispatch/v1':
+            raise ValueError('invalid runner window dispatch schema')
+        capability = str(body.get('capability') or '').strip()
+        operation = str(body.get('operation') or '').strip()
+        source_commit = str(body.get('source_commit') or '').strip()
+        if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
+            raise ValueError('source_commit must be an exact lowercase 40-hex commit SHA')
+        payload = body.get('payload') or {}
+        if not isinstance(payload, dict):
+            raise ValueError('payload must be an object')
+        intent, params = resolve_intent(
+            capability,
+            operation,
+            source_commit=source_commit,
+            payload=payload,
+        )
+        scheduler_body = {
+            'schema': 'agentos.scheduler-submit/v1',
+            'action': intent.action,
+            'params': params,
+        }
+        request_id = str(body.get('request_id') or '').strip()
+        if request_id:
+            scheduler_body['request_id'] = request_id
+        result = self._scheduler_submit(scheduler_body)
+        scheduler = result.get('scheduler') or {}
+        return {
+            'ok': result.get('ok') is True,
+            'state': result.get('state'),
+            'request_id': result.get('request_id'),
+            'dispatch': {
+                'schema': 'agentos.runner-window-plan/v1',
+                'capability': intent.capability,
+                'operation': intent.operation,
+                'role': scheduler.get('role'),
+                'priority': scheduler.get('priority'),
+                'requested_capabilities': scheduler.get('requested_capabilities') or [],
+                'locks': scheduler.get('locks') or [],
+            },
+        }
+
+    def _runner_window_status(self, request_id: str) -> dict[str, Any]:
+        result = self._scheduler_status(request_id)
+        receipt = result.get('receipt')
+        action = str((receipt or {}).get('action') or '')
+        public = public_intent_for_action(action)
+        projected = {
+            'ok': result.get('ok') is True,
+            'state': result.get('state'),
+            'request_id': result.get('request_id'),
+        }
+        if public is not None:
+            projected['dispatch'] = {
+                'schema': 'agentos.runner-window-plan/v1',
+                **public,
+            }
+        if isinstance(receipt, dict):
+            clean = dict(receipt)
+            clean.pop('action', None)
+            projected['receipt'] = clean
+        return projected
+
     def _scheduler_submit(self, body: dict[str, Any]) -> dict[str, Any]:
         if body.get('schema') != 'agentos.scheduler-submit/v1':
             raise ValueError('invalid scheduler submit schema')
@@ -344,6 +408,20 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'galaxy_day1_publish=',
                     'galaxy_day1_image_readback=',
                     'galaxy_day1_image_asset=',
+                )
+            elif action == bootstrap_control.ACTION_RECONCILE_CONTENT_SOCIAL:
+                safe_prefixes = (
+                    'content_social_converge=',
+                    'action_relay_generation=',
+                    'content_social_bootstrap_status=',
+                    'content_social_bootstrap_username=',
+                    'content_social_product_registration=',
+                    'content_social_bootstrap=',
+                    'content_social_inspect_status=',
+                    'content_social_username=',
+                    'content_social_write_entitlement=',
+                    'content_social_account_inspect=',
+                    'content_social_reconcile=',
                 )
             evidence: list[str] = []
             if safe_prefixes:
@@ -458,6 +536,23 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == '/v1/controller/nodes':
                 self._authorize_controller()
                 self._send(200, {'ok': True, 'node_map': self.controller.nodes()})
+                return
+            if parsed.path == '/v1/dispatch':
+                self._authorize_scheduler()
+                self._send(200, {
+                    'ok': True,
+                    'schema': 'agentos.runner-window/v1',
+                    'intents': runner_window_catalog(),
+                    'runner_pool': self.controller.scheduler(),
+                })
+                return
+            dispatch_request_prefix = '/v1/dispatch/requests/'
+            if parsed.path.startswith(dispatch_request_prefix):
+                self._authorize_scheduler()
+                request_id = parsed.path.removeprefix(dispatch_request_prefix).strip('/')
+                if not request_id or '/' in request_id:
+                    raise KeyError(parsed.path)
+                self._send(200, self._runner_window_status(request_id))
                 return
             if parsed.path == '/v1/controller/scheduler':
                 self._authorize_scheduler()
@@ -582,6 +677,15 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     raise ValueError('project query is required')
                 result = resolve_continuation(project_query, node_context=node_context)
                 self._send(200, {'ok': True, **result})
+                return
+            if parsed.path == '/v1/dispatch':
+                scheduler_claims = self._authorize_scheduler()
+                dispatch_body = self._json_body()
+                if scheduler_claims is not None:
+                    requested_commit = str(dispatch_body.get('source_commit') or '')
+                    if requested_commit != str(scheduler_claims.get('sha') or ''):
+                        raise PermissionError('github oidc source commit mismatch')
+                self._send(202, self._runner_window_submit(dispatch_body))
                 return
             if parsed.path == '/v1/controller/scheduler/submit':
                 scheduler_claims = self._authorize_scheduler()

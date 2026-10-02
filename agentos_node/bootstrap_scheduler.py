@@ -60,6 +60,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR: ActionPolicy("control", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
     bc.ACTION_INSTALL_MIO_OBSERVER_TIMER: ActionPolicy("control", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
     bc.ACTION_DEPLOY_SOCIAL_RUNTIME: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_RECONCILE_CONTENT_SOCIAL: ActionPolicy("control", 35, "normal", ("content.social.reconcile",), ("content-social-runtime",)),
     bc.ACTION_DEPLOY_THREADS_GALAXY: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
     bc.ACTION_RECONCILE_CONTROL_INBOX: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
     bc.ACTION_DEPLOY_REALM_GATEWAY: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),

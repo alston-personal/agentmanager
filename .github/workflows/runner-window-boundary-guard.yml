@@ -1,0 +1,28 @@
+name: Runner Window Boundary Guard
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/check_runner_window_boundary.py'
+      - 'scripts/agentos_dispatch.sh'
+      - 'agent_core/runner_window.py'
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/check_runner_window_boundary.py'
+      - 'scripts/agentos_dispatch.sh'
+      - 'agent_core/runner_window.py'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check_runner_window_boundary.py

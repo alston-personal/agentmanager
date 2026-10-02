@@ -19,6 +19,7 @@ RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
+ACTION_RECONCILE_CONTENT_SOCIAL = "agentos.content_social.reconcile"
 ACTION_DEPLOY_THREADS_GALAXY = "agentos.threads_galaxy_static.deploy"
 ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
 ACTION_PROVISION_ZIWEI_MASTER_REPO = "agentos.repository.provision_ziwei_master"
@@ -56,6 +57,7 @@ ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
+    ACTION_RECONCILE_CONTENT_SOCIAL,
     ACTION_DEPLOY_THREADS_GALAXY,
     ACTION_RECONCILE_CONTROL_INBOX,
     ACTION_PROVISION_ZIWEI_MASTER_REPO,
@@ -145,6 +147,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","source_run_id","username"}
     elif action == ACTION_DEPLOY_STUDIO_WEB_MIO:
         allowed_params={"source_commit","studio_commit"}
+    elif action == ACTION_RECONCILE_CONTENT_SOCIAL:
+        allowed_params={"source_commit","account_ref"}
     else:
         allowed_params={"source_commit"}
     unknown = set(params) - allowed_params
@@ -162,6 +166,10 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         studio_commit=str(params.get("studio_commit") or "")
         if not COMMIT_RE.fullmatch(studio_commit):
             raise ValueError("studio_commit must be an exact lowercase 40-hex commit SHA")
+    if action == ACTION_RECONCILE_CONTENT_SOCIAL:
+        account_ref=str(params.get("account_ref") or "")
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", account_ref):
+            raise ValueError("invalid content social account_ref")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
@@ -170,6 +178,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     exact_actions = {
         ACTION_DEPLOY_REALM_GATEWAY,
         ACTION_DEPLOY_SOCIAL_RUNTIME,
+        ACTION_RECONCILE_CONTENT_SOCIAL,
         ACTION_DEPLOY_THREADS_GALAXY,
         ACTION_RECONCILE_CONTROL_INBOX,
         ACTION_PROVISION_ZIWEI_MASTER_REPO,
@@ -334,6 +343,14 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=600, source_commit=source_commit)
     if action == ACTION_DEPLOY_SOCIAL_RUNTIME:
         return _run_canonical_script("scripts/deploy_social_runtime_user.sh", timeout=180, source_commit=source_commit)
+    if action == ACTION_RECONCILE_CONTENT_SOCIAL:
+        params = params or {}
+        return _run_canonical_script(
+            "scripts/reconcile_content_social_account_user.sh",
+            timeout=780,
+            source_commit=source_commit,
+            env_extra={"AGENTOS_CONTENT_SOCIAL_ACCOUNT_REF": str(params.get("account_ref") or "")},
+        )
     if action == ACTION_DEPLOY_THREADS_GALAXY:
         return _run_canonical_script("scripts/deploy_threads_galaxy_static_user.sh", timeout=600, source_commit=source_commit)
     if action == ACTION_PROVISION_ZIWEI_MASTER_REPO:
