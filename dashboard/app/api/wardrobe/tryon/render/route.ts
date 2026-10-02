@@ -4,6 +4,8 @@ import { isMilkcatAdmin } from '@/lib/auth/roles';
 import {
   DEFAULT_CHARACTER_ID,
   createTryOnJob,
+  findAcceptedCachedJob,
+  makeOutfitSignature,
   normalizeSelectedLayers,
 } from '@/lib/tryon-jobs';
 
@@ -41,17 +43,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Select at least one garment' }, { status: 400 });
     }
 
+    const baseBodyAsset =
+      typeof body?.baseBodyAsset === 'string' && body.baseBodyAsset.trim()
+        ? body.baseBodyAsset.trim()
+        : undefined;
+
+    const signature = makeOutfitSignature({
+      characterId,
+      selectedLayers,
+      baseBodyAsset,
+    });
+    const cached = findAcceptedCachedJob(signature);
+    if (cached) {
+      return NextResponse.json({
+        success: true,
+        cacheHit: true,
+        outfitSignature: signature,
+        jobId: cached.jobId,
+        status: cached.status,
+        requestedAt: cached.requestedAt,
+        asset: cached.output.asset,
+        previewAsset: cached.output.previewAsset,
+      }, { status: 200 });
+    }
+
     const job = createTryOnJob({
       characterId,
       selectedLayers,
-      baseBodyAsset:
-        typeof body?.baseBodyAsset === 'string' && body.baseBodyAsset.trim()
-          ? body.baseBodyAsset.trim()
-          : undefined,
+      baseBodyAsset,
     });
 
     return NextResponse.json({
       success: true,
+      cacheHit: false,
+      outfitSignature: job.outfitIr.signature,
       jobId: job.jobId,
       status: job.status,
       requestedAt: job.requestedAt,
