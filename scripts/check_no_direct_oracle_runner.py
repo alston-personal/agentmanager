@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(".github/workflows")
@@ -14,10 +16,35 @@ pattern = re.compile(
     re.IGNORECASE,
 )
 
+
+def changed_workflows() -> list[Path]:
+    base_ref = os.environ.get("GITHUB_BASE_REF", "").strip()
+    if not base_ref:
+        return sorted(ROOT.glob("*.yml"))
+    subprocess.run(
+        ["git", "fetch", "--no-tags", "origin", base_ref],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD", "--", str(ROOT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [
+        Path(line.strip())
+        for line in result.stdout.splitlines()
+        if line.strip().endswith((".yml", ".yaml"))
+    ]
+
+
 violations = []
-for path in sorted(ROOT.glob("*.yml")):
+for path in changed_workflows():
+    if not path.exists() or path.name in ALLOW:
+        continue
     text = path.read_text(encoding="utf-8", errors="replace")
-    if pattern.search(text) and path.name not in ALLOW:
+    if pattern.search(text):
         violations.append(str(path))
 
 if violations:
