@@ -360,4 +360,14 @@ See:
 - `v1.0/CONTRACT.md`
 - `v1.0/participant.schema.json`
 - `CONFORMANCE.md`
+- `ACCEPTANCE.md`
 - `GEMINI_WEB_ONBOARDING.md`
+
+
+## Acceptance is normative
+
+Integration success MUST be reported by acceptance level, not by vague statements such as "connected" or "running".
+
+The authoritative acceptance model is defined in `ACCEPTANCE.md`.
+
+A Participant is not considered joined/READY until the required acceptance gates pass, including an end-to-end invocation and correlated receipt.
