@@ -97,6 +97,11 @@ foreach ($required in @('thin_client.py','interactive_desktop.py','desktop_plan.
   }
 }
 
+$watchdogScript = Join-Path $InstallRoot 'scripts\windows\thin_client_watchdog.ps1'
+if (-not (Test-Path -LiteralPath $watchdogScript)) {
+  throw "Thin Client watchdog missing: $watchdogScript (ref=$Ref)"
+}
+
 $policy = @{
   schema = 'agentos.client-policy/v0.1'
   allowed_executables = @('git','python','python.exe','python3','powershell','powershell.exe','pwsh','cmd','cmd.exe')
@@ -120,3 +125,4 @@ Write-Host "Source commit: $Ref"
 Write-Host "Python: $version"
 Write-Host "Policy workspace: $WorkspaceRoot"
 Write-Host "Launcher: $launcherPath"
+Write-Host "Watchdog: $watchdogScript"
