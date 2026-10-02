@@ -1,0 +1,19 @@
+name: Main Runner Window Audit
+
+on:
+  push:
+    branches: [audit/main-runner-window-20261002]
+    paths:
+      - 'scripts/audit_main_direct_oracle.py'
+      - '.github/workflows/main-runner-window-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/audit_main_direct_oracle.py
