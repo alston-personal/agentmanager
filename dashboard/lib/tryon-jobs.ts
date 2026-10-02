@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { AGENT_DATA_ROOT } from '@/lib/data-root';
 import { normalizeWardrobeLayer } from './wardrobe-layers.mjs';
+import { findActiveGarment, garmentSourceImage } from './wardrobe-registry';
 
 export const TRYON_JOB_SCHEMA = 'agentos.tryon-render-job/v1' as const;
 export const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
@@ -29,8 +30,6 @@ export const ALLOWED_LAYERS = new Set<string>(LAYER_ORDER);
 const ROOT = path.join(AGENT_DATA_ROOT, 'projects', 'dressup-simulator');
 const JOB_DIR = path.join(ROOT, 'render_jobs', 'runtime');
 const CURRENT_DIR = path.join(ROOT, 'current_outfits');
-const GARMENT_DIR = path.join(ROOT, 'garments');
-
 export type TryOnStatus = 'queued' | 'rendering' | 'ready' | 'failed' | 'cancelled';
 
 export type LayerItem = {
@@ -95,21 +94,6 @@ export type TryOnJob = {
   error: null | { code: string; message: string };
 };
 
-type GarmentRecord = {
-  garmentId?: string;
-  garment_id?: string;
-  name?: string;
-  slot?: string;
-  layer?: string;
-  source?: {
-    imageUrl?: string | null;
-    officialVisualUrl?: string | null;
-    canonicalUrl?: string | null;
-    product_url?: string | null;
-  };
-  official_visuals?: Array<{ url?: string | null }>;
-};
-
 function safeMkdir(dir: string) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
@@ -129,44 +113,22 @@ function safeReadJson<T>(file: string): T | null {
   }
 }
 
-function listGarmentFiles(): string[] {
-  const out: string[] = [];
-  if (!fs.existsSync(GARMENT_DIR)) return out;
-  for (const entry of fs.readdirSync(GARMENT_DIR, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.endsWith('.json')) out.push(path.join(GARMENT_DIR, entry.name));
-    if (entry.isDirectory()) {
-      const sub = path.join(GARMENT_DIR, entry.name);
-      for (const child of fs.readdirSync(sub, { withFileTypes: true })) {
-        if (child.isFile() && child.name.endsWith('.json')) out.push(path.join(sub, child.name));
-      }
-    }
-  }
-  return out;
-}
-
 export function resolveGarment(garmentId: string): LayerItem | null {
-  for (const file of listGarmentFiles()) {
-    const row = safeReadJson<GarmentRecord>(file);
-    if (!row) continue;
-    const id = String(row.garmentId || row.garment_id || '');
-    if (id !== garmentId) continue;
-    const garmentName = String(row.name || id);
-    let layer = normalizeWardrobeLayer(row.layer || row.slot || '');
-    if (layer === 'accessory_1' && /內衣|胸罩|小可愛|細肩|bra|bralette|camisole|lingerie/i.test(garmentName)) layer = 'upper_inner';
-    if (!ALLOWED_LAYERS.has(layer)) return null;
-    const visual =
-      row.source?.imageUrl ||
-      row.source?.officialVisualUrl ||
-      row.official_visuals?.find((x) => x?.url)?.url ||
-      null;
-    return {
-      garmentId: id,
-      name: garmentName,
-      layer,
-      sourceImageUrl: visual ? String(visual) : null,
-    };
+  const row = findActiveGarment(garmentId);
+  if (!row) return null;
+  const id = String(row.garmentId || row.garment_id || '');
+  const garmentName = String(row.name || id);
+  let layer = normalizeWardrobeLayer(row.layer || row.slot || '');
+  if (layer === 'accessory_1' && /內衣|胸罩|小可愛|細肩|bra|bralette|camisole|lingerie/i.test(garmentName)) {
+    layer = 'upper_inner';
   }
-  return null;
+  if (!ALLOWED_LAYERS.has(layer)) return null;
+  return {
+    garmentId: id,
+    name: garmentName,
+    layer,
+    sourceImageUrl: garmentSourceImage(row),
+  };
 }
 
 export function normalizeSelectedLayers(input: unknown): Record<string, LayerItem> {
