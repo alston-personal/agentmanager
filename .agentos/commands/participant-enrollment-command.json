@@ -105,5 +105,6 @@
     "receipt": {
       "supported": true
     }
-  }
+  },
+  "inspection_revision": "challenge-read-v1"
 }
