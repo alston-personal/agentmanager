@@ -43,6 +43,7 @@ jobs:
           bash -n scripts/submit_oracle_bootstrap_request_remote.sh
 
       - name: Probe safe login resume hints
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -71,11 +72,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          REQUEST_ID="threads-web-dm-read-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           RECEIPT="$RUNNER_TEMP/threads-web-dm-read-receipt.json"
-          AGENTOS_RECEIPT_TIMEOUT_SECONDS=360 \
-            bash scripts/submit_oracle_bootstrap_request_remote.sh \
-              agentos.social_threads_web_dm.read "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          rm -f "$RECEIPT"
+          for attempt in 1 2 3; do
+            REQUEST_ID="threads-web-dm-read-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$attempt"
+            if AGENTOS_RECEIPT_TIMEOUT_SECONDS=360 \
+              bash scripts/submit_oracle_bootstrap_request_remote.sh \
+                agentos.social_threads_web_dm.read "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"; then
+              break
+            fi
+            rm -f "$RECEIPT"
+            echo "threads_web_dm_read_ingress_retry=$attempt"
+            sleep 5
+          done
+          test -s "$RECEIPT"
 
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
