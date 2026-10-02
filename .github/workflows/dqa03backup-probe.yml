@@ -29,50 +29,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CMD_JSON="$(cat .agentos/commands/dqa03backup-probe.json)"
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             "AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager CMD_JSON='$CMD_JSON' python3 - <<'PY'
-import json,os,time
-from agent_core.realm_fabric import RealmFabricStore
-from agent_core.node_registry import NodeRegistry
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 -' <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
 
-cmd=json.loads(os.environ['CMD_JSON'])
-assert cmd.get('schema')=='agentos.realm-command/v0.1'
-assert cmd.get('action')=='realm.node.probe'
-node_id=str(cmd.get('node_id') or '')
-assert node_id=='dqa03backup'
+          node_id='dqa03backup'
+          node_map=NodeRegistry().node_map()
+          node=next((n for n in node_map['nodes'] if n.get('node_id')==node_id),None)
+          print('node_snapshot='+json.dumps(node,ensure_ascii=False,sort_keys=True))
+          if node is None:
+              raise SystemExit('node_missing')
+          if node.get('status')!='online':
+              raise SystemExit('node_not_online:'+str(node.get('status')))
+          if not node.get('last_heartbeat_at'):
+              raise SystemExit('heartbeat_missing')
 
-node_map=NodeRegistry().node_map()
-node=next((n for n in node_map['nodes'] if n.get('node_id')==node_id),None)
-print('node_snapshot='+json.dumps(node,ensure_ascii=False,sort_keys=True))
-if node is None:
-    raise SystemExit('node_missing')
-if node.get('status')!='online':
-    raise SystemExit('node_not_online:'+str(node.get('status')))
-if not node.get('last_heartbeat_at'):
-    raise SystemExit('heartbeat_missing')
-
-task_id='probe-dqa03backup-'+str(int(time.time()))
-task={
-  'schema':'agentos.node-task/v0.1',
-  'task_id':task_id,
-  'action':'shell.exec',
-  'executable':'python3',
-  'argv':['-c','import json,platform,socket; print(json.dumps({"hostname":socket.gethostname(),"platform":platform.system(),"python":platform.python_version()}))'],
-  'cwd':'/home/dqa03',
-  'timeout_seconds':15,
-  'cognition_ids_used':[],
-}
-store=RealmFabricStore()
-store.queue_task(node_id,task)
-print('task_id='+task_id)
-for _ in range(45):
-    r=store.get_receipt(task_id)
-    if r:
-        print('receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True))
-        if r.get('ok') is not True:
-            raise SystemExit('probe_receipt_failed')
-        print('dqa03backup_probe=PASS')
-        raise SystemExit(0)
-    time.sleep(2)
-raise SystemExit('probe_receipt_timeout')
-PY"
+          task_id='probe-dqa03backup-'+str(int(time.time()))
+          task={
+            'schema':'agentos.node-task/v0.1',
+            'task_id':task_id,
+            'action':'shell.exec',
+            'executable':'python3',
+            'argv':['-c','import json,platform,socket; print(json.dumps({"hostname":socket.gethostname(),"platform":platform.system(),"python":platform.python_version()}))'],
+            'cwd':'/home/dqa03',
+            'timeout_seconds':15,
+            'cognition_ids_used':[],
+          }
+          store=RealmFabricStore()
+          store.queue_task(node_id,task)
+          print('task_id='+task_id)
+          for _ in range(45):
+              r=store.get_receipt(task_id)
+              if r:
+                  print('receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True))
+                  if r.get('ok') is not True:
+                      raise SystemExit('probe_receipt_failed')
+                  print('dqa03backup_probe=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('probe_receipt_timeout')
+          PY
