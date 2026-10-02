@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -314,11 +315,14 @@ def install_linux_node_supervisor(*, install_root: Path | None = None, launcher:
     unit.parent.mkdir(parents=True, exist_ok=True)
     root.mkdir(parents=True, exist_ok=True)
     if not client_launcher.exists():
-        return {
-            'schema':'agentos.node-lifecycle/v0.1','platform':'Linux','applicable':True,
-            'supervisor_ready':False,'unit':LINUX_THIN_CLIENT_UNIT,'unit_path':str(unit),
-            'returncode':2,'stderr':'agentos-client launcher missing',
-        }
+        python_bin = Path(sys.executable).resolve()
+        client_launcher.write_text(
+            '#!/usr/bin/env bash\n'
+            + 'set -euo pipefail\n'
+            + f'exec "{python_bin}" -m agentos_node.client_cli "$@"\n',
+            encoding='utf-8',
+        )
+        client_launcher.chmod(0o700)
     payload = f'''[Unit]
 Description=AgentOS Thin Client Node
 After=network-online.target
