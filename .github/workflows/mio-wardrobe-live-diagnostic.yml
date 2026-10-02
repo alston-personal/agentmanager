@@ -12,7 +12,7 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 8
     env:
       ORACLE_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -22,35 +22,91 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect current production wardrobe
+      - name: Exercise corrected innerwear layer live
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           out="$(mktemp)"
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE' || true
-          set -u
-          echo '=== runtime ==='
-          echo "live=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current 2>/dev/null || true)"
-          ss -H -ltnp 'sport = :3000' || true
-          pid="$(ss -H -ltnp 'sport = :3000' 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
-          if [[ "$pid" =~ ^[0-9]+$ ]]; then echo "pid=$pid cwd=$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"; fi
-          systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID --no-pager || true
-          echo '=== routes ==='
-          for spec in '/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001' '/dashboard/api/wardrobe/tryon/render' '/dashboard/api/wardrobe/intake'; do
-            code="$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 6 "http://127.0.0.1:3000$spec" || true)"
-            echo "$code $spec :: $(head -c 220 /tmp/body 2>/dev/null | tr '\n' ' ')"
-          done
-          echo '=== latest jobs ==='
-          find /home/ubuntu/agent-data/projects/dressup-simulator/render_jobs/runtime -maxdepth 1 -type f -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -3 | cut -d' ' -f2- | while read -r j; do
-            python3 - "$j" <<'PY'
-          import json,sys,os
-          j=json.load(open(sys.argv[1],encoding='utf-8'))
-          print(os.path.basename(sys.argv[1]),j.get('status'),j.get('requestedAt'),(j.get('error') or {}).get('message'))
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          ADMIN=/home/ubuntu/.config/milkcat/admin-identities
+          JWT_SECRET_VALUE="$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          for raw in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line: continue
+              k,v=line.split('=',1)
+              if k.strip()=='JWT_SECRET':
+                  print(v.strip().strip('"').strip("'")); break
           PY
+          )"
+          ADMIN_KEY="$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN" | head -n1 | tr -d '\r')"
+          export JWT_SECRET_VALUE ADMIN_KEY
+          TOKEN="$(cd "$LIVE" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          const key=process.env.ADMIN_KEY||'', secret=process.env.JWT_SECRET_VALUE||'';
+          let provider='',subject='',username='e2e-admin'; const marker=':username:';
+          if(key.includes(marker)){const i=key.indexOf(marker);provider=key.slice(0,i);username=key.slice(i+marker.length);subject='e2e-probe-subject';}
+          else {const i=key.indexOf(':');if(i<1)process.exit(3);provider=key.slice(0,i);subject=key.slice(i+1);}
+          process.stdout.write(jwt.sign({username,provider,subject,exp:Math.floor(Date.now()/1000)+900},secret));
+          NODE
+          )"
+          unset JWT_SECRET_VALUE ADMIN_KEY
+          BASE=https://studio.milkcat.org
+          CATALOG=/tmp/mio-innerwear-catalog-$$.json
+          curl --noproxy '*' -k -fsS --resolve studio.milkcat.org:443:127.0.0.1 "$BASE/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001" -o "$CATALOG"
+          python3 - "$CATALOG" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          g=next(x for x in j['garments'] if x['garmentId']=='retail-0d32c8a01cdce500')
+          assert g['slot']=='upper_inner', g
+          print('mio_innerwear_catalog_layer=PASS slot='+g['slot'])
+          PY
+          BODY=/tmp/mio-innerwear-create-$$.json
+          code="$(curl --noproxy '*' -k -sS -o "$BODY" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 -X POST -H 'Content-Type: application/json' -H "Cookie: auth_token=$TOKEN" --data '{"characterId":"sunlake-milkcat-ai-001","view":"front","pose":"neutral_standing","selectedLayers":{"upper_inner":"retail-0d32c8a01cdce500"}}' "$BASE/dashboard/api/wardrobe/tryon/render")"
+          echo "mio_innerwear_create_http=$code"
+          test "$code" = 201
+          JOB_ID="$(python3 - "$BODY" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8')); print(j['jobId'])
+          PY
+          )"
+          OK=0
+          for i in $(seq 1 120); do
+            POLL=/tmp/mio-innerwear-poll-$$.json
+            code="$(curl --noproxy '*' -k -sS -o "$POLL" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 -H "Cookie: auth_token=$TOKEN" "$BASE/dashboard/api/wardrobe/tryon/jobs/$JOB_ID")"
+            test "$code" = 200
+            STATE="$(python3 - "$POLL" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8')).get('status','missing'))
+          PY
+          )"
+            echo "mio_innerwear_state=$STATE poll=$i"
+            if [ "$STATE" = ready ]; then
+              ASSET="$(python3 - "$POLL" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8')); out=j.get('output') or {}
+          assert 'upper_inner' in (out.get('renderedLayers') or []), out
+          print(out['asset'])
+          PY
+          )"
+              IMG=/tmp/mio-innerwear-asset-$$
+              code="$(curl --noproxy '*' -k -sS -o "$IMG" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 -H "Cookie: auth_token=$TOKEN" "$BASE$ASSET")"
+              test "$code" = 200
+              bytes="$(wc -c < "$IMG")"; test "$bytes" -gt 1000
+              echo "mio_innerwear_asset_bytes=$bytes"
+              echo 'mio_innerwear_production_tryon=PASS'
+              OK=1; break
+            fi
+            if [ "$STATE" = failed ]; then cat "$POLL"; break; fi
+            sleep 2
           done
+          test "$OK" -eq 1
           REMOTE
           cat "$out"
-          { echo '### Mio Wardrobe production state'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          { echo '### Mio innerwear production E2E'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
           gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
