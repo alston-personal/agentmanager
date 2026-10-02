@@ -21,4 +21,6 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: python3 scripts/check_no_direct_oracle_runner.py
