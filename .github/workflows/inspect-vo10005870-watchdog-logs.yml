@@ -34,7 +34,7 @@ jobs:
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='inspect-watchdog-logs-20261002-1519'
+          tid='inspect-watchdog-logs-20261002-1522'
           ps=r'''$log=Join-Path $env:LOCALAPPDATA 'AgentOS\watchdog\watchdog.log'
           $state=Join-Path $env:LOCALAPPDATA 'AgentOS\watchdog\state.json'
           $lease=Join-Path $env:USERPROFILE '.agentos\heartbeat-lease.json'
@@ -46,10 +46,14 @@ jobs:
           }
           $logLines=@()
           if(Test-Path $log){$logLines=Get-Content -LiteralPath $log -Tail 80}
+          $stateText=''
+          if(Test-Path $state){$stateText=Get-Content -Raw -LiteralPath $state}
+          $leaseText=''
+          if(Test-Path $lease){$leaseText=Get-Content -Raw -LiteralPath $lease}
           [pscustomobject]@{
             log_lines=$logLines;
-            state=(if(Test-Path $state){Get-Content -Raw -LiteralPath $state}else{''});
-            lease=(if(Test-Path $lease){Get-Content -Raw -LiteralPath $lease}else{''});
+            state=$stateText;
+            lease=$leaseText;
             tasks=$tasks
           } | ConvertTo-Json -Depth 5 -Compress'''
           if f.get_receipt(tid) is None:
