@@ -1,6 +1,6 @@
 # AgentOS Current Architecture & Reality
 
-**Status date:** 2026-08-31  
+**Status date:** 2026-10-02  
 **Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
 
 This document exists to prevent architecture drift between code and prose. It is intentionally narrower than a roadmap: every item marked **Implemented** must have a concrete repository path; every item marked **Verified** must also have a test or evidence path.
@@ -33,7 +33,7 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Governance responsibility resolution | Implemented + tested | `agent_core/governance_directory.py` | `tests/test_governance_directory.py`, governance audit workflow/evidence |
 | Resource registry / world-state lookup | Implemented + tested | `agent_core/resource_registry.py` | `tests/test_resource_registry.py` |
 | Realm / cross-node fabric | Implemented slices + tested | `agent_core/realm_fabric.py`, `agent_core/realm_server.py`, `agent_core/realm_cli.py` | `tests/test_realm_fabric.py`, `.agentos/commands/` |
-| Controller dispatch route | Implemented + live accepted | Realm server / ControllerService path | `.agentos/evidence/issue-64/control-inbox.json`; real Control Inbox acceptance reached ControllerService |
+| Controller dispatch route | Implemented + tested; capability-first selection candidate | `agent_core/controller_service.py`, Realm server `/v1/controller/dispatch` | `tests/test_controller_service.py`; historical Control Inbox evidence proves the route, while capability-auto routing still requires post-merge live acceptance |
 | Core deployment authority / generation fence | Implemented + live accepted | governed claim/install/release path, Action Relay deployment fence | `docs/CORE_DEPLOYMENT_AUTHORITY.md`, active-lease conflict proof, Issue #64 acceptance |
 | Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
 | Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
@@ -148,6 +148,14 @@ The canonical Windows onboarding entry point is `install-agentos.cmd`, backed by
 A fresh machine may require one Realm enrollment approval. That approval is the intentional trust boundary: the installer displays the bounded enrollment code and waits for approval, then continues automatically in the same invocation. It must not require a second installer run merely to enable autostart. A machine with an existing `state/client.json` must preserve that identity and token, skip re-enrollment, repair/restart the background task, and proceed directly to readiness verification.
 
 Acceptance is end-to-end rather than file-copy success. The installer only reports `AGENTOS_ONE_CLICK_INSTALL=PASS` after the background Thin Client remains running and `agentos-client verify` succeeds against ONE. The installer may auto-install Python through winget when Python is absent, but Windows Store App Execution Alias stubs are not accepted as a valid interpreter.
+
+## Capability-first dispatch ingress
+
+As of 2026-10-02, the ControllerService source contract no longer requires normal callers to provide a concrete node identifier. A caller may submit only an action/capability. ONE then considers online nodes advertising that capability and deterministically prefers lower pending queue depth, then fresher heartbeat, then stable node ID. Explicit `node_id` targeting remains available for diagnostics, conformance, break-glass recovery, or work whose semantics truly require a specific physical target.
+
+This is an implemented and source-tested scheduling step, not yet proof that all production workflows use it. A large grandfathered set of GitHub workflows still encodes `runs-on: [self-hosted, Linux, ARM64, oracle]`; `.agentos/governance/main-legacy-direct-oracle-workflows.txt` is therefore a retirement list, not evidence that migration is complete. New direct-Oracle workflow paths are rejected by `Main Runner Window Guard`.
+
+The canonical caller rule is documented in `docs/DISPATCH_INGRESS.md`: GitHub Actions is an ingress/transport and must not become the scheduler. The target runtime topology is caller → ONE dispatch ingress → capability/policy/load selection → Participant/Node/Executor → correlated receipt. Full production acceptance still requires migrating representative legacy workflows and proving that unrelated jobs no longer block one another merely because they historically shared an Oracle runner label.
 
 ## Realm Node Map and capability semantics
 
