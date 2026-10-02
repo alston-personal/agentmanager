@@ -1,16 +1,14 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "vopc5750-service-control-probe-20261002-0941",
+  "nonce": "uia-edge-tree-20261002-0937",
   "action": "shell.exec",
   "payload": {
-    "executable": "powershell",
+    "executable": "python",
     "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='Stop'; $s=Get-Service -ComputerName VOPC5750 -Name Schedule; $s | Select-Object MachineName,Name,Status,StartType | ConvertTo-Json -Compress"
+      "-c",
+      "from pywinauto import Desktop; import json; rows=[]; d=Desktop(backend='uia');\nfor w in d.windows():\n t=(w.window_text() or '')[:200]\n if 'Edge' in t or 'Gemini' in t or 'Threads' in t:\n  try:\n   for c in w.descendants()[:1200]:\n    txt=(c.window_text() or '').strip(); ct=getattr(c.element_info,'control_type',None); aid=getattr(c.element_info,'automation_id',None)\n    if txt or aid: rows.append({'win':t,'text':txt[:180],'type':ct,'automation_id':str(aid or '')[:120]})\n  except Exception as e: rows.append({'win':t,'error':str(e)})\nprint(json.dumps(rows[-180:],ensure_ascii=False))"
     ],
-    "timeout_seconds": 12
+    "timeout_seconds": 60
   }
 }
