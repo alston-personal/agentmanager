@@ -1,0 +1,105 @@
+name: OTA VO10005870 Runtime Supervisor
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/ota-vo10005870-runtime-supervisor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SOURCE_COMMIT: 16c13ac8979fb3434f04a0b2f6f75f66e173e7f5
+      TOOL_COMMIT: bcc45ae48f5cd89b8932a6d4af8474a6cae567aa
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Stage candidate and wait for activator
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$SOURCE_COMMIT" "$TOOL_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          source_commit="$1"
+          tool_commit="$2"
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - "$source_commit" "$tool_commit" <<'PY'
+          import re,sys,time,json
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          source,tool=sys.argv[1:3]
+          assert re.fullmatch(r'[0-9a-f]{40}',source)
+          assert re.fullmatch(r'[0-9a-f]{40}',tool)
+          ps=f'''$p=Join-Path $env:TEMP 'agentos-transactional-ota.ps1'; Invoke-WebRequest -UseBasicParsing -Headers @{{'Cache-Control'='no-cache'}} -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota.ps1' -OutFile $p; & $p -SourceCommit '{source}' -ToolCommit '{tool}' '''
+          tid='ota-stage-VO10005870-20261002-1708'
+          f=RealmFabricStore()
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':120,'cognition_ids_used':['demo://transactional-ota/20261002']})
+          for _ in range(80):
+              r=f.get_receipt(tid)
+              if r:
+                  print('STAGE='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  out=str(r.get('stdout') or '')
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0 and 'agentos_ota_controller_acceptance=PENDING' in out,r
+                  break
+              time.sleep(2)
+          else: raise SystemExit('ota_stage_receipt_timeout')
+          PY
+          REMOTE
+
+      - name: Accept activated candidate
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$SOURCE_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - "$1" <<'PY'
+          import sys,json
+          from agent_core.runtime_ota_acceptance import accept_candidate
+          source=sys.argv[1]
+          r=accept_candidate('VO10005870',source,timeout_seconds=150)
+          print('ACCEPT='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+          assert r.get('ok') is True,r
+          PY
+          REMOTE
+
+      - name: Finalize accepted candidate
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$SOURCE_COMMIT" "$TOOL_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - "$1" "$2" <<'PY'
+          import sys,time,json
+          from agent_core.realm_fabric import RealmFabricStore
+          source,tool=sys.argv[1:3]
+          ps=f'''$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Headers @{{'Cache-Control'='no-cache'}} -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota_finalize.ps1' -OutFile $p; & $p -Action accept'''
+          tid='ota-finalize-VO10005870-20261002-1708'
+          f=RealmFabricStore()
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':['demo://transactional-ota/20261002']})
+          for _ in range(50):
+              r=f.get_receipt(tid)
+              if r:
+                  print('FINALIZE='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and 'agentos_ota_finalize=PASS' in str(r.get('stdout') or ''),r
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('ota_finalize_receipt_timeout')
+          PY
+          REMOTE
