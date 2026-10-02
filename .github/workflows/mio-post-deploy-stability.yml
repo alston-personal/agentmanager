@@ -42,7 +42,9 @@ jobs:
             sleep 2
           done
           code=$(curl -sS -o /tmp/mio-cat -w '%{http_code}' --max-time 5 'http://127.0.0.1:3000/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001' || true)
-          echo "catalog_http=$code"
+          echo "catalog_dashboard_http=$code"
+          code2=$(curl -sS -o /tmp/mio-cat2 -w '%{http_code}' --max-time 5 'http://127.0.0.1:3000/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001' || true)
+          echo "catalog_root_http=$code2"
           REMOTE
           cat "$out"
           { echo '### Mio post-deploy stability'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
