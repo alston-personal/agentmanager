@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.executor-reconcile",
   "node_id": "vopc5750",
-  "nonce": "executor-reconcile-after-local-start-20261002-1152"
+  "nonce": "executor-reconcile-after-realm-core-repair-20261002-1200"
 }
