@@ -34,26 +34,8 @@ jobs:
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='targeted-gemini-uia-probe-20261002-1346'
-          code=r"""import sys,json
-sys.stdout.reconfigure(encoding='utf-8')
-from pywinauto import Desktop
-w=Desktop(backend='uia').window(handle=1117002)
-result={'title':w.window_text()}
-for name in ('傳送訊息','下載原尺寸圖片'):
-    c=w.child_window(title=name, control_type='Button')
-    result[name]={'exists':bool(c.exists(timeout=2))}
-edits=[]
-for i in range(6):
-    c=w.child_window(control_type='Edit', found_index=i)
-    if not c.exists(timeout=1):
-        break
-    try:
-        edits.append({'index':i,'text':c.window_text(),'automation_id':str(c.element_info.automation_id or '')})
-    except Exception as e:
-        edits.append({'index':i,'error':str(e)})
-result['edits']=edits
-print(json.dumps(result,ensure_ascii=False))"""
+          tid='targeted-gemini-uia-probe-20261002-1348'
+          code="import sys,json\nsys.stdout.reconfigure(encoding='utf-8')\nfrom pywinauto import Desktop\nw=Desktop(backend='uia').window(handle=1117002)\nresult={'title':w.window_text()}\nfor name in ('傳送訊息','下載原尺寸圖片'):\n    c=w.child_window(title=name, control_type='Button')\n    result[name]={'exists':bool(c.exists(timeout=2))}\nedits=[]\nfor i in range(6):\n    c=w.child_window(control_type='Edit', found_index=i)\n    if not c.exists(timeout=1):\n        break\n    try:\n        edits.append({'index':i,'text':c.window_text(),'automation_id':str(c.element_info.automation_id or '')})\n    except Exception as e:\n        edits.append({'index':i,'error':str(e)})\nresult['edits']=edits\nprint(json.dumps(result,ensure_ascii=False))"
           if f.get_receipt(tid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
