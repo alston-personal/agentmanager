@@ -157,6 +157,23 @@ As of the 2026-10-02 live Oracle nginx audit, the TLS server for `studio.milkcat
 
 The legacy Action Relay capability `site.sync_build` is retired from mutation authority and now fails closed rather than fetching/building Zeus Writer. Production publication from `studio-web` must use the governed Studio Web release path. A future nginx-root migration is a separate change and must preserve the route ownership matrix and independent aliases/proxies.
 
+## Participant runtime enrollment
+
+As of 2026-10-02, Participant Protocol enrollment is implemented as a generic ONE runtime surface rather than documentation-only guidance. The first runtime slice supports hosted or direct Participants without provider-specific Core logic.
+
+Implemented endpoints:
+
+- `POST /v1/participants/join/request`
+- `POST /v1/participants/join/status`
+- `POST /v1/participants/join/claim`
+- `GET /v1/participants/describe?participant_id=...` with Participant bearer credential
+
+ONE negotiates the highest common supported Participant Protocol version from the currently supported set (`1.0`). Enrollment uses a pending request + operator approval + claim flow. Operator approval is available through `agentos-one participant-approve --code ...`. Claimed enrollment records stable Participant identity separately from `host_runtime_id` and issues a Participant credential to the Host Runtime.
+
+Enrollment/negotiation may advance a Participant to A3 only. Core conformance, capability verification, ONE-routed execution, correlated receipts, and A7 READY remain separate runtime work and must not be inferred from successful enrollment. Missing required v1.0 methods (for example `shutdown`) are preserved explicitly after enrollment.
+
+The first Gemini Web experiment remains A0 until the new runtime surface is deployed and a Host Runtime submits/claims a real enrollment request. This implementation is generic and must be reused by future model, Agent, service, browser, and Executor Participants.
+
 ## Capability-first dispatch ingress
 
 As of 2026-10-02, the ControllerService source contract no longer requires normal callers to provide a concrete node identifier. A caller may submit only an action/capability. ONE then considers online nodes advertising that capability and deterministically prefers lower pending queue depth, then fresher heartbeat, then stable node ID. Explicit `node_id` targeting remains available for diagnostics, conformance, break-glass recovery, or work whose semantics truly require a specific physical target.

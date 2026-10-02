@@ -6,6 +6,7 @@ from pathlib import Path
 
 from agent_core.node_registry import NodeRegistry
 from agent_core.realm_fabric import RealmFabricStore
+from agent_core.participant_registry import ParticipantRegistry
 from agent_core.realm_server import serve
 
 
@@ -27,6 +28,11 @@ def main() -> int:
     p_approve = sub.add_parser('approve')
     p_approve.add_argument('--code', required=True, help='device enrollment user code, e.g. ABCD-2345')
 
+    p_participant_approve = sub.add_parser('participant-approve')
+    p_participant_approve.add_argument('--code', required=True, help='Participant enrollment user code')
+
+    sub.add_parser('participants')
+
     p_serve = sub.add_parser('serve')
     p_serve.add_argument('--host', default='127.0.0.1')
     p_serve.add_argument('--port', type=int, default=8780)
@@ -42,6 +48,7 @@ def main() -> int:
 
     args = parser.parse_args()
     fabric = RealmFabricStore()
+    participants = ParticipantRegistry()
 
     if args.command == 'init':
         _print(fabric.initialize_realm(args.realm_id))
@@ -49,6 +56,18 @@ def main() -> int:
         _print(fabric.create_invite(expires_minutes=args.minutes, label=args.label))
     elif args.command == 'approve':
         _print(fabric.approve_join(args.code))
+    elif args.command == 'participant-approve':
+        _print(participants.approve_join(args.code))
+    elif args.command == 'participants':
+        data = participants.load()
+        _print({
+            'schema': data['schema'],
+            'supported_protocol_versions': data['supported_protocol_versions'],
+            'participants': [
+                {k: v for k, v in entry.items() if k != 'token_hash'}
+                for entry in data['participants'].values()
+            ],
+        })
     elif args.command == 'serve':
         serve(host=args.host, port=args.port, fabric=fabric)
     elif args.command == 'task':

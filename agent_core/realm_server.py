@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from agent_core.controller_service import ControllerService
 from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
 from agent_core.node_registry import NodeRegistry
+from agent_core.participant_registry import ParticipantRegistry
 from agent_core.realm_fabric import RealmFabricStore
 from agent_core.resolve_facade import resolve_continuation
 
@@ -82,6 +83,10 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
     @property
     def fabric(self) -> RealmFabricStore:
         return self.server.fabric  # type: ignore[attr-defined]
+
+    @property
+    def participants(self) -> ParticipantRegistry:
+        return self.server.participants  # type: ignore[attr-defined]
 
     def log_message(self, fmt: str, *args: Any) -> None:
         return super().log_message(fmt, *args)
@@ -162,6 +167,12 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     time.sleep(0.05)
                 self._send(200, {'ok': True, 'tasks': tasks, 'waited': wait_seconds > 0})
                 return
+            if parsed.path == '/v1/participants/describe':
+                query = parse_qs(parsed.query)
+                participant_id = (query.get('participant_id') or [''])[0]
+                token = self._bearer()
+                self._send(200, {'ok': True, **self.participants.describe(participant_id, token)})
+                return
             if parsed.path == '/v1/bootstrap':
                 query = parse_qs(parsed.query)
                 node_id = (query.get('node_id') or [''])[0]
@@ -175,6 +186,31 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         try:
+            if self.path == '/v1/participants/join/request':
+                body = self._json_body()
+                result = self.participants.request_join(
+                    manifest=dict(body.get('manifest') or {}),
+                    host_runtime_id=str(body.get('host_runtime_id') or ''),
+                    expires_minutes=int(body.get('expires_minutes') or 10),
+                )
+                self._send(200, {'ok': True, **result})
+                return
+            if self.path == '/v1/participants/join/status':
+                body = self._json_body()
+                result = self.participants.join_status(
+                    request_id=str(body.get('request_id') or ''),
+                    claim_secret=str(body.get('claim_secret') or ''),
+                )
+                self._send(200, {'ok': True, **result})
+                return
+            if self.path == '/v1/participants/join/claim':
+                body = self._json_body()
+                result = self.participants.claim_join(
+                    request_id=str(body.get('request_id') or ''),
+                    claim_secret=str(body.get('claim_secret') or ''),
+                )
+                self._send(200, {'ok': True, **result})
+                return
             if self.path == '/v1/join/request':
                 body = self._json_body()
                 result = self.fabric.request_join(
@@ -256,9 +292,10 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
 
 
 class RealmHTTPServer(ThreadingHTTPServer):
-    def __init__(self, address: tuple[str, int], fabric: RealmFabricStore):
+    def __init__(self, address: tuple[str, int], fabric: RealmFabricStore, participants: ParticipantRegistry | None = None):
         super().__init__(address, RealmRequestHandler)
         self.fabric = fabric
+        self.participants = participants or ParticipantRegistry()
 
 
 def serve(*, host: str = '127.0.0.1', port: int = 8780, fabric: RealmFabricStore | None = None) -> None:
