@@ -34,11 +34,14 @@ jobs:
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='deploy-inspect-watchdog-20261002-1424'
+          tid='deploy-inspect-watchdog-20261002-1427'
           ps=r'''$ErrorActionPreference='Stop'
           $dst=Join-Path $env:LOCALAPPDATA 'AgentOS\scripts\thin_client_watchdog.ps1'
-          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/fix/windows-thin-client-watchdog/scripts/windows/thin_client_watchdog.ps1' -OutFile $dst
+          $tmp=$dst+'.new'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/fix/windows-thin-client-watchdog/scripts/windows/thin_client_watchdog.ps1' -OutFile $tmp
           Stop-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Move-Item -Force -LiteralPath $tmp -Destination $dst
           Start-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog'
           $old=Join-Path $env:USERPROFILE '.agentos\heartbeat-lease.json'
           $new=Join-Path $env:LOCALAPPDATA 'AgentOS\state\heartbeat-lease.json'
