@@ -1,0 +1,67 @@
+name: Diagnose ONE Upstream Precisely
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/diagnose-one-upstream-precisely.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Realm upstream and runaway builders
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -u
+          echo '=== 8780 DIRECT HEALTH x10 ==='
+          for i in $(seq 1 10); do
+            printf '%s ' "$(date -u +%FT%TZ)"
+            curl -sS -o /tmp/aos-health.$$ -w 'http=%{http_code} time=%{time_total}\n' --max-time 3 http://127.0.0.1:8780/v1/health || true
+            head -c 240 /tmp/aos-health.$$ 2>/dev/null || true
+            echo
+            sleep 1
+          done
+          rm -f /tmp/aos-health.$$
+
+          echo '=== DASHBOARD UNIT ==='
+          systemctl --user status agentos-dashboard.service --no-pager -l || true
+          systemctl --user cat agentos-dashboard.service || true
+
+          echo '=== REALM/8780 PROCESS ==='
+          pids=$(ss -ltnp 2>/dev/null | sed -n 's/.*127\.0\.0\.1:8780.*pid=\([0-9]*\).*/\1/p' | sort -u)
+          for p in $pids; do
+            echo "--- PID $p"
+            ps -fp "$p" || true
+            cat "/proc/$p/cgroup" 2>/dev/null || true
+            tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null || true
+            echo
+          done
+
+          echo '=== GATEWAY/REALM LOGS 07:36-07:41 UTC ==='
+          journalctl --user --since '2026-10-02 07:36:00 UTC' --until '2026-10-02 07:41:30 UTC' --no-pager -u agentos-dashboard.service || true
+          journalctl --user --since '2026-10-02 07:36:00 UTC' --until '2026-10-02 07:41:30 UTC' --no-pager | grep -Ei 'realm|8780|gateway|502|bad gateway|upstream|agentos-dashboard' | tail -n 350 || true
+
+          echo '=== RUNAWAY BUILD PROCESSES ==='
+          ps -eo pid,ppid,%cpu,%mem,etime,lstart,cmd | grep -E 'pip/_vendor/pyproject_hooks/_in_process/_in_process.py|get_requires_for_build_wheel' | grep -v grep || true
+          for p in $(pgrep -f 'pip/_vendor/pyproject_hooks/_in_process/_in_process.py get_requires_for_build_wheel' || true); do
+            echo "--- BUILD PID $p"
+            ps -o pid,ppid,pgid,sid,%cpu,%mem,etime,lstart,cmd -p "$p" || true
+            pp=$(ps -o ppid= -p "$p" | tr -d ' ')
+            [ -n "$pp" ] && ps -o pid,ppid,pgid,sid,%cpu,%mem,etime,lstart,cmd -p "$pp" || true
+            cat "/proc/$p/cgroup" 2>/dev/null || true
+          done
+          REMOTE
