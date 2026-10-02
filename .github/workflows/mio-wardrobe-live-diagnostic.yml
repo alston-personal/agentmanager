@@ -3,8 +3,7 @@ name: Mio Wardrobe Live Diagnostic
 on:
   pull_request:
     branches: [core/integration]
-    paths:
-      - '.github/workflows/mio-wardrobe-live-diagnostic.yml'
+    paths: ['.github/workflows/mio-wardrobe-live-diagnostic.yml']
 
 permissions:
   contents: read
@@ -13,7 +12,7 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 4
     env:
       ORACLE_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -23,7 +22,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect live wardrobe try-on path
+      - name: Inspect route ownership
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -32,60 +31,35 @@ jobs:
           out="$(mktemp)"
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE' || true
           set -u
-          echo '=== host/time ==='
-          hostname; date -Is; uptime
-          echo '=== route probes ==='
-          for url in \
-            'https://studio.milkcat.org/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001' \
-            'https://studio.milkcat.org/dashboard/api/wardrobe/tryon/render' \
-            'https://studio.milkcat.org/dashboard/api/auth/session'
-          do
-            code="$(curl -ksS -o /tmp/mio-probe-body -w '%{http_code}' --max-time 12 "$url" || true)"
-            echo "$code $url"
-            head -c 300 /tmp/mio-probe-body 2>/dev/null | tr '\n' ' '; echo
+          echo '=== port 3000 owner ==='
+          ss -ltnp '( sport = :3000 )' || true
+          pids="$(fuser 3000/tcp 2>/dev/null || true)"
+          for pid in $pids; do
+            echo "PID=$pid"
+            ps -fp "$pid" || true
+            echo -n 'cwd='; readlink -f "/proc/$pid/cwd" || true
+            echo -n 'cmd='; tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null; echo
+            echo -n 'cgroup='; cat "/proc/$pid/cgroup" 2>/dev/null | tr '\n' ' '; echo
           done
-          echo '=== services ==='
-          systemctl --no-pager --type=service --all 2>/dev/null | grep -Ei 'agentos|studio|dashboard|wardrobe|try.?on|render' | head -100 || true
-          systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'agentos|studio|dashboard|wardrobe|try.?on|render' | head -100 || true
-          echo '=== dashboard unit/process ==='
-          systemctl --user cat agentos-dashboard.service 2>/dev/null || systemctl cat agentos-dashboard.service 2>/dev/null || true
-          dashpid="$(systemctl --user show agentos-dashboard.service -p MainPID --value 2>/dev/null || true)"
-          if [ -n "$dashpid" ] && [ "$dashpid" != "0" ]; then
-            echo "dashboard_pid=$dashpid"
-            readlink -f "/proc/$dashpid/cwd" || true
-            tr '\0' ' ' < "/proc/$dashpid/cmdline" 2>/dev/null; echo
-          fi
-          echo '=== tryon worker unit/process ==='
-          systemctl --user cat agentos-mio-tryon-render-worker.service 2>/dev/null || systemctl cat agentos-mio-tryon-render-worker.service 2>/dev/null || true
-          trypid="$(systemctl --user show agentos-mio-tryon-render-worker.service -p MainPID --value 2>/dev/null || true)"
-          if [ -n "$trypid" ] && [ "$trypid" != "0" ]; then
-            echo "tryon_pid=$trypid"
-            readlink -f "/proc/$trypid/cwd" || true
-            tr '\0' ' ' < "/proc/$trypid/cmdline" 2>/dev/null; echo
-          fi
-          echo '=== local dashboard probes ==='
-          for port in 3000 3001 3100 3200 4321 8787; do
-            code="$(curl -sS -o /tmp/mio-local -w '%{http_code}' --max-time 2 "http://127.0.0.1:$port/dashboard/api/wardrobe/tryon/render" || true)"
-            if [ "$code" != "000" ]; then echo "$port $code $(head -c 180 /tmp/mio-local | tr '\n' ' ')"; fi
-          done
-          echo '=== dashboard errors ==='
-          tail -n 200 /home/ubuntu/.pm2/logs/agentos-dashboard-error.log 2>/dev/null || true
-          journalctl --user -u agentos-dashboard.service --since '3 hours ago' --no-pager 2>/dev/null | tail -n 200 || true
-          echo '=== source hits ==='
-          for root in /home/ubuntu/agentmanager /home/ubuntu/agent-data /opt /srv /var/www; do
+          echo '=== pm2 ==='
+          command -v pm2 >/dev/null && pm2 jlist 2>/dev/null | python3 -c 'import json,sys; a=json.load(sys.stdin); print([{"name":x.get("name"),"pid":x.get("pid"),"cwd":x.get("pm2_env",{}).get("pm_cwd"),"status":x.get("pm2_env",{}).get("status")} for x in a])' || true
+          echo '=== dashboard unit ==='
+          systemctl --user cat agentos-dashboard.service 2>/dev/null || true
+          systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p ExecMainStartTimestamp -p FragmentPath 2>/dev/null || true
+          echo '=== route files in dashboard cwd/repo ==='
+          for root in /home/ubuntu/agentmanager/dashboard /home/ubuntu/agentmanager/apps /home/ubuntu/agentmanager /home/ubuntu/dashboard; do
             [ -d "$root" ] || continue
-            timeout 10s grep -RIl --exclude-dir=.git --exclude-dir=node_modules --exclude='*.log' -E 'wardrobe/tryon/render|tryon-render-job|renderer_failed|ready_for_tryon' "$root" 2>/dev/null | head -30 || true
-          done | sort -u
-          echo '=== recent evidence ==='
-          journalctl --since '8 hours ago' --no-pager 2>/dev/null | grep -Ei 'wardrobe|try.?on|renderer|render job|provider|hugging|replicate|fal|image.*generation' | tail -220 || true
-          echo 'mio_wardrobe_live_diagnostic=PASS'
+            echo "ROOT=$root"
+            timeout 8s find "$root" -maxdepth 8 -type f 2>/dev/null | grep -E '/(api/)?wardrobe/|tryon|auth-handoff' | head -80 || true
+          done
+          echo '=== exact route text ==='
+          timeout 10s grep -RIn --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.next -E 'wardrobe/(catalog|tryon|auth-handoff)|mio-tryon-render' /home/ubuntu/agentmanager 2>/dev/null | head -120 || true
+          echo '=== live probes ==='
+          for path in /dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001 /dashboard/api/wardrobe/tryon/render /dashboard/api/wardrobe/auth-handoff?action=start /dashboard/api/auth/session; do
+            code="$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 5 "http://127.0.0.1:3000$path" || true)"
+            echo "$code $path :: $(head -c 220 /tmp/body 2>/dev/null | tr '\n' ' ')"
+          done
           REMOTE
           cat "$out"
-          {
-            echo '### Mio Wardrobe live diagnostic'
-            echo
-            echo '```text'
-            tail -n 450 "$out"
-            echo '```'
-          } > /tmp/diag-comment.md
-          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag-comment.md
+          { echo '### Mio Wardrobe route ownership'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
