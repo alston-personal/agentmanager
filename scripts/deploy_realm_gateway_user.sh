@@ -293,37 +293,53 @@ PY
 }
 
 TMP=$(mktemp -d)
-BACKUP="$TMP/route.backup"
+STAGE="$TMP/dashboard-stage"
+BACKUP_ROUTE="$TMP/route.backup"
+BACKUP_NEXT="$TMP/next.backup"
 HAD_ROUTE=0
+HAD_NEXT=0
+CUTOVER_STARTED=0
+
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
 
 if [ -f "$ROUTE" ]; then
-  cp "$ROUTE" "$BACKUP"
+  cp "$ROUTE" "$BACKUP_ROUTE"
   HAD_ROUTE=1
 fi
 
+# Build away from the canonical runtime. The live Next server must continue
+# serving port 3000 while the new generation compiles.
+cp -a "$DASH" "$STAGE"
+rm -rf "$STAGE/.next"
+STAGE_ROUTE="$STAGE/app/api/agentos/[...path]/route.ts"
+mkdir -p "$(dirname "$STAGE_ROUTE")"
+git -C "$REPO" show "$SOURCE_COMMIT:$ROUTE_REL" > "$STAGE_ROUTE"
+chmod 0664 "$STAGE_ROUTE" || true
+
 rollback() {
   set +e
-  if [ "$HAD_ROUTE" = 1 ]; then
-    mkdir -p "$(dirname "$ROUTE")"
-    cp "$BACKUP" "$ROUTE"
-  else
-    rm -f "$ROUTE"
+  if [ "$CUTOVER_STARTED" = 1 ]; then
+    systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
+    rm -rf "$DASH/.next"
+    if [ "$HAD_NEXT" = 1 ] && [ -d "$BACKUP_NEXT" ]; then
+      mv "$BACKUP_NEXT" "$DASH/.next"
+    fi
+    if [ "$HAD_ROUTE" = 1 ]; then
+      mkdir -p "$(dirname "$ROUTE")"
+      cp "$BACKUP_ROUTE" "$ROUTE"
+    else
+      rm -f "$ROUTE"
+    fi
+    restart_dashboard >/tmp/agentos-realm-gateway-rollback-restart.log 2>&1 || true
   fi
-  (cd "$DASH" && npm run build >/tmp/agentos-realm-gateway-rollback-build.log 2>&1)
-  restart_dashboard >/tmp/agentos-realm-gateway-rollback-restart.log 2>&1 || true
   set -e
 }
 
 trap 'rc=$?; if [ $rc -ne 0 ]; then rollback; fi; cleanup; exit $rc' EXIT
 
-mkdir -p "$(dirname "$ROUTE")"
-git -C "$REPO" show "$SOURCE_COMMIT:$ROUTE_REL" > "$ROUTE"
-chmod 0664 "$ROUTE" || true
-
 echo "route_source=$SOURCE_COMMIT:$ROUTE_REL"
-python3 - "$ROUTE" <<'PY'
+python3 - "$STAGE_ROUTE" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1])
@@ -351,23 +367,33 @@ if ! printf '%s' "$LOCAL_BODY" | grep -q 'agentos.one-health/v0.1' || ! printf '
 fi
 echo "local_realm_health=PASS"
 
-# The canonical systemd runtime must not read the same .next tree while it is
-# being destroyed/rebuilt. An explicit stop does not trigger Restart=always.
-systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
-echo "dashboard_canonical_runtime_stopped_for_build=PASS"
-
-rm -rf "$DASH/.next"
-echo "dashboard_build_cache=CLEARED"
-(cd "$DASH" && npm run build)
+echo "dashboard_staging_build_begin=PASS"
+(cd "$STAGE" && npm run build)
 echo "dashboard_build=PASS"
+echo "dashboard_live_runtime_preserved_during_build=PASS"
 
-if ! grep -R -q '"method".*"path"\|"path".*"method"' "$DASH/.next/server" 2>/dev/null; then
+if ! grep -R -q '"method".*"path"\|"path".*"method"' "$STAGE/.next/server" 2>/dev/null; then
   echo "ERROR: compiled Realm gateway artifact does not contain current diagnostic fields" >&2
   exit 5
 fi
 echo "realm_gateway_compiled_generation=PASS"
 
+# Cutover only after the staged generation is complete. Keep the unavailable
+# window bounded to the directory swap + process restart, never the build.
+CUTOVER_STARTED=1
+systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
+if [ -d "$DASH/.next" ]; then
+  mv "$DASH/.next" "$BACKUP_NEXT"
+  HAD_NEXT=1
+fi
+mv "$STAGE/.next" "$DASH/.next"
+mkdir -p "$(dirname "$ROUTE")"
+cp "$STAGE_ROUTE" "$ROUTE"
+chmod 0664 "$ROUTE" || true
+echo "dashboard_generation_cutover=PASS"
+
 restart_dashboard
+CUTOVER_STARTED=0
 
 for i in $(seq 1 30); do
   if curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null; then break; fi
