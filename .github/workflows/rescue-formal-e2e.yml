@@ -1,0 +1,70 @@
+name: Rescue Formal E2E And Inspect Thin Client
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/rescue-formal-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rescue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Stop recorder and inspect Thin Client log
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+
+          stop_id='formal-e2e-rescue-stop-20261002-1549'
+          if f.get_receipt(stop_id) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':stop_id,
+                  'action':'desktop.demo.stop',
+                  'final_stage':'Formal E2E aborted / daemon restarted',
+                  'cognition_ids_used':['demo://formal-e2e/20261002'],
+              })
+          for _ in range(45):
+              r=f.get_receipt(stop_id)
+              if r is not None:
+                  print('STOP='+json.dumps(r,ensure_ascii=False,separators=(',',':')),flush=True)
+                  break
+              time.sleep(1)
+
+          log_id='formal-e2e-thin-client-log-20261002-1549'
+          ps=r'''$p=Join-Path $env:LOCALAPPDATA 'AgentOS\thin-client.log'
+          if(Test-Path $p){Get-Content -LiteralPath $p -Tail 220}else{Write-Output 'thin-client.log missing'}'''
+          if f.get_receipt(log_id) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':log_id,'action':'shell.exec',
+                  'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,
+                  'cognition_ids_used':['demo://formal-e2e/20261002'],
+              })
+          for _ in range(45):
+              r=f.get_receipt(log_id)
+              if r is not None:
+                  print('LOG='+json.dumps(r,ensure_ascii=False,separators=(',',':')),flush=True)
+                  break
+              time.sleep(1)
+          PY
+          REMOTE
