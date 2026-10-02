@@ -10,6 +10,13 @@ on:
 permissions:
   contents: read
 
+# Temporary bounded carrier until authenticated Realm scheduler ingress replaces SSH.
+# This serializes only the short GitHub-hosted -> Oracle control connection; execution
+# still fans out inside AgentOS to control/social/gui/build workers.
+concurrency:
+  group: agentos-oracle-hosted-ingress
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -89,7 +96,10 @@ jobs:
           set -euo pipefail
           REQUEST_ID="mio-approved-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           PARAMS="$(python3 -c 'import json,os; print(json.dumps({"post_key":os.environ["POST_KEY"]},separators=(",",":")))' )"
-          AGENTOS_RECEIPT_TIMEOUT_SECONDS=780             bash scripts/submit_oracle_bootstrap_request_remote.sh               agentos.social_threads_mio_approved.publish "$REQUEST_ID" "$GITHUB_SHA" "$PARAMS"               > "$RUNNER_TEMP/mio-approved-receipt.json"
+          AGENTOS_SSH_CONNECT_TIMEOUT_SECONDS=25 \
+          AGENTOS_SSH_CONNECTION_ATTEMPTS=3 \
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=780 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh               agentos.social_threads_mio_approved.publish "$REQUEST_ID" "$GITHUB_SHA" "$PARAMS"               > "$RUNNER_TEMP/mio-approved-receipt.json"
 
           python3 - "$RUNNER_TEMP/mio-approved-receipt.json" "$GITHUB_SHA" <<'PY'
           import json,os,sys
