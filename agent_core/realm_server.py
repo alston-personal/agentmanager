@@ -411,6 +411,15 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'galaxy_day1_image_readback=',
                     'galaxy_day1_image_asset=',
                 )
+            elif action == bootstrap_control.ACTION_PROBE_PERSONA_PDCA_RUNTIME:
+                safe_prefixes = (
+                    'persona_pdca_runtime_unit=',
+                    'persona_pdca_runtime_directive=',
+                    'persona_pdca_runtime_file=',
+                    'persona_pdca_runtime_sha256=',
+                    'persona_pdca_runtime_units_found=',
+                    'persona_pdca_runtime_probe=',
+                )
             elif action == bootstrap_control.ACTION_PROBE_OURSONG_PERSONA:
                 safe_prefixes = (
                     'oursong_status=',
