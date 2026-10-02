@@ -63,6 +63,8 @@ jobs:
             'verify-executor-supervisor-runtime-20261002-1632',
             'synthetic-timeout-receipt-20261002-1638',
             'seed-spool-transport-20261002-1638',
+            'verify-receipt-spool-isolation-20261002-1644',
+            'deploy-receipt-spool-isolation-20261002-1644',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
           PY
@@ -107,3 +109,5 @@ jobs:
 # post-spool-isolation-reload-20261002-1656
 
 # bounded-deadline-check-20261002-1657
+
+# include-spool-isolation-task-ids-20261002-1658
