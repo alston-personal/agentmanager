@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 15
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: a7fa83cd24dbb7d171dacf63cbe97f8980317475
+      SOURCE_SHA: 2e20cd20e620b1643c85ebe426466161b3a2264c
     steps:
       - uses: actions/checkout@v4
 
@@ -65,16 +65,18 @@ jobs:
           test -f "$SRC/dist/index.html"
           test -f "$SRC/dist/agentos/join.md"
           test -f "$SRC/dist/agentos/join/index.html"
+          test -f "$SRC/dist/agentos/join.html"
           test -f "$SRC/dist/.well-known/agentos.json"
           grep -Fq 'Milkcat World' "$SRC/dist/index.html"
           grep -Fq '/world/' "$SRC/dist/index.html"
           grep -Fq '# Join AgentOS ONE' "$SRC/dist/agentos/join.md"
           grep -Fq '<title>Join AgentOS ONE</title>' "$SRC/dist/agentos/join/index.html"
-          grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join"' "$SRC/dist/.well-known/agentos.json"
+          grep -Fq '<title>Join AgentOS ONE</title>' "$SRC/dist/agentos/join.html"
+          grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join.html"' "$SRC/dist/.well-known/agentos.json"
 
           test -d "$LIVE"
           mkdir -p "$BACKUP" "$LIVE/agentos" "$LIVE/.well-known"
-          for rel in index.html agentos/join.md agentos/join/index.html .well-known/agentos.json; do
+          for rel in index.html agentos/join.md agentos/join.html agentos/join/index.html .well-known/agentos.json; do
             if [ -f "$LIVE/$rel" ]; then
               mkdir -p "$BACKUP/$(dirname "$rel")"
               cp -a "$LIVE/$rel" "$BACKUP/$rel.previous"
@@ -85,6 +87,7 @@ jobs:
           mv -f "$LIVE/.index-$RUN_ID.html" "$LIVE/index.html"
           install -d "$LIVE/agentos/join"
           install -m 0644 "$SRC/dist/agentos/join.md" "$LIVE/agentos/join.md"
+          install -m 0644 "$SRC/dist/agentos/join.html" "$LIVE/agentos/join.html"
           install -m 0644 "$SRC/dist/agentos/join/index.html" "$LIVE/agentos/join/index.html"
           install -m 0644 "$SRC/dist/.well-known/agentos.json" "$LIVE/.well-known/agentos.json"
 
@@ -100,9 +103,10 @@ jobs:
           }
 
           curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/ | grep -Fq 'Milkcat World' || { rollback; exit 1; }
-          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/agentos/join | grep -Fq '<title>Join AgentOS ONE</title>' || { rollback; exit 1; }
+          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/agentos/join.html | grep -Fq '<title>Join AgentOS ONE</title>' || { rollback; exit 1; }
+          curl -LfsS --retry 4 --retry-delay 2 https://studio.milkcat.org/agentos/join/ | grep -Fq '<title>Join AgentOS ONE</title>' || { rollback; exit 1; }
           curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/agentos/join.md | grep -Fq '# Join AgentOS ONE' || { rollback; exit 1; }
-          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/.well-known/agentos.json | grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join"' || { rollback; exit 1; }
+          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/.well-known/agentos.json | grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join.html"' || { rollback; exit 1; }
 
           echo "studio_web_root_surface_publish=PASS source_sha=$SOURCE_SHA backup=$BACKUP"
           REMOTE
@@ -117,10 +121,10 @@ jobs:
           HTML_JOIN=$(mktemp)
           RAW_JOIN=$(mktemp)
           DISCOVERY=$(mktemp)
-          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/agentos/join?_=$GITHUB_RUN_ID" -o "$HTML_JOIN"
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/agentos/join.html?_=$GITHUB_RUN_ID" -o "$HTML_JOIN"
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/agentos/join.md?_=$GITHUB_RUN_ID" -o "$RAW_JOIN"
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/.well-known/agentos.json?_=$GITHUB_RUN_ID" -o "$DISCOVERY"
           grep -Fq '<title>Join AgentOS ONE</title>' "$HTML_JOIN"
           grep -Fq '# Join AgentOS ONE' "$RAW_JOIN"
-          grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join"' "$DISCOVERY"
+          grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join.html"' "$DISCOVERY"
           echo "public_studio_web_root_surface_acceptance=PASS"
