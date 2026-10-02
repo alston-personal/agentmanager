@@ -1,15 +1,13 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "vopc5750-rpc-management-probe-20261002-1001",
+  "nonce": "uia-edge-tree-utf8-20261002-1102",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
     "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='Continue'; Write-Output ('PROBE_FROM='+$env:COMPUTERNAME); Write-Output '=== RPC TASK QUERY ==='; cmd.exe /c 'schtasks /Query /S VOPC5750 /TN \"AgentOS Thin Client\" /FO LIST /V'; Write-Output ('SCHTASKS_RC='+$LASTEXITCODE); Write-Output '=== WMI/CIM ==='; try {;   $os=Get-CimInstance -ClassName Win32_OperatingSystem -ComputerName VOPC5750 -OperationTimeoutSec 5 -ErrorAction Stop;   Write-Output ('CIM_OK='+$os.CSName+' '+$os.Version); } catch { Write-Output ('CIM_ERR='+$_.Exception.Message) }; Write-Output '=== RPC SERVICE QUERY ==='; cmd.exe /c 'sc.exe \\\\VOPC5750 query schedule'; Write-Output ('SC_RC='+$LASTEXITCODE)"
+      "-c",
+      "import sys; sys.stdout.reconfigure(encoding='utf-8'); from pywinauto import Desktop; import json; rows=[]; d=Desktop(backend='uia');\nfor w in d.windows():\n t=(w.window_text() or '')[:200]\n if 'Edge' in t or 'Gemini' in t or 'Threads' in t:\n  try:\n   for c in w.descendants()[:1200]:\n    txt=(c.window_text() or '').strip(); ct=getattr(c.element_info,'control_type',None); aid=getattr(c.element_info,'automation_id',None)\n    if txt or aid: rows.append({'win':t,'text':txt[:180],'type':ct,'automation_id':str(aid or '')[:120]})\n  except Exception as e: rows.append({'win':t,'error':str(e)})\nprint(json.dumps(rows[-220:],ensure_ascii=False))"
     ],
     "timeout_seconds": 30
   }
