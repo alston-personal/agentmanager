@@ -40,6 +40,13 @@ class ActionRelayTests(unittest.TestCase):
         self.assertEqual(receipt["marker"], "called")
         self.assertEqual(receipt["capsule_id"], capsule["capsule_id"])
 
+    def test_legacy_site_sync_build_fails_closed_after_studio_web_authority_move(self):
+        result = ACTIONS["site.sync_build"]({"site": "studio.milkcat.org"})
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["blocked"])
+        self.assertEqual(result["reason"], "legacy_zeus_writer_site_authority_retired")
+        self.assertEqual(result["canonical_source_repository"], "alston-personal/studio-web")
+
     @patch("agentos_node.action_relay._share", lambda *args, **kwargs: None)
     def test_digest_tampering_is_rejected(self):
         client = ActionRelayClient(self.root)
