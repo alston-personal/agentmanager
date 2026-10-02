@@ -80,6 +80,101 @@ class ObservationContract(unittest.TestCase):
         return {'id': rid, 'username': 'reader', 'text': '測試留言',
                 'timestamp': (self.now - timedelta(minutes=5)).isoformat(), **extra}
 
+    def creative_tick(self, state=None, phase='afternoon', config=None, selected='content_ideation'):
+        self.write('pdca/state.json',state or {**self.state,'pending_external_actions':[]})
+        if config is not None: self.write('pdca/config.json',config)
+        with patch.object(self.tick,'local_phase',return_value=phase), \
+             patch.object(self.tick.random.Random,'choices',return_value=[selected]), \
+             patch.object(sys,'argv',['tick','--persona-dir',str(self.root),
+                                     '--receipt-out',str(self.root/'tick.json')]):
+            with contextlib.redirect_stdout(io.StringIO()): self.assertEqual(self.tick.main(),0)
+        return self.read('tick.json')
+
+    def test_due_read_keeps_creative_choice_and_both_intents(self):
+        receipt=self.creative_tick()
+        self.assertEqual(receipt['plan']['selected_intent'],'content_ideation')
+        self.assertEqual(receipt['do']['status'],'completed_internal')
+        self.assertTrue(receipt['plan']['social_observation']['due'])
+        pending=self.read('pdca/state.json')['pending_external_actions']
+        self.assertEqual([x['capability'] for x in pending],
+                         ['social.post.consider','social.threads.observe'])
+        self.assertEqual(receipt['act']['observation_candidate']['cycle'],11)
+        self.assertFalse(receipt['check']['external_action_completed'])
+        self.assertAlmostEqual(receipt['check']['energy_after'],68.8)
+
+    def test_successful_read_is_scheduled_before_next_heartbeat_would_expire(self):
+        state={**self.state,'pending_external_actions':[], 'last_social_observation':{
+            'read_status':'PASS','receipt_ref':'pdca/social_receipts/pass.json',
+            'observed_at':(self.now-timedelta(minutes=10)).isoformat()}}
+        plan=self.tick.social_observation_plan({'heartbeat_minutes':60},state,'afternoon',72,self.now)
+        self.assertTrue(plan['due'])
+        plan=self.tick.social_observation_plan({'heartbeat_minutes':60,
+            'social_observation':{'max_age_minutes':120}},state,'afternoon',72,self.now)
+        self.assertFalse(plan['due'])
+        self.assertEqual(plan['reason'],'successful_read_fresh')
+
+    def test_due_planning_respects_recovery_and_periodic_policy(self):
+        for phase,energy in [('sleep',72),('rest',72),('afternoon',14)]:
+            with self.subTest(phase=phase,energy=energy):
+                plan=self.tick.social_observation_plan({},self.state,phase,energy,self.now)
+                self.assertEqual(plan['reason'],'recovery_window')
+                self.assertFalse(plan['due'])
+        for interval in [None,False,0,-1,'60',float('nan'),float('inf')]:
+            with self.subTest(interval=interval):
+                plan=self.tick.social_observation_plan({'social_observation':{'max_age_minutes':interval}},
+                    self.state,'afternoon',72,self.now)
+                self.assertEqual(plan['reason'],'invalid_observation_policy')
+        plan=self.tick.social_observation_plan({'social_observation':{'enabled':False}},
+            self.state,'afternoon',72,self.now)
+        self.assertEqual(plan['reason'],'periodic_observation_disabled')
+
+    def test_existing_read_or_blocked_incident_prevents_supplemental_duplicate(self):
+        for status in ['candidate','in_progress','blocked']:
+            with self.subTest(status=status):
+                state={**self.state,'pending_external_actions':[{**self.action,'status':status}]}
+                receipt=self.creative_tick(state)
+                reads=[x for x in self.read('pdca/state.json')['pending_external_actions']
+                       if x['capability']=='social.threads.observe']
+                self.assertEqual(len(reads),1)
+                self.assertFalse(receipt['plan']['social_observation']['due'])
+
+    def test_future_naive_failed_or_unproven_summary_does_not_suppress_read(self):
+        for summary in [
+            {'read_status':'PASS','receipt_ref':'pass','observed_at':(self.now+timedelta(hours=1)).isoformat()},
+            {'read_status':'PASS','receipt_ref':'pass','observed_at':self.now.replace(tzinfo=None).isoformat()},
+            {'read_status':'FAILED','receipt_ref':'failed','observed_at':self.now.isoformat()},
+            {'read_status':'PASS','observed_at':self.now.isoformat()}]:
+            with self.subTest(summary=summary):
+                state={**self.state,'pending_external_actions':[],'last_social_observation':summary}
+                self.assertTrue(self.tick.social_observation_plan({},state,'afternoon',72,self.now)['due'])
+
+    def test_due_observation_precedes_write(self):
+        writes=[{'action_id':f'write-{i}','cycle':10,'capability':'social.post.publish',
+                 'status':'candidate','primary_text':'not sent'} for i in range(3)]
+        self.creative_tick({**self.state,'pending_external_actions':writes})
+        pending=self.read('pdca/state.json')['pending_external_actions']
+        self.assertEqual(len(pending),5)
+        self.assertEqual(pending[-1]['capability'],'social.threads.observe')
+        result=self.execute()
+        self.assertEqual(result['capability'],'social.threads.observe')
+        self.assertFalse(result['write_performed'])
+        self.assertTrue(all(x['operation'] in ('post.read','replies.read') for x in self.calls))
+
+    def test_full_live_queue_is_not_evicted_for_observation(self):
+        pending=[{'action_id':f'write-{i}','cycle':10,'capability':'social.post.publish',
+                  'status':'candidate'} for i in range(12)]
+        receipt=self.creative_tick({**self.state,'pending_external_actions':pending},selected='reflect')
+        self.assertEqual(self.read('pdca/state.json')['pending_external_actions'],pending)
+        self.assertEqual(receipt['plan']['social_observation']['reason'],'pending_capacity')
+        self.assertFalse(receipt['plan']['social_observation']['queued'])
+        self.assertNotIn('social_observation_energy_cost',receipt['do'])
+        pending[0]['status']='completed'
+        receipt=self.creative_tick({**self.state,'pending_external_actions':pending},selected='reflect')
+        saved=self.read('pdca/state.json')['pending_external_actions']
+        self.assertEqual([x['action_id'] for x in saved[:-1]],
+                         [x['action_id'] for x in pending[1:]])
+        self.assertTrue(receipt['plan']['social_observation']['queued'])
+
     def test_tick_queues_read_and_internal_executor_delegates(self):
         with patch.object(self.tick, 'local_phase', return_value='idle'), \
              patch.object(self.tick.random.Random, 'choices', return_value=['observe']), \
