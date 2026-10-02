@@ -33,6 +33,7 @@ LOW = 60
 MAINTENANCE = 70
 
 POLICIES: dict[str, ActionPolicy] = {
+    bc.ACTION_RUNNER_WINDOW_PROBE: ActionPolicy("control", 8, "high", ("agentos.dispatch.probe",), ()),
     bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("control", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
     bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
