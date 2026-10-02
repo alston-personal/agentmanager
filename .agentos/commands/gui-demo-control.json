@@ -1,9 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "hardened-smoke-stop-20261002-0048",
-  "action": "desktop.demo.stop",
+  "nonce": "e2e3-prehash-20261002-0049",
+  "action": "shell.exec",
   "payload": {
-    "final_stage": "verified / hardened smoke"
+    "executable": "powershell",
+    "argv": [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$d=Join-Path $env:USERPROFILE 'Downloads'; $items=Get-ChildItem $d -File -ErrorAction Stop | Where-Object {$_.Extension -match '^\\.(png|jpg|jpeg|webp)$'} | ForEach-Object {[pscustomobject]@{name=$_.Name;full_name=$_.FullName;length=$_.Length;mtime=$_.LastWriteTimeUtc.ToString('o');sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()}}; $root='C:\\Users\\alston.huang\\AgentOS\\agentos-demo'; New-Item -ItemType Directory -Force -Path $root|Out-Null; $doc=[pscustomobject]@{benchmark_start_utc=[DateTimeOffset]::UtcNow.ToString('o');images=@($items)}; $json=$doc|ConvertTo-Json -Depth 5; Set-Content -LiteralPath (Join-Path $root 'benchmark-pre.json') -Value $json -Encoding UTF8; $doc|ConvertTo-Json -Depth 5 -Compress"
+    ],
+    "timeout_seconds": 60
   }
 }
