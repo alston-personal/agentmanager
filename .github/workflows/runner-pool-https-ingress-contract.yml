@@ -1,0 +1,31 @@
+name: Runner Pool HTTPS Ingress Contract
+
+on:
+  push:
+    branches: [feat/runner-pool-https-ingress-20261002, core/integration]
+    paths:
+      - 'agent_core/realm_server.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'dashboard/app/api/agentos/**'
+      - 'scripts/submit_agentos_scheduler_request_https.sh'
+      - 'tests/test_runner_pool_https_ingress.py'
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'agent_core/realm_server.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'dashboard/app/api/agentos/**'
+      - 'scripts/submit_agentos_scheduler_request_https.sh'
+      - 'tests/test_runner_pool_https_ingress.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pytest -q tests/test_runner_pool_https_ingress.py
+      - run: bash -n scripts/submit_agentos_scheduler_request_https.sh
