@@ -1,0 +1,62 @@
+name: Read VO10005870 Thin Client Tail
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/read-vo10005870-thin-client-tail.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read Thin Client log tail
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tid='thin-client-tail-20261002-1606'
+          ps=r'''$p=Join-Path $env:LOCALAPPDATA 'AgentOS\thin-client.log'
+          if(Test-Path $p){
+            Write-Output ('PATH='+$p)
+            Write-Output ('SIZE='+(Get-Item $p).Length)
+            Get-Content -LiteralPath $p -Tail 400
+          } else {Write-Output 'MISSING'}'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                  'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,
+                  'cognition_ids_used':['demo://daemon-debug/20261002'],
+              })
+          for _ in range(35):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  print(r.get('stdout') or '')
+                  print('STDERR='+(r.get('stderr') or ''))
+                  print('ERR='+str(r.get('error') or ''))
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('tail_receipt_missing')
+          PY
+          REMOTE
