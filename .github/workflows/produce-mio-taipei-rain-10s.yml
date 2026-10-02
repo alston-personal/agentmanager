@@ -1,0 +1,182 @@
+name: Produce Mio Taipei Rain 10s
+
+on:
+  push:
+    branches:
+      - video/mio-taipei-rain-10s
+    paths:
+      - '.github/workflows/produce-mio-taipei-rain-10s.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: produce-mio-taipei-rain-10s
+  cancel-in-progress: false
+
+jobs:
+  produce:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 180
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      UPSTREAM_SHA: 7768ebfb1627546595f37e9acfd2d353937c6cd8
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Generate 10-second Mio Taipei rain film
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$UPSTREAM_SHA" "${GITHUB_RUN_ID}" <<'REMOTE'
+          set -euo pipefail
+          export PATH="/home/ubuntu/.local/bin:/home/ubuntu/.local/opt/google-cloud-sdk/bin:$PATH"
+          export COLAB_AUTH=adc
+          SHA="$1"; RUN_ID="$2"
+          ROOT=/home/ubuntu/agent-data/providers/colab
+          RELEASE="$ROOT/releases/$SHA"
+          EVIDENCE=/home/ubuntu/agent-data/evidence/colab
+          ARTIFACT_ROOT=/home/ubuntu/agent-data/artifacts/colab/mio-taipei-rain-$RUN_ID
+          INPUTS="$ARTIFACT_ROOT/inputs"
+          OUT="$ARTIFACT_ROOT/outputs"
+          WORK=/home/ubuntu/agent-data/tmp/mio-taipei-rain-$RUN_ID
+          mkdir -p "$WORK" "$INPUTS" "$OUT" "$EVIDENCE"
+          chmod 700 "$WORK" "$ARTIFACT_ROOT" "$EVIDENCE"
+          trap 'rm -rf "$WORK"' EXIT
+
+          test -f "$RELEASE/scripts/runner.py"
+          command -v colab >/dev/null
+          test -f /home/ubuntu/.config/gcloud/application_default_credentials.json
+
+          curl -kfsS --retry 5 --resolve studio.milkcat.org:443:127.0.0.1             "https://studio.milkcat.org/personas/mio/mio-avatar.webp?_=$RUN_ID"             -o "$INPUTS/mio-avatar.webp"
+          curl -kfsS --retry 5 --resolve studio.milkcat.org:443:127.0.0.1             "https://studio.milkcat.org/personas/mio/mio-base-v2.webp?_=$RUN_ID"             -o "$INPUTS/mio-body.webp"
+          test "$(wc -c < "$INPUTS/mio-avatar.webp")" -gt 3000
+          test "$(wc -c < "$INPUTS/mio-body.webp")" -gt 3000
+
+          cat > "$INPUTS/prompt.txt" <<'EOF'
+          subject_definitions:
+          <Picture 1> is Mio's canonical identity and face reference. Keep her the exact same adult East Asian woman: same face shape, eyes, nose, lips, skin tone, dark-brown 7:3 long hair, subtle beauty mark under the outer side of her right eye, and natural understated expression. Do not change her identity.
+          <Picture 2> is Mio's canonical full-body proportion reference. Preserve her adult natural proportions, approximately 170 cm tall, slightly long-legged, realistic anatomy and scale. Do not copy the technical base clothing from Picture 2 into the final scene.
+
+          summary:
+          A 10-second photorealistic cinematic night scene in Taipei. Mio walks out from a Taipei MRT station exit into steady rain, opens a transparent umbrella, pauses for one quiet breath, then walks toward the wet neon-lit street. The mood is intimate, calm and slightly dreamy, like a premium Taiwanese urban film.
+
+          retention_analysis:
+          Mio's identity must remain stable from first frame to last frame. Preserve the exact face from <Picture 1> and body proportions from <Picture 2>. No face morphing, no age change, no hairstyle change, no body-shape drift. She wears a tasteful light-gray waterproof hooded coat over a simple dark outfit, practical ankle boots, no logos, and carries a small understated shoulder bag. Her transparent umbrella and clothing remain structurally consistent throughout the shot.
+
+          detailed_description:
+          [0.0-2.5s] Night exterior at a recognizable but non-branded Taipei MRT station entrance. Warm white station light spills behind Mio while cool cyan and amber city reflections shimmer on the rain-soaked pavement. Mio steps out from under the station canopy. Medium full-body framing, camera slightly below eye level, 50mm cinematic lens feel. Real rain streaks and small puddle splashes.
+
+          [2.5-5.0s] Mio smoothly raises and opens a transparent umbrella. The camera makes a slow controlled dolly backward to keep her centered. A light breeze moves only a few loose strands of her dark-brown hair. She glances briefly toward the street, calm and observant, never posing for the camera.
+
+          [5.0-7.5s] She takes two natural steps forward. A city bus and scooters pass softly out of focus in the deep background; red, cyan and warm amber bokeh reflect across the wet asphalt. The camera transitions into a subtle three-quarter tracking angle. Realistic cloth physics, umbrella physics and foot contact.
+
+          [7.5-10.0s] Mio pauses at the curb under the umbrella and gives the faintest relaxed smile while looking across the rainy street, not directly at camera. The final moment holds for a cinematic beat as a soft reflection passes across the transparent umbrella. End on a stable three-quarter medium shot.
+
+          cinematography:
+          Photorealistic Taiwanese urban cinema, natural skin texture, restrained contrast, soft highlight rolloff, shallow depth of field, subtle film grain, realistic rain exposure, gentle handheld micro-motion but no shaky camera. 24 fps cinematic motion. No fast cuts. One continuous shot. No slow-motion gimmick. No text, subtitles, signs with readable fake writing, watermarks or logos.
+
+          overall_soundscape:
+          Natural Taipei rain at night, soft tire hiss on wet asphalt, distant MRT station ambience and subdued city traffic. No dialogue.
+
+          non_diegetic_music:
+          Minimal warm ambient synth pad, extremely subtle and cinematic, never overpowering the rain.
+          EOF
+
+          python3 - "$INPUTS/jobs.json" "$INPUTS/mio-avatar.webp" "$INPUTS/mio-body.webp" "$INPUTS/prompt.txt" <<'PY'
+          import json,sys
+          path,face,body,prompt=sys.argv[1:]
+          data={"jobs":[{
+              "id":"mio-taipei-rain-10s",
+              "title":"Mio exits Taipei MRT in cinematic rain",
+              "reference_images":[face,body],
+              "prompt_file":prompt,
+              "duration_seconds":10,
+              "output_name":"mio-taipei-rain-10s"
+          }]}
+          with open(path,"w",encoding="utf-8") as f:
+              json.dump(data,f,ensure_ascii=False,indent=2); f.write("\n")
+          PY
+
+          USAGE_BEFORE="$WORK/usage-before.txt"
+          USAGE_AFTER="$WORK/usage-after.txt"
+          colab --auth=adc usage > "$USAGE_BEFORE" 2>&1
+
+          set +e
+          python3 "$RELEASE/scripts/runner.py" batch             --manifest "$INPUTS/jobs.json"             --gpu A100             --timeout 7200             --output-dir "$OUT"             --progress "$WORK/progress.json" > "$WORK/runner.log" 2>&1
+          RC=$?
+          set -e
+
+          colab --auth=adc usage > "$USAGE_AFTER" 2>&1 || true
+
+          python3 - "$EVIDENCE/mio-taipei-rain-$RUN_ID.json" "$RC" "$ARTIFACT_ROOT" "$OUT" "$USAGE_BEFORE" "$USAGE_AFTER" "$WORK/progress.json" "$WORK/runner.log" <<'PY'
+          import hashlib,json,os,re,sys,datetime,glob
+          dst,rc,artifact_root,out,before,after,progress,runner_log=sys.argv[1:]
+          def parse_usage(path):
+              try: txt=open(path,encoding="utf-8",errors="replace").read()
+              except Exception: return {}
+              def num(p):
+                  m=re.search(p,txt,re.I|re.M)
+                  return float(m.group(1).replace(",","")) if m else None
+              return {
+                  "balance_compute_units":num(r"^Current balance:\s*([\d,]+(?:\.\d+)?)\s+compute units\s*$"),
+                  "rate_per_hour":num(r"^Usage rate:\s*([\d,]+(?:\.\d+)?)\s*/\s*hr\s*$"),
+                  "active_assignments":num(r"^Active assignments:\s*(\d+)\s*$")
+              }
+          outputs=[]
+          for p in sorted(glob.glob(os.path.join(out,"*.mp4"))):
+              with open(p,"rb") as fh: digest=hashlib.sha256(fh.read()).hexdigest()
+              outputs.append({"path":p,"bytes":os.path.getsize(p),"sha256":digest})
+          prog=None
+          if os.path.isfile(progress):
+              try: prog=json.load(open(progress,encoding="utf-8"))
+              except Exception: pass
+          tail=[]
+          if os.path.isfile(runner_log):
+              for line in open(runner_log,encoding="utf-8",errors="replace").read().splitlines()[-120:]:
+                  line=re.sub(r"(?i)(access[_ -]?token|refresh[_ -]?token|authorization|bearer)\s*[:=]\s*\S+",r"\1=<redacted>",line)
+                  tail.append(line[:1200])
+          payload={
+              "schema":"agentos.media-generation-receipt/v1",
+              "provider":"google-colab",
+              "capability":"capability://media.video.generate.minimax-h3",
+              "timestamp_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "creative":{"subject":"Mio","location":"Taipei MRT exterior","weather":"rain","duration_seconds":10,"style":"cinematic"},
+              "compute":{"requested_gpu":"A100","high_mem_requested":True},
+              "artifact_root":artifact_root,
+              "usage":{"before":parse_usage(before),"after":parse_usage(after)},
+              "runner":{"returncode":int(rc),"progress":prog,"sanitized_tail":tail},
+              "result":{"status":"PASS" if int(rc)==0 and outputs else "FAIL","outputs":outputs}
+          }
+          with open(dst+".tmp","w",encoding="utf-8") as f:
+              json.dump(payload,f,ensure_ascii=False,indent=2); f.write("\n")
+          os.replace(dst+".tmp",dst); os.chmod(dst,0o600)
+          print(json.dumps(payload,ensure_ascii=False,indent=2))
+          if payload["result"]["status"]!="PASS": raise SystemExit(21)
+          PY
+
+          echo "mio_taipei_rain_video=PASS"
+          echo "artifact_root=$ARTIFACT_ROOT"
+          echo "receipt=$EVIDENCE/mio-taipei-rain-$RUN_ID.json"
+          REMOTE
+
+      - name: Copy video artifact from Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          mkdir -p "$RUNNER_TEMP/mio-taipei-rain-${GITHUB_RUN_ID}"
+          scp -r -P "$PORT" -o StrictHostKeyChecking=accept-new             "$DEPLOY_USER@127.0.0.1:/home/ubuntu/agent-data/artifacts/colab/mio-taipei-rain-${GITHUB_RUN_ID}/outputs/"             "$RUNNER_TEMP/mio-taipei-rain-${GITHUB_RUN_ID}/"
+
+      - name: Upload finished Mio video
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-taipei-rain-10s-${{ github.run_id }}
+          path: ${{ runner.temp }}/mio-taipei-rain-${{ github.run_id }}/outputs/*.mp4
+          if-no-files-found: error
+          retention-days: 14
