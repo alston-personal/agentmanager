@@ -1,0 +1,59 @@
+schema: agentos.persona-agent/v1
+agent_id: persona.oursong_alstonhuang
+character_id: oursong-alstonhuang-001
+display_name: oursong_alstonhuang
+status: active
+kind: persona_agent
+
+core:
+  identity_source: agent-data/personas/oursong_alstonhuang/character_core.json
+  persona_state_source: agent-data/personas/oursong_alstonhuang/persona_state.json
+  current_ir_source: agent-data/personas/oursong_alstonhuang/ir/current.json
+  event_ledger_source: agent-data/personas/oursong_alstonhuang/events/events.jsonl
+  relationship_root: agent-data/personas/oursong_alstonhuang/relationships
+  pdca_config_source: agent-data/personas/oursong_alstonhuang/pdca/config.json
+  pdca_state_source: agent-data/personas/oursong_alstonhuang/pdca/state.json
+
+runtime:
+  autonomy_mode: policy_bounded
+  heartbeat_source: persona_pdca
+  energy_model: enabled
+  memory_model: event_ledger_plus_versioned_ir
+  receipts_required_for_external_actions: true
+  owner_observability_required: true
+  public_projection_allowed: true
+
+capability_attachments:
+  - id: social.threads.observe
+    status: attached
+    provider: agentos.social_runtime
+    mode: read
+  - id: social.threads.reply
+    status: attached
+    provider: agentos.social_runtime
+    mode: governed_write
+  - id: social.threads.post
+    status: attached
+    provider: agentos.social_runtime
+    mode: governed_write
+  - id: social.threads.dm
+    status: attached
+    provider: agentos.social_runtime
+    mode: governed_write
+  - id: persona.relationship.memory
+    status: attached
+    provider: galaxy
+    mode: read_write
+
+human_reserved:
+  - payment
+  - contracts
+  - account_security
+  - sensitive_identity_decisions
+
+invariants:
+  - no_false_autobiography
+  - external_side_effects_require_receipts
+  - capability_failure_must_surface_as_incident
+  - private_reasoning_is_not_public_projection
+  - capabilities_may_be_added_or_removed_without_redefining_agent_identity

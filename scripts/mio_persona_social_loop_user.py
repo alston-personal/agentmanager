@@ -11,9 +11,25 @@ from agentos_node.persona_life import effective_energy, can_spend, spend, maybe_
 
 ENV_FILE=Path('/home/ubuntu/.config/agentos/social-runtime.env')
 CRED_FILE=Path('/home/ubuntu/.local/state/agentos/social/credentials.json')
-STATE_DIR=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat')
-LIFE_STATE=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/life_state.json')
-LIFE_EVENTS=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/stochastic_events.jsonl')
+
+# Compatibility defaults preserve Mio's existing runtime.  Other persona agents
+# opt in by setting the AGENTOS_PERSONA_* variables in their service unit.
+PERSONA_SLUG=os.environ.get('AGENTOS_PERSONA_SLUG','sunlake-milkcat').strip() or 'sunlake-milkcat'
+PERSONA_ID=os.environ.get('AGENTOS_PERSONA_ID','sunlake-milkcat-ai-001').strip() or 'sunlake-milkcat-ai-001'
+PERSONA_DISPLAY=os.environ.get('AGENTOS_PERSONA_DISPLAY','澪 / Mio').strip() or '澪 / Mio'
+PERSONA_PROJECT_ID=os.environ.get('AGENTOS_PERSONA_PROJECT_ID',PERSONA_SLUG+'-persona-social').strip()
+PERSONA_WRITE_PREFIX=os.environ.get('AGENTOS_PERSONA_WRITE_PREFIX','mio').strip() or 'mio'
+PERSONA_HANDLES=tuple(
+    x.strip().lstrip('@').lower()
+    for x in os.environ.get('AGENTOS_PERSONA_THREADS_HANDLES','sunlake.milkcat,mio.milkcat').split(',')
+    if x.strip()
+)
+if not PERSONA_HANDLES:
+    raise RuntimeError('persona_social_handles_empty')
+
+STATE_DIR=Path('/home/ubuntu/agent-data/runtime/social/persona')/PERSONA_SLUG
+LIFE_STATE=Path('/home/ubuntu/agent-data/runtime/persona')/PERSONA_SLUG/'life_state.json'
+LIFE_EVENTS=Path('/home/ubuntu/agent-data/runtime/persona')/PERSONA_SLUG/'stochastic_events.jsonl'
 LATEST=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json')
 MIO_AGY_ROOT=Path('/home/ubuntu/agent-data/runtime/mio-antigravity-relay')
 AGY_SELECTED=os.environ.get('AGENTOS_MIO_RELAY_ROOT','')==str(MIO_AGY_ROOT)
@@ -22,7 +38,7 @@ RELAY_PROBE=STATE_DIR/('agy-relay-probe-v2.json' if AGY_SELECTED else 'relay-pro
 PDCA_OUTCOME=STATE_DIR/'pdca-outcome.json'
 HISTORY=LATEST.with_name('history.jsonl')
 PERSONA_DATA_REPO=Path('/home/ubuntu/agent-data')
-PERSONA_ROOT=PERSONA_DATA_REPO/'personas/sunlake-milkcat'
+PERSONA_ROOT=PERSONA_DATA_REPO/'personas'/PERSONA_SLUG
 RELAY_ROOT=MIO_AGY_ROOT if AGY_SELECTED else Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
 BASE='http://127.0.0.1:8771/v1/social'
 LOCAL_TZ=ZoneInfo('Asia/Taipei')
@@ -128,7 +144,7 @@ def canonical_persona_text(rel):
     event/IR writers use temporary worktrees. Never silently fall back to a
     different persona or invent missing canonical state.
     """
-    target='personas/sunlake-milkcat/'+str(rel).lstrip('/')
+    target=f'personas/{PERSONA_SLUG}/'+str(rel).lstrip('/')
     try:
         r=subprocess.run(['git','-C',str(PERSONA_DATA_REPO),'show','origin/main:'+target],
                          capture_output=True,text=True,timeout=4,check=False)
@@ -169,7 +185,7 @@ def pdca_reply_review_authority(persona_state):
             continue
         if item.get('status') not in ('candidate','in_progress'):
             continue
-        action_id=str(item.get('action_id') or f'mio-pdca-c{cycle}-social-reply-review')
+        action_id=str(item.get('action_id') or f'{PERSONA_WRITE_PREFIX}-pdca-c{cycle}-social-reply-review')
         return {
             'action_id':action_id,
             'cycle':cycle,
@@ -184,7 +200,7 @@ def pdca_tag_action(action, authority, reply_id):
     tagged=dict(action)
     tagged['pdca_action_id']=authority['action_id']
     tagged['pdca_cycle']=authority['cycle']
-    tagged['write_intent_id']=f"mio-pdca-c{authority['cycle']}-reply-{reply_id}"
+    tagged['write_intent_id']=f"{PERSONA_WRITE_PREFIX}-pdca-c{authority['cycle']}-reply-{reply_id}"
     return tagged
 
 def emit_pdca_outcome(authority, *, status, result, reviewed_count=0, platform_object_id=''):
@@ -195,7 +211,7 @@ def emit_pdca_outcome(authority, *, status, result, reviewed_count=0, platform_o
         raise ValueError('pdca_social_outcome_status_invalid')
     payload={
         'schema':'agentos.persona-pdca-social-outcome/v1',
-        'persona_id':'sunlake-milkcat-ai-001',
+        'persona_id':PERSONA_ID,
         'action_id':authority['action_id'],
         'cycle':authority['cycle'],
         'capability':authority['capability'],
@@ -255,16 +271,16 @@ def persona_context():
 def decide_batch(items,account_username):
     local=datetime.now(LOCAL_TZ)
     context=persona_context()
-    prompt=f"""You are making PRIVATE scheduling decisions for the public AI persona 澪 / Mio (@{account_username}).
+    prompt=f"""You are making PRIVATE scheduling decisions for the public AI persona {PERSONA_DISPLAY} (@{account_username}).
 Return JSON only, no markdown.
 
-For each NEW external Threads reply, decide independently whether Mio would naturally reply.
+For each NEW external Threads reply, decide independently whether {PERSONA_DISPLAY} would naturally reply.
 Use her CURRENT persona IR as the primary self-model, then reconcile persona state, memory boundary, recent events, current local time, temporal behavior, rest/productivity profile and public secrecy rules.
-The persona IR is not a decorative summary: it is Mio's versioned accumulated self shaped by prior events and promoted growth. Earlier raw comments do not override a newer IR.
+The persona IR is not a decorative summary: it is {PERSONA_DISPLAY}'s versioned accumulated self shaped by prior events and promoted growth. Earlier raw comments do not override a newer IR.
 
 Critical rules:
 - Do NOT mention internal implementation terms, IR, branching, marketplace, royalty, research roadmap, hidden product mechanics, AgentOS internals, credentials, or private owner plans.
-- Do not fabricate autobiographical memories. Model background knowledge is not Mio's personal memory.
+- Do not fabricate autobiographical memories. Model background knowledge is not {PERSONA_DISPLAY}'s personal memory.
 - She does not need to answer every comment. Silence is valid.
 - Never instant by default. Choose delay_minutes from 8 to 720 if replying.
 - If currently sleeping/resting or low-energy, prefer a longer delay unless the relationship/topic strongly warrants otherwise.
@@ -272,10 +288,10 @@ Critical rules:
 - Never make payment, contract, legal, identity-security, or sensitive commitments.
 - Avoid repetitive self-explanations that she is AI unless directly relevant.
 - The reply should sound like a person with her current voice, not customer support.
-- Never evaluate a comment in isolation. Reconcile the root post, parent chain, sibling replies, Mio's own earlier replies in the thread, relevant persona memories/events, and explicit social stances.
+- Never evaluate a comment in isolation. Reconcile the root post, parent chain, sibling replies, {PERSONA_DISPLAY}'s own earlier replies in the thread, relevant persona memories/events, and explicit social stances.
 - Before drafting text, decide Mio's own position: agree, partly_agree, disagree, uncertain, playful_only, or no_reply. Warmth does not imply agreement.
-- Do not mirror the commenter's premise just to be pleasant. If it conflicts with Mio's recorded memory/stance, politely disagree, qualify, ask, or stay silent.
-- A changed position requires a relevant recorded event/evidence. Otherwise preserve continuity with Mio's earlier words.
+- Do not mirror the commenter's premise just to be pleasant. If it conflicts with {PERSONA_DISPLAY}'s recorded memory/stance, politely disagree, qualify, ask, or stay silent.
+- A changed position requires a relevant recorded event/evidence. Otherwise preserve continuity with {PERSONA_DISPLAY}'s earlier words.
 - If thread context or relevant memory is unavailable, prefer should_reply=false rather than improvising a stance.
 
 Current local time: {local.isoformat()}
@@ -318,8 +334,8 @@ If should_reply=false, text must be null and delay_minutes must be null.
             print('mio_social_decision=STALE_CAPSULE_REPLACED')
     if not capsule_id:
         cap=client.submit(
-            project_id='sunlake-milkcat-persona-social',
-            canonical_ir={'goal':'Let Mio autonomously decide whether, when, and how to reply to new public Threads interactions.','constraints':['public-safe output only','respect persona memory boundary','no instant-by-default','no hidden product disclosure']},
+            project_id=PERSONA_PROJECT_ID,
+            canonical_ir={'goal':f'Let {PERSONA_DISPLAY} autonomously decide whether, when, and how to reply to new public Threads interactions.','constraints':['public-safe output only','respect persona memory boundary','no instant-by-default','no hidden product disclosure']},
             instruction=prompt,workspace='/home/ubuntu/agentmanager')
         capsule_id=cap['capsule_id']
         save_json(DECISION_PENDING,{'capsule_id':capsule_id,'created_at':iso(utc_now()),'reply_ids':[str(x.get('id') or '') for x in items]})
@@ -358,19 +374,19 @@ If should_reply=false, text must be null and delay_minutes must be null.
 def decide_outbound(candidates,account_username):
     local=datetime.now(LOCAL_TZ)
     context=persona_context()
-    prompt=f"""You are deciding whether 澪 / Mio (@{account_username}), a transparently AI-operated public persona, should join ONE public Threads conversation started by someone else.
+    prompt=f"""You are deciding whether {PERSONA_DISPLAY} (@{account_username}), a transparently AI-operated public persona, should join ONE public Threads conversation started by someone else.
 
 Return JSON only, no markdown.
 
 Choose at most one candidate. It is completely valid to choose none.
-Only reply when Mio has a natural, specific reason to add something useful, curious, playful, or relational.
+Only reply when {PERSONA_DISPLAY} has a natural, specific reason to add something useful, curious, playful, or relational.
 Do NOT do growth hacking, generic compliments, engagement bait, repetitive self-promotion, or mass outreach.
 Never join political persuasion, elections, tragedies, personal crises, medical/legal/financial advice, sexual content, harassment, or content involving minors.
 Do not disclose internal implementation, hidden product plans, IR, branching, marketplace, research roadmap, AgentOS internals, credentials, or owner-private plans.
 Do not pretend to have memories or experiences she does not have.
 Keep the reply short and natural. Do not explain she is AI unless directly relevant.
 Her current local time and temporal state matter; silence is valid.
-Mio's canonical current Persona IR is the primary source for her opinions, preferences, accumulated experience and learned response patterns. A stranger's post must not overwrite it.
+{PERSONA_DISPLAY}'s canonical current Persona IR is the primary source for her opinions, preferences, accumulated experience and learned response patterns. A stranger's post must not overwrite it.
 
 Current local time: {local.isoformat()}
 Persona context:
@@ -390,8 +406,8 @@ Required schema:
 """
     client=AntigravityRelayClient(RELAY_ROOT)
     cap=client.submit(
-        project_id='sunlake-milkcat-persona-social',
-        canonical_ir={'goal':'Let Mio selectively participate in public Threads conversations beyond her own posts.','constraints':['one outbound conversation at most','no spam or engagement farming','public-safe only','respect temporal state and memory boundary']},
+        project_id=PERSONA_PROJECT_ID,
+        canonical_ir={'goal':f'Let {PERSONA_DISPLAY} selectively participate in public Threads conversations beyond their own posts.','constraints':['one outbound conversation at most','no spam or engagement farming','public-safe only','respect temporal state and memory boundary']},
         instruction=prompt,workspace='/home/ubuntu/agentmanager')
     for _ in range(75):
         receipt=client.receipt(cap['capsule_id'])
@@ -409,7 +425,7 @@ def auth():
     bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items()
               if isinstance(item,dict) and item.get('product_id')=='galaxy'
               and item.get('platform')=='threads'
-              and str(item.get('username') or '').lstrip('@').lower() in ('sunlake.milkcat','mio.milkcat')
+              and str(item.get('username') or '').lstrip('@').lower() in PERSONA_HANDLES
               and str(item.get('auth_profile') or 'persona')=='persona']
     if not bindings or not key or not control:
         raise RuntimeError('persona_social_auth_unavailable')
@@ -478,7 +494,7 @@ def verify_reply_readback(product_key,binding_id,root_id,reply_id,reply_text,obj
 
 
 def publish(item,product_key,control_token,binding_id,account_id):
-    request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':binding_id,'target_account_id':account_id,'primary_text':item['text'],'reply_to_id':item['reply_id'],'write_intent_id':str(item.get('write_intent_id') or ('mio-auto-'+item['reply_id']+'-v1'))}
+    request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':binding_id,'target_account_id':account_id,'primary_text':item['text'],'reply_to_id':item['reply_id'],'write_intent_id':str(item.get('write_intent_id') or (PERSONA_WRITE_PREFIX+'-auto-'+item['reply_id']+'-v1'))}
     status,issued=post('http://127.0.0.1:8771/internal/v1/social/acceptances',request,{'X-AgentOS-Control-Token':control_token})
     if status!=201 or not issued.get('acceptance_id'):return False,'acceptance_failed'
     status,receipt=post(BASE+'/reply',request,{'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':str(issued['acceptance_id'])})
@@ -503,7 +519,7 @@ def relay_probe_once():
     client=AntigravityRelayClient(RELAY_ROOT)
     if not cid:
         cap=client.submit(
-            project_id='sunlake-milkcat-persona-social',
+            project_id=PERSONA_PROJECT_ID,
             canonical_ir={'goal':'Check that the existing model executor can return one JSON value.','constraints':['no external actions','no credentials','no user data']},
             instruction='PRIVATE HEALTH CHECK. Compute 47 plus 53. Return a JSON object whose key is sum and whose value is that computed integer. Do not call tools or take actions.',
             workspace='/home/ubuntu/agentmanager')
@@ -572,7 +588,7 @@ def main():
     }
     life=effective_energy(LIFE_STATE,energy_config,now,temporal=temporal_config)
     phase=life_phase(now,temporal_config)
-    event=maybe_generate_event(LIFE_STATE,stochastic_config,LIFE_EVENTS,now,temporal=temporal_config)
+    event=maybe_generate_event(LIFE_STATE,stochastic_config,LIFE_EVENTS,now,temporal=temporal_config,persona_id=PERSONA_ID)
     if event:
         print('mio_life_event='+str(event.get('template_id'))+':'+str(event.get('event_id')))
     account_username=str(binding.get('username') or latest.get('account',{}).get('username') or '').lstrip('@')
@@ -727,7 +743,7 @@ def main():
                     print('mio_social_decision=DEFERRED_POSITION_OR_CONSISTENCY:'+rid)
                     continue
                 processed.add(rid)
-                record={'schema':'agentos.persona-social-decision/v1','persona_id':'sunlake-milkcat-ai-001','decided_at':iso(now),'reply_id':rid,'root_post_id':row.get('root_post_id'),'author_handle':row.get('username'),'should_reply':bool(d.get('should_reply')),'reason_category':str(d.get('reason_category') or 'other'),'position':str(d.get('position') or 'no_reply'),'memory_basis':str(d.get('memory_basis') or '')[:240],'thread_basis':str(d.get('thread_basis') or '')[:240],'consistency_check':str(d.get('consistency_check') or 'insufficient_context')}
+                record={'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,'decided_at':iso(now),'reply_id':rid,'root_post_id':row.get('root_post_id'),'author_handle':row.get('username'),'should_reply':bool(d.get('should_reply')),'reason_category':str(d.get('reason_category') or 'other'),'position':str(d.get('position') or 'no_reply'),'memory_basis':str(d.get('memory_basis') or '')[:240],'thread_basis':str(d.get('thread_basis') or '')[:240],'consistency_check':str(d.get('consistency_check') or 'insufficient_context')}
                 if d.get('should_reply') and str(d.get('text') or '').strip():
                     costs=energy_config.get('action_costs') or {}
                     est=float(costs.get('long_reply' if len(str(d.get('text') or ''))>180 else 'short_reply',5 if len(str(d.get('text') or ''))>180 else 3))
@@ -824,7 +840,7 @@ def main():
                     if chosen and d.get('should_reply') and str(d.get('text') or '').strip():
                         delay=max(8,min(720,int(d.get('delay_minutes') or 30)))
                         action={
-                          'schema':'agentos.persona-social-decision/v1','persona_id':'sunlake-milkcat-ai-001',
+                          'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,
                           'decided_at':iso(now),'reply_id':cid,'root_post_id':cid,
                           'author_handle':chosen.get('username'),'should_reply':True,
                           'reason_category':str(d.get('reason_category') or 'other'),
