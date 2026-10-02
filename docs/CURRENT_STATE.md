@@ -215,3 +215,18 @@ VOPC5750 is an enrolled Windows Realm Node, but surface discovery alone is not s
 
 The reusable probe lives in `scripts/vopc5750_multi_agent_acceptance.py` and is triggered by `.agentos/commands/vopc5750-multi-agent-acceptance.json` or changes to its workflow/probe definition.
 
+## Windows Node self-healing lifecycle
+
+A Windows Node must not be considered durable merely because enrollment succeeded or the Thin Client process started once.
+
+The canonical Windows one-click supervisor now uses two independent Scheduled Tasks:
+
+- `AgentOS Thin Client`: the hidden interactive-user Thin Client that owns Realm heartbeat, task transport and desktop/GUI capabilities.
+- `AgentOS Thin Client Watchdog`: a separate one-minute liveness supervisor that does not share process lifetime with the Thin Client.
+
+Every successful Realm heartbeat writes a local non-secret liveness marker at `state/heartbeat.json`. The watchdog evaluates both process/task presence and heartbeat freshness. A missing process/task is restarted on the next watchdog cycle; a still-running client whose heartbeat marker remains stale beyond the bounded threshold is treated as wedged and restarted. Restart attempts are rate-limited and written to the local watchdog log/state so recovery loops remain diagnosable.
+
+This watchdog is an immediate reliability layer, not the final machine lifecycle architecture. The intended next boundary is to separate a machine-level AgentOS Node Daemon (heartbeat, transport, recovery, OTA and health) from the interactive session adapter (desktop, GUI Worker, Antigravity, Codex, Claude and Gemini). Loss of the interactive user session must eventually degrade only interactive capabilities, not make the entire Node disappear from the Realm.
+
+Windows Node Ready therefore requires recovery acceptance in addition to enrollment: process termination and intentional Scheduled Task stop must self-recover without human intervention, fresh heartbeat must return, and a governed task receipt must succeed after recovery.
+
