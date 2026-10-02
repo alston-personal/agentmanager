@@ -53,6 +53,8 @@ class OursongBootstrapAcceptanceTests(unittest.TestCase):
 
             self.assertEqual(character["character_id"], "oursong-alstonhuang-001")
             self.assertEqual(state["character_id"], "oursong-alstonhuang-001")
+            self.assertEqual(state["autonomy"]["public_conversation"], "autonomous_with_policy")
+            self.assertEqual(state["autonomy"]["routine_posts"], "guarded")
             self.assertEqual(ir["persona_id"], "oursong-alstonhuang-001")
             self.assertEqual(pdca_config["persona_id"], "oursong-alstonhuang-001")
             self.assertEqual(pdca_state["persona_id"], "oursong-alstonhuang-001")
@@ -69,3 +71,26 @@ class OursongBootstrapAcceptanceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_bootstrap_migrates_existing_state_without_overwriting_existing_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            first = self.run_bootstrap(home)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            root = home / "agent-data" / "personas" / "oursong_alstonhuang"
+            state_path = root / "persona_state.json"
+            state = json.loads(state_path.read_text())
+            state["voice"]["tone"] = "custom-existing-tone"
+            state["autonomy"].pop("public_conversation", None)
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+
+            second = self.run_bootstrap(home)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("oursong_bootstrap=MIGRATED_AUTONOMY", second.stdout)
+            migrated = json.loads(state_path.read_text())
+            self.assertEqual(migrated["voice"]["tone"], "custom-existing-tone")
+            self.assertEqual(
+                migrated["autonomy"]["public_conversation"],
+                "autonomous_with_policy",
+            )
