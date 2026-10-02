@@ -1,0 +1,170 @@
+name: VOPC5750 Executor Reconcile Acceptance
+
+on:
+  push:
+    branches:
+      - agentos/executor-reconcile-v01
+    paths:
+      - '.agentos/commands/vopc5750-executor-reconcile.json'
+      - '.github/workflows/vopc5750-executor-reconcile.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vopc5750-executor-reconcile
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Queue bounded runtime update
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          cmd=json.load(open('.agentos/commands/vopc5750-executor-reconcile.json',encoding='utf-8'))
+          assert cmd.get('schema') == 'agentos.realm-command/v0.1'
+          assert cmd.get('action') == 'realm.node.executor-reconcile'
+          node_id=str(cmd.get('node_id') or '')
+          assert node_id == 'vopc5750'
+          node=next((n for n in NodeRegistry().node_map()['nodes'] if n.get('node_id')==node_id),None)
+          assert node is not None and node.get('status') == 'online', node
+          ref='${{ github.sha }}'
+          assert re.fullmatch(r'[0-9a-f]{40}',ref)
+          script = r'''$ErrorActionPreference='Stop'
+          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $taskName='AgentOS Thin Client'
+          $base='https://raw.githubusercontent.com/alston-personal/agentmanager/REF'
+          $files=@(
+            'agentos_node/executor_reconcile.py',
+            'agentos_node/thin_client.py',
+            'agentos_node/client_cli.py'
+          )
+          foreach($rel in $files){
+            $dest=Join-Path $install ($rel -replace '/','\')
+            $parent=Split-Path -Parent $dest
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri "$base/$rel" -OutFile $dest
+          }
+          Write-Output 'agentos_executor_reconcile_runtime_stage=PASS'
+          Write-Output 'agentos_source_commit=REF'
+          $restart="Start-Sleep -Seconds 5; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '$taskName'"
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
+          '''.replace('REF',ref)
+          task_id='executor-reconcile-ota-'+str(int(time.time()))
+          task={
+            'schema':'agentos.node-task/v0.1',
+            'task_id':task_id,
+            'action':'shell.exec',
+            'executable':'powershell',
+            'argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS',
+            'timeout_seconds':90,
+            'cognition_ids_used':[]
+          }
+          queued=RealmFabricStore().queue_task(node_id,task)
+          Path('/tmp/vopc-executor-ota.json').write_text(json.dumps({'node_id':node_id,'source_commit':ref,'task':queued},indent=2)+'\n',encoding='utf-8')
+          print('ota_task_id='+task_id)
+          PY
+
+      - name: Wait for update receipt
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TASK=$(python3 -c "import json; print(json.load(open('/tmp/vopc-executor-ota.json'))['task']['task_id'])")
+          for i in $(seq 1 45); do
+            if python3 - "$TASK" <<'PY'
+          import sys
+          from agent_core.realm_fabric import RealmFabricStore
+          r=RealmFabricStore().get_receipt(sys.argv[1])
+          if r and r.get('ok') is True and int(r.get('returncode') or 0) == 0 and 'agentos_executor_reconcile_runtime_stage=PASS' in str(r.get('stdout') or ''):
+              print('executor_reconcile_ota_receipt=PASS')
+              raise SystemExit(0)
+          raise SystemExit(1)
+          PY
+            then exit 0; fi
+            sleep 2
+          done
+          echo 'executor reconcile update receipt timeout' >&2
+          exit 1
+
+      - name: Queue executor reconcile after restart
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sleep 8
+          python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+          node_id='vopc5750'
+          node=next((n for n in NodeRegistry().node_map()['nodes'] if n.get('node_id')==node_id),None)
+          assert node is not None and node.get('status') == 'online', node
+          task_id='executor-reconcile-'+str(int(time.time()))
+          task={'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'agent.executor.reconcile','cognition_ids_used':[]}
+          queued=RealmFabricStore().queue_task(node_id,task)
+          Path('/tmp/vopc-executor-reconcile.json').write_text(json.dumps({'node_id':node_id,'task':queued},indent=2)+'\n',encoding='utf-8')
+          print('reconcile_task_id='+task_id)
+          PY
+
+      - name: Wait for reconcile receipt and publish evidence
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TASK=$(python3 -c "import json; print(json.load(open('/tmp/vopc-executor-reconcile.json'))['task']['task_id'])")
+          for i in $(seq 1 45); do
+            if python3 - "$TASK" <<'PY'
+          import json,sys
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          r=RealmFabricStore().get_receipt(sys.argv[1])
+          if not (r and r.get('ok') is True):
+              raise SystemExit(1)
+          adoption=r.get('executor_adoption')
+          if not isinstance(adoption,dict) or adoption.get('schema')!='agentos.executor-adoption/v0.1':
+              raise SystemExit(1)
+          evidence={'schema':'agentos.executor-reconcile-acceptance/v0.1','node_id':'vopc5750','task_id':sys.argv[1],'ok':True,'summary':adoption.get('summary'),'executors':adoption.get('executors')}
+          Path('/tmp/vopc-executor-reconcile-evidence.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print('executor_reconcile_receipt=PASS')
+          print(json.dumps(evidence,sort_keys=True))
+          raise SystemExit(0)
+          PY
+            then break; fi
+            sleep 2
+          done
+          test -f /tmp/vopc-executor-reconcile-evidence.json
+          mkdir -p .agentos/evidence
+          cp /tmp/vopc-executor-reconcile-evidence.json .agentos/evidence/vopc5750-executor-reconcile-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vopc5750-executor-reconcile-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): accept VOPC5750 executor reconcile'
+          git push origin HEAD:${{ github.ref_name }}
