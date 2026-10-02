@@ -9,10 +9,12 @@ on:
       - 'scripts/mio_persona_social_loop_user.py'
       - 'scripts/sync_persona_pdca_social_outcome_user.py'
       - 'scripts/install_persona_social_timer_user.sh'
+      - 'scripts/bootstrap_oursong_persona_user.py'
       - 'personas/**/agent.yaml'
       - 'personas/**/runtime.env.example'
       - 'tests/test_mio_social_contract.py'
       - 'tests/test_persona_social_parameterization.py'
+      - 'tests/test_oursong_persona_bootstrap.py'
       - '.github/workflows/persona-social-parameterization-guard.yml'
   push:
     branches:
@@ -39,9 +41,11 @@ jobs:
           python-version: '3.12'
       - name: Compile persona runtime
         run: |
-          python -m py_compile             agentos_node/persona_life.py             scripts/mio_persona_social_loop_user.py             scripts/sync_persona_pdca_social_outcome_user.py
+          python -m py_compile             agentos_node/persona_life.py             scripts/mio_persona_social_loop_user.py             scripts/sync_persona_pdca_social_outcome_user.py \
+            scripts/bootstrap_oursong_persona_user.py
       - name: Validate timer installer
         run: bash -n scripts/install_persona_social_timer_user.sh
       - name: Run focused persona social contracts
         run: |
-          python -m unittest -v             tests.test_mio_social_contract             tests.test_persona_social_parameterization
+          python -m unittest -v             tests.test_mio_social_contract             tests.test_persona_social_parameterization \
+            tests.test_oursong_persona_bootstrap
