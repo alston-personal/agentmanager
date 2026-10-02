@@ -1,20 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "e2e3-benchmark-run-20261002-0052",
-  "action": "shell.exec",
-  "receipt_only": true,
+  "nonce": "e2e3-record-stop-diagnostic-20261002-0053",
+  "action": "desktop.demo.stop",
   "payload": {
-    "executable": "powershell",
-    "argv": [
-      "-STA",
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      "C:\\Users\\alston.huang\\AgentOS\\agentos_gui_demo_benchmark.ps1"
-    ],
-    "timeout_seconds": 180
+    "final_stage": "Benchmark incomplete / diagnostic stop"
   }
 }
