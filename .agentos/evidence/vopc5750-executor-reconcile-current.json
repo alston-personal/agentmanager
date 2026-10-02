@@ -1,0 +1,45 @@
+{
+  "executors": [
+    {
+      "adopted": false,
+      "bridge_capabilities": [],
+      "executor_id": "claude-code",
+      "routable": false,
+      "state": "UNAVAILABLE",
+      "version": null
+    },
+    {
+      "adopted": false,
+      "bridge_capabilities": [],
+      "executor_id": "codex",
+      "routable": false,
+      "state": "UNAVAILABLE",
+      "version": null
+    },
+    {
+      "adopted": false,
+      "bridge_capabilities": [],
+      "executor_id": "gemini",
+      "routable": false,
+      "state": "UNAVAILABLE",
+      "version": null
+    },
+    {
+      "adopted": false,
+      "bridge_capabilities": [],
+      "executor_id": "antigravity",
+      "routable": false,
+      "state": "UNAVAILABLE",
+      "version": null
+    }
+  ],
+  "node_id": "vopc5750",
+  "ok": true,
+  "schema": "agentos.executor-reconcile-acceptance/v0.1",
+  "summary": {
+    "discovered": 0,
+    "ready": 0,
+    "unavailable": 4
+  },
+  "task_id": "executor-reconcile-1790918948"
+}
