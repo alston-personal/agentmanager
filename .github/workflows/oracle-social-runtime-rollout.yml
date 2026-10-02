@@ -6,9 +6,10 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-social-runtime-rollout.yml'
-
       - 'scripts/deploy_social_runtime_user.sh'
       - 'agentos_node/social/**'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
       - 'dashboard/app/api/social/**'
 
 permissions:
@@ -16,8 +17,12 @@ permissions:
 
 jobs:
   rollout:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,71 +31,37 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/core/integration'
-          test "$(id -un)" = 'agentos-node'
           printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
-          python3 -m compileall -q agentos_node/social agentos_node/bootstrap_control.py
+          python3 -m compileall -q agentos_node/social agentos_node/bootstrap_control.py agentos_node/bootstrap_scheduler.py
           bash -n scripts/deploy_social_runtime_user.sh
+          bash -n scripts/submit_oracle_bootstrap_request_remote.sh
           test -f 'dashboard/app/api/social/[...path]/route.ts'
-          echo "social_runtime_rollout_source_ref=core/integration"
+          echo "social_runtime_ingress=github-hosted"
           echo "social_runtime_rollout_source_commit=$GITHUB_SHA"
 
-      - name: Publish bounded bootstrap hook and request deploy
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Submit deploy to AgentOS capability scheduler
         shell: bash
         run: |
           set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
           REQUEST_ID="social-runtime-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
-          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=720             bash scripts/submit_oracle_bootstrap_request_remote.sh               agentos.social_runtime.deploy "$REQUEST_ID" "$GITHUB_SHA" '{}'               > "$RUNNER_TEMP/social-runtime-receipt.json"
 
-          test -w "$LIVE/agentos_node" || test -w "$LIVE/agentos_node/bootstrap_control.py"
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
-          for i in $(seq 1 120); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS"
-          test -d "$RECEIPTS"
-          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
-          test "$(stat -c '%a' "$REQUESTS")" = 1777
-
-          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
-          import json, os, sys
-          from datetime import datetime, timezone
-          from pathlib import Path
-          path = Path(sys.argv[1]); request_id = sys.argv[2]; sha = sys.argv[3]
-          payload = {
-              "schema": "agentos.bootstrap-request/v1",
-              "request_id": request_id,
-              "action": "agentos.social_runtime.deploy",
-              "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-              "params": {"source_commit": sha},
-              "authority": {"source": "github-actions", "target_user": "ubuntu", "arbitrary_shell": False},
-          }
-          tmp = path.with_suffix(path.suffix + ".tmp")
-          tmp.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-          os.chmod(tmp, 0o644); tmp.replace(path); os.chmod(path, 0o644)
-          PY
-
-          for i in $(seq 1 540); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT" || { echo 'social_runtime_bootstrap_receipt=TIMEOUT'; exit 3; }
-
-          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
-          import json, sys
-          receipt = json.load(open(sys.argv[1], encoding='utf-8')); expected = sys.argv[2]
-          assert receipt.get('schema') == 'agentos.bootstrap-receipt/v1', receipt
-          assert receipt.get('action') == 'agentos.social_runtime.deploy', receipt
-          assert receipt.get('executor_user') == 'ubuntu', receipt
-          assert receipt.get('executor_uid') == 1001, receipt
-          assert receipt.get('source_commit') == expected, receipt
-          assert receipt.get('ok') is True, receipt
-          text = '\n'.join(str(s.get('stdout', '')) + '\n' + str(s.get('stderr', '')) for s in receipt.get('steps', []))
+          python3 - "$RUNNER_TEMP/social-runtime-receipt.json" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.social_runtime.deploy',r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          s=r.get('scheduler') or {}
+          assert s.get('worker_role')=='control',s
+          assert s.get('worker_id')=='oracle-control',s
+          text='\n'.join(str(x.get('stdout',''))+'\n'+str(x.get('stderr','')) for x in r.get('steps',[]))
           for marker in (
               'social_runtime_deploy=PASS',
               'social_runtime_service_identity=ubuntu',
@@ -102,54 +73,42 @@ jobs:
               'social_gateway_public=PASS',
               'social_gateway_nginx_mutation=NONE',
           ):
-              assert marker in text, (marker, text[-16000:])
-          assert f'social_runtime_source_commit={expected}' in text, text[-16000:]
-          print('social_runtime_bootstrap_receipt=PASS')
-          print('social_runtime_bootstrap_executor=ubuntu')
-          print('social_gateway_bootstrap_public=PASS')
+              assert marker in text,(marker,text[-16000:])
+          assert f'social_runtime_source_commit={expected}' in text,text[-16000:]
+          print('social_runtime_scheduler_receipt=PASS')
+          print('social_runtime_worker='+s['worker_id'])
           PY
 
-      - name: Verify local and public endpoints independently
+      - name: Verify public boundary
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS --max-time 3 http://127.0.0.1:8771/healthz > "$RUNNER_TEMP/social-runtime-health.json"
           curl -fsS --max-time 8 https://studio.milkcat.org/dashboard/api/social/healthz > "$RUNNER_TEMP/social-gateway-public-health.json"
-          python3 - "$RUNNER_TEMP/social-runtime-health.json" "$RUNNER_TEMP/social-gateway-public-health.json" <<'PY'
-          import json, sys
-          local = json.load(open(sys.argv[1], encoding='utf-8'))
-          public = json.load(open(sys.argv[2], encoding='utf-8'))
-          for p in (local, public):
-              assert p.get('schema') == 'agentos.social-runtime-status/v1', p
-              assert p.get('service') == 'agentos-social-runtime', p
-              threads = p.get('threads')
-              assert isinstance(threads, dict) and set(threads) == {'configured'}, p
-              assert isinstance(threads['configured'], bool), p
-              text = json.dumps(p, sort_keys=True).lower()
-              for forbidden in ('app_secret', 'access_token', 'refresh_token', 'authorization_code'):
-                  assert forbidden not in text, text
-          assert local == public, (local, public)
-          print('oracle_social_runtime_endpoint=PASS')
+          python3 - "$RUNNER_TEMP/social-gateway-public-health.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert p.get('schema')=='agentos.social-runtime-status/v1',p
+          assert p.get('service')=='agentos-social-runtime',p
+          threads=p.get('threads')
+          assert isinstance(threads,dict) and set(threads)=={'configured'},p
+          text=json.dumps(p,sort_keys=True).lower()
+          for forbidden in ('app_secret','access_token','refresh_token','authorization_code'):
+              assert forbidden not in text,text
           print('oracle_social_gateway_public=PASS')
-          print('oracle_social_runtime_configured=' + str(local['threads']['configured']).lower())
           PY
-
-          code=$(curl -sS -o "$RUNNER_TEMP/social-gateway-internal-block.json" -w '%{http_code}' --max-time 8 \
-            -X POST https://studio.milkcat.org/dashboard/api/social/internal/v1/social/acceptances \
-            -H 'content-type: application/json' --data '{}')
+          code=$(curl -sS -o "$RUNNER_TEMP/social-gateway-internal-block.json" -w '%{http_code}' --max-time 8             -X POST https://studio.milkcat.org/dashboard/api/social/internal/v1/social/acceptances             -H 'content-type: application/json' --data '{}')
           test "$code" = 404
           grep -q 'Social gateway route not allowlisted' "$RUNNER_TEMP/social-gateway-internal-block.json"
           echo 'oracle_social_gateway_internal_control=BLOCKED'
 
-      - name: Upload sanitized endpoint evidence
+      - name: Upload sanitized evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: oracle-social-runtime-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/social-runtime-health.json
+            ${{ runner.temp }}/social-runtime-receipt.json
             ${{ runner.temp }}/social-gateway-public-health.json
             ${{ runner.temp }}/social-gateway-internal-block.json
           if-no-files-found: warn
           retention-days: 14
-# 2026-09-25: restore missing deployed /dashboard/api/social gateway; localhost:8771 healthy, public health/connect 404.
