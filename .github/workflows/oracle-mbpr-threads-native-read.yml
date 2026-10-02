@@ -1,63 +1,81 @@
 name: Oracle MBPR Threads Native Read
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-threads-native-read.json'
+      - '.github/workflows/oracle-mbpr-threads-native-read.yml'
 permissions:
   contents: read
 jobs:
   read:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     env:
-      AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      PYTHONPATH: ${{ github.workspace }}
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Read Threads Messages into private Realm receipt
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read Threads Messages from MBPR existing Chrome through Realm
         shell: bash
         run: |
+          set -euo pipefail
+          RAW="$RUNNER_TEMP/mbpr-native-read-raw.txt"
+          OUT="$RUNNER_TEMP/threads-native-read.json"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s > "$RAW" <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
           python3 - <<'PY'
-          import json,time,hashlib
+          import time
           from agent_core.realm_fabric import RealmFabricStore
-          cmd=json.load(open('.agentos/commands/mbpr-threads-native-read.json',encoding='utf-8'))
-          assert cmd.get('node_id')=='mbpr'
+
           tid='mbpr-threads-native-read-'+str(int(time.time()))
           py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
           code="from agentos_node.macos_chrome_threads import read_visible_threads_messages; import json; r=read_visible_threads_messages(20000); print(json.dumps(r,ensure_ascii=False))"
           task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':25,'cognition_ids_used':[]}
-          store=RealmFabricStore(); store.queue_task('mbpr',task)
-          for _ in range(40):
+          store=RealmFabricStore()
+          store.queue_task('mbpr',task)
+          for _ in range(45):
               r=store.get_receipt(tid)
               if r:
-                  out=str(r.get('stdout') or '')
                   if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
-                      err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
-                      if ('javascript' in err and ('apple' in err or 'execute' in err or 'turned off' in err or 'disabled' in err)):
-                          kind='CHROME_JS_FROM_APPLE_EVENTS_DISABLED'
-                      elif 'not authorized' in err or 'not permitted' in err or '-1743' in err:
-                          kind='AUTOMATION_PERMISSION'
-                      elif 'timeout' in err or 'timed out' in err:
-                          kind='TIMEOUT'
-                      else:
-                          kind='OTHER'
-                      print('threads_native_read=ERROR')
-                      print('threads_native_read_error_type='+kind)
+                      print('threads_native_read_remote=ERROR')
                       raise SystemExit(2)
-                  digest=hashlib.sha256(out.encode()).hexdigest()[:16]
-                  open('/tmp/threads-native-read.json','w',encoding='utf-8').write(out)
-                  print('threads_native_read=PASS')
-                  print('threads_native_read_receipt='+tid)
-                  print('threads_native_read_digest='+digest)
-                  print('threads_native_read_bytes='+str(len(out.encode())))
+                  out=str(r.get('stdout') or '').strip()
+                  print('threads_native_read_payload='+out)
                   raise SystemExit(0)
               time.sleep(2)
           raise SystemExit('threads native read timeout')
           PY
+          REMOTE
 
+          python3 - "$RAW" "$OUT" <<'PY'
+          import hashlib,json,sys
+          raw=open(sys.argv[1],encoding="utf-8").read().splitlines()
+          line=next((x for x in reversed(raw) if x.startswith("threads_native_read_payload=")),None)
+          assert line,line
+          payload=line.split("=",1)[1]
+          obj=json.loads(payload)
+          open(sys.argv[2],"w",encoding="utf-8").write(json.dumps(obj,ensure_ascii=False)+"\n")
+          digest=hashlib.sha256(payload.encode()).hexdigest()[:16]
+          print("threads_native_read=PASS")
+          print("threads_native_read_found="+str(bool(obj.get("found"))).lower())
+          print("threads_native_read_digest="+digest)
+          print("threads_native_read_bytes="+str(len(payload.encode())))
+          PY
       - name: Upload private Threads read artifact
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: threads-native-read
-          path: /tmp/threads-native-read.json
+          path: ${{ runner.temp }}/threads-native-read.json
           retention-days: 1
           if-no-files-found: error
