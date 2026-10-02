@@ -1,4 +1,4 @@
-name: Oracle Cutover Milkcat World Home
+name: Oracle Publish Studio Web Root Surface
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: milkcat-world-home-cutover
+  group: studio-web-root-surface-publish
   cancel-in-progress: true
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 15
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: cfa50f0cb16305d7e0e007764e076ed142e5d83c
+      SOURCE_SHA: c698c3406f327609174d2feadd0c819bd4f9ab49
     steps:
       - uses: actions/checkout@v4
 
@@ -28,14 +28,14 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          echo "milkcat_world_home_contract=PASS"
+          echo "studio_web_root_surface_contract=PASS"
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Build pinned Studio Web and atomically replace root index
+      - name: Build pinned Studio Web and atomically publish root-owned artifacts
         env:
           DEPLOY_HOST: 127.0.0.1
           DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -63,34 +63,56 @@ jobs:
           npm run build >/dev/null
 
           test -f "$SRC/dist/index.html"
+          test -f "$SRC/dist/agentos/join.md"
+          test -f "$SRC/dist/.well-known/agentos.json"
           grep -Fq 'Milkcat World' "$SRC/dist/index.html"
           grep -Fq '/world/' "$SRC/dist/index.html"
+          grep -Fq '# Join AgentOS ONE' "$SRC/dist/agentos/join.md"
+          grep -Fq '"schema": "agentos.discovery/v1"' "$SRC/dist/.well-known/agentos.json"
 
           test -d "$LIVE"
-          if [ -f "$LIVE/index.html" ]; then
-            cp -a "$LIVE/index.html" "$BACKUP/index.previous.html"
-          fi
-
-          cp "$SRC/dist/index.html" "$LIVE/.index-$RUN_ID.html"
-          chmod 0644 "$LIVE/.index-$RUN_ID.html"
-          mv -f "$LIVE/.index-$RUN_ID.html" "$LIVE/index.html"
-
-          if ! curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/ | grep -Fq 'Milkcat World'; then
-            if [ -f "$BACKUP/index.previous.html" ]; then
-              cp -a "$BACKUP/index.previous.html" "$LIVE/index.html"
+          mkdir -p "$BACKUP" "$LIVE/agentos" "$LIVE/.well-known"
+          for rel in index.html agentos/join.md .well-known/agentos.json; do
+            if [ -f "$LIVE/$rel" ]; then
+              mkdir -p "$BACKUP/$(dirname "$rel")"
+              cp -a "$LIVE/$rel" "$BACKUP/$rel.previous"
             fi
-            echo "milkcat_world_home_cutover=ROLLBACK"
-            exit 1
-          fi
+          done
 
-          echo "milkcat_world_home_cutover=PASS source_sha=$SOURCE_SHA backup=$BACKUP"
+          install -m 0644 "$SRC/dist/index.html" "$LIVE/.index-$RUN_ID.html"
+          mv -f "$LIVE/.index-$RUN_ID.html" "$LIVE/index.html"
+          install -m 0644 "$SRC/dist/agentos/join.md" "$LIVE/agentos/join.md"
+          install -m 0644 "$SRC/dist/.well-known/agentos.json" "$LIVE/.well-known/agentos.json"
+
+          rollback() {
+            for rel in index.html agentos/join.md .well-known/agentos.json; do
+              if [ -f "$BACKUP/$rel.previous" ]; then
+                mkdir -p "$LIVE/$(dirname "$rel")"
+                cp -a "$BACKUP/$rel.previous" "$LIVE/$rel"
+              else
+                rm -f "$LIVE/$rel"
+              fi
+            done
+          }
+
+          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/ | grep -Fq 'Milkcat World' || { rollback; exit 1; }
+          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/agentos/join.md | grep -Fq '# Join AgentOS ONE' || { rollback; exit 1; }
+          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/.well-known/agentos.json | grep -Fq '"schema": "agentos.discovery/v1"' || { rollback; exit 1; }
+
+          echo "studio_web_root_surface_publish=PASS source_sha=$SOURCE_SHA backup=$BACKUP"
           REMOTE
 
-      - name: Public acceptance
+      - name: Public root surface acceptance
         run: |
           set -euo pipefail
           OUT=$(mktemp)
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/?_=$GITHUB_RUN_ID" -o "$OUT"
           grep -Fq 'Milkcat World' "$OUT"
           grep -Fq '/world/' "$OUT"
-          echo "public_milkcat_world_home_acceptance=PASS"
+          JOIN=$(mktemp)
+          DISCOVERY=$(mktemp)
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/agentos/join.md?_=$GITHUB_RUN_ID" -o "$JOIN"
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/.well-known/agentos.json?_=$GITHUB_RUN_ID" -o "$DISCOVERY"
+          grep -Fq '# Join AgentOS ONE' "$JOIN"
+          grep -Fq '"schema": "agentos.discovery/v1"' "$DISCOVERY"
+          echo "public_studio_web_root_surface_acceptance=PASS"
