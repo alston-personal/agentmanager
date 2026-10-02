@@ -21,6 +21,7 @@ Wants=network-online.target
 Type=oneshot
 EnvironmentFile=%h/.config/agentos/personas/%i.env
 WorkingDirectory=%h
+ExecStart=/usr/bin/python3 ${AGENTOS_PERSONA_PDCA_TICK_SCRIPT}
 ExecStart=/usr/bin/python3 ${AGENTOS_PERSONA_SOCIAL_LOOP_SCRIPT}
 ExecStartPost=/usr/bin/python3 ${AGENTOS_PERSONA_PDCA_SYNC_SCRIPT}
 TimeoutStartSec=240
