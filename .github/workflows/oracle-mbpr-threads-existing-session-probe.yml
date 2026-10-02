@@ -37,14 +37,11 @@ jobs:
 
           cmd=json.load(open('/home/ubuntu/agentmanager/.agentos/commands/mbpr-threads-existing-session-probe.json',encoding='utf-8'))
           assert cmd.get('node_id')=='mbpr'
-          sha=str(cmd.get('source_commit') or '')
           py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
-          root='/Users/tengweihuang/Library/Application Support/AgentOS/browser-bridge'
-          code=("import sys,runpy,urllib.request,tempfile; "
-                "sys.path.insert(0,"+repr(root+"/site-packages")+"); "
-                "p=tempfile.mktemp(suffix='.py'); "
-                "urllib.request.urlretrieve('https://raw.githubusercontent.com/alston-personal/agentmanager/"+sha+"/scripts/threads_existing_chrome_reader.py',p); "
-                "sys.argv=[p]; runpy.run_path(p,run_name='__main__')")
+          code=("import json,urllib.request; "
+                "tabs=json.load(urllib.request.urlopen('http://127.0.0.1:9222/json/list',timeout=5)); "
+                "found=[t for t in tabs if '/messages' in str(t.get('url') or '') and 'threads.com' in str(t.get('url') or '')]; "
+                "print(json.dumps({'count':len(found),'transport':'chrome-cdp'},separators=(',',':')))")
           tid='threads-existing-session-'+str(int(time.time()))
           store=RealmFabricStore()
           store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
