@@ -195,6 +195,15 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 )
                 self._send(200, {'ok': True, **result})
                 return
+            if self.path == '/v1/participants/join/challenge':
+                body = self._json_body()
+                result = self.participants.verify_challenge(
+                    request_id=str(body.get('request_id') or ''),
+                    claim_secret=str(body.get('claim_secret') or ''),
+                    response=dict(body.get('response') or {}),
+                )
+                self._send(200, {'ok': True, **result})
+                return
             if self.path == '/v1/participants/join/status':
                 body = self._json_body()
                 result = self.participants.join_status(

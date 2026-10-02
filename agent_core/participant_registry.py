@@ -144,6 +144,8 @@ class ParticipantRegistry:
             "manifest": normalized,
             "negotiated_protocol": negotiated,
             "challenge": challenge,
+            "challenge_verified_at": None,
+            "challenge_response_digest": None,
             "claim_secret_hash": _hash_secret(claim_secret),
             "user_code": user_code,
             "created_at": _utc_now(),
@@ -173,6 +175,39 @@ class ParticipantRegistry:
             if request_id.upper() == selector or str(entry.get("user_code") or "").upper() == selector:
                 return request_id, entry
         raise KeyError(selector)
+
+    def verify_challenge(self, *, request_id: str, claim_secret: str, response: dict[str, Any]) -> dict[str, Any]:
+        data = self.load()
+        entry = data["join_requests"].get(request_id)
+        if not entry or not secrets.compare_digest(str(entry.get("claim_secret_hash") or ""), _hash_secret(claim_secret)):
+            raise PermissionError("invalid participant join credential")
+        if _parse_utc(entry["expires_at"]) < datetime.now(timezone.utc):
+            raise PermissionError("participant join request expired")
+        if str(response.get("request_id") or "") != request_id:
+            raise ValueError("challenge response request_id mismatch")
+        if str(response.get("participant_id") or "") != entry["participant_id"]:
+            raise ValueError("challenge response participant_id mismatch")
+        if str(response.get("challenge") or "") != entry["challenge"]:
+            raise ValueError("challenge response challenge mismatch")
+        if str(response.get("protocol") or "") != f"agentos-participant/{entry['negotiated_protocol']}":
+            raise ValueError("challenge response protocol mismatch")
+        ack = str(response.get("ack") or "").strip()
+        if ack != "ACCEPT":
+            raise ValueError("challenge response ack must be ACCEPT")
+        canonical = json.dumps(response, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        entry["challenge_verified_at"] = _utc_now()
+        entry["challenge_response_digest"] = digest
+        data["join_requests"][request_id] = entry
+        self.save(data)
+        return {
+            "schema": "agentos.participant-challenge-verification/v1",
+            "ok": True,
+            "request_id": request_id,
+            "participant_id": entry["participant_id"],
+            "verified_at": entry["challenge_verified_at"],
+            "response_digest": digest,
+        }
 
     def approve_join(self, selector: str) -> dict[str, Any]:
         data = self.load()
@@ -236,6 +271,8 @@ class ParticipantRegistry:
                 "status": "pending",
             }
 
+        if not entry.get("challenge_verified_at"):
+            raise PermissionError("participant challenge not verified")
         token = secrets.token_urlsafe(32)
         participant_id = entry["participant_id"]
         manifest = dict(entry["manifest"])

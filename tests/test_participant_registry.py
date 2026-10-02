@@ -75,6 +75,17 @@ class ParticipantRegistryTests(unittest.TestCase):
             host_runtime_id="participant://host/browser-bridge",
         )
         self.registry.approve_join(req["user_code"])
+        self.registry.verify_challenge(
+            request_id=req["request_id"],
+            claim_secret=req["claim_secret"],
+            response={
+                "request_id": req["request_id"],
+                "participant_id": req["participant_id"],
+                "challenge": req["challenge"],
+                "protocol": "agentos-participant/1.0",
+                "ack": "ACCEPT",
+            },
+        )
         result = self.registry.claim_join(
             request_id=req["request_id"],
             claim_secret=req["claim_secret"],
@@ -90,6 +101,17 @@ class ParticipantRegistryTests(unittest.TestCase):
             host_runtime_id="participant://host/browser-bridge",
         )
         self.registry.approve_join(req["request_id"])
+        self.registry.verify_challenge(
+            request_id=req["request_id"],
+            claim_secret=req["claim_secret"],
+            response={
+                "request_id": req["request_id"],
+                "participant_id": req["participant_id"],
+                "challenge": req["challenge"],
+                "protocol": "agentos-participant/1.0",
+                "ack": "ACCEPT",
+            },
+        )
         result = self.registry.claim_join(
             request_id=req["request_id"],
             claim_secret=req["claim_secret"],
@@ -102,6 +124,37 @@ class ParticipantRegistryTests(unittest.TestCase):
         )
         self.assertEqual(record["core_conformance"], "pending")
         self.assertEqual(record["capability_conformance"], "pending")
+
+
+    def test_claim_rejects_without_verified_challenge_after_approval(self):
+        req = self.registry.request_join(
+            manifest=manifest(),
+            host_runtime_id="participant://host/browser-bridge",
+        )
+        self.registry.approve_join(req["user_code"])
+        with self.assertRaisesRegex(PermissionError, "challenge not verified"):
+            self.registry.claim_join(
+                request_id=req["request_id"],
+                claim_secret=req["claim_secret"],
+            )
+
+    def test_challenge_must_correlate_exactly(self):
+        req = self.registry.request_join(
+            manifest=manifest(),
+            host_runtime_id="participant://host/browser-bridge",
+        )
+        with self.assertRaisesRegex(ValueError, "challenge response challenge mismatch"):
+            self.registry.verify_challenge(
+                request_id=req["request_id"],
+                claim_secret=req["claim_secret"],
+                response={
+                    "request_id": req["request_id"],
+                    "participant_id": req["participant_id"],
+                    "challenge": "wrong",
+                    "protocol": "agentos-participant/1.0",
+                    "ack": "ACCEPT",
+                },
+            )
 
     def test_no_common_protocol_is_explicit(self):
         m = manifest()
