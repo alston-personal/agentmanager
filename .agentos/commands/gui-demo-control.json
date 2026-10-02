@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "uia-edge-tree-20261002-0937",
+  "nonce": "uia-edge-tree-retry-20261002-0941",
   "action": "shell.exec",
   "payload": {
     "executable": "python",
