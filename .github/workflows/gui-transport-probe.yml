@@ -22,7 +22,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Verify watchdog recovery
+      - name: Inspect Gemini window
         shell: bash
         run: |
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
@@ -32,26 +32,22 @@ jobs:
           cd /home/ubuntu/agentmanager
           python3 - <<'PY'
           import json,time
-          from agent_core.node_registry import NodeRegistry
           from agent_core.realm_fabric import RealmFabricStore
-          task_id='gui-demo-watchdog-after-uia-20261002-1115'
-          node=next((n for n in (NodeRegistry().node_map().get('nodes') or []) if str(n.get('node_id') or '')=='VO10005870'),None)
-          print('NODE_BEFORE='+json.dumps(node,ensure_ascii=False,separators=(',',':')))
           f=RealmFabricStore()
-          if f.get_receipt(task_id) is None:
-              f.queue_task('VO10005870', {
+          tid='gui-demo-inspect-gemini-window-hosted-20261002-1125'
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1',
-                  'task_id':task_id,
-                  'action':'desktop.session.inspect',
-                  'cognition_ids_used':['demo://watchdog-after-uia/20261002'],
+                  'task_id':tid,
+                  'action':'desktop.windows.inspect',
+                  'cognition_ids_used':['demo://gemini-window-inspect/20261002'],
               })
-          for _ in range(25):
-              r=f.get_receipt(task_id)
+          for _ in range(20):
+              r=f.get_receipt(tid)
               if r is not None:
                   print('RECEIPT='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
-                  raise SystemExit(0)
+                  raise SystemExit(0 if r.get('ok') is True else 1)
               time.sleep(1)
-          print('PENDING='+json.dumps((f.load().get('tasks') or {}).get('VO10005870') or [],ensure_ascii=False,separators=(',',':')))
-          raise SystemExit('watchdog_recovery_probe_no_receipt')
+          raise SystemExit('no_receipt')
           PY
           REMOTE
