@@ -1,0 +1,76 @@
+name: Reload VO10005870 After Recovery Fixes
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/reload-vo10005870-after-fixes.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  reload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Reload Thin Client and verify new daemon
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+
+          reload_id='reload-thin-client-after-hung-fixes-20261002-1312'
+          ps=r'''$cmd="Start-Sleep -Seconds 3; Stop-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName 'AgentOS Thin Client'"; Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$cmd); Write-Output 'reload_scheduled' '''
+          if f.get_receipt(reload_id) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':reload_id,'action':'shell.exec',
+                  'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,
+                  'cognition_ids_used':['demo://hung-recovery-fix/20261002'],
+              })
+          for _ in range(30):
+              r=f.get_receipt(reload_id)
+              if r:
+                  print('RELOAD='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      raise SystemExit('reload_schedule_failed')
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('reload_receipt_timeout')
+
+          time.sleep(12)
+          verify_id='verify-thin-client-after-hung-fixes-20261002-1312'
+          if f.get_receipt(verify_id) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':verify_id,'action':'desktop.session.inspect',
+                  'cognition_ids_used':['demo://hung-recovery-fix/20261002'],
+              })
+          for _ in range(60):
+              r=f.get_receipt(verify_id)
+              if r:
+                  print('VERIFY='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  if r.get('ok') is not True:
+                      raise SystemExit('reload_verify_failed')
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('verify_receipt_timeout')
+          PY
+          REMOTE
