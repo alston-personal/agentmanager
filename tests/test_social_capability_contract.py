@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentos_node.social.contracts import SocialReceipt, SocialRequest
+from agentos_node.social.contracts import SocialReceipt, SocialRequest, social_request_digest
 from agentos_node.social.credentials import AccountBinding, EphemeralCredentialVault
 from agentos_node.social.governance import RuntimeWriteAcceptance, SocialWriteGate
 from agentos_node.social.oauth import OAuthStateStore, sanitized_oauth_return
@@ -31,10 +31,35 @@ def test_write_fails_closed_without_runtime_acceptance():
 
 def test_write_acceptance_is_exact_product_platform_operation_and_account():
     request = publish_request()
-    accepted = RuntimeWriteAcceptance("accept-1", "leopardcat-tarot", "threads", frozenset({"publish"}), frozenset({request.account_binding_id}))
+    accepted = RuntimeWriteAcceptance(
+        "accept-1", "leopardcat-tarot", "threads",
+        frozenset({"publish"}), frozenset({request.account_binding_id}),
+        social_request_digest(request),
+    )
     SocialWriteGate().authorize(request, accepted)
     with pytest.raises(PermissionError):
-        SocialWriteGate().authorize(request, RuntimeWriteAcceptance("accept-2", "vendor-reputation-service", "threads", frozenset({"publish"}), frozenset({request.account_binding_id})))
+        SocialWriteGate().authorize(
+            request,
+            RuntimeWriteAcceptance(
+                "accept-2", "vendor-reputation-service", "threads",
+                frozenset({"publish"}), frozenset({request.account_binding_id}),
+                social_request_digest(request),
+            ),
+        )
+
+
+def test_write_acceptance_rejects_content_or_media_substitution():
+    request = publish_request()
+    accepted = RuntimeWriteAcceptance(
+        "accept-1", "leopardcat-tarot", "threads",
+        frozenset({"publish"}), frozenset({request.account_binding_id}),
+        social_request_digest(request),
+    )
+    with pytest.raises(PermissionError, match="request_digest_mismatch"):
+        SocialWriteGate().authorize(
+            publish_request(primary_text="substituted content"),
+            accepted,
+        )
 
 
 def test_receipt_recursively_rejects_secret_fields():
