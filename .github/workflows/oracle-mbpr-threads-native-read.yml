@@ -26,21 +26,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RAW="$RUNNER_TEMP/mbpr-native-read-raw.txt"
-          OUT="$RUNNER_TEMP/threads-native-read.json"
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3 \
-            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
-            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s > "$RAW" <<'REMOTE'
+          RAW="$RUNNER_TEMP/mbpr-native-read-raw.txt",          OUT="$RUNNER_TEMP/threads-native-read.json",          SCRIPT_B64="$(base64 -w0 scripts/threads_existing_chrome_reader.py)",          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3 \,            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \,            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$SCRIPT_B64" > "$RAW" <<'REMOTE',          SCRIPT_B64="$1"
           set -euo pipefail
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
           export PYTHONPATH=/home/ubuntu/agentmanager
-          python3 - <<'PY'
+          python3 - "$SCRIPT_B64" <<'PY'
           import time
           from agent_core.realm_fabric import RealmFabricStore
 
+          import base64,sys
           tid='mbpr-threads-native-read-'+str(int(time.time()))
-          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
-          code="from agentos_node.macos_chrome_threads import read_visible_threads_messages; import json; r=read_visible_threads_messages(20000); print(json.dumps(r,ensure_ascii=False))"
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
+          script_b64=sys.argv[1] if len(sys.argv)>1 else ''
+          code=("import base64,runpy,sys,tempfile; "
+                "p=tempfile.mktemp(suffix='.py'); "
+                "open(p,'wb').write(base64.b64decode("+repr(script_b64)+")); "
+                "sys.argv=[p,'--read','--max-chars','20000']; "
+                "runpy.run_path(p,run_name='__main__')")
           task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':25,'cognition_ids_used':[]}
           store=RealmFabricStore()
           store.queue_task('mbpr',task)
