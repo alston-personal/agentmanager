@@ -1,9 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "e2e3-record-stop-diagnostic-20261002-0053",
-  "action": "desktop.demo.stop",
-  "payload": {
-    "final_stage": "Benchmark incomplete / diagnostic stop"
-  }
+  "nonce": "e2e3-postfail-windows-20261002-0054",
+  "action": "desktop.windows.inspect",
+  "payload": {}
 }
