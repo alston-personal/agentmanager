@@ -1,37 +1,58 @@
 name: Oracle MBPR Open Threads Existing Chrome
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-open-threads-existing-chrome.json'
+      - '.github/workflows/oracle-mbpr-open-threads-existing-chrome.yml'
 permissions:
   contents: read
 jobs:
   open:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
     env:
-      AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      PYTHONPATH: ${{ github.workspace }}
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Open Threads in existing Chrome profile
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Queue fixed Threads Messages open on MBPR through Realm
         shell: bash
         run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
           python3 - <<'PY'
-          import json,time
-          from agent_core.realm_fabric import RealmFabricStore
-          cmd=json.load(open('.agentos/commands/mbpr-open-threads-existing-chrome.json',encoding='utf-8'))
-          assert cmd.get('node_id')=='mbpr'
-          tid='open-threads-existing-chrome-'+str(int(time.time()))
-          code="import subprocess; r=subprocess.run(['open','-a','Google Chrome','https://www.threads.com/messages']); print('OPEN_THREADS_EXISTING_CHROME_PASS' if r.returncode==0 else 'OPEN_THREADS_EXISTING_CHROME_FAIL'); raise SystemExit(r.returncode)"
-          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
-          store=RealmFabricStore(); store.queue_task('mbpr',task)
-          for _ in range(30):
-              r=store.get_receipt(tid)
-              if r:
-                  out=str(r.get('stdout') or '')
-                  print(out)
-                  if r.get('ok') is True and 'OPEN_THREADS_EXISTING_CHROME_PASS' in out:
-                      print('mbpr_open_threads_existing_chrome=PASS'); raise SystemExit(0)
-                  print(str(r)); raise SystemExit(2)
-              time.sleep(2)
-          raise SystemExit('open Threads existing Chrome receipt timeout')
-          PY
+import time
+from agent_core.realm_fabric import RealmFabricStore
+
+tid='open-threads-existing-chrome-'+str(int(time.time()))
+code="import subprocess; r=subprocess.run([\'open\',\'-a\',\'Google Chrome\',\'https://www.threads.com/messages\']); print(\'OPEN_THREADS_EXISTING_CHROME_PASS\' if r.returncode==0 else \'OPEN_THREADS_EXISTING_CHROME_FAIL\'); raise SystemExit(r.returncode)"
+task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+store=RealmFabricStore()
+store.queue_task('mbpr',task)
+for _ in range(40):
+    r=store.get_receipt(tid)
+    if r:
+        out=str(r.get('stdout') or '')
+        print(out)
+        if r.get('ok') is True and 'OPEN_THREADS_EXISTING_CHROME_PASS' in out:
+            print('mbpr_open_threads_existing_chrome=PASS')
+            raise SystemExit(0)
+        print('mbpr_open_threads_existing_chrome=ERROR')
+        raise SystemExit(2)
+    time.sleep(2)
+raise SystemExit('open Threads existing Chrome receipt timeout')
+PY
+          REMOTE

@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.threads-existing-chrome.open",
   "node_id": "mbpr",
-  "nonce": "open-existing-chrome-1790557996888"
+  "nonce": "open-existing-chrome-20261002-1128"
 }
