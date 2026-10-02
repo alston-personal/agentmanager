@@ -157,6 +157,14 @@ As of the 2026-10-02 live Oracle nginx audit, the TLS server for `studio.milkcat
 
 The legacy Action Relay capability `site.sync_build` is retired from mutation authority and now fails closed rather than fetching/building Zeus Writer. Production publication from `studio-web` must use the governed Studio Web release path. A future nginx-root migration is a separate change and must preserve the route ownership matrix and independent aliases/proxies.
 
+## Hosted Participant enrollment control lane
+
+As of 2026-10-02, the existing Oracle Realm enrollment control workflow is being generalized to carry Participant join requests without creating a second direct-Oracle workflow. Enrollment mutations execute only from `main`; feature-branch pushes may run governance checks but must not create, approve, challenge, or claim live Participants.
+
+For hosted Participant join requests, ONE-issued `claim_secret` is stored only under `/home/ubuntu/agent-data/runtime/participant-enrollment/` with restrictive permissions and is never committed or printed. Repository evidence may contain only non-secret correlation fields such as Participant ID, request ID, user code, negotiated protocol, expiry, and challenge.
+
+The initial live Gemini Web join request proved that the Participant runtime endpoint is reachable and can negotiate protocol 1.0. That request remains an experiment artifact; acceptance does not advance above A0 until the actual Gemini Participant returns the correlated challenge response and ONE records verification.
+
 ## Participant runtime enrollment
 
 As of 2026-10-02, Participant Protocol enrollment is implemented as a generic ONE runtime surface rather than documentation-only guidance. The first runtime slice supports hosted or direct Participants without provider-specific Core logic.
