@@ -2,6 +2,7 @@ from pathlib import Path
 
 SOCIAL = Path(".github/workflows/oracle-social-runtime-rollout.yml")
 MIO = Path(".github/workflows/oracle-publish-mio-approved.yml")
+CONTENT = Path(".github/workflows/content-publish-social-consumer.yml")
 
 
 def _assert_runner_window_workflow(path: Path):
@@ -27,3 +28,12 @@ def test_mio_approved_publish_uses_runner_window():
     text = MIO.read_text(encoding="utf-8")
     assert "social.publish mio.approved" in text
     assert "mio_approved_runner_window_receipt=PASS" in text
+
+
+def test_content_social_uses_runner_window():
+    _assert_runner_window_workflow(CONTENT)
+    text = CONTENT.read_text(encoding="utf-8")
+    assert "content.social reconcile" in text
+    assert "webfactory/ssh-agent" not in text
+    assert "ssh \\" not in text
+    assert "content_social_runner_window=PASS" in text
