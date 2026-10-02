@@ -34,7 +34,10 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
 
     def test_rollout_is_integration_only_and_never_writes_main(self):
         text = _text(WORKFLOW)
-        self.assertIn('branches:\n      - core/integration', text)
+        trigger = text.split('permissions:', 1)[0]
+        self.assertIn('workflow_dispatch:', trigger)
+        self.assertNotIn('\n  push:', trigger)
+        self.assertNotIn('\n  pull_request:', trigger)
         self.assertIn('"params": {"source_commit": sha}', text)
         self.assertIn('agentos_source_ref=core/integration', text)
         self.assertNotIn('git push', text)
@@ -82,8 +85,8 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
 
     def test_rollout_validates_and_preserves_bounded_attribution_evidence(self):
         text = _text(WORKFLOW)
-        self.assertIn("'agent_core/experience_attribution_contract.py'", text)
-        self.assertIn("'scripts/oracle_codex_experience_ablation.py'", text)
+        # Manual compatibility lanes no longer carry push path filters; retain
+        # the bounded attribution contract checks on the actual executor logic.
         self.assertIn('parse_attribution_evidence_json', text)
         self.assertIn('sanitize_attribution_evidence_json', text)
         self.assertIn('attribution_json = receipt.get("attribution_evidence_json")', text)
