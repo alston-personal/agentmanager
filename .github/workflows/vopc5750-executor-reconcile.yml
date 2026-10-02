@@ -78,7 +78,7 @@ jobs:
           if not (r and r.get('ok') is True):
               raise SystemExit(1)
           adoption=r.get('executor_adoption')
-          if not isinstance(adoption,dict) or adoption.get('schema')!='agentos.executor-adoption/v0.1':
+          if not isinstance(adoption,dict) or adoption.get('schema')!='agentos.executor-adoption/v0.2':
               raise SystemExit(1)
           evidence={'schema':'agentos.executor-reconcile-acceptance/v0.1','node_id':'vopc5750','task_id':sys.argv[1],'ok':True,'summary':adoption.get('summary'),'executors':adoption.get('executors')}
           Path('/tmp/vopc-executor-reconcile-evidence.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n',encoding='utf-8')
