@@ -222,6 +222,7 @@ function classifySlot(text: string): ResolvedProduct['slot'] {
   if (/shoe|sneaker|boot|loafer|sandal|鞋|靴|涼鞋|樂福/.test(v)) return 'shoes';
   if (/bag|tote|pouch|wallet|包|皮夾|錢包/.test(v)) return 'bag';
   if (/pant|trouser|jean|skirt|short|legging|褲|裙/.test(v)) return 'lower_body';
+  if (/bra|bralette|camisole|lingerie|內衣|胸罩|小可愛|細肩/.test(v)) return 'upper_body';
   if (/shirt|tee|top|blouse|sweater|knit|hoodie|上衣|襯衫|針織|毛衣|帽t|背心/.test(v)) return 'upper_body';
   return 'accessories';
 }
