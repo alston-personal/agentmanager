@@ -1,0 +1,59 @@
+name: Mio Garment Registry Layout
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-garment-registry-layout.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect garment metadata only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' >"$out" <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data/projects/dressup-simulator/garments')
+          wanted={'net-32235-711','net-43774-002','net-42761-201','net-40832-002','net-40793-003','net-40685-003'}
+          print('root_exists='+str(root.exists()).lower())
+          for p in sorted(root.rglob('*.json')):
+              try:
+                  j=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              gid=str(j.get('garmentId') or j.get('garment_id') or '')
+              if gid not in wanted:
+                  continue
+              rel=p.relative_to(root)
+              print(json.dumps({
+                  'path':str(rel),
+                  'garmentId':gid,
+                  'characterId':j.get('characterId'),
+                  'character_id':j.get('character_id'),
+                  'slot':j.get('slot'),
+                  'layer':j.get('layer'),
+                  'name':j.get('name'),
+              },ensure_ascii=False))
+          PY
+          cat "$out"
+          { echo '### Garment registry layout'; echo; echo '~~~text'; cat "$out"; echo '~~~'; } >/tmp/g.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/g.md
