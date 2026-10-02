@@ -1,9 +1,13 @@
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agent_core.one_uplift import BenchmarkMetrics, compare_before_after
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy
+from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport
 
 
 class TestThinClient(unittest.TestCase):
@@ -56,6 +60,33 @@ class TestThinClient(unittest.TestCase):
             })
             self.assertFalse(receipt['ok'])
             self.assertIn('not allowlisted', receipt['error'])
+
+
+    def test_successful_heartbeat_writes_local_liveness_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = ThinClientPolicy(readable_roots=(root,), writable_roots=(root,))
+            client = ThinClient(NodeIdentity('realm-test', 'client-heartbeat-01'), policy)
+            config = ClientConfig(
+                one_url='http://127.0.0.1:8780',
+                realm_id='realm-test',
+                node_id='client-heartbeat-01',
+                node_token='test-token',
+            )
+            transport = ThinClientTransport(client, config)
+            marker = root / 'heartbeat.json'
+
+            with mock.patch.dict(os.environ, {'AGENTOS_CLIENT_HOME': str(root)}, clear=False):
+                with mock.patch.object(ThinClientTransport, '_request', return_value={'ok': True}):
+                    result = transport.heartbeat()
+
+            self.assertTrue(result['ok'])
+            self.assertTrue(marker.exists())
+            payload = json.loads(marker.read_text(encoding='utf-8'))
+            self.assertEqual(payload['schema'], 'agentos.local-heartbeat/v0.1')
+            self.assertEqual(payload['node_id'], 'client-heartbeat-01')
+            self.assertEqual(payload['realm_id'], 'realm-test')
+            self.assertIsNotNone(payload['recorded_at_epoch'])
 
     def test_uplift_dimensions(self):
         before = BenchmarkMetrics(

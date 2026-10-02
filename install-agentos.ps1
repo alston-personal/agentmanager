@@ -86,15 +86,17 @@ function Resolve-SourceCommit([string]$Ref) {
 function Install-Supervisor([string]$PythonPath) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
+  $watchdogTaskName='AgentOS Thin Client Watchdog'
+
   $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   if($existing){
     Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   }
 
-  # Remove legacy supervisor artifacts from pre-headless builds. The primary
-  # hidden Thin Client task now owns restart behavior; stale watchdog/switch
-  # tasks can otherwise keep waking the user session or leave console windows.
-  foreach($legacyTask in @('AgentOS Thin Client Watchdog','AgentOS Thin Client Headless Switch')){
+  # Replace legacy supervisor artifacts with the canonical hidden Thin Client +
+  # independent watchdog pair. The watchdog must not share process lifetime with
+  # the client it supervises.
+  foreach($legacyTask in @($watchdogTaskName,'AgentOS Thin Client Headless Switch')){
     $legacy=Get-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
     if($legacy){
       Stop-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
@@ -111,6 +113,11 @@ function Install-Supervisor([string]$PythonPath) {
   $state=Join-Path $InstallRoot 'state'
   $runner=Join-Path $InstallRoot 'agentos-thin-client-hidden.ps1'
   $log=Join-Path $InstallRoot 'thin-client.log'
+  $watchdogScript=Join-Path $InstallRoot 'scripts\windows\thin_client_watchdog.ps1'
+  if(-not (Test-Path -LiteralPath $watchdogScript)){
+    throw "AgentOS Thin Client watchdog script missing: $watchdogScript"
+  }
+
   $escapedInstall=$InstallRoot.Replace("'","''")
   $escapedState=$state.Replace("'","''")
   $escapedPython=$PythonPath.Replace("'","''")
@@ -124,14 +131,16 @@ function Install-Supervisor([string]$PythonPath) {
   ) -join [Environment]::NewLine
   $runnerBody | Set-Content -Encoding UTF8 -LiteralPath $runner
 
-  # Use a hidden PowerShell host instead of cmd.exe so background restarts never
-  # flash a console window in the signed-in user's desktop session.
+  # Primary Thin Client: hidden, interactive-user session so GUI capabilities
+  # remain available, with normal Task Scheduler restart-on-failure semantics.
   $action=New-ScheduledTaskAction `
     -Execute 'powershell.exe' `
     -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"') `
     -WorkingDirectory $InstallRoot
   $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
   $settings=New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
     -RestartCount 10 `
     -RestartInterval (New-TimeSpan -Minutes 1) `
@@ -139,8 +148,24 @@ function Install-Supervisor([string]$PythonPath) {
     -Hidden
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force | Out-Null
 
+  # Independent watchdog: a separate periodic task is required because an
+  # intentional Stop-ScheduledTask is not a process failure and therefore does
+  # not reliably activate RestartCount on the primary task.
+  $watchdogArgs='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdogScript + '" -TaskName "' + $taskName + '" -InstallRoot "' + $InstallRoot + '"'
+  $watchdogAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $watchdogArgs -WorkingDirectory $InstallRoot
+  $watchdogLogonTrigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  $watchdogPeriodicTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+  $watchdogSettings=New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
+    -Hidden
+  Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force | Out-Null
+
   Start-ScheduledTask -TaskName $taskName
   Start-Sleep -Seconds 4
+
   $task=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
   if($task.State -ne 'Running'){
     $info=Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
@@ -150,7 +175,18 @@ function Install-Supervisor([string]$PythonPath) {
   if([string]$taskAction.Execute -match '(?i)cmd\.exe$'){
     throw 'AgentOS Thin Client task still uses visible cmd.exe'
   }
+
+  $watchdogTask=Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop
+  $watchdogActionActual=$watchdogTask.Actions | Select-Object -First 1
+  if([string]$watchdogActionActual.Execute -notmatch '(?i)powershell\.exe$'){
+    throw 'AgentOS Thin Client watchdog is not using hidden PowerShell'
+  }
+  if([string]$watchdogActionActual.Arguments -notmatch 'thin_client_watchdog\.ps1'){
+    throw 'AgentOS Thin Client watchdog action is not wired to the canonical script'
+  }
+
   Write-Host 'Background service: Running (headless)' -ForegroundColor Green
+  Write-Host 'Independent watchdog: Installed (60s cadence)' -ForegroundColor Green
 }
 
 try {

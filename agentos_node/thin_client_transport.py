@@ -123,7 +123,36 @@ class ThinClientTransport:
     def heartbeat(self) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/heartbeat', method='POST', body=self.client.heartbeat(), token=self.config.node_token)
+        heartbeat = self.client.heartbeat()
+        result = self._request(
+            self.config.one_url + '/v1/heartbeat',
+            method='POST',
+            body=heartbeat,
+            token=self.config.node_token,
+        )
+        self._record_local_heartbeat(heartbeat)
+        return result
+
+    def _record_local_heartbeat(self, heartbeat: dict[str, Any]) -> None:
+        root = os.environ.get('AGENTOS_CLIENT_HOME')
+        if not root:
+            return
+        target = Path(root) / 'heartbeat.json'
+        payload = {
+            'schema': 'agentos.local-heartbeat/v0.1',
+            'realm_id': self.config.realm_id if self.config else None,
+            'node_id': self.config.node_id if self.config else None,
+            'observed_at': heartbeat.get('observed_at'),
+            'recorded_at_epoch': time.time(),
+        }
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_suffix(target.suffix + '.tmp')
+            tmp.write_text(json.dumps(payload, ensure_ascii=False) + '\n', encoding='utf-8')
+            os.replace(tmp, target)
+        except OSError as exc:
+            # Local liveness evidence must never make a successful Realm heartbeat fail.
+            print(f'[agentos-client] local heartbeat marker error: {exc}', flush=True)
 
     def bootstrap(self) -> dict[str, Any]:
         if not self.config:
