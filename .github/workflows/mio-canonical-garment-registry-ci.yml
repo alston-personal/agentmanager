@@ -1,0 +1,40 @@
+name: Mio Canonical Garment Registry CI
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'dashboard/lib/wardrobe-registry.ts'
+      - 'dashboard/lib/tryon-jobs.ts'
+      - 'dashboard/app/api/wardrobe/catalog/route.ts'
+      - '.github/workflows/mio-canonical-garment-registry-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Build dashboard
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run build
+      - name: Verify canonical registry contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "ACTIVE_GARMENT_DIRS = ['seeded', 'imported']" dashboard/lib/wardrobe-registry.ts
+          grep -Fq "findActiveGarment" dashboard/lib/tryon-jobs.ts
+          grep -Fq "listActiveGarmentRecords" dashboard/app/api/wardrobe/catalog/route.ts
+          if grep -Fq "seeded.prev-" dashboard/lib/wardrobe-registry.ts; then
+            echo "backup directory leaked into active registry"; exit 1
+          fi
+          echo "mio_canonical_registry_contract=PASS"
