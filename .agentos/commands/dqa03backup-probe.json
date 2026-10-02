@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.probe",
+  "node_id": "dqa03backup",
+  "nonce": "verify-after-linux-launcher-fix-20261002"
+}
