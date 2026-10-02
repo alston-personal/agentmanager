@@ -157,7 +157,11 @@ Return ONLY one JSON object with exactly these keys:
 Context:
 """+json.dumps(contract,ensure_ascii=False)
 
-    p=subprocess.run([*executor,prompt],cwd="/home/ubuntu/agentmanager",text=True,capture_output=True,timeout=90)
+    try:
+        p=subprocess.run([*executor,prompt],cwd="/home/ubuntu/agentmanager",text=True,capture_output=True,timeout=90)
+    except subprocess.TimeoutExpired:
+        print(json.dumps({"status":"DEFER","reason":"persona_reasoning_timeout","timeout_seconds":90},ensure_ascii=False))
+        return 0
     if p.returncode!=0:
         print(json.dumps({"status":"DEFER","reason":"reasoning_executor_failed","returncode":p.returncode},ensure_ascii=False)); return 0
     try: decision=extract_json(p.stdout)
