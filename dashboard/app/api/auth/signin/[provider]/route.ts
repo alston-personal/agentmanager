@@ -29,7 +29,7 @@ export async function GET(
     const returnTo = searchParams.get('returnTo') || '/';
     const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
     const response = NextResponse.redirect(authorizeUrl);
-    response.cookies.set({ name: 'oauth_return_to', value: encodeURIComponent(safeReturnTo), httpOnly: true, secure: true, domain: '.milkcat.org', path: '/', sameSite: 'lax', maxAge: 600 });
+    response.cookies.set({ name: 'oauth_return_to', value: encodeURIComponent(safeReturnTo), httpOnly: true, secure: true, path: '/', sameSite: 'lax', maxAge: 600 });
     return response;
   } catch (error) {
     console.error('Sign-in redirect error:', error);
