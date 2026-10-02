@@ -199,6 +199,8 @@ def main(argv: list[str] | None = None) -> int:
         print(render_json(transport.bootstrap()))
     elif args.command == 'verify':
         lifecycle = check_node_supervisor()
+        if not lifecycle.get('supervisor_ready'):
+            lifecycle = install_node_supervisor()
         readiness = transport.verify_readiness(lifecycle=lifecycle)
         print(render_json({'ok': bool(readiness.get('node_ready')), 'lifecycle': lifecycle, 'readiness': readiness}))
         return 0 if readiness.get('node_ready') else 2
