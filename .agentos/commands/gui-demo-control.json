@@ -1,9 +1,14 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "e2e4-abort-stop-20261002-0933b",
-  "action": "desktop.demo.stop",
+  "nonce": "gui-fallback-probe-20261002-0934",
+  "action": "shell.exec",
   "payload": {
-    "final_stage": "ABORTED / browser CDP unavailable"
+    "executable": "python",
+    "argv": [
+      "-c",
+      "import importlib.util,json; mods=['pywinauto','uiautomation','pyautogui','playwright']; print(json.dumps({m:bool(importlib.util.find_spec(m)) for m in mods}))"
+    ],
+    "timeout_seconds": 20
   }
 }
