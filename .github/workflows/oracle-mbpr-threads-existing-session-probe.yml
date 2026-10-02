@@ -1,24 +1,41 @@
 name: Oracle MBPR Threads Existing Session Probe
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-threads-existing-session-probe.json'
+      - '.github/workflows/oracle-mbpr-threads-existing-session-probe.yml'
 permissions:
   contents: read
 jobs:
   probe:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     env:
-      AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      PYTHONPATH: ${{ github.workspace }}
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Run fixed existing-session reader
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe MBPR AgentOS browser-bridge session through Realm
         shell: bash
         run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
           python3 - <<'PY'
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
-          cmd=json.load(open('.agentos/commands/mbpr-threads-existing-session-probe.json',encoding='utf-8'))
+
+          cmd=json.load(open('/home/ubuntu/agentmanager/.agentos/commands/mbpr-threads-existing-session-probe.json',encoding='utf-8'))
           assert cmd.get('node_id')=='mbpr'
           sha=str(cmd.get('source_commit') or '')
           py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
@@ -31,14 +48,20 @@ jobs:
           tid='threads-existing-session-'+str(int(time.time()))
           store=RealmFabricStore()
           store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
-          for _ in range(45):
+          for _ in range(50):
               r=store.get_receipt(tid)
               if r:
-                  print(json.dumps(r,ensure_ascii=False,sort_keys=True))
-                  if r.get('ok') is True and int(r.get('returncode') or 0)==0:
-                      print('mbpr_threads_existing_session_probe=PASS')
-                      raise SystemExit(0)
-                  raise SystemExit('fixed existing-session reader failed')
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      print('mbpr_threads_existing_session_probe=ERROR')
+                      raise SystemExit(2)
+                  out=str(r.get('stdout') or '')
+                  obj=json.loads(out.strip())
+                  count=int(obj.get('count') or 0)
+                  print('mbpr_threads_existing_session_probe=PASS')
+                  print('mbpr_threads_existing_session_count='+str(count))
+                  print('mbpr_threads_existing_session_transport='+str(obj.get('transport') or 'unknown'))
+                  raise SystemExit(0 if count>0 else 4)
               time.sleep(2)
           raise SystemExit('fixed existing-session reader timeout')
           PY
+          REMOTE
