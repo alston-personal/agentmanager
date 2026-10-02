@@ -1,15 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
-import { AGENT_DATA_ROOT } from '@/lib/data-root';
-
-const GARMENT_DIR = path.join(
-  AGENT_DATA_ROOT,
-  'projects',
-  'dressup-simulator',
-  'garments',
-  'imported'
-);
+import { listActiveGarmentRecords, garmentCanonicalUrl, garmentSourceImage } from '@/lib/wardrobe-registry';
 
 const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
 const CHARACTER_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
@@ -42,30 +32,39 @@ type PublicGarment = {
   };
 };
 
-function readCatalog(characterId: string): PublicGarment[] {
-  if (!fs.existsSync(GARMENT_DIR)) return [];
-  const rows: PublicGarment[] = [];
+function toNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const text = String(value ?? '').replace(/[^0-9.]/g, '');
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
 
-  for (const name of fs.readdirSync(GARMENT_DIR)) {
-    if (!name.endsWith('.json')) continue;
-    try {
-      const raw = JSON.parse(fs.readFileSync(path.join(GARMENT_DIR, name), 'utf8'));
-      if (raw?.characterId !== characterId || !raw?.garmentId || !raw?.name) continue;
-      rows.push({
-        garmentId: String(raw.garmentId),
+function readCatalog(characterId: string): PublicGarment[] {
+  return listActiveGarmentRecords(characterId)
+    .flatMap((raw) => {
+      const garmentId = String(raw.garmentId || raw.garment_id || '').trim();
+      if (!garmentId || !raw.name) return [];
+      return [{
+        garmentId,
         characterId,
         name: String(raw.name),
         retailer: String(raw.retailer || raw.brand || 'Retail'),
         brand: raw.brand ? String(raw.brand) : null,
         sku: raw.sku ? String(raw.sku) : null,
         variant: raw.variant ? String(raw.variant) : null,
-        category: raw.category ? String(raw.category) : null,
-        slot: (() => { const rawSlot = String(raw.layer || raw.slot || 'accessories'); const productName = String(raw.name || ''); if ((rawSlot === 'accessories' || rawSlot === 'accessory_1') && /內衣|胸罩|小可愛|細肩|bra|bralette|camisole|lingerie/i.test(productName)) return 'upper_inner'; return rawSlot; })(),
-        price: typeof raw.price === 'number' ? raw.price : null,
-        currency: raw.currency ? String(raw.currency) : null,
+        category: raw.category ? String(raw.category) : raw.kind ? String(raw.kind) : null,
+        slot: (() => {
+          const rawSlot = String(raw.layer || raw.slot || 'accessories');
+          const productName = String(raw.name || '');
+          if ((rawSlot === 'accessories' || rawSlot === 'accessory_1') && /內衣|胸罩|小可愛|細肩|bra|bralette|camisole|lingerie/i.test(productName)) return 'upper_inner';
+          return rawSlot;
+        })(),
+        price: toNumber(raw.priceTwd ?? raw.price),
+        currency: raw.currency ? String(raw.currency) : (raw.priceTwd ? 'TWD' : null),
         source: {
-          canonicalUrl: String(raw?.source?.canonicalUrl || raw?.source?.submittedUrl || ''),
-          imageUrl: raw?.source?.imageUrl ? String(raw.source.imageUrl) : null,
+          canonicalUrl: garmentCanonicalUrl(raw),
+          imageUrl: garmentSourceImage(raw),
           extractedAt: String(raw?.source?.extractedAt || ''),
         },
         acquisition: {
@@ -74,16 +73,12 @@ function readCatalog(characterId: string): PublicGarment[] {
           worn: Boolean(raw?.acquisition?.worn),
         },
         tryOn: {
-          state: String(raw?.tryOn?.state || 'ready_for_tryon'),
+          state: String(raw?.tryOn?.state || raw?.tryOn?.status || 'ready_for_tryon'),
           asset: raw?.tryOn?.asset ? String(raw.tryOn.asset) : null,
         },
-      });
-    } catch {
-      // One malformed imported record must not break the public wardrobe.
-    }
-  }
-
-  return rows.sort((a, b) => b.source.extractedAt.localeCompare(a.source.extractedAt));
+      }];
+    })
+    .sort((a, b) => b.source.extractedAt.localeCompare(a.source.extractedAt));
 }
 
 export async function GET(request: NextRequest) {
