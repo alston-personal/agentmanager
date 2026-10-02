@@ -1,6 +1,6 @@
 # AgentOS Participant Protocol
 
-Status: draft canonical replacement model for Node/Executor/Agent onboarding.
+Status: canonical model for versioned Participant integration and self-onboarding.
 
 ## Goal
 
@@ -361,7 +361,8 @@ See:
 - `v1.0/participant.schema.json`
 - `CONFORMANCE.md`
 - `ACCEPTANCE.md`
-- `GEMINI_WEB_ONBOARDING.md`
+- `onboarding/SELF_ONBOARD.md`
+- `examples/` for non-normative product-specific examples
 
 
 ## Acceptance is normative
@@ -371,3 +372,10 @@ Integration success MUST be reported by acceptance level, not by vague statement
 The authoritative acceptance model is defined in `ACCEPTANCE.md`.
 
 A Participant is not considered joined/READY until the required acceptance gates pass, including an end-to-end invocation and correlated receipt.
+
+
+## Single onboarding entrypoint
+
+All new Participants MUST start from `onboarding/SELF_ONBOARD.md`.
+
+Product-specific onboarding documents are non-normative examples only. The canonical onboarding flow is shared by Node, Executor, Agent, model provider, browser/GUI surface, service, device, worker, or future Participant types.

@@ -1,4 +1,4 @@
-# Gemini Web -> AgentOS ONE onboarding experiment
+# Example: Gemini Web self-onboarding experiment
 
 Purpose: use Gemini Web as the first non-Node Participant to test whether a new participant can read the public contract, build only its adapter, and join without product-specific ONE Core changes.
 
@@ -44,9 +44,13 @@ Likely consumed capabilities:
 - artifact.write
 - browser.interact
 
-## Prompt to give Gemini Web
+## Example invocation
 
-Read these files as the authoritative onboarding specification:
+Start from the canonical self-onboarding entrypoint:
+
+`docs/participant-protocol/onboarding/SELF_ONBOARD.md`
+
+The following notes are Gemini-specific examples only and are not normative protocol requirements.
 
 1. docs/participant-protocol/README.md
 2. docs/participant-protocol/v1.0/CONTRACT.md
