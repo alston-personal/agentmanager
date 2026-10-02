@@ -1,0 +1,65 @@
+name: Mio PWA Frontend Live Deploy
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-pwa-frontend-live-deploy.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      STUDIO_SHA: f49df3e7b8f90dba626c83c813bfb007960c85bf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Build and publish exact Studio Web SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$STUDIO_SHA" "${{ github.run_id }}" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RUN="$2"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/mio-pwa-frontend-XXXXXXXX)
+          SRC="$TMP/studio-web"
+          ROUTE="$SRC/dist/personas/mio"
+          NEW="$LIVE/personas/.mio-$RUN"
+          BACKUP=/home/ubuntu/agent-data/releases/studio-web/mio-persona/${SHA:0:12}-$RUN
+          cleanup(){ rm -rf "$TMP" "$NEW" 2>/dev/null || true; }
+          trap cleanup EXIT
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone alston-personal/studio-web "$SRC" -- --no-checkout >/dev/null
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$SHA"
+          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$SHA"
+          cd "$SRC"
+          npm install --no-package-lock --ignore-scripts >/dev/null
+          npm run build
+          test -f "$ROUTE/wardrobe/index.html"
+          grep -Fq 'milkcat.mio.pwaHandoff/v1' "$ROUTE/wardrobe/index.html"
+          grep -Fq 'action=ack' "$ROUTE/wardrobe/index.html"
+          grep -Fq 'await finalizeAdminSession()' "$ROUTE/wardrobe/index.html"
+          if [ -f "$LIVE/personas/mio/activity.json" ] && [ ! -f "$ROUTE/activity.json" ]; then cp "$LIVE/personas/mio/activity.json" "$ROUTE/activity.json"; fi
+          mkdir -p "$BACKUP" "$LIVE/personas"
+          if [ -d "$LIVE/personas/mio" ]; then cp -a "$LIVE/personas/mio" "$BACKUP/mio.previous"; fi
+          cp -a "$ROUTE" "$NEW"
+          find "$NEW" -type d -exec chmod 0755 {} +
+          find "$NEW" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE/personas/mio"
+          mv "$NEW" "$LIVE/personas/mio"
+          curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org/personas/mio/wardrobe/?_=$RUN" -o "$TMP/live.html"
+          grep -Fq 'milkcat.mio.pwaHandoff/v1' "$TMP/live.html"
+          grep -Fq 'action=ack' "$TMP/live.html"
+          grep -Fq 'await finalizeAdminSession()' "$TMP/live.html"
+          echo "mio_pwa_frontend_live=PASS source_sha=$SHA"
+          REMOTE
