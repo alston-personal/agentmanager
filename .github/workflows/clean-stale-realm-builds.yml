@@ -1,0 +1,74 @@
+name: Clean Stale Realm Build Processes
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/clean-stale-realm-builds.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Terminate only stale realm build groups and verify health
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          echo '=== BEFORE ==='
+          ps -eo pid,ppid,pgid,etime,%cpu,cmd | grep -E 'realm-fabric/releases/.*/venv/bin/python -m pip install git\+https://github.com/alston-personal/agentmanager.git|pip/_vendor/pyproject_hooks/_in_process/_in_process.py get_requires_for_build_wheel' | grep -v grep || true
+
+          groups=""
+          while read -r pid ppid pgid etime cmd; do
+            [ -n "$pid" ] || continue
+            full=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+            cg=$(cat "/proc/$pid/cgroup" 2>/dev/null || true)
+            if echo "$full" | grep -q 'realm-fabric/releases/' && echo "$full" | grep -Eq 'pip install git\+https://github.com/alston-personal/agentmanager.git|get_requires_for_build_wheel' && echo "$cg" | grep -q '/session-'; then
+              age=$(ps -o etimes= -p "$pid" | tr -d ' ')
+              if [ -n "$age" ] && [ "$age" -gt 21600 ]; then
+                groups="$groups $pgid"
+              fi
+            fi
+          done < <(ps -eo pid=,ppid=,pgid=,etime=,cmd= | grep -E 'realm-fabric/releases/' | grep -E 'pip install git\+https://github.com/alston-personal/agentmanager.git|get_requires_for_build_wheel' | grep -v grep)
+
+          groups=$(echo "$groups" | xargs -n1 2>/dev/null | sort -u | xargs 2>/dev/null || true)
+          echo "TARGET_GROUPS=$groups"
+          for g in $groups; do
+            echo "TERM process-group $g"
+            kill -TERM -- "-$g" 2>/dev/null || true
+          done
+          sleep 3
+          for g in $groups; do
+            if ps -g "$g" -o pid= 2>/dev/null | grep -q '[0-9]'; then
+              echo "KILL process-group $g"
+              kill -KILL -- "-$g" 2>/dev/null || true
+            fi
+          done
+          sleep 2
+
+          echo '=== AFTER ==='
+          ps -eo pid,ppid,pgid,etime,%cpu,cmd | grep -E 'realm-fabric/releases/.*/venv/bin/python -m pip install git\+https://github.com/alston-personal/agentmanager.git|pip/_vendor/pyproject_hooks/_in_process/_in_process.py get_requires_for_build_wheel' | grep -v grep || true
+
+          echo '=== HEALTH ==='
+          for i in $(seq 1 20); do
+            a=$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time 3 http://127.0.0.1:8780/v1/health || true)
+            b=$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true)
+            echo "$i local=$a public=$b"
+            sleep 0.5
+          done
+          echo '=== LOAD ==='
+          uptime
+          REMOTE
