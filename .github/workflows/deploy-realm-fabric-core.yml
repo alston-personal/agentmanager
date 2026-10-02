@@ -211,3 +211,5 @@ jobs:
           echo "realm_receipt_archive=$DATA/realm/receipts.sqlite3"
           trap - EXIT
           REMOTE
+
+# deploy-trigger: oidc-scheduler-20261002
