@@ -35,6 +35,14 @@ ROOT="$DATA_REPO/$PERSONA_PATH"
 test -f "$ROOT/pdca/state.json"
 test -f "$ROOT/events/events.jsonl"
 
+# Resolve the PDCA-selected read before cognition. This is the existing worker
+# lane consuming a durable intent, not another independent patrol cron.
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+SOCIAL_RECEIPT="$ROOT/pdca/social_receipts/$STAMP.json"
+mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
+python3 "$SOCIAL_EXECUTOR" --persona-dir "$ROOT" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"
+python3 -m json.tool "$SOCIAL_RECEIPT" >/dev/null
+
 # Social lane owns bounded social cognition. A reasoning defer/failure is local
 # to this lane and never blocks the core PDCA/Observer heartbeat.
 if python3 "$REPLY_INTENT_GENERATOR" --persona-dir "$ROOT"; then
@@ -47,16 +55,18 @@ if python3 "$POST_INTENT_GENERATOR" --persona-dir "$ROOT"; then
 else
   echo "persona_social_post_intent=DEGRADED rc=$?" >&2
 fi
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-SOCIAL_RECEIPT="$ROOT/pdca/social_receipts/$STAMP.json"
-mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
-python3 "$SOCIAL_EXECUTOR" --persona-dir "$ROOT" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"
-python3 -m json.tool "$SOCIAL_RECEIPT" >/dev/null
-
 METRICS_RECEIPT="$ROOT/pdca/growth_metrics/$STAMP.json"
 mkdir -p "$(dirname "$METRICS_RECEIPT")"
-python3 "$GROWTH_METRICS" --persona-dir "$ROOT" --username mio.milkcat --receipt-out "$METRICS_RECEIPT"
-python3 -m json.tool "$METRICS_RECEIPT" >/dev/null
+if python3 "$GROWTH_METRICS" --persona-dir "$ROOT" --username mio.milkcat --receipt-out "$METRICS_RECEIPT"; then
+  python3 -m json.tool "$METRICS_RECEIPT" >/dev/null
+else
+  # A metrics outage must not discard the observation or incident in this clone.
+  python3 - "$METRICS_RECEIPT" <<'PY'
+import json,sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({"status":"ERROR","changed":0})+"\n",encoding="utf-8")
+PY
+fi
 
 STATUS="$(python3 -c "import json; print(json.load(open('$SOCIAL_RECEIPT')).get('status',''))")"
 if [ "$STATUS" = "NO_ACTION" ]; then
@@ -88,9 +98,8 @@ else
 import json,sys
 r=json.load(open(sys.argv[1],encoding="utf-8"))
 m=json.load(open(sys.argv[2],encoding="utf-8"))
-assert r.get("ok") is True,r
-assert r.get("status")=="EXECUTED",r
-print("persona_social_action_runtime=PASS")
+assert r.get("status") in ("EXECUTED","BLOCKED"),r
+print("persona_social_action_runtime="+("PASS" if r.get("ok") is True else "BLOCKED"))
 print("persona_social_action_capability="+str(r.get("capability") or "unknown"))
 print("persona_social_action_write="+str(bool(r.get("write_performed"))).lower())
 print("persona_growth_metrics_status="+str(m.get("status") or "unknown"))

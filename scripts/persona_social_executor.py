@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse, json, os, urllib.request, urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 RUNTIME="http://127.0.0.1:8771"
@@ -34,11 +34,162 @@ def find_binding(creds,username):
     candidates=[]
     for binding_id,item in bindings.items():
         if not isinstance(item,dict): continue
-        if item.get("platform")!="threads": continue
+        if item.get("platform")!="threads" or item.get("product_id")!="galaxy": continue
+        if item.get("auth_profile","persona")!="persona": continue
         if str(item.get("username") or "").lower()==username.lower():
             candidates.append((binding_id,item))
     persona=[x for x in candidates if ":persona:" in x[0]]
-    return (persona or candidates)[0] if (persona or candidates) else (None,None)
+    ids={str(x[1].get("provider_account_id") or "") for x in candidates}
+    if len(ids)!=1 or not next(iter(ids), ""):
+        return None,None
+    return (persona or candidates)[-1] if (persona or candidates) else (None,None)
+
+
+def save(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp=path.with_suffix(path.suffix+".tmp")
+    tmp.write_text(json.dumps(value,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    os.replace(tmp,path)
+
+
+def timestamp(value):
+    try:
+        dt=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+        return dt.astimezone(timezone.utc) if dt.tzinfo else None
+    except (ValueError,TypeError):
+        return None
+
+
+def read_items(request, headers):
+    code, receipt=post("/v1/social/status",request,headers)
+    if code!=200 or not isinstance(receipt,dict) or receipt.get("ok") is not True:
+        raise RuntimeError("adapter_read_failed")
+    result=receipt.get("result")
+    if not isinstance(result,dict) or not isinstance(result.get("items"),list):
+        raise RuntimeError("adapter_receipt_invalid")
+    return result["items"], receipt
+
+
+def observe(root, state, target, out, username, base, headers, now_dt):
+    """A PDCA-authorized public read. DM and social writes are separate lanes."""
+    action_id=target.get("action_id")
+    cycle=target.get("cycle")
+    if not isinstance(action_id,str) or not action_id or not isinstance(cycle,int) or cycle<1:
+        raise RuntimeError("observation_intent_invalid")
+    posts, posts_receipt=read_items({**base,"operation":"post.read"},headers)
+    rows={}; receipts=[]; scanned=0
+    for index, item in enumerate(posts[:20]):
+        if not isinstance(item,dict) or not str(item.get("id") or "").isdigit():
+            raise RuntimeError("owned_post_invalid")
+        # Provider has_replies can lag. Always read the newest five posts.
+        if index>=5 and item.get("has_replies") is False:
+            continue
+        pid=str(item["id"])
+        replies, adapter=read_items({**base,"operation":"replies.read","object_id":pid},headers)
+        scanned+=1
+        receipts.append({"operation":"replies.read","object_id":pid,"ok":True,
+                         "receipt_id":adapter.get("receipt_id")})
+        for reply in replies:
+            if not isinstance(reply,dict) or not str(reply.get("id") or "").isdigit():
+                raise RuntimeError("reply_receipt_invalid")
+            rid=str(reply["id"])
+            rows[rid]={"id":rid,"root_id":pid,"username":reply.get("username"),
+                       "timestamp":reply.get("timestamp"),"text":reply.get("text"),
+                       "permalink":reply.get("permalink"),
+                       "is_reply_owned_by_me":reply.get("is_reply_owned_by_me") is True,
+                       "replied_to_id":(reply.get("replied_to") or {}).get("id")
+                           if isinstance(reply.get("replied_to"),dict) else None}
+    # Advance no cursor and emit no events until every required read has passed.
+    previous=state.get("social_observation_cursor") or {}
+    seen=set(str(x) for x in previous.get("seen_reply_ids",[]))
+    events_path=root/"events/events.jsonl"
+    if events_path.exists():
+        for line in events_path.read_text(encoding="utf-8").splitlines():
+            try:
+                event=json.loads(line)
+                if event.get("type")=="reply.observed" and event.get("source_object_id"):
+                    seen.add(str(event["source_object_id"]))
+            except (ValueError,TypeError,AttributeError):
+                continue
+    fresh=[row for rid,row in rows.items() if rid not in seen]
+    eligible=[row for row in fresh if not row["is_reply_owned_by_me"]
+              and str(row.get("username") or "").lstrip("@").lower()!=username.lstrip("@").lower()
+              and timestamp(row.get("timestamp")) is not None
+              and now_dt-timedelta(hours=42)<=timestamp(row["timestamp"])<=now_dt]
+    observed_at=now_dt.isoformat().replace("+00:00","Z")
+    ref=str(out.relative_to(root))
+    result="NEW_REPLIES" if eligible else "NO_NEW_REPLIES"
+    receipt={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,
+             "status":"EXECUTED","read_status":"PASS","result":result,
+             "timestamp":observed_at,"observed_at":observed_at,"action_id":action_id,
+             "cycle":cycle,"capability":target["capability"],"write_performed":False,
+             "posts_scanned":scanned,"replies_observed":len(rows),"fresh_replies":len(eligible),
+             "items":eligible,"source_receipts_verified":True,
+             "adapter_receipts":[{"operation":"post.read","ok":True,
+                                  "receipt_id":posts_receipt.get("receipt_id")},*receipts],
+             "executor":"oracle-local-persona-social-lane",
+             "cursor":{"previous_observed_at":previous.get("observed_at"),
+                       "observed_at":observed_at,"seen_count":len(seen|set(rows))},
+             "freshness":{"eligible_reply_max_age_hours":42}}
+    save(out,receipt)
+    with events_path.open("a",encoding="utf-8") as fh:
+        for row in eligible:
+            fh.write(json.dumps({"id":"threads:reply:"+row["id"],"type":"reply.observed",
+                      "timestamp":row["timestamp"],"observed_at":observed_at,
+                      "source":"agentos_shared_social_capability","source_object_id":row["id"],
+                      "root_id":row["root_id"],"username":row["username"],"text":row["text"],
+                      "permalink":row["permalink"],"replied_to_id":row["replied_to_id"],
+                      "pdca_action_id":action_id,"pdca_external_receipt":ref},
+                      ensure_ascii=False,separators=(",",":"))+"\n")
+    target.update(status="completed",executed_at=observed_at,receipt_ref=ref,
+                  read_status="PASS",fresh_replies=len(eligible))
+    state["social_observation_cursor"]={"observed_at":observed_at,
+        "seen_reply_ids":sorted(seen|set(rows))[-2000:]}
+    summary={k:receipt[k] for k in ("action_id","cycle","capability","observed_at",
+        "read_status","result","posts_scanned","replies_observed","fresh_replies","cursor","executor")}
+    summary["receipt_ref"]=ref
+    state["last_social_observation"]=summary
+    state["last_social_receipt"]=ref
+    pending=state.get("pending_external_actions") or []
+    if eligible and target["capability"]=="social.threads.observe":
+        review=next((x for x in pending if isinstance(x,dict)
+            and x.get("capability")=="social.reply.review"
+            and x.get("status") in ("candidate","in_progress")),None)
+        if review is None:
+            review={"action_id":f"mio-pdca-c{cycle}-social-reply-review","cycle":cycle,
+                    "capability":"social.reply.review","status":"candidate",
+                    "policy":"public_conversation=autonomous_with_policy",
+                    "requires_real_adapter_receipt":True}
+            pending.append(review)
+        review["observation_receipt_ref"]=ref
+        review["reply_ids"]=list(dict.fromkeys([*(review.get("reply_ids") or []),
+                                              *(row["id"] for row in eligible)]))
+    state["pending_external_actions"]=pending[-12:]
+    save(root/"pdca/state.json",state)
+    return receipt
+
+
+def blocked_observation(root,state,target,out,now):
+    # Exception text/provider envelopes may contain credentials: never copy them.
+    ref=str(out.relative_to(root))
+    receipt={"schema":"agentos.persona-social-executor-receipt/v1","ok":False,
+        "status":"BLOCKED","read_status":"FAILED","result":"SOCIAL_ADAPTER_UNAVAILABLE",
+        "timestamp":now,"observed_at":now,"action_id":target.get("action_id"),
+        "cycle":target.get("cycle"),"capability":target.get("capability"),
+        "write_performed":False,"source_receipts_verified":False,"receipt_ref":ref}
+    save(out,receipt)
+    target.update(status="blocked",receipt_ref=ref,blocked_at=now)
+    state["last_social_observation"]=receipt
+    incident={"schema":"agentos.persona-social-incident/v1","status":"open",
+        "action_id":target.get("action_id"),"capability":target.get("capability"),
+        "observed_at":now,"failure_class":"SOCIAL_ADAPTER_UNAVAILABLE","receipt_ref":ref,
+        "repair_status":"pending","owner":"agentos.social_runtime"}
+    # Source-owned identifier; never use caller/provider error text as a path.
+    import hashlib
+    key=hashlib.sha256(str(target.get("action_id")).encode()).hexdigest()[:20]
+    save(root/"pdca/incidents"/(key+".json"),incident)
+    save(root/"pdca/state.json",state)
+    return receipt
 
 def main():
     ap=argparse.ArgumentParser()
@@ -47,7 +198,7 @@ def main():
     ap.add_argument("--receipt-out",required=True)
     args=ap.parse_args()
     root=Path(args.persona_dir)
-    state=json.load(open(root/"pdca/state.json",encoding="utf-8"))
+    state=json.loads((root/"pdca/state.json").read_text(encoding="utf-8"))
     pending=list(state.get("pending_external_actions") or [])
     now_dt=datetime.now(timezone.utc)
     def due(x):
@@ -55,8 +206,8 @@ def main():
         if not nb: return True
         try: return datetime.fromisoformat(nb.replace("Z","+00:00")) <= now_dt
         except Exception: return False
-    target=next((x for x in pending if x.get("status")=="candidate" and due(x) and x.get("capability") in (
-        "social.reply.review","social.reply.send","social.post.publish"
+    target=next((x for x in pending if isinstance(x,dict) and x.get("status")=="candidate" and due(x) and x.get("capability") in (
+        "social.threads.observe","social.reply.review","social.reply.send","social.post.publish"
     )),None)
     now=now_dt.isoformat().replace("+00:00","Z")
     if not target:
@@ -65,18 +216,31 @@ def main():
         Path(args.receipt_out).write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         print(json.dumps(result,ensure_ascii=False)); return 0
 
-    env=parse_env(ENV)
-    registry=json.loads(env["AGENTOS_SOCIAL_PRODUCTS_JSON"])
-    product="galaxy"
-    product_key=str(registry[product]["api_key"])
-    creds=json.loads(CREDS.read_text(encoding="utf-8"))
-    binding_id,binding=find_binding(creds,args.username)
-    if not binding_id:
-        raise SystemExit("persona_threads_binding_not_found")
-
-    base={"schema":"agentos.social-request/v1","product_id":product,"platform":"threads","account_binding_id":binding_id}
-    headers={"X-AgentOS-Product-Key":product_key}
     capability=target.get("capability")
+    try:
+        if capability in ("social.threads.observe","social.reply.review"):
+            cfg=json.loads((root/"pdca/config.json").read_text(encoding="utf-8"))
+            if cfg.get("enabled") is not True or state.get("status")!="RUNNING":
+                raise RuntimeError("observation_not_authorized")
+        env=parse_env(ENV)
+        registry=json.loads(env["AGENTOS_SOCIAL_PRODUCTS_JSON"])
+        product="galaxy"
+        product_key=str(registry[product]["api_key"])
+        creds=json.loads(CREDS.read_text(encoding="utf-8"))
+        binding_id,binding=find_binding(creds,args.username)
+        if not binding_id or not product_key:
+            raise RuntimeError("persona_threads_binding_not_found")
+        base={"schema":"agentos.social-request/v1","product_id":product,
+              "platform":"threads","account_binding_id":binding_id}
+        headers={"X-AgentOS-Product-Key":product_key}
+        if capability in ("social.threads.observe","social.reply.review"):
+            result=observe(root,state,target,Path(args.receipt_out),args.username,base,headers,now_dt)
+            print(json.dumps(result,ensure_ascii=False)); return 0
+    except (OSError,ValueError,TypeError,KeyError,RuntimeError):
+        if capability in ("social.threads.observe","social.reply.review"):
+            result=blocked_observation(root,state,target,Path(args.receipt_out),now)
+            print(json.dumps(result,ensure_ascii=False)); return 0
+        raise
 
     if capability in ("social.reply.send","social.post.publish"):
         text=str(target.get("primary_text") or "").strip()
@@ -134,70 +298,6 @@ def main():
         os.replace(tmp,root/"pdca/state.json")
         print(json.dumps(receipt,ensure_ascii=False)); return 0
 
-    sc,posts_r=post("/v1/social/status",{**base,"operation":"post.read"},headers)
-    if sc!=200 or posts_r.get("ok") is False:
-        raise SystemExit("post_read_failed:"+str(posts_r.get("error") or sc))
-    posts=(posts_r.get("result") or {}).get("items") or []
-
-    observed=[]
-    for p in posts[:20]:
-        pid=str(p.get("id") or "")
-        if not pid or p.get("has_replies") is False: continue
-        rc,rr=post("/v1/social/status",{**base,"operation":"replies.read","object_id":pid},headers)
-        if rc!=200 or rr.get("ok") is False: continue
-        for item in ((rr.get("result") or {}).get("items") or []):
-            if not item.get("id"): continue
-            observed.append({
-                "id":str(item.get("id")),
-                "root_id":pid,
-                "username":item.get("username"),
-                "timestamp":item.get("timestamp"),
-                "text":item.get("text"),
-                "permalink":item.get("permalink"),
-                "replied_to_id":((item.get("replied_to") or {}).get("id") if isinstance(item.get("replied_to"),dict) else None),
-            })
-
-    seen_ids=set()
-    events_path=root/"events/events.jsonl"
-    if events_path.exists():
-        for line in events_path.read_text(encoding="utf-8").splitlines():
-            try:
-                e=json.loads(line)
-                if e.get("source_object_id"): seen_ids.add(str(e["source_object_id"]))
-            except Exception: pass
-    fresh=[x for x in observed if x["id"] not in seen_ids]
-
-    receipt={
-      "schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"EXECUTED",
-      "timestamp":now,"persona_username":args.username,"capability":"social.reply.review",
-      "account_binding_id":binding_id,"posts_scanned":len(posts[:20]),"replies_observed":len(observed),
-      "fresh_replies":len(fresh),"items":fresh[:50],
-      "source_receipts_verified":True,"write_performed":False
-    }
-    out=Path(args.receipt_out); out.parent.mkdir(parents=True,exist_ok=True)
-    out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-
-    with open(events_path,"a",encoding="utf-8") as f:
-        for item in fresh:
-            f.write(json.dumps({
-              "id":"threads:reply:"+item["id"],"type":"reply.observed","timestamp":item.get("timestamp") or now,
-              "source":"agentos_shared_social_capability","source_object_id":item["id"],"root_id":item["root_id"],
-              "username":item.get("username"),"text":item.get("text"),"permalink":item.get("permalink"),
-              "pdca_external_receipt":str(out.relative_to(root))
-            },ensure_ascii=False,separators=(",",":"))+"\n")
-
-    for x in pending:
-        if x is target:
-            x["status"]="executed"
-            x["executed_at"]=now
-            x["receipt_ref"]=str(out.relative_to(root))
-            x["fresh_replies"]=len(fresh)
-    state["pending_external_actions"]=pending[-12:]
-    state["last_social_receipt"]=str(out.relative_to(root))
-    tmp=root/"pdca/state.json.tmp"
-    tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-    os.replace(tmp,root/"pdca/state.json")
-    print(json.dumps(receipt,ensure_ascii=False))
     return 0
 
 if __name__=="__main__":

@@ -59,6 +59,8 @@ def main():
     args=ap.parse_args()
     root=Path(args.persona_dir)
     ir=load(root/"ir/current.json")
+    state=load(root/"pdca/state.json")
+    observation=state.get("last_social_observation") or {}
     allr=[]
     for p in sorted((root/"pdca/receipts").glob("*.jsonl")):
         allr.extend(receipts(p))
@@ -83,6 +85,8 @@ def main():
       "updated_label":f"更新於 {now.strftime('%m/%d %H:%M')}",
       "persona_revision":ir.get("revision"),
       "activity_count":len(auto),
+      "social_observation":{k:observation.get(k) for k in
+          ("observed_at","read_status","result","posts_scanned","replies_observed","fresh_replies")},
       "current":current,
       "recent":recent[:6],
       "privacy":{

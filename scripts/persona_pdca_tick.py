@@ -171,7 +171,14 @@ def main():
     do={"action":selected,"status":"completed_internal","energy_cost":cost}
     pending=list(state.get("pending_external_actions",[]))
     external=None
-    if selected=="review_social_feedback" and observed:
+    if selected=="observe":
+        external={"action_id":f"mio-pdca-c{cycle}-social-observe","cycle":cycle,
+                  "capability":"social.threads.observe","status":"candidate",
+                  "created_at":now_utc.isoformat().replace("+00:00","Z"),
+                  "reason":"inspect owned-post public replies through the social runtime",
+                  "requires_real_adapter_receipt":True}
+        do.update(status="pending_external",capability=external["capability"])
+    elif selected=="review_social_feedback" and observed:
         external={"action_id":f"mio-pdca-c{cycle}-social-reply-review","cycle":cycle,
                   "capability":"social.reply.review","status":"candidate",
                   "reason":f"{observed} newly observed replies since last PDCA cursor",
@@ -187,11 +194,18 @@ def main():
                   "capability":"social.post.consider","status":"candidate",
                   "reason":post_reason,
                   "policy":"routine_posts=autonomous_with_policy","requires_real_adapter_receipt":True}
+    existing=next((x for x in reversed(pending) if isinstance(x,dict)
+        and external and x.get("capability")==external["capability"]
+        and x.get("status") in ("candidate","in_progress")),None)
+    if existing:
+        external=existing
     if external and not any(
         x.get("capability")==external["capability"] and x.get("status") in ("candidate","in_progress")
         for x in pending[-12:] if isinstance(x,dict)
     ):
         pending.append(external); pending=pending[-12:]
+    if selected=="observe":
+        do["action_id"]=external["action_id"]
 
     noop=selected in ("sleep","rest","observe") and not unseen
     noops=int(state.get("consecutive_noops",0))+1 if noop else 0
@@ -206,7 +220,7 @@ def main():
                      "growth":{"enabled":growth_enabled,"posts_today":len(todays_posts),"target":target,"max":max_posts,"gap_minutes":round(post_gap_min,1) if post_gap_min is not None else None,"gap_ok":gap_ok},
                      "candidates":[{"intent":n,"weight":w} for n,w in candidates],"selected_intent":selected},
              "do":do,
-             "check":{"internal_action_verified":True,"external_action_completed":False,
+             "check":{"internal_action_verified":selected!="observe","external_action_completed":False,
                       "new_event_counts":counts,"unseen_events":len(unseen),
                       "energy_before":round(energy,2),"energy_after":round(energy_after,2),
                       "policy_boundary_respected":True},
