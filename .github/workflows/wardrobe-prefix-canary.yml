@@ -1,0 +1,49 @@
+name: Wardrobe Prefix Canary
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'dashboard/app/api/wardrobe-probe/route.ts'
+      - 'dashboard/app/api/auth/wardrobe-probe/route.ts'
+      - '.github/workflows/wardrobe-prefix-canary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Build isolated canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- '${{ github.event.pull_request.head.sha }}' <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          TMP=$(mktemp -d /tmp/next-prefix-canary-XXXXXXXX)
+          trap 'test -f "$TMP/pid" && kill $(cat "$TMP/pid") 2>/dev/null || true; rm -rf "$TMP"' EXIT
+          git -C /home/ubuntu/agentmanager fetch --no-tags origin "$SHA"
+          mkdir -p "$TMP/dashboard"
+          git -C /home/ubuntu/agentmanager archive "$SHA:dashboard" | tar -x -C "$TMP/dashboard"
+          cp /home/ubuntu/.config/milkcat/dashboard.env.local "$TMP/dashboard/.env.local"
+          cd "$TMP/dashboard"
+          npm ci --ignore-scripts --no-audit --no-fund >/dev/null
+          npm run build >/dev/null
+          PORT=3099 npm start >/tmp/next-prefix-canary.log 2>&1 & echo $! > "$TMP/pid"
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:3099/dashboard/api/auth/session >/dev/null && break; sleep 1; done
+          for p in '/dashboard/api/auth/session' '/dashboard/api/auth/wardrobe-probe' '/dashboard/api/wardrobe-probe' '/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001'; do
+            code=$(curl -sS -o /tmp/canary-body -w '%{http_code}' --max-time 4 "http://127.0.0.1:3099$p" || true)
+            echo "$p -> $code $(head -c 120 /tmp/canary-body 2>/dev/null | tr '\n' ' ')"
+          done
+          REMOTE
