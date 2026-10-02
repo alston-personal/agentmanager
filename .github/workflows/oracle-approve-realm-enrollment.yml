@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   approve:
-    if: github.actor == 'alstonhuang'
+    if: github.actor == 'alstonhuang' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 4
     steps:
