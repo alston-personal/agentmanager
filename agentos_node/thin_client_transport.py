@@ -277,11 +277,30 @@ class ThinClientTransport:
         if not directory.is_dir():
             return 0
         flushed = 0
+        quarantine = directory / 'quarantine'
         for path in sorted(directory.glob('*.json')):
-            receipt = json.loads(path.read_text(encoding='utf-8'))
-            self.submit_receipt(receipt)
-            path.unlink()
-            flushed += 1
+            try:
+                # utf-8-sig tolerates BOM-producing writers (notably Windows
+                # PowerShell 5.1 Set-Content -Encoding UTF8) while remaining
+                # compatible with canonical UTF-8 spool files.
+                receipt = json.loads(path.read_text(encoding='utf-8-sig'))
+                if not isinstance(receipt, dict):
+                    raise ValueError('receipt spool payload must be an object')
+                self.submit_receipt(receipt)
+                path.unlink()
+                flushed += 1
+            except Exception as exc:
+                quarantine.mkdir(parents=True, exist_ok=True)
+                target = quarantine / path.name
+                try:
+                    os.replace(path, target)
+                except OSError:
+                    target = path
+                print(
+                    f'[agentos-client] quarantined malformed/unflushable receipt '
+                    f'path={target} error={type(exc).__name__}: {exc}',
+                    flush=True,
+                )
         return flushed
 
     def run_once(self) -> list[dict[str, Any]]:
