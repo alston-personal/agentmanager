@@ -10,6 +10,7 @@ on:
       - 'scripts/sync_persona_pdca_social_outcome_user.py'
       - 'scripts/install_persona_social_timer_user.sh'
       - 'scripts/bootstrap_oursong_persona_user.py'
+      - 'scripts/activate_oursong_persona_user.sh'
       - 'personas/**/agent.yaml'
       - 'personas/**/runtime.env.example'
       - 'tests/test_mio_social_contract.py'
@@ -43,8 +44,10 @@ jobs:
         run: |
           python -m py_compile             agentos_node/persona_life.py             scripts/mio_persona_social_loop_user.py             scripts/sync_persona_pdca_social_outcome_user.py \
             scripts/bootstrap_oursong_persona_user.py
-      - name: Validate timer installer
-        run: bash -n scripts/install_persona_social_timer_user.sh
+      - name: Validate timer and activation installers
+        run: |
+          bash -n scripts/install_persona_social_timer_user.sh
+          bash -n scripts/activate_oursong_persona_user.sh
       - name: Run focused persona social contracts
         run: |
           python -m unittest -v             tests.test_mio_social_contract             tests.test_persona_social_parameterization \
