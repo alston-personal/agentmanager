@@ -1,16 +1,14 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "vopc5750-lan-rescue-probe-20261002-0933",
+  "nonce": "e2e4-cdp-probe-20261002-0932",
   "action": "shell.exec",
   "payload": {
-    "executable": "powershell",
+    "executable": "python",
     "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='Continue'; Write-Output ('PROBE_FROM='+$env:COMPUTERNAME); Write-Output '=== RESOLVE ==='; Resolve-DnsName VOPC5750 -ErrorAction SilentlyContinue | Select-Object Name,IPAddress,Type | ConvertTo-Json -Compress; Write-Output '=== PING ==='; $ping=Test-Connection -ComputerName VOPC5750 -Count 1 -Quiet -ErrorAction SilentlyContinue; Write-Output ('PING='+$ping); foreach($p in @(5985,445,3389)){ $t=Test-NetConnection -ComputerName VOPC5750 -Port $p -WarningAction SilentlyContinue; Write-Output ('PORT_'+$p+'='+$t.TcpTestSucceeded+' REMOTE='+$t.RemoteAddress) }; Write-Output '=== SCHTASK QUERY ==='; schtasks.exe /Query /S VOPC5750 /TN \"AgentOS Thin Client\" /FO LIST 2>&1 | Select-Object -First 30"
+      "-c",
+      "import urllib.request,json; u='http://127.0.0.1:9222/json/list';\ntry:\n d=json.load(urllib.request.urlopen(u,timeout=2)); print(json.dumps([{'url':x.get('url'),'title':x.get('title'),'type':x.get('type'),'ws':bool(x.get('webSocketDebuggerUrl'))} for x in d],ensure_ascii=False))\nexcept Exception as e: print(type(e).__name__+':'+str(e)); raise"
     ],
-    "timeout_seconds": 45
+    "timeout_seconds": 10
   }
 }
