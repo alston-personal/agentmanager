@@ -1,16 +1,18 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "vopc5750-remote-schtask-rescue-20261002-0937",
+  "nonce": "install-pywinauto-20261002-0935",
   "action": "shell.exec",
   "payload": {
-    "executable": "powershell",
+    "executable": "python",
     "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='Continue'; function Run-Bounded([string]$args,[int]$ms=7000){;   $psi=New-Object System.Diagnostics.ProcessStartInfo;   $psi.FileName='schtasks.exe';   $psi.Arguments=$args;   $psi.UseShellExecute=$false;   $psi.RedirectStandardOutput=$true;   $psi.RedirectStandardError=$true;   $psi.CreateNoWindow=$true;   $p=New-Object System.Diagnostics.Process;   $p.StartInfo=$psi;   [void]$p.Start();   if(-not $p.WaitForExit($ms)){ try{$p.Kill()}catch{}; return @{timeout=$true;rc=$null;out='';err='TIMEOUT'} };   return @{timeout=$false;rc=$p.ExitCode;out=$p.StandardOutput.ReadToEnd();err=$p.StandardError.ReadToEnd()}; }; $q=Run-Bounded '/Query /S VOPC5750 /TN \"AgentOS Thin Client\" /FO LIST' 7000; Write-Output ('QUERY_RC='+$q.rc+' TIMEOUT='+$q.timeout); Write-Output $q.out; Write-Output $q.err; if(-not $q.timeout -and $q.rc -eq 0){;   $r=Run-Bounded '/Run /S VOPC5750 /TN \"AgentOS Thin Client\"' 7000;   Write-Output ('RUN_RC='+$r.rc+' TIMEOUT='+$r.timeout);   Write-Output $r.out;   Write-Output $r.err; } else { Write-Output 'RUN_SKIPPED=query_failed' }"
+      "-m",
+      "pip",
+      "install",
+      "--user",
+      "pywinauto",
+      "pillow"
     ],
-    "timeout_seconds": 25
+    "timeout_seconds": 180
   }
 }
