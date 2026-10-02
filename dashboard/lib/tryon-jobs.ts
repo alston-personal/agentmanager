@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AGENT_DATA_ROOT } from '@/lib/data-root';
 import { normalizeWardrobeLayer } from './wardrobe-layers.mjs';
 
@@ -8,6 +8,8 @@ export const TRYON_JOB_SCHEMA = 'agentos.tryon-render-job/v1' as const;
 export const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
 export const DEFAULT_CHARACTER_VERSION = 'mio-body-v1';
 export const DEFAULT_BASE_BODY_ASSET = '/personas/mio/mio-base-v2.webp';
+export const OUTFIT_IR_SCHEMA = 'agentos.wardrobe-outfit-ir/v1' as const;
+export const TRYON_RENDERER_VERSION = 'mio-2d-tryon-v1';
 
 export const LAYER_ORDER = [
   'upper_inner',
@@ -38,8 +40,20 @@ export type LayerItem = {
   sourceImageUrl: string | null;
 };
 
+export type TryOnProgressStage = 'queued' | 'preparing_assets' | 'rendering' | 'validating' | 'ready' | 'failed' | 'cancelled';
+
 export type TryOnJob = {
   schema: typeof TRYON_JOB_SCHEMA;
+  outfitIr: {
+    schema: typeof OUTFIT_IR_SCHEMA;
+    signature: string;
+    characterId: string;
+    characterVersion: string;
+    rendererVersion: string;
+    view: 'front';
+    pose: 'neutral_standing';
+    selectedLayers: Record<string, string>;
+  };
   jobId: string;
   characterId: string;
   characterVersion: string;
@@ -51,6 +65,11 @@ export type TryOnJob = {
   completedAt: string | null;
   failedAt: string | null;
   supersededBy: string | null;
+  progress: {
+    stage: TryOnProgressStage;
+    heartbeatAt: string;
+    message: string | null;
+  };
   input: {
     baseBodyAsset: string;
     layerOrder: string[];
@@ -67,6 +86,11 @@ export type TryOnJob = {
     pendingLayers?: string[];
     warnings?: Array<{ layer?: string; code: string; message?: string }>;
     cacheKey?: string | null;
+    quality?: {
+      accepted: boolean;
+      checkedAt: string | null;
+      checks?: Array<{ code: string; passed: boolean; message?: string }>;
+    };
   };
   error: null | { code: string; message: string };
 };
@@ -168,6 +192,47 @@ export function normalizeSelectedLayers(input: unknown): Record<string, LayerIte
   return result;
 }
 
+export function makeOutfitSignature(args: {
+  characterId: string;
+  characterVersion?: string;
+  baseBodyAsset?: string;
+  selectedLayers: Record<string, LayerItem>;
+  view?: 'front';
+  pose?: 'neutral_standing';
+  rendererVersion?: string;
+}) {
+  const selectedLayers = Object.fromEntries(
+    LAYER_ORDER
+      .filter((layer) => args.selectedLayers[layer])
+      .map((layer) => [layer, args.selectedLayers[layer].garmentId])
+  );
+  const canonical = JSON.stringify({
+    schema: OUTFIT_IR_SCHEMA,
+    characterId: args.characterId,
+    characterVersion: args.characterVersion || DEFAULT_CHARACTER_VERSION,
+    baseBodyAsset: args.baseBodyAsset || DEFAULT_BASE_BODY_ASSET,
+    rendererVersion: args.rendererVersion || TRYON_RENDERER_VERSION,
+    view: args.view || 'front',
+    pose: args.pose || 'neutral_standing',
+    selectedLayers,
+  });
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+export function findAcceptedCachedJob(signature: string): TryOnJob | null {
+  if (!fs.existsSync(JOB_DIR)) return null;
+  const names = fs.readdirSync(JOB_DIR).filter((name) => name.endsWith('.json')).sort().reverse();
+  for (const name of names) {
+    const job = safeReadJson<TryOnJob>(path.join(JOB_DIR, name));
+    if (!job || job.status !== 'ready') continue;
+    if (job.outfitIr?.signature !== signature) continue;
+    if (!job.output?.asset && !job.output?.previewAsset) continue;
+    if (job.output?.quality?.accepted !== true) continue;
+    return job;
+  }
+  return null;
+}
+
 export function makeJobId(characterId: string) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   return characterId.replace(/[^A-Za-z0-9._-]/g, '-') + '-tryon-' + stamp + '-' + randomUUID().slice(0, 8);
@@ -179,7 +244,21 @@ export function jobPath(jobId: string) {
 }
 
 export function readJob(jobId: string): TryOnJob | null {
-  return safeReadJson<TryOnJob>(jobPath(jobId));
+  const job = safeReadJson<TryOnJob>(jobPath(jobId));
+  if (!job) return null;
+  const fallbackStage: TryOnProgressStage =
+    job.status === 'rendering' ? 'rendering' :
+    job.status === 'ready' ? 'ready' :
+    job.status === 'failed' ? 'failed' :
+    job.status === 'cancelled' ? 'cancelled' : 'queued';
+  if (!job.progress) {
+    job.progress = {
+      stage: fallbackStage,
+      heartbeatAt: job.completedAt || job.failedAt || job.startedAt || job.requestedAt,
+      message: null,
+    };
+  }
+  return job;
 }
 
 export function writeJob(job: TryOnJob) {
@@ -236,8 +315,29 @@ export function createTryOnJob(args: {
   baseBodyAsset?: string;
 }): TryOnJob {
   const now = new Date().toISOString();
+  const baseBodyAsset = args.baseBodyAsset || DEFAULT_BASE_BODY_ASSET;
+  const signature = makeOutfitSignature({
+    characterId: args.characterId,
+    selectedLayers: args.selectedLayers,
+    baseBodyAsset,
+  });
+  const selectedLayerIds = Object.fromEntries(
+    LAYER_ORDER
+      .filter((layer) => args.selectedLayers[layer])
+      .map((layer) => [layer, args.selectedLayers[layer].garmentId])
+  );
   const job: TryOnJob = {
     schema: TRYON_JOB_SCHEMA,
+    outfitIr: {
+      schema: OUTFIT_IR_SCHEMA,
+      signature,
+      characterId: args.characterId,
+      characterVersion: DEFAULT_CHARACTER_VERSION,
+      rendererVersion: TRYON_RENDERER_VERSION,
+      view: 'front',
+      pose: 'neutral_standing',
+      selectedLayers: selectedLayerIds,
+    },
     jobId: makeJobId(args.characterId),
     characterId: args.characterId,
     characterVersion: DEFAULT_CHARACTER_VERSION,
@@ -249,8 +349,13 @@ export function createTryOnJob(args: {
     completedAt: null,
     failedAt: null,
     supersededBy: null,
+    progress: {
+      stage: 'queued',
+      heartbeatAt: now,
+      message: 'queued',
+    },
     input: {
-      baseBodyAsset: args.baseBodyAsset || DEFAULT_BASE_BODY_ASSET,
+      baseBodyAsset,
       layerOrder: [...LAYER_ORDER],
       selectedLayers: args.selectedLayers,
     },
@@ -259,6 +364,12 @@ export function createTryOnJob(args: {
       previewAsset: null,
       width: null,
       height: null,
+      cacheKey: signature,
+      quality: {
+        accepted: false,
+        checkedAt: null,
+        checks: [],
+      },
     },
     error: null,
   };
