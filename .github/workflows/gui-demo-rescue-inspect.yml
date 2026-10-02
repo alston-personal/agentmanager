@@ -58,6 +58,7 @@ jobs:
             'targeted-uia-probe-gemini-20261002-1332',
             'minimal-gemini-uia-probe-20261002-1622',
             'probe-edge-cdp-flag-20261002-1620',
+            'correct-gemini-uia-probe-20261002-1625',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
           PY
@@ -88,3 +89,5 @@ jobs:
 # executor-queue-postcheck-20261002-1625
 
 # post-dashboard-recovery-20261002-1620
+
+# correct-uia-late-receipt-20261002-1624
