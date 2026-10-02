@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   inspect:
@@ -24,8 +25,11 @@ jobs:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
       - name: Inspect live wardrobe try-on path
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          out="$(mktemp)"
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
           set -u
           echo "=== host/time ==="
@@ -59,3 +63,13 @@ jobs:
 
           echo "mio_wardrobe_live_diagnostic=PASS"
           REMOTE
+          ) >"$out" 2>&1 || true
+          cat "$out"
+          {
+            echo '### Mio Wardrobe live diagnostic'
+            echo
+            echo '```text'
+            tail -n 500 "$out"
+            echo '```'
+          } > /tmp/diag-comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag-comment.md
