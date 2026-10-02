@@ -1,7 +1,11 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "watchdog-recovery-verify-20261002-0927",
-  "action": "desktop.session.inspect",
-  "payload": {}
+  "nonce": "desktop-demo-hardened-start-20261002-0928",
+  "action": "desktop.demo.start",
+  "payload": {
+    "label": "AgentOS Hardened Smoke",
+    "stage": "start",
+    "max_seconds": 60
+  }
 }
