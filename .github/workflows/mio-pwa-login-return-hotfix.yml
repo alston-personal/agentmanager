@@ -1,0 +1,44 @@
+name: Mio PWA Login Return Hotfix
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-pwa-login-return-hotfix.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      TARGET_SHA: 52189702086ba45deb032896f283d776acd38548
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy exact core integration SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$TARGET_SHA' && git show '$TARGET_SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh' > /tmp/deploy-mio-pwa-return.sh && chmod 700 /tmp/deploy-mio-pwa-return.sh && /tmp/deploy-mio-pwa-return.sh '$TARGET_SHA' '${{ github.run_id }}'"
+      - name: Verify exact release is active
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<REMOTE
+          set -euo pipefail
+          live="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          echo "live=$live"
+          echo "$live" | grep -F "$TARGET_SHA"
+          pid="$(ss -H -ltnp 'sport = :3000' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)"
+          test "$(readlink -f /proc/$pid/cwd)" = "$live"
+          code="$(curl -sS -o /tmp/handoff -w '%{http_code}' -X POST 'http://127.0.0.1:3000/dashboard/api/wardrobe/auth-handoff?action=start')"
+          test "$code" = 200
+          echo 'mio_pwa_login_return_release=PASS'
+          REMOTE
