@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import platform
@@ -8,12 +10,14 @@ import secrets
 import shutil
 import socket
 import threading
+import time
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+import urllib.request
 
 from agent_core.controller_api import ControllerService as RuntimeControllerService
 from agent_core.controller_service import ControllerService as LegacyControllerService
@@ -25,6 +29,126 @@ from agent_core.active_continuation import resolve_active_continuation, active_c
 from agent_core.runtime_converge_capability import installed_core_capabilities
 from agentos_node import bootstrap_control as bootstrap_control
 from agentos_node.bootstrap_scheduler import policy_for as bootstrap_policy_for
+
+
+_GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com'
+_GITHUB_OIDC_JWKS = 'https://token.actions.githubusercontent.com/.well-known/jwks'
+_GITHUB_SCHEDULER_AUDIENCE = 'agentos-scheduler'
+_GITHUB_SCHEDULER_REPOSITORY = 'alston-personal/agentmanager'
+_GITHUB_SCHEDULER_REF = 'refs/heads/core/integration'
+_GITHUB_JWKS_CACHE: dict[str, Any] = {'expires_at': 0.0, 'keys': {}}
+_GITHUB_JWKS_LOCK = threading.Lock()
+_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex('3031300d060960864801650304020105000420')
+
+
+def _b64url_decode(value: str) -> bytes:
+    padding = '=' * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode('ascii'))
+
+
+def _github_jwks(*, force_refresh: bool = False) -> dict[str, dict[str, Any]]:
+    now = time.time()
+    with _GITHUB_JWKS_LOCK:
+        if not force_refresh and now < float(_GITHUB_JWKS_CACHE.get('expires_at') or 0):
+            cached = _GITHUB_JWKS_CACHE.get('keys') or {}
+            if cached:
+                return dict(cached)
+        request = urllib.request.Request(
+            _GITHUB_OIDC_JWKS,
+            headers={'Accept': 'application/json', 'User-Agent': 'AgentOS-ONE/0.1'},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+        keys = {
+            str(item.get('kid') or ''): item
+            for item in (payload.get('keys') or [])
+            if isinstance(item, dict) and item.get('kid')
+        }
+        if not keys:
+            raise PermissionError('github oidc jwks unavailable')
+        _GITHUB_JWKS_CACHE['keys'] = keys
+        _GITHUB_JWKS_CACHE['expires_at'] = now + 600
+        return dict(keys)
+
+
+def _verify_rs256(signing_input: bytes, signature: bytes, jwk: dict[str, Any]) -> None:
+    if jwk.get('kty') != 'RSA':
+        raise PermissionError('github oidc key type invalid')
+    try:
+        n = int.from_bytes(_b64url_decode(str(jwk['n'])), 'big')
+        e = int.from_bytes(_b64url_decode(str(jwk['e'])), 'big')
+    except Exception as exc:
+        raise PermissionError('github oidc rsa key invalid') from exc
+    if n.bit_length() < 2048 or e < 3:
+        raise PermissionError('github oidc rsa key too weak')
+    width = (n.bit_length() + 7) // 8
+    if len(signature) != width:
+        raise PermissionError('github oidc signature length invalid')
+    recovered = pow(int.from_bytes(signature, 'big'), e, n).to_bytes(width, 'big')
+    digest_info = _SHA256_DIGEST_INFO_PREFIX + hashlib.sha256(signing_input).digest()
+    padding_len = width - len(digest_info) - 3
+    if padding_len < 8:
+        raise PermissionError('github oidc signature encoding invalid')
+    expected = b'\x00\x01' + (b'\xff' * padding_len) + b'\x00' + digest_info
+    if not secrets.compare_digest(recovered, expected):
+        raise PermissionError('github oidc signature invalid')
+
+
+def _validate_github_scheduler_claims(payload: dict[str, Any]) -> None:
+    now = int(time.time())
+    if payload.get('iss') != _GITHUB_OIDC_ISSUER:
+        raise PermissionError('github oidc issuer invalid')
+    audience = payload.get('aud')
+    audiences = {str(audience)} if isinstance(audience, str) else {str(x) for x in (audience or [])}
+    if _GITHUB_SCHEDULER_AUDIENCE not in audiences:
+        raise PermissionError('github oidc audience invalid')
+    if payload.get('repository') != _GITHUB_SCHEDULER_REPOSITORY:
+        raise PermissionError('github oidc repository invalid')
+    if payload.get('ref') != _GITHUB_SCHEDULER_REF:
+        raise PermissionError('github oidc ref invalid')
+    if str(payload.get('event_name') or '') not in {'push', 'workflow_dispatch', 'schedule'}:
+        raise PermissionError('github oidc event invalid')
+    sha = str(payload.get('sha') or '')
+    if not re.fullmatch(r'[0-9a-f]{40}', sha):
+        raise PermissionError('github oidc sha invalid')
+    try:
+        exp = int(payload.get('exp'))
+        iat = int(payload.get('iat'))
+        nbf = int(payload.get('nbf', iat))
+    except (TypeError, ValueError) as exc:
+        raise PermissionError('github oidc time claims invalid') from exc
+    if exp <= now - 10 or nbf > now + 30 or iat > now + 30:
+        raise PermissionError('github oidc token outside validity window')
+    if exp - iat > 900 or now - iat > 900:
+        raise PermissionError('github oidc token lifetime invalid')
+
+
+def _verify_github_scheduler_oidc(token: str) -> dict[str, Any]:
+    parts = token.split('.')
+    if len(parts) != 3:
+        raise PermissionError('github oidc token malformed')
+    try:
+        header = json.loads(_b64url_decode(parts[0]))
+        payload = json.loads(_b64url_decode(parts[1]))
+        signature = _b64url_decode(parts[2])
+    except Exception as exc:
+        raise PermissionError('github oidc token decode failed') from exc
+    if not isinstance(header, dict) or not isinstance(payload, dict):
+        raise PermissionError('github oidc token payload invalid')
+    if header.get('alg') != 'RS256':
+        raise PermissionError('github oidc algorithm invalid')
+    kid = str(header.get('kid') or '')
+    if not kid:
+        raise PermissionError('github oidc kid missing')
+    keys = _github_jwks()
+    key = keys.get(kid)
+    if key is None:
+        key = _github_jwks(force_refresh=True).get(kid)
+    if key is None:
+        raise PermissionError('github oidc signing key unknown')
+    _verify_rs256(f'{parts[0]}.{parts[1]}'.encode('ascii'), signature, key)
+    _validate_github_scheduler_claims(payload)
+    return payload
 
 
 def _utc_now() -> str:
@@ -115,6 +239,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
         supplied = self._bearer()
         if not secrets.compare_digest(supplied, expected):
             raise PermissionError('invalid controller credential')
+
+    def _authorize_scheduler(self) -> dict[str, Any] | None:
+        supplied = self._bearer()
+        expected = str(getattr(self.server, 'controller_token', '') or '')  # type: ignore[attr-defined]
+        if expected and secrets.compare_digest(supplied, expected):
+            return None
+        return _verify_github_scheduler_oidc(supplied)
 
     def _scheduler_submit(self, body: dict[str, Any]) -> dict[str, Any]:
         if body.get('schema') != 'agentos.scheduler-submit/v1':
@@ -295,12 +426,12 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 self._send(200, {'ok': True, 'node_map': self.controller.nodes()})
                 return
             if parsed.path == '/v1/controller/scheduler':
-                self._authorize_controller()
+                self._authorize_scheduler()
                 self._send(200, {'ok': True, 'runner_pool': self.controller.scheduler()})
                 return
             scheduler_request_prefix = '/v1/controller/scheduler/requests/'
             if parsed.path.startswith(scheduler_request_prefix):
-                self._authorize_controller()
+                self._authorize_scheduler()
                 request_id = parsed.path.removeprefix(scheduler_request_prefix).strip('/')
                 if not request_id or '/' in request_id:
                     raise KeyError(parsed.path)
@@ -419,8 +550,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 self._send(200, {'ok': True, **result})
                 return
             if parsed.path == '/v1/controller/scheduler/submit':
-                self._authorize_controller()
-                self._send(202, self._scheduler_submit(self._json_body()))
+                scheduler_claims = self._authorize_scheduler()
+                scheduler_body = self._json_body()
+                if scheduler_claims is not None:
+                    requested_commit = str((scheduler_body.get('params') or {}).get('source_commit') or '')
+                    if requested_commit != str(scheduler_claims.get('sha') or ''):
+                        raise PermissionError('github oidc source commit mismatch')
+                self._send(202, self._scheduler_submit(scheduler_body))
                 return
             if parsed.path == '/v1/controller/runtime/rollout':
                 self._authorize_controller()
