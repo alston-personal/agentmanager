@@ -1,0 +1,24 @@
+name: Oracle Reachability Probe
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/oracle-reachability-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Probe public Realm and Oracle SSH
+        shell: bash
+        run: |
+          set -x
+          curl -sS -D - --max-time 8 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true
+          timeout 8 bash -lc 'cat < /dev/null > /dev/tcp/161.33.24.170/22' && echo oracle_tcp22=OPEN || echo oracle_tcp22=FAIL
+          timeout 8 bash -lc 'exec 3<>/dev/tcp/161.33.24.170/22; head -c 160 <&3' || true
