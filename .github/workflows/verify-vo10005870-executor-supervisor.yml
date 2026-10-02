@@ -1,0 +1,68 @@
+name: Verify VO10005870 Executor Supervisor
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/verify-vo10005870-executor-supervisor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify runtime and bounded UIA
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          inspect_id='verify-executor-supervisor-runtime-20261002-1632'
+          ps=r'''$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^pythonw?\.exe$' -and $_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' } | Select-Object -First 1
+          $src=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos_node\thin_client_transport.py'
+          [pscustomobject]@{pid=$p.ProcessId;created=$p.CreationDate;has_supervisor=((Get-Content -Raw -LiteralPath $src) -match '_execute_task_bounded');bytes=(Get-Item $src).Length}|ConvertTo-Json -Compress'''
+          if f.get_receipt(inspect_id) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':inspect_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':['demo://executor-supervisor/20261002']})
+          for _ in range(30):
+              r=f.get_receipt(inspect_id)
+              if r:
+                  print('RUNTIME='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and '"has_supervisor":true' in (r.get('stdout') or '').lower(), r
+                  break
+              time.sleep(1)
+          else: raise SystemExit('runtime_verify_receipt_missing')
+
+          uia_id='bounded-gemini-uia-probe-20261002-1632'
+          code='''import sys,json\nsys.stdout.reconfigure(encoding="utf-8")\nfrom pywinauto import Desktop\nd=Desktop(backend="uia")\nspec=d.window(title_re=".*Gemini.*")\nif not spec.exists(timeout=3): raise SystemExit("gemini_window_not_found")\nbtn=spec.child_window(title="傳送訊息", control_type="Button")\nok=bool(btn.exists(timeout=3))\nout={"window":spec.window_text(),"send_exists":ok}\nif ok: out["send_enabled"]=bool(btn.is_enabled())\nprint(json.dumps(out,ensure_ascii=False))'''
+          if f.get_receipt(uia_id) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':uia_id,'action':'shell.exec','executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe','argv':['-c',code],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':8,'cognition_ids_used':['demo://gemini-threads/20261002']})
+          got=None
+          for _ in range(50):
+              got=f.get_receipt(uia_id)
+              if got: break
+              time.sleep(1)
+          print('UIA='+json.dumps(got,ensure_ascii=False,separators=(',',':')))
+          assert got is not None, 'bounded_uia_receipt_missing'
+          time.sleep(5)
+          node=(f.load().get('nodes') or {}).get('VO10005870') or {}
+          print('NODE='+json.dumps(node,ensure_ascii=False,separators=(',',':')))
+          assert node.get('status') == 'online', node
+          PY
+          REMOTE
