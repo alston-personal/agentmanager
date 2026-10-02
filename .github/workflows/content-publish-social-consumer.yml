@@ -33,6 +33,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   contract:
@@ -54,158 +55,72 @@ jobs:
   bootstrap-live-account:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 14
-    concurrency:
-      group: agentos-oracle-hosted-ingress
-      cancel-in-progress: false
+    timeout-minutes: 16
     env:
-      EVENT_COMMIT: ${{ github.sha }}
-      SOURCE_COMMIT: ${{ github.sha }}
       ACCOUNT_REF: oursong_alstonhuang
-      ORACLE_HOST: 161.33.24.170
-      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-
-      - name: Run live account reconciliation through bounded hosted ingress
+      - name: Preflight Runner Window client
         shell: bash
         run: |
           set -euo pipefail
-          ssh \
-            -o StrictHostKeyChecking=accept-new \
-            -o ConnectTimeout=25 \
-            -o ConnectionAttempts=3 \
-            -o ServerAliveInterval=15 \
-            -o ServerAliveCountMax=4 \
-            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
-            sudo -n -u agentos-node env EVENT_COMMIT="$EVENT_COMMIT" SOURCE_COMMIT="$SOURCE_COMMIT" ACCOUNT_REF="$ACCOUNT_REF" RELAY_ROOT=/home/ubuntu/agent-data/runtime/action-relay PYTHONPATH=/home/ubuntu/agentmanager bash -s <<'REMOTE'
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          bash -n scripts/agentos_dispatch.sh scripts/reconcile_content_social_account_user.sh
+          echo 'content_social_ingress=runner-window'
+
+      - name: Mint GitHub OIDC Runner Window credential
+        shell: bash
+        run: |
           set -euo pipefail
-          cd /home/ubuntu/agentmanager
-          test "$(id -un)" = "agentos-node"
-
-          git fetch --no-tags origin core/integration
-          current="$(git rev-parse FETCH_HEAD)"
-          event="$EVENT_COMMIT"
-          if [ "$current" != "$event" ]; then
-            critical=(
-              config/content_publish_accounts.json
-              agentos_node/content_publish_social_action_relay.py
-              agentos_node/executor_job_action_relay.py
-              agentos_node/runtime_converge_action_relay.py
-              agent_core/runtime_converge_capability.py
-              scripts/install_action_relay_user.sh
-              scripts/reconcile_action_relay_runtime.py
-              .github/workflows/content-publish-social-consumer.yml
-            )
-            git diff --quiet "$event" "$current" -- "${critical[@]}" || {
-              echo "content_social_stale_incompatible=FAIL" >&2
-              exit 4
-            }
-            echo "content_social_event_superseded_compatibly=true"
-          fi
-          export SOURCE_COMMIT="$current"
-          echo "content_social_source_commit=$SOURCE_COMMIT"
-
-          python3 - <<'PY'
-          import os,time
-          from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
-          sha=os.environ["SOURCE_COMMIT"]
-          d=ActionRelayRuntimeConvergeDispatcher(os.environ["RELAY_ROOT"])
-          req={
-            "schema":"agentos.runtime-converge-request/v1",
-            "request_id":"content-social-"+sha[:20],
-            "node_id":"oracle-core-node",
-            "repository":"alston-personal/agentmanager",
-            "source_ref":"core/integration",
-            "source_commit":sha,
-          }
-          s=d.submit(request=req); deadline=time.time()+360
-          print("content_social_converge_task="+s["task_id"])
-          while time.time()<deadline:
-              r=d.inspect(s["task_id"])
-              if r is not None:
-                  assert r.get("ok") is True,r
-                  assert r.get("resulting_commit")==sha,r
-                  print("content_social_converge=PASS")
-                  break
-              time.sleep(1)
-          else:
-              raise SystemExit("content_social_converge_timeout")
-          PY
-
-          echo "action_relay_reconcile_trigger=ubuntu-owned-timer"
-          for i in $(seq 1 420); do
-            if python3 - "$SOURCE_COMMIT" <<'PY'
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
           import json,sys
-          from pathlib import Path
-          p=Path("/home/ubuntu/agent-data/runtime/action-relay/capabilities.json")
-          if not p.is_file():
-              raise SystemExit(1)
-          try:
-              x=json.loads(p.read_text(encoding="utf-8"))
-          except Exception:
-              raise SystemExit(1)
-          required={"agentos.content.social.bootstrap","agentos.content.social.inspect"}
-          ok=x.get("source_commit")==sys.argv[1] and required.issubset(set(x.get("actions") or []))
-          raise SystemExit(0 if ok else 1)
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
           PY
-            then
-              echo "action_relay_generation=PASS"
-              break
-            fi
-            sleep 1
-            if [ "$i" -eq 420 ]; then
-              echo "action_relay_generation=TIMEOUT" >&2
-              exit 1
-            fi
-          done
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
 
-          python3 - <<'PY'
-          import os,time
-          from agentos_node.content_publish_social_action_relay import ContentPublishSocialDispatcher
-          d=ContentPublishSocialDispatcher(os.environ["RELAY_ROOT"])
-          s=d.submit_bootstrap(account_ref=os.environ["ACCOUNT_REF"]); deadline=time.time()+120
-          print("content_social_bootstrap_task="+s["task_id"])
-          while time.time()<deadline:
-              r=d.inspect(s["task_id"])
-              if r is not None:
-                  print("content_social_bootstrap_status="+str(r.get("status")))
-                  print("content_social_bootstrap_username="+str(r.get("username") or "unknown"))
-                  print("content_social_product_registration="+str(r.get("product_registration") or "unknown"))
-                  assert r.get("credential_exposed") is False,r
-                  assert r.get("public_publish_performed") is False,r
-                  assert r.get("credential_migrated") is True,r
-                  assert r.get("status")=="BOUND",r
-                  assert r.get("executor_user")=="ubuntu",r
-                  print("content_social_bootstrap=PASS")
-                  break
-              time.sleep(1)
-          else:
-              raise SystemExit("content_social_bootstrap_timeout")
+      - name: Dispatch live account reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=900             bash scripts/agentos_dispatch.sh               content.social reconcile "$GITHUB_SHA"               account_ref="$ACCOUNT_REF"               > "$RUNNER_TEMP/content-social-roundtrip.txt"
+          cat "$RUNNER_TEMP/content-social-roundtrip.txt"
 
-          s=d.submit_inspect(account_ref=os.environ["ACCOUNT_REF"]); deadline=time.time()+120
-          print("content_social_inspect_task="+s["task_id"])
-          while time.time()<deadline:
-              r=d.inspect(s["task_id"])
-              if r is not None:
-                  print("content_social_inspect_status="+str(r.get("status")))
-                  print("content_social_username="+str(r.get("username") or "unknown"))
-                  print("content_social_write_entitlement="+str(r.get("write_entitlement")))
-                  assert r.get("credential_exposed") is False,r
-                  assert r.get("public_publish_performed") is False,r
-                  assert r.get("status")=="AUTHENTICATED",r
-                  assert r.get("executor_user")=="ubuntu",r
-                  print("content_social_account_inspect=PASS")
-                  break
-              time.sleep(1)
-          else:
-              raise SystemExit("content_social_inspect_timeout")
+          python3 - "$RUNNER_TEMP/content-social-roundtrip.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.lstrip().startswith('{')]
+          result=docs[-1]
+          receipt=result.get('receipt') or {}
+          assert receipt.get('source_commit')==sys.argv[2],receipt
+          assert receipt.get('ok') is True,receipt
+          scheduler=receipt.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='control',scheduler
+          evidence=set(receipt.get('evidence') or [])
+          for marker in (
+              'content_social_converge=PASS',
+              'action_relay_generation=PASS',
+              'content_social_bootstrap=PASS',
+              'content_social_account_inspect=PASS',
+              'content_social_reconcile=PASS',
+          ):
+              assert marker in evidence,(marker,evidence)
+          print('content_social_runner_window=PASS')
+          print('content_social_worker='+str(scheduler.get('worker_id') or 'unknown'))
           PY
-          REMOTE
-          echo "content_social_ingress=github-hosted"
+
+      - name: Upload bounded reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-social-runner-window-${{ github.run_id }}
+          path: ${{ runner.temp }}/content-social-roundtrip.txt
+          if-no-files-found: warn
+          retention-days: 14
