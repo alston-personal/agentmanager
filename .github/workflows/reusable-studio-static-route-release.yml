@@ -53,6 +53,21 @@ on:
         required: false
         type: string
         default: ''
+      node_asset_source:
+        description: Optional absolute Oracle artifact path under /home/ubuntu/agent-data/artifacts
+        required: false
+        type: string
+        default: ''
+      node_asset_target:
+        description: Optional relative file path under the released route
+        required: false
+        type: string
+        default: ''
+      node_asset_sha256:
+        description: Optional expected SHA-256 for the injected node-local artifact
+        required: false
+        type: string
+        default: ''
       credit_account:
         description: Optional funded Milkcat Platform credit account; empty disables metering
         required: false
@@ -97,6 +112,9 @@ jobs:
       ACCEPTANCE_FOCUSED_NESTED_ANCHOR: ${{ inputs.acceptance_focused_nested_anchor }}
       ACCEPTANCE_JS_MODULE: ${{ inputs.acceptance_js_module }}
       ACCEPTANCE_JS_ANCHOR: ${{ inputs.acceptance_js_anchor }}
+      NODE_ASSET_SOURCE: ${{ inputs.node_asset_source }}
+      NODE_ASSET_TARGET: ${{ inputs.node_asset_target }}
+      NODE_ASSET_SHA256: ${{ inputs.node_asset_sha256 }}
       CREDIT_ACCOUNT: ${{ inputs.credit_account }}
       CREDIT_COST: ${{ inputs.credit_cost }}
       PLATFORM_EXECUTION_ID: studio-static-route-${{ inputs.route }}-${{ github.run_id }}
@@ -121,6 +139,16 @@ jobs:
               *$'\n'*|*$'\r'*) echo 'invalid acceptance anchor' >&2; exit 1 ;;
             esac
           done <<< "$ACCEPTANCE_ANCHORS"
+          if [ -n "$NODE_ASSET_SOURCE" ] || [ -n "$NODE_ASSET_TARGET" ] || [ -n "$NODE_ASSET_SHA256" ]; then
+            test -n "$NODE_ASSET_SOURCE"
+            test -n "$NODE_ASSET_TARGET"
+            [[ "$NODE_ASSET_SOURCE" == /home/ubuntu/agent-data/artifacts/* ]]
+            [[ "$NODE_ASSET_TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]
+            [[ "$NODE_ASSET_TARGET" != *..* ]]
+            if [ -n "$NODE_ASSET_SHA256" ]; then
+              [[ "$NODE_ASSET_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            fi
+          fi
           if [ -n "$CREDIT_ACCOUNT" ]; then
             [[ "$CREDIT_COST" =~ ^[1-9][0-9]*$ ]]
           else
@@ -153,10 +181,14 @@ jobs:
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
           ANCHORS_B64=$(printf '%s' "$ACCEPTANCE_ANCHORS" | base64 -w0)
+          NODE_ASSET_SOURCE_B64=$(printf '%s' "$NODE_ASSET_SOURCE" | base64 -w0)
+          NODE_ASSET_TARGET_B64=$(printf '%s' "$NODE_ASSET_TARGET" | base64 -w0)
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" "$ANCHORS_B64" <<'REMOTE'
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" "$ANCHORS_B64" "$NODE_ASSET_SOURCE_B64" "$NODE_ASSET_TARGET_B64" "$NODE_ASSET_SHA256" <<'REMOTE'
           set -euo pipefail
-          REPO="$1"; SOURCE_SHA="$2"; ROUTE="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"; ANCHORS_B64="$7"
+          REPO="$1"; SOURCE_SHA="$2"; ROUTE="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"; ANCHORS_B64="$7"; NODE_ASSET_SOURCE_B64="$8"; NODE_ASSET_TARGET_B64="$9"; NODE_ASSET_SHA256="${10}"
+          NODE_ASSET_SOURCE="$(printf '%s' "$NODE_ASSET_SOURCE_B64" | base64 -d)"
+          NODE_ASSET_TARGET="$(printf '%s' "$NODE_ASSET_TARGET_B64" | base64 -d)"
           LIVE=/home/ubuntu/zeus-writer/website/dist
           TMP=$(mktemp -d /tmp/studio-static-route-release-XXXXXX)
           SRC="$TMP/studio-web"
@@ -209,6 +241,24 @@ jobs:
           cd "$SRC"
           npm install --no-package-lock --ignore-scripts
           npm run build
+
+          if [ -n "$NODE_ASSET_SOURCE" ] || [ -n "$NODE_ASSET_TARGET" ] || [ -n "$NODE_ASSET_SHA256" ]; then
+            test -n "$NODE_ASSET_SOURCE"
+            test -n "$NODE_ASSET_TARGET"
+            [[ "$NODE_ASSET_SOURCE" == /home/ubuntu/agent-data/artifacts/* ]]
+            [[ "$NODE_ASSET_TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]
+            [[ "$NODE_ASSET_TARGET" != *..* ]]
+            test -f "$NODE_ASSET_SOURCE"
+            if [ -n "$NODE_ASSET_SHA256" ]; then
+              ACTUAL_ASSET_SHA256="$(sha256sum "$NODE_ASSET_SOURCE" | awk '{print $1}')"
+              test "$ACTUAL_ASSET_SHA256" = "$NODE_ASSET_SHA256"
+            fi
+            mkdir -p "$ROUTE_DIR/$(dirname "$NODE_ASSET_TARGET")"
+            cp -a "$NODE_ASSET_SOURCE" "$ROUTE_DIR/$NODE_ASSET_TARGET"
+            chmod 0644 "$ROUTE_DIR/$NODE_ASSET_TARGET"
+            test -s "$ROUTE_DIR/$NODE_ASSET_TARGET"
+            echo "studio_static_route_node_asset=PASS target=$ROUTE/$NODE_ASSET_TARGET"
+          fi
 
           echo "studio_static_route_build_pwd=$(pwd)"
           echo "studio_static_route_expected_dir=$ROUTE_DIR"
@@ -315,6 +365,15 @@ jobs:
           fi
           echo "public_studio_static_route_acceptance=PASS route=$ROUTE"
           echo "public_studio_static_assets_acceptance=PASS route=$ROUTE"
+          if [ -n "$NODE_ASSET_TARGET" ]; then
+            ASSET_OUT="${OUT}-node-asset"
+            curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/$ROUTE/$NODE_ASSET_TARGET?_=$GITHUB_RUN_ID" -o "$ASSET_OUT"
+            test -s "$ASSET_OUT"
+            if [ -n "$NODE_ASSET_SHA256" ]; then
+              test "$(sha256sum "$ASSET_OUT" | awk '{print $1}')" = "$NODE_ASSET_SHA256"
+            fi
+            echo "public_studio_static_node_asset_acceptance=PASS route=$ROUTE/$NODE_ASSET_TARGET"
+          fi
           # Public nested pages are checked within the same job so any failure
           # triggers the existing backed-up route rollback on the next step.
           FOCUSED_NESTED_FOUND=0
