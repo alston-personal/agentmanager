@@ -31,11 +31,11 @@ concurrency:
 
 jobs:
   tick:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       PERSONA_PATH: ${{ github.event.inputs.persona_path || 'personas/sunlake-milkcat' }}
-      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
