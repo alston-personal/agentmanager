@@ -42,6 +42,17 @@ jobs:
           assert not bad,bad[:20]
           print('legacy_direct_oracle_manual_only=PASS')
           PY
+      - name: Package generated quarantine
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "$RUNNER_TEMP/legacy-oracle-quarantine.tar.gz" .github/workflows
+      - name: Upload generated quarantine
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-oracle-quarantine
+          path: ${{ runner.temp }}/legacy-oracle-quarantine.tar.gz
+          retention-days: 1
       - name: Commit generated quarantine
         shell: bash
         run: |
