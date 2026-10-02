@@ -56,12 +56,11 @@ export async function GET(
       value: token,
       httpOnly: true,
       secure: true,
-      domain: '.milkcat.org',
       path: '/',
       sameSite: 'lax',
       maxAge: 86400, // 24 hours
     });
-    response.cookies.set({ name: 'oauth_return_to', value: '', httpOnly: true, secure: true, domain: '.milkcat.org', path: '/', sameSite: 'lax', maxAge: 0 });
+    response.cookies.set({ name: 'oauth_return_to', value: '', httpOnly: true, secure: true, path: '/', sameSite: 'lax', maxAge: 0 });
 
     return response;
   } catch (error: any) {
