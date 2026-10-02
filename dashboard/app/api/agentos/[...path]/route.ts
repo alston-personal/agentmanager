@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 const UPSTREAM = "http://127.0.0.1:8780";
 
 const ALLOWED: Record<string, Set<string>> = {
-  GET: new Set(["/v1/health", "/v1/tasks", "/v1/bootstrap"]),
+  GET: new Set(["/v1/health", "/v1/tasks", "/v1/bootstrap", "/v1/controller/scheduler"]),
   POST: new Set([
     "/v1/join/request",
     "/v1/join/status",
@@ -13,8 +13,15 @@ const ALLOWED: Record<string, Set<string>> = {
     "/v1/benchmark",
     "/v1/receipts",
     "/v1/resolve",
+    "/v1/controller/scheduler/submit",
   ]),
 };
+
+function isAllowed(method: string, path: string): boolean {
+  if (ALLOWED[method]?.has(path)) return true;
+  if (method === "GET" && /^\/v1\/controller\/scheduler\/requests\/[A-Za-z0-9._:-]{1,160}$/.test(path)) return true;
+  return false;
+}
 
 function safePath(parts: string[]): string {
   const path = "/" + parts.map((part) => encodeURIComponent(decodeURIComponent(part))).join("/");
@@ -30,7 +37,7 @@ async function proxy(
   const { path: parts } = await context.params;
   const rawPath = safePath(parts || []);
   const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
-  if (!ALLOWED[method]?.has(path)) {
+  if (!isAllowed(method, path)) {
     return Response.json(
       { ok: false, error: "Realm gateway route not allowlisted", method, path },
       { status: 404 },
