@@ -2,6 +2,6 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.threads-existing-session.probe",
   "node_id": "mbpr",
-  "source_commit": "a7bd9b9bf921a228df8e8c1653451832f4ee461d",
-  "nonce": "threads-existing-session-20260929-2004"
+  "source_commit": "1c0d62fee75f497850390b85702603561e0f181c",
+  "nonce": "threads-existing-session-20261002-1142"
 }
