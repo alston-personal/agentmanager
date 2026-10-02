@@ -4,6 +4,7 @@ import json
 import os
 import time
 import urllib.error
+import socket
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -71,7 +72,15 @@ class ThinClientTransport:
         self.config = config
 
     @staticmethod
-    def _request(url: str, *, method: str = 'GET', body: dict[str, Any] | None = None, token: str | None = None, timeout: float = 15.0) -> dict[str, Any]:
+    def _request(
+        url: str,
+        *,
+        method: str = 'GET',
+        body: dict[str, Any] | None = None,
+        token: str | None = None,
+        timeout: float = 15.0,
+        retries: int = 0,
+    ) -> dict[str, Any]:
         headers = {'Accept': 'application/json', 'User-Agent': 'AgentOS-ThinClient/0.1'}
         data = None
         if body is not None:
@@ -80,12 +89,20 @@ class ThinClientTransport:
         if token:
             headers['Authorization'] = f'Bearer {token}'
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as response:
-                payload = json.loads(response.read().decode('utf-8'))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode('utf-8', errors='replace')
-            raise RuntimeError(f'ONE HTTP {exc.code}: {detail}') from exc
+        attempt = 0
+        while True:
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    payload = json.loads(response.read().decode('utf-8'))
+                break
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode('utf-8', errors='replace')
+                raise RuntimeError(f'ONE HTTP {exc.code}: {detail}') from exc
+            except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+                if attempt >= max(0, int(retries)):
+                    raise RuntimeError(f'ONE transport timeout: {type(exc).__name__}: {exc}') from exc
+                attempt += 1
+                time.sleep(min(5.0, 0.5 * (2 ** (attempt - 1))))
         if not isinstance(payload, dict):
             raise RuntimeError('ONE response must be a JSON object')
         return payload
@@ -145,7 +162,7 @@ class ThinClientTransport:
     def health(self) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/health')
+        return self._request(self.config.one_url + '/v1/health', retries=2)
 
     def heartbeat(self) -> dict[str, Any]:
         if not self.config:
@@ -155,6 +172,7 @@ class ThinClientTransport:
             method='POST',
             body=self.client.heartbeat(),
             token=self.config.node_token,
+            retries=2,
         )
         _write_heartbeat_lease(self.config)
         return result
@@ -163,7 +181,7 @@ class ThinClientTransport:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         query = urllib.parse.urlencode({'node_id': self.config.node_id})
-        return self._request(self.config.one_url + '/v1/bootstrap?' + query, token=self.config.node_token)
+        return self._request(self.config.one_url + '/v1/bootstrap?' + query, token=self.config.node_token, retries=2)
 
     def submit_benchmark(self, report: dict[str, Any]) -> dict[str, Any]:
         if not self.config:

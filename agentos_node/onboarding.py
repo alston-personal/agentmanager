@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import platform
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -305,6 +307,26 @@ def linux_systemd_user_dir() -> Path:
 def linux_thin_client_unit_path() -> Path:
     return linux_systemd_user_dir() / LINUX_THIN_CLIENT_UNIT
 
+def _linux_linger_enabled() -> bool:
+    if not shutil.which('loginctl'):
+        return False
+    result = subprocess.run(
+        ['loginctl', 'show-user', str(os.getuid()), '--property=Linger', '--value'],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    return result.returncode == 0 and result.stdout.strip().lower() == 'yes'
+
+def _ensure_linux_linger() -> bool:
+    if _linux_linger_enabled():
+        return True
+    if not shutil.which('loginctl'):
+        return False
+    subprocess.run(
+        ['loginctl', 'enable-linger'],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    return _linux_linger_enabled()
+
 def install_linux_node_supervisor(*, install_root: Path | None = None, launcher: Path | None = None) -> dict[str, Any]:
     if platform.system() != 'Linux':
         return _non_windows_lifecycle()
@@ -313,12 +335,16 @@ def install_linux_node_supervisor(*, install_root: Path | None = None, launcher:
     unit = linux_thin_client_unit_path()
     unit.parent.mkdir(parents=True, exist_ok=True)
     root.mkdir(parents=True, exist_ok=True)
-    if not client_launcher.exists():
-        return {
-            'schema':'agentos.node-lifecycle/v0.1','platform':'Linux','applicable':True,
-            'supervisor_ready':False,'unit':LINUX_THIN_CLIENT_UNIT,'unit_path':str(unit),
-            'returncode':2,'stderr':'agentos-client launcher missing',
-        }
+    python_bin = Path(sys.executable).absolute()
+    launcher_payload = (
+        '#!/usr/bin/env bash\n'
+        + 'set -euo pipefail\n'
+        + f'exec "{python_bin}" -m agentos_node.client_cli "$@"\n'
+    )
+    current_launcher = client_launcher.read_text(encoding='utf-8') if client_launcher.exists() else None
+    if current_launcher != launcher_payload:
+        client_launcher.write_text(launcher_payload, encoding='utf-8')
+        client_launcher.chmod(0o700)
     payload = f'''[Unit]
 Description=AgentOS Thin Client Node
 After=network-online.target
@@ -347,10 +373,12 @@ WantedBy=default.target
         ['systemctl','--user','is-active',LINUX_THIN_CLIENT_UNIT],
         capture_output=True,text=True,timeout=10,check=False,
     )
-    ready = result.returncode == 0 and probe.returncode == 0 and probe.stdout.strip() == 'active'
+    linger_enabled = _ensure_linux_linger()
+    ready = result.returncode == 0 and probe.returncode == 0 and probe.stdout.strip() == 'active' and linger_enabled
     return {
         'schema':'agentos.node-lifecycle/v0.1','platform':'Linux','applicable':True,
         'supervisor_ready':ready,'unit':LINUX_THIN_CLIENT_UNIT,'unit_path':str(unit),
+        'linger_enabled':linger_enabled,
         'returncode':result.returncode,'stderr':(result.stderr + '\n' + probe.stderr)[-2000:],
     }
 
@@ -362,10 +390,12 @@ def check_linux_node_supervisor() -> dict[str, Any]:
         ['systemctl','--user','is-active',LINUX_THIN_CLIENT_UNIT],
         capture_output=True,text=True,timeout=10,check=False,
     )
-    ready = unit.exists() and result.returncode == 0 and result.stdout.strip() == 'active'
+    linger_enabled = _linux_linger_enabled()
+    ready = unit.exists() and result.returncode == 0 and result.stdout.strip() == 'active' and linger_enabled
     return {
         'schema':'agentos.node-lifecycle/v0.1','platform':'Linux','applicable':True,
         'supervisor_ready':ready,'unit':LINUX_THIN_CLIENT_UNIT,'unit_path':str(unit),
+        'linger_enabled':linger_enabled,
         'returncode':result.returncode,'stderr':result.stderr[-2000:],
     }
 
