@@ -34,8 +34,16 @@ jobs:
           echo "live=$live"
           [ -f "$live/RELEASE_RECEIPT" ] && cat "$live/RELEASE_RECEIPT" || true
           systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStartTimestamp --no-pager
-          echo '=== wardrobe route manifest ==='
-          if [ -f "$live/.next/server/app-paths-manifest.json" ]; then grep -o '"/api/wardrobe[^" ]*"' "$live/.next/server/app-paths-manifest.json" | sort -u || true; fi
+          echo '=== route artifact presence ==='
+          python3 - "$live" <<'PY'
+          import json, pathlib, sys
+          live=pathlib.Path(sys.argv[1])
+          m=json.loads((live/'.next/server/app-paths-manifest.json').read_text())
+          for key in ['/api/auth/session/route','/api/wardrobe/catalog/route','/api/wardrobe/tryon/render/route']:
+              rel=m.get(key)
+              p=live/'.next/server'/rel if rel else None
+              print(key,'->',rel,'exists=',bool(p and p.exists()),'size=',p.stat().st_size if p and p.exists() else 0)
+          PY
           for i in 1 2 3 4 5; do
             code=$(curl -sS -o /tmp/mio-health -w '%{http_code}' --max-time 5 http://127.0.0.1:3000/dashboard/api/auth/session || true)
             echo "probe=$i http=$code"
