@@ -5,6 +5,8 @@ on:
     branches: [core/integration]
     paths:
       - 'agent_core/realm_server.py'
+      - 'agent_core/runner_window.py'
+      - 'dashboard/app/api/agentos/[...path]/route.ts'
       - 'scripts/agentos_dispatch.sh'
       - '.github/workflows/runner-pool-https-live-acceptance.yml'
   workflow_dispatch:
@@ -47,11 +49,10 @@ jobs:
           set -euo pipefail
           ok=0
           for _ in $(seq 1 60); do
-            code="$(curl -sS -o "$RUNNER_TEMP/scheduler.json" -w '%{http_code}' --max-time 8               -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"               "$AGENTOS_RUNNER_WINDOW_BASE/v1/controller/scheduler" || true)"
+            code="$(curl -sS -o "$RUNNER_TEMP/scheduler.json" -w '%{http_code}' --max-time 8               -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"               "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
             if [ "$code" = 200 ] && python3 - "$RUNNER_TEMP/scheduler.json" <<'PY'
           import json,sys
           d=json.load(open(sys.argv[1],encoding='utf-8'))
-          p=d.get('runner_pool') or {}
           assert d.get('ok') is True
           assert d.get('schema')=='agentos.runner-window/v1'
           intents=d.get('intents') or []
