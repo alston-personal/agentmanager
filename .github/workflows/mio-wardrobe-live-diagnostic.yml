@@ -1,0 +1,61 @@
+name: Mio Wardrobe Live Diagnostic
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/mio-wardrobe-live-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect live wardrobe try-on path
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -u
+          echo "=== host/time ==="
+          hostname
+          date -Is
+          uptime
+
+          echo "=== public route probes ==="
+          for url in             https://studio.milkcat.org/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001             https://studio.milkcat.org/dashboard/api/wardrobe/tryon/render             https://studio.milkcat.org/dashboard/api/auth/session
+          do
+            code="$(curl -ksS -o /tmp/mio-probe-body -w '%{http_code}' --max-time 15 "$url" || true)"
+            echo "$code $url"
+            head -c 400 /tmp/mio-probe-body 2>/dev/null | tr '\n' ' '; echo
+          done
+
+          echo "=== relevant services ==="
+          systemctl --no-pager --type=service --all 2>/dev/null | grep -Ei 'agentos|studio|dashboard|wardrobe|try.?on|render' | head -120 || true
+          systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'agentos|studio|dashboard|wardrobe|try.?on|render' | head -120 || true
+
+          echo "=== endpoint source locations ==="
+          for root in /home/ubuntu/agentmanager /home/ubuntu /opt /srv /var/www; do
+            [ -d "$root" ] || continue
+            grep -RIl --exclude-dir=.git --exclude-dir=node_modules --exclude='*.log'               -E 'wardrobe/tryon/render|tryon-render-job|renderer_failed|ready_for_tryon' "$root" 2>/dev/null | head -80
+          done | sort -u
+
+          echo "=== recent error evidence ==="
+          journalctl --since '6 hours ago' --no-pager 2>/dev/null             | grep -Ei 'wardrobe|try.?on|renderer|render job|provider|hugging|hf_|replicate|fal|image.*generation'             | tail -250 || true
+
+          echo "=== likely runtime logs ==="
+          find /home/ubuntu/agent-data /home/ubuntu -maxdepth 5 -type f             \( -name '*.log' -o -name '*.jsonl' -o -name '*receipt*' -o -name '*incident*' \)             -mmin -720 2>/dev/null             | grep -Ei 'wardrobe|try|render|dashboard|studio|receipt|incident'             | head -100 || true
+
+          echo "mio_wardrobe_live_diagnostic=PASS"
+          REMOTE
