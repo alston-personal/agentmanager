@@ -10,6 +10,7 @@ on:
       - 'scripts/sync_persona_pdca_social_outcome_user.py'
       - 'scripts/install_persona_social_timer_user.sh'
       - 'scripts/bootstrap_oursong_persona_user.py'
+      - 'scripts/persona_pdca_tick_user.py'
       - 'scripts/activate_oursong_persona_user.sh'
       - 'personas/**/agent.yaml'
       - 'personas/**/runtime.env.example'
@@ -17,6 +18,7 @@ on:
       - 'tests/test_persona_social_parameterization.py'
       - 'tests/test_oursong_persona_bootstrap.py'
       - 'tests/test_persona_social_exact_release.py'
+      - 'tests/test_persona_pdca_tick_contract.py'
       - '.github/workflows/persona-social-parameterization-guard.yml'
   push:
     branches:
@@ -44,7 +46,8 @@ jobs:
       - name: Compile persona runtime
         run: |
           python -m py_compile             agentos_node/persona_life.py             scripts/mio_persona_social_loop_user.py             scripts/sync_persona_pdca_social_outcome_user.py \
-            scripts/bootstrap_oursong_persona_user.py
+            scripts/bootstrap_oursong_persona_user.py \
+            scripts/persona_pdca_tick_user.py
       - name: Validate timer and activation installers
         run: |
           bash -n scripts/install_persona_social_timer_user.sh
@@ -53,4 +56,5 @@ jobs:
         run: |
           python -m unittest -v             tests.test_mio_social_contract             tests.test_persona_social_parameterization \
             tests.test_oursong_persona_bootstrap \
-            tests.test_persona_social_exact_release
+            tests.test_persona_social_exact_release \
+            tests.test_persona_pdca_tick_contract
