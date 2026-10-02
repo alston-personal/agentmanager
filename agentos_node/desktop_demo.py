@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -55,7 +56,7 @@ def _write_state(path: Path, doc: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
-def start(workspace: Path, *, label: str = "AgentOS Demo", stage: str = "Starting") -> dict[str, Any]:
+def start(workspace: Path, *, label: str = "AgentOS Demo", stage: str = "Starting", max_seconds: int = 900) -> dict[str, Any]:
     _require_windows()
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -84,6 +85,7 @@ def start(workspace: Path, *, label: str = "AgentOS Demo", stage: str = "Startin
     if video_path.exists():
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         video_path.replace(root / f"agentos-demo-raw-{stamp}.mkv")
+    max_seconds = max(30, min(int(max_seconds), 7200))
     now = time.time()
     state = {
         "schema": "agentos.desktop-demo/v1",
@@ -93,6 +95,8 @@ def start(workspace: Path, *, label: str = "AgentOS Demo", stage: str = "Startin
         "started_at": _utc_now(),
         "started_epoch": now,
         "video_path": str(video_path),
+        "max_seconds": max_seconds,
+        "stage_history": [{"stage": str(stage)[:120], "changed_at": _utc_now(), "elapsed_seconds": 0.0}],
     }
     _write_state(state_path, state)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -118,6 +122,7 @@ def start(workspace: Path, *, label: str = "AgentOS Demo", stage: str = "Startin
         "overlay_pid": overlay.pid,
         "recorder_pid": recorder.pid,
         "started_at": state["started_at"],
+        "max_seconds": state["max_seconds"],
     }
 
 
@@ -131,8 +136,12 @@ def set_stage(workspace: Path, stage: str) -> dict[str, Any]:
         raise RuntimeError("demo_recording_not_active")
     state["stage"] = str(stage)[:120]
     state["stage_changed_at"] = _utc_now()
+    elapsed = round(time.time() - float(state["started_epoch"]), 2)
+    history = list(state.get("stage_history") or [])
+    history.append({"stage": state["stage"], "changed_at": state["stage_changed_at"], "elapsed_seconds": elapsed})
+    state["stage_history"] = history[-100:]
     _write_state(path, state)
-    return {"demo_recording": True, "stage": state["stage"], "elapsed_seconds": round(time.time() - float(state["started_epoch"]), 2)}
+    return {"demo_recording": True, "stage": state["stage"], "elapsed_seconds": elapsed, "stage_history": state["stage_history"]}
 
 
 def stop(workspace: Path, *, final_stage: str = "Verified") -> dict[str, Any]:
@@ -145,6 +154,9 @@ def stop(workspace: Path, *, final_stage: str = "Verified") -> dict[str, Any]:
     state["recording"] = False
     state["completed_at"] = _utc_now()
     state["elapsed_seconds"] = round(time.time() - float(state["started_epoch"]), 2)
+    history = list(state.get("stage_history") or [])
+    history.append({"stage": state["stage"], "changed_at": state["completed_at"], "elapsed_seconds": state["elapsed_seconds"]})
+    state["stage_history"] = history[-100:]
     _write_state(path, state)
     video = Path(str(state["video_path"]))
     deadline = time.time() + 8
@@ -158,15 +170,24 @@ def stop(workspace: Path, *, final_stage: str = "Verified") -> dict[str, Any]:
             if stable >= 2:
                 break
         time.sleep(0.5)
+    sha256 = None
+    if video.is_file():
+        digest = hashlib.sha256()
+        with video.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+        sha256 = digest.hexdigest()
     return {
         "demo_recording": False,
         "video_path": str(video),
         "video_exists": video.is_file(),
         "video_bytes": video.stat().st_size if video.is_file() else 0,
+        "video_sha256": sha256,
         "started_at": state.get("started_at"),
         "completed_at": state["completed_at"],
         "elapsed_seconds": state["elapsed_seconds"],
         "final_stage": state["stage"],
+        "stage_history": state.get("stage_history") or [],
     }
 
 
@@ -220,7 +241,17 @@ def _recorder(state_path: Path, video_path: Path, ffmpeg: str) -> None:
     try:
         while proc.poll() is None:
             try:
-                if not _read_state(state_path).get("recording"):
+                current = _read_state(state_path)
+                if current.get("recording") and (time.time() - float(current.get("started_epoch") or time.time())) >= float(current.get("max_seconds") or 900):
+                    current["recording"] = False
+                    current["stage"] = "Auto-stop / max duration"
+                    current["completed_at"] = _utc_now()
+                    current["elapsed_seconds"] = round(time.time() - float(current.get("started_epoch") or time.time()), 2)
+                    history = list(current.get("stage_history") or [])
+                    history.append({"stage": current["stage"], "changed_at": current["completed_at"], "elapsed_seconds": current["elapsed_seconds"]})
+                    current["stage_history"] = history[-100:]
+                    _write_state(state_path, current)
+                if not current.get("recording"):
                     if proc.stdin:
                         proc.stdin.write(b"q\n")
                         proc.stdin.flush()
