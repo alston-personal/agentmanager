@@ -42,8 +42,10 @@ This route requires `X-AgentOS-Control-Token`, is deliberately separate from pro
 - operation
 - account binding
 - `write_intent_id`
+- exact canonical `SocialRequest` SHA-256 digest, including text, media URLs,
+  target/reply fields and all other request content
 
-A credential/account binding never creates publish authority. Product credentials cannot mint write acceptance. The acceptance is consumed before provider execution; mismatch also consumes it and fails closed.
+A credential/account binding never creates publish authority. Product credentials cannot mint write acceptance. A `write_intent_id` alone is not content authorization: if the caller substitutes text, media, reply target, destination account or any other canonical request field after acceptance issuance, the request digest changes and execution fails closed. The acceptance is consumed before provider execution; mismatch also consumes it and cannot be retried as another payload.
 
 ## Runtime-owned secret configuration
 
