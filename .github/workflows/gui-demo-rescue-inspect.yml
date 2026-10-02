@@ -59,6 +59,8 @@ jobs:
             'minimal-gemini-uia-probe-20261002-1622',
             'probe-edge-cdp-flag-20261002-1620',
             'correct-gemini-uia-probe-20261002-1625',
+            'bounded-gemini-uia-probe-20261002-1632',
+            'verify-executor-supervisor-runtime-20261002-1632',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
           PY
@@ -93,3 +95,5 @@ jobs:
 # correct-uia-late-receipt-20261002-1624
 
 # post-manual-thin-client-restart-20261002-1630
+
+# post-supervisor-timeout-recovery-20261002-1635
