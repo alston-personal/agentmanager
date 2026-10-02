@@ -1,0 +1,41 @@
+name: VOPC5750 Multi-Agent Acceptance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.agentos/commands/vopc5750-multi-agent-acceptance.json'
+      - '.github/workflows/vopc5750-multi-agent-acceptance.yml'
+      - 'scripts/vopc5750_multi_agent_acceptance.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vopc5750-multi-agent-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run governed acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/vopc5750_multi_agent_acceptance.py
+
+      - name: Upload sanitized acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vopc5750-multi-agent-acceptance
+          path: .agentos/evidence/vopc5750-multi-agent-acceptance-current.json
+          if-no-files-found: warn
+          retention-days: 14

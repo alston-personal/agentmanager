@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "vopc5750.multi_agent_acceptance",
+  "node_id": "vopc5750",
+  "requested_by": "chatgpt",
+  "reason": "Verify Antigravity/Gemini, Codex, Claude and Gemini CLI through AgentOS governed dispatch and receipts."
+}

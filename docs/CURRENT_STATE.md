@@ -203,3 +203,15 @@ The Windows Thin Client now has an explicit low-latency interactive execution pa
 
 This is not yet a claim of fully human-equivalent desktop autonomy. WebSocket/SSE transport, desktop session leasing/mutex, cancellation, durable plan checkpoints, semantic Gemini/Threads skills and vision fallback for canvas/WebGL remain follow-up work. See `docs/LOW_LATENCY_GUI_AGENT.md`.
 
+## Governed VOPC5750 multi-agent acceptance
+
+VOPC5750 is an enrolled Windows Realm Node, but surface discovery alone is not sufficient evidence that a local model/IDE provider is operational through AgentOS. The canonical acceptance path now distinguishes discovery from execution:
+
+- `agent.surface.inspect` proves the live Thin Client can report its current Antigravity, Codex, Claude Code and Gemini surfaces.
+- Antigravity is considered wired only when its session bridge is ready and an actual governed `agent.session.discover` task returns a Node receipt.
+- Codex, Claude Code and Gemini CLI are accepted only after a minimal governed `shell.exec` smoke reaches VOPC5750 through the Controller/Realm task transport and the expected response marker is observed in the returned receipt.
+- Acceptance evidence is sanitized and uploaded as a workflow artifact. The acceptance workflow must not push evidence directly to protected `main`; source changes and promotions remain PR-governed.
+- A provider that is merely installed/running but has no working AgentOS invocation path must be reported as `NOT_WIRED` or `FAIL`, never promoted to READY from presence alone.
+
+The reusable probe lives in `scripts/vopc5750_multi_agent_acceptance.py` and is triggered by `.agentos/commands/vopc5750-multi-agent-acceptance.json` or changes to its workflow/probe definition.
+
