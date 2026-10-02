@@ -1,16 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "vopc5750-lan-fast-probe-20261002-0935",
-  "action": "shell.exec",
+  "nonce": "e2e4-abort-stop-20261002-0933b",
+  "action": "desktop.demo.stop",
   "payload": {
-    "executable": "powershell",
-    "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='Continue'; Write-Output ('PROBE_FROM='+$env:COMPUTERNAME); Write-Output '=== PING ==='; cmd.exe /c 'ping -4 -n 1 -w 1000 VOPC5750'; Write-Output '=== TCP ==='; foreach($p in @(135,445,5985,3389)){;   $c=New-Object System.Net.Sockets.TcpClient;   try {;     $ar=$c.BeginConnect('VOPC5750',$p,$null,$null);     $ok=$ar.AsyncWaitHandle.WaitOne(1500,$false);     if($ok -and $c.Connected){ $c.EndConnect($ar); Write-Output ('PORT_'+$p+'=OPEN') } else { Write-Output ('PORT_'+$p+'=CLOSED_OR_TIMEOUT') };   } catch { Write-Output ('PORT_'+$p+'=ERROR '+$_.Exception.Message) } finally { $c.Close() }; }"
-    ],
-    "timeout_seconds": 20
+    "final_stage": "ABORTED / browser CDP unavailable"
   }
 }
