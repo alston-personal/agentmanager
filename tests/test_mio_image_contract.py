@@ -5,7 +5,7 @@ import unittest
 import zlib
 from pathlib import Path
 from unittest.mock import patch
-from agentos_node.social.contracts import SocialRequest
+from agentos_node.social.contracts import SocialRequest, social_request_digest
 from agentos_node.social.credentials import AccountBinding, EphemeralCredentialVault
 from agentos_node.social.governance import RuntimeWriteAcceptance
 from agentos_node.social.threads import ThreadsCapability
@@ -49,7 +49,11 @@ class MioImageContractTests(unittest.TestCase):
         transport=FakeImageTransport()
         cap=ThreadsCapability(vault,transport)
         req=request(image_url="https://raw.githubusercontent.com/a/b/sha/file.png",image_alt_text="黃昏裡的公園")
-        acceptance=RuntimeWriteAcceptance("accepted-image-1","galaxy","threads",frozenset({"publish"}),frozenset({req.account_binding_id}))
+        acceptance=RuntimeWriteAcceptance(
+            "accepted-image-1","galaxy","threads",
+            frozenset({"publish"}),frozenset({req.account_binding_id}),
+            social_request_digest(req),
+        )
         with patch("agentos_node.social.threads.time.sleep"):
             receipt=cap.publish(req,acceptance=acceptance)
         self.assertTrue(receipt["ok"],receipt)
@@ -109,7 +113,11 @@ class MioImageContractTests(unittest.TestCase):
         transport=FakeCarouselTransport()
         cap=ThreadsCapability(vault,transport)
         req=request(image_urls=urls,image_alt_texts=["燉飯與干貝","甜點"])
-        acceptance=RuntimeWriteAcceptance("accepted-carousel-1","galaxy","threads",frozenset({"publish"}),frozenset({req.account_binding_id}))
+        acceptance=RuntimeWriteAcceptance(
+            "accepted-carousel-1","galaxy","threads",
+            frozenset({"publish"}),frozenset({req.account_binding_id}),
+            social_request_digest(req),
+        )
         with patch("agentos_node.social.threads.time.sleep"):
             receipt=cap.publish(req,acceptance=acceptance)
         self.assertTrue(receipt["ok"],receipt)
