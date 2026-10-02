@@ -18,25 +18,43 @@ permissions:
   actions: write
   issues: write
 
+concurrency:
+  group: mio-social-incident-repair
+  cancel-in-progress: true
+
 jobs:
   repair:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: core/integration
 
-      - name: Reconcile known Mio social bootstrap drift
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Reconcile known Mio social bootstrap drift without consuming Oracle runner
         shell: bash
         run: |
           set -euo pipefail
-          cmp -s agentos_node/bootstrap_control.py /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py ||             cat agentos_node/bootstrap_control.py > /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
-          grep -q 'ACTION_READ_THREADS_WEB_DM' /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
-          grep -q 'ACTION_INSPECT_MIO_RECENT' /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
-          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user restart os-chronos.service
-          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user is-active os-chronos.service
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3             -o ServerAliveInterval=10 -o ServerAliveCountMax=3             -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          grep -q 'ACTION_READ_THREADS_WEB_DM' "$LIVE/agentos_node/bootstrap_control.py"
+          grep -q 'ACTION_INSPECT_MIO_RECENT' "$LIVE/agentos_node/bootstrap_control.py"
+          export XDG_RUNTIME_DIR=/run/user/1001
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          systemctl --user restart os-chronos.service
+          systemctl --user is-active os-chronos.service
           echo mio_social_incident_repair=PASS
+          REMOTE
 
       - name: Re-run failed source workflow jobs
         shell: bash
