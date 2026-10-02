@@ -1,0 +1,37 @@
+name: Mio V5 Worker Contract
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'scripts/tryon_render_worker.py'
+      - 'scripts/deploy_mio_tryon_worker_user.sh'
+      - '.github/workflows/mio-v5-worker-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify worker syntax and V5 contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/tryon_render_worker.py
+          bash -n scripts/deploy_mio_tryon_worker_user.sh
+          grep -Fq 'qualityAccepted' scripts/tryon_render_worker.py
+          grep -Fq 'visual_qc_required' scripts/tryon_render_worker.py
+          grep -Fq 'preparing_assets' scripts/tryon_render_worker.py
+          grep -Fq 'validating' scripts/tryon_render_worker.py
+          grep -Fq 'git -C "$REPO" fetch --no-tags origin "$SOURCE_SHA"' scripts/deploy_mio_tryon_worker_user.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/tryon_render_worker.py').read_text()
+          block=s[s.index('def cached_render'):s.index('def longest_cached_prefix')]
+          assert 'qualityAccepted' in block and 'is not True' in block
+          assert 'return None' in block
+          print('mio_v5_worker_contract=PASS')
+          PY
