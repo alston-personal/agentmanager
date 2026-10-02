@@ -56,7 +56,7 @@ jobs:
           assert d.get('ok') is True
           assert d.get('schema')=='agentos.runner-window/v1'
           intents=d.get('intents') or []
-          assert any(x.get('capability')=='browser.gui' and x.get('operation')=='smoke' for x in intents)
+          assert any(x.get('capability')=='agentos.dispatch' and x.get('operation')=='probe' for x in intents)
           p=d.get('runner_pool') or {}
           assert p.get('schema')=='agentos.runner-pool/v1'
           PY
@@ -78,8 +78,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          AGENTOS_DISPATCH_WAIT_SECONDS=240 bash scripts/agentos_dispatch.sh browser.gui smoke "$GITHUB_SHA"               > "$RUNNER_TEMP/roundtrip.txt"
+          set +e
+          AGENTOS_DISPATCH_WAIT_SECONDS=120 bash scripts/agentos_dispatch.sh agentos.dispatch probe "$GITHUB_SHA" > "$RUNNER_TEMP/roundtrip.txt"
+          rc=$?
+          set -e
           cat "$RUNNER_TEMP/roundtrip.txt"
+          test "$rc" = 0
           grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/roundtrip.txt"
-          grep -q '"ok":true' "$RUNNER_TEMP/roundtrip.txt" || grep -q '"ok": true' "$RUNNER_TEMP/roundtrip.txt"
+          grep -q 'runner_window_probe=PASS' "$RUNNER_TEMP/roundtrip.txt"
           echo 'runner_window_https_roundtrip=PASS'
