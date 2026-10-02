@@ -137,3 +137,5 @@ jobs:
 # probe: post-dashboard-cutover-mbpr-heartbeat
 
 # inspect-trigger: 2026-10-02T05:06Z vopc-task-queue-no-receipt
+
+# inspect-trigger: 2026-10-02T13:xxZ recurrent-html-502
