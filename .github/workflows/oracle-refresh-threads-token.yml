@@ -1,9 +1,6 @@
 name: Oracle Refresh Threads Long-Lived Token
 
 on:
-  schedule:
-    # Weekly. Threads long-lived tokens are ~60 days and become refreshable after 24h.
-    - cron: '17 3 * * 1'
   workflow_dispatch:
 
 permissions:
