@@ -1,0 +1,150 @@
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+from types import SimpleNamespace
+import subprocess
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = spec_from_file_location("control_inbox_service_repair", ROOT / "scripts/control_inbox_service_repair.py")
+repair = module_from_spec(spec)
+spec.loader.exec_module(repair)
+
+CONFIG = """# Host-owned settings must survive maintenance.
+AGENTOS_GITHUB_TOKEN=old_github
+AGENTOS_CONTROLLER_TOKEN=old_controller
+AGENTOS_CONTROL_REPOSITORY=alston-personal/agentmanager
+AGENTOS_CONTROL_ISSUE=50
+AGENTOS_CONTROL_ALLOWED_LOGIN=alstonhuang
+AGENTOS_ONE_URL=http://127.0.0.1:8780
+AGENTOS_CONTROL_ALLOWED_ACTIONS=desktop.session.inspect,persona.oursong.activate
+AGENTOS_CONTROL_STATE=/private/durable-state.json
+AGENTOS_CONTROL_POLL_SECONDS=7
+CUSTOM_HOST_SETTING=retain-this-value
+"""
+
+
+@pytest.fixture
+def host(monkeypatch, tmp_path):
+    env_path = tmp_path / "control-inbox.env"
+    env_path.write_text(CONFIG)
+    controller = tmp_path / "controller.env"
+    controller.write_text("AGENTOS_CONTROLLER_TOKEN=new_controller\n")
+    monkeypatch.setattr(repair, "ENV_PATH", env_path)
+    monkeypatch.setattr(repair, "CONTROLLER_PATH", controller)
+    monkeypatch.setattr(repair.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_name="ubuntu"))
+    calls = []
+
+    def command(args, **kwargs):
+        calls.append(args)
+        output = str(env_path) + " (ignore_errors=no)\n" if "EnvironmentFiles" in args else ""
+        return SimpleNamespace(returncode=0, stdout=output)
+
+    monkeypatch.setattr(repair, "command", command)
+    monkeypatch.setattr(repair, "http_status", lambda url, token: 200)
+    return env_path, calls
+
+
+def test_healthy_credentials_are_not_replaced_and_only_bridge_restarts(host, monkeypatch):
+    path, calls = host
+    monkeypatch.setattr(repair, "github_candidate", lambda: pytest.fail("must not fetch replacement"))
+    result = repair.repair()
+    assert path.read_text() == CONFIG
+    assert result["credentials_changed"] is False
+    assert result["end_to_end_verified"] is False
+    assert [args[-1] for args in calls if "restart" in args] == [repair.UNIT]
+
+
+def test_invalid_credentials_are_replaced_without_clobbering_host_configuration(host, monkeypatch):
+    path, _ = host
+    monkeypatch.setattr(repair, "http_status", lambda url, token: 401 if token.startswith("old_") else 200)
+    monkeypatch.setattr(repair, "github_candidate", lambda: "new_github")
+    result = repair.repair()
+    assert result["credentials_changed"] is True
+    assert path.read_text() == CONFIG.replace("old_github", "new_github").replace("old_controller", "new_controller")
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("code", [0, 404, 429, 502])
+def test_upstream_unavailability_does_not_modify_config_or_restart(host, monkeypatch, code):
+    path, calls = host
+    monkeypatch.setattr(repair, "http_status", lambda url, token: code if url == repair.ONE_READ else 200)
+    with pytest.raises(repair.RepairFailure, match="one_controller_unavailable"):
+        repair.repair()
+    assert path.read_text() == CONFIG
+    assert not any("restart" in args for args in calls)
+
+
+def test_failed_postcheck_rolls_back_credentials_and_restarts_previous_config(host, monkeypatch):
+    path, _ = host
+    monkeypatch.setattr(repair, "github_candidate", lambda: "new_github")
+    restarts = []
+    monkeypatch.setattr(repair, "restart_bridge", lambda: restarts.append(path.read_text()))
+    monkeypatch.setattr(repair, "http_status", lambda url, token:
+                        401 if token == "old_github" else 502 if token == "new_github" and restarts else 200)
+    with pytest.raises(repair.RepairFailure, match="github_postcheck_failed"):
+        repair.repair()
+    assert path.read_text() == CONFIG
+    assert len(restarts) == 2
+    assert restarts[-1] == CONFIG
+
+
+def test_restart_timeout_restores_credentials(host, monkeypatch):
+    path, _ = host
+    monkeypatch.setattr(repair, "github_candidate", lambda: "new_github")
+    monkeypatch.setattr(repair, "http_status", lambda url, token: 401 if token == "old_github" else 200)
+    restarts = []
+
+    def restart():
+        restarts.append(path.read_text())
+        if len(restarts) == 1:
+            raise subprocess.TimeoutExpired("systemctl", 20)
+
+    monkeypatch.setattr(repair, "restart_bridge", restart)
+    with pytest.raises(subprocess.TimeoutExpired):
+        repair.repair()
+    assert path.read_text() == CONFIG
+    assert len(restarts) == 2
+
+
+def test_unknown_identity_does_not_create_lock_or_run_commands(host, monkeypatch, capsys):
+    path, calls = host
+    monkeypatch.setattr(repair.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_name="agentos-node"))
+    assert repair.main() == 1
+    assert not (path.parent / ".control-inbox-repair.lock").exists()
+    assert not calls
+    assert "wrong_service_identity" in capsys.readouterr().out
+
+
+def test_concurrent_configuration_change_is_not_overwritten(host, monkeypatch):
+    path, _ = host
+    newer = CONFIG + "NEWER_DEPLOYMENT=true\n"
+
+    def candidate():
+        path.write_text(newer)
+        return "new_github"
+
+    monkeypatch.setattr(repair, "github_candidate", candidate)
+    monkeypatch.setattr(repair, "http_status", lambda url, token: 401 if token == "old_github" else 200)
+    with pytest.raises(repair.RepairFailure, match="configuration_changed_during_preflight"):
+        repair.repair()
+    assert path.read_text() == newer
+
+
+def test_failure_output_does_not_serialize_sensitive_exception(host, monkeypatch, capsys):
+    monkeypatch.setattr(repair, "repair", lambda: (_ for _ in ()).throw(RuntimeError("private-token-material")))
+    assert repair.main() == 1
+    output = capsys.readouterr().out
+    assert "private-token-material" not in output
+    assert '"error": "repair_failed"' in output
+
+
+def test_duplicate_environment_keys_fail_closed():
+    with pytest.raises(repair.RepairFailure, match="environment_malformed"):
+        repair.parse_env("AGENTOS_GITHUB_TOKEN=first\nAGENTOS_GITHUB_TOKEN=second\n")
+
+
+def test_credential_replacement_cannot_change_allowlist():
+    with pytest.raises(repair.RepairFailure, match="credential_update_invalid"):
+        repair.replace_credentials(CONFIG, {"AGENTOS_CONTROL_ALLOWED_ACTIONS": "shell.exec"})
