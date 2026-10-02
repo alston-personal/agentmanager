@@ -120,11 +120,31 @@ The caller's `authority=approved-content-publish` field is necessary intent
 evidence but is not, by itself, runtime authorization. Core must never convert
 that string into its own acceptance.
 
-Unresolved `asset://` media fails closed with
-`content_publish_media_resolution_required`; the executor will not silently
-turn host filesystem paths into public media URLs. An ambiguous transport
-failure is returned as `UNKNOWN` with `reconcile_required=true`; blind retry
-of the same write intent is forbidden.
+Canonical Content Artifacts may retain portable `asset://` references. Before
+SocialRequest projection, each such reference must resolve through an
+`agentos.media.asset.v0` envelope that proves:
+
+- stable `asset_id` + owner scope;
+- image MIME + immutable SHA-256;
+- `rights.publication_allowed=true`;
+- `integrity.human_approved=true`;
+- `state=approved`;
+- exactly one non-expiring `public_https` delivery location.
+
+The artifact itself is not rewritten: its content hash remains tied to the
+portable asset reference. The final SocialRequest contains the resolved HTTPS
+delivery URL, so the Social Runtime one-shot request digest binds the exact URL
+that will be sent to Threads. Changing the delivery URL after approval therefore
+invalidates the acceptance even when the canonical artifact hash is unchanged.
+
+Missing or unapproved `asset://` media fails closed with
+`content_publish_media_resolution_required` or a more specific rights /
+integrity error. The resolver does **not** upload local files or mint public URLs;
+an `asset.export` provider is still required to create the approved
+`public_https` location.
+
+An ambiguous transport failure is returned as `UNKNOWN` with
+`reconcile_required=true`; blind retry of the same write intent is forbidden.
 
 ## Resolution
 

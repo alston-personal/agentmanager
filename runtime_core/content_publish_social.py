@@ -13,6 +13,7 @@ from runtime_core.content_publish import (
     validate_content_artifact,
     validate_publish_request,
 )
+from runtime_core.content_publish_media import resolve_public_media_asset
 
 
 def _threads_text(artifact: Mapping[str, Any]) -> str:
@@ -26,14 +27,20 @@ def _threads_text(artifact: Mapping[str, Any]) -> str:
     return str(normalized["body"]).strip()
 
 
-def _threads_media(artifact: Mapping[str, Any]) -> tuple[list[str] | None, list[str] | None]:
+def _threads_media(
+    artifact: Mapping[str, Any],
+    *,
+    media_resolutions: Mapping[str, Mapping[str, Any]] | None = None,
+) -> tuple[list[str] | None, list[str] | None, list[dict[str, str]]]:
     normalized = validate_content_artifact(artifact)
     media = normalized.get("media") or []
     if not media:
-        return None, None
+        return None, None, []
 
+    resolutions = dict(media_resolutions or {})
     urls: list[str] = []
     alts: list[str] = []
+    evidence: list[dict[str, str]] = []
     for index, item in enumerate(media):
         if isinstance(item, str):
             ref = item
@@ -41,24 +48,35 @@ def _threads_media(artifact: Mapping[str, Any]) -> tuple[list[str] | None, list[
         else:
             ref = str(item.get("ref") or "")
             alt = str(item.get("alt") or item.get("alt_text") or "")
+
         if ref.startswith("asset://"):
-            raise ValueError("content_publish_media_resolution_required")
-        if not ref.startswith("https://"):
-            raise ValueError("content_publish_threads_media_https_required")
+            envelope = resolutions.get(ref)
+            if not isinstance(envelope, Mapping):
+                raise ValueError("content_publish_media_resolution_required")
+            resolved = resolve_public_media_asset(ref, envelope)
+            url = resolved["public_url"]
+            evidence.append(resolved)
+        else:
+            if not ref.startswith("https://"):
+                raise ValueError("content_publish_threads_media_https_required")
+            url = ref
+
         if not alt.strip():
             alt = f"content image {index + 1}"
-        urls.append(ref)
+        urls.append(url)
         alts.append(alt[:1000])
 
     if len(urls) > 20:
         raise ValueError("content_publish_threads_media_limit_exceeded")
-    return urls, alts
+    return urls, alts, evidence
 
 
 def build_threads_social_request(
     publish_request: Mapping[str, Any],
     artifact: Mapping[str, Any],
     account: Mapping[str, Any],
+    *,
+    media_resolutions: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Project an exact approved content.publish request into SocialRequest.
 
@@ -87,7 +105,10 @@ def build_threads_social_request(
     if not binding_id or not provider_account_id:
         raise ValueError("content_publish_social_binding_not_ready")
 
-    urls, alts = _threads_media(normalized)
+    urls, alts, media_evidence = _threads_media(
+        normalized,
+        media_resolutions=media_resolutions,
+    )
     kwargs: dict[str, Any] = {
         "product_id": "content-publish",
         "platform": "threads",
@@ -113,6 +134,7 @@ def build_threads_social_request(
         if value is not None
     }
     payload["content_hash"] = content_hash(normalized)
+    payload["media_resolution"] = media_evidence
     return payload
 
 

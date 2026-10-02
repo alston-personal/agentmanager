@@ -103,6 +103,7 @@ def execute_preaccepted_threads(
     *,
     acceptance_id: str,
     account: Mapping[str, Any] | None = None,
+    media_resolutions: Mapping[str, Mapping[str, Any]] | None = None,
     runtime_call=_execute_runtime,
 ) -> dict[str, Any]:
     """Execute only with a separately-issued exact one-shot acceptance.
@@ -111,7 +112,12 @@ def execute_preaccepted_threads(
     authority string as runtime authorization.
     """
     account_item = dict(account) if account is not None else _account(str(publish_request.get("account_ref") or ""))
-    projected = build_threads_social_request(publish_request, artifact, account_item)
+    projected = build_threads_social_request(
+        publish_request,
+        artifact,
+        account_item,
+        media_resolutions=media_resolutions,
+    )
     social_payload = social_request_payload(projected)
 
     try:
@@ -150,5 +156,6 @@ def execute_preaccepted_threads(
             "error_code": result.get("error_code"),
             "public_publish_performed": bool(ok),
             "reconcile_required": False,
+            "media_resolution": projected.get("media_resolution") or [],
         },
     )

@@ -6,6 +6,7 @@ import pytest
 
 from agentos_node import action_relay
 from agentos_node.content_publish_social_executor import execute_preaccepted_threads
+from agentos_node.social.contracts import SocialRequest, social_request_digest
 from runtime_core.content_publish_social import (
     build_threads_social_request,
     social_request_payload,
@@ -42,6 +43,42 @@ def artifact(**overrides):
     return value
 
 
+def media_envelope(**overrides):
+    value={
+        "schema":"agentos.media.asset.v0",
+        "asset_id":"asset:zeus-cover-1",
+        "owner_scope":"project:zeus-writer",
+        "event_id":"zeus-ch01-cover",
+        "content":{
+            "mime":"image/jpeg",
+            "sha256":"a"*64,
+            "byte_length":12345,
+        },
+        "locations":[
+            {
+                "kind":"public_https",
+                "uri":"https://studio.milkcat.org/media/zeus/ch01-cover.jpg",
+                "expires_at":None,
+            }
+        ],
+        "provenance":{"source":"user_upload","generator":None,"inputs":[],"scene_source":None},
+        "rights":{
+            "owner":"zeus-writer",
+            "license":"owned",
+            "publication_allowed":True,
+            "commercial_allowed":True,
+        },
+        "integrity":{
+            "background_preserved":None,
+            "identity_reference_checked":None,
+            "human_approved":True,
+        },
+        "state":"approved",
+    }
+    value.update(overrides)
+    return value
+
+
 def account(**overrides):
     value={
         "account_ref":"oursong_alstonhuang",
@@ -73,6 +110,68 @@ def test_projection_fails_closed_for_unresolved_asset_media():
             artifact(media=[{"ref":"asset://cover/1","role":"cover"}]),
             account(),
         )
+
+
+def test_projection_resolves_only_approved_portable_media():
+    ref="asset://zeus-writer/fragment/ch01/cover"
+    art=artifact(media=[{"ref":ref,"role":"cover","alt":"章節封面"}])
+    projected=build_threads_social_request(
+        request(),
+        art,
+        account(),
+        media_resolutions={ref:media_envelope()},
+    )
+    assert projected["image_url"]=="https://studio.milkcat.org/media/zeus/ch01-cover.jpg"
+    assert projected["image_alt_text"]=="章節封面"
+    assert projected["media_resolution"]==[{
+        "asset_ref":ref,
+        "asset_id":"asset:zeus-cover-1",
+        "owner_scope":"project:zeus-writer",
+        "mime":"image/jpeg",
+        "sha256":"a"*64,
+        "public_url":"https://studio.milkcat.org/media/zeus/ch01-cover.jpg",
+    }]
+
+
+@pytest.mark.parametrize(
+    "envelope,error",
+    [
+        (media_envelope(rights={"owner":"zeus-writer","license":"owned","publication_allowed":False,"commercial_allowed":True}),"publication_not_allowed"),
+        (media_envelope(integrity={"background_preserved":None,"identity_reference_checked":None,"human_approved":False}),"not_human_approved"),
+        (media_envelope(state="draft"),"state_not_approved"),
+        (media_envelope(locations=[]),"public_https_delivery_required"),
+    ],
+)
+def test_projection_rejects_unapproved_or_undeliverable_media(envelope,error):
+    ref="asset://zeus-writer/fragment/ch01/cover"
+    with pytest.raises((ValueError,PermissionError),match=error):
+        build_threads_social_request(
+            request(),
+            artifact(media=[{"ref":ref,"role":"cover"}]),
+            account(),
+            media_resolutions={ref:envelope},
+        )
+
+
+def test_delivery_url_change_keeps_artifact_hash_but_changes_social_request_digest():
+    ref="asset://zeus-writer/fragment/ch01/cover"
+    art=artifact(media=[{"ref":ref,"role":"cover"}])
+    one=build_threads_social_request(
+        request(),art,account(),media_resolutions={ref:media_envelope()}
+    )
+    two_env=media_envelope(locations=[{
+        "kind":"public_https",
+        "uri":"https://studio.milkcat.org/media/zeus/ch01-cover-v2.jpg",
+        "expires_at":None,
+    }])
+    two=build_threads_social_request(
+        request(),art,account(),media_resolutions={ref:two_env}
+    )
+    assert one["content_hash"]==two["content_hash"]
+    assert one["image_url"]!=two["image_url"]
+    one_req=SocialRequest(**social_request_payload(one))
+    two_req=SocialRequest(**social_request_payload(two))
+    assert social_request_digest(one_req)!=social_request_digest(two_req)
 
 
 def test_projection_rejects_prepare_or_unapproved_authority():
@@ -118,6 +217,32 @@ def test_executor_consumes_acceptance_without_exposing_it(monkeypatch):
     encoded=json.dumps(receipt)
     assert "one-shot-authority" not in encoded
     assert "product-key" not in encoded
+
+
+def test_executor_uses_resolved_media_without_exposing_acceptance(monkeypatch):
+    monkeypatch.setattr("agentos_node.content_publish_social_executor._product_key",lambda:"product-key")
+    ref="asset://zeus-writer/fragment/ch01/cover"
+    seen={}
+    def fake(payload,*,acceptance_id,product_key):
+        seen["payload"]=payload
+        return {
+            "schema":"agentos.social-receipt/v1",
+            "ok":True,
+            "platform_object_id":"threads-image-1",
+            "permalink":"https://www.threads.net/@oursong_alstonhuang/post/threads-image-1",
+        }
+    receipt=execute_preaccepted_threads(
+        request(),
+        artifact(media=[{"ref":ref,"role":"cover","alt":"封面"}]),
+        acceptance_id="one-shot-authority",
+        account=account(),
+        media_resolutions={ref:media_envelope()},
+        runtime_call=fake,
+    )
+    assert seen["payload"]["image_url"].startswith("https://")
+    assert "asset://" not in json.dumps(seen["payload"])
+    assert receipt["result"]["media_resolution"][0]["asset_id"]=="asset:zeus-cover-1"
+    assert "one-shot-authority" not in json.dumps(receipt)
 
 
 def test_ambiguous_transport_result_requires_reconciliation(monkeypatch):
