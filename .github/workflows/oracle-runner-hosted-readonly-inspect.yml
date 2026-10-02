@@ -129,10 +129,21 @@ jobs:
           set -e
           cat "$LOG"
           if [ "$rc" -ne 0 ]; then
-            echo "oracle_runner_host_reachable=false"
-            echo "oracle_runner_inspect_status=HOST_UNREACHABLE"
             echo "oracle_runner_ssh_exit_code=$rc"
+            if grep -qi 'timed out during banner exchange' "$LOG"; then
+              echo "oracle_runner_tcp_connectivity=LIKELY_REACHED"
+              echo "oracle_runner_inspect_status=SSH_BANNER_TIMEOUT"
+            elif grep -qi 'connection refused' "$LOG"; then
+              echo "oracle_runner_tcp_connectivity=REFUSED"
+              echo "oracle_runner_inspect_status=SSH_REFUSED"
+            elif grep -Eqi 'connection timed out|no route to host|network is unreachable' "$LOG"; then
+              echo "oracle_runner_tcp_connectivity=UNREACHABLE"
+              echo "oracle_runner_inspect_status=SSH_CONNECT_TIMEOUT"
+            else
+              echo "oracle_runner_tcp_connectivity=UNKNOWN"
+              echo "oracle_runner_inspect_status=SSH_UNAVAILABLE"
+            fi
             exit 0
           fi
-          echo "oracle_runner_host_reachable=true"
+          echo "oracle_runner_tcp_connectivity=REACHED"
           echo "oracle_runner_inspect_status=INSPECTED"
