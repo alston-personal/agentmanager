@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from threading import RLock
 
-from .contracts import SocialRequest, WRITE_OPERATIONS
+from .contracts import SocialRequest, WRITE_OPERATIONS, social_request_digest
 from .credentials import AccountBinding, CredentialVault
 from .governance import RuntimeWriteAcceptance
 
@@ -159,6 +159,7 @@ class OneShotAcceptanceStore:
             platform=request.platform,
             operations=frozenset({request.operation}),
             account_binding_ids=frozenset({request.account_binding_id}),
+            request_digest=social_request_digest(request),
         )
         with self._lock:
             self._items[acceptance_id] = OneShotAcceptance(acceptance, request.write_intent_id)
@@ -171,6 +172,8 @@ class OneShotAcceptanceStore:
             raise PermissionError("social_write_acceptance_invalid_or_consumed")
         if item.write_intent_id != request.write_intent_id:
             raise PermissionError("social_write_intent_mismatch")
+        if item.acceptance.request_digest != social_request_digest(request):
+            raise PermissionError("social_write_request_digest_mismatch")
         acceptance = item.acceptance
         if (
             acceptance.product_id != request.product_id
