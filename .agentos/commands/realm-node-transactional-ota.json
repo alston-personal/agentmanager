@@ -2,6 +2,6 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.transactional_ota",
   "node_id": "vopc5750",
-  "source_commit": "4a248b6f6fa484d35f4ebd6fe0e44630b5909f8e",
-  "nonce": "transactional-ota-full-acceptance-1790522652739"
+  "source_commit": "b465443f77d23286c2e652504c3d2d524e1677d1",
+  "nonce": "executor-reconcile-transactional-ota-20261002-1308"
 }
