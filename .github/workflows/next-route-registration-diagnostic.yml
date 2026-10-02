@@ -1,0 +1,53 @@
+name: Next Route Registration Diagnostic
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/next-route-registration-diagnostic.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Next route registration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          live=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)
+          echo "live=$live"
+          echo '=== candidate manifests ==='
+          find "$live/.next" -maxdepth 3 -type f \( -name '*manifest*.json' -o -name '*routes*.json' \) | sort | while read -r f; do
+            if grep -q 'wardrobe\|auth/session' "$f" 2>/dev/null; then
+              echo "--- $f"
+              grep -o '"[^\"]*wardrobe[^\"]*"\|"[^\"]*auth/session[^\"]*"' "$f" | sort -u | head -80 || true
+            fi
+          done
+          echo '=== compiled route headers ==='
+          for f in \
+            "$live/.next/server/app/api/auth/session/route.js" \
+            "$live/.next/server/app/api/wardrobe/catalog/route.js" \
+            "$live/.next/server/app/api/wardrobe/tryon/render/route.js"; do
+              echo "--- $f"
+              head -c 1400 "$f" | tr '\n' ' '; echo
+          done
+          REMOTE
+          cat "$out"
+          { echo '### Next route registration'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
