@@ -43,6 +43,10 @@ jobs:
           type=$(file -b --mime-type /tmp/net-43774.jpg 2>/dev/null || true)
           bytes=$(wc -c < /tmp/net-43774.jpg 2>/dev/null || echo 0)
           echo "image_http=$code image_type=$type image_bytes=$bytes"
+          echo '=== product image candidates ==='
+          curl -sSL --max-time 20 'https://www.net-fashion.net/product/736366' -o /tmp/net-product.html || true
+          grep -Eo 'https?://[^"[:space:]<>]+\.(jpg|jpeg|png|webp)(\?[^"[:space:]<>]*)?' /tmp/net-product.html 2>/dev/null | grep -Ei '736366|43774|735109' | head -40 || true
+          grep -Eo '[^"[:space:]<>]+\.(jpg|jpeg|png|webp)(\?[^"[:space:]<>]*)?' /tmp/net-product.html 2>/dev/null | grep -Ei '736366|43774|735109' | head -40 || true
           REMOTE
           cat "$out"
           { echo '### Mio live frontend diagnostic'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
