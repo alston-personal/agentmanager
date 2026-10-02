@@ -22,37 +22,42 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Read Threads Messages from MBPR existing Chrome through Realm
+      - name: Read Threads Messages from MBPR AgentOS CDP bridge through Realm
         shell: bash
         run: |
           set -euo pipefail
-          RAW="$RUNNER_TEMP/mbpr-native-read-raw.txt",          OUT="$RUNNER_TEMP/threads-native-read.json",          SCRIPT_B64="$(base64 -w0 scripts/threads_existing_chrome_reader.py)",          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3 \,            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \,            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$SCRIPT_B64" > "$RAW" <<'REMOTE',          SCRIPT_B64="$1"
+          RAW="$RUNNER_TEMP/mbpr-native-read-raw.txt"
+          OUT="$RUNNER_TEMP/threads-native-read.json"
+          SCRIPT_B64="$(base64 -w0 scripts/threads_existing_chrome_reader.py)"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$SCRIPT_B64" > "$RAW" <<'REMOTE'
           set -euo pipefail
+          SCRIPT_B64="$1"
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
           export PYTHONPATH=/home/ubuntu/agentmanager
           python3 - "$SCRIPT_B64" <<'PY'
-          import time
+          import base64,sys,time
           from agent_core.realm_fabric import RealmFabricStore
 
-          import base64,sys
+          script_b64=sys.argv[1]
           tid='mbpr-threads-native-read-'+str(int(time.time()))
           py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
-          script_b64=sys.argv[1] if len(sys.argv)>1 else ''
-          code=("import base64,runpy,sys,tempfile; "
-                "p=tempfile.mktemp(suffix='.py'); "
-                "open(p,'wb').write(base64.b64decode("+repr(script_b64)+")); "
-                "sys.argv=[p,'--read','--max-chars','20000']; "
-                "runpy.run_path(p,run_name='__main__')")
-          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':25,'cognition_ids_used':[]}
+          code=(
+              "import base64,runpy,sys,tempfile; "
+              "p=tempfile.mktemp(suffix='.py'); "
+              "open(p,'wb').write(base64.b64decode("+repr(script_b64)+")); "
+              "sys.argv=[p,'--read','--max-chars','20000']; "
+              "runpy.run_path(p,run_name='__main__')"
+          )
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]}
           store=RealmFabricStore()
           store.queue_task('mbpr',task)
-          for _ in range(45):
-              r=store.get_receipt(tid)
-              if r:
-                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+          for _ in range(50):
+              receipt=store.get_receipt(tid)
+              if receipt:
+                  if receipt.get('ok') is not True or int(receipt.get('returncode') or 0)!=0:
                       print('threads_native_read_remote=ERROR')
                       raise SystemExit(2)
-                  out=str(r.get('stdout') or '').strip()
+                  out=str(receipt.get('stdout') or '').strip()
                   print('threads_native_read_payload='+out)
                   raise SystemExit(0)
               time.sleep(2)
@@ -62,17 +67,17 @@ jobs:
 
           python3 - "$RAW" "$OUT" <<'PY'
           import hashlib,json,sys
-          raw=open(sys.argv[1],encoding="utf-8").read().splitlines()
-          line=next((x for x in reversed(raw) if x.startswith("threads_native_read_payload=")),None)
+          raw=open(sys.argv[1],encoding='utf-8').read().splitlines()
+          line=next((x for x in reversed(raw) if x.startswith('threads_native_read_payload=')),None)
           assert line,line
-          payload=line.split("=",1)[1]
+          payload=line.split('=',1)[1]
           obj=json.loads(payload)
-          open(sys.argv[2],"w",encoding="utf-8").write(json.dumps(obj,ensure_ascii=False)+"\n")
+          open(sys.argv[2],'w',encoding='utf-8').write(json.dumps(obj,ensure_ascii=False)+'\n')
           digest=hashlib.sha256(payload.encode()).hexdigest()[:16]
-          print("threads_native_read=PASS")
-          print("threads_native_read_found="+str(bool(obj.get("found"))).lower())
-          print("threads_native_read_digest="+digest)
-          print("threads_native_read_bytes="+str(len(payload.encode())))
+          print('threads_native_read=PASS')
+          print('threads_native_read_found='+str(bool(obj.get('found'))).lower())
+          print('threads_native_read_digest='+digest)
+          print('threads_native_read_bytes='+str(len(payload.encode())))
           PY
       - name: Upload private Threads read artifact
         uses: actions/upload-artifact@v4
