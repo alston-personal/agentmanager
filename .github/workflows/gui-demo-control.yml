@@ -98,7 +98,9 @@ jobs:
               fabric.queue_task(node_id,task)
               print('queued=PASS',flush=True)
           receipt=existing
-          for _ in range(60):
+          requested_timeout=int((cmd.get('payload') or {}).get('timeout_seconds') or 120)
+          receipt_wait_seconds=max(120,min(requested_timeout+60,360))
+          for _ in range((receipt_wait_seconds+1)//2):
               if receipt is not None:
                   break
               time.sleep(2)
