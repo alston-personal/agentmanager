@@ -66,13 +66,7 @@ jobs:
           if [ "$ok" != 1 ]; then
             echo "https_scheduler_projection=FAIL"
             echo "last_http_code=${code:-unknown}"
-            python3 - "$RUNNER_TEMP/scheduler.json" <<'PY' || true
-import sys
-from pathlib import Path
-p=Path(sys.argv[1])
-text=p.read_text(encoding='utf-8',errors='replace') if p.exists() else ''
-print('last_response_body='+text[:1200].replace('\n',' '))
-PY
+            python3 -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); text=p.read_text(encoding="utf-8",errors="replace") if p.exists() else ""; print("last_response_body="+text[:1200].replace("\\n"," "))' "$RUNNER_TEMP/scheduler.json" || true
             exit 1
           fi
           echo 'https_scheduler_projection=PASS'
