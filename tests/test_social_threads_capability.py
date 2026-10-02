@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agentos_node.social.contracts import SocialRequest
+from agentos_node.social.contracts import SocialRequest, social_request_digest
 from agentos_node.social.credentials import AccountBinding, EphemeralCredentialVault
 from agentos_node.social.governance import RuntimeWriteAcceptance
 from agentos_node.social.public_threads import ThreadsPublicReadError, normalize_url, parse_public_post_html
@@ -63,7 +63,11 @@ def test_leopardcat_teacher_text_attachment_uses_same_generic_request_contract()
         text_attachment={"plaintext": "full Master interpretation", "link_attachment_url": "https://example.test/share/1"},
         write_intent_id="user-confirmation-1",
     )
-    acceptance = RuntimeWriteAcceptance("runtime-accept-1", "leopardcat-tarot", "threads", frozenset({"publish"}), frozenset({request.account_binding_id}))
+    acceptance = RuntimeWriteAcceptance(
+        "runtime-accept-1", "leopardcat-tarot", "threads",
+        frozenset({"publish"}), frozenset({request.account_binding_id}),
+        social_request_digest(request),
+    )
     receipt = capability.publish(request, acceptance=acceptance)
     assert receipt["ok"] is True
     assert "SERVER-ONLY-TOKEN" not in str(receipt)
