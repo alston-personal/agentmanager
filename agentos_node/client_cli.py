@@ -131,6 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_enroll.add_argument('--node-id', default=socket.gethostname().lower())
 
     sub.add_parser('manifest', help='print local capability manifest')
+    sub.add_parser('reconcile', help='discover and adopt local AI executors without re-enrollment')
     sub.add_parser('health', help='check ONE health')
     sub.add_parser('bootstrap', help='show inherited Realm capabilities and canonical capability states')
     sub.add_parser('verify', help='verify an already-enrolled Node including lifecycle supervisor and persist regression evidence')
@@ -193,6 +194,9 @@ def main(argv: list[str] | None = None) -> int:
     transport = build_client(config, policy)
     if args.command == 'manifest':
         print(render_json(transport.client.capability_manifest()))
+    elif args.command == 'reconcile':
+        from agentos_node.executor_reconcile import reconcile_executor_adoption
+        print(render_json(reconcile_executor_adoption()))
     elif args.command == 'health':
         print(render_json(transport.health()))
     elif args.command == 'bootstrap':
