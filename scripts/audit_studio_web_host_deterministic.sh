@@ -19,6 +19,43 @@ WEB=/home/ubuntu/zeus-writer/website
     fi
   done
 
+  echo '=== LIVE STUDIO ROUTING FOCUS ==='
+  echo '--- nginx effective config excerpts'
+  nginx -T 2>&1 | awk '
+    /server_name studio\.milkcat\.org/ {show=1}
+    show {print}
+    show && /^}/ {show=0; print "---"}
+  ' || true
+
+  echo '--- onboarding public probes'
+  for path in '/agentos/join.md' '/.well-known/agentos.json'; do
+    tmp=$(mktemp)
+    code=$(curl -L -sS --max-time 15 -o "$tmp" -w '%{http_code}' "https://$SITE$path" || true)
+    ctype=$(curl -L -sSI --max-time 15 "https://$SITE$path" 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print $2}' | tail -1)
+    bytes=$(wc -c < "$tmp" 2>/dev/null || echo 0)
+    marker=$(tr '\n' ' ' < "$tmp" 2>/dev/null | sed -E 's/[[:space:]]+/ /g' | head -c 260 || true)
+    printf 'path=%s status=%s content_type=%q bytes=%s marker=%q\n' "$path" "$code" "$ctype" "$bytes" "$marker"
+    rm -f "$tmp"
+  done
+
+  echo '--- candidate serving roots'
+  for d in /home/ubuntu/studio-web/dist /home/ubuntu/zeus-writer/website/dist; do
+    echo "root_candidate=$d"
+    if [ -d "$d" ]; then
+      stat -c '%U:%G %a %F %n' "$d" || true
+      for f in "$d/agentos/join.md" "$d/.well-known/agentos.json"; do
+        if [ -f "$f" ]; then
+          echo "present=$f"
+          head -n 12 "$f" || true
+        else
+          echo "missing=$f"
+        fi
+      done
+    else
+      echo "missing_root=$d"
+    fi
+  done
+
   echo '=== WEBSITE SOURCE / BUILD OWNERSHIP ==='
   for p in /home/ubuntu/zeus-writer /home/ubuntu/zeus-writer/website "$WEB/dist"; do
     if [ -e "$p" ]; then
