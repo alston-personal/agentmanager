@@ -13,6 +13,7 @@ OUT = ROOT / '.agentos/evidence/realm-fabric-install-current.json'
 CLAIM_ACTION = 'agentos.realm-fabric.claim_deployment'
 INSTALL_ACTION = 'agentos.realm-fabric.install_release'
 STATUS_ACTION = 'agentos.realm-fabric.deployment_status'
+ADVANCE_ACTION = 'agentos.realm-fabric.advance_deployment'
 
 source_commit = (os.environ.get('AGENTOS_REALM_FABRIC_SOURCE_COMMIT') or '').strip().lower()
 lease_owner = (os.environ.get('AGENTOS_REALM_FABRIC_LEASE_OWNER') or 'agentos-core-mainline').strip()
@@ -73,31 +74,72 @@ except TimeoutError:
     OUT.write_text(json.dumps({'ok': False, 'stage': 'claim_receipt_timeout'}, indent=2) + '\n', encoding='utf-8')
     raise SystemExit(3)
 
-# Installation is intentionally NOT a generation transition primitive.
-# If another desired generation owns the lease, stop and require an explicit
-# governed release -> advance sequence.  This prevents a delayed workflow from
-# turning "deploy my checkout" into "replace the live Core generation".
+# Installation is not itself a generation transition primitive. If the
+# currently converged generation is owned by this same canonical deploy owner,
+# advance it explicitly through the governed transition action. Different
+# owners still fail closed.
 if claim.get('ok') is not True:
     current_desired = str(claim.get('desired_core_commit') or '')
-    if current_desired and current_desired != source_commit:
+    current_owner = str(claim.get('lease_owner') or '')
+    current_observed = str(claim.get('observed_core_commit') or '')
+    current_generation = int(claim.get('deployment_generation') or 0)
+    current_status = str(claim.get('deployment_status') or '')
+    same_owner_converged = (
+        current_desired
+        and current_desired != source_commit
+        and current_owner == lease_owner
+        and current_status in ('converged', 'desired')
+        and current_observed in ('', current_desired)
+    )
+    if same_owner_converged:
+        advance_payload = client.submit(ADVANCE_ACTION, {
+            'current_desired_core_commit': current_desired,
+            'next_desired_core_commit': source_commit,
+            'lease_owner': lease_owner,
+            'expected_generation': current_generation,
+            'lease_seconds': 900,
+        })
+        try:
+            advance = wait_receipt(advance_payload['capsule_id'])
+        except TimeoutError:
+            OUT.write_text(json.dumps({'ok': False, 'stage': 'advance_receipt_timeout'}, indent=2) + '\n', encoding='utf-8')
+            raise SystemExit(5)
+        if advance.get('ok') is not True:
+            OUT.write_text(json.dumps({
+                'ok': False,
+                'stage': 'advance',
+                'source_commit': source_commit,
+                'advance_receipt': advance,
+                'claim_receipt': claim,
+            }, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+            print(OUT.read_text(encoding='utf-8'))
+            raise SystemExit(5)
+        generation = int(advance.get('deployment_generation') or 0)
+        claim = {
+            **advance,
+            'action': ADVANCE_ACTION,
+            'transitioned_from_claim': claim,
+        }
+    elif current_desired and current_desired != source_commit:
         payload = {
             'ok': False,
             'stage': 'transition_required',
             'source_commit': source_commit,
             'current_desired_core_commit': current_desired,
-            'deployment_generation': claim.get('deployment_generation'),
-            'lease_owner': claim.get('lease_owner'),
-            'deployment_status': claim.get('deployment_status'),
+            'deployment_generation': current_generation,
+            'lease_owner': current_owner,
+            'deployment_status': current_status,
             'claim_receipt': claim,
         }
         OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
         print(OUT.read_text(encoding='utf-8'))
         raise SystemExit(5)
-    OUT.write_text(json.dumps({'ok': False, 'stage': 'claim', 'claim': claim}, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
-    print(OUT.read_text(encoding='utf-8'))
-    raise SystemExit(6)
-
-generation = int(claim.get('deployment_generation') or 0)
+    else:
+        OUT.write_text(json.dumps({'ok': False, 'stage': 'claim', 'claim': claim}, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+        print(OUT.read_text(encoding='utf-8'))
+        raise SystemExit(6)
+else:
+    generation = int(claim.get('deployment_generation') or 0)
 if generation < expected_generation:
     raise SystemExit('deployment generation regressed')
 
