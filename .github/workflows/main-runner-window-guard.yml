@@ -1,0 +1,26 @@
+name: Main Runner Window Guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.agentos/governance/main-legacy-direct-oracle-workflows.txt'
+      - 'scripts/check_main_runner_window_guard.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.agentos/governance/main-legacy-direct-oracle-workflows.txt'
+      - 'scripts/check_main_runner_window_guard.py'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check_main_runner_window_guard.py
