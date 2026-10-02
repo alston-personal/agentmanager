@@ -1,14 +1,14 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "uia-edge-tree-python312-20261002-1103",
+  "nonce": "uia-semantic-fast-20261002-1105",
   "action": "shell.exec",
   "payload": {
     "executable": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
     "argv": [
       "-c",
-      "import sys; sys.stdout.reconfigure(encoding='utf-8'); from pywinauto import Desktop; import json; rows=[]; d=Desktop(backend='uia');\nfor w in d.windows():\n t=(w.window_text() or '')[:200]\n if 'Edge' in t or 'Gemini' in t or 'Threads' in t:\n  try:\n   for c in w.descendants()[:1200]:\n    txt=(c.window_text() or '').strip(); ct=getattr(c.element_info,'control_type',None); aid=getattr(c.element_info,'automation_id',None)\n    if txt or aid: rows.append({'win':t,'text':txt[:180],'type':ct,'automation_id':str(aid or '')[:120]})\n  except Exception as e: rows.append({'win':t,'error':str(e)})\nprint(json.dumps(rows[-220:],ensure_ascii=False))"
+      "import sys,json\nsys.stdout.reconfigure(encoding='utf-8')\nfrom pywinauto import Desktop\nkeys=('gemini','threads','傳送','貼文','下載','訊息','prompt','post','send','download','text')\nrows=[]\nfor w in Desktop(backend='uia').windows():\n    title=(w.window_text() or '')\n    if 'Edge' not in title and 'Gemini' not in title and 'Threads' not in title:\n        continue\n    for c in w.descendants(control_type='Button') + w.descendants(control_type='Edit') + w.descendants(control_type='Document') + w.descendants(control_type='Text'):\n        txt=(c.window_text() or '').strip()\n        aid=str(getattr(c.element_info,'automation_id','') or '')\n        blob=(txt+' '+aid).lower()\n        if any(k in blob for k in keys):\n            rows.append({'window':title[:140],'text':txt[:180],'type':getattr(c.element_info,'control_type',None),'automation_id':aid[:140]})\nprint(json.dumps(rows[:180],ensure_ascii=False))"
     ],
-    "timeout_seconds": 30
+    "timeout_seconds": 25
   }
 }
