@@ -1,16 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "watchdog-reload-proof-20261002-0044",
-  "action": "shell.exec",
-  "payload": {
-    "executable": "powershell",
-    "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$p=Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -match 'agentos_node.client_cli.*run'} | Select-Object -First 1; if(-not $p){throw 'thin_client_process_not_found'}; $pid0=$p.ProcessId; $cmd=\"Start-Sleep -Seconds 3; Stop-Process -Id $pid0 -Force\"; Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$cmd); Write-Output ('scheduled_kill_pid='+$pid0)"
-    ],
-    "timeout_seconds": 20
-  }
+  "nonce": "watchdog-recovery-verify-20261002-0045",
+  "action": "desktop.windows.inspect",
+  "payload": {}
 }
