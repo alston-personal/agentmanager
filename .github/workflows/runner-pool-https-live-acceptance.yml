@@ -1,0 +1,55 @@
+name: Runner Pool HTTPS Live Acceptance
+
+on:
+  push:
+    branches: [accept/runner-pool-https-live-20261002]
+    paths:
+      - '.github/workflows/runner-pool-https-live-acceptance.yml'
+      - 'scripts/submit_agentos_scheduler_request_https.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AGENTOS_CONTROLLER_TOKEN: ${{ secrets.AGENTOS_CONTROLLER_TOKEN }}
+      AGENTOS_SCHEDULER_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check controller credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${AGENTOS_CONTROLLER_TOKEN:-}" ]; then
+            echo 'controller_secret=NOT_CONFIGURED'
+            exit 12
+          fi
+          echo 'controller_secret=CONFIGURED'
+      - name: Verify authenticated scheduler projection over HTTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 15             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"             "$AGENTOS_SCHEDULER_BASE/v1/controller/scheduler" > "$RUNNER_TEMP/scheduler.json"
+          python3 - "$RUNNER_TEMP/scheduler.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          p=d.get('runner_pool') or {}
+          assert d.get('ok') is True,d
+          assert p.get('schema')=='agentos.runner-pool/v1',p
+          workers=p.get('workers') or {}
+          for wid in ('oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build','agentos-router'):
+              assert wid in workers,(wid,workers)
+          print('https_scheduler_projection=PASS')
+          PY
+      - name: Round-trip typed request without SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_SCHEDULER_WAIT_SECONDS=180             bash scripts/submit_agentos_scheduler_request_https.sh               agentos.gui_worker.smoke "$GITHUB_SHA"               > "$RUNNER_TEMP/roundtrip.txt"
+          cat "$RUNNER_TEMP/roundtrip.txt"
+          grep -q 'scheduler_request=PASS' "$RUNNER_TEMP/roundtrip.txt"
+          echo 'runner_pool_https_roundtrip=PASS'
