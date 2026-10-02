@@ -112,13 +112,13 @@ def main():
             activity=load(p)
 
     recent=[]
-    for e in events[-50:]:
+    for e in events[-20:]:
         if e.get("type") not in ("post.sent","post.published","reply.observed","reply.sent","wardrobe.window_shopping","pdca.activity.completed"):
             continue
         recent.append({
           "type":e.get("type"),
           "timestamp":e.get("timestamp"),
-          "text":str(e.get("text") or e.get("summary") or "")[:500],
+          "text":str(e.get("text") or e.get("summary") or "")[:240],
           "author":e.get("author_handle") or e.get("username"),
           "source_object_id":e.get("source_object_id") or e.get("object_id")
         })
@@ -128,26 +128,40 @@ def main():
         print(json.dumps({"status":"DEFER","reason":"persona_reasoning_executor_unavailable"},ensure_ascii=False))
         return 0
 
+    current_self=ir.get("current_self") if isinstance(ir.get("current_self"),dict) else {}
+    energy_state=persona.get("energy") if isinstance(persona.get("energy"),dict) else {}
+    autonomy=persona.get("autonomy") if isinstance(persona.get("autonomy"),dict) else {}
     contract={
       "current_ir":{
         "ir_id":ir.get("ir_id"),
-        "current_self":ir.get("current_self"),
-        "reply_contract":ir.get("reply_contract"),
-        "promoted_growth":ir.get("promoted_growth")
+        "voice":current_self.get("voice"),
+        "interaction_principles":current_self.get("interaction_principles"),
+        "interests_with_evidence":current_self.get("interests_with_evidence"),
+        "uncertainties":current_self.get("uncertainties")
       },
       "persona":{
         "voice":persona.get("voice"),
-        "autonomy":persona.get("autonomy"),
-        "temporal_behavior":persona.get("temporal_behavior"),
-        "energy":persona.get("energy")
+        "routine_posts_autonomy":autonomy.get("routine_posts"),
+        "energy":{
+          "current":energy_state.get("current"),
+          "decision_thresholds":energy_state.get("decision_thresholds")
+        }
       },
       "pdca":{
         "cycle":state.get("cycle"),
         "focus":state.get("current_focus"),
         "consider_reason":consider.get("reason"),
-        "activity_receipt":activity
+        "activity_intent":activity.get("intent") if isinstance(activity,dict) else None,
+        "activity_result":activity.get("result") if isinstance(activity,dict) else None
       },
-      "growth_mode":growth,
+      "growth_mode":{
+        "enabled":growth.get("enabled"),
+        "phase":growth.get("phase"),
+        "primary_objective":growth.get("primary_objective"),
+        "current_topic_lanes":growth.get("current_topic_lanes"),
+        "content_rules":growth.get("content_rules"),
+        "scheduling_policy":growth.get("scheduling_policy")
+      },
       "growth_context":{
         "posts_today":len(todays_posts),
         "daily_target":daily_target,
@@ -168,7 +182,11 @@ Return ONLY one JSON object with exactly these keys:
 Context:
 """+json.dumps(contract,ensure_ascii=False)
 
-    result=subprocess.run([*executor,prompt],cwd="/home/ubuntu/agentmanager",text=True,capture_output=True,timeout=90)
+    try:
+        result=subprocess.run([*executor,prompt],cwd="/home/ubuntu/agentmanager",text=True,capture_output=True,timeout=180)
+    except subprocess.TimeoutExpired:
+        print(json.dumps({"status":"DEFER","reason":"persona_reasoning_timeout","timeout_seconds":180},ensure_ascii=False))
+        return 0
     if result.returncode!=0:
         print(json.dumps({"status":"DEFER","reason":"reasoning_executor_failed","returncode":result.returncode},ensure_ascii=False))
         return 0
