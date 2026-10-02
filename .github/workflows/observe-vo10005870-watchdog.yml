@@ -1,0 +1,42 @@
+name: Observe VO10005870 Watchdog Recovery
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/observe-vo10005870-watchdog.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Wait and inspect node only
+        shell: bash
+        run: |
+          sleep 75
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          node=next((n for n in (NodeRegistry().node_map().get('nodes') or []) if str(n.get('node_id') or '')=='VO10005870'),None)
+          print(json.dumps(node,ensure_ascii=False,separators=(',',':')))
+          if not node or str(node.get('status') or '')!='online':
+              raise SystemExit('watchdog_did_not_restore_online')
+          PY
+          REMOTE
