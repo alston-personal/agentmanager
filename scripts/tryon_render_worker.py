@@ -680,7 +680,10 @@ def persist_render_cache(job: dict[str, Any], rendered_layers: list[str], source
     key = outfit_cache_key(job, rendered_layers)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cached = cache_path(key)
-    if not cached.exists():
+    existing_meta = read_json(cache_meta_path(key)) or {}
+    # A quality-approved cache is immutable. A provisional/rejected cache must
+    # be replaced by the newest render for the same outfit signature.
+    if not cached.exists() or existing_meta.get("qualityAccepted") is not True:
         tmp = cached.with_suffix(".webp.tmp")
         shutil.copyfile(source, tmp)
         os.chmod(tmp, 0o600)
