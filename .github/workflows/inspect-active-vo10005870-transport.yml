@@ -45,8 +45,8 @@ jobs:
               raise SystemExit('watchdog_recovery_timeout')
 
           f=RealmFabricStore()
-          tid='inspect-active-transport-runtime-20261002-1410'
-          code="import sys,inspect,hashlib,agentos_node.thin_client_transport as m; src=inspect.getsource(m.ThinClientTransport.run_forever); print('PY='+sys.executable); print('MODULE='+m.__file__); print('HAS_HEARTBEAT_THREAD='+str('agentos-heartbeat' in src and 'threading.Thread' in src)); print('SRC_SHA='+hashlib.sha256(src.encode()).hexdigest()); print(src)"
+          tid='inspect-active-transport-runtime-20261002-1450'
+          code="import sys,inspect,hashlib,json,time,agentos_node.thin_client_transport as m; src=inspect.getsource(m.ThinClientTransport.run_forever); p=m._liveness_lease_path(); a=json.loads(p.read_text(encoding='utf-8')) if p.exists() else None; time.sleep(3); b=json.loads(p.read_text(encoding='utf-8')) if p.exists() else None; print('PY='+sys.executable); print('MODULE='+m.__file__); print('HAS_HEARTBEAT_THREAD='+str('agentos-heartbeat' in src and 'threading.Thread' in src)); print('HAS_LIVENESS_THREAD='+str('agentos-liveness' in src)); print('LIVENESS_PATH='+str(p)); print('LIVENESS_ADVANCED='+str(bool(a and b and int(b['recorded_at_unix'])>int(a['recorded_at_unix'])))); print('SRC_SHA='+hashlib.sha256(src.encode()).hexdigest())"
           if f.get_receipt(tid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
