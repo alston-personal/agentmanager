@@ -1,9 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-fresh-smoke-stop-20261002-0040",
-  "action": "desktop.demo.stop",
+  "nonce": "install-watchdog-20261002-0042",
+  "action": "shell.exec",
   "payload": {
-    "final_stage": "Fresh smoke / verified"
+    "executable": "powershell",
+    "argv": [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$root=Join-Path $env:LOCALAPPDATA 'AgentOS\\scripts'; New-Item -ItemType Directory -Force -Path $root|Out-Null; $src='https://raw.githubusercontent.com/alston-personal/agentmanager/fix/windows-thin-client-watchdog/scripts/windows/thin_client_watchdog.ps1'; $dst=Join-Path $root 'thin_client_watchdog.ps1'; Invoke-WebRequest -UseBasicParsing -Uri $src -OutFile $dst; $a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"'+$dst+'\" -TaskName \"AgentOS Thin Client\"'); $t1=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME; $t2=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1); $p=New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\\$env:USERNAME\" -LogonType Interactive -RunLevel Limited; $s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable; Register-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -Action $a -Trigger @($t1,$t2) -Principal $p -Settings $s -Force|Out-Null; Start-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog'; Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog'|Select-Object TaskName,State|ConvertTo-Json -Compress"
+    ],
+    "timeout_seconds": 60
   }
 }
