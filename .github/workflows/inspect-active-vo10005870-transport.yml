@@ -1,0 +1,68 @@
+name: Inspect Active VO10005870 Transport Runtime
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/inspect-active-vo10005870-transport.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Wait for watchdog then inspect active transport
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          for _ in range(24):
+              node=next((n for n in (NodeRegistry().node_map().get('nodes') or []) if str(n.get('node_id') or '')=='VO10005870'),None)
+              if node and node.get('status')=='online':
+                  print('NODE_ONLINE='+json.dumps(node,ensure_ascii=False,separators=(',',':')))
+                  break
+              time.sleep(5)
+          else:
+              raise SystemExit('watchdog_recovery_timeout')
+
+          f=RealmFabricStore()
+          tid='inspect-active-transport-runtime-20261002-1410'
+          code="import sys,inspect,hashlib,agentos_node.thin_client_transport as m; src=inspect.getsource(m.ThinClientTransport.run_forever); print('PY='+sys.executable); print('MODULE='+m.__file__); print('HAS_HEARTBEAT_THREAD='+str('agentos-heartbeat' in src and 'threading.Thread' in src)); print('SRC_SHA='+hashlib.sha256(src.encode()).hexdigest()); print(src)"
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                  'executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe',
+                  'argv':['-c',code],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,
+                  'cognition_ids_used':['demo://heartbeat-isolation/20261002'],
+              })
+          for _ in range(30):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  print('SOURCE='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0, r
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('source_receipt_missing')
+          PY
+          REMOTE
