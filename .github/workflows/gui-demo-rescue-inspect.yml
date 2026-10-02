@@ -49,3 +49,5 @@ jobs:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
           PY
           REMOTE
+
+# recovery-check-20261002-1117
