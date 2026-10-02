@@ -1,0 +1,66 @@
+name: Verify VO10005870 Receipt Spool Transport
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/verify-vo10005870-receipt-spool-transport.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Seed spool and verify archive
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time,hashlib
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          seed='seed-spool-transport-20261002-1638'
+          synthetic='synthetic-timeout-receipt-20261002-1638'
+          ps=r'''$ErrorActionPreference='Stop'
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS\state\pending-receipts'
+          New-Item -ItemType Directory -Force -Path $root|Out-Null
+          $task='synthetic-timeout-receipt-20261002-1638'
+          $sha=[System.Security.Cryptography.SHA256]::Create()
+          $bytes=[System.Text.Encoding]::UTF8.GetBytes($task)
+          $hash=([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()
+          $path=Join-Path $root ($hash+'.json')
+          $obj=[ordered]@{schema='agentos.node-receipt/v0.1';realm_id='realm-alston';node_id='VO10005870';task_id=$task;action='shell.exec';started_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ');completed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ');ok=$false;cognition_ids_used=@('demo://receipt-spool/20261002');error='synthetic spool transport proof'}
+          $obj|ConvertTo-Json -Depth 6|Set-Content -Encoding UTF8 -LiteralPath $path
+          [pscustomobject]@{seeded=$path;bytes=(Get-Item $path).Length}|ConvertTo-Json -Compress'''
+          if f.get_receipt(seed) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':seed,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':['demo://receipt-spool/20261002']})
+          for _ in range(30):
+              r=f.get_receipt(seed)
+              if r: print('SEED='+json.dumps(r,ensure_ascii=False,separators=(',',':'))); break
+              time.sleep(1)
+          else: raise SystemExit('seed_receipt_missing')
+          for _ in range(30):
+              r=f.get_receipt(synthetic)
+              if r:
+                  print('SYNTHETIC='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('error')=='synthetic spool transport proof', r
+                  raise SystemExit(0)
+              time.sleep(1)
+          raise SystemExit('synthetic_spool_receipt_missing')
+          PY
+          REMOTE
