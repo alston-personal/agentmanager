@@ -24,6 +24,29 @@ def _heartbeat_lease_path() -> Path:
     return _client_home() / 'heartbeat-lease.json'
 
 
+def _liveness_lease_path() -> Path:
+    return _client_home() / 'daemon-liveness.json'
+
+
+def _write_liveness_lease(config: 'ClientConfig') -> None:
+    target = _liveness_lease_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        'schema': 'agentos.node-daemon-liveness/v0.1',
+        'realm_id': config.realm_id,
+        'node_id': config.node_id,
+        'recorded_at_unix': int(time.time()),
+        'pid': os.getpid(),
+    }
+    tmp = target.with_suffix(target.suffix + '.tmp')
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, target)
+
+
 def _write_heartbeat_lease(config: 'ClientConfig') -> None:
     target = _heartbeat_lease_path()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +251,16 @@ class ThinClientTransport:
             receipts.append(receipt)
         return receipts
 
+    def _liveness_forever(self, delay: float) -> None:
+        interval = max(1.0, min(2.0, delay))
+        while True:
+            try:
+                if self.config:
+                    _write_liveness_lease(self.config)
+            except Exception as exc:
+                print(f'[agentos-client] liveness error: {exc}', flush=True)
+            time.sleep(interval)
+
     def _heartbeat_forever(self, delay: float) -> None:
         while True:
             try:
@@ -240,12 +273,19 @@ class ThinClientTransport:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         delay = max(1.0, float(self.config.poll_seconds))
+        liveness_thread = threading.Thread(
+            target=self._liveness_forever,
+            args=(delay,),
+            name='agentos-liveness',
+            daemon=True,
+        )
         heartbeat_thread = threading.Thread(
             target=self._heartbeat_forever,
             args=(delay,),
             name='agentos-heartbeat',
             daemon=True,
         )
+        liveness_thread.start()
         heartbeat_thread.start()
         while True:
             try:
