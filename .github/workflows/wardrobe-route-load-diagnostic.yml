@@ -1,0 +1,52 @@
+name: Wardrobe Route Load Diagnostic
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/wardrobe-route-load-diagnostic.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe route module load
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          live=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)
+          echo "live=$live"
+          echo '=== direct require auth/session ==='
+          (cd "$live" && node -e "try{require('./.next/server/app/api/auth/session/route.js');console.log('auth_require=PASS')}catch(e){console.error(e.stack||e);process.exitCode=1}") || true
+          echo '=== direct require wardrobe/catalog ==='
+          (cd "$live" && node -e "try{require('./.next/server/app/api/wardrobe/catalog/route.js');console.log('catalog_require=PASS')}catch(e){console.error(e.stack||e);process.exitCode=1}") || true
+          echo '=== direct require wardrobe/render ==='
+          (cd "$live" && node -e "try{require('./.next/server/app/api/wardrobe/tryon/render/route.js');console.log('render_require=PASS')}catch(e){console.error(e.stack||e);process.exitCode=1}") || true
+          echo '=== live request and immediate journal ==='
+          t=$(date '+%Y-%m-%d %H:%M:%S')
+          code=$(curl -sS -D /tmp/cat-h -o /tmp/cat-b -w '%{http_code}' --max-time 5 'http://127.0.0.1:3000/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001' || true)
+          echo "catalog_http=$code"
+          sed -n '1,20p' /tmp/cat-h || true
+          head -c 800 /tmp/cat-b || true; echo
+          sleep 1
+          journalctl --user -u agentos-dashboard.service --since "$t" --no-pager | tail -120 || true
+          REMOTE
+          cat "$out"
+          { echo '### Wardrobe route module load'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
