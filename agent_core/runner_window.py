@@ -15,6 +15,7 @@ class RunnerWindowIntent:
 
 
 INTENTS: tuple[RunnerWindowIntent, ...] = (
+    RunnerWindowIntent("agentos.dispatch", "probe", bc.ACTION_RUNNER_WINDOW_PROBE),
     RunnerWindowIntent("browser.gui", "smoke", bc.ACTION_SMOKE_GUI_WORKER),
     RunnerWindowIntent("social.runtime", "deploy", bc.ACTION_DEPLOY_SOCIAL_RUNTIME),
     RunnerWindowIntent("content.social", "reconcile", bc.ACTION_RECONCILE_CONTENT_SOCIAL, frozenset({"account_ref"})),
