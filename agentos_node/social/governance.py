@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .contracts import SocialRequest, WRITE_OPERATIONS
+from .contracts import SocialRequest, WRITE_OPERATIONS, social_request_digest
 
 
 @dataclass(frozen=True)
@@ -14,6 +14,7 @@ class RuntimeWriteAcceptance:
     platform: str
     operations: frozenset[str]
     account_binding_ids: frozenset[str] = field(default_factory=frozenset)
+    request_digest: str = ""
 
 
 class SocialWriteGate:
@@ -35,3 +36,7 @@ class SocialWriteGate:
             raise PermissionError("social_write_account_not_accepted")
         if request.write_intent_id is None:
             raise PermissionError("explicit_write_intent_required")
+        if not acceptance.request_digest:
+            raise PermissionError("social_write_request_digest_required")
+        if acceptance.request_digest != social_request_digest(request):
+            raise PermissionError("social_write_request_digest_mismatch")
