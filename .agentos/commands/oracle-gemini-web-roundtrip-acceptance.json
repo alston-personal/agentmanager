@@ -1,6 +1,6 @@
 {
   "schema": "agentos.command/v1",
   "command": "oracle-gemini-web-roundtrip-acceptance",
-  "requested_at": "2026-09-30T09:06:30Z",
-  "purpose": "Prove governed Gemini Web bidirectional roundtrip after READY session acceptance"
+  "requested_at": "2026-10-02T08:28:00Z",
+  "purpose": "Bridge pending AgentOS Participant enrollment challenge through Gemini Web Host Runtime"
 }
