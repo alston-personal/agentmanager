@@ -78,6 +78,65 @@ class TestControllerService(ControllerFixture):
             })
         self.assertEqual(self.fabric.load()['tasks']['vopc5750'], [])
 
+    def test_capability_only_dispatch_auto_selects_online_provider(self):
+        result = ControllerService(self.fabric).dispatch({
+            'schema': 'agentos.controller-dispatch/v0.1',
+            'action': 'agent.surface.inspect',
+            'payload': {'probe': 'auto-route'},
+        })
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['node_id'], 'vopc5750')
+        self.assertEqual(result['selection_mode'], 'capability_auto')
+        self.assertIsNone(result['requested_node_id'])
+        self.assertEqual(self.fabric.load()['tasks']['vopc5750'][0]['probe'], 'auto-route')
+
+    def test_capability_dispatch_prefers_lower_queue_depth(self):
+        root = Path(self.tmp.name)
+        manifest = {
+            'schema': 'agentos.node-manifest/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'vopc5751',
+            'role': 'client',
+            'hostname': 'VOPC5751',
+            'platform': 'Windows',
+            'platform_release': '11',
+            'capabilities': ['agent.surface.inspect'],
+            'tool_presence': {},
+            'surface_inventory': {'surfaces': []},
+        }
+        invite = self.fabric.create_invite(expires_minutes=5, label='controller-test-2')
+        enrolled = self.fabric.enroll(
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            manifest=manifest,
+        )
+        self.fabric.record_heartbeat({
+            'schema': 'agentos.node-heartbeat/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'vopc5751',
+            'status': 'online',
+            'observed_at': None,
+            'uptime_seconds': 10,
+            'surface_count': 0,
+            'manifest': manifest,
+        }, enrolled['node_token'])
+        self.fabric.queue_task('vopc5750', {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': 'preloaded',
+            'action': 'agent.surface.inspect',
+        })
+        result = ControllerService(self.fabric).dispatch({
+            'action': 'agent.surface.inspect',
+        })
+        self.assertEqual(result['node_id'], 'vopc5751')
+        self.assertEqual(result['candidate_queue_depth'], 0)
+
+    def test_capability_only_dispatch_rejects_when_no_provider(self):
+        with self.assertRaisesRegex(ValueError, 'no online node advertises capability'):
+            ControllerService(self.fabric).dispatch({
+                'action': 'video.generate',
+            })
+
 
 class TestControllerEndpoint(ControllerFixture):
     def setUp(self):
