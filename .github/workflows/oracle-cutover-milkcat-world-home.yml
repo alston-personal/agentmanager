@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 15
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: c698c3406f327609174d2feadd0c819bd4f9ab49
+      SOURCE_SHA: a7fa83cd24dbb7d171dacf63cbe97f8980317475
     steps:
       - uses: actions/checkout@v4
 
@@ -64,15 +64,17 @@ jobs:
 
           test -f "$SRC/dist/index.html"
           test -f "$SRC/dist/agentos/join.md"
+          test -f "$SRC/dist/agentos/join/index.html"
           test -f "$SRC/dist/.well-known/agentos.json"
           grep -Fq 'Milkcat World' "$SRC/dist/index.html"
           grep -Fq '/world/' "$SRC/dist/index.html"
           grep -Fq '# Join AgentOS ONE' "$SRC/dist/agentos/join.md"
-          grep -Fq '"schema": "agentos.discovery/v1"' "$SRC/dist/.well-known/agentos.json"
+          grep -Fq '<title>Join AgentOS ONE</title>' "$SRC/dist/agentos/join/index.html"
+          grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join"' "$SRC/dist/.well-known/agentos.json"
 
           test -d "$LIVE"
           mkdir -p "$BACKUP" "$LIVE/agentos" "$LIVE/.well-known"
-          for rel in index.html agentos/join.md .well-known/agentos.json; do
+          for rel in index.html agentos/join.md agentos/join/index.html .well-known/agentos.json; do
             if [ -f "$LIVE/$rel" ]; then
               mkdir -p "$BACKUP/$(dirname "$rel")"
               cp -a "$LIVE/$rel" "$BACKUP/$rel.previous"
@@ -81,7 +83,9 @@ jobs:
 
           install -m 0644 "$SRC/dist/index.html" "$LIVE/.index-$RUN_ID.html"
           mv -f "$LIVE/.index-$RUN_ID.html" "$LIVE/index.html"
+          install -d "$LIVE/agentos/join"
           install -m 0644 "$SRC/dist/agentos/join.md" "$LIVE/agentos/join.md"
+          install -m 0644 "$SRC/dist/agentos/join/index.html" "$LIVE/agentos/join/index.html"
           install -m 0644 "$SRC/dist/.well-known/agentos.json" "$LIVE/.well-known/agentos.json"
 
           rollback() {
@@ -96,8 +100,9 @@ jobs:
           }
 
           curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/ | grep -Fq 'Milkcat World' || { rollback; exit 1; }
+          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/agentos/join | grep -Fq '<title>Join AgentOS ONE</title>' || { rollback; exit 1; }
           curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/agentos/join.md | grep -Fq '# Join AgentOS ONE' || { rollback; exit 1; }
-          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/.well-known/agentos.json | grep -Fq '"schema": "agentos.discovery/v1"' || { rollback; exit 1; }
+          curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/.well-known/agentos.json | grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join"' || { rollback; exit 1; }
 
           echo "studio_web_root_surface_publish=PASS source_sha=$SOURCE_SHA backup=$BACKUP"
           REMOTE
@@ -109,10 +114,13 @@ jobs:
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/?_=$GITHUB_RUN_ID" -o "$OUT"
           grep -Fq 'Milkcat World' "$OUT"
           grep -Fq '/world/' "$OUT"
-          JOIN=$(mktemp)
+          HTML_JOIN=$(mktemp)
+          RAW_JOIN=$(mktemp)
           DISCOVERY=$(mktemp)
-          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/agentos/join.md?_=$GITHUB_RUN_ID" -o "$JOIN"
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/agentos/join?_=$GITHUB_RUN_ID" -o "$HTML_JOIN"
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/agentos/join.md?_=$GITHUB_RUN_ID" -o "$RAW_JOIN"
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/.well-known/agentos.json?_=$GITHUB_RUN_ID" -o "$DISCOVERY"
-          grep -Fq '# Join AgentOS ONE' "$JOIN"
-          grep -Fq '"schema": "agentos.discovery/v1"' "$DISCOVERY"
+          grep -Fq '<title>Join AgentOS ONE</title>' "$HTML_JOIN"
+          grep -Fq '# Join AgentOS ONE' "$RAW_JOIN"
+          grep -Fq '"onboarding": "https://studio.milkcat.org/agentos/join"' "$DISCOVERY"
           echo "public_studio_web_root_surface_acceptance=PASS"
