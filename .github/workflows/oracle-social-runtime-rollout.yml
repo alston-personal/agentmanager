@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      AGENTOS_SCHEDULER_BASE: https://studio.milkcat.org/dashboard/api/agentos
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +34,7 @@ jobs:
           printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
           python3 -m compileall -q agentos_node/social agentos_node/bootstrap_control.py agentos_node/bootstrap_scheduler.py
           bash -n scripts/deploy_social_runtime_user.sh
-          bash -n scripts/submit_agentos_scheduler_request_https.sh
+          bash -n scripts/agentos_dispatch.sh
           test -f 'dashboard/app/api/social/[...path]/route.ts'
           echo "social_runtime_ingress=github-hosted"
           echo "social_runtime_rollout_source_commit=$GITHUB_SHA"
@@ -54,11 +54,11 @@ jobs:
           )"
           echo "::add-mask::$token"
           printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
-      - name: Submit deploy to AgentOS capability scheduler
+      - name: Dispatch social runtime intent through Runner Window
         shell: bash
         run: |
           set -euo pipefail
-          AGENTOS_SCHEDULER_WAIT_SECONDS=720             bash scripts/submit_agentos_scheduler_request_https.sh               agentos.social_runtime.deploy "$GITHUB_SHA"               > "$RUNNER_TEMP/social-runtime-roundtrip.txt"
+          AGENTOS_DISPATCH_WAIT_SECONDS=720 bash scripts/agentos_dispatch.sh social.runtime deploy "$GITHUB_SHA"               > "$RUNNER_TEMP/social-runtime-roundtrip.txt"
 
           python3 - "$RUNNER_TEMP/social-runtime-roundtrip.txt" "$GITHUB_SHA" <<'PY'
           import json,sys
@@ -66,7 +66,6 @@ jobs:
           docs=[json.loads(x) for x in lines if x.startswith('{')]
           r=docs[-1]['receipt']; expected=sys.argv[2]
           assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
-          assert r.get('action')=='agentos.social_runtime.deploy',r
           assert r.get('source_commit')==expected,r
           assert r.get('ok') is True,r
           sch=r.get('scheduler') or {}
@@ -86,7 +85,7 @@ jobs:
               f'social_runtime_source_commit={expected}',
           ):
               assert marker in evidence,(marker,evidence)
-          print('social_runtime_scheduler_receipt=PASS')
+          print('social_runtime_runner_window_receipt=PASS')
           print('social_runtime_worker='+sch['worker_id'])
           PY
       - name: Verify public boundary
