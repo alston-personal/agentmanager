@@ -22,7 +22,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe transport
+      - name: Verify watchdog recovery
         shell: bash
         run: |
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
@@ -32,29 +32,26 @@ jobs:
           cd /home/ubuntu/agentmanager
           python3 - <<'PY'
           import json,time
+          from agent_core.node_registry import NodeRegistry
           from agent_core.realm_fabric import RealmFabricStore
-          task_id='gui-demo-uia-hosted-fast-20261002-1112'
+          task_id='gui-demo-watchdog-after-uia-20261002-1115'
+          node=next((n for n in (NodeRegistry().node_map().get('nodes') or []) if str(n.get('node_id') or '')=='VO10005870'),None)
+          print('NODE_BEFORE='+json.dumps(node,ensure_ascii=False,separators=(',',':')))
           f=RealmFabricStore()
           if f.get_receipt(task_id) is None:
               f.queue_task('VO10005870', {
                   'schema':'agentos.node-task/v0.1',
                   'task_id':task_id,
-                  'action':'shell.exec',
-                  'executable':r'C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-                  'argv':['-c',"import sys,json\nsys.stdout.reconfigure(encoding='utf-8')\nfrom pywinauto import Desktop\nkeys=('gemini','threads','傳送','貼文','下載','訊息','prompt','post','send','download','text')\nrows=[]\nfor w in Desktop(backend='uia').windows():\n    title=(w.window_text() or '')\n    if 'Edge' not in title and 'Gemini' not in title and 'Threads' not in title:\n        continue\n    for typ in ('Button','Edit','Document','Text'):\n        for c in w.descendants(control_type=typ)[:250]:\n            txt=(c.window_text() or '').strip()\n            aid=str(getattr(c.element_info,'automation_id','') or '')\n            blob=(txt+' '+aid).lower()\n            if any(k in blob for k in keys):\n                rows.append({'window':title[:140],'text':txt[:180],'type':typ,'automation_id':aid[:140]})\nprint(json.dumps(rows[:120],ensure_ascii=False))"],
-                  'timeout_seconds':25,
-                  'cwd':r'C:\\Users\\alston.huang\\AgentOS',
-                  'cognition_ids_used':['demo://transport-probe/20261002'],
+                  'action':'desktop.session.inspect',
+                  'cognition_ids_used':['demo://watchdog-after-uia/20261002'],
               })
-          for i in range(35):
+          for _ in range(25):
               r=f.get_receipt(task_id)
               if r is not None:
                   print('RECEIPT='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
-                  break
+                  raise SystemExit(0)
               time.sleep(1)
-          else:
-              data=f.load()
-              print('PENDING='+json.dumps((data.get('tasks') or {}).get('VO10005870') or [],ensure_ascii=False,separators=(',',':')))
-              raise SystemExit('transport_probe_no_receipt')
+          print('PENDING='+json.dumps((f.load().get('tasks') or {}).get('VO10005870') or [],ensure_ascii=False,separators=(',',':')))
+          raise SystemExit('watchdog_recovery_probe_no_receipt')
           PY
           REMOTE
