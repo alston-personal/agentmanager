@@ -1,0 +1,70 @@
+name: Converge VO10005870 Watchdog Task
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/converge-vo10005870-watchdog-task.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Re-register canonical watchdog
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tid='converge-canonical-watchdog-20261002-1530'
+          ps=r'''$ErrorActionPreference='Stop'
+          $watchdog=Join-Path $env:LOCALAPPDATA 'AgentOS\scripts\thin_client_watchdog.ps1'
+          if(-not (Test-Path $watchdog)){throw "canonical watchdog missing: $watchdog"}
+          $name='AgentOS Thin Client Watchdog'
+          $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$watchdog+'" -TaskName "AgentOS Thin Client"')
+          $logon=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+          $periodic=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+          $principal=New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+          $settings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+          Register-ScheduledTask -TaskName $name -Action $action -Trigger @($logon,$periodic) -Principal $principal -Settings $settings -Force | Out-Null
+          Start-ScheduledTask -TaskName $name
+          Start-Sleep -Seconds 3
+          $t=Get-ScheduledTask -TaskName $name
+          $i=Get-ScheduledTaskInfo -TaskName $name
+          [pscustomobject]@{state=[string]$t.State;execute=[string]$t.Actions.Execute;arguments=[string]$t.Actions.Arguments;lastResult=$i.LastTaskResult;nextRun=$i.NextRunTime}|ConvertTo-Json -Compress'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                  'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,
+                  'cognition_ids_used':['demo://watchdog-converge/20261002'],
+              })
+          for _ in range(45):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  print(json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0, r
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('watchdog_converge_receipt_missing')
+          PY
+          REMOTE
