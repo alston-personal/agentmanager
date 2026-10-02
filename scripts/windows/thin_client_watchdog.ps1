@@ -1,6 +1,7 @@
 param(
   [string]$TaskName = "AgentOS Thin Client",
   [string]$InstallRoot = "$env:LOCALAPPDATA\AgentOS",
+  [string]$ClientHome = "",
   [int]$MinRestartSeconds = 45,
   [int]$HeartbeatStaleSeconds = 45
 )
@@ -24,10 +25,16 @@ $running = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object { $_.CommandLine -match 'agentos_node\.client_cli.*run|agentos-client(?:\.exe)?.*run' } |
   Select-Object -First 1
 
-$leaseFile = Join-Path $env:USERPROFILE ".agentos\heartbeat-lease.json"
+$leaseCandidates = @()
+if ($ClientHome) { $leaseCandidates += (Join-Path $ClientHome "heartbeat-lease.json") }
+if ($env:AGENTOS_CLIENT_HOME) { $leaseCandidates += (Join-Path $env:AGENTOS_CLIENT_HOME "heartbeat-lease.json") }
+$leaseCandidates += (Join-Path $env:LOCALAPPDATA "AgentOS\state\heartbeat-lease.json")
+$leaseCandidates += (Join-Path $env:USERPROFILE ".agentos\heartbeat-lease.json")
+$leaseFile = $leaseCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
 $heartbeatStale = $false
 $heartbeatAgeSeconds = $null
-if (Test-Path $leaseFile) {
+if ($leaseFile) {
   try {
     $lease = Get-Content -Raw -LiteralPath $leaseFile | ConvertFrom-Json
     if ($lease.recorded_at_unix) {
@@ -36,10 +43,17 @@ if (Test-Path $leaseFile) {
       if ($heartbeatAgeSeconds -gt $HeartbeatStaleSeconds) {
         $heartbeatStale = $true
       }
+    } else {
+      $heartbeatStale = $true
+      Write-Log ("heartbeat_lease_missing_timestamp path={0}" -f $leaseFile)
     }
   } catch {
-    Write-Log ("heartbeat_lease_parse_error error={0}" -f $_.Exception.Message)
+    $heartbeatStale = $true
+    Write-Log ("heartbeat_lease_parse_error path={0} error={1}" -f $leaseFile,$_.Exception.Message)
   }
+} elseif ($running) {
+  $heartbeatStale = $true
+  Write-Log ("heartbeat_lease_missing candidates={0}" -f ([string]::Join(';',$leaseCandidates)))
 }
 
 if ($running -and -not $heartbeatStale) {
