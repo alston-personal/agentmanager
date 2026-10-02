@@ -32,12 +32,6 @@ $clientHomeCandidates += (Join-Path $env:LOCALAPPDATA "AgentOS\state")
 $clientHomeCandidates += (Join-Path $env:USERPROFILE ".agentos")
 $clientHomeCandidates = $clientHomeCandidates | Where-Object { $_ } | Select-Object -Unique
 
-$livenessFile = $null
-foreach ($home in $clientHomeCandidates) {
-  $candidate = Join-Path $home "daemon-liveness.json"
-  if (Test-Path $candidate) { $livenessFile = $candidate; break }
-}
-
 $leaseFile = $null
 foreach ($home in $clientHomeCandidates) {
   $candidate = Join-Path $home "heartbeat-lease.json"
@@ -46,19 +40,9 @@ foreach ($home in $clientHomeCandidates) {
 
 $heartbeatStale = $false
 $heartbeatAgeSeconds = $null
-$healthSource = $null
-$healthPath = $null
-if ($livenessFile) {
-  $healthSource = "daemon_liveness"
-  $healthPath = $livenessFile
-} elseif ($leaseFile) {
-  $healthSource = "heartbeat_lease"
-  $healthPath = $leaseFile
-}
-
-if ($healthPath) {
+if ($leaseFile) {
   try {
-    $lease = Get-Content -Raw -LiteralPath $healthPath | ConvertFrom-Json
+    $lease = Get-Content -Raw -LiteralPath $leaseFile | ConvertFrom-Json
     if ($lease.recorded_at_unix) {
       $leaseUtc = [DateTimeOffset]::FromUnixTimeSeconds([int64]$lease.recorded_at_unix)
       $heartbeatAgeSeconds = ([DateTimeOffset]::UtcNow - $leaseUtc).TotalSeconds
@@ -67,15 +51,15 @@ if ($healthPath) {
       }
     } else {
       $heartbeatStale = $true
-      Write-Log ("liveness_missing_timestamp source={0} path={1}" -f $healthSource,$healthPath)
+      Write-Log ("heartbeat_lease_missing_timestamp path={0}" -f $leaseFile)
     }
   } catch {
     $heartbeatStale = $true
-    Write-Log ("liveness_parse_error source={0} path={1} error={2}" -f $healthSource,$healthPath,$_.Exception.Message)
+    Write-Log ("heartbeat_lease_parse_error path={0} error={1}" -f $leaseFile,$_.Exception.Message)
   }
 } elseif ($running) {
   $heartbeatStale = $true
-  Write-Log ("liveness_missing client_homes={0}" -f ([string]::Join(';',$clientHomeCandidates)))
+  Write-Log ("heartbeat_lease_missing client_homes={0}" -f ([string]::Join(';',$clientHomeCandidates)))
 }
 
 if ($running -and -not $heartbeatStale) {
@@ -83,7 +67,7 @@ if ($running -and -not $heartbeatStale) {
 }
 
 if ($running -and $heartbeatStale) {
-  Write-Log ("daemon_stale pid={0} source={1} age_seconds={2:n1} threshold={3}" -f $running.ProcessId,$healthSource,$heartbeatAgeSeconds,$HeartbeatStaleSeconds)
+  Write-Log ("heartbeat_stale pid={0} age_seconds={1:n1} threshold={2}" -f $running.ProcessId,$heartbeatAgeSeconds,$HeartbeatStaleSeconds)
   try {
     Stop-Process -Id $running.ProcessId -Force -ErrorAction Stop
     Start-Sleep -Milliseconds 500
