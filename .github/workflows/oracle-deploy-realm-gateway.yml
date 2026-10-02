@@ -139,3 +139,5 @@ jobs:
           echo "public_identity=PASS"
           echo "public_bootstrap_routing=PASS"
           echo "public_resolve_routing=PASS"
+
+# deploy-trigger: one-controller-ingress-20261002
