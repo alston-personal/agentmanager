@@ -36,6 +36,7 @@ def test_runner_window_catalog_contains_stable_public_intents():
     assert ("social.runtime", "deploy") in items
     assert ("social.publish", "mio.approved") in items
     assert ("persona.runtime", "oursong.activate") in items
+    assert ("persona.runtime", "oursong.status") in items
 
 
 def test_gateway_exposes_runner_window_without_exposing_legacy_dispatch():
@@ -76,4 +77,18 @@ def test_oursong_activation_maps_to_fixed_bootstrap_action():
     assert public_intent_for_action(bc.ACTION_ACTIVATE_OURSONG_PERSONA) == {
         "capability": "persona.runtime",
         "operation": "oursong.activate",
+    }
+
+def test_oursong_status_maps_to_fixed_bootstrap_action():
+    intent, params = resolve_intent(
+        "persona.runtime",
+        "oursong.status",
+        source_commit="c" * 40,
+        payload={},
+    )
+    assert intent.action == bc.ACTION_PROBE_OURSONG_PERSONA
+    assert params == {"source_commit": "c" * 40}
+    assert public_intent_for_action(bc.ACTION_PROBE_OURSONG_PERSONA) == {
+        "capability": "persona.runtime",
+        "operation": "oursong.status",
     }
