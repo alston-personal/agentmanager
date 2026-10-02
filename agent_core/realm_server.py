@@ -321,19 +321,53 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
         receipt_path = receipts / f'{request_id}.json'
         if receipt_path.exists():
             raw = json.loads(receipt_path.read_text(encoding='utf-8'))
+            action = str(raw.get('action') or '')
+            safe_prefixes: tuple[str, ...] = ()
+            if action == bootstrap_control.ACTION_DEPLOY_SOCIAL_RUNTIME:
+                safe_prefixes = (
+                    'social_runtime_deploy=',
+                    'social_runtime_service_identity=',
+                    'social_runtime_root_privilege=',
+                    'social_gateway_route_guard=',
+                    'social_gateway_dashboard_build=',
+                    'social_gateway_local=',
+                    'social_gateway_internal_control_public=',
+                    'social_gateway_public=',
+                    'social_gateway_nginx_mutation=',
+                    'social_runtime_source_commit=',
+                )
+            elif action == bootstrap_control.ACTION_PUBLISH_MIO_APPROVED:
+                safe_prefixes = (
+                    'galaxy_day1_username=',
+                    'galaxy_day1_object_id=',
+                    'galaxy_day1_permalink=',
+                    'galaxy_day1_publish=',
+                    'galaxy_day1_image_readback=',
+                    'galaxy_day1_image_asset=',
+                )
+            evidence: list[str] = []
+            if safe_prefixes:
+                for step in raw.get('steps') or []:
+                    if not isinstance(step, dict):
+                        continue
+                    for line in str(step.get('stdout') or '').splitlines():
+                        clean = line.strip()
+                        if any(clean.startswith(prefix) for prefix in safe_prefixes):
+                            evidence.append(clean[:1000])
             return {
                 'ok': True,
                 'state': 'completed',
                 'request_id': request_id,
                 'receipt': {
                     'schema': raw.get('schema'),
-                    'action': raw.get('action'),
+                    'action': action,
                     'source_commit': raw.get('source_commit'),
                     'ok': raw.get('ok'),
                     'failure_class': raw.get('failure_class'),
                     'error': str(raw.get('error') or '')[:400] or None,
                     'completed_at': raw.get('completed_at'),
                     'scheduler': raw.get('scheduler'),
+                    'evidence': evidence[:32],
                 },
             }
         request_path = requests / f'{request_id}.request.json'
