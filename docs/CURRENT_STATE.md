@@ -149,6 +149,14 @@ A fresh machine may require one Realm enrollment approval. That approval is the 
 
 Acceptance is end-to-end rather than file-copy success. The installer only reports `AGENTOS_ONE_CLICK_INSTALL=PASS` after the background Thin Client remains running and `agentos-client verify` succeeds against ONE. The installer may auto-install Python through winget when Python is absent, but Windows Store App Execution Alias stubs are not accepted as a valid interpreter.
 
+## Studio Web production serving authority
+
+As of the 2026-10-02 live Oracle nginx audit, the TLS server for `studio.milkcat.org:443` still serves its default static root from `/home/ubuntu/zeus-writer/website/dist` with `try_files $uri $uri/ /index.html`. This is current observed serving topology, not source-of-truth ownership.
+
+`alston-personal/studio-web` is the canonical platform website source for the extracted shell and root-owned artifacts. The historical `oracle-cutover-milkcat-world-home.yml` did not change nginx root; it built a pinned `studio-web` commit and copied selected generated artifacts into the existing live dist. Therefore earlier language calling that operation a "cutover" referred to content publication, not a serving-root migration.
+
+The legacy Action Relay capability `site.sync_build` is retired from mutation authority and now fails closed rather than fetching/building Zeus Writer. Production publication from `studio-web` must use the governed Studio Web release path. A future nginx-root migration is a separate change and must preserve the route ownership matrix and independent aliases/proxies.
+
 ## Capability-first dispatch ingress
 
 As of 2026-10-02, the ControllerService source contract no longer requires normal callers to provide a concrete node identifier. A caller may submit only an action/capability. ONE then considers online nodes advertising that capability and deterministically prefers lower pending queue depth, then fresher heartbeat, then stable node ID. Explicit `node_id` targeting remains available for diagnostics, conformance, break-glass recovery, or work whose semantics truly require a specific physical target.
