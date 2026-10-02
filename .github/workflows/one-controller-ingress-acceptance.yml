@@ -30,7 +30,12 @@ jobs:
           do
             body="$RUNNER_TEMP/body.json"
             code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 8 "$ONE_BASE$path" || true)
-            echo "controller_route=$path http=$code prefix=$(head -c 160 "$body" | tr '\n' ' ')"
+            if [ "$code" = "000" ]; then
+              echo "controller_route=$path http=000 gateway_reachable=FAIL"
+              exit 2
+            fi
+            prefix=$(head -c 160 "$body" 2>/dev/null | tr '\n' ' ' || true)
+            echo "controller_route=$path http=$code prefix=$prefix"
             if grep -q 'Realm gateway route not allowlisted' "$body"; then
               echo "gateway_allowlist=FAIL"
               exit 3
