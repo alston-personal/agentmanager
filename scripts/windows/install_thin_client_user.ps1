@@ -55,10 +55,11 @@ Copy-Item -Force -LiteralPath $watchdogSource -Destination $watchdogTarget
 $watchdogTaskName = "$TaskName Watchdog"
 $watchdogArgs = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdogTarget + '" -TaskName "' + $TaskName + '"'
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $watchdogArgs
-$watchdogTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$watchdogLogonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$watchdogPeriodicTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
 $watchdogSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 $watchdogPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger $watchdogTrigger -Settings $watchdogSettings -Principal $watchdogPrincipal -Force | Out-Null
+Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Principal $watchdogPrincipal -Force | Out-Null
 Start-ScheduledTask -TaskName $watchdogTaskName
 Write-Host "Installed and started AgentOS Thin Client watchdog task: $watchdogTaskName"
 
