@@ -411,6 +411,20 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'galaxy_day1_image_readback=',
                     'galaxy_day1_image_asset=',
                 )
+            elif action == bootstrap_control.ACTION_PROBE_OURSONG_PERSONA:
+                safe_prefixes = (
+                    'oursong_status=',
+                    'oursong_runtime_release=',
+                    'oursong_runtime_source_commit=',
+                    'oursong_pdca_cycle=',
+                    'oursong_pdca_status=',
+                    'oursong_last_tick_at=',
+                    'oursong_last_action_at=',
+                    'ActiveState=',
+                    'UnitFileState=',
+                    'LastTriggerUSec=',
+                    'NextElapseUSecRealtime=',
+                )
             elif action == bootstrap_control.ACTION_RECONCILE_CONTENT_SOCIAL:
                 safe_prefixes = (
                     'content_social_converge=',
