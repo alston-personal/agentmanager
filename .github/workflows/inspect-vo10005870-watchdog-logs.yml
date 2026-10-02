@@ -34,7 +34,7 @@ jobs:
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='inspect-watchdog-logs-20261002-1522'
+          tid='inspect-watchdog-logs-20261002-1558'
           ps=r'''$log=Join-Path $env:LOCALAPPDATA 'AgentOS\watchdog\watchdog.log'
           $state=Join-Path $env:LOCALAPPDATA 'AgentOS\watchdog\state.json'
           $lease=Join-Path $env:USERPROFILE '.agentos\heartbeat-lease.json'
@@ -74,3 +74,5 @@ jobs:
               raise SystemExit('watchdog_log_receipt_missing')
           PY
           REMOTE
+
+# formal-r2-watchdog-check-1558
