@@ -21,12 +21,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ready: false }, { status: 404, headers: { 'cache-control': 'no-store' } });
     }
     const response = NextResponse.json(
-      { ready: true, cookieScope: 'host-only' },
+      { ready: true, cookieScope: 'host-only', legacyCookieCleared: true },
       { headers: { 'cache-control': 'no-store' } }
     );
     // iOS Home Screen web apps can keep a cookie jar separate from Safari.
     // Set a host-only cookie on studio.milkcat.org and keep the handoff
     // available until the PWA proves /auth/session can read it.
+    response.cookies.set({
+      name: 'auth_token',
+      value: '',
+      httpOnly: true,
+      secure: true,
+      domain: '.milkcat.org',
+      path: '/',
+      sameSite: 'lax',
+      maxAge: 0,
+    });
     response.cookies.set({
       name: 'auth_token',
       value: record.authToken,
@@ -42,7 +52,8 @@ export async function POST(request: NextRequest) {
   if (action === 'ack') {
     const body = await request.json().catch(() => ({}));
     const handoffId = typeof body?.handoffId === 'string' ? body.handoffId : '';
-    const token = request.cookies.get('auth_token')?.value || '';
+    const tokens = request.cookies.getAll('auth_token').map((cookie) => cookie.value).filter(Boolean);
+    const token = tokens.find((candidate) => candidate === (handoffId ? readPwaHandoff(handoffId)?.authToken : '')) || '';
     const record = handoffId ? readPwaHandoff(handoffId) : null;
     if (!record?.authToken || !token || token !== record.authToken || !verifyToken(token)) {
       return NextResponse.json({ acknowledged: false }, { status: 409, headers: { 'cache-control': 'no-store' } });
@@ -56,7 +67,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const handoff = new URL(request.url).searchParams.get('handoff') || '';
-  const token = request.cookies.get('auth_token')?.value || '';
+  const token = request.cookies.getAll('auth_token').map((cookie) => cookie.value).find((candidate) => Boolean(verifyToken(candidate))) || '';
   if (!handoff || !token || !verifyToken(token)) {
     return new NextResponse('Login not completed. Return to Mio wardrobe and retry.', {
       status: 401,
