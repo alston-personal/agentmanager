@@ -18,7 +18,9 @@ Read these before implementation:
 
 ## Objective
 
-Join AgentOS ONE by implementing the thinnest adapter that maps your native interfaces onto the existing AgentOS Participant Protocol.
+Join AgentOS ONE by implementing or selecting the thinnest adapter that maps your native interfaces onto the existing AgentOS Participant Protocol.
+
+If your environment cannot maintain its own persistent transport, you MAY join as a **hosted Participant**. In that case, a trusted AgentOS host/bridge (for example a GUI Worker, browser bridge, node daemon, API bridge, or CLI host) owns the persistent transport and invokes your native surface on your behalf.
 
 Do not modify ONE Core merely to accommodate your product or runtime.
 
@@ -41,6 +43,35 @@ identify self
 -> perform ONE-routed end-to-end invocation
 -> emit acceptance receipt
 -> report exact A0-A7 acceptance level
+```
+
+## Runtime modes
+
+A Participant MAY use either:
+
+### Direct mode
+
+The Participant runtime can directly maintain the required transport/session to ONE.
+
+### Hosted mode
+
+Use this when the Participant is a Web/chat surface or other constrained runtime that cannot itself maintain persistent sockets, daemons, polling loops, credentials, or filesystem state.
+
+In hosted mode:
+
+- the Participant identity is still distinct from the host/bridge identity
+- the host/bridge owns transport, session persistence, retries, leases, and execution plumbing
+- the Participant supplies the cognitive/native capability
+- the manifest MUST declare `hosted_by` and any `depends_on` relationships
+- ONE verifies the end-to-end path through the host/bridge
+- a Web model must NOT be rejected merely because it cannot itself run a daemon or WebSocket client
+
+Example:
+
+```text
+participant://agent/gemini-web
+  hosted_by  -> participant://node/vopc5750
+  depends_on -> participant://surface/chromium-session
 ```
 
 ## Adapter rules
