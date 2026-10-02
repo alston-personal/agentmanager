@@ -4,6 +4,8 @@ set -euo pipefail
 [ "$(id -u)" = "1001" ] || { echo "persona_social_action_runtime=WRONG_USER"; exit 2; }
 PERSONA_PATH="${PERSONA_PATH:-personas/sunlake-milkcat}"
 SOCIAL_EXECUTOR="${AGENTOS_PERSONA_SOCIAL_EXECUTOR:-$HOME/.local/lib/agentos/persona_social_executor.py}"
+REPLY_INTENT_GENERATOR="${AGENTOS_PERSONA_REPLY_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_reply_intent_generator.py}"
+POST_INTENT_GENERATOR="${AGENTOS_PERSONA_POST_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_post_intent_generator.py}"
 GROWTH_METRICS="${AGENTOS_PERSONA_GROWTH_METRICS:-$HOME/.local/lib/agentos/persona_growth_metrics_collector.py}"
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
@@ -14,6 +16,8 @@ if ! flock -n 9; then
 fi
 
 test -f "$SOCIAL_EXECUTOR"
+test -f "$REPLY_INTENT_GENERATOR"
+test -f "$POST_INTENT_GENERATOR"
 test -f "$GROWTH_METRICS"
 command -v gh >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth status >/dev/null
@@ -31,6 +35,18 @@ ROOT="$DATA_REPO/$PERSONA_PATH"
 test -f "$ROOT/pdca/state.json"
 test -f "$ROOT/events/events.jsonl"
 
+# Social lane owns bounded social cognition. A reasoning defer/failure is local
+# to this lane and never blocks the core PDCA/Observer heartbeat.
+if python3 "$REPLY_INTENT_GENERATOR" --persona-dir "$ROOT"; then
+  echo "persona_social_reply_intent=PASS"
+else
+  echo "persona_social_reply_intent=DEGRADED rc=$?" >&2
+fi
+if python3 "$POST_INTENT_GENERATOR" --persona-dir "$ROOT"; then
+  echo "persona_social_post_intent=PASS"
+else
+  echo "persona_social_post_intent=DEGRADED rc=$?" >&2
+fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 SOCIAL_RECEIPT="$ROOT/pdca/social_receipts/$STAMP.json"
 mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
