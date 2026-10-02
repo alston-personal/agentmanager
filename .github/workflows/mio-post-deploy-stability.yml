@@ -1,0 +1,44 @@
+name: Mio Post Deploy Stability
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-post-deploy-stability.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Check dashboard stability
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStartTimestamp --no-pager
+          for i in 1 2 3 4 5; do
+            code=$(curl -sS -o /tmp/mio-health -w '%{http_code}' --max-time 5 http://127.0.0.1:3000/dashboard/api/auth/session || true)
+            echo "probe=$i http=$code"
+            sleep 2
+          done
+          code=$(curl -sS -o /tmp/mio-cat -w '%{http_code}' --max-time 5 'http://127.0.0.1:3000/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001' || true)
+          echo "catalog_http=$code"
+          REMOTE
+          cat "$out"
+          { echo '### Mio post-deploy stability'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
