@@ -1,0 +1,52 @@
+name: Diagnose Oracle ONE 502
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/diagnose-oracle-one-502.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Diagnose ONE services and local health
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -u
+          echo '=== USER SERVICES ==='
+          systemctl --user --no-pager --type=service --all | grep -Ei 'agentos|realm|gateway|dashboard' || true
+          echo '=== SYSTEM SERVICES ==='
+          sudo -n systemctl --no-pager --type=service --all 2>/dev/null | grep -Ei 'agentos|realm|gateway|nginx' || true
+          echo '=== LISTENERS ==='
+          ss -ltnp | grep -E ':(80|443|8[0-9]{3}|9[0-9]{3})\b' || true
+          echo '=== LOCAL HEALTH CANDIDATES ==='
+          for u in http://127.0.0.1:8787/v1/health http://127.0.0.1:8790/v1/health http://127.0.0.1:8000/v1/health http://127.0.0.1:3000/v1/health; do
+            echo "--- $u"
+            curl -sS -i --max-time 3 "$u" | head -c 800 || true
+            echo
+          done
+          echo '=== PUBLIC GATEWAY HEALTH ==='
+          curl -sS -i --max-time 8 https://studio.milkcat.org/dashboard/api/agentos/v1/health | head -c 1200 || true
+          echo
+          echo '=== RECENT USER JOURNAL ERRORS ==='
+          journalctl --user --since '30 min ago' --no-pager | grep -Ei 'agentos|realm|gateway|error|failed|exception|traceback|502' | tail -n 180 || true
+          echo '=== RESOURCE SNAPSHOT ==='
+          uptime
+          free -h
+          df -h / /home 2>/dev/null || true
+          ps -eo pid,ppid,%cpu,%mem,etime,cmd --sort=-%cpu | head -n 25
+          REMOTE
