@@ -51,5 +51,39 @@ jobs:
           queue=list((data.get("tasks") or {}).get("mbpr") or [])
           print("mbpr_pending_tasks="+str(len(queue)))
           print("mbpr_pending_dm_reads="+str(sum(1 for x in queue if "threads-native-read" in str(x.get("task_id") or ""))))
+
+          # Ask MBPR itself for bounded browser-bridge health; no browser content is read.
+          import time
+          tid="mbpr-browser-bridge-health-"+str(int(time.time()))
+          code=(
+              "import json,os,socket,urllib.request; "
+              "p=\'/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python\'; "
+              "r={\'python_runtime_exists\':os.path.isfile(p),\'cdp_9222\':False,\'cdp_version\':False}; "
+              "s=socket.socket(); s.settimeout(2); "
+              "exec(\"try:\\n s.connect((\'127.0.0.1\',9222)); r[\'cdp_9222\']=True\\nexcept Exception: pass\\nfinally: s.close()\"); "
+              "exec(\"try:\\n urllib.request.urlopen(\'http://127.0.0.1:9222/json/version\',timeout=2).read(); r[\'cdp_version\']=True\\nexcept Exception: pass\"); "
+              "print(json.dumps(r,separators=(\',\',\':\')))"
+          )
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':12,'cognition_ids_used':[]}
+          store.queue_task("mbpr",task)
+          for _ in range(20):
+              receipt=store.get_receipt(tid)
+              if receipt:
+                  if receipt.get("ok") is not True or int(receipt.get("returncode") or 0)!=0:
+                      print("mbpr_browser_bridge_health=ERROR")
+                      break
+                  try:
+                      health=json.loads(str(receipt.get("stdout") or "").strip())
+                  except Exception:
+                      print("mbpr_browser_bridge_health=INVALID")
+                      break
+                  print("mbpr_browser_bridge_health=PASS")
+                  print("mbpr_bridge_python_runtime_exists="+str(bool(health.get("python_runtime_exists"))).lower())
+                  print("mbpr_bridge_cdp_9222="+str(bool(health.get("cdp_9222"))).lower())
+                  print("mbpr_bridge_cdp_version="+str(bool(health.get("cdp_version"))).lower())
+                  break
+              time.sleep(1)
+          else:
+              print("mbpr_browser_bridge_health=TIMEOUT")
           PY
           REMOTE
