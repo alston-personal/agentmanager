@@ -1,0 +1,41 @@
+name: Mio V5 Worker Deploy
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-v5-worker-deploy.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      TARGET_SHA: 0fbfc0aa32a37e7e9ea64e5b1f499d7edc733f90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy exact worker source
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$TARGET_SHA' && git show '$TARGET_SHA:scripts/deploy_mio_tryon_worker_user.sh' > /tmp/deploy-mio-v5-worker.sh && chmod 700 /tmp/deploy-mio-v5-worker.sh && /tmp/deploy-mio-v5-worker.sh '$TARGET_SHA'"
+      - name: Verify live worker contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          systemctl --user is-active --quiet agentos-mio-tryon-render-worker.service
+          grep -Fq 'qualityAccepted' /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
+          grep -Fq 'preparing_assets' /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
+          grep -Fq 'validating' /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
+          echo 'mio_v5_worker_live=PASS'
+          REMOTE
