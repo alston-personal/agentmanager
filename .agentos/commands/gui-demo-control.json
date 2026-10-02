@@ -1,9 +1,14 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-hardened-stop-20261002-0929",
-  "action": "desktop.demo.stop",
+  "nonce": "e2e4-preimage-snapshot-20261002-0930",
+  "action": "shell.exec",
   "payload": {
-    "final_stage": "hardened smoke verified"
+    "executable": "python",
+    "argv": [
+      "-c",
+      "from pathlib import Path; import hashlib,json,time; d=Path.home()/'Downloads'; rows=[]; exts={'.jpg','.jpeg','.png','.webp'}; [rows.append({'path':str(p),'mtime':p.stat().st_mtime,'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}) for p in d.iterdir() if p.is_file() and p.suffix.lower() in exts]; print(json.dumps({'benchmark_start_epoch':time.time(),'images':rows},ensure_ascii=False))"
+    ],
+    "timeout_seconds": 30
   }
 }
