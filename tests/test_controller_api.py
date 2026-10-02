@@ -14,7 +14,7 @@ from agent_core.realm_fabric import RealmFabricStore
 from agent_core.realm_server import RealmHTTPServer
 
 
-def _online_fabric(tmp_path: Path, *, include_workspace_roots: bool = True) -> tuple[RealmFabricStore, str]:
+def _online_fabric(tmp_path: Path, *, include_workspace_roots: bool = True, platform_name: str = 'Windows') -> tuple[RealmFabricStore, str]:
     registry = NodeRegistry(tmp_path / 'nodes.json')
     fabric = RealmFabricStore(tmp_path / 'fabric.json', node_registry=registry)
     fabric.initialize_realm('realm-test')
@@ -25,17 +25,17 @@ def _online_fabric(tmp_path: Path, *, include_workspace_roots: bool = True) -> t
         'node_id': 'node-a',
         'role': 'client',
         'hostname': 'node-a',
-        'platform': 'Windows',
-        'platform_release': '11',
+        'platform': platform_name,
+        'platform_release': '11' if platform_name == 'Windows' else '6.8.0',
         'capabilities': ['agent.surface.inspect', 'desktop.open_url', 'shell.exec'],
-        'tool_presence': {'python': 'C:/Python/python.exe'},
+        'tool_presence': {'python': 'C:/Python/python.exe'} if platform_name == 'Windows' else {'python3': '/usr/bin/python3', 'git': '/usr/bin/git'},
         'surface_inventory': {'surfaces': [], 'surface_count': 0, 'capabilities': []},
         'observed_at': '2099-01-01T00:00:00Z',
     }
     if include_workspace_roots:
         manifest['workspace_roots'] = {
-            'readable': ['C:/Users/test/AgentOS'],
-            'writable': ['C:/Users/test/AgentOS'],
+            'readable': ['C:/Users/test/AgentOS'] if platform_name == 'Windows' else ['/home/test'],
+            'writable': ['C:/Users/test/AgentOS'] if platform_name == 'Windows' else ['/home/test'],
         }
     enrolled = fabric.enroll(invite_id=invite['invite_id'], code=invite['code'], manifest=manifest)
     token = enrolled['node_token']
@@ -122,6 +122,33 @@ def test_runtime_convergence_constructs_fixed_shell_and_preserves_watchdog(tmp_p
 
     with pytest.raises(ValueError, match='source_commit'):
         controller.dispatch('node-a', {'action': 'node.runtime.converge', 'source_commit': 'main'})
+
+
+def test_linux_runtime_convergence_uses_python_and_deferred_systemd_restart(tmp_path: Path) -> None:
+    fabric, node_token = _online_fabric(tmp_path, platform_name='Linux')
+    controller = ControllerService(fabric)
+    commit = 'b' * 40
+    result = controller.dispatch('node-a', {
+        'action': 'node.runtime.converge',
+        'source_commit': commit,
+        'source_ref': 'core/integration',
+    })
+    assert result['action'] == 'node.runtime.converge'
+    queued = fabric.pull_tasks('node-a', node_token)
+    assert len(queued) == 1
+    task = queued[0]
+    assert task['action'] == 'shell.exec'
+    assert task['controller_action'] == 'node.runtime.converge'
+    assert task['executable'] == 'python3'
+    assert task['cwd'] == '/home/test'
+    script = task['argv'][-1]
+    assert commit in script
+    assert "git','-C',str(repo),'fetch'" in script
+    assert "git','-C',str(repo),'checkout','--detach'" in script
+    assert 'runtime-provenance.json' in script
+    assert 'agentos-thin-client.service' in script
+    assert 'start_new_session=True' in script
+    assert 'agentos_single_owner_convergence=DEFERRED' in script
 
 
 def test_runtime_convergence_requires_node_workspace_authority(tmp_path: Path) -> None:
