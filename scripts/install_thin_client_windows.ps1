@@ -77,7 +77,8 @@ $files = @(
   'agentos_node/thin_client_transport.py',
   'agentos_node/client_cli.py',
   'agentos_node/session_bridge.py',
-  'agentos_node/agent_surfaces.py'
+  'agentos_node/agent_surfaces.py',
+  'scripts/windows/thin_client_watchdog.ps1'
 )
 foreach ($rel in $files) {
   $dest = Join-Path $InstallRoot ($rel -replace '/', '\')
