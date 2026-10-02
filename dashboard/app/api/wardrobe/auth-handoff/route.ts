@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
-import { createPwaHandoff, completePwaHandoff, consumePwaHandoff } from '@/lib/auth/pwa-handoff';
+import { createPwaHandoff, completePwaHandoff, readPwaHandoff, consumePwaHandoff } from '@/lib/auth/pwa-handoff';
 
 export async function POST(request: NextRequest) {
   const action = new URL(request.url).searchParams.get('action') || 'start';
@@ -16,22 +16,39 @@ export async function POST(request: NextRequest) {
   if (action === 'exchange') {
     const body = await request.json().catch(() => ({}));
     const handoffId = typeof body?.handoffId === 'string' ? body.handoffId : '';
-    const record = handoffId ? consumePwaHandoff(handoffId) : null;
-    if (!record?.authToken || !verifyToken(record.authToken)) {
+    const record = handoffId ? readPwaHandoff(handoffId) : null;
+    if (!record?.authToken || record.status !== 'ready' || !verifyToken(record.authToken)) {
       return NextResponse.json({ ready: false }, { status: 404, headers: { 'cache-control': 'no-store' } });
     }
-    const response = NextResponse.json({ ready: true }, { headers: { 'cache-control': 'no-store' } });
+    const response = NextResponse.json(
+      { ready: true, cookieScope: 'host-only' },
+      { headers: { 'cache-control': 'no-store' } }
+    );
+    // iOS Home Screen web apps can keep a cookie jar separate from Safari.
+    // Set a host-only cookie on studio.milkcat.org and keep the handoff
+    // available until the PWA proves /auth/session can read it.
     response.cookies.set({
       name: 'auth_token',
       value: record.authToken,
       httpOnly: true,
       secure: true,
-      domain: '.milkcat.org',
       path: '/',
       sameSite: 'lax',
       maxAge: 86400,
     });
     return response;
+  }
+
+  if (action === 'ack') {
+    const body = await request.json().catch(() => ({}));
+    const handoffId = typeof body?.handoffId === 'string' ? body.handoffId : '';
+    const token = request.cookies.get('auth_token')?.value || '';
+    const record = handoffId ? readPwaHandoff(handoffId) : null;
+    if (!record?.authToken || !token || token !== record.authToken || !verifyToken(token)) {
+      return NextResponse.json({ acknowledged: false }, { status: 409, headers: { 'cache-control': 'no-store' } });
+    }
+    consumePwaHandoff(handoffId);
+    return NextResponse.json({ acknowledged: true }, { headers: { 'cache-control': 'no-store' } });
   }
 
   return NextResponse.json({ error: 'unsupported action' }, { status: 400 });
