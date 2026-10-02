@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+ALLOWED_SOURCE_REFS = frozenset({'main', 'core/integration', 'feature/realm-node-fabric-readiness'})
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
@@ -40,7 +42,7 @@ class RuntimeOTAPolicyStore:
         source_ref = str(source_ref or '').strip()
         if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
             raise ValueError('source_commit must be a 40-character lowercase git SHA')
-        if source_ref not in {'main', 'feature/realm-node-fabric-readiness'}:
+        if source_ref not in ALLOWED_SOURCE_REFS:
             raise ValueError('source_ref is not allowlisted')
         payload = {
             'schema': self.SCHEMA,

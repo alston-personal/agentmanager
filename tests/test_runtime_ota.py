@@ -6,7 +6,7 @@ from pathlib import Path
 from agent_core.controller_api import ControllerService
 from agent_core.node_registry import NodeRegistry
 from agent_core.realm_fabric import RealmFabricStore
-from agent_core.runtime_ota import RuntimeOTAPolicyStore
+from agent_core.runtime_ota import ALLOWED_SOURCE_REFS, RuntimeOTAPolicyStore
 from agentos_node.runtime_provenance import SCHEMA, observe_runtime
 
 
@@ -131,3 +131,26 @@ def test_realm_rollout_queues_only_nonconverged_and_requires_post_restart_heartb
     node_map = controller.nodes()
     assert node_map['runtime_converged_count'] == 2
     assert all(node['runtime_status'] == 'converged' for node in node_map['nodes'])
+
+
+def test_core_integration_is_allowed_runtime_source_ref(tmp_path: Path) -> None:
+    store = RuntimeOTAPolicyStore(tmp_path / 'runtime-ota-policy.json')
+    commit = 'c' * 40
+    policy = store.set_desired(
+        source_commit=commit,
+        source_ref='core/integration',
+        auto_converge=False,
+    )
+    assert policy['desired_source_ref'] == 'core/integration'
+    assert policy['desired_source_commit'] == commit
+    assert 'core/integration' in ALLOWED_SOURCE_REFS
+
+
+def test_runtime_source_ref_rejects_unknown_branch(tmp_path: Path) -> None:
+    store = RuntimeOTAPolicyStore(tmp_path / 'runtime-ota-policy.json')
+    import pytest
+    with pytest.raises(ValueError, match='source_ref'):
+        store.set_desired(
+            source_commit='d' * 40,
+            source_ref='arbitrary/branch',
+        )
