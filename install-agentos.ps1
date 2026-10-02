@@ -71,6 +71,9 @@ function Ensure-Python {
 }
 
 function Resolve-SourceCommit([string]$Ref) {
+  if($Ref -match '^[0-9a-fA-F]{40}$'){
+    return $Ref.ToLowerInvariant()
+  }
   $headers=@{
     'Accept'='application/vnd.github+json'
     'User-Agent'='AgentOS-OneClick-Installer/1.0'
