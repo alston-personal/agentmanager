@@ -1,0 +1,50 @@
+name: Inspect Realm Runtime Data Root
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/inspect-realm-runtime-data-root.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect live Realm environment
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== SERVICE ==='
+          systemctl --user status agentos-realm-fabric.service --no-pager -l || true
+          systemctl --user cat agentos-realm-fabric.service || true
+          echo '=== LISTENER ==='
+          pid=$(ss -ltnp | awk '/127.0.0.1:8780/ { if (match($0,/pid=[0-9]+/)) { print substr($0,RSTART+4,RLENGTH-4); exit } }')
+          echo "pid=$pid"
+          if [ -n "$pid" ] && [ -r "/proc/$pid/environ" ]; then
+            tr '\0' '\n' < "/proc/$pid/environ" | grep -E '^(AGENT_DATA_ROOT|HOME|PWD|PYTHONPATH)=' || true
+            echo "cwd=$(readlink -f /proc/$pid/cwd || true)"
+          fi
+          echo '=== CANDIDATE STORES ==='
+          find /home/ubuntu -maxdepth 5 \( -name fabric.json -o -name receipts.sqlite3 \) -type f -printf '%p %s %TY-%Tm-%TdT%TH:%TM:%TS\n' 2>/dev/null | sort
+          echo '=== LOCAL EXPECTED ==='
+          AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 - <<'PY'
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          print('fabric_path='+str(f.path))
+          print('archive_path='+str(f.receipt_archive.path))
+          print('synthetic='+repr(f.get_receipt('synthetic-timeout-receipt-20261002-1659')))
+          PY
+          REMOTE
