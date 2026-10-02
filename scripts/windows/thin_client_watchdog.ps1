@@ -15,11 +15,20 @@ function Write-Log([string]$Message) {
   Add-Content -LiteralPath $logFile -Value $line -Encoding UTF8
 }
 
+# Task Scheduler is the primary local source of truth for the managed client.
+# Process command-line inspection is only a fallback because CommandLine may be
+# unavailable/transient under some Windows session boundaries.
+$managedTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($managedTask -and [string]$managedTask.State -eq 'Running') {
+  exit 0
+}
+
 $running = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-  Where-Object { $_.CommandLine -match 'agentos_node\.client_cli.*run|agentos-client.* run' } |
+  Where-Object { $_.CommandLine -match 'agentos_node\.client_cli.*run|agentos-client(?:\.exe)?.*run' } |
   Select-Object -First 1
 
 if ($running) {
+  Write-Log "task_state_not_running_but_process_present pid=$($running.ProcessId)"
   exit 0
 }
 
