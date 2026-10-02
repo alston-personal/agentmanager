@@ -67,7 +67,7 @@ jobs:
             if [ "$ACTION" = "participant.join.request" ]; then
               AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$PWD" \
               python3 - "$PARTICIPANT_CMD" "$PARTICIPANT_OUT" <<'PY'
-          import json,os,sys,urllib.request
+          import grp,json,os,sys,urllib.request
           from pathlib import Path
 
           cmd=json.load(open(sys.argv[1],encoding='utf-8'))
@@ -98,7 +98,9 @@ jobs:
 
           runtime=Path('/home/ubuntu/agent-data/runtime/participant-enrollment')
           runtime.mkdir(parents=True,exist_ok=True)
-          os.chmod(runtime,0o700)
+          agentos_gid=grp.getgrnam('agentos').gr_gid
+          os.chown(runtime,-1,agentos_gid)
+          os.chmod(runtime,0o750)
           safe=participant_id.replace('://','__').replace('/','_')
           secret_path=runtime / f'{safe}-pending.json'
           secret_payload={
@@ -115,7 +117,9 @@ jobs:
           }
           tmp=secret_path.with_suffix(secret_path.suffix+'.tmp')
           tmp.write_text(json.dumps(secret_payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          os.chmod(tmp,0o600); tmp.replace(secret_path); os.chmod(secret_path,0o600)
+          os.chown(tmp,-1,agentos_gid); os.chmod(tmp,0o640)
+          tmp.replace(secret_path)
+          os.chown(secret_path,-1,agentos_gid); os.chmod(secret_path,0o640)
 
           public={k:v for k,v in result.items() if k != 'claim_secret'}
           public['host_runtime_id']=host_runtime_id
