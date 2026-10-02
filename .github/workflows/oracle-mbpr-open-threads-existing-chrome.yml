@@ -34,25 +34,25 @@ jobs:
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
           export PYTHONPATH=/home/ubuntu/agentmanager
           python3 - <<'PY'
-import time
-from agent_core.realm_fabric import RealmFabricStore
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
 
-tid='open-threads-existing-chrome-'+str(int(time.time()))
-code="import subprocess; r=subprocess.run([\'open\',\'-a\',\'Google Chrome\',\'https://www.threads.com/messages\']); print(\'OPEN_THREADS_EXISTING_CHROME_PASS\' if r.returncode==0 else \'OPEN_THREADS_EXISTING_CHROME_FAIL\'); raise SystemExit(r.returncode)"
-task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
-store=RealmFabricStore()
-store.queue_task('mbpr',task)
-for _ in range(40):
-    r=store.get_receipt(tid)
-    if r:
-        out=str(r.get('stdout') or '')
-        print(out)
-        if r.get('ok') is True and 'OPEN_THREADS_EXISTING_CHROME_PASS' in out:
-            print('mbpr_open_threads_existing_chrome=PASS')
-            raise SystemExit(0)
-        print('mbpr_open_threads_existing_chrome=ERROR')
-        raise SystemExit(2)
-    time.sleep(2)
-raise SystemExit('open Threads existing Chrome receipt timeout')
-PY
+          tid='open-threads-existing-chrome-'+str(int(time.time()))
+          code="import subprocess; r=subprocess.run([\'open\',\'-a\',\'Google Chrome\',\'https://www.threads.com/messages\']); print(\'OPEN_THREADS_EXISTING_CHROME_PASS\' if r.returncode==0 else \'OPEN_THREADS_EXISTING_CHROME_FAIL\'); raise SystemExit(r.returncode)"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          store=RealmFabricStore()
+          store.queue_task('mbpr',task)
+          for _ in range(40):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  print(out)
+                  if r.get('ok') is True and 'OPEN_THREADS_EXISTING_CHROME_PASS' in out:
+                      print('mbpr_open_threads_existing_chrome=PASS')
+                      raise SystemExit(0)
+                  print('mbpr_open_threads_existing_chrome=ERROR')
+                  raise SystemExit(2)
+              time.sleep(2)
+          raise SystemExit('open Threads existing Chrome receipt timeout')
+          PY
           REMOTE
