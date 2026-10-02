@@ -1,0 +1,55 @@
+name: Mio DM MBPR Node Health
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/mio-dm-mbpr-node-health.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect MBPR Realm health without DM mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -o ConnectionAttempts=3 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          nodes=NodeRegistry().node_map().get("nodes") or []
+          node=next((x for x in nodes if x.get("node_id")=="mbpr"),None)
+          if not node:
+              print("mbpr_node_present=false")
+              raise SystemExit(2)
+          print("mbpr_node_present=true")
+          print("mbpr_node_status="+str(node.get("status") or "unknown"))
+          print("mbpr_node_effective_status="+str(node.get("effective_status") or node.get("status") or "unknown"))
+          print("mbpr_heartbeat_age_seconds="+str(node.get("heartbeat_age_seconds")))
+          caps=set(node.get("capabilities") or [])
+          print("mbpr_threads_gui_read="+str("threads.gui.read" in caps).lower())
+          print("mbpr_shell_exec="+str("shell.exec" in caps).lower())
+          data=RealmFabricStore().load()
+          queue=list((data.get("tasks") or {}).get("mbpr") or [])
+          print("mbpr_pending_tasks="+str(len(queue)))
+          print("mbpr_pending_dm_reads="+str(sum(1 for x in queue if "threads-native-read" in str(x.get("task_id") or ""))))
+          PY
+          REMOTE
