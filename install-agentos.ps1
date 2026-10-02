@@ -86,7 +86,7 @@ function Resolve-SourceCommit([string]$Ref) {
 function Install-Supervisor([string]$PythonPath) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
-  $watchdogTaskName="$taskName Watchdog"
+  $watchdogTaskName='AgentOS Thin Client Watchdog'
 
   $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   if($existing){
