@@ -1,0 +1,40 @@
+name: Inspect Receipt Archive Window
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/inspect-receipt-archive-window.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Query receipt archive
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          python3 - <<'PY'
+          import sqlite3,json
+          p='/home/ubuntu/agent-data/realm/receipts.sqlite3'
+          c=sqlite3.connect(p)
+          rows=c.execute("select task_id,received_at,payload_json from receipts where received_at between ? and ? order by received_at",('2026-10-02T08:59:00Z','2026-10-02T09:00:30Z')).fetchall()
+          for task_id,received,payload in rows:
+              try: obj=json.loads(payload)
+              except Exception: obj={}
+              print(json.dumps({'task_id':task_id,'received_at':received,'ok':obj.get('ok'),'error':obj.get('error')},ensure_ascii=False,separators=(',',':')))
+          print('count='+str(len(rows)))
+          PY
+          REMOTE
