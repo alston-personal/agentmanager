@@ -1,5 +1,5 @@
 {
   "schema": "agentos.realm-command/v0.1",
   "action": "governance.autonomy.inspect",
-  "nonce": "bootstrap-20261002"
+  "nonce": "inspect-live-20261002-0129"
 }
