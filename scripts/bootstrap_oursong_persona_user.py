@@ -28,6 +28,12 @@ FILES = {
             "sales_pushiness": 0.05,
         },
         "updated_at": "2026-10-02T15:45:00+08:00",
+        "autonomy": {
+            "public_conversation": "autonomous_with_policy",
+            "routine_posts": "guarded",
+            "commercial_claims": "guarded",
+            "contracts_payments_identity": "human_required",
+        },
         "energy": {
             "schema": "agentos.persona-energy/v1",
             "policy_version": "oursong-energy-v1",
@@ -149,6 +155,29 @@ def main() -> int:
             continue
         path.write_text(content, encoding="utf-8")
         print(f"oursong_bootstrap=CREATED:{rel}")
+    state_path = ROOT / "persona_state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        print("oursong_bootstrap=BAD_PERSONA_STATE")
+        return 3
+    autonomy = state.setdefault("autonomy", {})
+    migrated = False
+    if "public_conversation" not in autonomy:
+        autonomy["public_conversation"] = "autonomous_with_policy"
+        migrated = True
+    if "routine_posts" not in autonomy:
+        autonomy["routine_posts"] = "guarded"
+        migrated = True
+    if "commercial_claims" not in autonomy:
+        autonomy["commercial_claims"] = "guarded"
+        migrated = True
+    if "contracts_payments_identity" not in autonomy:
+        autonomy["contracts_payments_identity"] = "human_required"
+        migrated = True
+    if migrated:
+        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print("oursong_bootstrap=MIGRATED_AUTONOMY")
     print("oursong_bootstrap=PASS")
     return 0
 
