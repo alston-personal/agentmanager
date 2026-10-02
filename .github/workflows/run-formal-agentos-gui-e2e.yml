@@ -1,0 +1,101 @@
+name: Run Formal AgentOS GUI E2E
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/run-formal-agentos-gui-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run recorded fresh-asset E2E
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          node='VO10005870'
+
+          def queue_wait(task, wait=150):
+              tid=task['task_id']
+              old=f.get_receipt(tid)
+              if old is None:
+                  f.queue_task(node,task)
+              r=old
+              end=time.time()+wait
+              while r is None and time.time()<end:
+                  time.sleep(1)
+                  r=f.get_receipt(tid)
+              if r is None:
+                  raise RuntimeError('receipt_missing:'+tid)
+              print(tid+'='+json.dumps(r,ensure_ascii=False,separators=(',',':')),flush=True)
+              return r
+
+          deploy=queue_wait({
+              'schema':'agentos.node-task/v0.1',
+              'task_id':'formal-e2e-deploy-runner-20261002-1548',
+              'action':'shell.exec',
+              'executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe',
+              'argv':['-c',"import urllib.request,pathlib; u='https://raw.githubusercontent.com/alston-personal/agentmanager/feat/desktop-demo-recorder/scripts/windows/agentos_gui_demo_benchmark.ps1'; p=pathlib.Path(r'C:\\Users\\alston.huang\\AgentOS\\agentos_gui_demo_benchmark.ps1'); p.write_bytes(urllib.request.urlopen(u,timeout=20).read()); print(p,p.stat().st_size)"],
+              'cwd':r'C:\Users\alston.huang\AgentOS',
+              'timeout_seconds':30,
+              'cognition_ids_used':['demo://formal-e2e/20261002'],
+          },60)
+          assert deploy.get('ok') is True and int(deploy.get('returncode') or 0)==0,deploy
+
+          rec=queue_wait({
+              'schema':'agentos.node-task/v0.1',
+              'task_id':'formal-e2e-rec-start-20261002-1548',
+              'action':'desktop.demo.start',
+              'label':'AgentOS Gemini to Threads E2E',
+              'stage':'Benchmark start / Gemini',
+              'max_seconds':300,
+              'cognition_ids_used':['demo://formal-e2e/20261002'],
+          },30)
+          assert rec.get('ok') is True,rec
+
+          bench=None
+          try:
+              bench=queue_wait({
+                  'schema':'agentos.node-task/v0.1',
+                  'task_id':'formal-e2e-run-20261002-1548',
+                  'action':'shell.exec',
+                  'executable':'powershell',
+                  'argv':['-STA','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',r'C:\Users\alston.huang\AgentOS\agentos_gui_demo_benchmark.ps1','-PostPrefix','AgentOS GUI E2E 2026-10-02'],
+                  'cwd':r'C:\Users\alston.huang\AgentOS',
+                  'timeout_seconds':120,
+                  'cognition_ids_used':['demo://formal-e2e/20261002'],
+              },145)
+              if bench.get('ok') is not True or int(bench.get('returncode') or 0)!=0:
+                  raise RuntimeError('benchmark_failed:'+json.dumps(bench,ensure_ascii=False))
+          finally:
+              stop=queue_wait({
+                  'schema':'agentos.node-task/v0.1',
+                  'task_id':'formal-e2e-rec-stop-20261002-1548',
+                  'action':'desktop.demo.stop',
+                  'final_stage':'Formal E2E complete' if bench and bench.get('ok') is True else 'Formal E2E failed',
+                  'cognition_ids_used':['demo://formal-e2e/20261002'],
+              },60)
+              print('RECORDER_FINAL='+json.dumps(stop,ensure_ascii=False,separators=(',',':')),flush=True)
+          PY
+          REMOTE
