@@ -134,9 +134,8 @@ jobs:
           test -f "$ROOT/.env" || { echo "Missing $ROOT/.env"; exit 2; }
           cd "$ROOT"
           if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-            echo "Refusing deployment: tracked local changes exist in $ROOT"
+            echo "INFO: shared checkout has tracked local changes; immutable release deployment will not mutate it:"
             git status --short --untracked-files=no
-            exit 2
           fi
           test -f "$HOME/.agentos.secrets" || echo "WARN: ~/.agentos.secrets does not exist"
           systemctl --user --version >/dev/null
