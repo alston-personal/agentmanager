@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import secrets
 import shutil
 import socket
@@ -11,6 +12,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from agent_core.controller_api import ControllerService as RuntimeControllerService
@@ -21,6 +23,8 @@ from agent_core.realm_fabric import RealmFabricStore
 from agent_core.resolve_facade import resolve_continuation
 from agent_core.active_continuation import resolve_active_continuation, active_continuation_identity
 from agent_core.runtime_converge_capability import installed_core_capabilities
+from agentos_node import bootstrap_control as bootstrap_control
+from agentos_node.bootstrap_scheduler import policy_for as bootstrap_policy_for
 
 
 def _utc_now() -> str:
@@ -112,6 +116,106 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
         if not secrets.compare_digest(supplied, expected):
             raise PermissionError('invalid controller credential')
 
+    def _scheduler_submit(self, body: dict[str, Any]) -> dict[str, Any]:
+        if body.get('schema') != 'agentos.scheduler-submit/v1':
+            raise ValueError('invalid scheduler submit schema')
+        action = str(body.get('action') or '').strip()
+        if action not in bootstrap_control.ALLOWED_ACTIONS:
+            raise ValueError('action is not allowlisted')
+        params = body.get('params') or {}
+        if not isinstance(params, dict):
+            raise ValueError('params must be an object')
+        allowed_params = {'source_commit'}
+        if action == bootstrap_control.ACTION_PUBLISH_MIO_APPROVED:
+            allowed_params |= {'post_key'}
+        elif action == bootstrap_control.ACTION_RUN_MIO_DM_DECISION:
+            allowed_params |= {'source_run_id', 'username'}
+        elif action == bootstrap_control.ACTION_DEPLOY_STUDIO_WEB_MIO:
+            allowed_params |= {'studio_commit'}
+        unknown = set(params) - allowed_params
+        if unknown:
+            raise ValueError(f'unsupported scheduler params: {sorted(unknown)}')
+        source_commit = str(params.get('source_commit') or '').strip()
+        if action != bootstrap_control.ACTION_REPAIR_TRANSPORT:
+            if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
+                raise ValueError('source_commit must be an exact lowercase 40-hex commit SHA')
+        elif source_commit and not re.fullmatch(r'[0-9a-f]{40}', source_commit):
+            raise ValueError('source_commit must be an exact lowercase 40-hex commit SHA')
+        request_id = str(body.get('request_id') or '').strip()
+        if request_id:
+            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,159}', request_id):
+                raise ValueError('invalid request_id')
+        else:
+            slug = re.sub(r'[^A-Za-z0-9._-]+', '-', action).strip('-')[:80] or 'scheduler'
+            request_id = f'{slug}-{int(datetime.now(timezone.utc).timestamp())}-{secrets.token_hex(4)}'
+        requests, receipts, _ = bootstrap_control._ensure(bootstrap_control._root())
+        receipt_path = receipts / f'{request_id}.json'
+        request_path = requests / f'{request_id}.request.json'
+        if receipt_path.exists():
+            return {'ok': True, 'state': 'completed', 'request_id': request_id}
+        if request_path.exists():
+            return {'ok': True, 'state': 'queued', 'request_id': request_id}
+        payload = {
+            'schema': bootstrap_control.SCHEMA,
+            'request_id': request_id,
+            'action': action,
+            'created_at': _utc_now(),
+            'params': dict(params),
+            'authority': {
+                'source': 'realm-controller',
+                'target_user': 'ubuntu',
+                'arbitrary_shell': False,
+            },
+        }
+        bootstrap_control._atomic_json(request_path, payload)
+        policy = bootstrap_policy_for(action)
+        return {
+            'ok': True,
+            'state': 'queued',
+            'request_id': request_id,
+            'action': action,
+            'scheduler': {
+                'role': policy.role,
+                'priority': policy.priority_label,
+                'requested_capabilities': list(policy.capabilities),
+                'locks': list(policy.locks),
+            },
+        }
+
+    def _scheduler_status(self, request_id: str) -> dict[str, Any]:
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,159}', request_id):
+            raise KeyError(request_id)
+        root = bootstrap_control._root()
+        requests, receipts, rejected = bootstrap_control._ensure(root)
+        receipt_path = receipts / f'{request_id}.json'
+        if receipt_path.exists():
+            raw = json.loads(receipt_path.read_text(encoding='utf-8'))
+            return {
+                'ok': True,
+                'state': 'completed',
+                'request_id': request_id,
+                'receipt': {
+                    'schema': raw.get('schema'),
+                    'action': raw.get('action'),
+                    'source_commit': raw.get('source_commit'),
+                    'ok': raw.get('ok'),
+                    'failure_class': raw.get('failure_class'),
+                    'error': str(raw.get('error') or '')[:400] or None,
+                    'completed_at': raw.get('completed_at'),
+                    'scheduler': raw.get('scheduler'),
+                },
+            }
+        request_path = requests / f'{request_id}.request.json'
+        if request_path.exists():
+            return {'ok': True, 'state': 'queued', 'request_id': request_id}
+        for inflight in (root / 'inflight').glob(f'*/{request_id}.request.json') if (root / 'inflight').exists() else []:
+            if inflight.exists():
+                return {'ok': True, 'state': 'running', 'request_id': request_id}
+        rejected_path = rejected / f'{request_id}.request.json'
+        if rejected_path.exists():
+            return {'ok': True, 'state': 'rejected', 'request_id': request_id}
+        raise KeyError(request_id)
+
     def _send(self, status: int, payload: dict[str, Any] | list[Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode('utf-8')
         self.send_response(status)
@@ -193,6 +297,14 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == '/v1/controller/scheduler':
                 self._authorize_controller()
                 self._send(200, {'ok': True, 'runner_pool': self.controller.scheduler()})
+                return
+            scheduler_request_prefix = '/v1/controller/scheduler/requests/'
+            if parsed.path.startswith(scheduler_request_prefix):
+                self._authorize_controller()
+                request_id = parsed.path.removeprefix(scheduler_request_prefix).strip('/')
+                if not request_id or '/' in request_id:
+                    raise KeyError(parsed.path)
+                self._send(200, self._scheduler_status(request_id))
                 return
             rollout_prefix = '/v1/controller/runtime/rollouts/'
             if parsed.path.startswith(rollout_prefix):
@@ -305,6 +417,10 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     raise ValueError('project query is required')
                 result = resolve_continuation(project_query, node_context=node_context)
                 self._send(200, {'ok': True, **result})
+                return
+            if parsed.path == '/v1/controller/scheduler/submit':
+                self._authorize_controller()
+                self._send(202, self._scheduler_submit(self._json_body()))
                 return
             if parsed.path == '/v1/controller/runtime/rollout':
                 self._authorize_controller()
