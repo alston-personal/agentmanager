@@ -1,9 +1,10 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-normalize-stop-20261002-0038",
-  "action": "desktop.demo.stop",
+  "nonce": "desktop-demo-fresh-smoke-start-20261002-0039",
+  "action": "desktop.demo.start",
   "payload": {
-    "final_stage": "Normalize before smoke"
+    "label": "AgentOS Recorder Smoke",
+    "stage": "Fresh smoke / recording"
   }
 }
