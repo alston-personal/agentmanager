@@ -138,5 +138,17 @@ jobs:
           assert receipt.get('source_commit')==expected,receipt
           scheduler=receipt.get('scheduler') or {}
           assert scheduler.get('worker_id')=='oracle-control',scheduler
+          evidence=receipt.get('evidence') or []
+          pairs={}
+          for line in evidence:
+              if '=' in line:
+                  k,v=line.split('=',1); pairs[k]=v
+          assert pairs.get('oursong_status')=='PASS',pairs
+          assert pairs.get('ActiveState')=='active',pairs
+          assert pairs.get('UnitFileState') in {'enabled','static'},pairs
+          cycle=int(pairs.get('oursong_pdca_cycle') or 0)
           print('oursong_persona_status_receipt=PASS')
+          print('oursong_pdca_cycle='+str(cycle))
+          print('oursong_last_tick_at='+str(pairs.get('oursong_last_tick_at')))
+          print('oursong_last_action_at='+str(pairs.get('oursong_last_action_at')))
           PY
