@@ -1,0 +1,88 @@
+name: Deploy VO10005870 Heartbeat Isolation
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/deploy-vo10005870-heartbeat-isolation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy heartbeat-isolated transport and reload singleton
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tid='deploy-heartbeat-isolation-20261002-1358'
+          ps=r'''$ErrorActionPreference='Stop'
+          $dst=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos_node\thin_client_transport.py'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/feat/desktop-demo-recorder/agentos_node/thin_client_transport.py' -OutFile $dst
+          $script=@'
+          Stop-ScheduledTask -TaskName "AgentOS Thin Client Watchdog" -ErrorAction SilentlyContinue
+          Stop-ScheduledTask -TaskName "AgentOS Thin Client" -ErrorAction SilentlyContinue
+          Get-CimInstance Win32_Process |
+            Where-Object { $_.CommandLine -match 'agentos_node\.client_cli.*run|agentos-client(?:\.exe)?.*run' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          Start-Sleep -Seconds 2
+          Start-ScheduledTask -TaskName "AgentOS Thin Client"
+          Start-Sleep -Seconds 5
+          Start-ScheduledTask -TaskName "AgentOS Thin Client Watchdog"
+          '@
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$script)
+          [pscustomobject]@{transport=$dst;bytes=(Get-Item $dst).Length;reload='scheduled'}|ConvertTo-Json -Compress'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                  'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,
+                  'cognition_ids_used':['demo://heartbeat-isolation/20261002'],
+              })
+          for _ in range(45):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  print('DEPLOY='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0, r
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('deploy_receipt_missing')
+
+          time.sleep(15)
+          vid='verify-heartbeat-isolation-reload-20261002-1358'
+          if f.get_receipt(vid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':vid,'action':'desktop.session.inspect',
+                  'cognition_ids_used':['demo://heartbeat-isolation/20261002'],
+              })
+          for _ in range(45):
+              r=f.get_receipt(vid)
+              if r is not None:
+                  print('VERIFY='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True, r
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('verify_receipt_missing')
+          PY
+          REMOTE
