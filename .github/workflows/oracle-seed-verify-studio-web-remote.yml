@@ -1,10 +1,7 @@
 name: Oracle Seed Verify Studio Web Remote
 
 on:
-  push:
-    paths:
-      - '.github/workflows/oracle-seed-verify-studio-web-remote.yml'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

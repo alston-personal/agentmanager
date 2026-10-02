@@ -1,10 +1,6 @@
 name: Oracle MBPR Probe Threads Web DM
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-probe-threads-web-dm.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

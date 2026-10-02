@@ -1,11 +1,7 @@
 name: Oracle Node Map Status
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.agentos/commands/node-map-status.json'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

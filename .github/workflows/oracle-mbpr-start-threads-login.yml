@@ -1,10 +1,6 @@
 name: Oracle MBPR Start Threads Login
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-start-threads-login.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

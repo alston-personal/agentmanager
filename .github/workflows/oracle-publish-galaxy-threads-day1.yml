@@ -1,14 +1,7 @@
 name: Oracle Publish Galaxy Threads Day 1
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-publish-galaxy-threads-day1.yml'
-      - 'agentos_node/bootstrap_control.py'
-      - 'scripts/publish_galaxy_threads_day1_user.sh'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

@@ -2,10 +2,6 @@ name: Oracle Bootstrap Studio Web Remote
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-bootstrap-studio-web-remote.yml'
-
 permissions:
   contents: write
 

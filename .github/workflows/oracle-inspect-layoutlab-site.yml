@@ -2,10 +2,6 @@ name: Oracle Inspect Layout Lab Site Routing
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-inspect-layoutlab-site.yml'
-
 permissions:
   contents: write
 

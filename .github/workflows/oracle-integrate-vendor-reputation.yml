@@ -1,8 +1,6 @@
 name: Oracle Integrate Vendor Reputation Into Official Site
 
 on:
-  # Legacy Oracle integration is quarantined to explicit invocation until its
-  # execution body is migrated from the generic self-hosted runner to AgentOS Scheduler.
   workflow_dispatch:
 
 permissions:

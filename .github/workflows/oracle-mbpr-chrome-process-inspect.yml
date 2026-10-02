@@ -1,10 +1,6 @@
 name: Oracle MBPR Chrome Process Inspect
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-chrome-process-inspect.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

@@ -7,13 +7,6 @@ name: Oracle Deploy Threads Galaxy Static
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-deploy-threads-galaxy-static.yml'
-      - 'scripts/deploy_threads_galaxy_static_user.sh'
-
 permissions:
   contents: read
 

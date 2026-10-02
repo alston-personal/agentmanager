@@ -1,12 +1,7 @@
 name: Prove vopc5750 Watchdog Recovery
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/vopc5750-watchdog-recovery-proof.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

@@ -2,10 +2,6 @@ name: Oracle Inspect Chronos Safe Bootstrap Aftermath
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-inspect-chronos-safe-bootstrap.yml'
-
 permissions:
   contents: write
 

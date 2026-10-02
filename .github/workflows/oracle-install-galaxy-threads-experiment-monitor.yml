@@ -6,24 +6,7 @@
 name: Oracle Install Galaxy Threads Experiment Monitor
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-install-galaxy-threads-experiment-monitor.yml'
-      - 'scripts/install_galaxy_threads_experiment_monitor_user.sh'
-      - 'scripts/monitor_galaxy_threads_experiment_user.py'
-      - 'scripts/monitor_social_post_experiment_user.py'
-      - 'scripts/run_social_post_experiment_queue_user.py'
-      - 'agentos_node/social/post_experiment.py'
-      - 'scripts/sync_sunlake_milkcat_persona_user.py'
-      - 'scripts/evolve_mio_persona_ir_user.py'
-      - 'scripts/mio_persona_social_loop_user.py'
-      - 'scripts/sync_mio_pdca_social_outcome_user.py'
-      - 'scripts/diagnose_mio_threads_search_scope_user.py'
-      - 'tests/test_mio_social_contract.py'
-      - 'agentos_node/persona_life.py'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

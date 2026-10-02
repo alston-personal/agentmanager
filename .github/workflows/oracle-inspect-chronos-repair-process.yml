@@ -2,10 +2,6 @@ name: Oracle Inspect Chronos Repair Process
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-inspect-chronos-repair-process.yml'
-
 permissions:
   contents: write
 

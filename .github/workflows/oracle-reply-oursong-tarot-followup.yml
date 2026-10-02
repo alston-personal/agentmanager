@@ -1,11 +1,7 @@
 name: Oracle Reply Oursong Tarot Followup
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-reply-oursong-tarot-followup.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

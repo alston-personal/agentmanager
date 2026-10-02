@@ -1,10 +1,7 @@
 name: Oracle Provision ZiWei Master via Bootstrap Control
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/ziwei-master-repo.json'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

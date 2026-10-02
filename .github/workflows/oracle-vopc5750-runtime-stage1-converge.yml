@@ -1,11 +1,6 @@
 name: Oracle vopc5750 Runtime Stage1 Converge
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/oracle-vopc5750-runtime-stage1-converge.yml'
   workflow_dispatch:
 
 permissions:

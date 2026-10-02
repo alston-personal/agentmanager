@@ -7,33 +7,7 @@ name: Oracle Exact Generation Executor Job Rollout
 # Touching this contract intentionally re-runs the live Oracle acceptance after
 # the exact-generation moving-ref race fix; runtime semantics are unchanged.
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-exact-generation-executor-job-rollout.yml'
-      - 'agent_core/controller_service.py'
-      - 'agent_core/realm_server.py'
-      - 'agentos_node/bootstrap_control.py'
-      - 'scripts/repair_antigravity_relay_user.sh'
-      - 'scripts/install_action_relay_user.sh'
-      - 'scripts/publish_action_relay_capability.py'
-      - 'scripts/seed_one_experience.py'
-      - 'scripts/oracle_codex_experience_regression.py'
-      - 'scripts/oracle_codex_experience_regression_entry_v2.py'
-      - 'scripts/oracle_codex_experience_ablation.py'
-      - 'agent_core/executor_job_contract.py'
-      - 'agent_core/experience_attribution_contract.py'
-      - 'agentos_node/executor_job_action_relay.py'
-      - 'agentos_node/executor_job_adapter.py'
-      - 'agentos_node/issue117_experience_provider.py'
-      - 'agentos_node/typesafe_skill_install_provider.py'
-      - 'scripts/install_oracle_typesafe_skill.sh'
-      - 'agentos_node/gemini_cli_install_provider.py'
-      - 'agentos_node/gemini_cli_one_hook.py'
-      - 'scripts/install_gemini_cli_one.py'
-      - 'scripts/install_oracle_gemini_cli_one.sh'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

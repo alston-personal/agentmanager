@@ -1,11 +1,7 @@
 name: Oracle Probe Canva Media URL
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-probe-canva-media.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

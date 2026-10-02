@@ -1,11 +1,6 @@
 name: Oracle Runner Pool Audit
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-runner-pool-audit.yml'
   workflow_dispatch:
 
 permissions:

@@ -2,14 +2,6 @@ name: Oracle Deploy Layout Lab Static Official
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-deploy-layoutlab-static-official.yml'
-      - 'web_assets/layoutlab_v0_5.html'
-      - 'web_assets/layoutlib-browser-v0.5.js'
-      - 'web_assets/layoutlab-capability-bridge-v0.7.js'
-      - 'scripts/deploy_layoutlab_static.py'
-
 permissions:
   contents: write
 

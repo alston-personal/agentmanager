@@ -1,13 +1,7 @@
 name: Oracle Publish Mio Threads Day 2
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-publish-mio-threads-day2.yml'
-      - 'personas/mio/second-post-20260919.txt'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

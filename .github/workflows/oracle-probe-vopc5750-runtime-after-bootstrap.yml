@@ -1,11 +1,6 @@
 name: Oracle Probe vopc5750 Runtime After Bootstrap
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/oracle-probe-vopc5750-runtime-after-bootstrap.yml'
   workflow_dispatch:
 
 permissions:

@@ -1,11 +1,7 @@
 name: Oracle Search Oursong Huang Threads
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-search-oursong-huang.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

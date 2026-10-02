@@ -1,13 +1,7 @@
 name: Oracle Probe Threads Web DM
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-probe-threads-web-dm.yml'
-      - 'scripts/probe_threads_web_dm_user.sh'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

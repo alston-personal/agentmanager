@@ -1,10 +1,6 @@
 name: Oracle MBPR Node Probe
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-node-probe.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

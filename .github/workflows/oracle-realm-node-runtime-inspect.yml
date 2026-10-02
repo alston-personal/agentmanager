@@ -1,9 +1,6 @@
 name: Oracle vopc5750 Runtime Inspect
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.agentos/commands/realm-node-runtime-inspect.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

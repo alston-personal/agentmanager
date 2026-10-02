@@ -1,11 +1,7 @@
 name: Oracle Publish Oursong Shadow Clone Meme
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-publish-oursong-shadow-clone.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

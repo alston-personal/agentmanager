@@ -1,8 +1,6 @@
 name: Oracle Probe Canva Media Variants
 on:
-  push:
-    branches: [core/integration]
-    paths: ['.github/workflows/oracle-probe-canva-media-variants.yml']
+  workflow_dispatch:
 permissions: {contents: read}
 jobs:
   probe:

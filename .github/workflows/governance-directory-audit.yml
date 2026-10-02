@@ -2,25 +2,6 @@ name: AgentOS Governance Directory Audit
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'agent_core/governance_directory.py'
-      - 'agent_core/resource_registry.py'
-      - 'scripts/agentos_node.py'
-      - 'scripts/governance_directory.py'
-      - 'scripts/core_services/port_manager.py'
-      - 'scripts/drift_guard.py'
-      - 'tests/test_agentos_node.py'
-      - 'tests/test_governance_directory.py'
-      - '.agent/CONSTITUTION.yaml'
-      - '.agent/governance/**'
-      - '.agent/roles/**'
-      - '.agent/SERVICES.md'
-      - 'scripts/os_watchdog.py'
-      - '.github/workflows/governance-directory-audit.yml'
-  pull_request:
-    branches: [main]
-
 permissions:
   contents: write
 

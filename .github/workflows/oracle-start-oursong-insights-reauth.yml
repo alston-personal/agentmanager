@@ -2,11 +2,7 @@ name: Oracle Start Oursong Insights Reauth
 # refresh: 2026-09-29T06:12+08:00
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-start-oursong-insights-reauth.yml'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

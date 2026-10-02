@@ -1,11 +1,7 @@
 name: Oracle vopc5750 Recovery Acceptance
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.agentos/commands/vopc5750-recovery-acceptance.json'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

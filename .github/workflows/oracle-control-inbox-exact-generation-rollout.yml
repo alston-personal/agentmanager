@@ -5,19 +5,6 @@ name: Oracle Control Inbox Exact Generation Rollout
 # It never reads private Canonical IR and is not a continuation control-plane
 # fallback; live continuation acceptance still enters through the Control Inbox.
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-control-inbox-exact-generation-rollout.yml'
-      - 'agent_core/control_inbox_bridge.py'
-      - 'agent_core/active_continuation.py'
-      - 'agent_core/chatgpt_continuation_projection.py'
-      - 'agentos_node/bootstrap_control.py'
-      - 'scripts/install_control_inbox_bridge_user.sh'
-      - 'scripts/install_chatgpt_continuation_projection_user.sh'
-      - 'scripts/repair_control_inbox_github_auth_user.sh'
-      - 'scripts/deploy_mio_tryon_worker_user.sh'
   workflow_dispatch:
 
 permissions:

@@ -4,12 +4,6 @@ name: Oracle Publish Sunlake Persona Replies
 # unless an approved manifest was introduced in the exact source commit.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - 'personas/mio/approved/replies/mio-reply-*.json'
-
 permissions:
   contents: read
 

@@ -1,12 +1,7 @@
 name: Oracle Governance Autonomy Inspect
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/governance-autonomy-inspect.json'
-
+  workflow_dispatch:
 permissions:
   contents: read
 

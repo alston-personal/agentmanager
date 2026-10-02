@@ -2,11 +2,6 @@
 name: Oracle vopc5750 Resolve E2E
 
 on:
-  push:
-    branches:
-      - feature/realm-node-fabric-readiness
-    paths:
-      - '.github/workflows/oracle-vopc5750-resolve-e2e.yml'
   workflow_dispatch:
 
 permissions:

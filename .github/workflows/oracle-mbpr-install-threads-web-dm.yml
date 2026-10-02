@@ -1,10 +1,6 @@
 name: Oracle MBPR Install Threads Web DM
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.agentos/commands/mbpr-install-threads-web-dm.json'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
