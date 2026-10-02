@@ -1,9 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "hardened-smoke-stage-20261002-0047",
-  "action": "desktop.demo.stage",
+  "nonce": "hardened-smoke-stop-20261002-0048",
+  "action": "desktop.demo.stop",
   "payload": {
-    "stage": "mid-smoke / stage-history"
+    "final_stage": "verified / hardened smoke"
   }
 }
