@@ -311,6 +311,78 @@ class ThinClientTransport:
                 print(f'[agentos-client] heartbeat error: {exc}', flush=True)
             time.sleep(delay)
 
+    def _execute_task_bounded(self, task: dict[str, Any]) -> dict[str, Any]:
+        """Execute one task behind a daemon-thread deadline supervisor.
+
+        A provider call can wedge even when its inner subprocess timeout is
+        correctly configured. Never let such a call permanently monopolize the
+        Thin Client task loop. On deadline, persist a synthetic receipt first,
+        then terminate the daemon so Task Scheduler/watchdog can recover it.
+        """
+        requested = int(task.get('timeout_seconds') or self.client.policy.max_timeout_seconds)
+        action_timeout = max(1, min(requested, self.client.policy.max_timeout_seconds))
+        deadline_seconds = action_timeout + 15
+        done = threading.Event()
+        box: dict[str, Any] = {}
+
+        def worker() -> None:
+            try:
+                box['receipt'] = self.client.execute(task)
+            except BaseException as exc:
+                box['fatal'] = f'{type(exc).__name__}: {exc}'
+            finally:
+                done.set()
+
+        thread = threading.Thread(
+            target=worker,
+            name=f"agentos-task-{str(task.get('task_id') or 'unknown')[:32]}",
+            daemon=True,
+        )
+        thread.start()
+        if done.wait(deadline_seconds):
+            receipt = box.get('receipt')
+            if isinstance(receipt, dict):
+                return receipt
+            now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            return {
+                'schema': 'agentos.node-receipt/v0.1',
+                'realm_id': self.config.realm_id if self.config else self.client.identity.realm_id,
+                'node_id': self.config.node_id if self.config else self.client.identity.node_id,
+                'task_id': task.get('task_id'),
+                'action': task.get('action'),
+                'started_at': now,
+                'completed_at': now,
+                'ok': False,
+                'cognition_ids_used': list(task.get('cognition_ids_used') or []),
+                'error': str(box.get('fatal') or 'task worker exited without receipt'),
+            }
+
+        now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        receipt = {
+            'schema': 'agentos.node-receipt/v0.1',
+            'realm_id': self.config.realm_id if self.config else self.client.identity.realm_id,
+            'node_id': self.config.node_id if self.config else self.client.identity.node_id,
+            'task_id': task.get('task_id'),
+            'action': task.get('action'),
+            'started_at': now,
+            'completed_at': now,
+            'ok': False,
+            'cognition_ids_used': list(task.get('cognition_ids_used') or []),
+            'error': f'task executor deadline exceeded after {deadline_seconds}s; daemon restart required',
+            'executor_supervisor': {
+                'deadline_seconds': deadline_seconds,
+                'action_timeout_seconds': action_timeout,
+                'recovery': 'restart_daemon',
+            },
+        }
+        _spool_receipt(receipt)
+        print(
+            f"[agentos-client] task deadline exceeded task_id={task.get('task_id')} "
+            f"deadline_seconds={deadline_seconds}; receipt spooled; exiting for recovery",
+            flush=True,
+        )
+        raise SystemExit(75)
+
     def run_forever(self) -> None:
         if not self.config:
             raise RuntimeError('client is not enrolled')
@@ -336,7 +408,7 @@ class ThinClientTransport:
                     print(f'[agentos-client] flushed_receipts={flushed}', flush=True)
                 receipts: list[dict[str, Any]] = []
                 for task in self.pull_tasks():
-                    receipt = self.client.execute(task)
+                    receipt = self._execute_task_bounded(task)
                     self._persist_and_submit_receipt(receipt)
                     receipts.append(receipt)
             except Exception as exc:
