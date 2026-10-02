@@ -46,6 +46,8 @@ jobs:
             'gui-demo-uia-hosted-fast-20261002-1112',
             'gui-demo-open-gemini-targeted-uia-20261002-1120',
             'targeted-gemini-uia-probe-20261002-1348',
+            'deploy-heartbeat-isolation-20261002-1358',
+            'verify-heartbeat-isolation-reload-20261002-1358',
             'targeted-uia-probe-gemini-20261002-1332',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
@@ -63,3 +65,5 @@ jobs:
 # targeted-uia-postcheck-20261002-1349
 
 # watchdog-manual-recovery-check-20261002-1355
+
+# heartbeat-isolation-deploy-postcheck-20261002-1400
