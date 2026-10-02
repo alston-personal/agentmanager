@@ -1,0 +1,49 @@
+name: Next Path Matrix Diagnostic
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/next-path-matrix-diagnostic.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe local Next paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          for p in \
+            '/api/auth/session' \
+            '/dashboard/api/auth/session' \
+            '/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001' \
+            '/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001'; do
+              code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 4 "http://127.0.0.1:3000$p" || true)
+              echo "GET $p -> $code $(head -c 120 /tmp/body 2>/dev/null | tr '\n' ' ')"
+          done
+          for p in '/api/wardrobe/auth-handoff?action=start' '/dashboard/api/wardrobe/auth-handoff?action=start'; do
+              code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 4 -X POST "http://127.0.0.1:3000$p" || true)
+              echo "POST $p -> $code $(head -c 120 /tmp/body 2>/dev/null | tr '\n' ' ')"
+          done
+          REMOTE
+          cat "$out"
+          { echo '### Next local path matrix'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
