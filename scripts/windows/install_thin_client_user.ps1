@@ -53,7 +53,7 @@ New-Item -ItemType Directory -Force -Path $watchdogTargetDir | Out-Null
 Copy-Item -Force -LiteralPath $watchdogSource -Destination $watchdogTarget
 
 $watchdogTaskName = "$TaskName Watchdog"
-$watchdogArgs = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdogTarget + '" -TaskName "' + $TaskName + '"'
+$watchdogArgs = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdogTarget + '" -TaskName "' + $TaskName + '" -ClientHome "' + $ClientHome + '"'
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $watchdogArgs
 $watchdogLogonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $watchdogPeriodicTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
