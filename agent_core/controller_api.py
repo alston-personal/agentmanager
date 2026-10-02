@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_core.realm_fabric import RealmFabricStore
-from agent_core.runtime_ota import RuntimeOTAPolicyStore
+from agent_core.runtime_ota import ALLOWED_SOURCE_REFS, RuntimeOTAPolicyStore
 
 
 CONTROLLER_ACTION_CAPABILITY = {
@@ -215,7 +215,7 @@ class ControllerService:
     ) -> dict[str, Any]:
         if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
             raise ValueError('source_commit must be a 40-character lowercase git SHA')
-        if source_ref not in {'main', 'core/integration', 'feature/realm-node-fabric-readiness'}:
+        if source_ref not in ALLOWED_SOURCE_REFS:
             raise ValueError('source_ref is not allowlisted')
         if not str(cwd or '').strip():
             raise ValueError('runtime convergence cwd is required')
