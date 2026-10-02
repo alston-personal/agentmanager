@@ -1,0 +1,57 @@
+name: Diagnose Current ONE Gateway Path
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/diagnose-current-one-gateway.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Diagnose gateway path
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -u
+          echo '=== HEALTH MATRIX ==='
+          for i in 1 2 3 4 5; do
+            printf '%s ' "$(date -u +%FT%TZ)"
+            printf 'realm='
+            curl -sS -o /tmp/realm.out -w '%{http_code}/%{time_total}' --max-time 3 http://127.0.0.1:8780/v1/health || true
+            printf ' dashboard='
+            curl -sS -o /tmp/dash.out -w '%{http_code}/%{time_total}' --max-time 3 http://127.0.0.1:3000/dashboard/api/agentos/v1/health || true
+            printf ' public='
+            curl -sS -o /tmp/pub.out -w '%{http_code}/%{time_total}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true
+            echo
+            echo "realm_body=$(tr '\n' ' ' </tmp/realm.out 2>/dev/null | head -c 300)"
+            echo "dash_body=$(tr '\n' ' ' </tmp/dash.out 2>/dev/null | head -c 300)"
+            echo "pub_body=$(tr '\n' ' ' </tmp/pub.out 2>/dev/null | head -c 300)"
+            sleep 1
+          done
+          echo '=== AGENTOS SERVICES ==='
+          systemctl --user --no-pager --type=service --all | grep -Ei 'agentos|realm|dashboard' || true
+          echo '=== DASHBOARD STATUS ==='
+          systemctl --user status agentos-dashboard.service --no-pager -l || true
+          echo '=== 8780 LISTENER ==='
+          ss -ltnp | grep ':8780' || true
+          echo '=== 3000 LISTENER ==='
+          ss -ltnp | grep ':3000' || true
+          echo '=== NGINX ERROR TAIL ==='
+          sudo -n tail -n 80 /var/log/nginx/error.log 2>/dev/null || tail -n 80 /var/log/nginx/error.log 2>/dev/null || true
+          echo '=== TOP CPU ==='
+          ps -eo pid,ppid,%cpu,%mem,etime,cmd --sort=-%cpu | head -n 25
+          REMOTE
