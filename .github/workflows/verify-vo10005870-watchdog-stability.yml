@@ -1,0 +1,79 @@
+name: Verify VO10005870 Watchdog Stability
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/verify-vo10005870-watchdog-stability.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify PID stability and lease freshness
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+
+          def run_task(tid, ps):
+              if f.get_receipt(tid) is None:
+                  f.queue_task('VO10005870',{
+                      'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                      'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+                      'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,
+                      'cognition_ids_used':['demo://watchdog-stability/20261002'],
+                  })
+              for _ in range(30):
+                  r=f.get_receipt(tid)
+                  if r is not None:
+                      assert r.get('ok') is True and int(r.get('returncode') or 0)==0, r
+                      return r
+                  time.sleep(1)
+              raise RuntimeError('receipt_missing:'+tid)
+
+          ps=r'''$proc=Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'python\.exe.*-m agentos_node\.client_cli run' } | Select-Object -First 1
+          $lease=Join-Path $env:LOCALAPPDATA 'AgentOS\state\heartbeat-lease.json'
+          $content=''
+          if(Test-Path $lease){$content=Get-Content -Raw -LiteralPath $lease}
+          [pscustomobject]@{pid=$proc.ProcessId;lease_path=$lease;lease_exists=(Test-Path $lease);lease=$content}|ConvertTo-Json -Compress'''
+
+          r1=run_task('watchdog-stability-before-20261002-1540',ps)
+          print('BEFORE='+r1.get('stdout','').strip(),flush=True)
+          before=json.loads(r1.get('stdout') or '{}')
+          assert before.get('pid'), before
+          assert before.get('lease_exists') is True, before
+
+          time.sleep(70)
+
+          r2=run_task('watchdog-stability-after-20261002-1540',ps)
+          print('AFTER='+r2.get('stdout','').strip(),flush=True)
+          after=json.loads(r2.get('stdout') or '{}')
+          assert after.get('pid')==before.get('pid'), {'before':before,'after':after}
+          assert after.get('lease_exists') is True, after
+
+          lb=json.loads(before.get('lease') or '{}')
+          la=json.loads(after.get('lease') or '{}')
+          assert int(la.get('recorded_at_unix') or 0) > int(lb.get('recorded_at_unix') or 0), {'before':lb,'after':la}
+          print('WATCHDOG_STABILITY=PASS pid='+str(after.get('pid')),flush=True)
+          PY
+          REMOTE
