@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+# One-shot governance codemod; safe to rerun idempotently.
+
 BASELINE = Path(".agentos/governance/legacy-direct-oracle-workflows.txt")
 TOP_LEVEL_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*\s*:")
 
