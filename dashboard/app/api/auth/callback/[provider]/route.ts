@@ -51,6 +51,18 @@ export async function GET(
     const returnTo = returnToCookie ? decodeURIComponent(returnToCookie) : '/';
     const response = NextResponse.redirect(new URL(returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/', siteUrl));
     
+    // Remove the legacy parent-domain cookie so iOS/WebKit cannot keep two
+    // same-name auth_token cookies with different scopes.
+    response.cookies.set({
+      name: 'auth_token',
+      value: '',
+      httpOnly: true,
+      secure: true,
+      domain: '.milkcat.org',
+      path: '/',
+      sameSite: 'lax',
+      maxAge: 0,
+    });
     response.cookies.set({
       name: 'auth_token',
       value: token,
@@ -60,6 +72,7 @@ export async function GET(
       sameSite: 'lax',
       maxAge: 86400, // 24 hours
     });
+    response.cookies.set({ name: 'oauth_return_to', value: '', httpOnly: true, secure: true, domain: '.milkcat.org', path: '/', sameSite: 'lax', maxAge: 0 });
     response.cookies.set({ name: 'oauth_return_to', value: '', httpOnly: true, secure: true, path: '/', sameSite: 'lax', maxAge: 0 });
 
     return response;
