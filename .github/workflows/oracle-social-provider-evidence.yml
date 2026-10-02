@@ -16,38 +16,8 @@ jobs:
   evidence:
     runs-on: ubuntu-latest
     timeout-minutes: 6
-    env:
-      ORACLE_HOST: 161.33.24.170
-      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-
-      - name: Inspect Oracle-local provider boundary through hosted ingress
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          echo 'galaxy_social_local_probe_begin'
-          for spec in             'LOCAL|http://127.0.0.1:8771/healthz|GET'             'NEXT_3000|http://127.0.0.1:3000/dashboard/api/social/healthz|GET'             'NEXT_8800|http://127.0.0.1:8800/dashboard/api/social/healthz|GET'; do
-            IFS='|' read -r label url method <<< "$spec"
-            result=$(curl -sS -o /dev/null -w '%{http_code} %{content_type} %{redirect_url}' --max-time 10 "$url" 2>/dev/null || true)
-            echo "galaxy_social_probe_${label}=${result:-unreachable}"
-          done
-          ENV=/home/ubuntu/.config/agentos/social-runtime.env
-          test -f "$ENV"
-          APP_ID=$(sed -n 's/^AGENTOS_THREADS_APP_ID=//p' "$ENV" | head -n1)
-          test -n "$APP_ID"
-          suffix="$APP_ID"; [ "${#suffix}" -gt 6 ] && suffix="${suffix: -6}"
-          echo "threads_configured_app_suffix=$suffix"
-          echo 'threads_configured_app_identification=PASS'
-          REMOTE
-
-      - name: Verify public provider boundary
+      - name: Verify public provider boundary without Oracle runner or SSH
         shell: bash
         run: |
           set -euo pipefail
@@ -55,28 +25,56 @@ jobs:
           TMP="$RUNNER_TEMP/agentos-social-provider-evidence"
           mkdir -p "$TMP"
 
-          curl -fsS --max-time 8 "$PUBLIC/healthz" > "$TMP/health.json"
+          curl -fsS --max-time 12 "$PUBLIC/healthz" > "$TMP/health.json"
           python3 - "$TMP/health.json" <<'PY'
           import json,sys
           p=json.load(open(sys.argv[1],encoding='utf-8'))
           assert p.get('schema')=='agentos.social-runtime-status/v1',p
           assert p.get('service')=='agentos-social-runtime',p
-          assert p.get('threads')=={'configured':True},p
+          threads=p.get('threads')
+          assert isinstance(threads,dict) and set(threads)=={'configured'},p
+          assert threads['configured'] is True,p
           text=json.dumps(p,sort_keys=True).lower()
           for forbidden in ('app_id','app_secret','access_token','refresh_token','authorization_code','product_key'):
               assert forbidden not in text,text
           print('oracle_social_provider_configured=PASS')
           print('oracle_social_provider_secret_exposure=NONE')
+          print('oracle_social_provider_ingress=PUBLIC_NO_SSH')
           PY
 
-          code=$(curl -sS -o "$TMP/internal-block.json" -w '%{http_code}' --max-time 8             -X POST "$PUBLIC/internal/v1/social/acceptances"             -H 'content-type: application/json' --data '{}')
+          code=$(curl -sS -o "$TMP/internal-block.json" -w '%{http_code}' --max-time 12 \
+            -X POST "$PUBLIC/internal/v1/social/acceptances" \
+            -H 'content-type: application/json' --data '{}')
           test "$code" = 404
           grep -q 'Social gateway route not allowlisted' "$TMP/internal-block.json"
           echo 'oracle_social_internal_control_public=BLOCKED'
 
-          code=$(curl -sS -o "$TMP/forged-deauthorize.json" -w '%{http_code}' --max-time 8             -X POST "$PUBLIC/v1/social/webhooks/threads/deauthorize"             -H 'content-type: application/x-www-form-urlencoded'             --data-urlencode 'signed_request=forged.invalid')
+          code=$(curl -sS -o "$TMP/forged-deauthorize.json" -w '%{http_code}' --max-time 12 \
+            -X POST "$PUBLIC/v1/social/webhooks/threads/deauthorize" \
+            -H 'content-type: application/x-www-form-urlencoded' \
+            --data-urlencode 'signed_request=forged.invalid')
           test "$code" != 200
-          echo 'oracle_social_forged_provider_callback=REJECTED'
+          python3 - "$TMP/forged-deauthorize.json" <<'PY'
+          import json,sys
+          try:
+              p=json.load(open(sys.argv[1],encoding='utf-8'))
+          except Exception:
+              p={}
+          text=json.dumps(p,sort_keys=True).lower()
+          for forbidden in ('app_secret','access_token','refresh_token','authorization_code'):
+              assert forbidden not in text,text
+          print('oracle_social_forged_provider_callback=REJECTED')
+          PY
+
+          curl -fsS --max-time 12 \
+            "$PUBLIC/v1/social/webhooks/threads/data-deletion/status?code=evidence-only" \
+            > "$TMP/deletion-status.json"
+          python3 - "$TMP/deletion-status.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert p == {'status':'completed','confirmation_code':'evidence-only'},p
+          print('oracle_social_deletion_status_public=PASS')
+          PY
 
       - name: Upload sanitized provider evidence
         if: always()
