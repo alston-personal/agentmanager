@@ -1,0 +1,56 @@
+name: Dashboard Runtime Recover
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/dashboard-runtime-recover.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Recover and verify Dashboard runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          exec 9>/tmp/agentos-dashboard-deploy.lock
+          flock -w 120 9
+          live=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)
+          test -d "$live"
+          echo "live=$live"
+          echo '=== before ==='
+          systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p NRestarts --no-pager || true
+          ss -ltnp '( sport = :3000 )' || true
+          systemctl --user daemon-reload
+          systemctl --user restart agentos-dashboard.service
+          ready=0
+          for i in $(seq 1 40); do
+            code=$(curl -sS -o /tmp/session -w '%{http_code}' --max-time 3 http://127.0.0.1:3000/dashboard/api/auth/session || true)
+            if [ "$code" = 200 ]; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+          echo '=== after ==='
+          systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStartTimestamp --no-pager
+          ss -ltnp '( sport = :3000 )'
+          for i in 1 2 3 4 5 6; do
+            s=$(curl -sS -o /tmp/s -w '%{http_code}' --max-time 3 http://127.0.0.1:3000/dashboard/api/auth/session || true)
+            h=$(curl -sS -o /tmp/h -w '%{http_code}' --max-time 3 -X POST http://127.0.0.1:3000/dashboard/api/wardrobe/auth-handoff?action=start || true)
+            echo "probe=$i session=$s handoff_start=$h"
+            sleep 2
+          done
+          REMOTE
