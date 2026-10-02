@@ -30,6 +30,7 @@ export const ALLOWED_LAYERS = new Set<string>(LAYER_ORDER);
 const ROOT = path.join(AGENT_DATA_ROOT, 'projects', 'dressup-simulator');
 const JOB_DIR = path.join(ROOT, 'render_jobs', 'runtime');
 const CURRENT_DIR = path.join(ROOT, 'current_outfits');
+const CACHE_DIR = path.join(ROOT, 'render_cache');
 export type TryOnStatus = 'queued' | 'rendering' | 'ready' | 'failed' | 'cancelled';
 
 export type LayerItem = {
@@ -225,6 +226,73 @@ export function readJob(jobId: string): TryOnJob | null {
 
 export function writeJob(job: TryOnJob) {
   atomicWrite(jobPath(job.jobId), job);
+}
+
+export function setTryOnQuality(args: {
+  jobId: string;
+  accepted: boolean;
+  issues?: string[];
+  reviewer?: string | null;
+}): TryOnJob {
+  const job = readJob(args.jobId);
+  if (!job) throw new Error('Try-on job not found');
+  if (job.status !== 'ready' || (!job.output.asset && !job.output.previewAsset)) {
+    throw new Error('Only completed try-on results can be reviewed');
+  }
+
+  const pending = Array.isArray(job.output.pendingLayers) ? job.output.pendingLayers : [];
+  if (args.accepted && pending.length) {
+    throw new Error('Incomplete try-on results cannot be approved for cache reuse');
+  }
+
+  const cacheKey = String(job.output.cacheKey || '');
+  if (args.accepted && !/^[a-f0-9]{64}$/.test(cacheKey)) {
+    throw new Error('Completed result has no reusable cache key');
+  }
+
+  const now = new Date().toISOString();
+  const issues = Array.isArray(args.issues)
+    ? args.issues.map((value) => String(value).trim()).filter(Boolean).slice(0, 12)
+    : [];
+  const previousChecks = Array.isArray(job.output.quality?.checks)
+    ? job.output.quality!.checks!
+    : [];
+  const checks = previousChecks
+    .filter((row) => row.code !== 'manual_visual_review')
+    .concat([{
+      code: 'manual_visual_review',
+      passed: args.accepted,
+      message: args.accepted
+        ? 'Approved for reuse by wardrobe visual review'
+        : (issues.length ? 'Rejected: ' + issues.join(', ') : 'Rejected by wardrobe visual review'),
+    }]);
+
+  job.output.quality = {
+    accepted: args.accepted,
+    checkedAt: now,
+    checks,
+  };
+  writeJob(job);
+
+  if (/^[a-f0-9]{64}$/.test(cacheKey)) {
+    safeMkdir(CACHE_DIR);
+    const metaPath = path.join(CACHE_DIR, cacheKey + '.json');
+    const previous = safeReadJson<Record<string, unknown>>(metaPath) || {};
+    atomicWrite(metaPath, {
+      ...previous,
+      schema: 'agentos.tryon-cache-meta/v1',
+      cacheKey,
+      qualityAccepted: args.accepted,
+      checkedAt: now,
+      reviewer: args.reviewer || null,
+      issues,
+      checks,
+      jobId: job.jobId,
+      renderedLayers: job.output.renderedLayers || [],
+    });
+  }
+
+  return job;
 }
 
 export function currentOutfitPath(characterId: string) {
