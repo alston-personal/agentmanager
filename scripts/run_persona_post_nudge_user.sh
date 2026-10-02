@@ -28,6 +28,37 @@ test -f "$ROOT/pdca/state.json"
 test -f "$POST_GENERATOR"
 test -f "$SOCIAL_EXECUTOR"
 
+python3 - "$ROOT/pdca/state.json" <<'PY'
+import json,sys
+from datetime import datetime, timezone
+p=sys.argv[1]
+s=json.load(open(p,encoding="utf-8"))
+pending=list(s.get("pending_external_actions") or [])
+existing=next((x for x in pending if isinstance(x,dict) and x.get("capability")=="social.post.consider" and x.get("status")=="candidate"),None)
+if existing:
+    print("persona_post_nudge_consider_existing="+str(existing.get("action_id") or "unknown"))
+else:
+    now=datetime.now(timezone.utc)
+    cycle=int(s.get("cycle",0))
+    stamp=now.strftime("%Y%m%dT%H%M%SZ")
+    action_id=f"mio-owner-nudge-c{cycle}-social-post-consider-{stamp}"
+    pending.append({
+        "action_id": action_id,
+        "cycle": cycle,
+        "capability": "social.post.consider",
+        "status": "candidate",
+        "reason": "owner requested immediate routine-post consideration",
+        "policy": "routine_posts=autonomous_with_policy",
+        "requires_real_adapter_receipt": True,
+        "execution_context": "owner_requested_immediate_observation",
+        "created_at": now.isoformat().replace("+00:00","Z"),
+    })
+    s["pending_external_actions"]=pending[-12:]
+    with open(p,"w",encoding="utf-8") as out:
+        json.dump(s,out,ensure_ascii=False,indent=2); out.write("\n")
+    print("persona_post_nudge_consider_seeded="+action_id)
+PY
+
 python3 "$POST_GENERATOR" --persona-dir "$ROOT" | tee /tmp/persona-post-nudge-generator.json
 
 python3 - "$ROOT/pdca/state.json" <<'PY'
