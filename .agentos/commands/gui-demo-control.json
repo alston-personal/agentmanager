@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "vopc5750-rpc-alt-probe-20261002-0939",
+  "nonce": "vopc5750-service-control-probe-20261002-0941",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,8 +9,8 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$ErrorActionPreference='Continue'; function Run-Proc([string]$file,[string]$args,[int]$ms=6000){;  $psi=New-Object System.Diagnostics.ProcessStartInfo; $psi.FileName=$file; $psi.Arguments=$args; $psi.UseShellExecute=$false; $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; $psi.CreateNoWindow=$true;;  $p=New-Object System.Diagnostics.Process; $p.StartInfo=$psi; [void]$p.Start();;  if(-not $p.WaitForExit($ms)){try{$p.Kill()}catch{}; return @{timeout=$true;rc=$null;out='';err='TIMEOUT'}};;  return @{timeout=$false;rc=$p.ExitCode;out=$p.StandardOutput.ReadToEnd();err=$p.StandardError.ReadToEnd()}; }; $s=Run-Proc 'sc.exe' '\\\\VOPC5750 query schedule' 6000; Write-Output ('SC_RC='+$s.rc+' TIMEOUT='+$s.timeout); Write-Output $s.out; Write-Output $s.err; $w=Run-Proc 'wmic.exe' '/node:VOPC5750 os get Caption /value' 6000; Write-Output ('WMI_RC='+$w.rc+' TIMEOUT='+$w.timeout); Write-Output $w.out; Write-Output $w.err"
+      "$ErrorActionPreference='Stop'; $s=Get-Service -ComputerName VOPC5750 -Name Schedule; $s | Select-Object MachineName,Name,Status,StartType | ConvertTo-Json -Compress"
     ],
-    "timeout_seconds": 20
+    "timeout_seconds": 12
   }
 }
