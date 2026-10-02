@@ -307,6 +307,7 @@ class ThinClient:
                     workspace,
                     label=str(task.get('label') or 'AgentOS Demo'),
                     stage=str(task.get('stage') or 'Starting'),
+                    max_seconds=int(task.get('max_seconds') or 900),
                 )
             elif action == 'desktop.demo.stage':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
