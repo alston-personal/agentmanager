@@ -36,7 +36,7 @@ jobs:
           from agent_core.node_registry import NodeRegistry
 
           f=RealmFabricStore()
-          tid='heartbeat-isolation-long-task-20261002-1403'
+          tid='heartbeat-isolation-long-task-20261002-1545'
           if f.get_receipt(tid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
