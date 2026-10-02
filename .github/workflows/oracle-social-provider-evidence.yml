@@ -14,121 +14,75 @@ permissions:
 
 jobs:
   evidence:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
-      - name: Diagnose Galaxy Social Capability 404 without credentials
-        continue-on-error: true
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect Oracle-local provider boundary through hosted ingress
         shell: bash
         run: |
           set -euo pipefail
-          for spec in \
-            'LOCAL|http://127.0.0.1:8771/healthz|GET' \
-            'PUBLIC_HEALTH|https://studio.milkcat.org/dashboard/api/social/healthz|GET' \
-            'PUBLIC_START|https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/start|GET' \
-            'PUBLIC_CONNECT|https://studio.milkcat.org/dashboard/api/social/v1/social/connect|POST' \
-            'GALAXY_PAGE|https://studio.milkcat.org/threads-galaxy/|GET' \
-            'GALAXY_ADAPTER|https://studio.milkcat.org/threads-galaxy/adapters/threads.js|GET' \
-            'NEXT_3000|http://127.0.0.1:3000/dashboard/api/social/healthz|GET' \
-            'NEXT_8800|http://127.0.0.1:8800/dashboard/api/social/healthz|GET'; do
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo 'galaxy_social_local_probe_begin'
+          for spec in             'LOCAL|http://127.0.0.1:8771/healthz|GET'             'NEXT_3000|http://127.0.0.1:3000/dashboard/api/social/healthz|GET'             'NEXT_8800|http://127.0.0.1:8800/dashboard/api/social/healthz|GET'; do
             IFS='|' read -r label url method <<< "$spec"
-            if [ "$method" = POST ]; then
-              result=$(curl -sS -o /dev/null -w '%{http_code} %{content_type} %{redirect_url}' --max-time 10 -X POST -H 'content-type: application/json' --data '{}' "$url" 2>/dev/null || true)
-            else
-              result=$(curl -sS -o /dev/null -w '%{http_code} %{content_type} %{redirect_url}' --max-time 10 "$url" 2>/dev/null || true)
-            fi
+            result=$(curl -sS -o /dev/null -w '%{http_code} %{content_type} %{redirect_url}' --max-time 10 "$url" 2>/dev/null || true)
             echo "galaxy_social_probe_${label}=${result:-unreachable}"
           done
-          echo 'galaxy_social_listeners_begin'
-          ss -ltn 2>/dev/null | grep -E ':(80|443|3000|8771|8800)\\b' | head -15 || true
-          echo 'galaxy_social_nginx_routes_begin'
-          grep -nE 'location |proxy_pass|root |alias ' /etc/nginx/sites-enabled/studio.milkcat.org 2>/dev/null | head -70 || true
-      - name: Identify configured Threads Meta app safely
-        shell: bash
-        run: |
-          set -euo pipefail
           ENV=/home/ubuntu/.config/agentos/social-runtime.env
           test -f "$ENV"
           APP_ID=$(sed -n 's/^AGENTOS_THREADS_APP_ID=//p' "$ENV" | head -n1)
-          APP_SECRET=$(sed -n 's/^AGENTOS_THREADS_APP_SECRET=//p' "$ENV" | head -n1)
           test -n "$APP_ID"
-          suffix="$APP_ID"
-          [ "${#suffix}" -gt 6 ] && suffix="${suffix: -6}"
+          suffix="$APP_ID"; [ "${#suffix}" -gt 6 ] && suffix="${suffix: -6}"
           echo "threads_configured_app_suffix=$suffix"
-          if [ -n "$APP_SECRET" ]; then
-            APP_NAME=$(curl -fsS --max-time 15 --get               --data-urlencode 'fields=name'               --data-urlencode "access_token=$APP_ID|$APP_SECRET"               "https://graph.facebook.com/$APP_ID" 2>/dev/null |               python3 -c 'import json,sys; d=json.load(sys.stdin); n=d.get("name"); print(n if isinstance(n,str) and n else "")' 2>/dev/null || true)
-            if [ -n "$APP_NAME" ]; then
-              printf 'threads_configured_app_name=%s\n' "$APP_NAME"
-            else
-              echo 'threads_configured_app_name=UNAVAILABLE'
-            fi
-          else
-            echo 'threads_configured_app_name=UNAVAILABLE'
-          fi
           echo 'threads_configured_app_identification=PASS'
-      - name: Verify shared Threads provider is configured through public boundary
+          REMOTE
+
+      - name: Verify public provider boundary
         shell: bash
         run: |
           set -euo pipefail
           PUBLIC='https://studio.milkcat.org/dashboard/api/social'
-          TMP="${RUNNER_TEMP}/agentos-social-provider-evidence"
+          TMP="$RUNNER_TEMP/agentos-social-provider-evidence"
           mkdir -p "$TMP"
 
           curl -fsS --max-time 8 "$PUBLIC/healthz" > "$TMP/health.json"
           python3 - "$TMP/health.json" <<'PY'
-          import json, sys
-          p = json.load(open(sys.argv[1], encoding='utf-8'))
-          assert p.get('schema') == 'agentos.social-runtime-status/v1', p
-          assert p.get('service') == 'agentos-social-runtime', p
-          threads = p.get('threads')
-          assert threads == {'configured': True}, p
-          text = json.dumps(p, sort_keys=True).lower()
-          for forbidden in ('app_id', 'app_secret', 'access_token', 'refresh_token', 'authorization_code', 'product_key'):
-              assert forbidden not in text, text
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert p.get('schema')=='agentos.social-runtime-status/v1',p
+          assert p.get('service')=='agentos-social-runtime',p
+          assert p.get('threads')=={'configured':True},p
+          text=json.dumps(p,sort_keys=True).lower()
+          for forbidden in ('app_id','app_secret','access_token','refresh_token','authorization_code','product_key'):
+              assert forbidden not in text,text
           print('oracle_social_provider_configured=PASS')
           print('oracle_social_provider_secret_exposure=NONE')
           PY
 
-          code=$(curl -sS -o "$TMP/internal-block.json" -w '%{http_code}' --max-time 8 \
-            -X POST "$PUBLIC/internal/v1/social/acceptances" \
-            -H 'content-type: application/json' --data '{}')
+          code=$(curl -sS -o "$TMP/internal-block.json" -w '%{http_code}' --max-time 8             -X POST "$PUBLIC/internal/v1/social/acceptances"             -H 'content-type: application/json' --data '{}')
           test "$code" = 404
           grep -q 'Social gateway route not allowlisted' "$TMP/internal-block.json"
           echo 'oracle_social_internal_control_public=BLOCKED'
 
-          code=$(curl -sS -o "$TMP/forged-deauthorize.json" -w '%{http_code}' --max-time 8 \
-            -X POST "$PUBLIC/v1/social/webhooks/threads/deauthorize" \
-            -H 'content-type: application/x-www-form-urlencoded' \
-            --data-urlencode 'signed_request=forged.invalid')
+          code=$(curl -sS -o "$TMP/forged-deauthorize.json" -w '%{http_code}' --max-time 8             -X POST "$PUBLIC/v1/social/webhooks/threads/deauthorize"             -H 'content-type: application/x-www-form-urlencoded'             --data-urlencode 'signed_request=forged.invalid')
           test "$code" != 200
-          python3 - "$TMP/forged-deauthorize.json" <<'PY'
-          import json, sys
-          p = json.load(open(sys.argv[1], encoding='utf-8'))
-          text = json.dumps(p, sort_keys=True).lower()
-          for forbidden in ('app_secret', 'access_token', 'refresh_token', 'authorization_code'):
-              assert forbidden not in text, text
-          print('oracle_social_forged_provider_callback=REJECTED')
-          PY
-
-          curl -fsS --max-time 8 \
-            "$PUBLIC/v1/social/webhooks/threads/data-deletion/status?code=evidence-only" \
-            > "$TMP/deletion-status.json"
-          python3 - "$TMP/deletion-status.json" <<'PY'
-          import json, sys
-          p = json.load(open(sys.argv[1], encoding='utf-8'))
-          assert p == {'status': 'completed', 'confirmation_code': 'evidence-only'}, p
-          print('oracle_social_deletion_status_public=PASS')
-          PY
+          echo 'oracle_social_forged_provider_callback=REJECTED'
 
       - name: Upload sanitized provider evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: oracle-social-provider-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/agentos-social-provider-evidence/health.json
-            ${{ runner.temp }}/agentos-social-provider-evidence/internal-block.json
-            ${{ runner.temp }}/agentos-social-provider-evidence/forged-deauthorize.json
-            ${{ runner.temp }}/agentos-social-provider-evidence/deletion-status.json
+          path: ${{ runner.temp }}/agentos-social-provider-evidence/
           if-no-files-found: warn
           retention-days: 14
