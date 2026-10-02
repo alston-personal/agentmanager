@@ -24,7 +24,7 @@ concurrency:
 jobs:
   activate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
     steps:
@@ -54,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           ok=0
-          for _ in $(seq 1 90); do
+          for _ in $(seq 1 300); do
             code="$(curl -sS -o "$RUNNER_TEMP/window.json" -w '%{http_code}' --max-time 8               -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"               "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
             if [ "$code" = 200 ] && python3 - "$RUNNER_TEMP/window.json" <<'PY'
           import json,sys
