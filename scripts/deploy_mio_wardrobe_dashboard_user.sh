@@ -12,11 +12,11 @@ CONFIG="$CONFIG_DIR/dashboard.env.local"
 UNIT_DIR=/home/ubuntu/.config/systemd/user
 UNIT="$UNIT_DIR/agentos-dashboard.service"
 RELEASE="$RELEASE_ROOT/$SOURCE_SHA-$RUN_ID"
-STAGE="$(mktemp -d /tmp/mio-dashboard-release-XXXXXXXX)"
+STAGE="$RELEASE"
 PREV_LIVE="$(readlink -f "$LIVE" 2>/dev/null || true)"
 SWITCHED=0
 
-cleanup(){ rm -rf "$STAGE"; }
+cleanup(){ :; }
 rollback(){
   set +e
   if [ "$SWITCHED" = 1 ] && [ -n "$PREV_LIVE" ] && [ -d "$PREV_LIVE" ]; then
@@ -54,12 +54,13 @@ test -f "$CONFIG"
 test ! -L "$CONFIG"
 chmod 600 "$CONFIG"
 
-mkdir -p "$STAGE/dashboard"
-git -C "$REPO" archive "$SOURCE_SHA:dashboard" | tar -x -C "$STAGE/dashboard"
-cp "$CONFIG" "$STAGE/dashboard/.env.local"
-chmod 600 "$STAGE/dashboard/.env.local"
+test ! -e "$RELEASE"
+mkdir -p "$RELEASE"
+git -C "$REPO" archive "$SOURCE_SHA:dashboard" | tar -x -C "$RELEASE"
+cp "$CONFIG" "$RELEASE/.env.local"
+chmod 600 "$RELEASE/.env.local"
 
-cd "$STAGE/dashboard"
+cd "$RELEASE"
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build
 
@@ -81,8 +82,13 @@ for (const r of [
 console.log('mio_dashboard_built_routes=PASS');
 NODE
 
-test ! -e "$RELEASE"
-mv "$STAGE/dashboard" "$RELEASE"
+if grep -RIl --binary-files=text '/tmp/mio-dashboard-release-' "$RELEASE/.next" > /tmp/mio-dashboard-stale-paths 2>/dev/null && [ -s /tmp/mio-dashboard-stale-paths ]; then
+  echo "ERROR: stale temporary Next build path detected"
+  cat /tmp/mio-dashboard-stale-paths
+  exit 1
+fi
+echo "mio_dashboard_build_path=PASS"
+
 cp "$CONFIG" "$RELEASE/.env.local"
 chmod 600 "$RELEASE/.env.local"
 printf 'source_sha=%s\nrun_id=%s\nstate=candidate\n' "$SOURCE_SHA" "$RUN_ID" > "$RELEASE/RELEASE_RECEIPT"
