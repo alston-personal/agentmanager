@@ -1,0 +1,47 @@
+name: Persona Social Parameterization Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/persona_life.py'
+      - 'scripts/mio_persona_social_loop_user.py'
+      - 'scripts/sync_persona_pdca_social_outcome_user.py'
+      - 'scripts/install_persona_social_timer_user.sh'
+      - 'personas/**/agent.yaml'
+      - 'personas/**/runtime.env.example'
+      - 'tests/test_mio_social_contract.py'
+      - 'tests/test_persona_social_parameterization.py'
+      - '.github/workflows/persona-social-parameterization-guard.yml'
+  push:
+    branches:
+      - feat/oursong-persona-agent
+    paths:
+      - 'agentos_node/persona_life.py'
+      - 'scripts/mio_persona_social_loop_user.py'
+      - 'scripts/sync_persona_pdca_social_outcome_user.py'
+      - 'scripts/install_persona_social_timer_user.sh'
+      - 'personas/**'
+      - 'tests/test_persona_social_parameterization.py'
+      - '.github/workflows/persona-social-parameterization-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile persona runtime
+        run: |
+          python -m py_compile             agentos_node/persona_life.py             scripts/mio_persona_social_loop_user.py             scripts/sync_persona_pdca_social_outcome_user.py
+      - name: Validate timer installer
+        run: bash -n scripts/install_persona_social_timer_user.sh
+      - name: Run focused persona social contracts
+        run: |
+          python -m unittest -v             tests.test_mio_social_contract             tests.test_persona_social_parameterization
