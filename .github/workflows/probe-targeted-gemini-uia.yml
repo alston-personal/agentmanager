@@ -1,0 +1,90 @@
+name: Probe Targeted Gemini UIA
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/probe-targeted-gemini-uia.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Open Gemini and probe exact UIA controls
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+
+          oid='targeted-uia-open-gemini-20261002-1332'
+          if f.get_receipt(oid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':oid,'action':'desktop.open_url',
+                  'url':'https://gemini.google.com/app',
+                  'cognition_ids_used':['demo://targeted-uia/20261002'],
+              })
+          for _ in range(20):
+              r=f.get_receipt(oid)
+              if r:
+                  print('OPEN='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True, r
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('open_gemini_receipt_missing')
+
+          time.sleep(5)
+          tid='targeted-uia-probe-gemini-20261002-1332'
+          code=r'''import sys,json
+          sys.stdout.reconfigure(encoding="utf-8")
+          from pywinauto import Desktop
+          out={"windows":[],"send_button":False}
+          for w in Desktop(backend="uia").windows():
+              title=(w.window_text() or "")
+              if "Gemini" not in title:
+                  continue
+              out["windows"].append(title[:200])
+              try:
+                  c=w.child_window(title="傳送訊息", control_type="Button")
+                  out["send_button"]=bool(c.exists(timeout=2))
+              except Exception as e:
+                  out["send_error"]=type(e).__name__+":"+str(e)[:300]
+          print(json.dumps(out,ensure_ascii=False))'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+                  'executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe',
+                  'argv':['-c',code],
+                  'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':8,
+                  'cognition_ids_used':['demo://targeted-uia/20261002'],
+              })
+          for _ in range(25):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  print('PROBE='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0, r
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('targeted_uia_receipt_missing')
+          PY
+          REMOTE
