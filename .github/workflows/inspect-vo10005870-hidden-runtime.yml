@@ -34,22 +34,17 @@ jobs:
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='inspect-hidden-runtime-scripts-20261002-1528'
+          tid='inspect-hidden-runtime-scripts-20261002-1533'
           ps=r'''$root=Join-Path $env:LOCALAPPDATA 'AgentOS'
           $launcher=Join-Path $root 'agentos-thin-client-hidden.ps1'
           $wdv3=Join-Path $root 'scripts\thin_client_watchdog-v3.ps1'
           $wd=Join-Path $root 'scripts\thin_client_watchdog.ps1'
-          [pscustomobject]@{
-            launcher_path=$launcher;
-            launcher_exists=(Test-Path $launcher);
-            launcher_content=$(if(Test-Path $launcher){Get-Content -Raw -LiteralPath $launcher}else{''});
-            watchdog_v3_path=$wdv3;
-            watchdog_v3_exists=(Test-Path $wdv3);
-            watchdog_v3_content=$(if(Test-Path $wdv3){Get-Content -Raw -LiteralPath $wdv3}else{''});
-            watchdog_path=$wd;
-            watchdog_exists=(Test-Path $wd);
-            watchdog_content=$(if(Test-Path $wd){Get-Content -Raw -LiteralPath $wd}else{''})
-          } | ConvertTo-Json -Depth 4 -Compress'''
+          Write-Output '===LAUNCHER==='
+          if(Test-Path $launcher){Get-Content -Raw -LiteralPath $launcher}
+          Write-Output '===WATCHDOG_V3==='
+          if(Test-Path $wdv3){Get-Content -Raw -LiteralPath $wdv3}
+          Write-Output '===WATCHDOG_CANONICAL==='
+          if(Test-Path $wd){Get-Content -Raw -LiteralPath $wd}'''
           if f.get_receipt(tid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
