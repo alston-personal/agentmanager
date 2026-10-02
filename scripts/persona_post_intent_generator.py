@@ -80,12 +80,16 @@ def main():
         if dt.astimezone().date()==now_utc.astimezone().date():
             todays_posts.append(dt.astimezone(timezone.utc))
     todays_posts.sort()
-    max_posts=int(growth.get("daily_post_max",3))
-    min_gap=int(growth.get("minimum_post_gap_minutes",240))
-    if len(todays_posts)>=max_posts:
+    target_raw=growth.get("daily_post_target")
+    max_raw=growth.get("daily_post_max")
+    gap_raw=growth.get("minimum_post_gap_minutes")
+    daily_target=int(target_raw) if isinstance(target_raw,(int,float)) and not isinstance(target_raw,bool) else None
+    max_posts=int(max_raw) if isinstance(max_raw,(int,float)) and not isinstance(max_raw,bool) else None
+    min_gap=int(gap_raw) if isinstance(gap_raw,(int,float)) and not isinstance(gap_raw,bool) else None
+    if max_posts is not None and len(todays_posts)>=max_posts:
         print(json.dumps({"status":"NO_POST","reason":"daily_post_max_reached","posts_today":len(todays_posts)},ensure_ascii=False))
         return 0
-    if todays_posts:
+    if todays_posts and min_gap is not None:
         gap=(now_utc-todays_posts[-1]).total_seconds()/60.0
         if gap < min_gap:
             print(json.dumps({"status":"DEFER","reason":"minimum_post_gap","gap_minutes":round(gap,1),"required":min_gap},ensure_ascii=False))
@@ -146,7 +150,7 @@ def main():
       "growth_mode":growth,
       "growth_context":{
         "posts_today":len(todays_posts),
-        "daily_target":int(growth.get("daily_post_target",2)),
+        "daily_target":daily_target,
         "daily_max":max_posts,
         "minimum_gap_minutes":min_gap
       },
