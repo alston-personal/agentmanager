@@ -88,8 +88,7 @@ if claim.get('ok') is not True:
         current_desired
         and current_desired != source_commit
         and current_owner == lease_owner
-        and current_status in ('converged', 'desired')
-        and current_observed in ('', current_desired)
+        and current_observed == current_desired
     )
     if same_owner_converged:
         advance_payload = client.submit(ADVANCE_ACTION, {
