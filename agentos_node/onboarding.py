@@ -315,7 +315,7 @@ def install_linux_node_supervisor(*, install_root: Path | None = None, launcher:
     unit.parent.mkdir(parents=True, exist_ok=True)
     root.mkdir(parents=True, exist_ok=True)
     if not client_launcher.exists():
-        python_bin = Path(sys.executable).resolve()
+        python_bin = Path(sys.executable).absolute()
         client_launcher.write_text(
             '#!/usr/bin/env bash\n'
             + 'set -euo pipefail\n'
