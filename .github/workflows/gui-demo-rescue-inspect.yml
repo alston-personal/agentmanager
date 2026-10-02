@@ -49,6 +49,10 @@ jobs:
             'targeted-gemini-uia-probe-20261002-1538',
             'deploy-heartbeat-isolation-20261002-1358',
             'verify-heartbeat-isolation-reload-20261002-1358',
+            'formal-e2e-deploy-runner-20261002-1548',
+            'formal-e2e-rec-start-20261002-1548',
+            'formal-e2e-run-20261002-1548',
+            'formal-e2e-rec-stop-20261002-1548',
             'targeted-uia-probe-gemini-20261002-1332',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
@@ -72,3 +76,5 @@ jobs:
 # live-heartbeat-during-long-task-20261002-1405
 
 # post-targeted-uia-1538
+
+# formal-e2e-live-inspect-1548
