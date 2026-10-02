@@ -34,7 +34,7 @@ jobs:
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='inspect-windows-before-targeted-uia-20261002-1332'
+          tid='inspect-windows-before-targeted-uia-20261002-1550'
           if f.get_receipt(tid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1','task_id':tid,'action':'desktop.windows.inspect',
