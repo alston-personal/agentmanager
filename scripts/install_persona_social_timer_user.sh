@@ -20,9 +20,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=%h/.config/agentos/personas/%i.env
-WorkingDirectory=%h/agentmanager
-ExecStart=/usr/bin/python3 %h/agentmanager/scripts/mio_persona_social_loop_user.py
-ExecStartPost=/usr/bin/python3 %h/agentmanager/scripts/sync_persona_pdca_social_outcome_user.py
+WorkingDirectory=%h
+ExecStart=/usr/bin/python3 ${AGENTOS_PERSONA_SOCIAL_LOOP_SCRIPT}
+ExecStartPost=/usr/bin/python3 ${AGENTOS_PERSONA_PDCA_SYNC_SCRIPT}
 TimeoutStartSec=240
 NoNewPrivileges=true
 PrivateTmp=true
