@@ -141,7 +141,7 @@ jobs:
           PY
 
       - name: Publish non-secret enrollment evidence
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
