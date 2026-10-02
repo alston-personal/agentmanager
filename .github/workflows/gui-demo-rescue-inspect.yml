@@ -45,6 +45,7 @@ jobs:
             'gui-demo-uia-semantic-fast-20261002-1105',
             'gui-demo-uia-hosted-fast-20261002-1112',
             'gui-demo-open-gemini-targeted-uia-20261002-1120',
+            'targeted-uia-probe-gemini-20261002-1332',
           ]:
             print(task_id+'='+json.dumps(f.get_receipt(task_id),ensure_ascii=False,separators=(',',':')))
           PY
@@ -55,3 +56,5 @@ jobs:
 # post-fix-status-check-20261002-1132
 
 # recovery-after-manual-restart-20261002-1308
+
+# inspect-targeted-uia-after-timeout-20261002-1335
