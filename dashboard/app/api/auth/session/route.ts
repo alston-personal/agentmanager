@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
+import { roleForIdentity } from '@/lib/auth/roles';
 import fs from 'fs';
 import path from 'path';
 import { AGENT_DATA_ROOT } from '@/lib/data-root';
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
     provider: user.provider,
     subject: user.subject,
     likedProjects: likedSlugs,
+    role: roleForIdentity(user),
     providers,
   });
 }
