@@ -35,7 +35,7 @@ jobs:
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
 
-          tid='verify-shell-timeout-isolation-20261002-1315'
+          tid='verify-shell-timeout-isolation-20261002-1328'
           if f.get_receipt(tid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
@@ -49,13 +49,13 @@ jobs:
               if r is not None:
                   print('TIMEOUT_RECEIPT='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
                   assert r.get('ok') is False, r
-                  assert 'timed out' in str(r.get('error') or '').lower(), r
+                  assert 'process tree was terminated' in str(r.get('error') or '').lower(), r
                   break
               time.sleep(1)
           else:
               raise SystemExit('timeout_receipt_missing')
 
-          vid='verify-node-survives-shell-timeout-20261002-1315'
+          vid='verify-node-survives-shell-timeout-20261002-1328'
           if f.get_receipt(vid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1','task_id':vid,'action':'desktop.session.inspect',
