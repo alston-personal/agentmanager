@@ -144,6 +144,62 @@ def screenshot(workspace: Path, *, quality: int = 55) -> dict[str, Any]:
     return {'path':str(target),'mime_type':'image/bmp','bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'width':width,'height':height,'image_base64':base64.b64encode(raw).decode('ascii'),'session':info}
 
 
+
+def tile_windows(task: dict[str, Any]) -> dict[str, Any]:
+    _require_windows()
+    info = session_info()
+    if not info['interactive']:
+        raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
+    entries = list(task.get('windows') or [])
+    if not entries or len(entries) > 4:
+        raise ValueError('windows must contain 1..4 layout entries')
+    reserve_top = max(0, min(160, int(task.get('reserve_top_px') or 80)))
+    margin = max(0, min(40, int(task.get('margin_px') or 8)))
+    user32 = ctypes.windll.user32
+    screen_w = int(user32.GetSystemMetrics(0))
+    screen_h = int(user32.GetSystemMetrics(1))
+    usable_y = reserve_top + margin
+    usable_h = max(200, screen_h - usable_y - margin)
+
+    visible: list[tuple[int, str]] = []
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def callback(hwnd: int, _lparam: int) -> bool:
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = int(user32.GetWindowTextLengthW(hwnd))
+        if length <= 0:
+            return True
+        buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buf, length + 1)
+        title = buf.value.strip()
+        if title:
+            visible.append((int(hwnd), title))
+        return True
+    proc = EnumWindowsProc(callback)
+    user32.EnumWindows(proc, 0)
+
+    zones = {
+        'left': (margin, usable_y, max(300, screen_w * 2 // 5 - margin * 2), usable_h),
+        'right': (screen_w * 2 // 5 + margin, usable_y, max(400, screen_w * 3 // 5 - margin * 2), usable_h),
+        'full': (margin, usable_y, max(400, screen_w - margin * 2), usable_h),
+    }
+    moved: list[dict[str, Any]] = []
+    for entry in entries:
+        needle = str(entry.get('title_contains') or '').strip()
+        zone = str(entry.get('zone') or '').strip().lower()
+        if not needle or zone not in zones:
+            raise ValueError('each window requires title_contains and zone=left|right|full')
+        match = next(((hwnd, title) for hwnd, title in visible if needle.lower() in title.lower()), None)
+        if match is None:
+            moved.append({'title_contains': needle, 'zone': zone, 'matched': False})
+            continue
+        hwnd, title = match
+        x, y, w, h = zones[zone]
+        user32.ShowWindow(hwnd, 9)
+        ok = bool(user32.MoveWindow(hwnd, int(x), int(y), int(w), int(h), True))
+        moved.append({'title_contains': needle, 'zone': zone, 'matched': True, 'title': title[:200], 'hwnd': hwnd, 'moved': ok, 'rect': [int(x), int(y), int(w), int(h)]})
+    return {'session': info, 'screen': [screen_w, screen_h], 'reserve_top_px': reserve_top, 'windows': moved}
+
 def mouse(task: dict[str, Any]) -> dict[str, Any]:
     _require_windows()
     info = session_info()
