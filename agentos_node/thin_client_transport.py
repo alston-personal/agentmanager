@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -26,6 +27,26 @@ def _heartbeat_lease_path() -> Path:
 
 def _liveness_lease_path() -> Path:
     return _client_home() / 'daemon-liveness.json'
+
+
+def _receipt_spool_dir() -> Path:
+    return _client_home() / 'pending-receipts'
+
+
+def _spool_receipt(receipt: dict[str, Any]) -> Path:
+    task_id = str(receipt.get('task_id') or 'unknown')
+    digest = hashlib.sha256(task_id.encode('utf-8')).hexdigest()
+    directory = _receipt_spool_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f'{digest}.json'
+    tmp = target.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(receipt, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, target)
+    return target
 
 
 def _write_liveness_lease(config: 'ClientConfig') -> None:
@@ -242,12 +263,33 @@ class ThinClientTransport:
             raise RuntimeError('client is not enrolled')
         return self._request(self.config.one_url + '/v1/receipts', method='POST', body=receipt, token=self.config.node_token)
 
+    def _persist_and_submit_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
+        spool_path = _spool_receipt(receipt)
+        result = self.submit_receipt(receipt)
+        try:
+            spool_path.unlink()
+        except FileNotFoundError:
+            pass
+        return result
+
+    def _flush_spooled_receipts(self) -> int:
+        directory = _receipt_spool_dir()
+        if not directory.is_dir():
+            return 0
+        flushed = 0
+        for path in sorted(directory.glob('*.json')):
+            receipt = json.loads(path.read_text(encoding='utf-8'))
+            self.submit_receipt(receipt)
+            path.unlink()
+            flushed += 1
+        return flushed
+
     def run_once(self) -> list[dict[str, Any]]:
         self.heartbeat()
         receipts: list[dict[str, Any]] = []
         for task in self.pull_tasks():
             receipt = self.client.execute(task)
-            self.submit_receipt(receipt)
+            self._persist_and_submit_receipt(receipt)
             receipts.append(receipt)
         return receipts
 
@@ -289,10 +331,13 @@ class ThinClientTransport:
         heartbeat_thread.start()
         while True:
             try:
+                flushed = self._flush_spooled_receipts()
+                if flushed:
+                    print(f'[agentos-client] flushed_receipts={flushed}', flush=True)
                 receipts: list[dict[str, Any]] = []
                 for task in self.pull_tasks():
                     receipt = self.client.execute(task)
-                    self.submit_receipt(receipt)
+                    self._persist_and_submit_receipt(receipt)
                     receipts.append(receipt)
             except Exception as exc:
                 print(f'[agentos-client] transport error: {exc}', flush=True)
