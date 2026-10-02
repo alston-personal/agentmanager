@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.vopc5750-rescue-probe/v0.1",
+  "nonce": "rpc-management-20261002-1005",
+  "timeout_seconds": 30,
+  "powershell": "$ErrorActionPreference='Continue'; Write-Output ('PROBE_FROM='+$env:COMPUTERNAME); Write-Output '=== SCHTASK ==='; cmd.exe /c 'schtasks /Query /S VOPC5750 /TN \"AgentOS Thin Client\" /FO LIST /V'; Write-Output ('SCHTASKS_RC='+$LASTEXITCODE); Write-Output '=== SC SCHEDULE ==='; cmd.exe /c 'sc.exe \\\\VOPC5750 query schedule'; Write-Output ('SC_RC='+$LASTEXITCODE); Write-Output '=== CIM ==='; try { $opt=New-CimSessionOption -Protocol Dcom; $s=New-CimSession -ComputerName VOPC5750 -SessionOption $opt -OperationTimeoutSec 5 -ErrorAction Stop; $os=Get-CimInstance -CimSession $s -ClassName Win32_OperatingSystem -ErrorAction Stop; Write-Output ('CIM_OK='+$os.CSName+' '+$os.Version); Remove-CimSession $s } catch { Write-Output ('CIM_ERR='+$_.Exception.Message) }"
+}
