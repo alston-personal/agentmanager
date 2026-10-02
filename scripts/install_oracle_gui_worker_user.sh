@@ -115,11 +115,19 @@ ExecStart=$BIN/start-browser.sh
 Restart=always
 RestartSec=3
 # Browser work is expendable; it must never be able to consume the whole VM.
-MemoryHigh=25%
-MemoryMax=35%
-TasksMax=512
+# Do not use MemoryHigh here: sustained memory.high reclaim can put Chromium
+# renderers into mem_cgroup_handle_over_high and starve unrelated host services.
+MemoryHigh=infinity
+MemoryMax=4G
+MemoryOOMGroup=yes
+TasksMax=384
 CPUQuota=200%
 OOMPolicy=stop
+# Persistent profile survives process recycling; bound Chromium lifetime so a
+# long-lived renderer leak cannot accumulate for days.
+RuntimeMaxSec=12h
+TimeoutStopSec=20s
+KillMode=control-group
 
 [Install]
 WantedBy=default.target
