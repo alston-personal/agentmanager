@@ -35,6 +35,7 @@ def test_runner_window_catalog_contains_stable_public_intents():
     assert ("browser.gui", "smoke") in items
     assert ("social.runtime", "deploy") in items
     assert ("social.publish", "mio.approved") in items
+    assert ("persona.runtime", "oursong.activate") in items
 
 
 def test_gateway_exposes_runner_window_without_exposing_legacy_dispatch():
@@ -61,3 +62,18 @@ def test_dispatch_client_has_no_runner_or_worker_selector():
     assert "runner_window_dispatch=PASS" in text
     assert "oracle-gui" not in text
     assert "oracle-control" not in text
+
+
+def test_oursong_activation_maps_to_fixed_bootstrap_action():
+    intent, params = resolve_intent(
+        "persona.runtime",
+        "oursong.activate",
+        source_commit="b" * 40,
+        payload={},
+    )
+    assert intent.action == bc.ACTION_ACTIVATE_OURSONG_PERSONA
+    assert params == {"source_commit": "b" * 40}
+    assert public_intent_for_action(bc.ACTION_ACTIVATE_OURSONG_PERSONA) == {
+        "capability": "persona.runtime",
+        "operation": "oursong.activate",
+    }
