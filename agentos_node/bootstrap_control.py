@@ -210,14 +210,19 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         raise ValueError(f"request outside freshness window: age={age:.1f}s")
     info = path.stat()
     owner = pwd.getpwuid(info.st_uid).pw_name
-    if owner != REQUEST_OWNER:
-        raise ValueError(f"request owner must be {REQUEST_OWNER}: owner={owner}")
     mode = info.st_mode & 0o777
     if mode & 0o022:
         raise ValueError(f"request must not be group/world-writable: mode={mode:o}")
     authority = payload.get("authority") or {}
-    if authority.get("source") != "github-actions" or authority.get("target_user") != "ubuntu":
+    authority_source = str(authority.get("source") or "")
+    expected_owner = {
+        "github-actions": REQUEST_OWNER,
+        "realm-controller": "ubuntu",
+    }.get(authority_source)
+    if expected_owner is None or authority.get("target_user") != "ubuntu":
         raise ValueError("invalid authority envelope")
+    if owner != expected_owner:
+        raise ValueError(f"request owner mismatch for {authority_source}: owner={owner}")
     if authority.get("arbitrary_shell") is not False:
         raise ValueError("arbitrary shell is forbidden")
     return request_id, action, source_commit, (post_key if action == ACTION_PUBLISH_MIO_APPROVED else None)
