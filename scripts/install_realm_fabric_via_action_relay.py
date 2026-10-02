@@ -13,6 +13,7 @@ OUT = ROOT / '.agentos/evidence/realm-fabric-install-current.json'
 CLAIM_ACTION = 'agentos.realm-fabric.claim_deployment'
 INSTALL_ACTION = 'agentos.realm-fabric.install_release'
 STATUS_ACTION = 'agentos.realm-fabric.deployment_status'
+RELEASE_ACTION = 'agentos.realm-fabric.release_deployment'
 ADVANCE_ACTION = 'agentos.realm-fabric.advance_deployment'
 
 source_commit = (os.environ.get('AGENTOS_REALM_FABRIC_SOURCE_COMMIT') or '').strip().lower()
@@ -91,6 +92,27 @@ if claim.get('ok') is not True:
         and current_observed == current_desired
     )
     if same_owner_converged:
+        release_payload = client.submit(RELEASE_ACTION, {
+            'desired_core_commit': current_desired,
+            'lease_owner': lease_owner,
+            'deployment_generation': current_generation,
+        })
+        try:
+            release = wait_receipt(release_payload['capsule_id'])
+        except TimeoutError:
+            OUT.write_text(json.dumps({'ok': False, 'stage': 'release_receipt_timeout'}, indent=2) + '\n', encoding='utf-8')
+            raise SystemExit(5)
+        if release.get('ok') is not True:
+            OUT.write_text(json.dumps({
+                'ok': False,
+                'stage': 'release',
+                'source_commit': source_commit,
+                'release_receipt': release,
+                'claim_receipt': claim,
+            }, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+            print(OUT.read_text(encoding='utf-8'))
+            raise SystemExit(5)
+
         advance_payload = client.submit(ADVANCE_ACTION, {
             'current_desired_core_commit': current_desired,
             'next_desired_core_commit': source_commit,
@@ -108,6 +130,7 @@ if claim.get('ok') is not True:
                 'ok': False,
                 'stage': 'advance',
                 'source_commit': source_commit,
+                'release_receipt': release,
                 'advance_receipt': advance,
                 'claim_receipt': claim,
             }, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
@@ -117,6 +140,7 @@ if claim.get('ok') is not True:
         claim = {
             **advance,
             'action': ADVANCE_ACTION,
+            'release_receipt': release,
             'transitioned_from_claim': claim,
         }
     elif current_desired and current_desired != source_commit:
