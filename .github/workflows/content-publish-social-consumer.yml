@@ -53,20 +53,42 @@ jobs:
 
   bootstrap-live-account:
     if: github.event_name == 'push'
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 12
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    concurrency:
+      group: agentos-oracle-hosted-ingress
+      cancel-in-progress: false
     env:
       EVENT_COMMIT: ${{ github.sha }}
       SOURCE_COMMIT: ${{ github.sha }}
-      RELAY_ROOT: /home/ubuntu/agent-data/runtime/action-relay
       ACCOUNT_REF: oursong_alstonhuang
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve current compatible Core head
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Run live account reconciliation through bounded hosted ingress
         shell: bash
         run: |
           set -euo pipefail
+          ssh \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=25 \
+            -o ConnectionAttempts=3 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            sudo -n -u agentos-node env EVENT_COMMIT="$EVENT_COMMIT" SOURCE_COMMIT="$SOURCE_COMMIT" ACCOUNT_REF="$ACCOUNT_REF" RELAY_ROOT=/home/ubuntu/agent-data/runtime/action-relay PYTHONPATH=/home/ubuntu/agentmanager bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /home/ubuntu/agentmanager
+          test "$(id -un)" = "agentos-node"
+
           git fetch --no-tags origin core/integration
           current="$(git rev-parse FETCH_HEAD)"
           event="$EVENT_COMMIT"
@@ -87,15 +109,10 @@ jobs:
             }
             echo "content_social_event_superseded_compatibly=true"
           fi
-          echo "SOURCE_COMMIT=$current" >> "$GITHUB_ENV"
-          echo "content_social_source_commit=$current"
+          export SOURCE_COMMIT="$current"
+          echo "content_social_source_commit=$SOURCE_COMMIT"
 
-      - name: Converge exact Core generation
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(id -un)" = "agentos-node"
-          PYTHONPATH="$PWD" python3 - <<'PY'
+          python3 - <<'PY'
           import os,time
           from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
           sha=os.environ["SOURCE_COMMIT"]
@@ -118,13 +135,10 @@ jobs:
                   print("content_social_converge=PASS")
                   break
               time.sleep(1)
-          else: raise SystemExit("content_social_converge_timeout")
+          else:
+              raise SystemExit("content_social_converge_timeout")
           PY
 
-      - name: Wait for ubuntu-owned Action Relay reconcile timer
-        shell: bash
-        run: |
-          set -euo pipefail
           echo "action_relay_reconcile_trigger=ubuntu-owned-timer"
           for i in $(seq 1 420); do
             if python3 - "$SOURCE_COMMIT" <<'PY'
@@ -143,18 +157,16 @@ jobs:
           PY
             then
               echo "action_relay_generation=PASS"
-              exit 0
+              break
             fi
             sleep 1
+            if [ "$i" -eq 420 ]; then
+              echo "action_relay_generation=TIMEOUT" >&2
+              exit 1
+            fi
           done
-          echo "action_relay_generation=TIMEOUT" >&2
-          exit 1
 
-      - name: Bootstrap product-specific Threads binding from legacy ZeusWriter credential
-        shell: bash
-        run: |
-          set -euo pipefail
-          PYTHONPATH="$PWD" python3 - <<'PY'
+          python3 - <<'PY'
           import os,time
           from agentos_node.content_publish_social_action_relay import ContentPublishSocialDispatcher
           d=ContentPublishSocialDispatcher(os.environ["RELAY_ROOT"])
@@ -174,17 +186,9 @@ jobs:
                   print("content_social_bootstrap=PASS")
                   break
               time.sleep(1)
-          else: raise SystemExit("content_social_bootstrap_timeout")
-          PY
+          else:
+              raise SystemExit("content_social_bootstrap_timeout")
 
-      - name: Verify account through shared Social Runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          PYTHONPATH="$PWD" python3 - <<'PY'
-          import os,time
-          from agentos_node.content_publish_social_action_relay import ContentPublishSocialDispatcher
-          d=ContentPublishSocialDispatcher(os.environ["RELAY_ROOT"])
           s=d.submit_inspect(account_ref=os.environ["ACCOUNT_REF"]); deadline=time.time()+120
           print("content_social_inspect_task="+s["task_id"])
           while time.time()<deadline:
@@ -200,5 +204,8 @@ jobs:
                   print("content_social_account_inspect=PASS")
                   break
               time.sleep(1)
-          else: raise SystemExit("content_social_inspect_timeout")
+          else:
+              raise SystemExit("content_social_inspect_timeout")
           PY
+          REMOTE
+          echo "content_social_ingress=github-hosted"
