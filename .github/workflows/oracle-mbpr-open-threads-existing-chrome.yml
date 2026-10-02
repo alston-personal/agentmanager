@@ -38,7 +38,7 @@ jobs:
           from agent_core.realm_fabric import RealmFabricStore
 
           tid='open-threads-existing-chrome-'+str(int(time.time()))
-          code="import subprocess; r=subprocess.run([\'open\',\'-a\',\'Google Chrome\',\'https://www.threads.com/messages\']); print(\'OPEN_THREADS_EXISTING_CHROME_PASS\' if r.returncode==0 else \'OPEN_THREADS_EXISTING_CHROME_FAIL\'); raise SystemExit(r.returncode)"
+          code="import json,urllib.parse,urllib.request; u=\'https://www.threads.com/messages\'; endpoint=\'http://127.0.0.1:9222/json/new?\'+urllib.parse.quote(u,safe=\'\'); req=urllib.request.Request(endpoint,method=\'PUT\'); obj=json.load(urllib.request.urlopen(req,timeout=5)); ok=\'threads.com\' in str(obj.get(\'url\') or \'\'); print(\'OPEN_THREADS_EXISTING_CHROME_PASS\' if ok else \'OPEN_THREADS_EXISTING_CHROME_FAIL\'); raise SystemExit(0 if ok else 2)"
           task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
           store=RealmFabricStore()
           store.queue_task('mbpr',task)
