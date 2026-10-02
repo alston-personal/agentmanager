@@ -1,0 +1,64 @@
+name: Auth Pre-OAuth Smoke
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/auth-preoauth-smoke.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify auth start and Google redirect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          RESOLVE='--resolve studio.milkcat.org:443:127.0.0.1'
+          curl --noproxy '*' -k -sS -D /tmp/start-h -o /tmp/start-b -X POST --resolve studio.milkcat.org:443:127.0.0.1 "$BASE/dashboard/api/wardrobe/auth-handoff?action=start"
+          python3 - /tmp/start-b <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1]))
+          assert j.get('handoffId') and j.get('signInUrl')
+          assert '/dashboard/api/auth/signin/google?returnTo=' in j['signInUrl']
+          print('handoff_start=PASS')
+          print(j['signInUrl'])
+          PY
+          URL=$(python3 - /tmp/start-b <<'PY'
+          import json,sys; print(json.load(open(sys.argv[1]))['signInUrl'])
+          PY
+          )
+          curl --noproxy '*' -k -sS -D /tmp/signin-h -o /dev/null --resolve studio.milkcat.org:443:127.0.0.1 "$URL"
+          code=$(awk 'NR==1{print $2}' /tmp/signin-h)
+          echo "signin_http=$code"
+          test "$code" = 307
+          grep -i '^location: https://accounts.google.com/' /tmp/signin-h >/dev/null
+          echo 'google_redirect=PASS'
+          echo '=== set-cookie names/scopes ==='
+          grep -i '^set-cookie:' /tmp/signin-h | sed -E 's/(oauth_return_to=)[^;]+/\1<redacted>/'
+          if grep -i '^set-cookie: oauth_return_to=' /tmp/signin-h | grep -qi 'domain='; then
+            echo 'ERROR oauth_return_to still has Domain'; exit 1
+          fi
+          echo 'oauth_return_to_host_only=PASS'
+          REMOTE
+          cat "$out"
+          { echo '### Auth pre-OAuth smoke'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
