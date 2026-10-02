@@ -115,19 +115,19 @@ def _restart_user_service(unit: str, *, timeout: float = 20.0) -> dict[str, Any]
 
 def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
     site = params.get("site")
-    if site != "studio.milkcat.org": raise ValueError("site is not allowlisted")
-    repo = Path("/home/ubuntu/zeus-writer"); website = repo / "website"
-    if not (repo / ".git").exists() or not (website / "package.json").exists(): raise RuntimeError("allowlisted site checkout unavailable")
-    git = ["git", "-c", f"safe.directory={repo}", "-C", str(repo)]
-    dirty = subprocess.check_output(git + ["status", "--porcelain"], text=True).strip()
-    if dirty: raise RuntimeError("site checkout is dirty; refusing automated sync")
-    steps = [_run(git + ["fetch", "origin", "master"], cwd=repo)]
-    if steps[-1]["returncode"] != 0: return {"ok": False, "steps": steps}
-    steps.append(_run(git + ["merge", "--ff-only", "origin/master"], cwd=repo))
-    if steps[-1]["returncode"] != 0: return {"ok": False, "steps": steps}
-    steps.append(_run(["npm", "run", "build"], cwd=website, timeout=600))
-    ok = steps[-1]["returncode"] == 0 and (website / "dist" / "layout-lab" / "index.html").exists()
-    return {"ok": ok, "site": site, "artifact": str(website / "dist" / "layout-lab" / "index.html"), "steps": steps}
+    if site != "studio.milkcat.org":
+        raise ValueError("site is not allowlisted")
+    # Studio Web source authority moved to alston-personal/studio-web.
+    # Keep the legacy action name fail-closed so an old caller cannot silently
+    # fetch/build Zeus Writer and overwrite platform-owned website artifacts.
+    return {
+        "ok": False,
+        "site": site,
+        "blocked": True,
+        "reason": "legacy_zeus_writer_site_authority_retired",
+        "canonical_source_repository": "alston-personal/studio-web",
+        "required_path": "governed_studio_web_release",
+    }
 
 
 
