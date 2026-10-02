@@ -6,6 +6,9 @@ on:
       - 'install-agentos.ps1'
       - 'install-agentos.cmd'
       - 'scripts/install_thin_client_windows.ps1'
+      - 'scripts/windows/thin_client_watchdog.ps1'
+      - 'agentos_node/thin_client_transport.py'
+      - 'tests/test_thin_client.py'
       - '.github/workflows/windows-one-click-installer-ci.yml'
   push:
     branches:
@@ -30,7 +33,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1')
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/windows/thin_client_watchdog.ps1')
           foreach($file in $files) {
             $tokens = $null
             $errors = $null
@@ -69,6 +72,10 @@ jobs:
             'agentos-thin-client-hidden.ps1',
             "AgentOS Thin Client task still uses visible cmd.exe",
             "AgentOS Thin Client Watchdog",
+            "Independent watchdog: Installed (60s cadence)",
+            "thin_client_watchdog.ps1",
+            "Register-ScheduledTask -TaskName $watchdogTaskName",
+            "RepetitionInterval (New-TimeSpan -Minutes 1)",
             "AgentOS Thin Client Headless Switch",
             "Unregister-ScheduledTask"
           )) {
@@ -78,6 +85,7 @@ jobs:
           foreach($needle in @(
             'agentos_node/session_bridge.py',
             'agentos_node/agent_surfaces.py',
+            'scripts/windows/thin_client_watchdog.ps1',
             'Windows Store App Execution Alias is not accepted'
           )) {
             if(-not $low.Contains($needle)) { throw "missing low-level installer marker: $needle" }
@@ -86,4 +94,17 @@ jobs:
           if(-not $cmd.Contains('install-agentos.ps1')) { throw 'double-click bootstrap is not wired to install-agentos.ps1' }
           $successBlock = ($cmd -split ':fail',2)[0]
           if($successBlock -match '(?im)^pause\s*$') { throw 'successful installer path must not pause or leave a cmd window open' }
+
+          $watchdog = Get-Content -Raw scripts/windows/thin_client_watchdog.ps1
+          foreach($needle in @(
+            'HeartbeatStaleSeconds = 180',
+            'state\heartbeat.json',
+            'restart_requested',
+            'stale_client_restart',
+            'MinRestartSeconds = 45'
+          )) {
+            if(-not $watchdog.Contains($needle)) { throw "missing watchdog contract marker: $needle" }
+          }
+
+          python -m unittest tests.test_thin_client
           Write-Host 'windows_one_click_contract=PASS'
