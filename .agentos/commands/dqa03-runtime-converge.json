@@ -1,0 +1,8 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.runtime.converge",
+  "node_id": "dqa03backup",
+  "source_ref": "core/integration",
+  "source_commit": "d6378ca0521fedf12f3ca4feb7513e44052308a5",
+  "task_id": "dqa03-runtime-d6378ca0521f"
+}
