@@ -45,36 +45,9 @@ test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 python3 "$TICK" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT" --trigger oracle_local_timer
 python3 -m json.tool "$RECEIPT" >/dev/null
 
-# Core persona continuity must survive optional social subsystem failures.
-# Internal activity + persistence + public Observer projection are the hard path.
+# Core lane: internal PDCA + Observer only. Social cognition/execution runs on
+# the separate short-cycle social lane and cannot delay this heartbeat.
 python3 "$INTERNAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
-
-run_optional() {
-  local name="$1"; shift
-  if "$@"; then
-    echo "persona_optional_${name}=PASS"
-    return 0
-  fi
-  rc=$?
-  echo "persona_optional_${name}=DEGRADED rc=${rc}" >&2
-  return 0
-}
-
-run_optional reply_intent python3 "$REPLY_INTENT_GENERATOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
-run_optional post_intent python3 "$POST_INTENT_GENERATOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
-
-SOCIAL_RECEIPT="$DATA_REPO/$PERSONA_PATH/pdca/social_receipts/$(date -u +%Y%m%dT%H%M%SZ).json"
-mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
-if python3 "$SOCIAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"; then
-  python3 -m json.tool "$SOCIAL_RECEIPT" >/dev/null
-  echo "persona_optional_social_executor=PASS"
-else
-  rc=$?
-  rm -f "$SOCIAL_RECEIPT"
-  echo "persona_optional_social_executor=DEGRADED rc=$rc" >&2
-fi
-
-# Observer/public activity is independent from DM and social write availability.
 python3 "$PUBLIC_ACTIVITY_PUBLISHER" --persona-dir "$DATA_REPO/$PERSONA_PATH" --output "$PUBLIC_ACTIVITY_OUTPUT"
 
 cd "$DATA_REPO"
