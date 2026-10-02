@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "watchdog-hotfix-deploy-20261002-0058",
+  "nonce": "watchdog-long-task-proof-20261002-0059",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,8 +9,8 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$dst=Join-Path $env:LOCALAPPDATA 'AgentOS\\scripts\\thin_client_watchdog.ps1'; Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/fix/windows-thin-client-watchdog/scripts/windows/thin_client_watchdog.ps1' -OutFile $dst; Write-Output ('updated='+$dst); Get-ScheduledTask -TaskName 'AgentOS Thin Client' | Select-Object TaskName,State | ConvertTo-Json -Compress"
+      "Write-Output 'LONG_TASK_BEGIN'; Start-Sleep -Seconds 75; Write-Output 'LONG_TASK_PASS'"
     ],
-    "timeout_seconds": 30
+    "timeout_seconds": 100
   }
 }
