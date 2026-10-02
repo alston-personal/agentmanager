@@ -1,0 +1,85 @@
+name: Oursong Persona Activation
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/runner_window.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/activate_oursong_persona_user.sh'
+      - 'scripts/bootstrap_oursong_persona_user.py'
+      - 'scripts/install_persona_social_timer_user.sh'
+      - '.github/workflows/oursong-persona-activation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: oursong-persona-activation
+  cancel-in-progress: true
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          echo 'oursong_activation_oidc=PASS'
+
+      - name: Wait for Runner Window intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for _ in $(seq 1 90); do
+            code="$(curl -sS -o "$RUNNER_TEMP/window.json" -w '%{http_code}' --max-time 8               -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"               "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+            if [ "$code" = 200 ] && python3 - "$RUNNER_TEMP/window.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          intents=d.get('intents') or []
+          assert any(
+              x.get('capability')=='persona.runtime'
+              and x.get('operation')=='oursong.activate'
+              for x in intents
+          ), intents
+          PY
+            then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ok" = 1
+          echo 'oursong_activation_intent=READY'
+
+      - name: Activate oursong through Runner Window
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=300             bash scripts/agentos_dispatch.sh               persona.runtime oursong.activate "$GITHUB_SHA"               | tee "$RUNNER_TEMP/oursong-activation.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/oursong-activation.txt"
+          grep -q 'oursong_activate=PASS' "$RUNNER_TEMP/oursong-activation.txt"
+          echo 'oursong_persona_activation=PASS'
