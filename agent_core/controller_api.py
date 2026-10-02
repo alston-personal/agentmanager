@@ -208,17 +208,21 @@ class ControllerService:
     def _runtime_convergence_task(
         task_id: str,
         source_commit: str,
-        source_ref: str = 'feature/realm-node-fabric-readiness',
+        source_ref: str = 'core/integration',
         *,
         cwd: str,
+        platform_name: str,
     ) -> dict[str, Any]:
         if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
             raise ValueError('source_commit must be a 40-character lowercase git SHA')
-        if source_ref not in {'main', 'feature/realm-node-fabric-readiness'}:
+        if source_ref not in {'main', 'core/integration', 'feature/realm-node-fabric-readiness'}:
             raise ValueError('source_ref is not allowlisted')
         if not str(cwd or '').strip():
             raise ValueError('runtime convergence cwd is required')
-        script = r'''$ErrorActionPreference='Stop'
+
+        platform_name = str(platform_name or '').strip()
+        if platform_name == 'Windows':
+            script = r'''$ErrorActionPreference='Stop'
 $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
 $base='https://raw.githubusercontent.com/alston-personal/agentmanager/SOURCE_COMMIT'
 $files=@(
@@ -245,14 +249,10 @@ $prov=@{
   install_mode='controller-single-owner-converge'
 } | ConvertTo-Json
 [System.IO.File]::WriteAllText((Join-Path $install 'runtime-provenance.json'),$prov,(New-Object System.Text.UTF8Encoding($false)))
-
 $taskName='AgentOS Thin Client'
 $watchdogName='AgentOS Thin Client Watchdog'
 Get-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
 Get-ScheduledTask -TaskName $watchdogName -ErrorAction Stop | Out-Null
-
-# The task receipt must be submitted before the currently-serving daemon is
-# retired. A detached, bounded convergence script runs after this task returns.
 $convergeScript=Join-Path $install 'agentos-runtime-converge.ps1'
 $statusPath=Join-Path $install 'runtime-convergence.json'
 $body=@'
@@ -267,9 +267,7 @@ $old=@(Get-CimInstance Win32_Process | Where-Object {
   $_.Name -match '^pythonw?\.exe$' -and
   $_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)'
 })
-foreach($proc in $old){
-  Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
-}
+foreach($proc in $old){ Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 3
 Start-ScheduledTask -TaskName $taskName
 $state='Unknown'
@@ -305,17 +303,93 @@ Write-Output 'agentos_single_owner_convergence=DEFERRED'
 Write-Output 'agentos_watchdog_preserved=PASS'
 Write-Output 'agentos_source_commit=SOURCE_COMMIT'
 '''.replace('SOURCE_COMMIT', source_commit).replace('SOURCE_REF', source_ref)
-        return {
-            'schema': 'agentos.node-task/v0.1',
-            'task_id': task_id,
-            'action': 'shell.exec',
-            'controller_action': 'node.runtime.converge',
-            'executable': 'powershell',
-            'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
-            'cwd': str(cwd),
-            'timeout_seconds': 60,
-            'cognition_ids_used': [],
-        }
+            return {
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': task_id,
+                'action': 'shell.exec',
+                'controller_action': 'node.runtime.converge',
+                'executable': 'powershell',
+                'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
+                'cwd': str(cwd),
+                'timeout_seconds': 60,
+                'cognition_ids_used': [],
+            }
+
+        if platform_name == 'Linux':
+            script = r'''from __future__ import annotations
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+source_commit='SOURCE_COMMIT'
+source_ref='SOURCE_REF'
+cwd=Path.cwd()
+candidates=[cwd/'AgentOS', cwd]
+repo=next((p for p in candidates if (p/'.git').exists()), None)
+if repo is None:
+    raise SystemExit('agentos_repo_missing')
+subprocess.run(['git','-C',str(repo),'fetch','--no-tags','origin',source_commit],check=True,timeout=45)
+subprocess.run(['git','-C',str(repo),'checkout','--detach',source_commit],check=True,timeout=30)
+
+runtime=Path.home()/'.local/share/agentos'
+runtime.mkdir(parents=True,exist_ok=True)
+prov={
+  'schema':'agentos.thin-client-runtime/v0.1',
+  'source_ref':source_ref,
+  'source_commit':source_commit,
+  'installed_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+  'install_mode':'controller-single-owner-converge',
+}
+(runtime/'runtime-provenance.json').write_text(json.dumps(prov,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+
+helper=runtime/'agentos-runtime-converge-linux.py'
+status=runtime/'runtime-convergence.json'
+helper.write_text("""import json,subprocess,time
+from datetime import datetime,timezone
+from pathlib import Path
+time.sleep(10)
+unit='agentos-thin-client.service'
+subprocess.run(['systemctl','--user','restart',unit],check=True,timeout=20)
+state='unknown'
+for _ in range(12):
+    time.sleep(1)
+    p=subprocess.run(['systemctl','--user','is-active',unit],capture_output=True,text=True,timeout=5)
+    state=p.stdout.strip()
+    if p.returncode==0 and state=='active':
+        break
+result={
+  'schema':'agentos.node-runtime-convergence/v0.1',
+  'source_commit':'SOURCE_COMMIT',
+  'source_ref':'SOURCE_REF',
+  'thin_client_service_state':state,
+  'converged':state=='active',
+  'completed_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+}
+Path('STATUS_PATH').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\\n',encoding='utf-8')
+raise SystemExit(0 if result['converged'] else 4)
+""".replace('SOURCE_COMMIT',source_commit).replace('SOURCE_REF',source_ref).replace('STATUS_PATH',str(status)),encoding='utf-8')
+subprocess.Popen([sys.executable,str(helper)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True,close_fds=True)
+print('agentos_runtime_converge=PASS')
+print('agentos_single_owner_convergence=DEFERRED')
+print('agentos_source_commit='+source_commit)
+'''.replace('SOURCE_COMMIT', source_commit).replace('SOURCE_REF', source_ref)
+            return {
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': task_id,
+                'action': 'shell.exec',
+                'controller_action': 'node.runtime.converge',
+                'executable': 'python3',
+                'argv': ['-c', script],
+                'cwd': str(cwd),
+                'timeout_seconds': 90,
+                'cognition_ids_used': [],
+            }
+
+        raise ValueError(f'node runtime convergence unsupported on platform: {platform_name}')
 
     def rollout_runtime(self, request: dict[str, Any]) -> dict[str, Any]:
         source_commit = str(request.get('source_commit') or '').strip()
@@ -349,7 +423,10 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
             if existing is not None:
                 results.append({'node_id': node_id, 'task_id': task_id, 'state': existing.get('state'), 'reused': True})
                 continue
-            task = self._runtime_convergence_task(task_id, source_commit, source_ref, cwd=cwd)
+            task = self._runtime_convergence_task(
+                task_id, source_commit, source_ref, cwd=cwd,
+                platform_name=str(node.get('platform') or ''),
+            )
             queued = self.fabric.queue_task(node_id, task)
             results.append({'node_id': node_id, 'task_id': task_id, 'state': 'queued', 'queued_at': queued.get('queued_at'), 'reused': False, 'cwd': cwd})
         return {
@@ -431,6 +508,7 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
                 str(request.get('source_commit') or '').strip(),
                 str(request.get('source_ref') or 'feature/realm-node-fabric-readiness').strip(),
                 cwd=self._maintenance_cwd(node),
+                platform_name=str(node.get('platform') or ''),
             )
         else:
             task = {
