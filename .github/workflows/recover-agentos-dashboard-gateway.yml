@@ -1,0 +1,62 @@
+name: Recover AgentOS Dashboard Gateway
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/recover-agentos-dashboard-gateway.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Recover dashboard and verify gateway
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== BEFORE ==='
+          systemctl --user status agentos-dashboard.service --no-pager -l || true
+          ss -ltnp | grep ':3000' || true
+
+          systemctl --user restart agentos-dashboard.service
+
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard/api/agentos/v1/health >/tmp/dashboard-health.json 2>/dev/null; then
+              echo "dashboard_ready_after=${i}s"
+              cat /tmp/dashboard-health.json
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              systemctl --user status agentos-dashboard.service --no-pager -l || true
+              journalctl --user -u agentos-dashboard.service -n 120 --no-pager || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo '=== PUBLIC 20X ==='
+          for i in $(seq 1 20); do
+            code=$(curl -sS -o /tmp/public-health.json -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true)
+            body=$(tr '\n' ' ' </tmp/public-health.json | head -c 200)
+            echo "$i code=$code body=$body"
+            [ "$code" = "200" ] || exit 2
+            sleep 0.25
+          done
+
+          echo '=== AFTER ==='
+          systemctl --user status agentos-dashboard.service --no-pager -l
+          ss -ltnp | grep ':3000'
+          REMOTE
