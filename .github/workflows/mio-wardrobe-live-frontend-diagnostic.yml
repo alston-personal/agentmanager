@@ -37,6 +37,55 @@ jobs:
           grep -F 'milkcat.mio.wardrobe.runtime/v1' "$HTML" >/dev/null && echo runtime_state=present || echo runtime_state=missing
           grep -F 'milkcat.mio.pwaHandoff/v1' "$HTML" >/dev/null && echo pwa_handoff=present || echo pwa_handoff=missing
           grep -F "window.open('about:blank'" "$HTML" >/dev/null && echo sync_popup=present || echo sync_popup=missing
+          echo '=== handoff roundtrip ==='
+          LIVE_DASH="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          ADMIN=/home/ubuntu/.config/milkcat/admin-identities
+          JWT_SECRET_VALUE="$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          for raw in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line: continue
+              k,v=line.split('=',1)
+              if k.strip()=='JWT_SECRET':
+                  print(v.strip().strip('"').strip("'")); break
+          PY
+          )"
+          ADMIN_KEY="$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN" | head -n1 | tr -d '\r')"
+          export JWT_SECRET_VALUE ADMIN_KEY
+          TOKEN="$(cd "$LIVE_DASH" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          const key=process.env.ADMIN_KEY||'', secret=process.env.JWT_SECRET_VALUE||'';
+          let provider='',subject='',username='handoff-admin'; const marker=':username:';
+          if(key.includes(marker)){const i=key.indexOf(marker);provider=key.slice(0,i);username=key.slice(i+marker.length);subject='handoff-probe-subject';}
+          else {const i=key.indexOf(':'); if(i<1) process.exit(3); provider=key.slice(0,i); subject=key.slice(i+1);}
+          process.stdout.write(jwt.sign({username,provider,subject,exp:Math.floor(Date.now()/1000)+900},secret));
+          NODE
+          )"
+          unset JWT_SECRET_VALUE ADMIN_KEY
+          START=/tmp/mio-handoff-start.json
+          code="$(curl -sS -o "$START" -w '%{http_code}' -X POST 'http://127.0.0.1:3000/dashboard/api/wardrobe/auth-handoff?action=start')"
+          test "$code" = 200
+          HID="$(python3 - "$START" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8')); assert j.get('handoffId'); print(j['handoffId'])
+          PY
+          )"
+          code="$(curl -sS -o /tmp/mio-handoff-complete -w '%{http_code}' -H "Cookie: auth_token=$TOKEN" "http://127.0.0.1:3000/dashboard/api/wardrobe/auth-handoff?handoff=$HID")"
+          test "$code" = 200
+          code="$(curl -sS -D /tmp/mio-handoff-headers -o /tmp/mio-handoff-exchange -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data "{\"handoffId\":\"$HID\"}" 'http://127.0.0.1:3000/dashboard/api/wardrobe/auth-handoff?action=exchange')"
+          test "$code" = 200
+          grep -qi '^set-cookie: auth_token=' /tmp/mio-handoff-headers
+          COOKIE="$(awk 'BEGIN{IGNORECASE=1}/^set-cookie: auth_token=/{sub(/^set-cookie: /,""); split($0,a,";"); print a[1]; exit}' /tmp/mio-handoff-headers | tr -d '\r')"
+          test -n "$COOKIE"
+          curl -sS -H "Cookie: $COOKIE" 'http://127.0.0.1:3000/dashboard/api/auth/session' -o /tmp/mio-handoff-session
+          python3 - /tmp/mio-handoff-session <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert j.get('loggedIn') is True, j
+          assert j.get('role') == 'admin', j
+          print('handoff_roundtrip=PASS role=admin')
+          PY
           echo '=== image probe ==='
           URL='https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570'
           curl -sSIL --max-time 12 "$URL" | sed -n '1,12p' || true
