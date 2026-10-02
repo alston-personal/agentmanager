@@ -1,0 +1,30 @@
+name: Mio V5 Renderer Locate
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-v5-renderer-locate.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate renderer and garment pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          echo '=== tryon related files ===' >> "$out"
+          find . -type f \( -iname '*tryon*' -o -iname '*wardrobe*' -o -iname '*garment*' \) | sort | head -240 >> "$out"
+          echo '=== job mutation references ===' >> "$out"
+          grep -RInE "render_jobs/runtime|status.?=.?['\"]rendering|renderedLayers|providerOutputs|writeJob\(|quality" --exclude-dir=.git --exclude-dir=node_modules . | head -320 >> "$out" || true
+          cat "$out"
+          { echo '### Mio V5 renderer locate'; echo; echo '```text'; cat "$out"; echo '```'; } >/tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/diag.md
