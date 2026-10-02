@@ -1,0 +1,88 @@
+name: Oracle ONE Break Glass Repair
+
+on:
+  push:
+    branches:
+      - fix/one-controller-ingress
+    paths:
+      - '.agentos/commands/one-break-glass-repair.json'
+      - '.github/workflows/oracle-one-break-glass-repair.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-one-break-glass-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inspect and repair local ONE services without SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+
+          echo '=== preflight services ==='
+          systemctl --user show agentos-realm-fabric.service -p ActiveState -p SubState -p MainPID --no-pager || true
+          systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID --no-pager || true
+          ss -ltnp 2>/dev/null | grep -E ':3000|:8780' || true
+
+          health() {
+            local url="$1"
+            local expect="$2"
+            local body=/tmp/agentos-break-glass-body
+            local code
+            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 4 "$url" || true)
+            echo "probe=$url http=$code prefix=$(head -c 220 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ')"
+            [ "$code" = "$expect" ]
+          }
+
+          if ! health 'http://127.0.0.1:8780/v1/health' 200; then
+            echo 'repair_realm=START'
+            systemctl --user restart agentos-realm-fabric.service
+            for _ in $(seq 1 20); do
+              sleep 1
+              health 'http://127.0.0.1:8780/v1/health' 200 && break
+            done
+          fi
+          health 'http://127.0.0.1:8780/v1/health' 200
+
+          if ! health 'http://127.0.0.1:3000/dashboard/api/agentos/v1/health' 200; then
+            echo 'repair_dashboard=START'
+            systemctl --user restart agentos-dashboard.service
+            for _ in $(seq 1 30); do
+              sleep 1
+              health 'http://127.0.0.1:3000/dashboard/api/agentos/v1/health' 200 && break
+            done
+          fi
+          health 'http://127.0.0.1:3000/dashboard/api/agentos/v1/health' 200
+
+          echo '=== postflight services ==='
+          systemctl --user is-active agentos-realm-fabric.service
+          systemctl --user is-active agentos-dashboard.service
+          ss -ltnp 2>/dev/null | grep -E ':3000|:8780'
+          echo 'oracle_one_local_repair=PASS'
+
+      - name: Verify public ONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          body=/tmp/agentos-public-one-health
+          for _ in $(seq 1 12); do
+            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 6 'https://studio.milkcat.org/dashboard/api/agentos/v1/health' || true)
+            echo "public_one_http=$code prefix=$(head -c 220 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ')"
+            if [ "$code" = 200 ] && grep -q 'agentos.one-health/v0.1' "$body"; then
+              echo 'public_one_health=PASS'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'public_one_health=FAIL'
+          exit 6
