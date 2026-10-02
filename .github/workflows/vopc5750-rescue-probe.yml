@@ -1,0 +1,85 @@
+name: VOPC5750 Rescue Probe
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.agentos/commands/vopc5750-rescue-probe.json'
+
+permissions:
+  contents: read
+
+jobs:
+  rescue-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Dispatch rescue probe through Realm
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(python3 - <<'PY'
+          import base64, pathlib
+          p=pathlib.Path('.agentos/commands/vopc5750-rescue-probe.json').read_bytes()
+          print(base64.b64encode(p).decode())
+          PY
+          )"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$payload" <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          PAYLOAD_B64="$1" python3 - <<'PY'
+          import base64, json, os, time
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          cmd=json.loads(base64.b64decode(os.environ['PAYLOAD_B64']).decode('utf-8'))
+          if cmd.get('schema')!='agentos.vopc5750-rescue-probe/v0.1':
+              raise SystemExit('invalid_schema')
+          node_id='VO10005870'
+          nodes=NodeRegistry().node_map().get('nodes') or []
+          node=next((n for n in nodes if str(n.get('node_id') or '')==node_id),None)
+          if not node or str(node.get('effective_status') or node.get('status') or '')!='online':
+              raise SystemExit('rescue_node_not_online')
+          if 'shell.exec' not in set(node.get('capabilities') or []):
+              raise SystemExit('rescue_node_shell_missing')
+          task={
+              'schema':'agentos.node-task/v0.1',
+              'task_id':'vopc5750-rescue-'+str(cmd['nonce']),
+              'action':'shell.exec',
+              'executable':'powershell',
+              'argv':['-NoProfile','-NonInteractive','-Command',cmd['powershell']],
+              'timeout_seconds':int(cmd.get('timeout_seconds') or 30),
+              'cwd':r'C:\Users\alston.huang\AgentOS',
+              'cognition_ids_used':['recovery://vopc5750/20261002'],
+          }
+          fabric=RealmFabricStore()
+          if fabric.get_receipt(task['task_id']) is None:
+              fabric.queue_task(node_id,task)
+              print('queued=PASS',flush=True)
+          deadline=time.monotonic()+120
+          receipt=None
+          while time.monotonic()<deadline:
+              receipt=fabric.get_receipt(task['task_id'])
+              if receipt is not None:
+                  break
+              time.sleep(2)
+          if receipt is None:
+              raise SystemExit('receipt_timeout')
+          print('RECEIPT_JSON='+json.dumps(receipt,ensure_ascii=False,separators=(',',':')))
+          if receipt.get('ok') is not True:
+              raise SystemExit('task_failed:'+str(receipt.get('error') or 'unknown'))
+          if int(receipt.get('returncode') or 0)!=0:
+              raise SystemExit('shell_failed_rc:'+str(receipt.get('returncode'))+':'+str(receipt.get('stderr') or '')[-1000:])
+          PY
+          REMOTE
