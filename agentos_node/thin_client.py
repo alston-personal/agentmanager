@@ -15,6 +15,7 @@ import urllib.request
 import socket
 
 from agentos_node import interactive_desktop
+from agentos_node import desktop_demo
 from agentos_node.agent_surfaces import discover_surfaces
 from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
@@ -150,6 +151,7 @@ class ThinClient:
             caps.extend([
                 'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
                 'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
+                'desktop.windows.tile', 'desktop.demo.start', 'desktop.demo.stage', 'desktop.demo.stop',
             ])
         elif platform.system() == 'Darwin':
             caps.extend(['desktop.open_url', 'node.runtime.converge'])
@@ -297,6 +299,22 @@ class ThinClient:
             elif action == 'desktop.screenshot':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
                 result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
+            elif action == 'desktop.windows.tile':
+                result = interactive_desktop.tile_windows(task)
+            elif action == 'desktop.demo.start':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
+                result = desktop_demo.start(
+                    workspace,
+                    label=str(task.get('label') or 'AgentOS Demo'),
+                    stage=str(task.get('stage') or 'Starting'),
+                    max_seconds=int(task.get('max_seconds') or 900),
+                )
+            elif action == 'desktop.demo.stage':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
+                result = desktop_demo.set_stage(workspace, str(task.get('stage') or ''))
+            elif action == 'desktop.demo.stop':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
+                result = desktop_demo.stop(workspace, final_stage=str(task.get('final_stage') or 'Verified'))
             elif action == 'desktop.mouse':
                 result = interactive_desktop.mouse(task)
             elif action == 'desktop.keyboard':
@@ -457,11 +475,42 @@ class ThinClient:
         if self.policy.readable_roots and not self.policy.can_read(cwd):
             raise PermissionError(f'cwd outside readable roots: {cwd}')
         timeout = min(int(task.get('timeout_seconds') or self.policy.max_timeout_seconds), self.policy.max_timeout_seconds)
-        completed = subprocess.run([resolved, *argv], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False)
+        if platform.system() == 'Windows':
+            creationflags = int(getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+            proc = subprocess.Popen(
+                [resolved, *argv],
+                cwd=str(cwd),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=creationflags,
+            )
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+                returncode = int(proc.returncode or 0)
+            except subprocess.TimeoutExpired:
+                # Kill the complete Windows process tree. Some GUI/UIA providers
+                # can leave descendants alive after the direct child is killed,
+                # which otherwise wedges the persistent Thin Client daemon.
+                subprocess.run(
+                    ['taskkill', '/PID', str(proc.pid), '/T', '/F'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                except Exception:
+                    stdout, stderr = '', ''
+                raise TimeoutError(f'shell.exec timed out after {timeout}s and process tree was terminated')
+        else:
+            completed = subprocess.run([resolved, *argv], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False)
+            returncode, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
         return {
-            'returncode': completed.returncode,
-            'stdout': completed.stdout[-30000:],
-            'stderr': completed.stderr[-10000:],
+            'returncode': returncode,
+            'stdout': stdout[-30000:],
+            'stderr': stderr[-10000:],
             'execution': {'executable': resolved, 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': timeout},
         }
 
