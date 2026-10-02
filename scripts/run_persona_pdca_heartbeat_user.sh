@@ -8,6 +8,8 @@ SOCIAL_EXECUTOR="${AGENTOS_PERSONA_SOCIAL_EXECUTOR:-$HOME/.local/lib/agentos/per
 INTERNAL_EXECUTOR="${AGENTOS_PERSONA_INTERNAL_EXECUTOR:-$HOME/.local/lib/agentos/persona_internal_activity_executor.py}"
 REPLY_INTENT_GENERATOR="${AGENTOS_PERSONA_REPLY_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_reply_intent_generator.py}"
 POST_INTENT_GENERATOR="${AGENTOS_PERSONA_POST_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_post_intent_generator.py}"
+PUBLIC_ACTIVITY_PUBLISHER="${AGENTOS_MIO_PUBLIC_ACTIVITY_PUBLISHER:-$HOME/.local/lib/agentos/publish_mio_public_activity.py}"
+PUBLIC_ACTIVITY_OUTPUT="${AGENTOS_MIO_PUBLIC_ACTIVITY_OUTPUT:-/home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json}"
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
 exec 9>"$LOCK"
@@ -21,6 +23,8 @@ test -f "$SOCIAL_EXECUTOR"
 test -f "$INTERNAL_EXECUTOR"
 test -f "$REPLY_INTENT_GENERATOR"
 test -f "$POST_INTENT_GENERATOR"
+test -f "$PUBLIC_ACTIVITY_PUBLISHER"
+mkdir -p "$(dirname "$PUBLIC_ACTIVITY_OUTPUT")"
 command -v gh >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth status >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth setup-git >/dev/null
