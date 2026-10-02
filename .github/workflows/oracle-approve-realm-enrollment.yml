@@ -2,6 +2,7 @@ name: Oracle Realm Enrollment Control
 
 on:
   push:
+    branches: [main]
     paths:
       - '.agentos/commands/realm-enrollment-approval.json'
       - '.agentos/commands/participant-enrollment-command.json'
@@ -15,7 +16,7 @@ concurrency:
 
 jobs:
   approve:
-    if: github.actor == 'alstonhuang' && github.ref == 'refs/heads/main'
+    if: github.actor == 'alstonhuang'
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 4
     steps:
@@ -168,22 +169,15 @@ jobs:
           print('user_code='+str(r.get('user_code')))
           PY
 
-      - name: Publish non-secret enrollment evidence
-        if: always() && github.ref == 'refs/heads/main'
+      - name: Report non-secret enrollment result
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .agentos/evidence
-          if [ -f /tmp/realm-enrollment-approval-result.json ]; then
-            cp /tmp/realm-enrollment-approval-result.json .agentos/evidence/realm-enrollment-approval-current.json
-          fi
           if [ -f /tmp/participant-enrollment-public-result.json ]; then
-            cp /tmp/participant-enrollment-public-result.json .agentos/evidence/participant-enrollment-request-current.json
+            cat /tmp/participant-enrollment-public-result.json
+          elif [ -f /tmp/realm-enrollment-approval-result.json ]; then
+            cat /tmp/realm-enrollment-approval-result.json
+          else
+            echo '{"ok":false,"status":"no_result"}'
           fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/realm-enrollment-approval-current.json .agentos/evidence/participant-enrollment-request-current.json 2>/dev/null || true
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): record enrollment control result'
-          git pull --rebase origin main
-          git push origin HEAD:main
