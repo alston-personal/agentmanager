@@ -122,3 +122,14 @@ jobs:
 
           echo "oracle_runner_inspect=PASS"
           REMOTE
+          rc=$?
+          set -e
+          cat "$LOG"
+          if [ "$rc" -ne 0 ]; then
+            echo "oracle_runner_host_reachable=false"
+            echo "oracle_runner_inspect_status=HOST_UNREACHABLE"
+            echo "oracle_runner_ssh_exit_code=$rc"
+            exit 0
+          fi
+          echo "oracle_runner_host_reachable=true"
+          echo "oracle_runner_inspect_status=INSPECTED"
