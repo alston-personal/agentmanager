@@ -1,0 +1,96 @@
+name: ONE Controller Ingress Acceptance
+
+on:
+  push:
+    branches:
+      - fix/one-controller-ingress
+    paths:
+      - 'dashboard/app/api/agentos/**'
+      - '.github/workflows/one-controller-ingress-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ONE_BASE: https://studio.milkcat.org/dashboard/api/agentos
+      CONTROLLER_TOKEN: ${{ secrets.AGENTOS_CONTROLLER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify controller routes are not gateway-blocked
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in             /v1/controller/nodes             /v1/controller/scheduler             /v1/controller/nodes/dqa03backup
+          do
+            body="$RUNNER_TEMP/body.json"
+            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 8 "$ONE_BASE$path" || true)
+            echo "controller_route=$path http=$code prefix=$(head -c 160 "$body" | tr '\n' ' ')"
+            if grep -q 'Realm gateway route not allowlisted' "$body"; then
+              echo "gateway_allowlist=FAIL"
+              exit 3
+            fi
+          done
+
+      - name: Verify authenticated Node status and discovery round trip
+        if: env.CONTROLLER_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $CONTROLLER_TOKEN")
+
+          node_body="$RUNNER_TEMP/node.json"
+          code=$(curl -sS -o "$node_body" -w '%{http_code}' --max-time 8 "${auth[@]}" "$ONE_BASE/v1/controller/nodes/dqa03backup" || true)
+          test "$code" = 200
+          python3 - "$node_body" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          n=d.get('node') or {}
+          print('node_status='+str(n.get('status')))
+          print('heartbeat_age_seconds='+str(n.get('heartbeat_age_seconds')))
+          assert n.get('node_id')=='dqa03backup',n
+          assert n.get('status')=='online',n
+          PY
+
+          discover_body="$RUNNER_TEMP/discover.json"
+          code=$(curl -sS -o "$discover_body" -w '%{http_code}' --max-time 8 "${auth[@]}"             -H 'Content-Type: application/json' -d '{}'             "$ONE_BASE/v1/controller/nodes/dqa03backup/discover" || true)
+          test "$code" = 202
+          task_id=$(python3 - "$discover_body" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert d.get('ok') is True,d
+          print(d['task_id'])
+          PY
+          )
+          echo "discover_task_id=$task_id"
+
+          for _ in $(seq 1 30); do
+            receipt_body="$RUNNER_TEMP/receipt.json"
+            code=$(curl -sS -o "$receipt_body" -w '%{http_code}' --max-time 8 "${auth[@]}"               "$ONE_BASE/v1/controller/receipts/$task_id" || true)
+            if [ "$code" = 200 ]; then
+              python3 - "$receipt_body" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          r=d.get('receipt') or {}
+          assert r.get('ok') is True,r
+          print('controller_roundtrip=PASS')
+          print('receipt_node='+str(r.get('node_id')))
+          PY
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "receipt_timeout=FAIL"
+          exit 4
+
+      - name: Require controller credential wiring
+        if: env.CONTROLLER_TOKEN == ''
+        shell: bash
+        run: |
+          echo "AGENTOS_CONTROLLER_TOKEN secret is not configured"
+          exit 5
