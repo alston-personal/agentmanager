@@ -176,6 +176,14 @@ jobs:
           if [ -L "$CURRENT_LINK" ]; then
             PREVIOUS_RELEASE="$(readlink -f "$CURRENT_LINK")"
           fi
+          if [ -z "$PREVIOUS_RELEASE" ]; then
+            FALLBACK_RELEASE="$RELEASE_ROOT/$SHARED_SHA"
+            if [ ! -e "$FALLBACK_RELEASE/.git" ]; then
+              git worktree add --detach "$FALLBACK_RELEASE" "$SHARED_SHA"
+            fi
+            [ -e "$FALLBACK_RELEASE/.env" ] || ln -s "$ROOT/.env" "$FALLBACK_RELEASE/.env"
+            PREVIOUS_RELEASE="$FALLBACK_RELEASE"
+          fi
 
           rollback() {
             rc=$?
@@ -187,6 +195,9 @@ jobs:
               if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
                 [ -e "$PREVIOUS_RELEASE/.env" ] || ln -s "$ROOT/.env" "$PREVIOUS_RELEASE/.env" || true
                 PYTHONPATH="$PREVIOUS_RELEASE" python3 "$PREVIOUS_RELEASE/scripts/install_services.py" --project-root "$PREVIOUS_RELEASE" --data-root "$DATA_ROOT" || true
+                if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
+                  (cd "$PREVIOUS_RELEASE" && bash scripts/install_realm_fabric_user.sh || true)
+                fi
                 ln -sfn "$PREVIOUS_RELEASE" "$CURRENT_LINK" || true
               fi
               curl -fsS http://127.0.0.1:8765/health || true
@@ -248,7 +259,7 @@ jobs:
           echo
 
           if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-            bash "$RELEASE/scripts/bootstrap_runtime_converger_oracle.sh" "$REF" "$TARGET_SHA"
+            (cd "$RELEASE" && bash scripts/bootstrap_runtime_converger_oracle.sh "$REF" "$TARGET_SHA")
           fi
 
           ln -sfn "$RELEASE" "$CURRENT_LINK"
