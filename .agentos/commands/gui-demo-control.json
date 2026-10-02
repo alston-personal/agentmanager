@@ -1,15 +1,13 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "install-watchdog-20261002-0042",
+  "nonce": "deploy-recorder-hardening-20261002-0043",
   "action": "shell.exec",
   "payload": {
-    "executable": "powershell",
+    "executable": "python",
     "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$root=Join-Path $env:LOCALAPPDATA 'AgentOS\\scripts'; New-Item -ItemType Directory -Force -Path $root|Out-Null; $src='https://raw.githubusercontent.com/alston-personal/agentmanager/fix/windows-thin-client-watchdog/scripts/windows/thin_client_watchdog.ps1'; $dst=Join-Path $root 'thin_client_watchdog.ps1'; Invoke-WebRequest -UseBasicParsing -Uri $src -OutFile $dst; $a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"'+$dst+'\" -TaskName \"AgentOS Thin Client\"'); $t1=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME; $t2=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1); $p=New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\\$env:USERNAME\" -LogonType Interactive -RunLevel Limited; $s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable; Register-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -Action $a -Trigger @($t1,$t2) -Principal $p -Settings $s -Force|Out-Null; Start-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog'; Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog'|Select-Object TaskName,State|ConvertTo-Json -Compress"
+      "-c",
+      "import urllib.request,pathlib; base='https://raw.githubusercontent.com/alston-personal/agentmanager/feat/desktop-demo-recorder/agentos_node/'; root=pathlib.Path(r'C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\AgentOS\\\\agentos_node'); [(root/n).write_bytes(urllib.request.urlopen(base+n,timeout=20).read()) for n in ['desktop_demo.py','thin_client.py']]; print([(n,(root/n).stat().st_size) for n in ['desktop_demo.py','thin_client.py']])"
     ],
     "timeout_seconds": 60
   }
