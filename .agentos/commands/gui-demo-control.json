@@ -3,6 +3,7 @@
   "node_id": "VO10005870",
   "nonce": "e2e3-benchmark-run-20261002-0052",
   "action": "shell.exec",
+  "receipt_only": true,
   "payload": {
     "executable": "powershell",
     "argv": [
