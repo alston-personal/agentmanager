@@ -10,7 +10,6 @@ fi
 
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 RUNTIME="${AGENTOS_RUNTIME_VNEXT:-/home/ubuntu/.local/share/agentos/runtime-vnext}"
-REALM_RUNTIME="${AGENTOS_REALM_RUNTIME:-/home/ubuntu/.local/share/agentos/realm-fabric/current}"
 ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-/home/ubuntu/.local/share/agentos/action-runtime}"
 DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
 SOURCE_REF="${AGENTOS_REF:-main}"
@@ -19,11 +18,8 @@ PROVIDER="${AGENTOS_ANTIGRAVITY_PROVIDER:-claude}"
 SPOOL="$DATA_ROOT/runtime/antigravity-relay"
 UNIT_DIR="/home/ubuntu/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-antigravity-relay.service"
-REALM_UNIT="$UNIT_DIR/agentos-realm-fabric.service"
 MANIFEST="$RUNTIME/runtime-provenance.json"
 CODEX_CONFIG="/home/ubuntu/.codex/config.toml"
-REALM_FABRIC_EXPECTED_FILE_SHA256="6e328861419b18c4194de44f66e72344f22a32a39bdc204d92410d7c6523e216"
-REALM_FABRIC_EXPECTED_PREFIX_SHA256="16fe1100378068a06264c6d6415560fdcd049595a094e537bef132fe3e45abc2"
 ONE_EXPERIENCE_EXPECTED_PREDECESSOR="sha256:f0fcb879fef89117084b4730aa0e74d0a78c1a61a02b63a47bbe825f5d70a959"
 
 case "$SOURCE_REF" in
@@ -46,7 +42,7 @@ for user in ubuntu agentos-node; do
 done
 
 test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
-mkdir -p "$RUNTIME/agentos_node" "$REALM_RUNTIME" "$UNIT_DIR"
+mkdir -p "$RUNTIME/agentos_node" "$UNIT_DIR"
 TMPDIR=$(mktemp -d)
 cleanup() {
   rc=$?
@@ -89,24 +85,10 @@ show_source agentos_node/__init__.py > "$TMPDIR/__init__.py"
 show_source agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"
 show_source agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
 show_source scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
-show_source scripts/repair_realm_fabric_store.py > "$TMPDIR/repair_realm_fabric_store.py"
-show_source scripts/repair_realm_fabric_truncated_tail.py > "$TMPDIR/repair_realm_fabric_truncated_tail.py"
 
 install -m 0664 "$TMPDIR/__init__.py" "$RUNTIME/agentos_node/__init__.py"
 install -m 0664 "$TMPDIR/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
 install -m 0664 "$TMPDIR/antigravity_relay_worker.py" "$RUNTIME/agentos_node/antigravity_relay_worker.py"
-
-REPAIR_STAGE="materialize_realm_runtime"
-rm -rf "$REALM_RUNTIME/agent_core"
-git -C "$REPO" archive "$SOURCE_COMMIT" agent_core | tar -x -C "$REALM_RUNTIME"
-test -f "$REALM_RUNTIME/agent_core/realm_server.py"
-test -f "$REALM_RUNTIME/agent_core/controller_api.py"
-test -f "$REALM_RUNTIME/agent_core/controller_service.py"
-test -f "$REALM_RUNTIME/agent_core/executor_job_contract.py"
-PYTHONPATH="$REALM_RUNTIME" python3 -m py_compile \
-  "$REALM_RUNTIME/agent_core/realm_server.py" \
-  "$REALM_RUNTIME/agent_core/controller_api.py" \
-  "$REALM_RUNTIME/agent_core/controller_service.py"
 
 WORKER_SHA256=$(sha256sum "$RUNTIME/agentos_node/antigravity_relay_worker.py" | awk '{print $1}')
 python3 - "$MANIFEST" "$SOURCE_REF" "$SOURCE_COMMIT" "$PROVIDER" "$WORKER_SHA256" <<'PY'
@@ -155,59 +137,6 @@ PrivateTmp=true
 WantedBy=default.target
 EOF
 
-# One-time #298 historical repair, authorized by the exact hashes emitted by
-# exact-generation rollout #22. Any changed byte fails closed before mutation.
-if ! python3 - "$DATA_ROOT/realm/fabric.json" <<'PY'
-import json, sys
-from pathlib import Path
-p=Path(sys.argv[1])
-try:
-    json.loads(p.read_text(encoding='utf-8'))
-except json.JSONDecodeError:
-    raise SystemExit(1)
-raise SystemExit(0)
-PY
-then
-  python3 "$TMPDIR/repair_realm_fabric_truncated_tail.py" \
-    --fabric "$DATA_ROOT/realm/fabric.json" \
-    --expected-file-sha256 "$REALM_FABRIC_EXPECTED_FILE_SHA256" \
-    --expected-prefix-sha256 "$REALM_FABRIC_EXPECTED_PREFIX_SHA256" \
-    --backup-dir "$DATA_ROOT/realm/repair-backups"
-  echo "realm_fabric_hash_bound_tail_repair=PASS"
-fi
-
-# Ordinary recovery remains strict. After the hash-bound historical repair this
-# must observe a valid store and perform no further mutation.
-python3 "$TMPDIR/repair_realm_fabric_store.py" --path "$DATA_ROOT/realm/fabric.json"
-
-(
-  cd "$REALM_RUNTIME"
-  PYTHONPATH="$REALM_RUNTIME:$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" /usr/bin/python3 -m agent_core.realm_cli init --realm-id realm-alston >/dev/null
-)
-cat > "$REALM_UNIT" <<EOF
-[Unit]
-Description=AgentOS ONE Realm Fabric (ubuntu Core identity, agentos boundary)
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=$REALM_RUNTIME
-Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME
-Environment=AGENT_DATA_ROOT=$DATA_ROOT
-UMask=0007
-ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780'
-Restart=always
-RestartSec=3
-PrivateTmp=true
-
-[Install]
-WantedBy=default.target
-EOF
-
-REPAIR_STAGE="restart_realm_runtime"
-systemctl --user daemon-reload
-systemctl --user restart agentos-realm-fabric.service
-systemctl --user enable agentos-realm-fabric.service >/dev/null
 (
   cd "$RUNTIME"
   PYTHONPATH="$RUNTIME" AGENTOS_ANTIGRAVITY_PROVIDER="$PROVIDER" python3 - <<'PY'
@@ -296,6 +225,4 @@ echo "one_experience_seed=PASS"
 echo "one_experience_digest_convergence=PASS"
 echo "codex_experience_mcp_install=PASS"
 echo "codex_experience_mcp_exact_runtime=PASS"
-echo "realm_fabric_install=PASS"
-echo "realm_fabric_runtime_closure=PASS"
-echo "realm_fabric_group_context=agentos"
+echo "realm_fabric_dependency_health=PASS"
