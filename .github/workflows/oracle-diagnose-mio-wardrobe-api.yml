@@ -153,6 +153,36 @@ jobs:
             head -c 500 /tmp/mio-auth-signin-body | tr '\n' ' '; echo
           fi
 
+          echo "=== recent PWA handoff state ==="
+          python3 - <<'PY'
+          import json, pathlib, datetime
+          root=pathlib.Path('/home/ubuntu/agent-data/auth/pwa-handoffs')
+          rows=[]
+          if root.exists():
+              for p in root.glob('*.json'):
+                  try:
+                      j=json.loads(p.read_text(encoding='utf-8'))
+                  except Exception:
+                      continue
+                  rows.append((j.get('createdAt',''), {
+                      'createdAt': j.get('createdAt'),
+                      'expiresAt': j.get('expiresAt'),
+                      'status': j.get('status'),
+                      'hasAuthToken': bool(j.get('authToken')),
+                  }))
+          for _,row in sorted(rows, reverse=True)[:12]:
+              print('pwa_handoff_state='+json.dumps(row,ensure_ascii=False))
+          print('pwa_handoff_count='+str(len(rows)))
+          PY
+
+          echo "=== recent Dashboard auth errors ==="
+          for log in /home/ubuntu/.pm2/logs/agentos-dashboard-error.log /home/ubuntu/.pm2/logs/agentos-dashboard-out.log; do
+            test -f "$log" || continue
+            echo "dashboard_log=$(basename "$log")"
+            tail -n 500 "$log" | grep -E 'OAuth callback error|Sign-in redirect error|handoff|auth-handoff' | tail -n 80 | \
+              sed -E 's/(code|state|token|auth_token|handoff)=([^&[:space:]]+)/\1=<redacted>/g' || true
+          done
+
           echo "=== auth session ==="
           code="$(curl --noproxy '*' -k -sS -o /tmp/mio-auth-session-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
             https://studio.milkcat.org/dashboard/api/auth/session || true)"
