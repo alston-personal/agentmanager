@@ -20,6 +20,17 @@ if [ -f "$HEARTBEAT" ]; then
   else
     echo "persona_pdca_heartbeat_legacy_mio_markers=0"
   fi
+  if grep -Eiq 'oursong|oursong_alstonhuang|oursong-alstonhuang' "$HEARTBEAT"; then
+    echo "persona_pdca_heartbeat_oursong_markers=1"
+  else
+    echo "persona_pdca_heartbeat_oursong_markers=0"
+  fi
+  if grep -Eiq 'my-agent-data|agent-data/personas|personas/' "$HEARTBEAT"; then
+    echo "persona_pdca_heartbeat_data_path_markers=1"
+  else
+    echo "persona_pdca_heartbeat_data_path_markers=0"
+  fi
+  strings "$HEARTBEAT" 2>/dev/null | grep -Eo '/home/ubuntu/[^[:space:]"'"']*personas[^[:space:]"'"']*|[^[:space:]"'"']*my-agent-data[^[:space:]"'"']*|[^[:space:]"'"']*agent-data/personas[^[:space:]"'"']*' | sed 's#^/home/ubuntu/#%h/#' | sort -u | head -n 8 | sed 's/^/persona_pdca_heartbeat_path_hint=/' || true
 else
   echo "persona_pdca_heartbeat_present=0"
   echo "persona_pdca_heartbeat_generic_markers=0"
