@@ -329,6 +329,10 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'studio_commit'}
         elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
             allowed_params |= {'node_id', 'candidate_commit'}
+        elif action == bootstrap_control.ACTION_EXECUTOR_JOB_SUBMIT:
+            allowed_params |= {'job_type'}
+        elif action == bootstrap_control.ACTION_EXECUTOR_JOB_INSPECT:
+            allowed_params |= {'job_id'}
         unknown = set(params) - allowed_params
         if unknown:
             raise ValueError(f'unsupported scheduler params: {sorted(unknown)}')
@@ -448,6 +452,17 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'UnitFileState=',
                     'LastTriggerUSec=',
                     'NextElapseUSecRealtime=',
+                )
+            elif action == bootstrap_control.ACTION_REPAIR_TRANSPORT:
+                safe_prefixes = (
+                    'antigravity_repair_stage=',
+                    'antigravity_repair=',
+                    'agentos_source_ref=',
+                    'agentos_source_commit=',
+                    'action_relay_install=',
+                    'action_relay_source_generation_pinned=',
+                    'realm_fabric_install=',
+                    'realm_fabric_runtime_closure=',
                 )
             elif action == bootstrap_control.ACTION_RECONCILE_CONTENT_SOCIAL:
                 safe_prefixes = (
