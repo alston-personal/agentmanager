@@ -27,7 +27,7 @@ def _default_profile_root() -> Path:
     override = os.environ.get("AGENTOS_EXECUTOR_PROFILE_ROOT")
     if override:
         return Path(override)
-    return Path(__file__).resolve().parents[1] / ".agentos" / "executors"
+    return Path(__file__).resolve().parent / "executor_profiles"
 
 
 def _require_string(profile: dict[str, Any], key: str) -> str:
