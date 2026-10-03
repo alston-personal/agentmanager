@@ -66,10 +66,10 @@ rollback() {
 trap rollback EXIT
 
 # Materialize an immutable scheduler generation. It contains agentos_node,
-# agent_core, and runtime_core because build-role executor providers are loaded
-# from this same exact release and their registered modules have fixed
-# runtime_core dependencies.
-git -C "$REPO" archive "$SOURCE_COMMIT" agentos_node agent_core runtime_core | tar -x -C "$STAGE"
+# agent_core, runtime_core, and the one fixed social-runtime config module needed
+# by the registered Action Relay extensions imported by the build-role dispatcher.
+# Keep this dependency closure explicit instead of archiving arbitrary scripts.
+git -C "$REPO" archive "$SOURCE_COMMIT"   agentos_node   agent_core   runtime_core   scripts/social_runtime_local_config.py   | tar -x -C "$STAGE"
 PYTHONPATH="$STAGE" /usr/bin/python3 -m py_compile   "$STAGE/agentos_node/bootstrap_control.py"   "$STAGE/agentos_node/bootstrap_scheduler.py"   "$STAGE/agent_core/realm_fabric.py"
 
 PYTHONPATH="$STAGE" /usr/bin/python3 - <<'PY'
