@@ -157,11 +157,14 @@ class NodeRegistry:
             raise ValueError('manifest belongs to a different Realm')
 
         inventory = manifest.get('surface_inventory') or {}
+        executor_inventory = manifest.get('executor_inventory') or {}
         adapters = manifest.get('adapters') or []
         runtime = manifest.get('runtime')
         workspace_roots = manifest.get('workspace_roots')
         if not isinstance(inventory, dict):
             raise ValueError('surface_inventory must be an object')
+        if not isinstance(executor_inventory, dict):
+            raise ValueError('executor_inventory must be an object')
         if not isinstance(adapters, list) or any(not isinstance(item, dict) for item in adapters):
             raise ValueError('adapters must be an array of objects')
         if runtime is not None and not isinstance(runtime, dict):
@@ -180,6 +183,7 @@ class NodeRegistry:
             'capabilities': sorted(set(manifest.get('capabilities') or [])),
             'tool_presence': dict(manifest.get('tool_presence') or {}),
             'surface_inventory': dict(inventory),
+            'executor_inventory': dict(executor_inventory),
             'adapters': [dict(item) for item in adapters],
             'runtime': dict(runtime) if isinstance(runtime, dict) else dict(existing.get('runtime') or {}),
             # workspace_root_authority_v1: persist the Node's own policy projection so
