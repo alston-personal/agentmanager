@@ -246,7 +246,7 @@ class ThinClient:
                 result = {'executor_inventory': discover_executor_inventory()}
             elif action == 'agent.executor.reconcile':
                 from agentos_node.executor_reconcile import reconcile_executor_adoption
-                result = reconcile_executor_adoption()
+                result = reconcile_executor_adoption(node_id=self.identity.node_id)
             elif action == 'process.inspect':
                 result = self._inspect_processes(task)
             elif action == 'node.ssh.inspect':
