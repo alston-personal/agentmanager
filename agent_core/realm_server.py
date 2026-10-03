@@ -456,6 +456,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             elif action == bootstrap_control.ACTION_REPAIR_TRANSPORT:
                 safe_prefixes = (
                     'antigravity_repair_stage=',
+                    'antigravity_repair_exit=',
                     'antigravity_repair=',
                     'agentos_source_ref=',
                     'agentos_source_commit=',
@@ -479,6 +480,16 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'content_social_reconcile=',
                 )
             evidence: list[str] = []
+            failed_steps: list[dict[str, Any]] = []
+            for step in raw.get('steps') or []:
+                if not isinstance(step, dict):
+                    continue
+                returncode = step.get('returncode')
+                if isinstance(returncode, int) and returncode != 0:
+                    failed_steps.append({
+                        'step': str(step.get('step') or 'unknown')[:80],
+                        'returncode': returncode,
+                    })
             if safe_prefixes:
                 for step in raw.get('steps') or []:
                     if not isinstance(step, dict):
@@ -501,6 +512,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'completed_at': raw.get('completed_at'),
                     'scheduler': raw.get('scheduler'),
                     'evidence': evidence[:32],
+                    'failed_steps': failed_steps[:8],
                 },
             }
         request_path = requests / f'{request_id}.request.json'
