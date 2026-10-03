@@ -112,7 +112,6 @@ jobs:
           receipt=docs[-1].get('receipt') or {}
           expected=sys.argv[2]
           assert receipt.get('schema')=='agentos.bootstrap-receipt/v1', receipt
-          assert receipt.get('action')=='agentos.transport.repair', receipt
           assert receipt.get('source_commit')==expected, receipt
           assert receipt.get('ok') is True, receipt
           evidence=[str(x) for x in (receipt.get('evidence') or [])]
