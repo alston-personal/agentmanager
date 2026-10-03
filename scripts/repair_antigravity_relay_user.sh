@@ -2,7 +2,6 @@
 set -euo pipefail
 
 REPAIR_STAGE="init"
-trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "antigravity_repair_stage=$REPAIR_STAGE"; fi' EXIT
 
 if [ "$(id -un)" != "ubuntu" ]; then
   echo "ERROR: run as ubuntu" >&2
@@ -49,7 +48,15 @@ done
 test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
 mkdir -p "$RUNTIME/agentos_node" "$REALM_RUNTIME" "$UNIT_DIR"
 TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+cleanup() {
+  rc=$?
+  rm -rf "$TMPDIR"
+  if [ "$rc" -ne 0 ]; then
+    echo "antigravity_repair_stage=$REPAIR_STAGE"
+    echo "antigravity_repair_exit=$rc"
+  fi
+}
+trap cleanup EXIT
 
 # The governed ref proves lane membership; the exact commit determines bytes.
 # Snapshot the ref first, then fetch the requested generation itself. A parallel
