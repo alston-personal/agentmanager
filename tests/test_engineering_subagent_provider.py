@@ -66,6 +66,43 @@ def test_engineering_smoke_is_read_only():
     assert spec.capability == "agentos.engineering.probe"
 
 
+def test_failed_engineering_job_projects_only_safe_executor_diagnostics(tmp_path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    class FakeClient:
+        def __init__(self, root):
+            pass
+        def submit(self, **kwargs):
+            return {"capsule_id": "relay-test"}
+        def receipt(self, capsule_id):
+            return {
+                "schema": "agentos.antigravity-receipt/v1",
+                "ok": False,
+                "provider": "claude",
+                "returncode": 7,
+                "timed_out": False,
+                "stdout": "private output",
+                "stderr": "private error",
+            }
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+    monkeypatch.setattr(provider, "AntigravityRelayClient", FakeClient)
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.subagent.smoke"),
+        relay_root=tmp_path / "relay",
+        workspace=workspace,
+        timeout_seconds=0.1,
+    )
+    assert result["classification"] == "ENGINEERING_EXECUTOR_NONZERO"
+    assert result["executor_provider"] == "claude"
+    assert result["executor_returncode"] == 7
+    assert result["executor_timed_out"] is False
+    assert "stdout" not in result
+    assert "stderr" not in result
+
+
 def test_relay_failure_classification_is_bounded():
     from agentos_node.engineering_subagent_provider import _relay_failure_classification
 
