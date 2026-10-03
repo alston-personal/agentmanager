@@ -469,8 +469,8 @@ def test_relay_timeout_preserves_selected_provider(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(
         provider,
-        "_run_executor_health",
-        lambda _workspace: {
+        "_read_executor_health",
+        lambda: {
             "verdict": "PASS",
             "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
             "executor_available": True,
