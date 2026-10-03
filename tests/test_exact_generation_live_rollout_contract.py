@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPAIR = ROOT / "scripts" / "repair_antigravity_relay_user.sh"
 BOOTSTRAP = ROOT / "agentos_node" / "bootstrap_control.py"
+ACTION_INSTALLER = ROOT / "scripts" / "install_action_relay_user.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "oracle-exact-generation-executor-job-rollout.yml"
 LEGACY_BOOTSTRAP_WORKFLOW = ROOT / ".github" / "workflows" / "oracle-bootstrap-transport-control-plane.yml"
 
@@ -25,6 +26,16 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertIn('exact runtime source commit is not in governed ref', text)
         self.assertNotIn('runtime source generation mismatch: ref=$SOURCE_REF observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT', text)
         self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', text)
+
+    def test_action_relay_installer_accepts_exact_ancestor_after_lane_advances(self):
+        text = _text(ACTION_INSTALLER)
+        self.assertIn('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"', text)
+        self.assertIn('SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)', text)
+        self.assertIn('git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"', text)
+        self.assertIn('git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"', text)
+        self.assertIn('Action Relay exact source fetch mismatch', text)
+        self.assertIn('Action Relay source commit is not in governed ref', text)
+        self.assertNotIn('Action Relay source generation mismatch: expected=', text)
 
     def test_bootstrap_exact_repair_owns_integration_lane_selection(self):
         text = _text(BOOTSTRAP)
