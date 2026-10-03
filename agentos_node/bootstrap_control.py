@@ -20,6 +20,7 @@ ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
 ACTION_RELAY_STATUS = "agentos.relay.status"
 ACTION_SCHEDULER_STATUS = "agentos.scheduler.status"
+ACTION_RELAY_RESTART = "agentos.relay.restart"
 ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
@@ -67,6 +68,7 @@ ALLOWED_ACTIONS = {
     ACTION_RUNNER_WINDOW_PROBE,
     ACTION_RELAY_STATUS,
     ACTION_SCHEDULER_STATUS,
+    ACTION_RELAY_RESTART,
     ACTION_NODE_TRANSACTIONAL_OTA,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
@@ -369,6 +371,36 @@ def _run_canonical_script(
         tmp.unlink(missing_ok=True)
 
 
+def _restart_antigravity_relay() -> dict[str, Any]:
+    from agentos_node.action_relay import ActionRelayClient
+
+    client = ActionRelayClient("/home/ubuntu/agent-data/runtime/action-relay")
+    capsule = client.submit("agentos.antigravity.restart", {"service": "agentos-antigravity-relay"})
+    capsule_id = str(capsule.get("capsule_id") or "")
+    deadline = time.monotonic() + 60.0
+    receipt = None
+    while time.monotonic() < deadline:
+        receipt = client.receipt(capsule_id)
+        if receipt is not None:
+            break
+        time.sleep(0.5)
+    ok = bool(receipt and receipt.get("ok") is True and receipt.get("service") == "agentos-antigravity-relay.service")
+    markers = [
+        "relay_restart_service=agentos-antigravity-relay.service",
+        "relay_restart=" + ("PASS" if ok else "FAIL"),
+    ]
+    return {
+        "ok": ok,
+        "source_commit": None,
+        "steps": [{
+            "step": "relay_restart",
+            "returncode": 0 if ok else 1,
+            "stdout": "\n".join(markers) + "\n",
+            "stderr": "",
+        }],
+    }
+
+
 def _scheduler_status_probe() -> dict[str, Any]:
     root = _root()
     requests, receipts, rejected = _ensure(root)
@@ -449,6 +481,10 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return result
     if action == ACTION_SCHEDULER_STATUS:
         result = _scheduler_status_probe()
+        result["source_commit"] = source_commit
+        return result
+    if action == ACTION_RELAY_RESTART:
+        result = _restart_antigravity_relay()
         result["source_commit"] = source_commit
         return result
     if action == ACTION_NODE_TRANSACTIONAL_OTA:

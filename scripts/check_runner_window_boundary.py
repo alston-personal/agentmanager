@@ -5,6 +5,7 @@ WORKFLOWS = Path(".github/workflows")
 GATEWAY_WORKFLOW = Path(".github/workflows/oracle-deploy-realm-gateway.yml")
 GATEWAY_SCRIPT = Path("scripts/deploy_realm_gateway_user.sh")
 DISPATCH_CLIENT = Path("scripts/agentos_dispatch.sh")
+RUNNER_WINDOW = Path("agent_core/runner_window.py")
 
 
 def main() -> int:
@@ -33,6 +34,15 @@ def main() -> int:
     for name, ok in inspect_retry_required.items():
         if not ok:
             violations.append((str(DISPATCH_CLIENT), name))
+
+    runner_window = RUNNER_WINDOW.read_text(encoding="utf-8", errors="replace")
+    relay_restart_required = {
+        "relay_restart_fixed_intent": 'RunnerWindowIntent("agentos.relay", "restart", bc.ACTION_RELAY_RESTART)' in runner_window,
+        "relay_restart_no_payload": 'RunnerWindowIntent("agentos.relay", "restart", bc.ACTION_RELAY_RESTART, frozenset(' not in runner_window,
+    }
+    for name, ok in relay_restart_required.items():
+        if not ok:
+            violations.append((str(RUNNER_WINDOW), name))
 
     gateway_workflow = GATEWAY_WORKFLOW.read_text(encoding="utf-8", errors="replace")
     gateway_script = GATEWAY_SCRIPT.read_text(encoding="utf-8", errors="replace")

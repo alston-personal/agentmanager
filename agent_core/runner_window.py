@@ -18,6 +18,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("agentos.dispatch", "probe", bc.ACTION_RUNNER_WINDOW_PROBE),
     RunnerWindowIntent("agentos.relay", "status", bc.ACTION_RELAY_STATUS),
     RunnerWindowIntent("agentos.scheduler", "status", bc.ACTION_SCHEDULER_STATUS),
+    RunnerWindowIntent("agentos.relay", "restart", bc.ACTION_RELAY_RESTART),
     RunnerWindowIntent("agentos.runtime", "repair", bc.ACTION_REPAIR_TRANSPORT),
     RunnerWindowIntent("agentos.executor", "job.submit", bc.ACTION_EXECUTOR_JOB_SUBMIT, frozenset({"job_type"})),
     RunnerWindowIntent("agentos.executor", "job.inspect", bc.ACTION_EXECUTOR_JOB_INSPECT, frozenset({"job_id"})),
