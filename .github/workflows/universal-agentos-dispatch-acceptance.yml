@@ -2,7 +2,7 @@ name: Universal AgentOS Dispatch Acceptance
 
 on:
   push:
-    branches: [feat/universal-agentos-dispatch-20261003, core/integration]
+    branches: [core/integration]
     paths:
       - '.github/workflows/agentos-dispatch.yml'
       - '.github/workflows/universal-agentos-dispatch-acceptance.yml'
