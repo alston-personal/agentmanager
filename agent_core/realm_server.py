@@ -432,6 +432,10 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 )
             elif action == bootstrap_control.ACTION_PROBE_PERSONA_PDCA_RUNTIME:
                 safe_prefixes = (
+                    'persona_pdca_heartbeat_present=',
+                    'persona_pdca_heartbeat_sha256=',
+                    'persona_pdca_heartbeat_generic_markers=',
+                    'persona_pdca_heartbeat_legacy_mio_markers=',
                     'persona_pdca_runtime_unit=',
                     'persona_pdca_runtime_directive=',
                     'persona_pdca_runtime_file=',
