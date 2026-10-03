@@ -1,0 +1,63 @@
+name: Layout Lab Production Watchdog
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: layoutlab-production-watchdog
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe canonical Layout Lab identity
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org/layout-lab
+
+          probe() {
+            rm -f /tmp/layoutlab-watch-ui /tmp/layoutlab-watch-editor
+            curl -fsS --max-time 15 --retry 2 --retry-all-errors "$BASE/" -o /tmp/layoutlab-watch-ui
+            curl -fsS --max-time 15 --retry 2 --retry-all-errors "$BASE/layoutlib-editor-v0.7.js?v=0.7.9" -o /tmp/layoutlab-watch-editor
+            grep -q '<div class="badge" data-release="0.7.9">v0.7.9</div>' /tmp/layoutlab-watch-ui
+            grep -q 'deleteWallsById' /tmp/layoutlab-watch-editor
+          }
+
+          if probe; then
+            echo 'healthy=true' >> "$GITHUB_OUTPUT"
+            echo 'layoutlab_watchdog=healthy'
+            exit 0
+          fi
+
+          # Avoid repairing on a single transient edge/network failure.
+          sleep 10
+          if probe; then
+            echo 'healthy=true' >> "$GITHUB_OUTPUT"
+            echo 'layoutlab_watchdog=healthy_after_retry'
+            exit 0
+          fi
+
+          echo 'healthy=false' >> "$GITHUB_OUTPUT"
+          echo 'layoutlab_watchdog=repair_required'
+
+      - name: Dispatch canonical repair
+        if: steps.probe.outputs.healthy != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run oracle-release-layoutlab-v079-canonical.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo 'layoutlab_watchdog=canonical_repair_dispatched'
