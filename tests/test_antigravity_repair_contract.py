@@ -28,20 +28,20 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertNotIn('runtime source generation mismatch: ref=$SOURCE_REF observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT', text)
         self.assertNotIn('origin/main:', text)
 
-    def test_realm_runtime_materializes_complete_exact_core_package(self):
+    def test_transport_repair_does_not_mutate_realm_exact_release(self):
         text = _text(SCRIPT)
-        self.assertIn('git -C "$REPO" archive "$SOURCE_COMMIT" agent_core | tar -x -C "$REALM_RUNTIME"', text)
-        self.assertIn('rm -rf "$REALM_RUNTIME/agent_core"', text)
-        self.assertIn('test -f "$REALM_RUNTIME/agent_core/controller_api.py"', text)
-        self.assertIn('test -f "$REALM_RUNTIME/agent_core/controller_service.py"', text)
-        self.assertIn('test -f "$REALM_RUNTIME/agent_core/executor_job_contract.py"', text)
-        self.assertNotIn('show_source agent_core/node_bootstrap.py', text)
-        self.assertIn('realm_fabric_runtime_closure=PASS', text)
+        self.assertNotIn('REALM_RUNTIME=', text)
+        self.assertNotIn('REALM_UNIT=', text)
+        self.assertNotIn('git -C "$REPO" archive "$SOURCE_COMMIT" agent_core', text)
+        self.assertNotIn('rm -rf "$REALM_RUNTIME/agent_core"', text)
+        self.assertNotIn('systemctl --user restart agentos-realm-fabric.service', text)
+        self.assertNotIn('repair_realm_fabric_store.py', text)
+        self.assertNotIn('repair_realm_fabric_truncated_tail.py', text)
+        self.assertIn('realm_fabric_dependency_health=PASS', text)
 
-    def test_realm_runtime_can_lazy_load_same_generation_action_runtime(self):
+    def test_action_runtime_stays_bound_to_same_immutable_generation(self):
         text = _text(SCRIPT)
         self.assertIn('ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-/home/ubuntu/.local/share/agentos/action-runtime}"', text)
-        self.assertIn('Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME', text)
         self.assertIn('AGENTOS_ACTION_RUNTIME_ROOT="$ACTION_RUNTIME"', text)
         self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', text)
 
@@ -51,15 +51,6 @@ class AntigravityRepairContractTests(unittest.TestCase):
         unit_section = text.split('cat > "$UNIT" <<EOF', 1)[1].split('EOF', 1)[0]
         self.assertNotIn('NoNewPrivileges=true', unit_section)
         self.assertIn('UMask=0007', unit_section)
-
-    def test_realm_boundary_uses_authorized_agentos_group_for_bounded_executor_dispatch(self):
-        text = _text(SCRIPT)
-        realm_section = text.split('cat > "$REALM_UNIT" <<EOF', 1)[1].split('EOF', 1)[0]
-        self.assertIn("ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780'", realm_section)
-        self.assertIn('Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME', realm_section)
-        self.assertIn('UMask=0007', realm_section)
-        self.assertNotIn('NoNewPrivileges=true', realm_section)
-        self.assertIn('realm_fabric_group_context=agentos', text)
 
     def test_relay_provider_is_explicit_allowlisted_and_not_capsule_controlled(self):
         text = _text(SCRIPT)
