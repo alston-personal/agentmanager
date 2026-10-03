@@ -110,11 +110,17 @@ def plan_executor_onboarding(
     state = _load_state(target)
     intents = dict(state.get("intents") or {})
 
-    provider_states = {
-        str(item.get("executor_id") or ""): str(item.get("state") or "")
-        for item in (adoption.get("executors") or [])
-        if isinstance(item, dict)
-    }
+    provider_states: dict[str, str] = {}
+    provider_registered: dict[str, bool] = {}
+    for item in adoption.get("executors") or []:
+        if not isinstance(item, dict):
+            continue
+        state = str(item.get("state") or "")
+        registered = bool(item.get("adapter_registered"))
+        for key in (str(item.get("executor_id") or "").strip(), str(item.get("provider_id") or "").strip()):
+            if key:
+                provider_states[key] = state
+                provider_registered[key] = registered
 
     candidates = classify_surface_candidates(
         node_id=node_id,
@@ -142,6 +148,10 @@ def plan_executor_onboarding(
         provider_hint = str(candidate["provider_hint"])
         known_state = provider_states.get(provider_hint)
         if known_state == "READY":
+            continue
+        if candidate["profile_known"] and provider_registered.get(provider_hint) and known_state not in {None, "", "REGISTRATION_REQUIRED"}:
+            # A known, registered provider that is AUTH_REQUIRED/UNHEALTHY is
+            # a health/remediation problem, not an integration-code problem.
             continue
 
         intent = {
