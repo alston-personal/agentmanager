@@ -54,7 +54,34 @@ PY
 
 SUBMIT="$(mktemp)"
 trap 'rm -f "$SUBMIT"' EXIT
-CODE="$(curl -sS -o "$SUBMIT" -w '%{http_code}' --max-time 15   -H "Authorization: Bearer $TOKEN"   -H 'Content-Type: application/json'   -d "$BODY" "$BASE/v1/dispatch")"
+
+submit_attempts=1
+if [ "$CAPABILITY" = "agentos.executor" ] && [ "$OPERATION" = "job.inspect" ]; then
+  # job.inspect is a bounded read-only status query. Retrying its Runner Window
+  # request creation is replay-safe; mutating/general operations remain single-shot.
+  submit_attempts=4
+fi
+
+CODE=""
+for attempt in $(seq 1 "$submit_attempts"); do
+  CODE="$(curl -sS -o "$SUBMIT" -w '%{http_code}' --max-time 15 \
+    -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' \
+    -d "$BODY" "$BASE/v1/dispatch" || true)"
+  if [ "$CODE" = 202 ]; then
+    break
+  fi
+  transient=0
+  case "$CODE" in
+    429|502|503|504) transient=1 ;;
+  esac
+  if [ "$attempt" -lt "$submit_attempts" ] && [ "$transient" = 1 ]; then
+    echo "runner_window_submit_retry=$attempt http=$CODE" >&2
+    sleep 1
+    continue
+  fi
+  break
+done
 cat "$SUBMIT"; echo
 [ "$CODE" = 202 ] || { echo "runner_window_submit_http=$CODE" >&2; exit 3; }
 
