@@ -12,6 +12,7 @@ on:
       - 'agentos_node/engineering_subagent_provider.py'
       - 'agentos_node/executor_provider_registry.py'
       - 'agentos_node/executor_provider_adapters.py'
+      - 'agentos_node/executor_reconcile.py'
       - 'agentos_node/antigravity_relay_worker.py'
       - '.agentos/executors/**'
       - 'agentos_node/issue117_experience_provider.py'
@@ -47,7 +48,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/core/integration'
           printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
-          python3 -m py_compile             agent_core/executor_job_contract.py             agentos_node/executor_job_adapter.py             agentos_node/executor_job_action_relay.py             agentos_node/engineering_subagent_provider.py
+          python3 -m py_compile             agent_core/executor_job_contract.py             agentos_node/executor_job_adapter.py             agentos_node/executor_job_action_relay.py             agentos_node/engineering_subagent_provider.py             agentos_node/executor_reconcile.py
           bash -n scripts/repair_antigravity_relay_user.sh
           bash -n scripts/install_action_relay_user.sh
 
