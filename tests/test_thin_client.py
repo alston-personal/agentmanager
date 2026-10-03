@@ -39,6 +39,40 @@ class TestThinClient(unittest.TestCase):
             self.assertTrue(read['ok'])
             self.assertEqual(read['content_utf8'], 'hello ONE')
 
+    def test_manifest_and_actions_expose_fast_executor_inventory(self):
+        from unittest import mock
+
+        inventory = {
+            'schema': 'agentos.executor-inventory/v0.2',
+            'executors': [{
+                'executor_id': 'claude-code',
+                'state': 'DISCOVERED',
+                'health_deferred': True,
+                'routable': False,
+            }],
+        }
+        client = ThinClient(
+            NodeIdentity('realm-test', 'client-executor-01'),
+            ThinClientPolicy(),
+        )
+        with mock.patch(
+            'agentos_node.executor_reconcile.discover_executor_inventory',
+            return_value=inventory,
+        ) as discover:
+            manifest = client.capability_manifest()
+            receipt = client.execute({
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': 'executor-discover',
+                'action': 'agent.executor.discover',
+            })
+        self.assertIn('agent.executor.discover', manifest['capabilities'])
+        self.assertIn('agent.executor.reconcile', manifest['capabilities'])
+        self.assertEqual(manifest['executor_inventory'], inventory)
+        self.assertTrue(receipt['ok'])
+        self.assertEqual(receipt['executor_inventory'], inventory)
+        for call in discover.call_args_list:
+            self.assertEqual(call.kwargs.get('probe_health'), False)
+
     def test_shell_requires_allowlist(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
