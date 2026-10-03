@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentos.executor-provider-profile/v0.1",
+  "title": "AgentOS Executor Provider Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "executor_id",
+    "provider_id",
+    "executor_class",
+    "modes",
+    "capabilities",
+    "discovery",
+    "readiness",
+    "invocation",
+    "cancellation",
+    "concurrency",
+    "receipt",
+    "smoke",
+    "adoption",
+    "implementation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "agentos.executor-provider-profile/v0.1"
+    },
+    "executor_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executor_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "owner": {
+      "type": "string"
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "provider_owned_allowlists_only",
+        "credential_access"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "provider_owned_allowlists_only": {
+          "const": true
+        },
+        "credential_access": {
+          "const": false
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dimensions",
+        "ready_requires"
+      ],
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "installed",
+              "reachable",
+              "authorized",
+              "routable",
+              "healthy"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "ready_requires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "installed",
+              "reachable",
+              "authorized",
+              "routable",
+              "healthy"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bounded_semantic_requests_only",
+        "caller_supplied_executable",
+        "caller_supplied_argv",
+        "caller_supplied_env"
+      ],
+      "properties": {
+        "bounded_semantic_requests_only": {
+          "const": true
+        },
+        "caller_supplied_executable": {
+          "const": false
+        },
+        "caller_supplied_argv": {
+          "const": false
+        },
+        "caller_supplied_env": {
+          "const": false
+        }
+      }
+    },
+    "cancellation": {
+      "type": "object",
+      "required": [
+        "supported",
+        "strategy"
+      ],
+      "properties": {
+        "supported": {
+          "type": "boolean"
+        },
+        "strategy": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "concurrency": {
+      "type": "object",
+      "required": [
+        "model",
+        "mutex_scope"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mutex_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "required": [
+        "required",
+        "secrets_allowed"
+      ],
+      "properties": {
+        "required": {
+          "const": true
+        },
+        "secrets_allowed": {
+          "const": false
+        }
+      }
+    },
+    "smoke": {
+      "type": "object",
+      "required": [
+        "required",
+        "kind",
+        "expected_safe_evidence"
+      ],
+      "properties": {
+        "required": {
+          "const": true
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_safe_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "adoption": {
+      "type": "object",
+      "required": [
+        "reinstall_by_default",
+        "preserve_existing_identity"
+      ],
+      "properties": {
+        "reinstall_by_default": {
+          "const": false
+        },
+        "preserve_existing_identity": {
+          "const": true
+        }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "required": [
+        "adapter_module",
+        "notes"
+      ],
+      "properties": {
+        "adapter_module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
