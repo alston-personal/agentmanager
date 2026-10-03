@@ -1,0 +1,144 @@
+name: Executor Health Reconcile
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: executor-health-reconcile
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+
+    steps:
+      - name: Checkout canonical Core generation
+        uses: actions/checkout@v4
+        with:
+          ref: core/integration
+
+      - name: Resolve canonical Core SHA
+        id: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          test -n "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "executor_health_core_sha=$sha"
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Submit bounded health reconcile
+        id: submit
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=180 \
+            bash scripts/agentos_dispatch.sh \
+              agentos.executor job.submit "${{ steps.core.outputs.sha }}" \
+              job_type=engineering.executor.health \
+              | tee "$RUNNER_TEMP/health-submit.txt"
+
+          python3 - "$RUNNER_TEMP/health-submit.txt" "$GITHUB_OUTPUT" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs
+          receipt=docs[-1].get('receipt') or {}
+          job=receipt.get('executor_job') or {}
+          assert receipt.get('ok') is True, receipt
+          assert job.get('job_type')=='engineering.executor.health', job
+          job_id=str(job.get('job_id') or '')
+          assert job_id.startswith('action-'), job
+          with open(sys.argv[2],'a',encoding='utf-8') as out:
+              out.write('job_id='+job_id+'\n')
+          print('executor_health_reconcile_submit=PASS')
+          PY
+
+      - name: Wait for bounded health receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          job_id="${{ steps.submit.outputs.job_id }}"
+          core_sha="${{ steps.core.outputs.sha }}"
+          terminal=0
+          : > "$RUNNER_TEMP/health-inspect.txt"
+          for i in $(seq 1 60); do
+            out="$RUNNER_TEMP/health-inspect-$i.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=90 \
+              bash scripts/agentos_dispatch.sh \
+                agentos.executor job.inspect "$core_sha" \
+                job_id="$job_id" > "$out"
+            cat "$out" >> "$RUNNER_TEMP/health-inspect.txt"
+            if python3 - "$out" "$RUNNER_TEMP/health-terminal.json" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          if not docs:
+              raise SystemExit(1)
+          receipt=docs[-1].get('receipt') or {}
+          if receipt.get('executor_job_state')!='completed':
+              raise SystemExit(1)
+          job=receipt.get('executor_job_receipt')
+          if not isinstance(job,dict):
+              raise SystemExit(1)
+          json.dump(job,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
+          raise SystemExit(0)
+          PY
+            then
+              terminal=1
+              break
+            fi
+            sleep 3
+          done
+          test "$terminal" = 1
+
+          python3 - "$RUNNER_TEMP/health-terminal.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('schema')=='agentos.executor-job-receipt/v1', r
+          assert r.get('job_type')=='engineering.executor.health', r
+          assert r.get('credential_exposed') is False, r
+          assert r.get('classification') in {
+              'ENGINEERING_EXECUTOR_HEALTH_READY',
+              'ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER',
+          }, r
+          print('executor_health_reconcile=PASS')
+          print('executor_health_selected_provider='+str(r.get('selected_provider') or 'none'))
+          PY
+
+      - name: Upload sanitized reconcile evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: executor-health-reconcile-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/health-submit.txt
+            ${{ runner.temp }}/health-inspect.txt
+            ${{ runner.temp }}/health-terminal.json
+          if-no-files-found: warn
+          retention-days: 7
