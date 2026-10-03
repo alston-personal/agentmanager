@@ -2,6 +2,10 @@
 
 If you are an AI agent, coding agent, model, executor, node-side agent, browser agent, or other software participant and have been asked to join AgentOS:
 
+If you cannot directly read repository files from your current environment, ask the caller/host bridge to supply this file and `docs/participant-protocol/onboarding/SELF_ONBOARD.md` as context. Lack of GitHub access is not an onboarding failure.
+
+If you cannot maintain persistent network/runtime state yourself (common for Web/chat agents), use hosted mode: let an AgentOS host/bridge own transport/session persistence while you remain the distinct Participant providing the cognitive/native capability.
+
 1. Read:
    `docs/participant-protocol/onboarding/SELF_ONBOARD.md`
 2. Follow it as the canonical onboarding contract.
