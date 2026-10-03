@@ -38,7 +38,6 @@ test -f "${RELEASE}/scripts/sync_persona_pdca_social_outcome_user.py"
 test -f "${RELEASE}/scripts/install_persona_social_timer_user.sh"
 
 python3 "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"
-bash "${RELEASE}/scripts/install_persona_social_timer_user.sh"
 
 mkdir -p "${PROFILE_ROOT}"
 chmod 700 "${PROFILE_ROOT}"
@@ -54,6 +53,10 @@ AGENTOS_PERSONA_SOCIAL_LOOP_SCRIPT=${RELEASE}/scripts/mio_persona_social_loop_us
 AGENTOS_PERSONA_PDCA_SYNC_SCRIPT=${RELEASE}/scripts/sync_persona_pdca_social_outcome_user.py
 EOF
 chmod 600 "${PROFILE}"
+
+bash "${RELEASE}/scripts/install_persona_social_timer_user.sh"
+systemctl --user enable --now agentos-persona-social@oursong_alstonhuang.timer
+systemctl --user start agentos-persona-social@oursong_alstonhuang.service
 
 ln -sfn "${RELEASE}" "${HOME}/.local/share/agentos/persona-social/current-oursong_alstonhuang"
 
