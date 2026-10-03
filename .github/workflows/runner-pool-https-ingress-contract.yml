@@ -19,9 +19,16 @@ on:
     branches: [core/integration]
     paths:
       - 'agent_core/realm_server.py'
+      - 'agent_core/runner_window.py'
       - 'agentos_node/bootstrap_control.py'
       - 'dashboard/app/api/agentos/**'
+      - 'scripts/agentos_dispatch.sh'
       - 'tests/test_runner_pool_https_ingress.py'
+      - 'tests/test_runner_window.py'
+      - 'tests/test_universal_agentos_dispatch.py'
+      - '.github/workflows/agentos-dispatch.yml'
+      - '.github/workflows/universal-agentos-dispatch-acceptance.yml'
+      - '.github/workflows/runner-pool-https-ingress-contract.yml'
 
 permissions:
   contents: read
