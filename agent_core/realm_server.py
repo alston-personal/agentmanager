@@ -499,22 +499,51 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                         clean = line.strip()
                         if any(clean.startswith(prefix) for prefix in safe_prefixes):
                             evidence.append(clean[:1000])
+            receipt_projection = {
+                'schema': raw.get('schema'),
+                'action': action,
+                'source_commit': raw.get('source_commit'),
+                'ok': raw.get('ok'),
+                'failure_class': raw.get('failure_class'),
+                'error': str(raw.get('error') or '')[:400] or None,
+                'completed_at': raw.get('completed_at'),
+                'scheduler': raw.get('scheduler'),
+                'evidence': evidence[:32],
+                'failed_steps': failed_steps[:8],
+            }
+            if action == bootstrap_control.ACTION_EXECUTOR_JOB_SUBMIT:
+                submission = raw.get('executor_job')
+                if isinstance(submission, dict):
+                    receipt_projection['executor_job'] = {
+                        key: submission.get(key)
+                        for key in (
+                            'schema', 'ok', 'state', 'job_id', 'node_id',
+                            'job_type', 'project_id', 'executor_class',
+                            'capability', 'reused', 'credential_exposed',
+                        )
+                        if key in submission
+                    }
+            elif action == bootstrap_control.ACTION_EXECUTOR_JOB_INSPECT:
+                state = str(raw.get('executor_job_state') or '')
+                receipt_projection['executor_job_state'] = state if state in {'pending', 'completed'} else 'unknown'
+                job_receipt = raw.get('executor_job_receipt')
+                if isinstance(job_receipt, dict):
+                    receipt_projection['executor_job_receipt'] = {
+                        key: job_receipt.get(key)
+                        for key in (
+                            'schema', 'job_id', 'job_type', 'project_id',
+                            'executor_class', 'capability', 'executor_available',
+                            'routable', 'authorized', 'successful',
+                            'credential_exposed', 'verdict', 'classification',
+                            'install_receipt_ok',
+                        )
+                        if key in job_receipt
+                    }
             return {
                 'ok': True,
                 'state': 'completed',
                 'request_id': request_id,
-                'receipt': {
-                    'schema': raw.get('schema'),
-                    'action': action,
-                    'source_commit': raw.get('source_commit'),
-                    'ok': raw.get('ok'),
-                    'failure_class': raw.get('failure_class'),
-                    'error': str(raw.get('error') or '')[:400] or None,
-                    'completed_at': raw.get('completed_at'),
-                    'scheduler': raw.get('scheduler'),
-                    'evidence': evidence[:32],
-                    'failed_steps': failed_steps[:8],
-                },
+                'receipt': receipt_projection,
             }
         request_path = requests / f'{request_id}.request.json'
         if request_path.exists():
