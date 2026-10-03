@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+REPAIR_STAGE="init"
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "antigravity_repair_stage=$REPAIR_STAGE"; fi' EXIT
+
 if [ "$(id -un)" != "ubuntu" ]; then
   echo "ERROR: run as ubuntu" >&2
   exit 2
@@ -52,6 +55,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # Snapshot the ref first, then fetch the requested generation itself. A parallel
 # merge may advance SOURCE_REF after the rollout starts without invalidating a
 # commit that was already accepted into that lane.
+REPAIR_STAGE="materialize_source"
 if [ -n "$EXPECTED_SOURCE_COMMIT" ]; then
   git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
   SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)
@@ -73,6 +77,7 @@ show_source() {
   git -C "$REPO" show "$SOURCE_COMMIT:$1"
 }
 
+REPAIR_STAGE="materialize_relay_runtime"
 show_source agentos_node/__init__.py > "$TMPDIR/__init__.py"
 show_source agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"
 show_source agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
@@ -84,6 +89,7 @@ install -m 0664 "$TMPDIR/__init__.py" "$RUNTIME/agentos_node/__init__.py"
 install -m 0664 "$TMPDIR/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
 install -m 0664 "$TMPDIR/antigravity_relay_worker.py" "$RUNTIME/agentos_node/antigravity_relay_worker.py"
 
+REPAIR_STAGE="materialize_realm_runtime"
 rm -rf "$REALM_RUNTIME/agent_core"
 git -C "$REPO" archive "$SOURCE_COMMIT" agent_core | tar -x -C "$REALM_RUNTIME"
 test -f "$REALM_RUNTIME/agent_core/realm_server.py"
@@ -191,6 +197,7 @@ PrivateTmp=true
 WantedBy=default.target
 EOF
 
+REPAIR_STAGE="restart_realm_runtime"
 systemctl --user daemon-reload
 systemctl --user restart agentos-realm-fabric.service
 systemctl --user enable agentos-realm-fabric.service >/dev/null
@@ -204,12 +211,14 @@ print('antigravity_provider=' + worker.provider)
 PY
 )
 
+REPAIR_STAGE="install_action_runtime"
 AGENTOS_REPO="$REPO" \
 AGENTOS_ACTION_RUNTIME_ROOT="$ACTION_RUNTIME" \
 AGENTOS_ACTION_SOURCE_REF="$SOURCE_REF" \
 AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT" \
 bash "$TMPDIR/install_action_relay_user.sh"
 
+REPAIR_STAGE="verify_experience_runtime"
 for required in \
   agent_core/experience.py \
   agent_core/experience_store.py \
@@ -225,6 +234,7 @@ PYTHONPATH="$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" python3 -m py_compile 
   "$ACTION_RUNTIME/agentos_node/experience_mcp_stdio.py" \
   "$ACTION_RUNTIME/scripts/seed_one_experience.py" \
   "$ACTION_RUNTIME/scripts/install_codex_experience_mcp_oracle.py"
+REPAIR_STAGE="converge_experience_runtime"
 (
   cd "$ACTION_RUNTIME"
   # One-time #117 Experience convergence is fenced by the exact live predecessor
@@ -247,6 +257,7 @@ grep -Fq "cwd = \"$ACTION_RUNTIME\"" "$CODEX_CONFIG"
 grep -Fq "PYTHONPATH = \"$ACTION_RUNTIME\"" "$CODEX_CONFIG"
 echo "codex_experience_mcp_exact_runtime=PASS"
 
+REPAIR_STAGE="final_runtime_acceptance"
 systemctl --user is-active --quiet agentos-action-relay.service
 systemctl --user is-active --quiet agentos-realm-fabric.service
 for i in $(seq 1 20); do
@@ -261,6 +272,8 @@ BENCHMARK_CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H
 test "$BOOTSTRAP_CODE" = 401
 test "$BENCHMARK_CODE" = 401
 
+REPAIR_STAGE="complete"
+echo "antigravity_repair_stage=complete"
 echo "antigravity_repair=PASS"
 echo "agentos_source_ref=$SOURCE_REF"
 echo "agentos_source_commit=$SOURCE_COMMIT"
