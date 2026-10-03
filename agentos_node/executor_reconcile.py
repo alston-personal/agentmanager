@@ -30,6 +30,8 @@ def _bounded_error(exc: Exception) -> str:
 def _state_from_provider(
     profile: dict[str, Any],
     provider: Any | None,
+    *,
+    probe_health: bool = True,
 ) -> dict[str, Any]:
     executor_id = str(profile["executor_id"])
     base: dict[str, Any] = {
@@ -68,6 +70,19 @@ def _state_from_provider(
             "authorized": False,
             "healthy": False,
             "provider_error": _bounded_error(exc),
+        })
+        return base
+
+    if not probe_health:
+        installed = bool(discovered.get("installed") or discovered.get("detected"))
+        base.update({
+            "state": "DISCOVERED" if installed else "INSTALL_REQUIRED",
+            "discovered": installed,
+            "reachable": False,
+            "authorized": False,
+            "healthy": False,
+            "routable": False,
+            "health_deferred": True,
         })
         return base
 
@@ -132,12 +147,13 @@ def _state_from_provider(
 def discover_executor_inventory(
     *,
     profile_root: str | Path | None = None,
+    probe_health: bool = True,
 ) -> dict[str, Any]:
     executors: list[dict[str, Any]] = []
     for profile in load_provider_profiles(profile_root):
         try:
             provider = load_provider(profile)
-            executors.append(_state_from_provider(profile, provider))
+            executors.append(_state_from_provider(profile, provider, probe_health=probe_health))
         except Exception as exc:
             executors.append({
                 "executor_id": str(profile.get("executor_id") or "unknown"),
