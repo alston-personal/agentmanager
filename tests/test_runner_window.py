@@ -57,6 +57,7 @@ def test_runner_window_rejects_unregistered_payload_keys():
 def test_runner_window_catalog_contains_stable_public_intents():
     items = {(x["capability"], x["operation"]) for x in catalog()}
     assert ("agentos.dispatch", "probe") in items
+    assert ("agentos.runtime", "repair") in items
     assert ("browser.gui", "smoke") in items
     assert ("social.runtime", "deploy") in items
     assert ("social.publish", "mio.approved") in items
