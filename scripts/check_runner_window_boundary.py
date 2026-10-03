@@ -2,6 +2,8 @@ from pathlib import Path
 
 LEGACY = Path(".agentos/governance/legacy-direct-oracle-workflows.txt")
 WORKFLOWS = Path(".github/workflows")
+GATEWAY_WORKFLOW = Path(".github/workflows/oracle-deploy-realm-gateway.yml")
+GATEWAY_SCRIPT = Path("scripts/deploy_realm_gateway_user.sh")
 
 
 def main() -> int:
@@ -20,6 +22,19 @@ def main() -> int:
             violations.append((rel, "internal_scheduler_client"))
         if "agentos-oracle-hosted-ingress" in text:
             violations.append((rel, "legacy_oracle_ingress_concurrency"))
+    gateway_workflow = GATEWAY_WORKFLOW.read_text(encoding="utf-8", errors="replace")
+    gateway_script = GATEWAY_SCRIPT.read_text(encoding="utf-8", errors="replace")
+    gateway_required = {
+        "workflow_dispatch_route": "/dashboard/api/agentos/v1/dispatch" in gateway_workflow,
+        "workflow_public_dispatch": "public_dispatch_routing=PASS" in gateway_workflow,
+        "script_local_dispatch": "realm_gateway_dispatch_local=PASS" in gateway_script,
+        "script_public_dispatch": "realm_gateway_dispatch_public=PASS" in gateway_script,
+        "script_route_guard": "'/v1/dispatch'" in gateway_script,
+    }
+    for name, ok in gateway_required.items():
+        if not ok:
+            violations.append((str(GATEWAY_WORKFLOW if name.startswith("workflow") else GATEWAY_SCRIPT), name))
+
     if violations:
         print("runner_window_boundary=FAIL")
         for path, reason in violations:
