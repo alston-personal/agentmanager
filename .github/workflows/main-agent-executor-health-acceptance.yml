@@ -17,7 +17,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: main-agent-executor-health-acceptance
+  group: main-agent-engineering-model-control
   cancel-in-progress: false
 
 jobs:
