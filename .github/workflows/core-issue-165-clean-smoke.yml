@@ -1,0 +1,95 @@
+name: Core 165 Clean Governed Execution Smoke
+
+on:
+  push:
+    branches:
+      - core/issue-165-clean-execution-v1
+  pull_request:
+    paths:
+      - 'governance/execution-authority.json'
+      - 'scripts/run_governed_execution_request.py'
+      - 'scripts/fetch_governed_product_request.py'
+      - 'tests/test_governed_execution_request.py'
+      - 'docs/GOVERNED_EXECUTION_REQUESTS.md'
+      - '.github/workflows/core-issue-165-clean-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-165-clean-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded contract
+        run: |
+          python3 tests/test_governed_execution_request.py
+          python3 -m py_compile scripts/run_governed_execution_request.py scripts/fetch_governed_product_request.py
+
+  leopardcat-owned-smoke:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch canonical LeopardCat request through governed product source
+        run: |
+          python3 scripts/fetch_governed_product_request.py \
+            leopardcat-tarot \
+            /tmp/leopardcat-production-parity.json
+      - name: Execute bounded LeopardCat request
+        id: execute
+        run: |
+          set +e
+          python3 scripts/run_governed_execution_request.py \
+            /tmp/leopardcat-production-parity.json \
+            /tmp/leopardcat-production-parity-receipt.json
+          code=$?
+          cat /tmp/leopardcat-production-parity-receipt.json
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Persist sanitized LeopardCat receipt artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leopardcat-production-parity-receipt
+          path: /tmp/leopardcat-production-parity-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce LeopardCat execution result
+        if: always()
+        run: test "${{ steps.execute.outputs.exit_code }}" = "0"
+
+  vendor-owned-smoke:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch canonical Vendor request through governed product source
+        run: |
+          python3 scripts/fetch_governed_product_request.py \
+            vendor-reputation-service \
+            /tmp/vendor-production-runtime.json
+      - name: Execute bounded Vendor request
+        id: execute
+        run: |
+          set +e
+          python3 scripts/run_governed_execution_request.py \
+            /tmp/vendor-production-runtime.json \
+            /tmp/vendor-production-runtime-receipt.json
+          code=$?
+          cat /tmp/vendor-production-runtime-receipt.json
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Persist sanitized Vendor receipt artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-production-runtime-receipt
+          path: /tmp/vendor-production-runtime-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce Vendor execution result
+        if: always()
+        run: test "${{ steps.execute.outputs.exit_code }}" = "0"
