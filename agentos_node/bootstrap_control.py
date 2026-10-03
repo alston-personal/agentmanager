@@ -58,6 +58,8 @@ ACTION_INSTALL_MIO_OBSERVER_TIMER = "agentos.mio_observer.timer.install"
 ACTION_ACTIVATE_OURSONG_PERSONA = "agentos.oursong_persona.activate"
 ACTION_PROBE_OURSONG_PERSONA = "agentos.oursong_persona.status"
 ACTION_PROBE_PERSONA_PDCA_RUNTIME = "agentos.persona_pdca_runtime.probe"
+ACTION_EXECUTOR_JOB_SUBMIT = "agentos.executor_job.submit"
+ACTION_EXECUTOR_JOB_INSPECT = "agentos.executor_job.inspect"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_RUNNER_WINDOW_PROBE,
@@ -101,6 +103,8 @@ ALLOWED_ACTIONS = {
     ACTION_ACTIVATE_OURSONG_PERSONA,
     ACTION_PROBE_OURSONG_PERSONA,
     ACTION_PROBE_PERSONA_PDCA_RUNTIME,
+    ACTION_EXECUTOR_JOB_SUBMIT,
+    ACTION_EXECUTOR_JOB_INSPECT,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -161,6 +165,10 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","account_ref"}
     elif action == ACTION_NODE_TRANSACTIONAL_OTA:
         allowed_params={"source_commit","node_id","candidate_commit"}
+    elif action == ACTION_EXECUTOR_JOB_SUBMIT:
+        allowed_params={"source_commit","job_type"}
+    elif action == ACTION_EXECUTOR_JOB_INSPECT:
+        allowed_params={"source_commit","job_id"}
     else:
         allowed_params={"source_commit"}
     unknown = set(params) - allowed_params
@@ -189,6 +197,14 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
             raise ValueError("invalid OTA node_id")
         if not COMMIT_RE.fullmatch(candidate_commit):
             raise ValueError("candidate_commit must be an exact lowercase 40-hex commit SHA")
+    if action == ACTION_EXECUTOR_JOB_SUBMIT:
+        job_type=str(params.get("job_type") or "")
+        from agent_core.executor_job_contract import canonical_executor_job_request
+        canonical_executor_job_request(job_type)
+    if action == ACTION_EXECUTOR_JOB_INSPECT:
+        job_id=str(params.get("job_id") or "")
+        from agent_core.executor_job_contract import validate_executor_job_id
+        validate_executor_job_id(job_id)
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
@@ -546,6 +562,27 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             timeout=90,
             source_commit=source_commit,
         )
+    if action == ACTION_EXECUTOR_JOB_SUBMIT:
+        params = params or {}
+        from agent_core.executor_job_contract import canonical_executor_job_request
+        from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
+        request = canonical_executor_job_request(str(params.get("job_type") or ""))
+        submission = ActionRelayExecutorJobDispatcher().submit(
+            node_id="oracle-core-node",
+            request=request,
+        )
+        return {"ok": True, "executor_job": submission}
+    if action == ACTION_EXECUTOR_JOB_INSPECT:
+        params = params or {}
+        from agent_core.executor_job_contract import validate_executor_job_id
+        from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
+        job_id = validate_executor_job_id(str(params.get("job_id") or ""))
+        receipt = ActionRelayExecutorJobDispatcher().inspect(job_id)
+        return {
+            "ok": True,
+            "executor_job_state": "completed" if receipt is not None else "pending",
+            "executor_job_receipt": receipt,
+        }
     raise ValueError("unsupported bootstrap action")
 
 
