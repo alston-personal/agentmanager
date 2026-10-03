@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 12
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: 3ba89ec0c44235cccabaf5bb3c29958a6498ea38
+      SOURCE_SHA: 5480ec81284ce8ce7a5a5cda2e2126544f58421d
       LIVE_ROOT: /home/ubuntu/zeus-writer/website/dist
       ROUTE_PATH: personas/mio
       BACKUP_KEY: mio-persona
@@ -144,6 +144,8 @@ jobs:
           grep -Fq 'data-reload-page' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '登入／重新授權' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '/dashboard/api/wardrobe/auth-handoff?action=start' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq 'handoffPollGeneration' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq 'forceRestart' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '/dashboard/api/wardrobe/auth-handoff?action=exchange' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '734984_400_002E799BDE889B2.jpg' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '↻ 更新' "$ROUTE_DIR/wardrobe/index.html"
