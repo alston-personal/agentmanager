@@ -17,9 +17,11 @@ ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
 PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
 PUBLIC_BOOTSTRAP='https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
+PUBLIC_DISPATCH='https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch'
 LOCAL='http://127.0.0.1:8780/v1/health'
 LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/agentos/v1/health'
 LOCAL_GATEWAY_BOOTSTRAP='http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
+LOCAL_GATEWAY_DISPATCH='http://127.0.0.1:3000/dashboard/api/agentos/v1/dispatch'
 
 [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'ERROR: AGENTOS_SOURCE_COMMIT must be exact lowercase 40-hex commit' >&2; exit 2; }
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
@@ -344,7 +346,7 @@ from pathlib import Path
 import sys
 p=Path(sys.argv[1])
 s=p.read_text(encoding='utf-8')
-required=['127.0.0.1:8780','/v1/bootstrap','/v1/join/request','/v1/join/claim','/v1/heartbeat','x-agentos-realm-gateway']
+required=['127.0.0.1:8780','/v1/bootstrap','/v1/dispatch','/v1/join/request','/v1/join/claim','/v1/heartbeat','x-agentos-realm-gateway']
 missing=[x for x in required if x not in s]
 assert not missing, missing
 assert 'http://' + '${' not in s
@@ -419,6 +421,14 @@ echo "local_bootstrap_http=$LB_CODE prefix=$(head -c 240 "$LB_BODY" 2>/dev/null 
 ! grep -q 'Realm gateway route not allowlisted' "$LB_BODY"
 echo "realm_gateway_bootstrap_local=PASS"
 
+LD_BODY=/tmp/agentos-realm-local-dispatch
+LD_CODE=$(curl -sS -o "$LD_BODY" -w '%{http_code}' --max-time 5 "$LOCAL_GATEWAY_DISPATCH" || true)
+echo "local_dispatch_http=$LD_CODE prefix=$(head -c 240 "$LD_BODY" 2>/dev/null | tr '
+' ' ' | tr '' ' ' || true)"
+[ "$LD_CODE" = 401 ]
+! grep -q 'Realm gateway route not allowlisted' "$LD_BODY"
+echo "realm_gateway_dispatch_local=PASS"
+
 for i in $(seq 1 30); do
   BODY=$(curl -fsS --max-time 5 "$PUBLIC" 2>/dev/null || true)
   if printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1' && printf '%s' "$BODY" | grep -q 'realm-alston'; then break; fi
@@ -435,6 +445,14 @@ echo "public_bootstrap_http=$PB_CODE prefix=$(head -c 240 "$PB_BODY" 2>/dev/null
 [ "$PB_CODE" = 401 ]
 ! grep -q 'Realm gateway route not allowlisted' "$PB_BODY"
 echo "realm_gateway_bootstrap_public=PASS"
+
+PD_BODY=/tmp/agentos-realm-public-dispatch
+PD_CODE=$(curl -sS -o "$PD_BODY" -w '%{http_code}' --max-time 8 "$PUBLIC_DISPATCH" || true)
+echo "public_dispatch_http=$PD_CODE prefix=$(head -c 240 "$PD_BODY" 2>/dev/null | tr '
+' ' ' | tr '' ' ' || true)"
+[ "$PD_CODE" = 401 ]
+! grep -q 'Realm gateway route not allowlisted' "$PD_BODY"
+echo "realm_gateway_dispatch_public=PASS"
 
 echo "realm_gateway_source_commit=$SOURCE_COMMIT"
 echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
