@@ -194,7 +194,19 @@ def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_second
     if selected == "agy":
         argv = [*executable, "run", "--task", prompt, "--workspace", str(workspace_path)]
     else:
-        argv = [*executable, prompt]
+        # Health probing must isolate model/auth/network readiness from project
+        # customizations. Safe mode preserves authentication/model selection but
+        # disables CLAUDE.md, skills, plugins, hooks, MCP, and other local
+        # customization sources. Also remove all tools and cap the agent loop.
+        argv = [
+            *executable,
+            "--safe-mode",
+            "--tools", "",
+            "--disallowedTools", "mcp__*",
+            "--max-turns", "1",
+            "--disable-slash-commands",
+            prompt,
+        ]
 
     try:
         completed = subprocess.run(
