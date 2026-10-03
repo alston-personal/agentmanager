@@ -23,6 +23,12 @@ POLL_SECONDS = 1.0
 TIMEOUT_SECONDS = 240.0
 
 JOBS: dict[str, dict[str, str]] = {
+    "engineering.subagent.smoke": {
+        "workload_ref": "surface://engineering-subagent",
+        "branch": "",
+        "goal": "Prove the governed engineering Subagent can inspect the canonical AgentOS repository without mutation.",
+        "acceptance": "Inspect current HEAD and repository status, make no changes, and return a concrete bounded result.",
+    },
     "engineering.windows-thin-client.fix": {
         "workload_ref": "issue://892",
         "branch": "fix/subagent-892-windows-thin-client",
@@ -58,6 +64,15 @@ def _failure(classification: str, *, executor_available: bool = True, routable: 
 
 def _instruction(job_type: str) -> str:
     item = JOBS[job_type]
+    if job_type == "engineering.subagent.smoke":
+        return (
+            f"Execute bounded AgentOS engineering probe {item['workload_ref']}. "
+            f"Goal: {item['goal']} "
+            f"Acceptance: {item['acceptance']} "
+            "Do not create or switch branches, do not modify files, do not commit, do not push, "
+            "do not deploy, and do not expose credentials. Report the observed repository HEAD "
+            "and whether the worktree is clean. If inspection is unavailable, report BLOCKED."
+        )
     return (
         f"Execute bounded AgentOS engineering work {item['workload_ref']}. "
         f"Goal: {item['goal']} "
@@ -69,6 +84,20 @@ def _instruction(job_type: str) -> str:
         "modify unrelated projects. If the repository/worktree is unsafe or evidence is insufficient, "
         "stop and report BLOCKED rather than guessing."
     )
+
+
+def _relay_failure_classification(receipt: Mapping[str, Any]) -> str:
+    if receipt.get("timed_out") is True or int(receipt.get("returncode") or 0) == 124:
+        return "ENGINEERING_EXECUTOR_TIMEOUT"
+    error = str(receipt.get("error") or "")
+    if "no authorized local Antigravity executor discovered" in error:
+        return "ENGINEERING_EXECUTOR_UNAVAILABLE"
+    returncode = receipt.get("returncode")
+    if isinstance(returncode, int) and returncode != 0:
+        return "ENGINEERING_EXECUTOR_NONZERO"
+    if error:
+        return "ENGINEERING_EXECUTOR_RUNTIME_ERROR"
+    return "ENGINEERING_EXECUTOR_FAILED"
 
 
 def run_engineering_subagent(
@@ -104,7 +133,7 @@ def run_engineering_subagent(
                 "goal": JOBS[spec.job_type]["goal"],
                 "constraints": [
                     f"workload_ref={JOBS[spec.job_type]['workload_ref']}",
-                    f"branch={JOBS[spec.job_type]['branch']}",
+                    f"branch={JOBS[spec.job_type]['branch'] or 'none'}",
                     "base_ref=core/integration",
                     "production_mutation=false",
                     "main_agent_verification_required=true",
@@ -132,7 +161,11 @@ def run_engineering_subagent(
     if receipt is None:
         return _failure("ENGINEERING_RELAY_TIMEOUT")
     if receipt.get("ok") is not True:
-        return _failure("ENGINEERING_EXECUTOR_FAILED")
+        classification = _relay_failure_classification(receipt)
+        return _failure(
+            classification,
+            executor_available=classification != "ENGINEERING_EXECUTOR_UNAVAILABLE",
+        )
 
     # A successful relay process only proves that the delegated worker returned.
     # It deliberately does not prove code correctness or acceptance. Main Agent
