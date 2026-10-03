@@ -19,6 +19,31 @@ def test_runner_window_hides_runner_identity_from_submit_contract():
     assert public == {"capability": "browser.gui", "operation": "smoke"}
 
 
+def test_executor_job_submit_and_inspect_are_bounded_public_intents():
+    submit, submit_params = resolve_intent(
+        "agentos.executor",
+        "job.submit",
+        source_commit="d" * 40,
+        payload={"job_type": "experience.regression"},
+    )
+    assert submit.action == bc.ACTION_EXECUTOR_JOB_SUBMIT
+    assert submit_params == {
+        "source_commit": "d" * 40,
+        "job_type": "experience.regression",
+    }
+    inspect, inspect_params = resolve_intent(
+        "agentos.executor",
+        "job.inspect",
+        source_commit="e" * 40,
+        payload={"job_id": "action-12345678"},
+    )
+    assert inspect.action == bc.ACTION_EXECUTOR_JOB_INSPECT
+    assert inspect_params == {
+        "source_commit": "e" * 40,
+        "job_id": "action-12345678",
+    }
+
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})

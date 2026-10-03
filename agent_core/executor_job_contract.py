@@ -149,8 +149,11 @@ def validate_executor_job_id(job_id: str) -> str:
     return value
 
 
-def _canonical_request(job_type: str) -> dict[str, str]:
-    spec = JOB_TYPES[job_type]
+def canonical_executor_job_request(job_type: str) -> dict[str, str]:
+    job_type = str(job_type or "").strip()
+    spec = JOB_TYPES.get(job_type)
+    if spec is None:
+        raise ExecutorJobContractError("unsupported executor job type")
     return {
         "schema": EXECUTOR_JOB_SCHEMA,
         "job_type": spec.job_type,
@@ -162,15 +165,15 @@ def _canonical_request(job_type: str) -> dict[str, str]:
 
 
 def canonical_experience_regression_request() -> dict[str, str]:
-    return _canonical_request("experience.regression")
+    return canonical_executor_job_request("experience.regression")
 
 
 def canonical_typesafe_skill_install_request() -> dict[str, str]:
-    return _canonical_request("typesafe.skill.install")
+    return canonical_executor_job_request("typesafe.skill.install")
 
 
 def canonical_gemini_cli_install_request() -> dict[str, str]:
-    return _canonical_request("gemini.cli.install")
+    return canonical_executor_job_request("gemini.cli.install")
 
 
 def project_executor_job_submission(
