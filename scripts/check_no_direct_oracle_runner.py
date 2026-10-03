@@ -16,6 +16,19 @@ AUTOMATIC = re.compile(
 )
 
 
+def trigger_block(text: str) -> str:
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line == "on:"), None)
+    if start is None:
+        return ""
+    out = [lines[start]]
+    for line in lines[start + 1:]:
+        if line and not line.startswith((" ", "\t")):
+            break
+        out.append(line)
+    return "\n".join(out)
+
+
 def changed_workflows() -> list[Path]:
     base_ref = os.environ.get("GITHUB_BASE_REF", "").strip()
     if not base_ref:
@@ -46,7 +59,7 @@ for path in changed_workflows():
     text = path.read_text(encoding="utf-8", errors="replace")
     if not DIRECT.search(text):
         continue
-    trigger = text.split("\njobs:", 1)[0]
+    trigger = trigger_block(text)
     events = sorted(set(AUTOMATIC.findall(trigger)))
     if events:
         violations.append(f"{path}:automatic={','.join(events)}")
