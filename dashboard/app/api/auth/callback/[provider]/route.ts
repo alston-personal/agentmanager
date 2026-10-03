@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProvider } from '@/lib/auth/providers';
 import { generateToken } from '@/lib/auth';
+import { consumeOAuthState } from '@/lib/auth/oauth-state';
 
 export async function GET(
   request: NextRequest,
@@ -8,6 +9,7 @@ export async function GET(
 ) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
+  const state = searchParams.get('state') || '';
 
   const { provider } = await params;
   const lowerProvider = provider.toLowerCase();
@@ -46,10 +48,18 @@ export async function GET(
     // 3. Generate our JWT token
     const token = generateToken(username, { provider: profile.provider, subject: profile.subject, avatarUrl: profile.avatarUrl });
 
-    // 4. Set HttpOnly cookie and redirect back to root
+    // 4. Recover returnTo from the server-side OAuth state. This survives
+    // Safari / Home Screen cookie isolation. The cookie is only a fallback for
+    // in-flight sign-ins created before this deployment.
+    const stateRecord = state ? consumeOAuthState(state) : null;
     const returnToCookie = request.cookies.get('oauth_return_to')?.value;
-    const returnTo = returnToCookie ? decodeURIComponent(returnToCookie) : '/';
-    const response = NextResponse.redirect(new URL(returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/', siteUrl));
+    const fallbackReturnTo = returnToCookie ? decodeURIComponent(returnToCookie) : '/';
+    if (state && !stateRecord) {
+      return NextResponse.json({ error: 'OAuth state is invalid or expired' }, { status: 400 });
+    }
+    const returnTo = stateRecord?.returnTo || fallbackReturnTo;
+    const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
+    const response = NextResponse.redirect(new URL(safeReturnTo, siteUrl));
     
     response.cookies.set({
       name: 'auth_token',
