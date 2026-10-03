@@ -202,6 +202,24 @@ def reconcile_executor_adoption(
         },
     }
 
+    try:
+        from agentos_node.agent_surfaces import discover_surfaces
+        from agentos_node.executor_onboarding import plan_executor_onboarding
+        onboarding = plan_executor_onboarding(
+            node_id=os.environ.get("AGENTOS_NODE_ID", "local-node"),
+            surface_inventory=discover_surfaces(),
+            adoption=payload,
+            state_root=root,
+            profile_root=profile_root,
+        )
+    except Exception as exc:
+        onboarding = {
+            "schema": "agentos.executor-onboarding-plan/v0.1",
+            "state": "UNHEALTHY",
+            "error": _bounded_error(exc),
+        }
+    payload["onboarding"] = onboarding
+
     target = root / "executor-adoption.json"
     fd, temp_name = tempfile.mkstemp(
         prefix=".executor-adoption-",
