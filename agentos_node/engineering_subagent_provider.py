@@ -442,21 +442,27 @@ def run_engineering_subagent(
         return health
 
     client = AntigravityRelayClient(relay_root)
+    if spec.job_type == "engineering.model.smoke":
+        canonical_ir = {"schema": "agentos.engineering-subagent-ir/v1"}
+        instruction = "AgentOS routed model smoke. Do not modify files. Reply exactly READY."
+    else:
+        canonical_ir = {
+            "schema": "agentos.engineering-subagent-ir/v1",
+            "goal": JOBS[spec.job_type]["goal"],
+            "constraints": [
+                f"workload_ref={JOBS[spec.job_type]['workload_ref']}",
+                f"branch={JOBS[spec.job_type]['branch'] or 'none'}",
+                "base_ref=core/integration",
+                "production_mutation=false",
+                "main_agent_verification_required=true",
+            ],
+        }
+        instruction = _instruction(spec.job_type)
     try:
         capsule = client.submit(
             project_id="agentos-core",
-            canonical_ir={
-                "schema": "agentos.engineering-subagent-ir/v1",
-                "goal": JOBS[spec.job_type]["goal"],
-                "constraints": [
-                    f"workload_ref={JOBS[spec.job_type]['workload_ref']}",
-                    f"branch={JOBS[spec.job_type]['branch'] or 'none'}",
-                    "base_ref=core/integration",
-                    "production_mutation=false",
-                    "main_agent_verification_required=true",
-                ],
-            },
-            instruction=_instruction(spec.job_type),
+            canonical_ir=canonical_ir,
+            instruction=instruction,
             workspace=str(workspace_path),
             executor_hint=f"provider:{selected_provider}",
         )
@@ -486,6 +492,9 @@ def run_engineering_subagent(
         provider = str(receipt.get("provider") or "").strip().lower()
         if provider in {"claude", "agy"}:
             result["executor_provider"] = provider
+        else:
+            result["executor_provider"] = selected_provider
+        result["selected_provider"] = selected_provider
         returncode = receipt.get("returncode")
         if isinstance(returncode, int):
             result["executor_returncode"] = returncode
@@ -508,6 +517,7 @@ def run_engineering_subagent(
         "successful": False,
         "credential_exposed": False,
         "executor_provider": selected_provider,
+        "selected_provider": selected_provider,
         "executor_returncode": int(receipt.get("returncode") or 0),
         "executor_timed_out": receipt.get("timed_out") is True,
     }
