@@ -133,6 +133,8 @@ jobs:
           assert r.get('job_type')=='engineering.executor.health', r
           assert r.get('credential_exposed') is False, r
           allowed={'READY','AUTH_REQUIRED','TIMEOUT','ERROR','UNAVAILABLE'}
+          assert r.get('claude_liveness') in allowed, r
+          assert r.get('agy_liveness') in allowed, r
           assert r.get('claude_state') in allowed, r
           assert r.get('agy_state') in allowed, r
           selected=str(r.get('selected_provider') or '')
@@ -141,7 +143,9 @@ jobs:
           assert r.get('classification')=='ENGINEERING_EXECUTOR_HEALTH_READY', r
           print('executor_health_acceptance=PASS')
           print('executor_health_selected_provider='+selected)
+          print('executor_health_claude_liveness='+str(r.get('claude_liveness')))
           print('executor_health_claude_state='+str(r.get('claude_state')))
+          print('executor_health_agy_liveness='+str(r.get('agy_liveness')))
           print('executor_health_agy_state='+str(r.get('agy_state')))
           PY
 
