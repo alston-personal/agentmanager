@@ -8,6 +8,7 @@ on:
       - '.github/workflows/oracle-bootstrap-scheduler-rollout.yml'
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/bootstrap_scheduler.py'
+      - 'agent_core/executor_job_contract.py'
       - 'scripts/install_bootstrap_scheduler_user.sh'
       - 'scripts/update_scheduler_board.py'
       - 'tests/test_bootstrap_scheduler_selector.py'
