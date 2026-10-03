@@ -190,3 +190,29 @@ def test_executor_health_fails_closed_when_no_provider_ready(tmp_path: Path, mon
     assert result["routable"] is False
     assert result["authorized"] is False
     assert result["successful"] is False
+
+
+def test_executor_health_reports_binary_liveness_separately(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    monkeypatch.setattr(provider, "_probe_binary_liveness", lambda name: "READY" if name == "claude" else "UNAVAILABLE")
+    monkeypatch.setattr(
+        provider,
+        "_probe_model_provider",
+        lambda name, _workspace: {"state": "TIMEOUT", "returncode": 124, "timed_out": True}
+        if name == "claude"
+        else {"state": "UNAVAILABLE", "returncode": None, "timed_out": False},
+    )
+
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.executor.health"),
+        workspace=workspace,
+    )
+    assert result["claude_liveness"] == "READY"
+    assert result["claude_state"] == "TIMEOUT"
+    assert result["agy_liveness"] == "UNAVAILABLE"
+    assert result["agy_state"] == "UNAVAILABLE"
+    assert result["successful"] is False

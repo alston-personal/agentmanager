@@ -155,6 +155,30 @@ def _classify_probe_output(returncode: int, text: str, *, timed_out: bool) -> st
     return "ERROR"
 
 
+def _probe_binary_liveness(provider: str) -> str:
+    try:
+        selected, executable = discover_executor(provider)
+    except Exception:
+        return "ERROR"
+    if not executable:
+        return "UNAVAILABLE"
+    binary = str(executable[0])
+    argv = [binary, "--version"] if selected == "claude" else [binary, "--help"]
+    try:
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return "TIMEOUT"
+    except OSError:
+        return "UNAVAILABLE"
+    return "READY" if completed.returncode == 0 else "ERROR"
+
+
 def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_seconds: float = 20.0) -> dict[str, Any]:
     try:
         selected, executable = discover_executor(provider)
@@ -194,6 +218,8 @@ def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_second
 
 
 def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
+    claude_liveness = _probe_binary_liveness("claude")
+    agy_liveness = _probe_binary_liveness("agy")
     claude = _probe_model_provider("claude", workspace_path)
     agy = _probe_model_provider("agy", workspace_path)
     selected_provider = ""
@@ -210,9 +236,11 @@ def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
         "authorized": ok,
         "successful": ok,
         "credential_exposed": False,
+        "claude_liveness": claude_liveness,
         "claude_state": claude["state"],
         "claude_returncode": claude["returncode"],
         "claude_timed_out": claude["timed_out"],
+        "agy_liveness": agy_liveness,
         "agy_state": agy["state"],
         "agy_returncode": agy["returncode"],
         "agy_timed_out": agy["timed_out"],
