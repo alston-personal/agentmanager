@@ -14,6 +14,7 @@ on:
       - 'agentos_node/typesafe_skill_install_provider.py'
       - 'agentos_node/gemini_cli_install_provider.py'
       - 'agentos_node/action_relay.py'
+      - 'agent_core/realm_server.py'
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/repair_antigravity_relay_user.sh'
   workflow_dispatch:
@@ -61,6 +62,33 @@ jobs:
           )"
           echo "::add-mask::$token"
           printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Wait for live Runner Window catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS --max-time 5 \
+              -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+              "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" \
+              > "$RUNNER_TEMP/runner-window-catalog.json"; then
+              if python3 - "$RUNNER_TEMP/runner-window-catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=d.get('intents') or d.get('catalog') or []
+          ok=any(isinstance(x,dict) and x.get('capability')=='agentos.runtime' and x.get('operation')=='repair' for x in rows)
+          raise SystemExit(0 if ok else 1)
+          PY
+              then
+                ready=1
+                break
+              fi
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          echo "runner_window_runtime_repair_catalog=PASS"
 
       - name: Roll out exact Action Runtime through Runner Window
         shell: bash
