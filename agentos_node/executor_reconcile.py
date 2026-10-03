@@ -160,6 +160,7 @@ def discover_executor_inventory(
 
 def reconcile_executor_adoption(
     *,
+    node_id: str = "local-node",
     state_root: str | Path | None = None,
     profile_root: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -206,7 +207,7 @@ def reconcile_executor_adoption(
         from agentos_node.agent_surfaces import discover_surfaces
         from agentos_node.executor_onboarding import plan_executor_onboarding
         onboarding = plan_executor_onboarding(
-            node_id=os.environ.get("AGENTOS_NODE_ID", "local-node"),
+            node_id=node_id,
             surface_inventory=discover_surfaces(),
             adoption=payload,
             state_root=root,
