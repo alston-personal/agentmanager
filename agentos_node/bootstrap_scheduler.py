@@ -69,6 +69,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_SMOKE_GUI_WORKER: ActionPolicy("gui", 25, "normal", ("browser.cdp", "browser.gui"), ("oracle-gui-profile",)),
     bc.ACTION_DEPLOY_MIO_TRYON: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
     bc.ACTION_INSTALL_ORACLE_EXEC: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_EXECUTOR_ONBOARDING_INTEGRATE: ActionPolicy("build", 35, "normal", ("agent.executor.integrate",), ("executor-integrator",)),
 }
 
 DEFAULT_POLICY = ActionPolicy("control", MAINTENANCE, "low", ("agentos.bootstrap.execute",), ("oracle-core-runtime",))
@@ -833,7 +834,17 @@ def main() -> int:
         _recover_inflight(args.role, worker_id)
     _write_status(worker_id, args.role, state="idle", current=None)
     last_idle_heartbeat = time.monotonic()
+    last_executor_onboarding_reconcile = 0.0
     while True:
+        if args.role == "control":
+            now = time.monotonic()
+            if now - last_executor_onboarding_reconcile >= 15.0:
+                try:
+                    from agent_core.executor_onboarding_reconciler import enqueue_onboarding_requests
+                    enqueue_onboarding_requests()
+                except Exception:
+                    pass
+                last_executor_onboarding_reconcile = now
         if args.role == "router":
             receipt = route_failover_once(worker_id=worker_id)
         else:
