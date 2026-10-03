@@ -132,11 +132,15 @@ jobs:
           assert r.get('schema')=='agentos.executor-job-receipt/v1', r
           assert r.get('job_type')=='engineering.executor.health', r
           assert r.get('credential_exposed') is False, r
-          allowed={'READY','AUTH_REQUIRED','TIMEOUT','ERROR','UNAVAILABLE'}
+          allowed={'READY','FLAKY','AUTH_REQUIRED','TIMEOUT','ERROR','UNAVAILABLE'}
           assert r.get('claude_liveness') in allowed, r
           assert r.get('agy_liveness') in allowed, r
           assert r.get('claude_state') in allowed, r
           assert r.get('agy_state') in allowed, r
+          assert isinstance(r.get('claude_ready_count'), int), r
+          assert r.get('claude_probe_attempts') == 2, r
+          assert isinstance(r.get('agy_ready_count'), int), r
+          assert r.get('agy_probe_attempts') == 2, r
           selected=str(r.get('selected_provider') or '')
           assert selected in {'claude','agy'}, r
           assert r.get('successful') is True, r
@@ -145,8 +149,10 @@ jobs:
           print('executor_health_selected_provider='+selected)
           print('executor_health_claude_liveness='+str(r.get('claude_liveness')))
           print('executor_health_claude_state='+str(r.get('claude_state')))
+          print('executor_health_claude_ready_count='+str(r.get('claude_ready_count')))
           print('executor_health_agy_liveness='+str(r.get('agy_liveness')))
           print('executor_health_agy_state='+str(r.get('agy_state')))
+          print('executor_health_agy_ready_count='+str(r.get('agy_ready_count')))
           PY
 
       - name: Upload sanitized health evidence
