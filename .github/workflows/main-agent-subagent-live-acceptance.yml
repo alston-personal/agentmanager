@@ -1,0 +1,172 @@
+name: Main Agent Subagent Live Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/main-agent-subagent-live-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: main-agent-subagent-live-acceptance
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Wait for bounded executor intents
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS --max-time 5               -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"               "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch"               > "$RUNNER_TEMP/catalog.json"; then
+              if python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=d.get('intents') or d.get('catalog') or []
+          wanted={('agentos.executor','job.submit'),('agentos.executor','job.inspect')}
+          got={(x.get('capability'),x.get('operation')) for x in rows if isinstance(x,dict)}
+          raise SystemExit(0 if wanted.issubset(got) else 1)
+          PY
+              then
+                ready=1
+                break
+              fi
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          echo "main_agent_executor_intents=PASS"
+
+      - name: Submit #892 bounded engineering Subagent job
+        id: submit
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=180             bash scripts/agentos_dispatch.sh               agentos.executor job.submit "$GITHUB_SHA"               job_type=engineering.windows-thin-client.fix               | tee "$RUNNER_TEMP/subagent-submit.txt"
+
+          python3 - "$RUNNER_TEMP/subagent-submit.txt" "$GITHUB_OUTPUT" <<'PY'
+          import json,sys
+          docs=[]
+          for line in open(sys.argv[1],encoding='utf-8'):
+              line=line.strip()
+              if line.startswith('{'):
+                  docs.append(json.loads(line))
+          assert docs, 'missing submit receipt'
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('ok') is True, receipt
+          job=receipt.get('executor_job') or {}
+          assert job.get('schema')=='agentos.executor-job-submission/v1', job
+          assert job.get('job_type')=='engineering.windows-thin-client.fix', job
+          assert job.get('project_id')=='agentos-core', job
+          assert job.get('executor_class')=='antigravity-engineering', job
+          assert job.get('credential_exposed') is False, job
+          job_id=str(job.get('job_id') or '')
+          assert job_id.startswith('action-'), job
+          with open(sys.argv[2],'a',encoding='utf-8') as out:
+              out.write('job_id='+job_id+'\n')
+          print('main_agent_subagent_submit=PASS')
+          print('main_agent_subagent_job_id='+job_id)
+          PY
+
+      - name: Inspect #892 Subagent receipt until terminal
+        shell: bash
+        run: |
+          set -euo pipefail
+          job_id="${{ steps.submit.outputs.job_id }}"
+          test -n "$job_id"
+          terminal=0
+          : > "$RUNNER_TEMP/subagent-inspect.txt"
+
+          for i in $(seq 1 90); do
+            out="$RUNNER_TEMP/subagent-inspect-$i.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=90               bash scripts/agentos_dispatch.sh                 agentos.executor job.inspect "$GITHUB_SHA"                 job_id="$job_id"                 > "$out"
+            cat "$out" >> "$RUNNER_TEMP/subagent-inspect.txt"
+
+            if python3 - "$out" "$RUNNER_TEMP/subagent-terminal.json" <<'PY'
+          import json,sys
+          docs=[]
+          for line in open(sys.argv[1],encoding='utf-8'):
+              line=line.strip()
+              if line.startswith('{'):
+                  docs.append(json.loads(line))
+          if not docs:
+              raise SystemExit(1)
+          receipt=docs[-1].get('receipt') or {}
+          state=receipt.get('executor_job_state')
+          if state!='completed':
+              raise SystemExit(1)
+          job=receipt.get('executor_job_receipt')
+          if not isinstance(job,dict):
+              raise SystemExit(1)
+          with open(sys.argv[2],'w',encoding='utf-8') as f:
+              json.dump(job,f,sort_keys=True,indent=2)
+              f.write('\n')
+          raise SystemExit(0)
+          PY
+            then
+              terminal=1
+              break
+            fi
+            sleep 5
+          done
+
+          test "$terminal" = 1
+          python3 - "$RUNNER_TEMP/subagent-terminal.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('schema')=='agentos.executor-job-receipt/v1', r
+          assert r.get('job_type')=='engineering.windows-thin-client.fix', r
+          assert r.get('project_id')=='agentos-core', r
+          assert r.get('executor_class')=='antigravity-engineering', r
+          assert r.get('executor_available') is True, r
+          assert r.get('routable') is True, r
+          assert r.get('authorized') is True, r
+          assert r.get('credential_exposed') is False, r
+          classification=str(r.get('classification') or '')
+          assert classification=='ENGINEERING_EXECUTOR_COMPLETED_PENDING_VERIFICATION', r
+          assert r.get('successful') is False, r
+          print('main_agent_subagent_receipt=PASS')
+          print('main_agent_verification_required=YES')
+          PY
+
+      - name: Upload sanitized acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-agent-subagent-live-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/subagent-submit.txt
+            ${{ runner.temp }}/subagent-inspect.txt
+            ${{ runner.temp }}/subagent-terminal.json
+          if-no-files-found: warn
+          retention-days: 14
