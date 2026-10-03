@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+import os
 import tempfile
 import time
 import unittest
@@ -28,10 +29,10 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             old = time.time() - 1200
-            import os
             os.utime(stranded, (old, old))
             worker = AntigravityRelayWorker(root, executor=["/bin/true"])
-            self.assertEqual(worker.reconcile_stranded_processing(stale_after=600), 1)
+            with patch("agentos_node.antigravity_relay._shared_gid", return_value=os.getgid()):
+                self.assertEqual(worker.reconcile_stranded_processing(stale_after=600), 1)
             self.assertIsNone(worker._next_capsule())
             self.assertFalse(stranded.exists())
             self.assertTrue((root / "quarantine" / "relay-old.json").exists())
@@ -52,7 +53,8 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             worker = AntigravityRelayWorker(root, executor=["/bin/true"])
-            self.assertEqual(worker.reconcile_stranded_processing(stale_after=600), 0)
+            with patch("agentos_node.antigravity_relay._shared_gid", return_value=os.getgid()):
+                self.assertEqual(worker.reconcile_stranded_processing(stale_after=600), 0)
             self.assertTrue(processing.exists())
             self.assertFalse((root / "receipts" / "relay-live.json").exists())
 
