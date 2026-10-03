@@ -541,6 +541,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                         'baseline_score', 'hydrated_score', 'uplift',
                         'hydration_receipt_ok', 'install_receipt_ok', 'classification',
                         'executor_returncode', 'executor_timed_out', 'executor_provider',
+                        'worktree_clean', 'observed_head',
                     )
                     public_receipt['executor_job_receipt'] = {
                         key: job_receipt.get(key)
