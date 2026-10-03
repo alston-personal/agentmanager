@@ -360,25 +360,31 @@ test -f "$RELEASE/.env.local"
 chmod 600 "$RELEASE/.env.local"
 printf 'source_sha=%s\nrun_id=%s\nstate=candidate\n' "$SOURCE_SHA" "$RUN_ID" > "$RELEASE/RELEASE_RECEIPT"
 
-# Canary the exact release before switching PM2.
-if ss -ltn 'sport = :3099' | grep -q LISTEN; then
-  echo 'dashboard_canary_port_in_use=REFUSED'
-  exit 2
-fi
+# Canary the exact release before switching PM2. Use an ephemeral loopback
+# port so an orphaned/parallel diagnostic cannot block deployment.
+CANARY_PORT="$(python3 - <<'PY'
+import socket
+s=socket.socket()
+s.bind(('127.0.0.1',0))
+print(s.getsockname()[1])
+s.close()
+PY
+)"
+[[ "$CANARY_PORT" =~ ^[0-9]+$ ]]
 (
   cd "$RELEASE"
-  ./node_modules/.bin/next start -H 127.0.0.1 -p 3099 > "$TMP/canary.log" 2>&1 &
+  ./node_modules/.bin/next start -H 127.0.0.1 -p "$CANARY_PORT" > "$TMP/canary.log" 2>&1 &
   echo $! > "$TMP/canary.pid"
 )
 CANARY_PID="$(cat "$TMP/canary.pid")"
 canary_ready=0
 for _ in $(seq 1 20); do
-  code="$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 8     http://127.0.0.1:3099/dashboard/api/admin/usage 2>/dev/null || true)"
+  code="$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 8     "http://127.0.0.1:$CANARY_PORT/dashboard/api/admin/usage" 2>/dev/null || true)"
   if [ "$code" = 401 ]; then canary_ready=1; break; fi
   sleep 2
 done
-test "$canary_ready" -eq 1 || { echo "dashboard_isolated_canary=FAIL code=$code"; exit 1; }
-echo 'dashboard_isolated_canary=PASS code=401'
+test "$canary_ready" -eq 1 || { echo "dashboard_isolated_canary=FAIL port=$CANARY_PORT code=$code"; cat "$TMP/canary.log" >&2 || true; exit 1; }
+echo "dashboard_isolated_canary=PASS port=$CANARY_PORT code=401"
 kill "$CANARY_PID" 2>/dev/null || true
 wait "$CANARY_PID" 2>/dev/null || true
 CANARY_PID=""
