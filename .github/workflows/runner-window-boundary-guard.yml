@@ -25,4 +25,5 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
+      - run: bash -n scripts/agentos_dispatch.sh
       - run: python3 scripts/check_runner_window_boundary.py
