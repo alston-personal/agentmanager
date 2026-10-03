@@ -74,6 +74,32 @@ def test_runner_window_allows_bounded_deterministic_smoke_evidence():
     assert "'observed_head'" in text
 
 
+def test_relay_status_is_bounded_public_intent():
+    item, params = resolve_intent(
+        "agentos.relay",
+        "status",
+        source_commit="a" * 40,
+        payload={},
+    )
+    assert item.action == bc.ACTION_RELAY_STATUS
+    assert params == {"source_commit": "a" * 40}
+
+
+def test_relay_status_projection_is_fixed_marker_only():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    for marker in (
+        "relay_status_antigravity_service=",
+        "relay_status_action_service=",
+        "relay_status_inbox_count=",
+        "relay_status_processing_count=",
+        "relay_status_receipts_count=",
+        "relay_status_inbox_oldest_seconds=",
+        "relay_status_processing_oldest_seconds=",
+        "relay_status=",
+    ):
+        assert marker in text
+
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})

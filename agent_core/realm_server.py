@@ -395,6 +395,17 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             safe_prefixes: tuple[str, ...] = ()
             if action == bootstrap_control.ACTION_RUNNER_WINDOW_PROBE:
                 safe_prefixes = ('runner_window_probe=',)
+            elif action == bootstrap_control.ACTION_RELAY_STATUS:
+                safe_prefixes = (
+                    'relay_status_antigravity_service=',
+                    'relay_status_action_service=',
+                    'relay_status_inbox_count=',
+                    'relay_status_processing_count=',
+                    'relay_status_receipts_count=',
+                    'relay_status_inbox_oldest_seconds=',
+                    'relay_status_processing_oldest_seconds=',
+                    'relay_status=',
+                )
             elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
                 safe_prefixes = (
                     'node_ota_stage_task=',

@@ -18,6 +18,7 @@ SCHEMA = "agentos.bootstrap-request/v1"
 RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
+ACTION_RELAY_STATUS = "agentos.relay.status"
 ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
@@ -63,6 +64,7 @@ ACTION_EXECUTOR_JOB_INSPECT = "agentos.executor_job.inspect"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_RUNNER_WINDOW_PROBE,
+    ACTION_RELAY_STATUS,
     ACTION_NODE_TRANSACTIONAL_OTA,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
@@ -365,6 +367,50 @@ def _run_canonical_script(
         tmp.unlink(missing_ok=True)
 
 
+def _relay_status() -> dict[str, Any]:
+    root = Path(os.environ.get("AGENT_DATA_ROOT") or "/home/ubuntu/agent-data") / "runtime" / "antigravity-relay"
+    now = time.time()
+
+    def count_and_oldest(name: str) -> tuple[int, int]:
+        path = root / name
+        files = [p for p in path.glob("relay-*.json") if p.is_file()] if path.is_dir() else []
+        ages = [max(0, int(now - p.stat().st_mtime)) for p in files]
+        return len(files), max(ages) if ages else 0
+
+    inbox_count, inbox_oldest = count_and_oldest("inbox")
+    processing_count, processing_oldest = count_and_oldest("processing")
+    receipts_count, _ = count_and_oldest("receipts")
+
+    def active(unit: str) -> str:
+        proc = subprocess.run(
+            ["systemctl", "--user", "is-active", unit],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        value = (proc.stdout or "").strip()
+        return value if value in {"active", "inactive", "failed", "activating", "deactivating"} else "unknown"
+
+    antigravity = active("agentos-antigravity-relay.service")
+    action_relay = active("agentos-action-relay.service")
+    markers = [
+        f"relay_status_antigravity_service={antigravity}",
+        f"relay_status_action_service={action_relay}",
+        f"relay_status_inbox_count={inbox_count}",
+        f"relay_status_processing_count={processing_count}",
+        f"relay_status_receipts_count={receipts_count}",
+        f"relay_status_inbox_oldest_seconds={inbox_oldest}",
+        f"relay_status_processing_oldest_seconds={processing_oldest}",
+        "relay_status=PASS",
+    ]
+    return {
+        "ok": True,
+        "source_commit": None,
+        "steps": [{"step": "relay_status", "returncode": 0, "stdout": "\n".join(markers) + "\n", "stderr": ""}],
+    }
+
+
 def _execute(action: str, source_commit: str | None, post_key: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
     if action == ACTION_RUNNER_WINDOW_PROBE:
         return {
@@ -372,6 +418,10 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             "source_commit": source_commit,
             "steps": [{"step": "runner_window_probe", "returncode": 0, "stdout": "runner_window_probe=PASS\n", "stderr": ""}],
         }
+    if action == ACTION_RELAY_STATUS:
+        result = _relay_status()
+        result["source_commit"] = source_commit
+        return result
     if action == ACTION_NODE_TRANSACTIONAL_OTA:
         params=params or {}
         return _run_canonical_script(
