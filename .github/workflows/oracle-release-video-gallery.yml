@@ -19,7 +19,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 82c5e83943cec50ecf6c5e41f1e535982e26eb14
+      source_sha: 4c0af4dde06429547fe81dbbfed510edee5b8a2d
       route: videos
       backup_key: video-gallery
       receipt_schema: studio-web.video-gallery-release/v1
@@ -27,10 +27,12 @@ jobs:
         Milkcat World · Video Library
         AGENTOS · GENERATED FILMS
         澪 · 台北雨夜
+        澪 · 山道上吹吹風
         /videos/assets/mio-taipei-rain-10s.mp4
-      node_asset_source: /home/ubuntu/agent-data/artifacts/colab/mio-taipei-rain-36977321582/outputs/mio-taipei-rain-10s_mio-taipei-rain-10s.mp4
-      node_asset_target: assets/mio-taipei-rain-10s.mp4
-      node_asset_sha256: 5c9d4dacd9c74aae65e34d15c1f3497963c9d1d41d44891a16ddabdbb0e46367
+        /videos/assets/mio-mountain-breeze-10s.mp4
+      node_assets_manifest: |-
+        /home/ubuntu/agent-data/artifacts/colab/mio-taipei-rain-36977321582/outputs/mio-taipei-rain-10s_mio-taipei-rain-10s.mp4|assets/mio-taipei-rain-10s.mp4|5c9d4dacd9c74aae65e34d15c1f3497963c9d1d41d44891a16ddabdbb0e46367
+        /home/ubuntu/agent-data/artifacts/colab/mio-mountain-breeze-37082732581/outputs/mio-mountain-breeze-10s_mio-mountain-breeze-10s.mp4|assets/mio-mountain-breeze-10s.mp4|459ed4508f501711d61d3e1556654bf2d898a3ea5ccf494f05c7c08b859798db
     secrets:
       AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
       AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
