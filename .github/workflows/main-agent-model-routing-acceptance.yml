@@ -1,0 +1,125 @@
+name: Main Agent Model Routing Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/main-agent-model-routing-acceptance.yml'
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/engineering_subagent_provider.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: main-agent-model-routing-acceptance
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Submit health-routed model smoke
+        id: submit
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=180             bash scripts/agentos_dispatch.sh               agentos.executor job.submit "$GITHUB_SHA"               job_type=engineering.model.smoke               | tee "$RUNNER_TEMP/model-submit.txt"
+          python3 - "$RUNNER_TEMP/model-submit.txt" "$GITHUB_OUTPUT" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs
+          receipt=docs[-1].get('receipt') or {}
+          job=receipt.get('executor_job') or {}
+          assert receipt.get('ok') is True, receipt
+          assert job.get('job_type')=='engineering.model.smoke', job
+          job_id=str(job.get('job_id') or '')
+          assert job_id.startswith('action-'), job
+          with open(sys.argv[2],'a',encoding='utf-8') as f:
+              f.write('job_id='+job_id+'\n')
+          print('model_routing_submit=PASS')
+          PY
+
+      - name: Inspect routed model receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          job_id="${{ steps.submit.outputs.job_id }}"
+          terminal=0
+          : > "$RUNNER_TEMP/model-inspect.txt"
+          for i in $(seq 1 80); do
+            out="$RUNNER_TEMP/model-inspect-$i.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=90               bash scripts/agentos_dispatch.sh                 agentos.executor job.inspect "$GITHUB_SHA"                 job_id="$job_id" > "$out"
+            cat "$out" >> "$RUNNER_TEMP/model-inspect.txt"
+            if python3 - "$out" "$RUNNER_TEMP/model-terminal.json" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          if not docs:
+              raise SystemExit(1)
+          receipt=docs[-1].get('receipt') or {}
+          if receipt.get('executor_job_state')!='completed':
+              raise SystemExit(1)
+          job=receipt.get('executor_job_receipt')
+          if not isinstance(job,dict):
+              raise SystemExit(1)
+          json.dump(job,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
+          raise SystemExit(0)
+          PY
+            then
+              terminal=1
+              break
+            fi
+            sleep 4
+          done
+          test "$terminal" = 1
+          python3 - "$RUNNER_TEMP/model-terminal.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('job_type')=='engineering.model.smoke', r
+          assert r.get('classification')=='ENGINEERING_MODEL_SMOKE_COMPLETED_PENDING_VERIFICATION', r
+          assert r.get('executor_provider') in {'claude','agy'}, r
+          assert r.get('executor_returncode')==0, r
+          assert r.get('executor_timed_out') is False, r
+          assert r.get('credential_exposed') is False, r
+          assert r.get('successful') is False, r
+          print('model_routing_acceptance=PASS')
+          print('model_routing_selected_provider='+str(r.get('executor_provider')))
+          print('main_agent_verification_required=YES')
+          PY
+
+      - name: Upload sanitized routing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-agent-model-routing-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/model-submit.txt
+            ${{ runner.temp }}/model-inspect.txt
+            ${{ runner.temp }}/model-terminal.json
+          if-no-files-found: warn
+          retention-days: 14

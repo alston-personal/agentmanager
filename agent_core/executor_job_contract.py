@@ -107,6 +107,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://engineering-executors",
         read_only=True,
     ),
+    "engineering.model.smoke": JobTypeSpec(
+        job_type="engineering.model.smoke",
+        capability="agentos.engineering.model-smoke",
+        authority="bounded-read-only",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="surface://engineering-model-subagent",
+        read_only=True,
+    ),
     "engineering.windows-thin-client.fix": JobTypeSpec(
         job_type="engineering.windows-thin-client.fix",
         capability="agentos.engineering.windows-node",

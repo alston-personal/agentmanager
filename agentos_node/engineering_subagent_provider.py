@@ -37,6 +37,12 @@ JOBS: dict[str, dict[str, str]] = {
         "goal": "Probe fixed local engineering model providers without mutation.",
         "acceptance": "Classify Claude and agy as READY, AUTH_REQUIRED, TIMEOUT, ERROR, or UNAVAILABLE and select the first READY provider.",
     },
+    "engineering.model.smoke": {
+        "workload_ref": "surface://engineering-model-subagent",
+        "branch": "",
+        "goal": "Prove a health-selected real model executor can complete a bounded read-only AgentOS task through the relay.",
+        "acceptance": "Return a concrete read-only result through the selected healthy provider without modifying the repository.",
+    },
     "engineering.windows-thin-client.fix": {
         "workload_ref": "issue://892",
         "branch": "fix/subagent-892-windows-thin-client",
@@ -72,7 +78,7 @@ def _failure(classification: str, *, executor_available: bool = True, routable: 
 
 def _instruction(job_type: str) -> str:
     item = JOBS[job_type]
-    if job_type == "engineering.subagent.smoke":
+    if job_type in {"engineering.subagent.smoke", "engineering.model.smoke"}:
         return (
             f"Execute bounded AgentOS engineering probe {item['workload_ref']}. "
             f"Goal: {item['goal']} "
@@ -289,6 +295,11 @@ def run_engineering_subagent(
     if spec.job_type == "engineering.executor.health":
         return _run_executor_health(workspace_path)
 
+    health = _run_executor_health(workspace_path)
+    selected_provider = str(health.get("selected_provider") or "")
+    if not selected_provider:
+        return health
+
     client = AntigravityRelayClient(relay_root)
     try:
         capsule = client.submit(
@@ -306,7 +317,7 @@ def run_engineering_subagent(
             },
             instruction=_instruction(spec.job_type),
             workspace=str(workspace_path),
-            executor_hint="engineering-subagent",
+            executor_hint=f"provider:{selected_provider}",
         )
     except Exception:
         return _failure("ENGINEERING_RELAY_SUBMIT_FAILED")
@@ -345,12 +356,19 @@ def run_engineering_subagent(
     # must inspect the resulting branch/PR and CI before closing the work item.
     return {
         "verdict": "PASS",
-        "classification": "ENGINEERING_EXECUTOR_COMPLETED_PENDING_VERIFICATION",
+        "classification": (
+            "ENGINEERING_MODEL_SMOKE_COMPLETED_PENDING_VERIFICATION"
+            if spec.job_type == "engineering.model.smoke"
+            else "ENGINEERING_EXECUTOR_COMPLETED_PENDING_VERIFICATION"
+        ),
         "executor_available": True,
         "routable": True,
         "authorized": True,
         "successful": False,
         "credential_exposed": False,
+        "executor_provider": selected_provider,
+        "executor_returncode": int(receipt.get("returncode") or 0),
+        "executor_timed_out": receipt.get("timed_out") is True,
     }
 
 
