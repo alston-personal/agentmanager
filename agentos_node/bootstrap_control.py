@@ -18,6 +18,7 @@ SCHEMA = "agentos.bootstrap-request/v1"
 RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
+ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
 ACTION_RECONCILE_CONTENT_SOCIAL = "agentos.content_social.reconcile"
@@ -60,6 +61,7 @@ ACTION_PROBE_PERSONA_PDCA_RUNTIME = "agentos.persona_pdca_runtime.probe"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_RUNNER_WINDOW_PROBE,
+    ACTION_NODE_TRANSACTIONAL_OTA,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
     ACTION_RECONCILE_CONTENT_SOCIAL,
@@ -157,6 +159,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","studio_commit"}
     elif action == ACTION_RECONCILE_CONTENT_SOCIAL:
         allowed_params={"source_commit","account_ref"}
+    elif action == ACTION_NODE_TRANSACTIONAL_OTA:
+        allowed_params={"source_commit","node_id","candidate_commit"}
     else:
         allowed_params={"source_commit"}
     unknown = set(params) - allowed_params
@@ -178,12 +182,20 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         account_ref=str(params.get("account_ref") or "")
         if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", account_ref):
             raise ValueError("invalid content social account_ref")
+    if action == ACTION_NODE_TRANSACTIONAL_OTA:
+        node_id=str(params.get("node_id") or "")
+        candidate_commit=str(params.get("candidate_commit") or "")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", node_id):
+            raise ValueError("invalid OTA node_id")
+        if not COMMIT_RE.fullmatch(candidate_commit):
+            raise ValueError("candidate_commit must be an exact lowercase 40-hex commit SHA")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
     if source_commit is not None and not COMMIT_RE.fullmatch(source_commit):
         raise ValueError("source_commit must be an exact lowercase 40-hex commit SHA")
     exact_actions = {
+        ACTION_NODE_TRANSACTIONAL_OTA,
         ACTION_DEPLOY_REALM_GATEWAY,
         ACTION_DEPLOY_SOCIAL_RUNTIME,
         ACTION_RECONCILE_CONTENT_SOCIAL,
@@ -344,6 +356,17 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             "source_commit": source_commit,
             "steps": [{"step": "runner_window_probe", "returncode": 0, "stdout": "runner_window_probe=PASS\n", "stderr": ""}],
         }
+    if action == ACTION_NODE_TRANSACTIONAL_OTA:
+        params=params or {}
+        return _run_canonical_script(
+            "scripts/run_realm_node_transactional_ota_user.sh",
+            timeout=480,
+            source_commit=source_commit,
+            env_extra={
+                "AGENTOS_OTA_NODE_ID": str(params.get("node_id") or ""),
+                "AGENTOS_OTA_CANDIDATE_COMMIT": str(params.get("candidate_commit") or ""),
+            },
+        )
     if action == ACTION_REPAIR_TRANSPORT:
         env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
         if source_commit:
