@@ -3,11 +3,13 @@ name: Direct Oracle Runner Guard
 on:
   push:
     branches:
-      - fix/one-controller-ingress
+      - core/integration
     paths:
       - '.github/workflows/**'
       - 'scripts/check_no_direct_oracle_runner.py'
   pull_request:
+    branches:
+      - core/integration
     paths:
       - '.github/workflows/**'
       - 'scripts/check_no_direct_oracle_runner.py'
