@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Universal Runner Window client.
 set -euo pipefail
 
 CAPABILITY="${1:?usage: agentos_dispatch.sh <capability> <operation> <source_commit> [key=value ...]}"
