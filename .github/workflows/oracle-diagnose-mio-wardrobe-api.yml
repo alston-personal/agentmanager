@@ -183,6 +183,25 @@ jobs:
               sed -E 's/(code|state|token|auth_token|handoff)=([^&[:space:]]+)/\1=<redacted>/g' || true
           done
 
+          echo "=== OAuth server-side return target ==="
+          TEST_RETURN='/dashboard/api/wardrobe/auth-handoff?handoff=diagnostic-only-not-real'
+          curl --noproxy '*' -k -sS -D /tmp/mio-oauth-state-head -o /dev/null --resolve studio.milkcat.org:443:127.0.0.1 \
+            "https://studio.milkcat.org/dashboard/api/auth/signin/google?returnTo=$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["TEST_RETURN"],safe=""))')" || true
+          export OAUTH_LOCATION="$(grep -i '^location:' /tmp/mio-oauth-state-head | tail -n1 | sed 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r')"
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.parse
+          loc=os.environ.get('OAUTH_LOCATION','')
+          q=urllib.parse.parse_qs(urllib.parse.urlparse(loc).query)
+          state=(q.get('state') or [''])[0]
+          print('oauth_state_present='+str(bool(state)))
+          root=pathlib.Path('/home/ubuntu/agent-data/auth/oauth-states')
+          p=root/(state+'.json') if state else None
+          print('oauth_state_file_present='+str(bool(p and p.exists())))
+          if p and p.exists():
+              row=json.loads(p.read_text(encoding='utf-8'))
+              print('oauth_state_return_target_ok='+str(row.get('returnTo')=='/dashboard/api/wardrobe/auth-handoff?handoff=diagnostic-only-not-real'))
+          PY
+
           echo "=== auth session ==="
           code="$(curl --noproxy '*' -k -sS -o /tmp/mio-auth-session-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
             https://studio.milkcat.org/dashboard/api/auth/session || true)"
