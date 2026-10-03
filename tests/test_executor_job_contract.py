@@ -3,11 +3,18 @@ import pytest
 from agent_core.executor_job_contract import (
     EXECUTOR_JOB_RECEIPT_SCHEMA,
     ExecutorJobContractError,
+    canonical_executor_job_request,
     canonical_experience_regression_request,
     canonical_typesafe_skill_install_request,
     project_executor_job_receipt,
     validate_executor_job,
 )
+
+
+def test_public_canonical_job_builder_accepts_registered_types_and_rejects_unknown():
+    assert canonical_executor_job_request("experience.regression") == canonical_experience_regression_request()
+    with pytest.raises(ExecutorJobContractError, match="unsupported executor job type"):
+        canonical_executor_job_request("future.unknown")
 
 
 def test_canonical_experience_regression_is_exact_and_read_only():
