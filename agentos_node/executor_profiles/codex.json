@@ -1,0 +1,68 @@
+{
+  "schema": "agentos.executor-provider-profile/v0.1",
+  "executor_id": "codex",
+  "provider_id": "openai",
+  "executor_class": "codex",
+  "modes": [
+    "cli"
+  ],
+  "owner": "provider-adapter",
+  "capabilities": [
+    "agent.chat",
+    "code.edit"
+  ],
+  "discovery": {
+    "strategy": [
+      "provider_adapter"
+    ],
+    "provider_owned_allowlists_only": true,
+    "credential_access": false
+  },
+  "readiness": {
+    "dimensions": [
+      "installed",
+      "reachable",
+      "authorized",
+      "routable",
+      "healthy"
+    ],
+    "ready_requires": [
+      "installed",
+      "reachable",
+      "authorized",
+      "routable",
+      "healthy"
+    ]
+  },
+  "invocation": {
+    "bounded_semantic_requests_only": true,
+    "caller_supplied_executable": false,
+    "caller_supplied_argv": false,
+    "caller_supplied_env": false
+  },
+  "cancellation": {
+    "supported": false,
+    "strategy": "provider-defined"
+  },
+  "concurrency": {
+    "model": "provider-defined",
+    "mutex_scope": null
+  },
+  "receipt": {
+    "required": true,
+    "secrets_allowed": false
+  },
+  "smoke": {
+    "required": true,
+    "kind": "provider-defined",
+    "expected_safe_evidence": []
+  },
+  "adoption": {
+    "reinstall_by_default": false,
+    "preserve_existing_identity": true
+  },
+  "implementation": {
+    "adapter_module": null,
+    "notes": "Provider must implement adapter per EXECUTOR_PROVIDER_ONBOARDING_PROTOCOL.md before this executor can become routable."
+  }
+}
