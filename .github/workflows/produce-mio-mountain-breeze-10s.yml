@@ -1,0 +1,183 @@
+name: Produce Mio Mountain Breeze 10s
+
+on:
+  push:
+    branches:
+      - video/mio-mountain-breeze-10s
+    paths:
+      - '.github/workflows/produce-mio-mountain-breeze-10s.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: produce-mio-mountain-breeze-10s
+  cancel-in-progress: false
+
+jobs:
+  produce:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 180
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      UPSTREAM_SHA: 7768ebfb1627546595f37e9acfd2d353937c6cd8
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Generate 10-second Mio mountain breeze film
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$UPSTREAM_SHA" "${GITHUB_RUN_ID}" <<'REMOTE'
+          set -euo pipefail
+          export PATH="/home/ubuntu/.local/bin:/home/ubuntu/.local/opt/google-cloud-sdk/bin:$PATH"
+          export COLAB_AUTH=adc
+          SHA="$1"; RUN_ID="$2"
+          ROOT=/home/ubuntu/agent-data/providers/colab
+          RELEASE="$ROOT/releases/$SHA"
+          EVIDENCE=/home/ubuntu/agent-data/evidence/colab
+          ARTIFACT_ROOT=/home/ubuntu/agent-data/artifacts/colab/mio-mountain-breeze-$RUN_ID
+          INPUTS="$ARTIFACT_ROOT/inputs"
+          OUT="$ARTIFACT_ROOT/outputs"
+          WORK=/home/ubuntu/agent-data/tmp/mio-mountain-breeze-$RUN_ID
+          mkdir -p "$WORK" "$INPUTS" "$OUT" "$EVIDENCE"
+          chmod 700 "$WORK" "$ARTIFACT_ROOT" "$EVIDENCE"
+          trap 'rm -rf "$WORK"' EXIT
+
+          test -f "$RELEASE/scripts/runner.py"
+          command -v colab >/dev/null
+          test -f /home/ubuntu/.config/gcloud/application_default_credentials.json
+
+          curl -kfsS --retry 5 --resolve studio.milkcat.org:443:127.0.0.1             "https://studio.milkcat.org/personas/mio/mio-avatar.webp?_=$RUN_ID"             -o "$INPUTS/mio-avatar.webp"
+          curl -kfsS --retry 5 --resolve studio.milkcat.org:443:127.0.0.1             "https://studio.milkcat.org/personas/mio/mio-base-v2.webp?_=$RUN_ID"             -o "$INPUTS/mio-body.webp"
+          test "$(wc -c < "$INPUTS/mio-avatar.webp")" -gt 3000
+          test "$(wc -c < "$INPUTS/mio-body.webp")" -gt 3000
+
+          cat > "$INPUTS/prompt.txt" <<'EOF'
+          subject_definitions:
+          <Picture 1> is Mio's canonical identity and face reference. Keep her the exact same adult East Asian woman: same face shape, eyes, nose, lips, skin tone, dark-brown 7:3 long hair, subtle beauty mark under the outer side of her right eye, and natural understated expression. Do not change her identity.
+          <Picture 2> is Mio's canonical full-body proportion reference. Preserve her adult natural proportions, approximately 170 cm tall, slightly long-legged, realistic anatomy and scale. Do not copy the technical base clothing from Picture 2 into the final scene.
+
+          summary:
+          A 10-second photorealistic cinematic short film. Mio stands on a quiet mountain trail in the Taipei outskirts, enjoying a gentle breeze while looking at a distant city view. The mood is peaceful, intimate, natural, and quietly beautiful.
+
+          retention_analysis:
+          Mio's identity must remain stable from first frame to last frame. Preserve the exact face from <Picture 1> and body proportions from <Picture 2>. No face morphing, no age change, no hairstyle drift, no body-shape drift. She wears a tasteful lightweight pale-beige outdoor jacket over a simple cream top, relaxed dark trousers, practical low-profile walking shoes, no logos, no hat, no bag. Clothing remains structurally consistent.
+
+          detailed_description:
+          [0.0-3.0s] Late-afternoon exterior on a quiet Taipei-area mountain trail. Mio stands beside a simple trail railing with green hillside vegetation nearby and a soft distant cityscape visible below. Medium shot with environmental context. She looks calmly toward the horizon. A gentle natural breeze moves a few strands of her long dark-brown hair and lightly stirs the hem of her jacket.
+
+          [3.0-6.0s] Mio slowly lifts one hand and gently tucks a few windblown strands of hair back near her ear. The movement is small, natural and unhurried. The camera makes a very slow controlled push-in. Her posture stays relaxed and her expression remains calm.
+
+          [6.0-10.0s] She lowers her hand, turns her head slightly toward the near-front direction without looking directly into camera, and gives the faintest relaxed smile. The breeze continues softly through her hair and jacket. The camera settles into a stable medium-close three-quarter composition and holds the final beat.
+
+          environment:
+          A believable mountain walking trail in the Taipei outskirts: modest railing, greenery, hillside atmosphere, layered distant cityscape, no crowds, no fantasy elements, no readable fake signage.
+
+          cinematography:
+          Photorealistic Taiwanese lifestyle cinema, natural skin texture, soft late-afternoon light, restrained contrast, shallow depth of field, gentle highlight rolloff, subtle film grain, realistic wind physics, calm pacing, 50mm cinematic lens feel, 24 fps motion. One continuous shot. No fast cuts. No dramatic camera moves. No slow-motion gimmick. No text, subtitles, watermarks or logos.
+
+          overall_soundscape:
+          Natural mountain-trail ambience, soft wind through leaves, very distant city ambience. No dialogue.
+
+          non_diegetic_music:
+          Very subtle warm ambient pad, minimal and cinematic, quieter than the natural wind.
+          EOF
+
+          python3 - "$INPUTS/jobs.json" "$INPUTS/mio-avatar.webp" "$INPUTS/mio-body.webp" "$INPUTS/prompt.txt" <<'PY'
+          import json,sys
+          path,face,body,prompt=sys.argv[1:]
+          data={"jobs":[{
+              "id":"mio-mountain-breeze-10s",
+              "title":"Mio enjoys a quiet mountain breeze",
+              "reference_images":[face,body],
+              "prompt_file":prompt,
+              "duration_seconds":10,
+              "output_name":"mio-mountain-breeze-10s"
+          }]}
+          with open(path,"w",encoding="utf-8") as f:
+              json.dump(data,f,ensure_ascii=False,indent=2); f.write("\n")
+          PY
+
+          USAGE_BEFORE="$WORK/usage-before.txt"
+          USAGE_AFTER="$WORK/usage-after.txt"
+          colab --auth=adc usage > "$USAGE_BEFORE" 2>&1
+
+          set +e
+          python3 "$RELEASE/scripts/runner.py" batch             --manifest "$INPUTS/jobs.json"             --gpu A100             --timeout 7200             --output-dir "$OUT"             --progress "$WORK/progress.json" > "$WORK/runner.log" 2>&1
+          RC=$?
+          set -e
+
+          colab --auth=adc usage > "$USAGE_AFTER" 2>&1 || true
+
+          python3 - "$EVIDENCE/mio-mountain-breeze-$RUN_ID.json" "$RC" "$ARTIFACT_ROOT" "$OUT" "$USAGE_BEFORE" "$USAGE_AFTER" "$WORK/progress.json" "$WORK/runner.log" <<'PY'
+          import hashlib,json,os,re,sys,datetime,glob
+          dst,rc,artifact_root,out,before,after,progress,runner_log=sys.argv[1:]
+          def parse_usage(path):
+              try: txt=open(path,encoding="utf-8",errors="replace").read()
+              except Exception: return {}
+              def num(p):
+                  m=re.search(p,txt,re.I|re.M)
+                  return float(m.group(1).replace(",","")) if m else None
+              return {
+                  "balance_compute_units":num(r"^Current balance:\s*([\d,]+(?:\.\d+)?)\s+compute units\s*$"),
+                  "rate_per_hour":num(r"^Usage rate:\s*([\d,]+(?:\.\d+)?)\s*/\s*hr\s*$"),
+                  "active_assignments":num(r"^Active assignments:\s*(\d+)\s*$")
+              }
+          outputs=[]
+          for p in sorted(glob.glob(os.path.join(out,"*.mp4"))):
+              with open(p,"rb") as fh: digest=hashlib.sha256(fh.read()).hexdigest()
+              outputs.append({"path":p,"bytes":os.path.getsize(p),"sha256":digest})
+          prog=None
+          if os.path.isfile(progress):
+              try: prog=json.load(open(progress,encoding="utf-8"))
+              except Exception: pass
+          tail=[]
+          if os.path.isfile(runner_log):
+              for line in open(runner_log,encoding="utf-8",errors="replace").read().splitlines()[-120:]:
+                  line=re.sub(r"(?i)(access[_ -]?token|refresh[_ -]?token|authorization|bearer)\s*[:=]\s*\S+",r"\1=<redacted>",line)
+                  tail.append(line[:1200])
+          payload={
+              "schema":"agentos.media-generation-receipt/v1",
+              "provider":"google-colab",
+              "capability":"capability://media.video.generate.minimax-h3",
+              "timestamp_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "creative":{"subject":"Mio","location":"Taipei mountain trail","weather":"gentle breeze","duration_seconds":10,"style":"cinematic"},
+              "compute":{"requested_gpu":"A100","high_mem_requested":True},
+              "artifact_root":artifact_root,
+              "usage":{"before":parse_usage(before),"after":parse_usage(after)},
+              "runner":{"returncode":int(rc),"progress":prog,"sanitized_tail":tail},
+              "result":{"status":"PASS" if int(rc)==0 and outputs else "FAIL","outputs":outputs}
+          }
+          with open(dst+".tmp","w",encoding="utf-8") as f:
+              json.dump(payload,f,ensure_ascii=False,indent=2); f.write("\n")
+          os.replace(dst+".tmp",dst); os.chmod(dst,0o600)
+          print(json.dumps(payload,ensure_ascii=False,indent=2))
+          if payload["result"]["status"]!="PASS": raise SystemExit(21)
+          PY
+
+          echo "mio_mountain_breeze_video=PASS"
+          echo "artifact_root=$ARTIFACT_ROOT"
+          echo "receipt=$EVIDENCE/mio-mountain-breeze-$RUN_ID.json"
+          REMOTE
+
+      - name: Copy video artifact from Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          mkdir -p "$RUNNER_TEMP/mio-mountain-breeze-${GITHUB_RUN_ID}"
+          scp -r -P "$PORT" -o StrictHostKeyChecking=accept-new             "$DEPLOY_USER@127.0.0.1:/home/ubuntu/agent-data/artifacts/colab/mio-mountain-breeze-${GITHUB_RUN_ID}/outputs/"             "$RUNNER_TEMP/mio-mountain-breeze-${GITHUB_RUN_ID}/"
+
+      - name: Upload finished Mio video
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-mountain-breeze-10s-${{ github.run_id }}
+          path: ${{ runner.temp }}/mio-mountain-breeze-${{ github.run_id }}/outputs/*.mp4
+          if-no-files-found: error
+          retention-days: 14
