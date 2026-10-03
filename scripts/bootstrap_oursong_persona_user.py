@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
-ROOT = Path.home() / "agent-data" / "personas" / "oursong_alstonhuang"
+ROOT = Path(os.environ.get("AGENTOS_PERSONA_DATA_ROOT") or (Path.home() / "agent-data")) / "personas" / "oursong_alstonhuang"
 
 FILES = {
     "README.md": "# oursong_alstonhuang\n\nBootstrap state for AgentOS persona runtime.\n",
