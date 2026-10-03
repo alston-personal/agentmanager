@@ -100,6 +100,30 @@ def test_relay_status_projection_is_fixed_marker_only():
         assert marker in text
 
 
+def test_scheduler_status_is_bounded_public_intent():
+    item, params = resolve_intent(
+        "agentos.scheduler",
+        "status",
+        source_commit="b" * 40,
+        payload={},
+    )
+    assert item.action == bc.ACTION_SCHEDULER_STATUS
+    assert params == {"source_commit": "b" * 40}
+
+
+def test_scheduler_status_projection_is_fixed_marker_only():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    for marker in (
+        "scheduler_status_pending_count=",
+        "scheduler_status_pending_oldest_seconds=",
+        "scheduler_status_stalled_count=",
+        "scheduler_status_receipts_count=",
+        "scheduler_status_rejected_count=",
+        "scheduler_status=",
+    ):
+        assert marker in text
+
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})

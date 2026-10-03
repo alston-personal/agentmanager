@@ -35,6 +35,7 @@ MAINTENANCE = 70
 POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_RUNNER_WINDOW_PROBE: ActionPolicy("control", 8, "high", ("agentos.dispatch.probe",), ()),
     bc.ACTION_RELAY_STATUS: ActionPolicy("control", 9, "high", ("agentos.relay.inspect",), ()),
+    bc.ACTION_SCHEDULER_STATUS: ActionPolicy("control", 9, "high", ("agentos.scheduler.inspect",), ()),
     bc.ACTION_EXECUTOR_JOB_SUBMIT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
     bc.ACTION_EXECUTOR_JOB_INSPECT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
     bc.ACTION_NODE_TRANSACTIONAL_OTA: ActionPolicy("control", 16, "high", ("node.runtime.ota",), ("node-runtime-ota",)),
