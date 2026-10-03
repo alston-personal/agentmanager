@@ -2,6 +2,9 @@
 set -euo pipefail
 
 REPAIR_STAGE="init"
+REPAIR_FAILURE_LINE=""
+REPAIR_FAILURE_RC=""
+trap 'REPAIR_FAILURE_RC=$?; REPAIR_FAILURE_LINE=$LINENO' ERR
 
 if [ "$(id -un)" != "ubuntu" ]; then
   echo "ERROR: run as ubuntu" >&2
@@ -53,7 +56,8 @@ cleanup() {
   rm -rf "$TMPDIR"
   if [ "$rc" -ne 0 ]; then
     echo "antigravity_repair_stage=$REPAIR_STAGE"
-    echo "antigravity_repair_exit=$rc"
+    echo "antigravity_repair_exit=${REPAIR_FAILURE_RC:-$rc}"
+    echo "antigravity_repair_line=${REPAIR_FAILURE_LINE:-unknown}"
   fi
 }
 trap cleanup EXIT

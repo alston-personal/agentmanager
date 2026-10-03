@@ -457,6 +457,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 safe_prefixes = (
                     'antigravity_repair_stage=',
                     'antigravity_repair_exit=',
+                    'antigravity_repair_line=',
                     'antigravity_repair=',
                     'agentos_source_ref=',
                     'agentos_source_commit=',
