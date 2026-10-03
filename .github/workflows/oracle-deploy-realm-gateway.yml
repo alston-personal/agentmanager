@@ -2,6 +2,8 @@ name: Oracle Deploy Realm Gateway
 
 on:
   push:
+    branches:
+      - core/integration
     paths:
       - 'dashboard/app/api/agentos/**'
       - 'scripts/deploy_realm_gateway_user.sh'
