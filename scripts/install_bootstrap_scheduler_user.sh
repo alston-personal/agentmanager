@@ -65,10 +65,11 @@ rollback() {
 }
 trap rollback EXIT
 
-# Materialize an immutable scheduler generation. It contains both agentos_node
-# and agent_core because the router resolves Realm receipts and must use the
-# same archive-aware transport contract as the Core service.
-git -C "$REPO" archive "$SOURCE_COMMIT" agentos_node agent_core | tar -x -C "$STAGE"
+# Materialize an immutable scheduler generation. It contains agentos_node,
+# agent_core, and runtime_core because build-role executor providers are loaded
+# from this same exact release and their registered modules have fixed
+# runtime_core dependencies.
+git -C "$REPO" archive "$SOURCE_COMMIT" agentos_node agent_core runtime_core | tar -x -C "$STAGE"
 PYTHONPATH="$STAGE" /usr/bin/python3 -m py_compile   "$STAGE/agentos_node/bootstrap_control.py"   "$STAGE/agentos_node/bootstrap_scheduler.py"   "$STAGE/agent_core/realm_fabric.py"
 
 PYTHONPATH="$STAGE" /usr/bin/python3 - <<'PY'
