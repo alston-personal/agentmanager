@@ -458,3 +458,51 @@ def test_model_failure_preserves_selected_provider_when_relay_receipt_omits_prov
     assert result["selected_provider"] == "agy"
     assert result["executor_provider"] == "agy"
     assert result["executor_timed_out"] is True
+
+
+def test_relay_timeout_preserves_selected_provider(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    monkeypatch.setattr(
+        provider,
+        "_run_executor_health",
+        lambda _workspace: {
+            "verdict": "PASS",
+            "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
+            "executor_available": True,
+            "routable": True,
+            "authorized": True,
+            "successful": True,
+            "credential_exposed": False,
+            "selected_provider": "agy",
+        },
+    )
+
+    class FakeClient:
+        def __init__(self, root):
+            self.root = root
+        def submit(self, **kwargs):
+            assert kwargs["executor_hint"] == "provider:agy"
+            return {"capsule_id": "relay-timeout"}
+        def receipt(self, capsule_id):
+            assert capsule_id == "relay-timeout"
+            return None
+
+    monkeypatch.setattr(provider, "AntigravityRelayClient", FakeClient)
+    monkeypatch.setattr(provider.time, "sleep", lambda _s: None)
+
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.model.smoke"),
+        relay_root=tmp_path / "relay",
+        workspace=workspace,
+        timeout_seconds=0.001,
+    )
+    assert result["classification"] == "ENGINEERING_RELAY_TIMEOUT"
+    assert result["selected_provider"] == "agy"
+    assert result["executor_provider"] == "agy"
+    assert result["executor_timed_out"] is True
+    assert result["successful"] is False
