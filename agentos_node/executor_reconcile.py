@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,10 @@ from agentos_node.executor_provider_registry import (
 
 SCHEMA = "agentos.executor-inventory/v0.2"
 ADOPTION_SCHEMA = "agentos.executor-adoption/v0.2"
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _state_root() -> Path:
@@ -184,23 +189,43 @@ def reconcile_executor_adoption(
     root.mkdir(parents=True, exist_ok=True)
 
     inventory = discover_executor_inventory(profile_root=profile_root)
-    adopted = [
-        {
-            "executor_id": item["executor_id"],
+    previous_by_executor: dict[str, dict[str, Any]] = {}
+    previous_path = root / "executor-adoption.json"
+    if previous_path.exists():
+        try:
+            previous = json.loads(previous_path.read_text(encoding="utf-8"))
+            if previous.get("schema") == ADOPTION_SCHEMA:
+                previous_by_executor = {
+                    str(item.get("executor_id") or ""): item
+                    for item in previous.get("executors") or []
+                    if isinstance(item, dict) and item.get("executor_id")
+                }
+        except Exception:
+            previous_by_executor = {}
+
+    adopted = []
+    for item in inventory["executors"]:
+        executor_id = str(item["executor_id"])
+        prior = previous_by_executor.get(executor_id) or {}
+        ready_streak = int(prior.get("ready_streak") or 0) + 1 if item["state"] == "READY" else 0
+        adopted.append({
+            "executor_id": executor_id,
             "provider_id": item.get("provider_id"),
             "executor_class": item.get("executor_class"),
             "state": item["state"],
             "adopted": bool(item.get("adoptable")),
             "routable": bool(item.get("routable")),
+            "stable_routable": bool(item.get("routable")) and ready_streak >= 2,
+            "ready_streak": ready_streak,
             "capabilities": list(item.get("capabilities") or []),
             "profile_valid": bool(item.get("profile_valid")),
             "adapter_registered": bool(item.get("adapter_registered")),
             "discovered": bool(item.get("discovered")),
+            "reachable": bool(item.get("reachable")),
             "authorized": bool(item.get("authorized")),
             "healthy": bool(item.get("healthy")),
-        }
-        for item in inventory["executors"]
-    ]
+            "provider_health": dict(item.get("provider_health") or {}),
+        })
 
     counts: dict[str, int] = {}
     for item in adopted:
@@ -209,6 +234,7 @@ def reconcile_executor_adoption(
 
     payload = {
         "schema": ADOPTION_SCHEMA,
+        "observed_at": _utc_now(),
         "inventory_schema": inventory["schema"],
         "provider_profile_schema": inventory["provider_profile_schema"],
         "executors": adopted,
