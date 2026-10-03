@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from agentos_node import executor_reconcile
 from agentos_node import executor_provider_registry
@@ -158,3 +159,35 @@ def test_reconcile_persists_state_counts(tmp_path, monkeypatch):
             "REGISTRATION_REQUIRED": 1,
         },
     }
+
+
+def test_fast_inventory_defers_provider_health(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    root.mkdir()
+    (root / "demo.json").write_text(
+        json.dumps(_profile("tests.fake_demo_provider")),
+        encoding="utf-8",
+    )
+
+    provider = ReadyProvider()
+    monkeypatch.setattr(executor_provider_registry, "_load_symbol", lambda spec: provider)
+    monkeypatch.setattr(provider, "health", lambda: (_ for _ in ()).throw(AssertionError("health must be deferred")))
+
+    inventory = executor_reconcile.discover_executor_inventory(
+        profile_root=root,
+        probe_health=False,
+    )
+    item = inventory["executors"][0]
+    assert item["state"] == "DISCOVERED"
+    assert item["health_deferred"] is True
+    assert item["routable"] is False
+    assert item["authorized"] is False
+    assert item["healthy"] is False
+
+
+def test_packaged_provider_profiles_match_repo_canonical_profiles():
+    repo_root = Path(__file__).resolve().parents[1]
+    packaged = repo_root / "agentos_node" / "executor_profiles"
+    canonical = repo_root / ".agentos" / "executors"
+    for name in ("antigravity.json", "claude-code.json", "codex.json", "gemini.json", "provider-profile.schema.json"):
+        assert (packaged / name).read_text(encoding="utf-8") == (canonical / name).read_text(encoding="utf-8")
