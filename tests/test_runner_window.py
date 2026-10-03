@@ -68,6 +68,18 @@ def test_runtime_repair_emits_bounded_failure_line():
     assert "'antigravity_repair_line='" in server
 
 
+def test_runner_window_projects_only_bounded_executor_job_fields():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    assert "receipt_projection['executor_job']" in text
+    assert "receipt_projection['executor_job_receipt']" in text
+    for key in (
+        "'job_id'", "'job_type'", "'project_id'", "'executor_class'",
+        "'capability'", "'credential_exposed'", "'classification'",
+    ):
+        assert key in text
+    assert "'stdout'" not in text[text.index("receipt_projection['executor_job']"):text.index("return {", text.index("receipt_projection['executor_job']"))]
+
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})
