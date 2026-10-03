@@ -1,0 +1,119 @@
+name: Main Agent Relay Recovery Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/main-agent-relay-recovery-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: main-agent-relay-recovery-acceptance
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Wait for governed relay intents
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS --max-time 5 -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" > "$RUNNER_TEMP/catalog.json"; then
+              if python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=d.get('intents') or d.get('catalog') or []
+          got={(x.get('capability'),x.get('operation')) for x in rows if isinstance(x,dict)}
+          wanted={('agentos.relay','restart'),('agentos.relay','status')}
+          raise SystemExit(0 if wanted.issubset(got) else 1)
+          PY
+              then ready=1; break; fi
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+
+      - name: Restart Antigravity relay through governed boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=120             bash scripts/agentos_dispatch.sh agentos.relay restart "$GITHUB_SHA"             | tee "$RUNNER_TEMP/relay-restart.txt"
+          python3 - "$RUNNER_TEMP/relay-restart.txt" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('ok') is True, receipt
+          evidence=receipt.get('evidence') or []
+          assert 'relay_restart_service=agentos-antigravity-relay.service' in evidence, evidence
+          assert 'relay_restart=PASS' in evidence, evidence
+          print('relay_restart_acceptance=PASS')
+          PY
+
+      - name: Verify stranded processing converged without replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 2
+          AGENTOS_DISPATCH_WAIT_SECONDS=120             bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA"             | tee "$RUNNER_TEMP/relay-status-after-restart.txt"
+          python3 - "$RUNNER_TEMP/relay-status-after-restart.txt" "$RUNNER_TEMP/relay-recovery.json" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('ok') is True, receipt
+          vals={}
+          for line in receipt.get('evidence') or []:
+              if '=' in line:
+                  k,v=line.split('=',1)
+                  vals[k]=v
+          assert vals.get('relay_status_antigravity_service')=='active', vals
+          assert vals.get('relay_status_action_service')=='active', vals
+          assert vals.get('relay_status_processing_count')=='0', vals
+          assert vals.get('relay_status')=='PASS', vals
+          json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
+          print('relay_stranded_recovery=PASS')
+          print('relay_processing_count=0')
+          PY
+
+      - name: Upload sanitized recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-agent-relay-recovery-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/relay-restart.txt
+            ${{ runner.temp }}/relay-status-after-restart.txt
+            ${{ runner.temp }}/relay-recovery.json
+          if-no-files-found: warn
+          retention-days: 14
