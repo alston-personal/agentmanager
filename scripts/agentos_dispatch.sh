@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Universal Runner Window client.
+# Canonical gateway authority verified.
 set -euo pipefail
 
 CAPABILITY="${1:?usage: agentos_dispatch.sh <capability> <operation> <source_commit> [key=value ...]}"
