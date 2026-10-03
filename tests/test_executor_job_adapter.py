@@ -183,3 +183,28 @@ def test_required_resource_blocks_provider_before_execution(monkeypatch):
     assert receipt["authorized"] is False
     assert receipt["successful"] is False
     assert receipt["classification"] == "RESOURCE_NOT_READY"
+
+
+def test_provider_sanitizer_retains_only_bounded_engineering_diagnostics():
+    from agentos_node.executor_job_adapter import _sanitize_provider_result
+    raw = {
+        "classification": "ENGINEERING_SUBAGENT_SMOKE_COMPLETED_PENDING_VERIFICATION",
+        "executor_returncode": 0,
+        "executor_timed_out": False,
+        "executor_provider": "deterministic-git-probe",
+        "worktree_clean": True,
+        "observed_head": "a" * 40,
+        "stdout": "must-not-cross",
+        "stderr": "must-not-cross",
+        "path": "/secret",
+    }
+    safe = _sanitize_provider_result(raw)
+    assert safe["classification"] == raw["classification"]
+    assert safe["executor_returncode"] == 0
+    assert safe["executor_timed_out"] is False
+    assert safe["executor_provider"] == "deterministic-git-probe"
+    assert safe["worktree_clean"] is True
+    assert safe["observed_head"] == "a" * 40
+    assert "stdout" not in safe
+    assert "stderr" not in safe
+    assert "path" not in safe
