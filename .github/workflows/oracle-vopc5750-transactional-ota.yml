@@ -1,4 +1,4 @@
-name: Oracle vopc5750 Transactional OTA
+name: VOPC5750 Transactional OTA
 
 on:
   workflow_dispatch:
@@ -12,124 +12,56 @@ on:
     paths:
       - '.agentos/commands/realm-node-transactional-ota.json'
       - '.github/workflows/oracle-vopc5750-transactional-ota.yml'
+      - 'scripts/run_realm_node_transactional_ota_user.sh'
+      - 'agent_core/runner_window.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: vopc5750-transactional-ota
   cancel-in-progress: false
 
 jobs:
-  ota:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 8
-    env:
-      AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      PYTHONPATH: ${{ github.workspace }}
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      payload_json: ${{ steps.payload.outputs.payload_json }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: core/integration
-      - name: Queue staged OTA
+      - id: payload
+        name: Validate immutable OTA request
         shell: bash
+        env:
+          INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
         run: |
-          python3 - <<'PY'
-          import re,time
-          from agent_core.realm_fabric import RealmFabricStore
-          import json
-          cmd_path='.agentos/commands/realm-node-transactional-ota.json'
-          sha='''${{ inputs.source_commit }}'''.strip()
-          if not sha and __import__('os').path.exists(cmd_path):
-              cmd=json.load(open(cmd_path,encoding='utf-8'))
-              if cmd.get('node_id')!='vopc5750' or cmd.get('action')!='realm.node.transactional_ota': raise SystemExit('invalid OTA command')
-              sha=str(cmd.get('source_commit') or '').strip()
-          open('/tmp/ota-source','w').write(sha)
-          if not re.fullmatch(r'[0-9a-f]{40}',sha): raise SystemExit('invalid source commit')
-          tool_sha='''${{ github.sha }}'''.strip()
-          if not re.fullmatch(r'[0-9a-f]{40}',tool_sha): raise SystemExit('invalid deployment tool commit')
-          url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{tool_sha}/scripts/windows/transactional_ota.ps1'
-          ps=f"$p=Join-Path $env:TEMP 'agentos-transactional-ota.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -SourceCommit '{sha}' -ToolCommit '{tool_sha}'"
-          print('ota_tool_commit='+tool_sha)
-          task_id='ota-stage-vopc5750-'+str(int(time.time()))
-          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':120,'cognition_ids_used':[]})
-          open('/tmp/ota-task','w').write(task_id)
-          print('ota_stage_task='+task_id)
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json,os,re
+          from pathlib import Path
+
+          candidate=str(os.environ.get("INPUT_SOURCE_COMMIT") or "").strip()
+          if not candidate:
+              p=Path(".agentos/commands/realm-node-transactional-ota.json")
+              data=json.loads(p.read_text(encoding="utf-8"))
+              assert data.get("node_id")=="vopc5750",data
+              assert data.get("action")=="realm.node.transactional_ota",data
+              candidate=str(data.get("source_commit") or "").strip()
+          assert re.fullmatch(r"[0-9a-f]{40}",candidate),candidate
+          payload={"node_id":"vopc5750","candidate_commit":candidate}
+          print("payload_json="+json.dumps(payload,separators=(",",":")))
           PY
-      - name: Wait for staging receipt
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import time
-          from agent_core.realm_fabric import RealmFabricStore
-          tid=open('/tmp/ota-task').read().strip()
-          for _ in range(70):
-            r=RealmFabricStore().get_receipt(tid)
-            if r:
-              rc=int(r.get('returncode') if r.get('returncode') is not None else -999)
-              out=str(r.get('stdout') or '')
-              err=str(r.get('stderr') or '')
-              if r.get('ok') is not True or rc != 0 or 'agentos_ota_controller_acceptance=PENDING' not in out:
-                  print({'ok':r.get('ok'),'returncode':rc,'stdout':out[-4000:],'stderr':err[-4000:]})
-                  raise SystemExit('OTA staging subprocess failed')
-              print('ota_stage_receipt=PASS'); raise SystemExit(0)
-            time.sleep(2)
-          raise SystemExit('ota staging receipt timeout')
-          PY
-      - name: Controller acceptance
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from agent_core.runtime_ota_acceptance import accept_candidate
-          sha=open('/tmp/ota-source').read().strip()
-          r=accept_candidate('vopc5750',sha,timeout_seconds=120)
-          print(r)
-          if not r.get('ok'): raise SystemExit('controller acceptance failed')
-          PY
-      - name: Finalize accepted candidate
-        if: success()
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import time
-          from agent_core.realm_fabric import RealmFabricStore
-          sha=open('/tmp/ota-source').read().strip()
-          tool_sha='''${{ github.sha }}'''.strip()
-          url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{tool_sha}/scripts/windows/transactional_ota_finalize.ps1'
-          ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action accept"
-          tid='ota-finalize-vopc5750-'+str(int(time.time()))
-          store=RealmFabricStore()
-          store.queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
-          print('ota_finalize_task='+tid)
-          for _ in range(60):
-              r=store.get_receipt(tid)
-              if r:
-                  out=str(r.get('stdout') or '')
-                  if r.get('ok') is not True or 'agentos_ota_finalize=PASS' not in out: raise SystemExit(str(r))
-                  print('ota_finalize_receipt=PASS'); raise SystemExit(0)
-              time.sleep(2)
-          raise SystemExit('ota finalize receipt timeout')
-          PY
-      - name: Roll back rejected candidate
-        if: failure()
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import time
-          from agent_core.realm_fabric import RealmFabricStore
-          sha=open('/tmp/ota-source').read().strip()
-          tool_sha='''${{ github.sha }}'''.strip()
-          url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{tool_sha}/scripts/windows/transactional_ota_finalize.ps1'
-          ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action rollback"
-          tid='ota-rollback-vopc5750-'+str(int(time.time()))
-          store=RealmFabricStore()
-          store.queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
-          print('ota_rollback_task='+tid)
-          for _ in range(90):
-              r=store.get_receipt(tid)
-              if r:
-                  out=str(r.get('stdout') or '')
-                  if r.get('ok') is not True or 'agentos_ota_rollback=PASS' not in out: raise SystemExit(str(r))
-                  print('ota_rollback_receipt=PASS'); raise SystemExit(0)
-              time.sleep(2)
-          raise SystemExit('ota rollback receipt timeout')
-          PY
+          bash -n scripts/run_realm_node_transactional_ota_user.sh
+          echo "vopc5750_ota_request=PASS"
+
+  dispatch:
+    needs: prepare
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.runtime
+      operation: transactional-ota
+      payload_json: ${{ needs.prepare.outputs.payload_json }}
