@@ -19,6 +19,7 @@ class FakeRelay:
 
 def test_engineering_job_contracts_are_fixed_and_bounded():
     expected = {
+        "engineering.subagent.smoke": "surface://engineering-subagent",
         "engineering.windows-thin-client.fix": "issue://892",
         "engineering.realm-device-flow.fix": "issue://893",
         "engineering.realm-node-fabric.fix": "issue://894",
@@ -55,3 +56,23 @@ def test_missing_workspace_fails_closed(tmp_path: Path):
     assert result["successful"] is False
     assert result["classification"] == "ENGINEERING_WORKSPACE_UNAVAILABLE"
     assert result["credential_exposed"] is False
+
+
+def test_engineering_smoke_is_read_only():
+    request = canonical_executor_job_request("engineering.subagent.smoke")
+    spec = validate_executor_job(request)
+    assert spec.read_only is True
+    assert spec.authority == "bounded-read-only"
+    assert spec.capability == "agentos.engineering.probe"
+
+
+def test_relay_failure_classification_is_bounded():
+    from agentos_node.engineering_subagent_provider import _relay_failure_classification
+
+    assert _relay_failure_classification({"ok": False, "timed_out": True, "returncode": 124}) == "ENGINEERING_EXECUTOR_TIMEOUT"
+    assert _relay_failure_classification({
+        "ok": False,
+        "error": "RuntimeError: no authorized local Antigravity executor discovered for provider=claude",
+    }) == "ENGINEERING_EXECUTOR_UNAVAILABLE"
+    assert _relay_failure_classification({"ok": False, "returncode": 7}) == "ENGINEERING_EXECUTOR_NONZERO"
+    assert _relay_failure_classification({"ok": False, "error": "RuntimeError: bounded failure"}) == "ENGINEERING_EXECUTOR_RUNTIME_ERROR"
