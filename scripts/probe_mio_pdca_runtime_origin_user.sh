@@ -2,6 +2,29 @@
 set -euo pipefail
 
 UNIT_ROOT="${HOME}/.config/systemd/user"
+HEARTBEAT="${HOME}/.local/bin/agentos-persona-pdca-heartbeat"
+
+# Emit bounded structural facts first so they survive the public receipt evidence cap.
+# Never expose heartbeat source; only report whether the installed producer appears
+# persona-generic or contains legacy Mio/sunlake identifiers.
+if [ -f "$HEARTBEAT" ]; then
+  echo "persona_pdca_heartbeat_present=1"
+  echo "persona_pdca_heartbeat_sha256=$(sha256sum "$HEARTBEAT" | awk '{print $1}')"
+  if grep -Eq 'AGENTOS_PERSONA_|persona_agent_registry|agent\.yaml|PERSONA_SLUG' "$HEARTBEAT"; then
+    echo "persona_pdca_heartbeat_generic_markers=1"
+  else
+    echo "persona_pdca_heartbeat_generic_markers=0"
+  fi
+  if grep -Eiq 'sunlake|mio\.milkcat|sunlake-milkcat' "$HEARTBEAT"; then
+    echo "persona_pdca_heartbeat_legacy_mio_markers=1"
+  else
+    echo "persona_pdca_heartbeat_legacy_mio_markers=0"
+  fi
+else
+  echo "persona_pdca_heartbeat_present=0"
+  echo "persona_pdca_heartbeat_generic_markers=0"
+  echo "persona_pdca_heartbeat_legacy_mio_markers=0"
+fi
 FOUND=0
 declare -A SEEN_PATH=()
 
