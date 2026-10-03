@@ -12,9 +12,11 @@ from pathlib import Path
 
 
 class OursongBootstrapAcceptanceTests(unittest.TestCase):
-    def run_bootstrap(self, home: Path):
+    def run_bootstrap(self, home: Path, data_root: Path | None = None):
         env = os.environ.copy()
         env["HOME"] = str(home)
+        if data_root is not None:
+            env["AGENTOS_PERSONA_DATA_ROOT"] = str(data_root)
         proc = subprocess.run(
             [sys.executable, "scripts/bootstrap_oursong_persona_user.py"],
             cwd=Path(__file__).resolve().parents[1],
@@ -65,6 +67,20 @@ class OursongBootstrapAcceptanceTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertIn("oursong_bootstrap=SKIP:character_core.json", second.stdout)
             self.assertEqual(marker.read_text(), original)
+
+    def test_bootstrap_supports_explicit_authoritative_data_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            home = base / "home"
+            home.mkdir()
+            data_root = base / "authoritative-agent-data"
+            proc = self.run_bootstrap(home, data_root)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            root = data_root / "personas" / "oursong_alstonhuang"
+            self.assertTrue((root / "pdca/state.json").is_file())
+            state = json.loads((root / "pdca/state.json").read_text())
+            self.assertEqual(state["persona_id"], "oursong-alstonhuang-001")
+            self.assertFalse((home / "agent-data" / "personas" / "oursong_alstonhuang").exists())
 
 
 if __name__ == "__main__":
