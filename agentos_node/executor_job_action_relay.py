@@ -63,9 +63,18 @@ if ACTION in ACTIONS and ACTIONS[ACTION] is not _execute:
     raise RuntimeError("executor-job Action Relay action already registered differently")
 ACTIONS[ACTION] = _execute
 
-from agentos_node import runtime_converge_action_relay as _runtime_converge_action_relay  # noqa: E402,F401
-from agentos_node import content_publish_action_relay as _content_publish_action_relay  # noqa: E402,F401
-from agentos_node import content_publish_social_action_relay as _content_publish_social_action_relay  # noqa: E402,F401
+RUNTIME_CONVERGE_ACTION = "agentos.runtime.converge"
+
+
+def _load_relay_extensions() -> None:
+    """Load non-executor Action Relay extensions only in the relay service.
+
+    Bootstrap Scheduler workers import this module for the bounded executor-job
+    dispatcher and must not inherit content/social runtime dependency closure.
+    """
+    from agentos_node import runtime_converge_action_relay  # noqa: F401
+    from agentos_node import content_publish_action_relay  # noqa: F401
+    from agentos_node import content_publish_social_action_relay  # noqa: F401
 
 
 class ActionRelayExecutorJobDispatcher:
@@ -116,8 +125,9 @@ class ActionRelayExecutorJobDispatcher:
     def inspect(self, job_id: str) -> dict[str, Any] | None:
         job_id = validate_executor_job_id(job_id)
         receipt = self.client.receipt(job_id)
-        if receipt is not None and receipt.get("action") == _runtime_converge_action_relay.ACTION:
-            return _runtime_converge_action_relay.ActionRelayRuntimeConvergeDispatcher(self.root).inspect(job_id)
+        if receipt is not None and receipt.get("action") == RUNTIME_CONVERGE_ACTION:
+            from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
+            return ActionRelayRuntimeConvergeDispatcher(self.root).inspect(job_id)
         if receipt is None:
             return None
         request = self._recover_request(job_id)
@@ -147,6 +157,7 @@ class ActionRelayExecutorJobDispatcher:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _load_relay_extensions()
     return action_relay_main(argv)
 
 
