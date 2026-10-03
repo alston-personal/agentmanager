@@ -91,6 +91,25 @@ def test_dispatch_client_has_no_runner_or_worker_selector():
     assert "oracle-control" not in text
 
 
+def test_executor_job_public_intents_map_to_fixed_bootstrap_actions():
+    submit, params = resolve_intent(
+        "agentos.executor",
+        "job.submit",
+        source_commit="f" * 40,
+        payload={"job_type": "engineering.windows-thin-client.fix"},
+    )
+    assert submit.action == bc.ACTION_EXECUTOR_JOB_SUBMIT
+    assert params["job_type"] == "engineering.windows-thin-client.fix"
+    inspect, params = resolve_intent(
+        "agentos.executor",
+        "job.inspect",
+        source_commit="1" * 40,
+        payload={"job_id": "action-12345678"},
+    )
+    assert inspect.action == bc.ACTION_EXECUTOR_JOB_INSPECT
+    assert params["job_id"] == "action-12345678"
+
+
 def test_oursong_activation_maps_to_fixed_bootstrap_action():
     intent, params = resolve_intent(
         "persona.runtime",
