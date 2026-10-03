@@ -21,6 +21,7 @@ def test_engineering_job_contracts_are_fixed_and_bounded():
     expected = {
         "engineering.subagent.smoke": ("surface://engineering-subagent", "bounded-read-only", True),
         "engineering.executor.health": ("surface://engineering-executors", "bounded-read-only", True),
+        "engineering.model.smoke": ("surface://engineering-model-subagent", "bounded-read-only", True),
         "engineering.windows-thin-client.fix": ("issue://892", "bounded-code-fix", False),
         "engineering.realm-device-flow.fix": ("issue://893", "bounded-code-fix", False),
         "engineering.realm-node-fabric.fix": ("issue://894", "bounded-code-fix", False),
@@ -251,3 +252,91 @@ def test_claude_health_probe_uses_safe_single_turn_no_tool_mode(tmp_path: Path, 
     assert "--disable-slash-commands" in argv
     assert result["state"] == "READY"
     assert result["timed_out"] is False
+
+
+def test_model_smoke_routes_through_health_selected_provider(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    monkeypatch.setattr(
+        provider,
+        "_run_executor_health",
+        lambda _workspace: {
+            "verdict": "PASS",
+            "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
+            "executor_available": True,
+            "routable": True,
+            "authorized": True,
+            "successful": True,
+            "credential_exposed": False,
+            "selected_provider": "agy",
+        },
+    )
+
+    submitted = {}
+    class FakeClient:
+        def __init__(self, root):
+            self.root = root
+        def submit(self, **kwargs):
+            submitted.update(kwargs)
+            return {"capsule_id": "relay-test"}
+        def receipt(self, capsule_id):
+            assert capsule_id == "relay-test"
+            return {
+                "ok": True,
+                "provider": "agy",
+                "returncode": 0,
+                "timed_out": False,
+            }
+
+    monkeypatch.setattr(provider, "AntigravityRelayClient", FakeClient)
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.model.smoke"),
+        relay_root=tmp_path / "relay",
+        workspace=workspace,
+        timeout_seconds=1,
+    )
+
+    assert submitted["executor_hint"] == "provider:agy"
+    assert result["classification"] == "ENGINEERING_MODEL_SMOKE_COMPLETED_PENDING_VERIFICATION"
+    assert result["executor_provider"] == "agy"
+    assert result["executor_returncode"] == 0
+    assert result["executor_timed_out"] is False
+    assert result["successful"] is False
+
+
+def test_engineering_job_fails_before_relay_when_no_provider_is_healthy(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    health = {
+        "verdict": "FAIL",
+        "classification": "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+        "executor_available": True,
+        "routable": False,
+        "authorized": False,
+        "successful": False,
+        "credential_exposed": False,
+        "selected_provider": "",
+    }
+    monkeypatch.setattr(provider, "_run_executor_health", lambda _workspace: dict(health))
+
+    class FailIfConstructed:
+        def __init__(self, root):
+            raise AssertionError("relay must not be touched without a healthy provider")
+
+    monkeypatch.setattr(provider, "AntigravityRelayClient", FailIfConstructed)
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.model.smoke"),
+        relay_root=tmp_path / "relay",
+        workspace=workspace,
+        timeout_seconds=1,
+    )
+    assert result["classification"] == "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER"
+    assert result["routable"] is False
