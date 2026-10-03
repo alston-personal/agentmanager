@@ -1,0 +1,38 @@
+name: Oracle Release LINE Sticker Tool
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-line-sticker-tool.yml'
+      - '.github/workflows/reusable-studio-static-route-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-sticker-tool-production
+  cancel-in-progress: true
+
+jobs:
+  release:
+    uses: ./.github/workflows/reusable-studio-static-route-release.yml
+    with:
+      source_sha: 0d4bce4e09be2a43cb2ef91bb1edb63a6fc73fd3
+      route: line-sticker
+      backup_key: line-sticker-tool
+      receipt_schema: studio-web.line-sticker-release/v1
+      acceptance_anchors: |-
+        LINE 靜態貼圖製作工具
+        圖片只在你的瀏覽器內處理
+        下載全部三張 PNG
+      credit_account: ''
+      credit_cost: 0
+    secrets:
+      AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
+      AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
+      AGENTOS_DEPLOY_SSH_KEY: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY }}
+      N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
