@@ -33,6 +33,13 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "executor_provider",
     "worktree_clean",
     "observed_head",
+    "claude_state",
+    "claude_returncode",
+    "claude_timed_out",
+    "agy_state",
+    "agy_returncode",
+    "agy_timed_out",
+    "selected_provider",
 )
 _PROVIDER_STATE_FIELDS = (
     "executor_available",
