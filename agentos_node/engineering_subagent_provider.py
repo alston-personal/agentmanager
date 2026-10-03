@@ -7,6 +7,7 @@ Agent must verify branch/CI evidence before closure.
 """
 from __future__ import annotations
 
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Mapping
@@ -100,6 +101,42 @@ def _relay_failure_classification(receipt: Mapping[str, Any]) -> str:
     return "ENGINEERING_EXECUTOR_FAILED"
 
 
+def _run_read_only_smoke(workspace_path: Path) -> dict[str, Any]:
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(workspace_path), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "-C", str(workspace_path), "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        ).stdout
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return _failure("ENGINEERING_SUBAGENT_SMOKE_PROBE_FAILED")
+    if len(head) != 40 or any(ch not in "0123456789abcdef" for ch in head):
+        return _failure("ENGINEERING_SUBAGENT_SMOKE_INVALID_HEAD")
+    return {
+        "verdict": "PASS",
+        "classification": "ENGINEERING_SUBAGENT_SMOKE_COMPLETED_PENDING_VERIFICATION",
+        "executor_available": True,
+        "routable": True,
+        "authorized": True,
+        "successful": False,
+        "credential_exposed": False,
+        "executor_provider": "deterministic-git-probe",
+        "executor_returncode": 0,
+        "executor_timed_out": False,
+        "worktree_clean": status == "",
+        "observed_head": head,
+    }
+
+
 def run_engineering_subagent(
     request: Mapping[str, Any],
     *,
@@ -123,6 +160,9 @@ def run_engineering_subagent(
             routable=False,
             authorized=False,
         )
+
+    if spec.job_type == "engineering.subagent.smoke":
+        return _run_read_only_smoke(workspace_path)
 
     client = AntigravityRelayClient(relay_root)
     try:
