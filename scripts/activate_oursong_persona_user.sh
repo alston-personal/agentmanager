@@ -26,7 +26,7 @@ if [[ ! -d "${RELEASE}" ]]; then
   mkdir -p "${STAGE}"
   trap 'rm -rf "${STAGE:-}"' EXIT
   git -C "${REPO}" archive "${SOURCE_COMMIT}" | tar -x -C "${STAGE}"
-  python3 -m py_compile     "${STAGE}/scripts/bootstrap_oursong_persona_user.py"     "${STAGE}/scripts/mio_persona_social_loop_user.py"     "${STAGE}/scripts/sync_persona_pdca_social_outcome_user.py"     "${STAGE}/agentos_node/persona_life.py"
+  python3 -m py_compile     "${STAGE}/scripts/bootstrap_oursong_persona_user.py"     "${STAGE}/scripts/mio_persona_social_loop_user.py"     "${STAGE}/scripts/sync_persona_pdca_social_outcome_user.py"     "${STAGE}/scripts/persona_pdca_heartbeat_user.py"     "${STAGE}/agentos_node/persona_life.py"
   bash -n "${STAGE}/scripts/install_persona_social_timer_user.sh"
   mv "${STAGE}" "${RELEASE}"
   trap - EXIT
@@ -36,8 +36,15 @@ test -f "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"
 test -f "${RELEASE}/scripts/mio_persona_social_loop_user.py"
 test -f "${RELEASE}/scripts/sync_persona_pdca_social_outcome_user.py"
 test -f "${RELEASE}/scripts/install_persona_social_timer_user.sh"
+test -f "${RELEASE}/scripts/persona_pdca_heartbeat_user.py"
 
 python3 "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"
+
+# Cut over the legacy runtime-only producer to the repo-owned generic producer.
+# Keep the existing systemd unit/timer contract so rollback is a single symlink/file restore.
+install -m 0755 "${RELEASE}/scripts/persona_pdca_heartbeat_user.py" "${HOME}/.local/bin/agentos-persona-pdca-heartbeat"
+systemctl --user daemon-reload
+systemctl --user start agentos-persona-pdca-heartbeat.service
 
 mkdir -p "${PROFILE_ROOT}"
 chmod 700 "${PROFILE_ROOT}"
