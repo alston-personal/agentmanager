@@ -89,6 +89,33 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://gemini-cli",
         read_only=False,
     ),
+    "engineering.windows-thin-client.fix": JobTypeSpec(
+        job_type="engineering.windows-thin-client.fix",
+        capability="agentos.engineering.windows-node",
+        authority="bounded-code-fix",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="issue://892",
+        read_only=False,
+    ),
+    "engineering.realm-device-flow.fix": JobTypeSpec(
+        job_type="engineering.realm-device-flow.fix",
+        capability="agentos.engineering.realm-device-flow",
+        authority="bounded-code-fix",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="issue://893",
+        read_only=False,
+    ),
+    "engineering.realm-node-fabric.fix": JobTypeSpec(
+        job_type="engineering.realm-node-fabric.fix",
+        capability="agentos.engineering.realm-node-fabric",
+        authority="bounded-code-fix",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="issue://894",
+        read_only=False,
+    ),
 }
 
 
