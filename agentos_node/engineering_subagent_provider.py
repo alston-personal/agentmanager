@@ -482,7 +482,11 @@ def run_engineering_subagent(
         time.sleep(POLL_SECONDS)
 
     if receipt is None:
-        return _failure("ENGINEERING_RELAY_TIMEOUT")
+        result = _failure("ENGINEERING_RELAY_TIMEOUT")
+        result["selected_provider"] = selected_provider
+        result["executor_provider"] = selected_provider
+        result["executor_timed_out"] = True
+        return result
     if receipt.get("ok") is not True:
         classification = _relay_failure_classification(receipt)
         result = _failure(
