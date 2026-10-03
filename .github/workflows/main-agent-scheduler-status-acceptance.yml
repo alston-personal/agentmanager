@@ -1,0 +1,104 @@
+name: Main Agent Scheduler Status Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/main-agent-scheduler-status-acceptance.yml'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - 'agent_core/runner_window.py'
+      - 'agent_core/realm_server.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Wait for scheduler status intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS --max-time 5 -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" > "$RUNNER_TEMP/catalog.json"; then
+              if python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=d.get('intents') or d.get('catalog') or []
+          got={(x.get('capability'),x.get('operation')) for x in rows if isinstance(x,dict)}
+          raise SystemExit(0 if ('agentos.scheduler','status') in got else 1)
+          PY
+              then ready=1; break; fi
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+
+      - name: Inspect live scheduler status
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=120             bash scripts/agentos_dispatch.sh agentos.scheduler status "$GITHUB_SHA"             | tee "$RUNNER_TEMP/scheduler-status.txt"
+          python3 - "$RUNNER_TEMP/scheduler-status.txt" "$RUNNER_TEMP/scheduler-status.json" <<'PY'
+          import json,re,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('ok') is True, receipt
+          vals={}
+          allowed=(
+            'scheduler_status_pending_count=',
+            'scheduler_status_pending_oldest_seconds=',
+            'scheduler_status_stalled_count=',
+            'scheduler_status_receipts_count=',
+            'scheduler_status_rejected_count=',
+            'scheduler_status=',
+          )
+          for line in receipt.get('evidence') or []:
+              assert line.startswith(allowed), line
+              k,v=line.split('=',1); vals[k]=v
+          assert vals.get('scheduler_status')=='PASS', vals
+          for key in ('scheduler_status_pending_count','scheduler_status_pending_oldest_seconds','scheduler_status_stalled_count','scheduler_status_receipts_count','scheduler_status_rejected_count'):
+              assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)
+          json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
+          print('scheduler_status_acceptance=PASS')
+          for key in sorted(vals): print(key+'='+vals[key])
+          PY
+
+      - name: Upload sanitized scheduler evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-agent-scheduler-status-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/scheduler-status.txt
+            ${{ runner.temp }}/scheduler-status.json
+          if-no-files-found: warn
+          retention-days: 14
