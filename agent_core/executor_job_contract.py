@@ -89,6 +89,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://gemini-cli",
         read_only=False,
     ),
+    "engineering.control.smoke": JobTypeSpec(
+        job_type="engineering.control.smoke",
+        capability="agentos.engineering.control-smoke",
+        authority="read-only-smoke",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="control://engineering-smoke",
+        read_only=True,
+    ),
     "engineering.windows-thin-client.fix": JobTypeSpec(
         job_type="engineering.windows-thin-client.fix",
         capability="agentos.engineering.windows-node",
@@ -268,6 +277,9 @@ def project_executor_job_receipt(
             "hydration_receipt_ok",
             "install_receipt_ok",
             "classification",
+            "executor_returncode",
+            "executor_timed_out",
+            "executor_provider",
         ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:
