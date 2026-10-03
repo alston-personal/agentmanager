@@ -436,6 +436,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'persona_pdca_heartbeat_sha256=',
                     'persona_pdca_heartbeat_generic_markers=',
                     'persona_pdca_heartbeat_legacy_mio_markers=',
+                    'persona_pdca_heartbeat_oursong_markers=',
+                    'persona_pdca_heartbeat_data_path_markers=',
                     'persona_pdca_runtime_unit=',
                     'persona_pdca_runtime_directive=',
                     'persona_pdca_runtime_file=',
