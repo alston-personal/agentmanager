@@ -184,7 +184,7 @@ jobs:
           done
 
           echo "=== OAuth server-side return target ==="
-          TEST_RETURN='/dashboard/api/wardrobe/auth-handoff?handoff=diagnostic-only-not-real'
+          export TEST_RETURN='/dashboard/api/wardrobe/auth-handoff?handoff=diagnostic-only-not-real'
           curl --noproxy '*' -k -sS -D /tmp/mio-oauth-state-head -o /dev/null --resolve studio.milkcat.org:443:127.0.0.1 \
             "https://studio.milkcat.org/dashboard/api/auth/signin/google?returnTo=$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["TEST_RETURN"],safe=""))')" || true
           export OAUTH_LOCATION="$(grep -i '^location:' /tmp/mio-oauth-state-head | tail -n1 | sed 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r')"
