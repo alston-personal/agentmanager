@@ -98,6 +98,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://engineering-subagent",
         read_only=True,
     ),
+    "engineering.executor.health": JobTypeSpec(
+        job_type="engineering.executor.health",
+        capability="agentos.engineering.executor-health",
+        authority="bounded-read-only",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="surface://engineering-executors",
+        read_only=True,
+    ),
     "engineering.windows-thin-client.fix": JobTypeSpec(
         job_type="engineering.windows-thin-client.fix",
         capability="agentos.engineering.windows-node",
@@ -282,6 +291,13 @@ def project_executor_job_receipt(
             "executor_provider",
             "worktree_clean",
             "observed_head",
+            "claude_state",
+            "claude_returncode",
+            "claude_timed_out",
+            "agy_state",
+            "agy_returncode",
+            "agy_timed_out",
+            "selected_provider",
         ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:
