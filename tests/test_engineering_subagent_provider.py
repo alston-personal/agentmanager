@@ -216,3 +216,38 @@ def test_executor_health_reports_binary_liveness_separately(tmp_path: Path, monk
     assert result["agy_liveness"] == "UNAVAILABLE"
     assert result["agy_state"] == "UNAVAILABLE"
     assert result["successful"] is False
+
+
+def test_claude_health_probe_uses_safe_single_turn_no_tool_mode(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    captured = {}
+    monkeypatch.setattr(provider, "discover_executor", lambda name: ("claude", ["/fake/claude", "--print", "--output-format", "text", "--effort", "low"]))
+
+    class Completed:
+        returncode = 0
+        stdout = "READY"
+        stderr = ""
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = list(argv)
+        return Completed()
+
+    monkeypatch.setattr(provider.subprocess, "run", fake_run)
+    result = provider._probe_model_provider("claude", workspace, timeout_seconds=1)
+
+    argv = captured["argv"]
+    assert "--safe-mode" in argv
+    assert "--tools" in argv
+    assert argv[argv.index("--tools") + 1] == ""
+    assert "--disallowedTools" in argv
+    assert argv[argv.index("--disallowedTools") + 1] == "mcp__*"
+    assert "--max-turns" in argv
+    assert argv[argv.index("--max-turns") + 1] == "1"
+    assert "--disable-slash-commands" in argv
+    assert result["state"] == "READY"
+    assert result["timed_out"] is False
