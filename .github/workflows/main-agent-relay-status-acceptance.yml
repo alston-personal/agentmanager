@@ -1,0 +1,118 @@
+name: Main Agent Relay Status Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/main-agent-relay-status-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: main-agent-relay-status-acceptance
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Wait for relay status intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS --max-time 5               -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"               "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch"               > "$RUNNER_TEMP/catalog.json"; then
+              if python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=d.get('intents') or d.get('catalog') or []
+          got={(x.get('capability'),x.get('operation')) for x in rows if isinstance(x,dict)}
+          raise SystemExit(0 if ('agentos.relay','status') in got else 1)
+          PY
+              then
+                ready=1
+                break
+              fi
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          echo "relay_status_intent=PASS"
+
+      - name: Inspect live relay status
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=120             bash scripts/agentos_dispatch.sh               agentos.relay status "$GITHUB_SHA"               | tee "$RUNNER_TEMP/relay-status.txt"
+
+          python3 - "$RUNNER_TEMP/relay-status.txt" "$RUNNER_TEMP/relay-status.json" <<'PY'
+          import json,re,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs, 'missing relay status receipt'
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('ok') is True, receipt
+          evidence=receipt.get('evidence') or []
+          vals={}
+          allowed_prefixes=(
+              'relay_status_antigravity_service=',
+              'relay_status_action_service=',
+              'relay_status_inbox_count=',
+              'relay_status_processing_count=',
+              'relay_status_receipts_count=',
+              'relay_status_inbox_oldest_seconds=',
+              'relay_status_processing_oldest_seconds=',
+              'relay_status=',
+          )
+          for line in evidence:
+              assert line.startswith(allowed_prefixes), line
+              k,v=line.split('=',1)
+              vals[k]=v
+          assert vals.get('relay_status')=='PASS', vals
+          for key in ('relay_status_inbox_count','relay_status_processing_count','relay_status_receipts_count',
+                      'relay_status_inbox_oldest_seconds','relay_status_processing_oldest_seconds'):
+              assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)
+          for key in ('relay_status_antigravity_service','relay_status_action_service'):
+              assert vals.get(key) in {'active','inactive','failed','activating','deactivating','unknown'}, vals
+          json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
+          print('relay_status_acceptance=PASS')
+          for key in sorted(vals):
+              print(key+'='+vals[key])
+          PY
+
+      - name: Upload sanitized relay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-agent-relay-status-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/relay-status.txt
+            ${{ runner.temp }}/relay-status.json
+          if-no-files-found: warn
+          retention-days: 14
