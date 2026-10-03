@@ -6,6 +6,7 @@ on:
       - core/integration
     paths:
       - '.github/workflows/main-agent-relay-status-acceptance.yml'
+      - 'agentos_node/antigravity_relay_worker.py'
   workflow_dispatch:
 
 permissions:
