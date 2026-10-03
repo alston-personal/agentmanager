@@ -24,6 +24,8 @@ else
   echo "persona_pdca_heartbeat_present=0"
   echo "persona_pdca_heartbeat_generic_markers=0"
   echo "persona_pdca_heartbeat_legacy_mio_markers=0"
+  echo "persona_pdca_heartbeat_oursong_markers=0"
+  echo "persona_pdca_heartbeat_data_path_markers=0"
 fi
 FOUND=0
 declare -A SEEN_PATH=()
