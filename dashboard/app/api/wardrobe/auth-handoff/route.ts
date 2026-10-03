@@ -54,8 +54,46 @@ export async function GET(request: NextRequest) {
       headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
     });
   }
-  return new NextResponse('登入完成。請回到主畫面的「澪的衣櫃」App。', {
+  const safeHandoff = JSON.stringify(handoff);
+  const html = `<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>登入完成</title>
+<style>
+  body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:calc(32px + env(safe-area-inset-top)) 24px 32px;background:#08111f;color:#eef6ff}
+  main{max-width:560px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 12px}
+  p{color:#b9c6d8;line-height:1.6}
+  button{width:100%;margin-top:18px;padding:14px 16px;border:0;border-radius:14px;font-size:17px;font-weight:800;background:linear-gradient(90deg,#b8a8ff,#7cd9ef);color:#07111e}
+</style>
+</head>
+<body>
+<main>
+  <h1>登入完成</h1>
+  <p>正在回到主畫面的「澪的衣櫃」App，並接回剛才的試穿。</p>
+  <button type="button" id="return">回到澪的衣櫃</button>
+</main>
+<script>
+(() => {
+  const payload = { type: 'milkcat-pwa-auth-ready', handoffId: ${safeHandoff} };
+  try {
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage(payload, window.location.origin);
+    }
+  } catch {}
+  const close = () => {
+    try { window.close(); } catch {}
+  };
+  document.getElementById('return')?.addEventListener('click', close);
+  setTimeout(close, 350);
+})();
+</script>
+</body>
+</html>`;
+  return new NextResponse(html, {
     status: 200,
-    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
   });
 }
