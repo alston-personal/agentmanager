@@ -166,7 +166,7 @@ class ThinClient:
             caps.extend(_linux_gui_worker_capabilities())
         caps.extend(self.adapters.capabilities())
         from agentos_node.executor_reconcile import discover_executor_inventory
-        executor_inventory = discover_executor_inventory()
+        executor_inventory = discover_executor_inventory(probe_health=False)
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -246,7 +246,7 @@ class ThinClient:
                 result = {'surface_inventory': self.surface_inventory()}
             elif action == 'agent.executor.discover':
                 from agentos_node.executor_reconcile import discover_executor_inventory
-                result = {'executor_inventory': discover_executor_inventory()}
+                result = {'executor_inventory': discover_executor_inventory(probe_health=False)}
             elif action == 'agent.executor.reconcile':
                 from agentos_node.executor_reconcile import reconcile_executor_adoption
                 result = reconcile_executor_adoption(node_id=self.identity.node_id)
