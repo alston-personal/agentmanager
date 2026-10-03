@@ -153,6 +153,8 @@ jobs:
           assert pairs.get('ActiveState')=='active',pairs
           assert pairs.get('UnitFileState') in {'enabled','static'},pairs
           cycle=int(pairs.get('oursong_pdca_cycle') or 0)
+          assert cycle >= 1,pairs
+          assert pairs.get('oursong_last_tick_at') not in {None,'None',''},pairs
           print('oursong_persona_status_receipt=PASS')
           print('oursong_pdca_cycle='+str(cycle))
           print('oursong_last_tick_at='+str(pairs.get('oursong_last_tick_at')))
