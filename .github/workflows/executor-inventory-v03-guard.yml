@@ -1,0 +1,65 @@
+name: Executor Inventory v03 Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/executor_reconcile.py'
+      - 'agentos_node/executor_onboarding.py'
+      - 'agentos_node/executor_provider_registry.py'
+      - 'agentos_node/executor_provider_adapters.py'
+      - 'agentos_node/executor_profiles/**'
+      - '.agentos/executors/**'
+      - 'agentos_node/thin_client.py'
+      - 'agentos_node/client_cli.py'
+      - 'agent_core/node_registry.py'
+      - 'pyproject.toml'
+      - 'tests/test_executor_reconcile.py'
+      - 'tests/test_executor_onboarding.py'
+      - 'tests/test_thin_client.py'
+      - 'tests/test_node_registry_v01.py'
+      - '.github/workflows/executor-inventory-v03-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run executor inventory and node contract tests
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest             tests/test_executor_reconcile.py             tests/test_executor_onboarding.py             tests/test_thin_client.py             tests/test_node_registry_v01.py             -q
+
+      - name: Compile inventory runtime
+        run: |
+          set -euo pipefail
+          python -m py_compile             agentos_node/executor_reconcile.py             agentos_node/executor_onboarding.py             agentos_node/executor_provider_registry.py             agentos_node/executor_provider_adapters.py             agentos_node/thin_client.py             agentos_node/client_cli.py             agent_core/node_registry.py
+
+      - name: Prove clean wheel carries canonical provider profiles
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check build
+          python -m build --wheel --outdir "$RUNNER_TEMP/dist"
+          mkdir -p "$RUNNER_TEMP/site"
+          python -m pip install --disable-pip-version-check             --target "$RUNNER_TEMP/site" "$RUNNER_TEMP"/dist/*.whl
+          cd "$RUNNER_TEMP"
+          PYTHONPATH="$RUNNER_TEMP/site" python - <<'PY'
+          from agentos_node.executor_provider_registry import load_provider_profiles
+          rows={p['executor_id']:p for p in load_provider_profiles()}
+          expected={'antigravity','claude-code','codex','gemini'}
+          assert expected <= set(rows), (expected, set(rows))
+          assert rows['claude-code']['implementation']['adapter_module']
+          assert rows['antigravity']['implementation']['adapter_module']
+          assert rows['codex']['implementation']['adapter_module'] is None
+          assert rows['gemini']['implementation']['adapter_module'] is None
+          print('executor_profiles_packaged=PASS')
+          print('executor_profile_count='+str(len(rows)))
+          PY
