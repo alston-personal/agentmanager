@@ -145,7 +145,7 @@ def enqueue_onboarding_requests() -> dict[str, Any]:
                 "fingerprint": fp,
             },
             "authority": {
-                "source": "github-actions",
+                "source": "agentos-reconciler",
                 "target_user": "ubuntu",
                 "arbitrary_shell": False,
             },
