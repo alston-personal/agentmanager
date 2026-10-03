@@ -90,6 +90,40 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
         self.assertEqual(provider, "agy")
         self.assertEqual(executor, ["/home/ubuntu/.local/bin/agy"])
 
+    def test_trusted_provider_hint_selects_claude_without_caller_argv(self) -> None:
+        with tempfile.TemporaryDirectory() as td, \
+             patch("agentos_node.antigravity_relay_worker.discover_executor", return_value=("claude", ["/bin/true"])):
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(workspace / "relay", executor=["/bin/false"], provider="agy")
+            result = worker._run_executor(
+                {
+                    "canonical_ir": {"goal": "probe"},
+                    "instruction": "Return exactly PASS",
+                    "executor_hint": "provider:claude",
+                },
+                workspace,
+            )
+        self.assertEqual(result["provider"], "claude")
+        self.assertEqual(result["executor"], "/bin/true")
+        self.assertEqual(result["returncode"], 0)
+
+    def test_non_provider_hint_cannot_select_an_executor(self) -> None:
+        with tempfile.TemporaryDirectory() as td, \
+             patch("agentos_node.antigravity_relay_worker.discover_executor") as discover:
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(workspace / "relay", executor=["/bin/true"], provider="claude")
+            result = worker._run_executor(
+                {
+                    "canonical_ir": {"goal": "probe"},
+                    "instruction": "Return exactly PASS",
+                    "executor_hint": "caller-supplied-random-provider",
+                },
+                workspace,
+            )
+        discover.assert_not_called()
+        self.assertEqual(result["provider"], "claude")
+        self.assertEqual(result["returncode"], 0)
+
     def test_unknown_provider_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported Antigravity executor provider"):
             discover_executor("shell")
