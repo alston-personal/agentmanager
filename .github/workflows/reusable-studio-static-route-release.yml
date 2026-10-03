@@ -197,17 +197,31 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
-          ANCHORS_B64=$(printf '%s' "$ACCEPTANCE_ANCHORS" | base64 -w0)
-          NODE_ASSET_SOURCE_B64=$(printf '%s' "$NODE_ASSET_SOURCE" | base64 -w0)
-          NODE_ASSET_TARGET_B64=$(printf '%s' "$NODE_ASSET_TARGET" | base64 -w0)
-          NODE_ASSETS_MANIFEST_B64=$(printf '%s' "$NODE_ASSETS_MANIFEST" | base64 -w0)
+          encode_ssh_arg() {
+            if [ -z "$1" ]; then
+              printf '%s' '__AGENTOS_EMPTY__'
+            else
+              printf '%s' "$1" | base64 -w0
+            fi
+          }
+          ANCHORS_B64=$(encode_ssh_arg "$ACCEPTANCE_ANCHORS")
+          NODE_ASSET_SOURCE_B64=$(encode_ssh_arg "$NODE_ASSET_SOURCE")
+          NODE_ASSET_TARGET_B64=$(encode_ssh_arg "$NODE_ASSET_TARGET")
+          NODE_ASSETS_MANIFEST_B64=$(encode_ssh_arg "$NODE_ASSETS_MANIFEST")
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" "$ANCHORS_B64" "$NODE_ASSET_SOURCE_B64" "$NODE_ASSET_TARGET_B64" "$NODE_ASSET_SHA256" "$NODE_ASSETS_MANIFEST_B64" <<'REMOTE'
           set -euo pipefail
           REPO="$1"; SOURCE_SHA="$2"; ROUTE="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"; ANCHORS_B64="$7"; NODE_ASSET_SOURCE_B64="$8"; NODE_ASSET_TARGET_B64="$9"; NODE_ASSET_SHA256="${10}"; NODE_ASSETS_MANIFEST_B64="${11}"
-          NODE_ASSET_SOURCE="$(printf '%s' "$NODE_ASSET_SOURCE_B64" | base64 -d)"
-          NODE_ASSET_TARGET="$(printf '%s' "$NODE_ASSET_TARGET_B64" | base64 -d)"
-          NODE_ASSETS_MANIFEST="$(printf '%s' "$NODE_ASSETS_MANIFEST_B64" | base64 -d)"
+          decode_ssh_arg() {
+            if [ "$1" = '__AGENTOS_EMPTY__' ]; then
+              printf ''
+            else
+              printf '%s' "$1" | base64 -d
+            fi
+          }
+          NODE_ASSET_SOURCE="$(decode_ssh_arg "$NODE_ASSET_SOURCE_B64")"
+          NODE_ASSET_TARGET="$(decode_ssh_arg "$NODE_ASSET_TARGET_B64")"
+          NODE_ASSETS_MANIFEST="$(decode_ssh_arg "$NODE_ASSETS_MANIFEST_B64")"
           LIVE=/home/ubuntu/zeus-writer/website/dist
           TMP=$(mktemp -d /tmp/studio-static-route-release-XXXXXX)
           SRC="$TMP/studio-web"
@@ -217,7 +231,11 @@ jobs:
           NEW_ROUTE="$LIVE/.${ROUTE}-${RUN_ID}"
           DEPLOYED=0
 
-          printf '%s' "$ANCHORS_B64" | base64 -d > "$ANCHOR_FILE"
+          if [ "$ANCHORS_B64" = '__AGENTOS_EMPTY__' ]; then
+            : > "$ANCHOR_FILE"
+          else
+            printf '%s' "$ANCHORS_B64" | base64 -d > "$ANCHOR_FILE"
+          fi
 
           validate_html() {
             target="$1"
