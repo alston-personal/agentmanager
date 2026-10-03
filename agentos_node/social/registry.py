@@ -35,7 +35,7 @@ def _platform_specs(platform: str) -> list[SocialCapabilitySpec]:
 
 
 _SPECS: list[SocialCapabilitySpec] = []
-for _platform in ("threads", "facebook", "instagram"):
+for _platform in ("threads", "facebook", "instagram", "x"):
     _SPECS.extend(_platform_specs(_platform))
 _SPECS.append(SocialCapabilitySpec("social.threads.public_post.read", "threads", "public_post.read", False))
 _SPECS.append(SocialCapabilitySpec("social.threads.keyword.search", "threads", "keyword.search", False))
