@@ -391,6 +391,16 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             safe_prefixes: tuple[str, ...] = ()
             if action == bootstrap_control.ACTION_RUNNER_WINDOW_PROBE:
                 safe_prefixes = ('runner_window_probe=',)
+            elif action == bootstrap_control.ACTION_REPAIR_TRANSPORT:
+                safe_prefixes = (
+                    'antigravity_repair=',
+                    'antigravity_repair_exit=',
+                    'antigravity_repair_line=',
+                    'agentos_source_ref=',
+                    'agentos_source_commit=',
+                    'action_relay_install=',
+                    'action_relay_source_generation_pinned=',
+                )
             elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
                 safe_prefixes = (
                     'node_ota_stage_task=',
@@ -464,6 +474,16 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'content_social_reconcile=',
                 )
             evidence: list[str] = []
+            failed_steps: list[dict[str, Any]] = []
+            for step in raw.get('steps') or []:
+                if not isinstance(step, dict):
+                    continue
+                returncode = step.get('returncode')
+                if isinstance(returncode, int) and returncode != 0:
+                    failed_steps.append({
+                        'step': str(step.get('step') or 'unknown')[:80],
+                        'returncode': returncode,
+                    })
             if safe_prefixes:
                 for step in raw.get('steps') or []:
                     if not isinstance(step, dict):
@@ -486,6 +506,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'completed_at': raw.get('completed_at'),
                     'scheduler': raw.get('scheduler'),
                     'evidence': evidence[:32],
+                    'failed_steps': failed_steps[:8],
                 },
             }
         request_path = requests / f'{request_id}.request.json'
