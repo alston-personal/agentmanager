@@ -271,11 +271,14 @@ jobs:
             tail -n 160 "$DATA_ROOT/logs/milkcat_credits.log" 2>/dev/null || true
             exit 1
           fi
-          if ! curl -fsS http://127.0.0.1:8767/healthz | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["service"]=="milkcat-credits" and d["mode"]=="shadow"; print("milkcat_credits_shadow=PASS")'; then
+          source "$DATA_ROOT/config/milkcat_credits.env"
+          if ! curl -fsS "$MILKCAT_CREDITS_URL/healthz" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["service"]=="milkcat-credits" and d["mode"]=="shadow"; print("milkcat_credits_shadow=PASS")'; then
             systemctl --user --no-pager --full status milkcat-credits.service || true
             journalctl --user -u milkcat-credits.service -n 120 --no-pager || true
+            tail -n 160 "$DATA_ROOT/logs/milkcat_credits.log" 2>/dev/null || true
             exit 1
           fi
+          echo "milkcat_credits_url=$MILKCAT_CREDITS_URL"
           systemctl --user --no-pager --full status milkcat-credits.service | head -n 30
 
           if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
