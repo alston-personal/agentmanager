@@ -34,10 +34,7 @@ export async function GET(
       return NextResponse.json({ error: `OAuth credentials not configured for ${provider}` }, { status: 500 });
     }
 
-    // 1. Exchange temporary code for access token
     const accessToken = await adapter.exchangeCode(clientId, clientSecret, code, redirectUri);
-
-    // 2. Fetch user profile
     const profile = await adapter.getUserProfile(accessToken);
     const username = profile.username;
 
@@ -45,12 +42,8 @@ export async function GET(
       return NextResponse.json({ error: `Failed to retrieve username from ${provider}` }, { status: 400 });
     }
 
-    // 3. Generate our JWT token
     const token = generateToken(username, { provider: profile.provider, subject: profile.subject, avatarUrl: profile.avatarUrl });
 
-    // 4. Recover returnTo from the server-side OAuth state. This survives
-    // Safari / Home Screen cookie isolation. The cookie is only a fallback for
-    // in-flight sign-ins created before this deployment.
     const stateRecord = state ? consumeOAuthState(state) : null;
     const returnToCookie = request.cookies.get('oauth_return_to')?.value;
     const fallbackReturnTo = returnToCookie ? decodeURIComponent(returnToCookie) : '/';
@@ -60,18 +53,31 @@ export async function GET(
     const returnTo = stateRecord?.returnTo || fallbackReturnTo;
     const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
     const response = NextResponse.redirect(new URL(safeReturnTo, siteUrl));
-    
+
+    // Remove the legacy parent-domain cookie first. iOS/WebKit can otherwise
+    // retain both a Domain=.milkcat.org and host-only auth_token and return
+    // the stale one on the next session probe.
     response.cookies.set({
       name: 'auth_token',
-      value: token,
+      value: '',
       httpOnly: true,
       secure: true,
       domain: '.milkcat.org',
       path: '/',
       sameSite: 'lax',
-      maxAge: 86400, // 24 hours
+      maxAge: 0,
+    });
+    response.cookies.set({
+      name: 'auth_token',
+      value: token,
+      httpOnly: true,
+      secure: true,
+      path: '/',
+      sameSite: 'lax',
+      maxAge: 86400,
     });
     response.cookies.set({ name: 'oauth_return_to', value: '', httpOnly: true, secure: true, domain: '.milkcat.org', path: '/', sameSite: 'lax', maxAge: 0 });
+    response.cookies.set({ name: 'oauth_return_to', value: '', httpOnly: true, secure: true, path: '/', sameSite: 'lax', maxAge: 0 });
 
     return response;
   } catch (error: any) {

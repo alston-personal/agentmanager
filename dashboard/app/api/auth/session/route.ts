@@ -20,7 +20,7 @@ function getLikedSlugs(username: string): string[] {
 }
 
 export async function GET(request: NextRequest) {
-  const token = request.cookies.get('auth_token')?.value;
+  const authTokens = request.cookies.getAll('auth_token').map((cookie) => cookie.value).filter(Boolean);
 
   const providers = {
     github: !!process.env.GITHUB_CLIENT_ID,
@@ -29,11 +29,13 @@ export async function GET(request: NextRequest) {
     google: !!process.env.GOOGLE_CLIENT_ID,
   };
 
-  if (!token) {
+  if (!authTokens.length) {
     return NextResponse.json({ loggedIn: false, providers });
   }
 
-  const user = verifyToken(token);
+  const user = authTokens
+    .map((token) => verifyToken(token))
+    .find((candidate) => candidate?.username) || null;
 
   if (!user || !user.username) {
     return NextResponse.json({ loggedIn: false, providers });
