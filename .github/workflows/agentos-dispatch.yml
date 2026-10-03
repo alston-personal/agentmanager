@@ -1,0 +1,104 @@
+name: AgentOS Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      capability:
+        description: Public Runner Window capability
+        required: true
+        type: string
+      operation:
+        description: Public Runner Window operation
+        required: true
+        type: string
+      payload_json:
+        description: Optional JSON object payload
+        required: false
+        default: '{}'
+        type: string
+  workflow_call:
+    inputs:
+      capability:
+        required: true
+        type: string
+      operation:
+        required: true
+        type: string
+      payload_json:
+        required: false
+        default: '{}'
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate public intent envelope
+        shell: bash
+        env:
+          CAPABILITY: ${{ inputs.capability }}
+          OPERATION: ${{ inputs.operation }}
+          PAYLOAD_JSON: ${{ inputs.payload_json }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,re
+          cap=os.environ["CAPABILITY"].strip()
+          op=os.environ["OPERATION"].strip()
+          assert re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,95}",cap),cap
+          assert re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,95}",op),op
+          payload=json.loads(os.environ.get("PAYLOAD_JSON") or "{}")
+          assert isinstance(payload,dict)
+          encoded=json.dumps(payload,separators=(",",":"),ensure_ascii=False)
+          assert len(encoded)<=8000
+          print("agentos_dispatch_envelope=PASS")
+          PY
+          bash -n scripts/agentos_dispatch.sh
+
+      - name: Mint GitHub OIDC Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Dispatch through Runner Window
+        shell: bash
+        env:
+          CAPABILITY: ${{ inputs.capability }}
+          OPERATION: ${{ inputs.operation }}
+          PAYLOAD_JSON: ${{ inputs.payload_json }}
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=720             bash scripts/agentos_dispatch.sh               "$CAPABILITY" "$OPERATION" "$GITHUB_SHA"               --payload-json "$PAYLOAD_JSON"               | tee "$RUNNER_TEMP/agentos-dispatch-receipt.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/agentos-dispatch-receipt.txt"
+          echo "agentos_dispatch=PASS"
+
+      - name: Upload bounded dispatch receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentos-dispatch-${{ github.run_id }}
+          path: ${{ runner.temp }}/agentos-dispatch-receipt.txt
+          if-no-files-found: warn
+          retention-days: 7
