@@ -354,3 +354,40 @@ def test_engineering_job_fails_before_relay_when_no_provider_is_healthy(tmp_path
     )
     assert result["classification"] == "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER"
     assert result["routable"] is False
+
+
+def test_executor_health_marks_mixed_results_flaky(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    calls = {"claude": 0, "agy": 0}
+    def fake_probe(name, _workspace):
+        calls[name] += 1
+        if name == "claude":
+            return {"state": "TIMEOUT", "returncode": 124, "timed_out": True}
+        return (
+            {"state": "READY", "returncode": 0, "timed_out": False}
+            if calls[name] == 1
+            else {"state": "TIMEOUT", "returncode": 124, "timed_out": True}
+        )
+
+    monkeypatch.setattr(provider, "_probe_model_provider", fake_probe)
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.executor.health"),
+        workspace=workspace,
+    )
+    assert result["claude_ready_count"] == 0
+    assert result["claude_probe_attempts"] == 2
+    assert result["agy_ready_count"] == 1
+    assert result["agy_probe_attempts"] == 2
+    assert result["agy_state"] == "FLAKY"
+    assert result["selected_provider"] == ""
+    assert result["successful"] is False
+
+
+def test_timeout_with_auth_evidence_classifies_auth_required():
+    from agentos_node.engineering_subagent_provider import _classify_probe_output
+    assert _classify_probe_output(124, "Please login to continue", timed_out=True) == "AUTH_REQUIRED"
