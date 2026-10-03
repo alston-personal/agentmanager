@@ -91,6 +91,20 @@ def test_failed_engineering_job_projects_only_safe_executor_diagnostics(tmp_path
     workspace = tmp_path / "repo"
     workspace.mkdir()
     (workspace / ".git").mkdir()
+    monkeypatch.setattr(
+        provider,
+        "_run_executor_health",
+        lambda _workspace: {
+            "verdict": "PASS",
+            "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
+            "executor_available": True,
+            "routable": True,
+            "authorized": True,
+            "successful": True,
+            "credential_exposed": False,
+            "selected_provider": "claude",
+        },
+    )
     monkeypatch.setattr(provider, "AntigravityRelayClient", FakeClient)
     result = provider.run_engineering_subagent(
         canonical_executor_job_request("engineering.windows-thin-client.fix"),
