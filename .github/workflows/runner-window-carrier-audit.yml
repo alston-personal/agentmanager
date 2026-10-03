@@ -1,0 +1,16 @@
+name: Runner Window Carrier Audit
+on:
+  push:
+    branches: [audit/core-runner-window-carriers-20261003]
+    paths:
+      - 'scripts/audit_runner_window_carriers.py'
+      - '.github/workflows/runner-window-carrier-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/audit_runner_window_carriers.py
