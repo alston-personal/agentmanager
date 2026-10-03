@@ -78,6 +78,18 @@ def test_runner_window_rejects_unregistered_payload_keys():
         resolve_intent("browser.gui", "smoke", source_commit="a" * 40, payload={"runner": "oracle-gui"})
 
 
+def test_realm_scheduler_public_projection_keeps_bounded_executor_job_identity():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    assert "public_receipt['executor_job']" in text
+    assert "'job_id'" in text
+    assert "'job_type'" in text
+    assert "'credential_exposed'" in text
+    assert "public_receipt['executor_job_receipt']" in text
+    assert "'classification'" in text
+    assert "'stdout'" not in text.split("public_receipt['executor_job_receipt']", 1)[1].split("return {", 1)[0]
+    assert "'stderr'" not in text.split("public_receipt['executor_job_receipt']", 1)[1].split("return {", 1)[0]
+
+
 def test_runner_window_catalog_contains_stable_public_intents():
     items = {(x["capability"], x["operation"]) for x in catalog()}
     assert ("agentos.dispatch", "probe") in items
