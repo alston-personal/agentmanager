@@ -112,13 +112,17 @@ jobs:
           receipt=docs[-1].get('receipt') or {}
           expected=sys.argv[2]
           assert receipt.get('schema')=='agentos.bootstrap-receipt/v1', receipt
-          assert receipt.get('action')=='agentos.transport.repair', receipt
           assert receipt.get('source_commit')==expected, receipt
           assert receipt.get('ok') is True, receipt
-          text='\n'.join(str(step.get('stdout',''))+'\n'+str(step.get('stderr','')) for step in receipt.get('steps',[]))
-          assert 'action_relay_install=PASS' in text, text[-12000:]
-          assert 'action_relay_source_generation_pinned=PASS' in text, text[-12000:]
-          assert f'agentos_source_commit={expected}' in text, text[-12000:]
+          evidence=set(receipt.get('evidence') or [])
+          for marker in (
+              'antigravity_repair_stage=complete',
+              'antigravity_repair=PASS',
+              'action_relay_install=PASS',
+              'action_relay_source_generation_pinned=PASS',
+              f'agentos_source_commit={expected}',
+          ):
+              assert marker in evidence,(marker,evidence)
           print('oracle_action_runtime_rollout=PASS')
           print('oracle_action_runtime_source_commit='+expected)
           PY
