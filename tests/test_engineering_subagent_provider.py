@@ -94,7 +94,7 @@ def test_failed_engineering_job_projects_only_safe_executor_diagnostics(tmp_path
     monkeypatch.setattr(
         provider,
         "_read_executor_health",
-        lambda _workspace: {
+        lambda: {
             "verdict": "PASS",
             "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
             "executor_available": True,
@@ -286,7 +286,7 @@ def test_model_smoke_routes_through_health_selected_provider(tmp_path: Path, mon
     monkeypatch.setattr(
         provider,
         "_read_executor_health",
-        lambda _workspace: {
+        lambda: {
             "verdict": "PASS",
             "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
             "executor_available": True,
@@ -347,7 +347,7 @@ def test_engineering_job_fails_before_relay_when_no_provider_is_healthy(tmp_path
         "credential_exposed": False,
         "selected_provider": "",
     }
-    monkeypatch.setattr(provider, "_read_executor_health", lambda _workspace: dict(health))
+    monkeypatch.setattr(provider, "_read_executor_health", lambda: dict(health))
 
     class FailIfConstructed:
         def __init__(self, root):
