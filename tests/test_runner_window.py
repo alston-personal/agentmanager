@@ -68,6 +68,12 @@ def test_runtime_repair_emits_bounded_failure_line():
     assert "'antigravity_repair_line='" in server
 
 
+def test_runner_window_allows_bounded_deterministic_smoke_evidence():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    assert "'worktree_clean'" in text
+    assert "'observed_head'" in text
+
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})
