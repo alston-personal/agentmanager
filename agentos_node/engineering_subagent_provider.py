@@ -151,13 +151,13 @@ def _run_read_only_smoke(workspace_path: Path) -> dict[str, Any]:
 
 
 def _classify_probe_output(returncode: int, text: str, *, timed_out: bool) -> str:
+    lowered = text.casefold()
+    if any(token in lowered for token in ("login", "sign in", "auth required", "not authenticated", "unauthorized")):
+        return "AUTH_REQUIRED"
     if timed_out:
         return "TIMEOUT"
     if returncode == 0:
         return "READY"
-    lowered = text.casefold()
-    if any(token in lowered for token in ("login", "sign in", "auth required", "not authenticated", "unauthorized")):
-        return "AUTH_REQUIRED"
     return "ERROR"
 
 
@@ -229,17 +229,56 @@ def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_second
             "returncode": int(completed.returncode),
             "timed_out": False,
         }
-    except subprocess.TimeoutExpired:
-        return {"state": "TIMEOUT", "returncode": 124, "timed_out": True}
+    except subprocess.TimeoutExpired as exc:
+        out = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else str(exc.stdout or "")
+        err = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else str(exc.stderr or "")
+        return {
+            "state": _classify_probe_output(124, out[-4000:] + "\n" + err[-4000:], timed_out=True),
+            "returncode": 124,
+            "timed_out": True,
+        }
     except OSError:
         return {"state": "UNAVAILABLE", "returncode": None, "timed_out": False}
+
+
+def _probe_provider_stability(
+    provider: str,
+    workspace_path: Path,
+    *,
+    attempts: int = 2,
+) -> dict[str, Any]:
+    results = [_probe_model_provider(provider, workspace_path) for _ in range(max(1, int(attempts)))]
+    ready_count = sum(1 for item in results if item.get("state") == "READY")
+    total = len(results)
+    if ready_count == total:
+        state = "READY"
+    elif ready_count > 0:
+        state = "FLAKY"
+    else:
+        states = [str(item.get("state") or "ERROR") for item in results]
+        if "AUTH_REQUIRED" in states:
+            state = "AUTH_REQUIRED"
+        elif all(item == "TIMEOUT" for item in states):
+            state = "TIMEOUT"
+        elif all(item == "UNAVAILABLE" for item in states):
+            state = "UNAVAILABLE"
+        else:
+            state = "ERROR"
+    last = results[-1]
+    return {
+        "state": state,
+        "returncode": last.get("returncode"),
+        "timed_out": any(item.get("timed_out") is True for item in results),
+        "ready_count": ready_count,
+        "attempts": total,
+    }
 
 
 def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
     claude_liveness = _probe_binary_liveness("claude")
     agy_liveness = _probe_binary_liveness("agy")
-    claude = _probe_model_provider("claude", workspace_path)
-    agy = _probe_model_provider("agy", workspace_path)
+    claude = _probe_provider_stability("claude", workspace_path)
+    agy = _probe_provider_stability("agy", workspace_path)
     selected_provider = ""
     for provider, probe in (("claude", claude), ("agy", agy)):
         if probe["state"] == "READY":
@@ -258,10 +297,14 @@ def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
         "claude_state": claude["state"],
         "claude_returncode": claude["returncode"],
         "claude_timed_out": claude["timed_out"],
+        "claude_ready_count": claude["ready_count"],
+        "claude_probe_attempts": claude["attempts"],
         "agy_liveness": agy_liveness,
         "agy_state": agy["state"],
         "agy_returncode": agy["returncode"],
         "agy_timed_out": agy["timed_out"],
+        "agy_ready_count": agy["ready_count"],
+        "agy_probe_attempts": agy["attempts"],
         "selected_provider": selected_provider,
     }
 
