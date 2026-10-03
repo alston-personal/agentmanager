@@ -6,19 +6,34 @@ OPERATION="${2:?operation is required}"
 SOURCE_COMMIT="${3:?source_commit is required}"
 shift 3 || true
 
+PAYLOAD_JSON=""
+if [ "${1:-}" = "--payload-json" ]; then
+  [ "$#" -eq 2 ] || { echo "--payload-json requires exactly one JSON object" >&2; exit 2; }
+  PAYLOAD_JSON="$2"
+  shift 2
+fi
+
 BASE="${AGENTOS_RUNNER_WINDOW_BASE:-https://studio.milkcat.org/dashboard/api/agentos}"
 TOKEN="${AGENTOS_CONTROLLER_TOKEN:-}"
 WAIT_SECONDS="${AGENTOS_DISPATCH_WAIT_SECONDS:-300}"
 
 [ -n "$TOKEN" ] || { echo "AGENTOS_CONTROLLER_TOKEN is required" >&2; exit 2; }
 
-BODY="$(python3 - "$CAPABILITY" "$OPERATION" "$SOURCE_COMMIT" "$@" <<'PY'
+BODY="$(python3 - "$CAPABILITY" "$OPERATION" "$SOURCE_COMMIT" "$PAYLOAD_JSON" "$@" <<'PY'
 import json,re,sys
-capability,operation,source_commit=sys.argv[1:4]
+capability,operation,source_commit,payload_json=sys.argv[1:5]
 if not re.fullmatch(r"[0-9a-f]{40}",source_commit):
     raise SystemExit("source_commit must be exact lowercase 40-hex SHA")
 payload={}
-for raw in sys.argv[4:]:
+if payload_json:
+    try:
+        candidate=json.loads(payload_json)
+    except Exception as exc:
+        raise SystemExit(f"payload JSON invalid: {exc}")
+    if not isinstance(candidate,dict):
+        raise SystemExit("payload JSON must be an object")
+    payload.update(candidate)
+for raw in sys.argv[5:]:
     if "=" not in raw:
         raise SystemExit("extra payload must be key=value")
     k,v=raw.split("=",1)
