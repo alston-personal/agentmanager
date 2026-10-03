@@ -19,17 +19,19 @@ class FakeRelay:
 
 def test_engineering_job_contracts_are_fixed_and_bounded():
     expected = {
-        "engineering.subagent.smoke": "surface://engineering-subagent",
-        "engineering.windows-thin-client.fix": "issue://892",
-        "engineering.realm-device-flow.fix": "issue://893",
-        "engineering.realm-node-fabric.fix": "issue://894",
+        "engineering.subagent.smoke": ("surface://engineering-subagent", "bounded-read-only", True),
+        "engineering.executor.health": ("surface://engineering-executors", "bounded-read-only", True),
+        "engineering.windows-thin-client.fix": ("issue://892", "bounded-code-fix", False),
+        "engineering.realm-device-flow.fix": ("issue://893", "bounded-code-fix", False),
+        "engineering.realm-node-fabric.fix": ("issue://894", "bounded-code-fix", False),
     }
-    for job_type, workload_ref in expected.items():
+    for job_type, (workload_ref, authority, read_only) in expected.items():
         request = canonical_executor_job_request(job_type)
         spec = validate_executor_job(request)
         assert spec.executor_class == EXECUTOR_CLASS
         assert spec.workload_ref == workload_ref
-        assert spec.authority == "bounded-code-fix"
+        assert spec.authority == authority
+        assert spec.read_only is read_only
 
 
 def test_provider_registration_covers_all_engineering_jobs(tmp_path: Path):
@@ -90,7 +92,7 @@ def test_failed_engineering_job_projects_only_safe_executor_diagnostics(tmp_path
     (workspace / ".git").mkdir()
     monkeypatch.setattr(provider, "AntigravityRelayClient", FakeClient)
     result = provider.run_engineering_subagent(
-        canonical_executor_job_request("engineering.subagent.smoke"),
+        canonical_executor_job_request("engineering.windows-thin-client.fix"),
         relay_root=tmp_path / "relay",
         workspace=workspace,
         timeout_seconds=0.1,
@@ -138,4 +140,53 @@ def test_read_only_smoke_is_deterministic_and_does_not_require_model(tmp_path: P
     assert result["executor_timed_out"] is False
     assert result["worktree_clean"] is True
     assert len(result["observed_head"]) == 40
+    assert result["successful"] is False
+
+
+def test_executor_health_prefers_first_ready_provider(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    probes = {
+        "claude": {"state": "TIMEOUT", "returncode": 124, "timed_out": True},
+        "agy": {"state": "READY", "returncode": 0, "timed_out": False},
+    }
+    monkeypatch.setattr(provider, "_probe_model_provider", lambda name, _workspace: dict(probes[name]))
+
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.executor.health"),
+        workspace=workspace,
+    )
+    assert result["classification"] == "ENGINEERING_EXECUTOR_HEALTH_READY"
+    assert result["selected_provider"] == "agy"
+    assert result["claude_state"] == "TIMEOUT"
+    assert result["agy_state"] == "READY"
+    assert result["successful"] is True
+    assert result["credential_exposed"] is False
+
+
+def test_executor_health_fails_closed_when_no_provider_ready(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    probes = {
+        "claude": {"state": "AUTH_REQUIRED", "returncode": 1, "timed_out": False},
+        "agy": {"state": "UNAVAILABLE", "returncode": None, "timed_out": False},
+    }
+    monkeypatch.setattr(provider, "_probe_model_provider", lambda name, _workspace: dict(probes[name]))
+
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.executor.health"),
+        workspace=workspace,
+    )
+    assert result["classification"] == "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER"
+    assert result["selected_provider"] == ""
+    assert result["routable"] is False
+    assert result["authorized"] is False
     assert result["successful"] is False

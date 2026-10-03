@@ -17,6 +17,7 @@ on:
       - 'agentos_node/issue117_experience_provider.py'
       - 'agentos_node/typesafe_skill_install_provider.py'
       - 'agentos_node/gemini_cli_install_provider.py'
+      - 'agentos_node/engineering_subagent_provider.py'
       - 'agentos_node/experience_mcp_stdio.py'
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/repair_antigravity_relay_user.sh'
@@ -35,6 +36,7 @@ on:
       - 'tests/test_issue117_regression_floor.py'
       - 'tests/test_typesafe_skill_install_provider.py'
       - 'tests/test_gemini_cli_install_provider.py'
+      - 'tests/test_engineering_subagent_provider.py'
       - 'tests/test_experience_attribution_contract.py'
       - 'tests/test_issue117_experience_ablation.py'
       - 'tests/test_control_inbox_bridge.py'
@@ -57,6 +59,7 @@ on:
       - 'agentos_node/issue117_experience_provider.py'
       - 'agentos_node/typesafe_skill_install_provider.py'
       - 'agentos_node/gemini_cli_install_provider.py'
+      - 'agentos_node/engineering_subagent_provider.py'
       - 'agentos_node/experience_mcp_stdio.py'
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/repair_antigravity_relay_user.sh'
@@ -75,6 +78,7 @@ on:
       - 'tests/test_issue117_regression_floor.py'
       - 'tests/test_typesafe_skill_install_provider.py'
       - 'tests/test_gemini_cli_install_provider.py'
+      - 'tests/test_engineering_subagent_provider.py'
       - 'tests/test_experience_attribution_contract.py'
       - 'tests/test_issue117_experience_ablation.py'
       - 'tests/test_control_inbox_bridge.py'
@@ -106,6 +110,7 @@ jobs:
             tests/test_issue117_regression_floor.py \
             tests/test_typesafe_skill_install_provider.py \
             tests/test_gemini_cli_install_provider.py \
+            tests/test_engineering_subagent_provider.py \
             tests/test_experience_attribution_contract.py \
             tests/test_issue117_experience_ablation.py \
             tests/test_control_inbox_bridge.py \
@@ -165,6 +170,7 @@ jobs:
             agentos_node/executor_job_action_relay.py \
             agentos_node/issue117_experience_provider.py \
             agentos_node/gemini_cli_install_provider.py \
+            agentos_node/engineering_subagent_provider.py \
             agentos_node/experience_mcp_stdio.py \
             scripts/oracle_codex_experience_regression.py \
             scripts/oracle_codex_experience_regression_entry_v2.py \

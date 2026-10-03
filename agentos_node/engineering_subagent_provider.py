@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from agent_core.executor_job_contract import validate_executor_job
 from agentos_node.antigravity_relay import AntigravityRelayClient
+from agentos_node.antigravity_relay_worker import discover_executor
 from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS, ExecutorJobProviderRegistry
 
 EXECUTOR_CLASS = "antigravity-engineering"
@@ -29,6 +30,12 @@ JOBS: dict[str, dict[str, str]] = {
         "branch": "",
         "goal": "Prove the governed engineering Subagent can inspect the canonical AgentOS repository without mutation.",
         "acceptance": "Inspect current HEAD and repository status, make no changes, and return a concrete bounded result.",
+    },
+    "engineering.executor.health": {
+        "workload_ref": "surface://engineering-executors",
+        "branch": "",
+        "goal": "Probe fixed local engineering model providers without mutation.",
+        "acceptance": "Classify Claude and agy as READY, AUTH_REQUIRED, TIMEOUT, ERROR, or UNAVAILABLE and select the first READY provider.",
     },
     "engineering.windows-thin-client.fix": {
         "workload_ref": "issue://892",
@@ -137,6 +144,82 @@ def _run_read_only_smoke(workspace_path: Path) -> dict[str, Any]:
     }
 
 
+def _classify_probe_output(returncode: int, text: str, *, timed_out: bool) -> str:
+    if timed_out:
+        return "TIMEOUT"
+    if returncode == 0:
+        return "READY"
+    lowered = text.casefold()
+    if any(token in lowered for token in ("login", "sign in", "auth required", "not authenticated", "unauthorized")):
+        return "AUTH_REQUIRED"
+    return "ERROR"
+
+
+def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_seconds: float = 20.0) -> dict[str, Any]:
+    try:
+        selected, executable = discover_executor(provider)
+    except Exception:
+        return {"state": "ERROR", "returncode": None, "timed_out": False}
+    if not executable:
+        return {"state": "UNAVAILABLE", "returncode": None, "timed_out": False}
+
+    prompt = (
+        "AgentOS bounded executor health probe. Do not modify files, do not create branches, "
+        "do not commit, push, deploy, or expose credentials. Reply exactly READY."
+    )
+    if selected == "agy":
+        argv = [*executable, "run", "--task", prompt, "--workspace", str(workspace_path)]
+    else:
+        argv = [*executable, prompt]
+
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=str(workspace_path),
+            capture_output=True,
+            text=True,
+            timeout=max(1.0, float(timeout_seconds)),
+            check=False,
+        )
+        text = (completed.stdout or "")[-4000:] + "\n" + (completed.stderr or "")[-4000:]
+        return {
+            "state": _classify_probe_output(int(completed.returncode), text, timed_out=False),
+            "returncode": int(completed.returncode),
+            "timed_out": False,
+        }
+    except subprocess.TimeoutExpired:
+        return {"state": "TIMEOUT", "returncode": 124, "timed_out": True}
+    except OSError:
+        return {"state": "UNAVAILABLE", "returncode": None, "timed_out": False}
+
+
+def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
+    claude = _probe_model_provider("claude", workspace_path)
+    agy = _probe_model_provider("agy", workspace_path)
+    selected_provider = ""
+    for provider, probe in (("claude", claude), ("agy", agy)):
+        if probe["state"] == "READY":
+            selected_provider = provider
+            break
+    ok = bool(selected_provider)
+    return {
+        "verdict": "PASS" if ok else "FAIL",
+        "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+        "executor_available": any(x["state"] != "UNAVAILABLE" for x in (claude, agy)),
+        "routable": ok,
+        "authorized": ok,
+        "successful": ok,
+        "credential_exposed": False,
+        "claude_state": claude["state"],
+        "claude_returncode": claude["returncode"],
+        "claude_timed_out": claude["timed_out"],
+        "agy_state": agy["state"],
+        "agy_returncode": agy["returncode"],
+        "agy_timed_out": agy["timed_out"],
+        "selected_provider": selected_provider,
+    }
+
+
 def run_engineering_subagent(
     request: Mapping[str, Any],
     *,
@@ -163,6 +246,8 @@ def run_engineering_subagent(
 
     if spec.job_type == "engineering.subagent.smoke":
         return _run_read_only_smoke(workspace_path)
+    if spec.job_type == "engineering.executor.health":
+        return _run_executor_health(workspace_path)
 
     client = AntigravityRelayClient(relay_root)
     try:

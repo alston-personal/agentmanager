@@ -542,6 +542,9 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                         'hydration_receipt_ok', 'install_receipt_ok', 'classification',
                         'executor_returncode', 'executor_timed_out', 'executor_provider',
                         'worktree_clean', 'observed_head',
+                        'claude_state', 'claude_returncode', 'claude_timed_out',
+                        'agy_state', 'agy_returncode', 'agy_timed_out',
+                        'selected_provider',
                     )
                     public_receipt['executor_job_receipt'] = {
                         key: job_receipt.get(key)
