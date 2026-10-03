@@ -22,8 +22,14 @@ def test_action_relay_runtime_is_resolved_once_to_an_immutable_commit():
     assert 'EXPECTED_SOURCE_COMMIT="${AGENTOS_ACTION_SOURCE_COMMIT:-}"' in text
     assert "main|core/integration|feature/realm-node-fabric-readiness" in text
     assert 'git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"' in text
+    assert 'SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)' in text
+    assert 'git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"' in text
     assert 'SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)' in text
-    assert 'if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then' in text
+    assert 'if [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then' in text
+    assert 'git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"' in text
+    assert 'Action Relay exact source fetch mismatch' in text
+    assert 'Action Relay source commit is not in governed ref' in text
+    assert 'Action Relay source generation mismatch: expected=' not in text
     assert 'git -C "$RUNTIME_ROOT" reset --hard "$SOURCE_COMMIT"' in text
     assert 'worktree add --detach "$RUNTIME_ROOT" "$SOURCE_COMMIT"' in text
     assert 'test "$(git -C "$RUNTIME_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT"' in text
