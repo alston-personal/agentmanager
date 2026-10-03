@@ -105,6 +105,11 @@ def _instruction(job_type: str) -> str:
 
 
 def _relay_failure_classification(receipt: Mapping[str, Any]) -> str:
+    if str(receipt.get("classification") or "") == "UNKNOWN_SIDE_EFFECT":
+        return "ENGINEERING_EXECUTOR_UNKNOWN_SIDE_EFFECT"
+    error = str(receipt.get("error") or "")
+    if "StrandedProcessingCapsule" in error:
+        return "ENGINEERING_EXECUTOR_UNKNOWN_SIDE_EFFECT"
     if receipt.get("timed_out") is True or int(receipt.get("returncode") or 0) == 124:
         return "ENGINEERING_EXECUTOR_TIMEOUT"
     error = str(receipt.get("error") or "")

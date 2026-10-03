@@ -126,6 +126,54 @@ class AntigravityRelayWorker:
         inbox = sorted(self.paths.inbox.glob("relay-*.json"))
         return inbox[0] if inbox else None
 
+    def reconcile_stranded_processing(self, *, stale_after: float | None = None) -> int:
+        self._ensure_shared_spool()
+        threshold = max(600.0, float(stale_after if stale_after is not None else self.timeout * 3.0))
+        quarantine = self.paths.root / "quarantine"
+        quarantine.mkdir(parents=True, exist_ok=True)
+        share_relay_path(quarantine, directory=True)
+        now = time.time()
+        reconciled = 0
+        for source in sorted(self.paths.processing.glob("relay-*.json")):
+            try:
+                age = max(0.0, now - source.stat().st_mtime)
+            except FileNotFoundError:
+                continue
+            if age < threshold:
+                continue
+            capsule_id = source.stem
+            created_at = None
+            try:
+                payload = json.loads(source.read_text(encoding="utf-8"))
+                capsule_id = str(payload.get("capsule_id") or capsule_id).strip() or capsule_id
+                created_at = payload.get("created_at")
+            except Exception:
+                payload = {}
+            receipt = {
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "started_at": str(created_at or _utc_now()),
+                "completed_at": _utc_now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "provider": self.provider,
+                "ok": False,
+                "error": "StrandedProcessingCapsule: prior execution state UNKNOWN; automatic replay disabled",
+                "classification": "UNKNOWN_SIDE_EFFECT",
+                "timed_out": False,
+            }
+            target = self.paths.receipts / f"{capsule_id}.json"
+            if not target.exists():
+                tmp = target.with_suffix(target.suffix + ".tmp")
+                tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+                share_relay_path(tmp)
+                tmp.replace(target)
+                share_relay_path(target)
+            quarantined = quarantine / source.name
+            source.replace(quarantined)
+            share_relay_path(quarantined)
+            reconciled += 1
+        return reconciled
+
     def _executor_argv(self, capsule: dict[str, Any], workspace: Path) -> list[str]:
         if not self.executor:
             raise RuntimeError(f"no authorized local Antigravity executor discovered for provider={self.provider}")
@@ -247,6 +295,7 @@ class AntigravityRelayWorker:
 
     def serve(self, *, interval: float = 1.0) -> None:
         self._ensure_shared_spool()
+        self.reconcile_stranded_processing()
         while True:
             if self.process_one() is None:
                 time.sleep(interval)
@@ -261,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     worker = AntigravityRelayWorker(args.root, provider=args.provider)
     if args.once:
+        worker.reconcile_stranded_processing()
         print(json.dumps(worker.process_one() or {"status": "idle", "provider": worker.provider}, ensure_ascii=False, indent=2))
         return 0
     worker.serve(interval=args.interval)
