@@ -1,0 +1,142 @@
+name: Main Agent Bounded Job Live Acceptance
+
+on:
+  push:
+    paths:
+      - '.github/workflows/main-agent-bounded-job-live-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Submit bounded executor job
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"job_type":"experience.regression"}'
+          AGENTOS_DISPATCH_WAIT_SECONDS=120 \
+            bash scripts/agentos_dispatch.sh agentos.executor job.submit "$GITHUB_SHA" \
+              --payload-json "$payload" \
+            | tee "$RUNNER_TEMP/job-submit.txt"
+          python3 - "$RUNNER_TEMP/job-submit.txt" "$GITHUB_ENV" <<'PY'
+          import json,sys
+          docs=[]
+          for line in open(sys.argv[1],encoding='utf-8'):
+              line=line.strip()
+              if line.startswith('{'):
+                  docs.append(json.loads(line))
+          assert docs, 'missing submit documents'
+          final=docs[-1]
+          receipt=final.get('receipt') or {}
+          submission=receipt.get('executor_job') or {}
+          assert submission.get('schema')=='agentos.executor-job-submission/v1', submission
+          assert submission.get('state')=='queued', submission
+          assert submission.get('credential_exposed') is False, submission
+          job_id=str(submission.get('job_id') or '')
+          assert job_id.startswith('action-'), job_id
+          with open(sys.argv[2],'a',encoding='utf-8') as f:
+              f.write('AGENTOS_JOB_ID='+job_id+'\n')
+          print('main_agent_job_submit=PASS')
+          print('main_agent_job_id='+job_id)
+          PY
+
+      - name: Inspect until durable executor receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/job-inspect-final.txt"
+          found=0
+          for i in $(seq 1 60); do
+            payload="$(python3 - "$AGENTOS_JOB_ID" <<'PY'
+          import json,sys
+          print(json.dumps({'job_id':sys.argv[1]},separators=(',',':')))
+          PY
+          )"
+            out="$RUNNER_TEMP/job-inspect-$i.txt"
+            if AGENTOS_DISPATCH_WAIT_SECONDS=120 \
+              bash scripts/agentos_dispatch.sh agentos.executor job.inspect "$GITHUB_SHA" \
+                --payload-json "$payload" > "$out" 2>&1; then
+              if python3 - "$out" <<'PY'
+          import json,sys
+          docs=[]
+          for line in open(sys.argv[1],encoding='utf-8'):
+              line=line.strip()
+              if line.startswith('{'):
+                  docs.append(json.loads(line))
+          if not docs:
+              raise SystemExit(1)
+          receipt=(docs[-1].get('receipt') or {})
+          job_receipt=receipt.get('executor_job_receipt')
+          raise SystemExit(0 if isinstance(job_receipt,dict) else 1)
+          PY
+              then
+                cp "$out" "$RUNNER_TEMP/job-inspect-final.txt"
+                found=1
+                break
+              fi
+            fi
+            sleep 10
+          done
+          test "$found" = 1
+          python3 - "$RUNNER_TEMP/job-inspect-final.txt" "$AGENTOS_JOB_ID" <<'PY'
+          import json,sys
+          docs=[]
+          for line in open(sys.argv[1],encoding='utf-8'):
+              line=line.strip()
+              if line.startswith('{'):
+                  docs.append(json.loads(line))
+          assert docs
+          outer=docs[-1]
+          receipt=outer.get('receipt') or {}
+          assert receipt.get('executor_job_state')=='completed', receipt
+          result=receipt.get('executor_job_receipt') or {}
+          assert result.get('schema')=='agentos.executor-job-receipt/v1', result
+          assert result.get('job_id')==sys.argv[2], result
+          assert result.get('job_type')=='experience.regression', result
+          assert result.get('credential_exposed') is False, result
+          assert all(k not in result for k in ('stdout','stderr','prompt','path','credential','credentials')), result
+          print('main_agent_job_inspect=PASS')
+          print('main_agent_correlated_receipt=PASS')
+          print('main_agent_executor_successful='+str(bool(result.get('successful'))).lower())
+          print('main_agent_executor_classification='+str(result.get('classification') or 'none'))
+          PY
+
+      - name: Upload bounded acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-agent-bounded-job-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/job-submit.txt
+            ${{ runner.temp }}/job-inspect-final.txt
+          if-no-files-found: warn
+          retention-days: 7
