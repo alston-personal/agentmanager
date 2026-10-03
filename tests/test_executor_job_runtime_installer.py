@@ -71,7 +71,8 @@ def test_bootstrap_scheduler_rollout_tracks_executor_job_contract_generation():
         "agentos_node/engineering_subagent_provider.py",
     ):
         assert f"'{owned_path}'" in workflow
-    assert "git -C \"$REPO\" archive \"$SOURCE_COMMIT\" agentos_node agent_core" in installer
+    assert "git -C \"$REPO\" archive \"$SOURCE_COMMIT\" agentos_node agent_core runtime_core" in installer
     assert "Environment=PYTHONPATH=$RELEASE" in installer
+    assert "runtime_core" in installer
     assert 'canonical_executor_job_request("engineering.windows-thin-client.fix")' in installer
     assert "ENGINEERING_SUBAGENT_PROVIDERS_REGISTERED is True" in installer
