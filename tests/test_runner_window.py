@@ -44,6 +44,21 @@ def test_executor_job_submit_and_inspect_are_bounded_public_intents():
     }
 
 
+def test_runtime_repair_cleanup_preserves_failure_stage_trap():
+    text = Path("scripts/repair_antigravity_relay_user.sh").read_text(encoding="utf-8")
+    assert "cleanup()" in text
+    assert 'antigravity_repair_stage=$REPAIR_STAGE' in text
+    assert 'antigravity_repair_exit=$rc' in text
+    assert "trap cleanup EXIT" in text
+    assert "trap 'rm -rf \"$TMPDIR\"' EXIT" not in text
+
+
+def test_runner_window_projects_bounded_failed_step_diagnostics():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    assert "'antigravity_repair_exit='" in text
+    assert "'failed_steps': failed_steps[:8]" in text
+
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})
