@@ -9,6 +9,7 @@ from agent_core.node_registry import NodeRegistry
 from agent_core.realm_fabric import RealmFabricStore
 from agentos_node.employee_wake_node import (
     EMPLOYEE_IDS,
+    PRESENCE_EMPLOYEE_IDS,
     NODE_ID,
     EmployeeWakeOnlyClient,
     bootstrap_local_enrollment,
@@ -26,6 +27,15 @@ spec = importlib.util.spec_from_file_location("bootstrap_product_employees", BOO
 assert spec and spec.loader
 bootstrap_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bootstrap_mod)
+
+
+def test_wake_node_presence_scope_keeps_product_ids_stable_and_adds_spec_steward():
+    assert EMPLOYEE_IDS == ("zeus-writer", "youtube-ai-manager")
+    assert PRESENCE_EMPLOYEE_IDS == (
+        "zeus-writer",
+        "youtube-ai-manager",
+        "agentos-spec-steward",
+    )
 
 
 def test_wake_only_client_advertises_exactly_one_capability(tmp_path: Path):
