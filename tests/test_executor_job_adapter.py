@@ -85,6 +85,38 @@ def test_registered_provider_is_sanitized_before_transport_persistence():
         assert forbidden not in semantic
 
 
+def test_adapter_preserves_safe_executor_diagnostics_and_drops_raw_output():
+    registry = ExecutorJobProviderRegistry()
+    registry.register(
+        job_type="experience.regression",
+        provider_id="issue117-v1",
+        executor_class="openai-codex-local",
+        handler=lambda request: {
+            "verdict": "FAIL",
+            "classification": "ENGINEERING_EXECUTOR_NONZERO",
+            "executor_provider": "claude",
+            "executor_returncode": 7,
+            "executor_timed_out": False,
+            "stdout": "private output",
+            "stderr": "private diagnostics",
+            "executor_available": True,
+            "routable": True,
+            "authorized": True,
+            "successful": False,
+            "credential_exposed": False,
+        },
+    )
+    semantic = run_registered_executor_job(
+        request=canonical_experience_regression_request(),
+        registry=registry,
+    )
+    assert semantic["executor_provider"] == "claude"
+    assert semantic["executor_returncode"] == 7
+    assert semantic["executor_timed_out"] is False
+    assert "stdout" not in semantic
+    assert "stderr" not in semantic
+
+
 def test_registered_provider_returns_only_sanitized_result_projection():
     receipt = execute_registered_executor_job(
         job_id="job-pass",
