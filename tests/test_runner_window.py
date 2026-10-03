@@ -48,7 +48,7 @@ def test_runtime_repair_cleanup_preserves_failure_stage_trap():
     text = Path("scripts/repair_antigravity_relay_user.sh").read_text(encoding="utf-8")
     assert "cleanup()" in text
     assert 'antigravity_repair_stage=$REPAIR_STAGE' in text
-    assert 'antigravity_repair_exit=$rc' in text
+    assert 'antigravity_repair_exit=${REPAIR_FAILURE_RC:-$rc}' in text
     assert "trap cleanup EXIT" in text
     assert "trap 'rm -rf \"$TMPDIR\"' EXIT" not in text
 
