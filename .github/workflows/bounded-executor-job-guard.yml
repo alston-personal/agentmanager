@@ -20,6 +20,7 @@ on:
       - 'agentos_node/engineering_subagent_provider.py'
       - 'agentos_node/executor_provider_registry.py'
       - 'agentos_node/executor_provider_adapters.py'
+      - 'agentos_node/executor_reconcile.py'
       - 'agentos_node/antigravity_relay_worker.py'
       - '.agentos/executors/**'
       - 'agentos_node/experience_mcp_stdio.py'
@@ -42,6 +43,7 @@ on:
       - 'tests/test_gemini_cli_install_provider.py'
       - 'tests/test_engineering_subagent_provider.py'
       - 'tests/test_executor_provider_registry_v03.py'
+      - 'tests/test_executor_reconcile.py'
       - 'tests/test_antigravity_relay_worker.py'
       - 'tests/test_experience_attribution_contract.py'
       - 'tests/test_issue117_experience_ablation.py'
@@ -49,6 +51,7 @@ on:
       - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
       - '.github/workflows/oracle-exact-generation-executor-job-rollout.yml'
+      - '.github/workflows/executor-health-reconcile.yml'
   push:
     branches:
       - core/issue-194-bounded-executor-jobs
@@ -118,6 +121,7 @@ jobs:
             tests/test_gemini_cli_install_provider.py \
             tests/test_engineering_subagent_provider.py \
             tests/test_executor_provider_registry_v03.py \
+            tests/test_executor_reconcile.py \
             tests/test_antigravity_relay_worker.py \
             tests/test_experience_attribution_contract.py \
             tests/test_issue117_experience_ablation.py \
@@ -181,6 +185,7 @@ jobs:
             agentos_node/engineering_subagent_provider.py \
             agentos_node/executor_provider_registry.py \
             agentos_node/executor_provider_adapters.py \
+            agentos_node/executor_reconcile.py \
             agentos_node/antigravity_relay_worker.py \
             agentos_node/experience_mcp_stdio.py \
             scripts/oracle_codex_experience_regression.py \

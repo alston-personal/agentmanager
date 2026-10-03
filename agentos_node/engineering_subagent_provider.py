@@ -7,8 +7,11 @@ Agent must verify branch/CI evidence before closure.
 """
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -23,6 +26,7 @@ RELAY_ROOT = Path("/home/ubuntu/agent-data/runtime/antigravity-relay")
 WORKSPACE = Path("/home/ubuntu/agentmanager")
 POLL_SECONDS = 1.0
 TIMEOUT_SECONDS = 240.0
+HEALTH_SNAPSHOT_MAX_AGE_SECONDS = 420.0
 
 JOBS: dict[str, dict[str, str]] = {
     "engineering.subagent.smoke": {
@@ -274,39 +278,128 @@ def _probe_provider_stability(
     }
 
 
-def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
-    claude_liveness = _probe_binary_liveness("claude")
-    agy_liveness = _probe_binary_liveness("agy")
-    claude = _probe_provider_stability("claude", workspace_path)
-    agy = _probe_provider_stability("agy", workspace_path)
+def _snapshot_path() -> Path:
+    root = Path(os.environ.get("AGENTOS_CLIENT_HOME") or (Path.home() / ".agentos"))
+    return root / "executor-adoption.json"
+
+
+def _parse_utc(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _load_executor_snapshot(*, max_age_seconds: float = HEALTH_SNAPSHOT_MAX_AGE_SECONDS) -> dict[str, Any] | None:
+    path = _snapshot_path()
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if payload.get("schema") != "agentos.executor-adoption/v0.2":
+        return None
+    observed = _parse_utc(str(payload.get("observed_at") or ""))
+    if observed is None:
+        return None
+    age = (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
+    if age < 0 or age > max(1.0, float(max_age_seconds)):
+        return None
+    return payload
+
+
+def _snapshot_entry(snapshot: Mapping[str, Any] | None, executor_id: str) -> dict[str, Any]:
+    if not isinstance(snapshot, Mapping):
+        return {}
+    for item in snapshot.get("executors") or []:
+        if isinstance(item, dict) and str(item.get("executor_id") or "") == executor_id:
+            return item
+    return {}
+
+
+def _snapshot_state(item: Mapping[str, Any]) -> str:
+    if not item:
+        return "UNAVAILABLE"
+    if item.get("stable_routable") is True:
+        return "READY"
+    state = str(item.get("state") or "ERROR")
+    classification = str((item.get("provider_health") or {}).get("classification") or "")
+    if state == "AUTH_REQUIRED":
+        return "AUTH_REQUIRED"
+    if classification == "TIMEOUT":
+        return "TIMEOUT"
+    if state == "READY":
+        return "FLAKY"
+    if state in {"INSTALL_REQUIRED", "REGISTRATION_REQUIRED"}:
+        return "UNAVAILABLE"
+    return "ERROR"
+
+
+def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
+    claude = _snapshot_entry(snapshot, "claude-code")
+    agy = _snapshot_entry(snapshot, "antigravity")
+    claude_state = _snapshot_state(claude)
+    agy_state = _snapshot_state(agy)
     selected_provider = ""
-    for provider, probe in (("claude", claude), ("agy", agy)):
-        if probe["state"] == "READY":
+    for provider, item in (("claude", claude), ("agy", agy)):
+        if item.get("stable_routable") is True:
             selected_provider = provider
             break
     ok = bool(selected_provider)
+
+    def ready_count(item: Mapping[str, Any]) -> int:
+        return min(2, max(0, int(item.get("ready_streak") or 0)))
+
     return {
         "verdict": "PASS" if ok else "FAIL",
         "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
-        "executor_available": any(x["state"] != "UNAVAILABLE" for x in (claude, agy)),
+        "executor_available": bool(claude or agy),
         "routable": ok,
         "authorized": ok,
         "successful": ok,
         "credential_exposed": False,
-        "claude_liveness": claude_liveness,
-        "claude_state": claude["state"],
-        "claude_returncode": claude["returncode"],
-        "claude_timed_out": claude["timed_out"],
-        "claude_ready_count": claude["ready_count"],
-        "claude_probe_attempts": claude["attempts"],
-        "agy_liveness": agy_liveness,
-        "agy_state": agy["state"],
-        "agy_returncode": agy["returncode"],
-        "agy_timed_out": agy["timed_out"],
-        "agy_ready_count": agy["ready_count"],
-        "agy_probe_attempts": agy["attempts"],
+        "claude_liveness": "READY" if claude.get("discovered") else "UNAVAILABLE",
+        "claude_state": claude_state,
+        "claude_returncode": 124 if claude_state == "TIMEOUT" else (0 if claude_state == "READY" else None),
+        "claude_timed_out": claude_state == "TIMEOUT",
+        "claude_ready_count": ready_count(claude),
+        "claude_probe_attempts": 2,
+        "agy_liveness": "READY" if agy.get("discovered") else "UNAVAILABLE",
+        "agy_state": agy_state,
+        "agy_returncode": 124 if agy_state == "TIMEOUT" else (0 if agy_state == "READY" else None),
+        "agy_timed_out": agy_state == "TIMEOUT",
+        "agy_ready_count": ready_count(agy),
+        "agy_probe_attempts": 2,
         "selected_provider": selected_provider,
     }
+
+
+def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
+    del workspace_path
+    try:
+        from agentos_node.executor_reconcile import reconcile_executor_adoption
+        reconcile_executor_adoption(node_id="oracle-core-node")
+    except Exception:
+        return _failure(
+            "ENGINEERING_EXECUTOR_HEALTH_REFRESH_FAILED",
+            executor_available=False,
+            routable=False,
+            authorized=False,
+        )
+    return _health_from_snapshot(_load_executor_snapshot())
+
+
+def _read_executor_health() -> dict[str, Any]:
+    snapshot = _load_executor_snapshot()
+    if snapshot is None:
+        return _failure(
+            "ENGINEERING_EXECUTOR_HEALTH_SNAPSHOT_STALE",
+            executor_available=False,
+            routable=False,
+            authorized=False,
+        )
+    return _health_from_snapshot(snapshot)
 
 
 def run_engineering_subagent(
@@ -338,7 +431,7 @@ def run_engineering_subagent(
     if spec.job_type == "engineering.executor.health":
         return _run_executor_health(workspace_path)
 
-    health = _run_executor_health(workspace_path)
+    health = _read_executor_health()
     selected_provider = str(health.get("selected_provider") or "")
     if not selected_provider:
         return health

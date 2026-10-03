@@ -93,8 +93,8 @@ def test_failed_engineering_job_projects_only_safe_executor_diagnostics(tmp_path
     (workspace / ".git").mkdir()
     monkeypatch.setattr(
         provider,
-        "_run_executor_health",
-        lambda _workspace: {
+        "_read_executor_health",
+        lambda: {
             "verdict": "PASS",
             "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
             "executor_available": True,
@@ -158,79 +158,87 @@ def test_read_only_smoke_is_deterministic_and_does_not_require_model(tmp_path: P
     assert result["successful"] is False
 
 
-def test_executor_health_prefers_first_ready_provider(tmp_path: Path, monkeypatch):
+def _snapshot_row(executor_id: str, *, state: str, stable: bool, streak: int, classification: str = ""):
+    return {
+        "executor_id": executor_id,
+        "provider_id": "anthropic" if executor_id == "claude-code" else "google-antigravity",
+        "executor_class": executor_id,
+        "state": state,
+        "adopted": True,
+        "routable": state == "READY",
+        "stable_routable": stable,
+        "ready_streak": streak,
+        "profile_valid": True,
+        "adapter_registered": True,
+        "discovered": True,
+        "reachable": True,
+        "authorized": state == "READY",
+        "healthy": state == "READY",
+        "provider_health": {"classification": classification} if classification else {},
+        "capabilities": ["agent.chat", "code.edit"],
+    }
+
+
+def test_snapshot_health_selects_only_stable_ready_provider(monkeypatch):
     import agentos_node.engineering_subagent_provider as provider
 
-    workspace = tmp_path / "repo"
-    workspace.mkdir()
-    (workspace / ".git").mkdir()
-
-    probes = {
-        "claude": {"state": "TIMEOUT", "returncode": 124, "timed_out": True},
-        "agy": {"state": "READY", "returncode": 0, "timed_out": False},
+    snapshot = {
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": "2026-10-03T07:00:00Z",
+        "executors": [
+            _snapshot_row("claude-code", state="UNHEALTHY", stable=False, streak=0, classification="TIMEOUT"),
+            _snapshot_row("antigravity", state="READY", stable=True, streak=2),
+        ],
     }
-    monkeypatch.setattr(provider, "_probe_model_provider", lambda name, _workspace: dict(probes[name]))
-
-    result = provider.run_engineering_subagent(
-        canonical_executor_job_request("engineering.executor.health"),
-        workspace=workspace,
-    )
+    result = provider._health_from_snapshot(snapshot)
     assert result["classification"] == "ENGINEERING_EXECUTOR_HEALTH_READY"
     assert result["selected_provider"] == "agy"
     assert result["claude_state"] == "TIMEOUT"
     assert result["agy_state"] == "READY"
+    assert result["agy_ready_count"] == 2
     assert result["successful"] is True
-    assert result["credential_exposed"] is False
 
 
-def test_executor_health_fails_closed_when_no_provider_ready(tmp_path: Path, monkeypatch):
+def test_snapshot_health_treats_first_ready_sample_as_flaky(monkeypatch):
     import agentos_node.engineering_subagent_provider as provider
 
-    workspace = tmp_path / "repo"
-    workspace.mkdir()
-    (workspace / ".git").mkdir()
-
-    probes = {
-        "claude": {"state": "AUTH_REQUIRED", "returncode": 1, "timed_out": False},
-        "agy": {"state": "UNAVAILABLE", "returncode": None, "timed_out": False},
+    snapshot = {
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": "2026-10-03T07:00:00Z",
+        "executors": [
+            _snapshot_row("claude-code", state="UNHEALTHY", stable=False, streak=0, classification="TIMEOUT"),
+            _snapshot_row("antigravity", state="READY", stable=False, streak=1),
+        ],
     }
-    monkeypatch.setattr(provider, "_probe_model_provider", lambda name, _workspace: dict(probes[name]))
-
-    result = provider.run_engineering_subagent(
-        canonical_executor_job_request("engineering.executor.health"),
-        workspace=workspace,
-    )
-    assert result["classification"] == "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER"
+    result = provider._health_from_snapshot(snapshot)
+    assert result["agy_state"] == "FLAKY"
+    assert result["agy_ready_count"] == 1
     assert result["selected_provider"] == ""
-    assert result["routable"] is False
-    assert result["authorized"] is False
     assert result["successful"] is False
 
 
-def test_executor_health_reports_binary_liveness_separately(tmp_path: Path, monkeypatch):
+def test_model_job_fails_closed_on_stale_health_snapshot(tmp_path: Path, monkeypatch):
     import agentos_node.engineering_subagent_provider as provider
+
     workspace = tmp_path / "repo"
     workspace.mkdir()
     (workspace / ".git").mkdir()
+    monkeypatch.setattr(provider, "_load_executor_snapshot", lambda **kwargs: None)
 
-    monkeypatch.setattr(provider, "_probe_binary_liveness", lambda name: "READY" if name == "claude" else "UNAVAILABLE")
-    monkeypatch.setattr(
-        provider,
-        "_probe_model_provider",
-        lambda name, _workspace: {"state": "TIMEOUT", "returncode": 124, "timed_out": True}
-        if name == "claude"
-        else {"state": "UNAVAILABLE", "returncode": None, "timed_out": False},
-    )
+    class FailIfConstructed:
+        def __init__(self, root):
+            raise AssertionError("relay must not be touched with stale health")
 
+    monkeypatch.setattr(provider, "AntigravityRelayClient", FailIfConstructed)
     result = provider.run_engineering_subagent(
-        canonical_executor_job_request("engineering.executor.health"),
+        canonical_executor_job_request("engineering.model.smoke"),
+        relay_root=tmp_path / "relay",
         workspace=workspace,
+        timeout_seconds=1,
     )
-    assert result["claude_liveness"] == "READY"
-    assert result["claude_state"] == "TIMEOUT"
-    assert result["agy_liveness"] == "UNAVAILABLE"
-    assert result["agy_state"] == "UNAVAILABLE"
-    assert result["successful"] is False
+    assert result["classification"] == "ENGINEERING_EXECUTOR_HEALTH_SNAPSHOT_STALE"
+    assert result["routable"] is False
+
 
 
 def test_claude_health_probe_uses_safe_single_turn_no_tool_mode(tmp_path: Path, monkeypatch):
@@ -277,8 +285,8 @@ def test_model_smoke_routes_through_health_selected_provider(tmp_path: Path, mon
 
     monkeypatch.setattr(
         provider,
-        "_run_executor_health",
-        lambda _workspace: {
+        "_read_executor_health",
+        lambda: {
             "verdict": "PASS",
             "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
             "executor_available": True,
@@ -339,7 +347,7 @@ def test_engineering_job_fails_before_relay_when_no_provider_is_healthy(tmp_path
         "credential_exposed": False,
         "selected_provider": "",
     }
-    monkeypatch.setattr(provider, "_run_executor_health", lambda _workspace: dict(health))
+    monkeypatch.setattr(provider, "_read_executor_health", lambda: dict(health))
 
     class FailIfConstructed:
         def __init__(self, root):
@@ -354,38 +362,6 @@ def test_engineering_job_fails_before_relay_when_no_provider_is_healthy(tmp_path
     )
     assert result["classification"] == "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER"
     assert result["routable"] is False
-
-
-def test_executor_health_marks_mixed_results_flaky(tmp_path: Path, monkeypatch):
-    import agentos_node.engineering_subagent_provider as provider
-
-    workspace = tmp_path / "repo"
-    workspace.mkdir()
-    (workspace / ".git").mkdir()
-
-    calls = {"claude": 0, "agy": 0}
-    def fake_probe(name, _workspace):
-        calls[name] += 1
-        if name == "claude":
-            return {"state": "TIMEOUT", "returncode": 124, "timed_out": True}
-        return (
-            {"state": "READY", "returncode": 0, "timed_out": False}
-            if calls[name] == 1
-            else {"state": "TIMEOUT", "returncode": 124, "timed_out": True}
-        )
-
-    monkeypatch.setattr(provider, "_probe_model_provider", fake_probe)
-    result = provider.run_engineering_subagent(
-        canonical_executor_job_request("engineering.executor.health"),
-        workspace=workspace,
-    )
-    assert result["claude_ready_count"] == 0
-    assert result["claude_probe_attempts"] == 2
-    assert result["agy_ready_count"] == 1
-    assert result["agy_probe_attempts"] == 2
-    assert result["agy_state"] == "FLAKY"
-    assert result["selected_provider"] == ""
-    assert result["successful"] is False
 
 
 def test_timeout_with_auth_evidence_classifies_auth_required():

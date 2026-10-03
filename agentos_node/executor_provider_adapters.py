@@ -29,7 +29,15 @@ def _provider_command(provider: str, workspace: Path, instruction: str) -> list[
         return None
     if selected == "agy":
         return [*executable, "run", "--task", instruction, "--workspace", str(workspace)]
-    return [*executable, instruction]
+    return [
+        *executable,
+        "--safe-mode",
+        "--tools", "",
+        "--disallowedTools", "mcp__*",
+        "--max-turns", "1",
+        "--disable-slash-commands",
+        instruction,
+    ]
 
 
 def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: float = 30.0) -> dict[str, Any]:
