@@ -80,6 +80,16 @@ def test_runner_window_projects_only_bounded_executor_job_fields():
     assert "'stdout'" not in text[text.index("receipt_projection['executor_job']"):text.index("return {", text.index("receipt_projection['executor_job']"))]
 
 
+def test_executor_job_receipt_projection_is_bounded():
+    server = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    assert "'executor_job'" in server
+    assert "'executor_job_state'" in server
+    assert "'executor_job_receipt'" in server
+    assert "'job_id'" in server
+    assert "'credential_exposed'" in server
+    assert "'stdout'" not in server[server.index("ACTION_EXECUTOR_JOB_SUBMIT"):server.index("return {", server.index("ACTION_EXECUTOR_JOB_SUBMIT")) + 2000]
+
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})
