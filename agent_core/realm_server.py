@@ -487,6 +487,17 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                         clean = line.strip()
                         if any(clean.startswith(prefix) for prefix in safe_prefixes):
                             evidence.append(clean[:1000])
+            failure_steps: list[dict[str, object]] = []
+            if raw.get('ok') is not True:
+                for step in raw.get('steps') or []:
+                    if not isinstance(step, dict):
+                        continue
+                    item = {
+                        'step': str(step.get('step') or '')[:96] or None,
+                        'returncode': step.get('returncode') if isinstance(step.get('returncode'), int) else None,
+                    }
+                    if item['step'] is not None or item['returncode'] is not None:
+                        failure_steps.append(item)
             return {
                 'ok': True,
                 'state': 'completed',
@@ -501,6 +512,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'completed_at': raw.get('completed_at'),
                     'scheduler': raw.get('scheduler'),
                     'evidence': evidence[:32],
+                    'failure_steps': failure_steps[:16],
                 },
             }
         request_path = requests / f'{request_id}.request.json'
