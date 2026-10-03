@@ -113,3 +113,29 @@ def test_relay_failure_classification_is_bounded():
     }) == "ENGINEERING_EXECUTOR_UNAVAILABLE"
     assert _relay_failure_classification({"ok": False, "returncode": 7}) == "ENGINEERING_EXECUTOR_NONZERO"
     assert _relay_failure_classification({"ok": False, "error": "RuntimeError: bounded failure"}) == "ENGINEERING_EXECUTOR_RUNTIME_ERROR"
+
+
+def test_read_only_smoke_is_deterministic_and_does_not_require_model(tmp_path: Path):
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    import subprocess
+    subprocess.run(["git", "init", str(workspace)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(workspace), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(workspace), "config", "user.name", "Test"], check=True)
+    (workspace / "README").write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(workspace), "add", "README"], check=True)
+    subprocess.run(["git", "-C", str(workspace), "commit", "-m", "init"], check=True, capture_output=True)
+    request = canonical_executor_job_request("engineering.subagent.smoke")
+    result = run_engineering_subagent(
+        request,
+        relay_root=tmp_path / "unused-relay",
+        workspace=workspace,
+        timeout_seconds=0.01,
+    )
+    assert result["classification"] == "ENGINEERING_SUBAGENT_SMOKE_COMPLETED_PENDING_VERIFICATION"
+    assert result["executor_provider"] == "deterministic-git-probe"
+    assert result["executor_returncode"] == 0
+    assert result["executor_timed_out"] is False
+    assert result["worktree_clean"] is True
+    assert len(result["observed_head"]) == 40
+    assert result["successful"] is False
