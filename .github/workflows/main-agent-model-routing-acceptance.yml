@@ -6,6 +6,7 @@ on:
       - core/integration
     paths:
       - '.github/workflows/main-agent-model-routing-acceptance.yml'
+      - 'scripts/agentos_dispatch.sh'
       - 'agent_core/executor_job_contract.py'
       - 'agentos_node/engineering_subagent_provider.py'
   workflow_dispatch:
