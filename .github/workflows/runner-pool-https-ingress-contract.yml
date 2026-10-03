@@ -12,6 +12,7 @@ on:
       - 'tests/test_runner_pool_https_ingress.py'
       - 'tests/test_runner_window.py'
       - 'tests/test_universal_agentos_dispatch.py'
+      - 'tests/test_runner_window_node_ota.py'
       - 'tests/test_runner_pool_workflow_cutover.py'
       - '.github/workflows/oracle-social-runtime-rollout.yml'
       - '.github/workflows/oracle-publish-mio-approved.yml'
@@ -26,6 +27,9 @@ on:
       - 'tests/test_runner_pool_https_ingress.py'
       - 'tests/test_runner_window.py'
       - 'tests/test_universal_agentos_dispatch.py'
+      - 'tests/test_runner_window_node_ota.py'
+      - '.github/workflows/oracle-vopc5750-transactional-ota.yml'
+      - 'scripts/run_realm_node_transactional_ota_user.sh'
       - '.github/workflows/agentos-dispatch.yml'
       - '.github/workflows/universal-agentos-dispatch-acceptance.yml'
       - '.github/workflows/runner-pool-https-ingress-contract.yml'
@@ -40,5 +44,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 -m pip install --quiet pytest
-      - run: python3 -m pytest -q tests/test_runner_pool_https_ingress.py tests/test_realm_scheduler_oidc.py tests/test_runner_pool_workflow_cutover.py tests/test_runner_window.py tests/test_universal_agentos_dispatch.py
+      - run: python3 -m pytest -q tests/test_runner_pool_https_ingress.py tests/test_realm_scheduler_oidc.py tests/test_runner_pool_workflow_cutover.py tests/test_runner_window.py tests/test_universal_agentos_dispatch.py tests/test_runner_window_node_ota.py
       - run: bash -n scripts/agentos_dispatch.sh

@@ -327,6 +327,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'source_run_id', 'username'}
         elif action == bootstrap_control.ACTION_DEPLOY_STUDIO_WEB_MIO:
             allowed_params |= {'studio_commit'}
+        elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
+            allowed_params |= {'node_id', 'candidate_commit'}
         unknown = set(params) - allowed_params
         if unknown:
             raise ValueError(f'unsupported scheduler params: {sorted(unknown)}')
@@ -389,6 +391,19 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             safe_prefixes: tuple[str, ...] = ()
             if action == bootstrap_control.ACTION_RUNNER_WINDOW_PROBE:
                 safe_prefixes = ('runner_window_probe=',)
+            elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
+                safe_prefixes = (
+                    'node_ota_stage_task=',
+                    'node_ota_stage_receipt=',
+                    'node_ota_controller_acceptance=',
+                    'node_ota_finalize_task=',
+                    'node_ota_finalize_receipt=',
+                    'node_ota_rollback_task=',
+                    'node_ota_rollback_receipt=',
+                    'node_ota_target=',
+                    'node_ota_candidate_commit=',
+                    'node_ota=',
+                )
             elif action == bootstrap_control.ACTION_DEPLOY_SOCIAL_RUNTIME:
                 safe_prefixes = (
                     'social_runtime_deploy=',
