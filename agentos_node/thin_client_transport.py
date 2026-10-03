@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
+import threading
 import urllib.error
 import socket
 import urllib.parse
@@ -22,6 +24,49 @@ def _client_home() -> Path:
 
 def _heartbeat_lease_path() -> Path:
     return _client_home() / 'heartbeat-lease.json'
+
+
+def _liveness_lease_path() -> Path:
+    return _client_home() / 'daemon-liveness.json'
+
+
+def _receipt_spool_dir() -> Path:
+    return _client_home() / 'pending-receipts'
+
+
+def _spool_receipt(receipt: dict[str, Any]) -> Path:
+    task_id = str(receipt.get('task_id') or 'unknown')
+    digest = hashlib.sha256(task_id.encode('utf-8')).hexdigest()
+    directory = _receipt_spool_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f'{digest}.json'
+    tmp = target.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(receipt, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, target)
+    return target
+
+
+def _write_liveness_lease(config: 'ClientConfig') -> None:
+    target = _liveness_lease_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        'schema': 'agentos.node-daemon-liveness/v0.1',
+        'realm_id': config.realm_id,
+        'node_id': config.node_id,
+        'recorded_at_unix': int(time.time()),
+        'pid': os.getpid(),
+    }
+    tmp = target.with_suffix(target.suffix + '.tmp')
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, target)
 
 
 def _write_heartbeat_lease(config: 'ClientConfig') -> None:
@@ -236,22 +281,173 @@ class ThinClientTransport:
             raise RuntimeError('client is not enrolled')
         return self._request(self.config.one_url + '/v1/receipts', method='POST', body=receipt, token=self.config.node_token)
 
+    def _persist_and_submit_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
+        spool_path = _spool_receipt(receipt)
+        result = self.submit_receipt(receipt)
+        try:
+            spool_path.unlink()
+        except FileNotFoundError:
+            pass
+        return result
+
+    def _flush_spooled_receipts(self) -> int:
+        directory = _receipt_spool_dir()
+        if not directory.is_dir():
+            return 0
+        flushed = 0
+        quarantine = directory / 'quarantine'
+        for path in sorted(directory.glob('*.json')):
+            try:
+                # utf-8-sig tolerates BOM-producing writers (notably Windows
+                # PowerShell 5.1 Set-Content -Encoding UTF8) while remaining
+                # compatible with canonical UTF-8 spool files.
+                receipt = json.loads(path.read_text(encoding='utf-8-sig'))
+                if not isinstance(receipt, dict):
+                    raise ValueError('receipt spool payload must be an object')
+                self.submit_receipt(receipt)
+                path.unlink()
+                flushed += 1
+            except Exception as exc:
+                quarantine.mkdir(parents=True, exist_ok=True)
+                target = quarantine / path.name
+                try:
+                    os.replace(path, target)
+                except OSError:
+                    target = path
+                print(
+                    f'[agentos-client] quarantined malformed/unflushable receipt '
+                    f'path={target} error={type(exc).__name__}: {exc}',
+                    flush=True,
+                )
+        return flushed
+
     def run_once(self) -> list[dict[str, Any]]:
         self.heartbeat()
         receipts: list[dict[str, Any]] = []
         for task in self.pull_tasks():
             receipt = self.client.execute(task)
-            self.submit_receipt(receipt)
+            self._persist_and_submit_receipt(receipt)
             receipts.append(receipt)
         return receipts
+
+    def _liveness_forever(self, delay: float) -> None:
+        interval = max(1.0, min(2.0, delay))
+        while True:
+            try:
+                if self.config:
+                    _write_liveness_lease(self.config)
+            except Exception as exc:
+                print(f'[agentos-client] liveness error: {exc}', flush=True)
+            time.sleep(interval)
+
+    def _heartbeat_forever(self, delay: float) -> None:
+        while True:
+            try:
+                self.heartbeat()
+            except Exception as exc:
+                print(f'[agentos-client] heartbeat error: {exc}', flush=True)
+            time.sleep(delay)
+
+    def _execute_task_bounded(self, task: dict[str, Any]) -> dict[str, Any]:
+        """Execute one task behind a daemon-thread deadline supervisor.
+
+        A provider call can wedge even when its inner subprocess timeout is
+        correctly configured. Never let such a call permanently monopolize the
+        Thin Client task loop. On deadline, persist a synthetic receipt first,
+        then terminate the daemon so Task Scheduler/watchdog can recover it.
+        """
+        requested = int(task.get('timeout_seconds') or self.client.policy.max_timeout_seconds)
+        action_timeout = max(1, min(requested, self.client.policy.max_timeout_seconds))
+        deadline_seconds = action_timeout + 15
+        done = threading.Event()
+        box: dict[str, Any] = {}
+
+        def worker() -> None:
+            try:
+                box['receipt'] = self.client.execute(task)
+            except BaseException as exc:
+                box['fatal'] = f'{type(exc).__name__}: {exc}'
+            finally:
+                done.set()
+
+        thread = threading.Thread(
+            target=worker,
+            name=f"agentos-task-{str(task.get('task_id') or 'unknown')[:32]}",
+            daemon=True,
+        )
+        thread.start()
+        if done.wait(deadline_seconds):
+            receipt = box.get('receipt')
+            if isinstance(receipt, dict):
+                return receipt
+            now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            return {
+                'schema': 'agentos.node-receipt/v0.1',
+                'realm_id': self.config.realm_id if self.config else self.client.identity.realm_id,
+                'node_id': self.config.node_id if self.config else self.client.identity.node_id,
+                'task_id': task.get('task_id'),
+                'action': task.get('action'),
+                'started_at': now,
+                'completed_at': now,
+                'ok': False,
+                'cognition_ids_used': list(task.get('cognition_ids_used') or []),
+                'error': str(box.get('fatal') or 'task worker exited without receipt'),
+            }
+
+        now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        receipt = {
+            'schema': 'agentos.node-receipt/v0.1',
+            'realm_id': self.config.realm_id if self.config else self.client.identity.realm_id,
+            'node_id': self.config.node_id if self.config else self.client.identity.node_id,
+            'task_id': task.get('task_id'),
+            'action': task.get('action'),
+            'started_at': now,
+            'completed_at': now,
+            'ok': False,
+            'cognition_ids_used': list(task.get('cognition_ids_used') or []),
+            'error': f'task executor deadline exceeded after {deadline_seconds}s; daemon restart required',
+            'executor_supervisor': {
+                'deadline_seconds': deadline_seconds,
+                'action_timeout_seconds': action_timeout,
+                'recovery': 'restart_daemon',
+            },
+        }
+        _spool_receipt(receipt)
+        print(
+            f"[agentos-client] task deadline exceeded task_id={task.get('task_id')} "
+            f"deadline_seconds={deadline_seconds}; receipt spooled; exiting for recovery",
+            flush=True,
+        )
+        raise SystemExit(75)
 
     def run_forever(self) -> None:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         delay = max(1.0, float(self.config.poll_seconds))
+        liveness_thread = threading.Thread(
+            target=self._liveness_forever,
+            args=(delay,),
+            name='agentos-liveness',
+            daemon=True,
+        )
+        heartbeat_thread = threading.Thread(
+            target=self._heartbeat_forever,
+            args=(delay,),
+            name='agentos-heartbeat',
+            daemon=True,
+        )
+        liveness_thread.start()
+        heartbeat_thread.start()
         while True:
             try:
-                self.run_once()
+                flushed = self._flush_spooled_receipts()
+                if flushed:
+                    print(f'[agentos-client] flushed_receipts={flushed}', flush=True)
+                receipts: list[dict[str, Any]] = []
+                for task in self.pull_tasks():
+                    receipt = self._execute_task_bounded(task)
+                    self._persist_and_submit_receipt(receipt)
+                    receipts.append(receipt)
             except Exception as exc:
                 print(f'[agentos-client] transport error: {exc}', flush=True)
             time.sleep(delay)
