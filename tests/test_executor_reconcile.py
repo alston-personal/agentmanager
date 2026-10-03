@@ -191,3 +191,51 @@ def test_packaged_provider_profiles_match_repo_canonical_profiles():
     canonical = repo_root / ".agentos" / "executors"
     for name in ("antigravity.json", "claude-code.json", "codex.json", "gemini.json", "provider-profile.schema.json"):
         assert (packaged / name).read_text(encoding="utf-8") == (canonical / name).read_text(encoding="utf-8")
+
+
+def test_reconcile_requires_two_ready_snapshots_before_stable_routing(tmp_path, monkeypatch):
+    state = {"current": "READY"}
+
+    def inventory(**kwargs):
+        ready = state["current"] == "READY"
+        return {
+            "schema": executor_reconcile.SCHEMA,
+            "provider_profile_schema": "agentos.executor-provider-profile/v0.1",
+            "executors": [{
+                "executor_id": "demo",
+                "provider_id": "demo-provider",
+                "executor_class": "demo-class",
+                "state": state["current"],
+                "adoptable": True,
+                "routable": ready,
+                "profile_valid": True,
+                "adapter_registered": True,
+                "discovered": True,
+                "reachable": True,
+                "authorized": ready,
+                "healthy": ready,
+                "provider_health": {"classification": "READY" if ready else "TIMEOUT"},
+                "capabilities": ["agent.chat"],
+            }],
+        }
+
+    monkeypatch.setattr(executor_reconcile, "discover_executor_inventory", inventory)
+
+    first = executor_reconcile.reconcile_executor_adoption(state_root=tmp_path)["executor_adoption"]
+    row1 = first["executors"][0]
+    assert row1["ready_streak"] == 1
+    assert row1["stable_routable"] is False
+    assert first["observed_at"].endswith("Z")
+    assert row1["provider_health"]["classification"] == "READY"
+
+    second = executor_reconcile.reconcile_executor_adoption(state_root=tmp_path)["executor_adoption"]
+    row2 = second["executors"][0]
+    assert row2["ready_streak"] == 2
+    assert row2["stable_routable"] is True
+
+    state["current"] = "UNHEALTHY"
+    third = executor_reconcile.reconcile_executor_adoption(state_root=tmp_path)["executor_adoption"]
+    row3 = third["executors"][0]
+    assert row3["ready_streak"] == 0
+    assert row3["stable_routable"] is False
+    assert row3["provider_health"]["classification"] == "TIMEOUT"
