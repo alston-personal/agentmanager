@@ -19,6 +19,7 @@ RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
 ACTION_RELAY_STATUS = "agentos.relay.status"
+ACTION_SCHEDULER_STATUS = "agentos.scheduler.status"
 ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
@@ -65,6 +66,7 @@ ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_RUNNER_WINDOW_PROBE,
     ACTION_RELAY_STATUS,
+    ACTION_SCHEDULER_STATUS,
     ACTION_NODE_TRANSACTIONAL_OTA,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
@@ -367,6 +369,29 @@ def _run_canonical_script(
         tmp.unlink(missing_ok=True)
 
 
+def _scheduler_status_probe() -> dict[str, Any]:
+    root = _root()
+    requests, receipts, rejected = _ensure(root)
+    now = time.time()
+    pending = [p for p in requests.glob("*.request.json") if p.is_file()]
+    ages = [max(0, int(now - p.stat().st_mtime)) for p in pending]
+    oldest = max(ages) if ages else 0
+    stalled = sum(1 for age in ages if age > MAX_REQUEST_AGE_SECONDS)
+    markers = [
+        f"scheduler_status_pending_count={len(pending)}",
+        f"scheduler_status_pending_oldest_seconds={oldest}",
+        f"scheduler_status_stalled_count={stalled}",
+        f"scheduler_status_receipts_count={sum(1 for p in receipts.glob('*.json') if p.is_file())}",
+        f"scheduler_status_rejected_count={sum(1 for p in rejected.glob('*.json') if p.is_file())}",
+        "scheduler_status=PASS",
+    ]
+    return {
+        "ok": True,
+        "source_commit": None,
+        "steps": [{"step": "scheduler_status", "returncode": 0, "stdout": "\n".join(markers) + "\n", "stderr": ""}],
+    }
+
+
 def _relay_status() -> dict[str, Any]:
     root = Path(os.environ.get("AGENT_DATA_ROOT") or "/home/ubuntu/agent-data") / "runtime" / "antigravity-relay"
     now = time.time()
@@ -420,6 +445,10 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         }
     if action == ACTION_RELAY_STATUS:
         result = _relay_status()
+        result["source_commit"] = source_commit
+        return result
+    if action == ACTION_SCHEDULER_STATUS:
+        result = _scheduler_status_probe()
         result["source_commit"] = source_commit
         return result
     if action == ACTION_NODE_TRANSACTIONAL_OTA:
