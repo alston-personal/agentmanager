@@ -59,3 +59,19 @@ def test_outer_repair_passes_same_generation_to_action_relay_installer():
     assert 'AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"' in text
     assert 'bash "$TMPDIR/install_action_relay_user.sh"' in text
     assert "action_relay_source_generation_pinned=PASS" in text
+
+
+def test_bootstrap_scheduler_rollout_tracks_executor_job_contract_generation():
+    workflow = (ROOT / ".github" / "workflows" / "oracle-bootstrap-scheduler-rollout.yml").read_text(encoding="utf-8")
+    installer = (ROOT / "scripts" / "install_bootstrap_scheduler_user.sh").read_text(encoding="utf-8")
+    for owned_path in (
+        "agent_core/executor_job_contract.py",
+        "agentos_node/executor_job_adapter.py",
+        "agentos_node/executor_job_action_relay.py",
+        "agentos_node/engineering_subagent_provider.py",
+    ):
+        assert f"'{owned_path}'" in workflow
+    assert "git -C \"$REPO\" archive \"$SOURCE_COMMIT\" agentos_node agent_core" in installer
+    assert "Environment=PYTHONPATH=$RELEASE" in installer
+    assert 'canonical_executor_job_request("engineering.windows-thin-client.fix")' in installer
+    assert "ENGINEERING_SUBAGENT_PROVIDERS_REGISTERED is True" in installer
