@@ -29,6 +29,10 @@ def _part(name: str | None) -> tuple[str | None, float]:
     if any(k in n for k in ['foot','ankle']): return f'{side}_foot' if side else 'foot', 0.86
     if any(k in n for k in ['hair','bang','pony','braid']): return 'hair', 0.82
     if any(k in n for k in ['dress','shirt','coat','robe','jacket','skirt','cloth','garment']): return 'garment', 0.8
+    # A ribbon/bow tail is a decorative strip, not an anatomical appendage.
+    # Ponytails were already classified as hair above; animal tails still follow.
+    words = set(_norm(re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name or '')).split('_'))
+    if 'tail' in words and words & {'ribbon', 'bow'}: return 'accessory', 0.78
     if any(k in n for k in ['tail']): return 'tail', 0.82
     if any(k in n for k in ['wing']): return 'wing', 0.82
     if any(k in n for k in ['book','weapon','sword','staff','crown','hat','bag']): return 'accessory', 0.78

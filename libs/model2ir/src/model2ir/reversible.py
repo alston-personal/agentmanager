@@ -7,6 +7,25 @@ from typing import Any
 
 EXTENSION_KEY = "OPENAI_model2ir_character_ir"
 EXTENSION_VERSION = "0.2.0"
+NON_CANONICAL_TRUTH_STATUSES = {
+    "candidate", "inferred", "unknown", "stable-candidate",
+    "stable-unknown", "stable-but-ambiguous",
+}
+
+
+def assert_canonical_input(ir: dict[str, Any]) -> None:
+    """Apply the same canonical boundary to JSON and binary carriers.
+
+    Legacy IR without truth_status remains supported. This checks the declared
+    status; neither a digest nor this guard can establish semantic correctness.
+    """
+    if not isinstance(ir, dict):
+        raise ValueError("canonical IR must be a JSON object")
+    status = ir.get("truth_status")
+    if isinstance(status, str) and status.strip().lower().replace("_", "-") in NON_CANONICAL_TRUTH_STATUSES:
+        raise ValueError(
+            f"refusing to embed truth_status={status!r} as canonical IR; confirm/promote it explicitly first"
+        )
 
 
 def canonical_json(value: Any) -> str:
@@ -24,6 +43,7 @@ def embed_ir_in_gltf(gltf: dict[str, Any], ir: dict[str, Any]) -> dict[str, Any]
     resulting asset remains standards-compatible without claiming Khronos registry
     status. Geometry is untouched.
     """
+    assert_canonical_input(ir)
     out = copy.deepcopy(gltf)
     extras = out.setdefault("extras", {})
     extras[EXTENSION_KEY] = {
@@ -42,10 +62,13 @@ def recover_embedded_ir(gltf: dict[str, Any]) -> dict[str, Any] | None:
         return None
     ir = payload.get("character_ir")
     if not isinstance(ir, dict):
-        return None
+        raise ValueError("embedded Character IR must be a JSON object")
+    assert_canonical_input(ir)
     expected = payload.get("digest")
+    if not isinstance(expected, str) or not expected:
+        raise ValueError("embedded Character IR digest is required for verified recovery")
     actual = ir_digest(ir)
-    if expected and expected != actual:
+    if expected != actual:
         raise ValueError("embedded Character IR digest mismatch")
     return copy.deepcopy(ir)
 

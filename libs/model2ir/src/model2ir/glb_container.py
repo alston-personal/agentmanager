@@ -8,21 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .reversible import embed_ir_in_gltf, ir_digest, recover_embedded_ir
+from .reversible import assert_canonical_input, embed_ir_in_gltf, ir_digest, recover_embedded_ir
 
 GLB_MAGIC = b"glTF"
 GLB_VERSION = 2
 JSON_CHUNK = 0x4E4F534A
 BIN_CHUNK = 0x004E4942
 SUPPORTED_CONTAINER_SUFFIXES = {".glb", ".vrm"}
-NON_CANONICAL_TRUTH_STATUSES = {
-    "candidate",
-    "inferred",
-    "unknown",
-    "stable-candidate",
-    "stable-unknown",
-    "stable-but-ambiguous",
-}
 
 
 @dataclass(frozen=True)
@@ -108,16 +100,6 @@ def external_resource_uris(gltf: dict[str, Any]) -> list[str]:
     return [uri for uri in _resource_uris(gltf) if not uri.startswith("data:")]
 
 
-def _assert_canonical_input(canonical_ir: dict[str, Any]) -> None:
-    if not isinstance(canonical_ir, dict):
-        raise ValueError("canonical IR must be a JSON object")
-    status = canonical_ir.get("truth_status")
-    if isinstance(status, str) and status.lower().replace("_", "-") in NON_CANONICAL_TRUTH_STATUSES:
-        raise ValueError(
-            f"refusing to embed truth_status={status!r} as canonical IR; confirm/promote it explicitly first"
-        )
-
-
 def _encode_json_chunk(gltf: dict[str, Any]) -> bytes:
     payload = json.dumps(
         gltf,
@@ -160,7 +142,7 @@ def compile_reversible_glb(
     moving the output could otherwise silently break them.
     """
 
-    _assert_canonical_input(canonical_ir)
+    assert_canonical_input(canonical_ir)
     container = parse_glb_container(source)
     external = external_resource_uris(container.gltf)
     if require_relocatable and external:

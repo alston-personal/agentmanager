@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import argparse, copy, json
 from pathlib import Path
-from model2ir import extract_ir, stabilize_external_ir, compile_reversible_gltf, score_roundtrip, ir_digest
+from model2ir import extract_ir, stabilize_external_ir, ir_digest
+from model2ir_stabilized_import_regression import verify_candidate_storage
 
 CORE={'torso','left_arm','right_arm','left_leg','right_leg','neck'}
 
@@ -14,12 +15,7 @@ def stabilize(path: Path, out: Path):
     m=extract_ir(path)
     c=stabilize_external_ir(m)
     raw=json.loads(path.read_text())
-    carrier=compile_reversible_gltf(raw,c)
-    p=out/f'{path.stem}-stable.gltf'
-    p.write_text(json.dumps(carrier,ensure_ascii=False,indent=2)+'\n')
-    back=extract_ir(p)
-    s=score_roundtrip(c,back)
-    assert s['lossless_reversible'] is True
+    s=verify_candidate_storage(raw,c,out/f'{path.stem}-candidate.json')
     return m,c,s
 
 def main():
@@ -45,7 +41,7 @@ def main():
           'labels':sorted(labs),
           'candidate_digest':ir_digest(c),
           'joint_count':c['skeleton'].get('joint_count',0),
-          'roundtrip_exact':s['lossless_reversible'],
+          'candidate_storage':s,
         }
 
     shared=set.intersection(*human_labels)
@@ -62,26 +58,23 @@ def main():
     sani=extract_ir(sanp)
     assert (sani.get('semantic_evidence_v03') or {}).get('body_plan',{}).get('kind')!='humanoid'
     sc=stabilize_external_ir(sani)
-    carrier=compile_reversible_gltf(sanitized,sc)
-    stable=out/'rigged-no-names-stable.gltf'; stable.write_text(json.dumps(carrier,indent=2)+'\n')
-    back=extract_ir(stable)
-    score=score_roundtrip(sc,back)
-    assert score['lossless_reversible'] is True
+    storage=verify_candidate_storage(sanitized,sc,out/'rigged-no-names-candidate.json')
 
     report={
-      'schema':'model2ir-real-family-stability/v0.5',
+      'schema':'model2ir-real-family-stability/v0.9.2',
       'humanoid_models':results,
       'shared_core_labels':sorted(shared),
       'negative_control_kind':(neg.get('semantic_evidence_v03') or {}).get('body_plan',{}).get('kind'),
       'name_erasure':{
         'body_plan_after_erasure':(sani.get('semantic_evidence_v03') or {}).get('body_plan',{}).get('kind'),
         'hallucination_avoided':True,
-        'stabilized_roundtrip_exact':score['lossless_reversible'],
+        'candidate_storage':storage,
       },
       'gate':{
         'two_independent_humanoids_consistent':True,
         'candidate_repeatability':1.0,
-        'post_stabilization_reversibility':1.0,
+        'candidate_json_roundtrip':1.0,
+        'canonical_embedding_rejected':True,
         'negative_control_correct':True,
         'unknown_when_evidence_removed':True,
         'status':'PASS'

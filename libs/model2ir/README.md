@@ -86,6 +86,56 @@ The original JSON `.gltf` reversible API remains available for compatibility. Mu
 4. Unknown and unresolved fields are retained instead of filled merely to make the IR dense.
 5. Reversibility and semantic certainty are separate dimensions. An embedded Canonical Character IR may round-trip exactly even when the original external asset required inference.
 
+## v0.9.2 correctness and compatibility
+
+- Semantic comparison accepts every retained Model2IR envelope version, direct
+  candidate/Character IR `parts`, and Image→IR `inferred.parts`. Structured v0.3
+  evidence supplies envelope labels; a recovered canonical payload takes
+  precedence over carrier node names. Empty-set Jaccard is still conventionally
+  1.0, so a semantic score alone is never proof of useful evidence or appearance.
+- Both JSON glTF and binary GLB/VRM writers now share the same guard against
+  explicitly candidate/inferred/unknown truth statuses. Stabilization yields a
+  repeatable candidate, not confirmation. Keep it as standalone JSON until an
+  explicit review establishes canonical design intent. No helper promotes it.
+- Recovery requires an existing matching digest and rejects explicitly candidate
+  payloads, including carriers produced by the older permissive glTF writer.
+  These errors leave the source unchanged. Preserve such payloads as candidate
+  JSON for review; do not simply remove `truth_status` to evade the boundary.
+- Valid legacy IR without `truth_status` remains supported. This is a declared
+  status guard for compatibility, not authentication of an author's assertions.
+  Digest verification proves integrity, not semantic correctness.
+- Ribbon/bow tails are accessory candidates; anatomical tails and ponytails
+  retain their separate tail/hair classifications. Naming remains inference.
+
+The v0.4/v0.5/v0.6 regression adapters now explicitly test candidate JSON
+preservation plus rejection of unconfirmed canonical embedding. Their report
+schemas are v0.9.2: `candidate_json_roundtrip` replaces the misleading
+`post_stabilization_reversibility` gate. Canonical carrier round-trips remain
+tested separately by the reversible v0.2 and GLB v0.9 suites. The library CI also
+runs `tests/test_model2ir_semantic_integrity.py`.
+
+### Character generator integration boundary
+
+This repair does not turn Model2IR into a mesh generator. Extraction measures
+structure and recovers embedded data; the reversible compiler requires the
+source model. The current candidate projection does not contain enough geometry,
+texture coordinates, animation curves, or hair construction parameters to
+recreate the source appearance on its own.
+
+For a parameterized Character Blueprint producer, preserve its own versioned
+construction description in the existing Character IR payload, alongside an
+explicit coordinate/unit convention and pinned asset/compiler references.
+Hair curve control points, cross-section width/depth, layers and gradient
+positions must originate from that producer; Model2IR must not guess them from
+mesh names. Preserve the observed/inferred/assumed provenance of each design
+choice. Candidate designs remain standalone JSON until confirmed.
+
+Acceptance for that later integration must include IR-only regeneration by the
+identified producer, fixed-camera rendered comparisons, and an intentional hair
+parameter edit that changes the expected geometry. Exact payload/container
+round-trips alone are insufficient. No new generator or cross-project adapter
+is implemented by v0.9.2.
+
 ## Teacher dataset API
 
 The multi-view teacher contract is library-owned. Rendering is intentionally an injected adapter so `model2ir` itself does not depend on Playwright, Three.js, a browser, or an AgentOS repository layout.
