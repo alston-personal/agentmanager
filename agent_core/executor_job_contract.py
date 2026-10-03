@@ -280,6 +280,8 @@ def project_executor_job_receipt(
             "executor_returncode",
             "executor_timed_out",
             "executor_provider",
+            "worktree_clean",
+            "observed_head",
         ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:
