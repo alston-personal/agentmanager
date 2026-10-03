@@ -4,6 +4,7 @@ LEGACY = Path(".agentos/governance/legacy-direct-oracle-workflows.txt")
 WORKFLOWS = Path(".github/workflows")
 GATEWAY_WORKFLOW = Path(".github/workflows/oracle-deploy-realm-gateway.yml")
 GATEWAY_SCRIPT = Path("scripts/deploy_realm_gateway_user.sh")
+DISPATCH_CLIENT = Path("scripts/agentos_dispatch.sh")
 
 
 def main() -> int:
@@ -22,6 +23,17 @@ def main() -> int:
             violations.append((rel, "internal_scheduler_client"))
         if "agentos-oracle-hosted-ingress" in text:
             violations.append((rel, "legacy_oracle_ingress_concurrency"))
+    dispatch_client = DISPATCH_CLIENT.read_text(encoding="utf-8", errors="replace")
+    inspect_retry_required = {
+        "inspect_retry_scope": 'if [ "$CAPABILITY" = "agentos.executor" ] && [ "$OPERATION" = "job.inspect" ]' in dispatch_client,
+        "inspect_retry_bound": "submit_attempts=4" in dispatch_client,
+        "transient_codes": "429|502|503|504" in dispatch_client,
+        "generic_submit_default_single_shot": "submit_attempts=1" in dispatch_client,
+    }
+    for name, ok in inspect_retry_required.items():
+        if not ok:
+            violations.append((str(DISPATCH_CLIENT), name))
+
     gateway_workflow = GATEWAY_WORKFLOW.read_text(encoding="utf-8", errors="replace")
     gateway_script = GATEWAY_SCRIPT.read_text(encoding="utf-8", errors="replace")
     gateway_required = {
