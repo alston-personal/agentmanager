@@ -1,0 +1,23 @@
+name: Universal AgentOS Dispatch Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/agentos-dispatch.yml'
+      - '.github/workflows/universal-agentos-dispatch-acceptance.yml'
+      - 'scripts/agentos_dispatch.sh'
+      - 'agent_core/runner_window.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  probe:
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: agentos.dispatch
+      operation: probe
+      payload_json: '{}'
