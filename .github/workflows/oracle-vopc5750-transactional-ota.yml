@@ -11,11 +11,6 @@ on:
       - core/integration
     paths:
       - '.agentos/commands/realm-node-transactional-ota.json'
-      - '.github/workflows/oracle-vopc5750-transactional-ota.yml'
-      - 'scripts/run_realm_node_transactional_ota_user.sh'
-      - 'agent_core/runner_window.py'
-      - 'agentos_node/bootstrap_control.py'
-      - 'agentos_node/bootstrap_scheduler.py'
 
 permissions:
   contents: read
