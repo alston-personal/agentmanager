@@ -17,10 +17,8 @@ from typing import Any
 SCHEMA = "agentos.bootstrap-request/v1"
 RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
-ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
-ACTION_RECONCILE_CONTENT_SOCIAL = "agentos.content_social.reconcile"
 ACTION_DEPLOY_THREADS_GALAXY = "agentos.threads_galaxy_static.deploy"
 ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
 ACTION_PROVISION_ZIWEI_MASTER_REPO = "agentos.repository.provision_ziwei_master"
@@ -54,15 +52,11 @@ ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
 ACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
 ACTION_DEPLOY_STUDIO_WEB_MIO = "agentos.studio_web_mio.deploy"
 ACTION_INSTALL_MIO_OBSERVER_TIMER = "agentos.mio_observer.timer.install"
-ACTION_ACTIVATE_OURSONG_PERSONA = "agentos.oursong_persona.activate"
-ACTION_PROBE_OURSONG_PERSONA = "agentos.oursong_persona.status"
-ACTION_PROBE_PERSONA_PDCA_RUNTIME = "agentos.persona_pdca_runtime.probe"
+ACTION_EXECUTOR_ONBOARDING_INTEGRATE = "agentos.executor_onboarding.integrate"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
-    ACTION_RUNNER_WINDOW_PROBE,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
-    ACTION_RECONCILE_CONTENT_SOCIAL,
     ACTION_DEPLOY_THREADS_GALAXY,
     ACTION_RECONCILE_CONTROL_INBOX,
     ACTION_PROVISION_ZIWEI_MASTER_REPO,
@@ -96,9 +90,7 @@ ALLOWED_ACTIONS = {
     ACTION_PROJECT_MIO_OBSERVER,
     ACTION_DEPLOY_STUDIO_WEB_MIO,
     ACTION_INSTALL_MIO_OBSERVER_TIMER,
-    ACTION_ACTIVATE_OURSONG_PERSONA,
-    ACTION_PROBE_OURSONG_PERSONA,
-    ACTION_PROBE_PERSONA_PDCA_RUNTIME,
+    ACTION_EXECUTOR_ONBOARDING_INTEGRATE,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -155,8 +147,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","source_run_id","username"}
     elif action == ACTION_DEPLOY_STUDIO_WEB_MIO:
         allowed_params={"source_commit","studio_commit"}
-    elif action == ACTION_RECONCILE_CONTENT_SOCIAL:
-        allowed_params={"source_commit","account_ref"}
+    elif action == ACTION_EXECUTOR_ONBOARDING_INTEGRATE:
+        allowed_params={"node_id","provider_hint","surface_id","fingerprint"}
     else:
         allowed_params={"source_commit"}
     unknown = set(params) - allowed_params
@@ -174,10 +166,6 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         studio_commit=str(params.get("studio_commit") or "")
         if not COMMIT_RE.fullmatch(studio_commit):
             raise ValueError("studio_commit must be an exact lowercase 40-hex commit SHA")
-    if action == ACTION_RECONCILE_CONTENT_SOCIAL:
-        account_ref=str(params.get("account_ref") or "")
-        if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", account_ref):
-            raise ValueError("invalid content social account_ref")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
@@ -186,7 +174,6 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     exact_actions = {
         ACTION_DEPLOY_REALM_GATEWAY,
         ACTION_DEPLOY_SOCIAL_RUNTIME,
-        ACTION_RECONCILE_CONTENT_SOCIAL,
         ACTION_DEPLOY_THREADS_GALAXY,
         ACTION_RECONCILE_CONTROL_INBOX,
         ACTION_PROVISION_ZIWEI_MASTER_REPO,
@@ -218,9 +205,6 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_PROJECT_MIO_OBSERVER,
         ACTION_DEPLOY_STUDIO_WEB_MIO,
         ACTION_INSTALL_MIO_OBSERVER_TIMER,
-        ACTION_ACTIVATE_OURSONG_PERSONA,
-        ACTION_PROBE_OURSONG_PERSONA,
-        ACTION_PROBE_PERSONA_PDCA_RUNTIME,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -230,19 +214,15 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         raise ValueError(f"request outside freshness window: age={age:.1f}s")
     info = path.stat()
     owner = pwd.getpwuid(info.st_uid).pw_name
+    if owner != REQUEST_OWNER:
+        raise ValueError(f"request owner must be {REQUEST_OWNER}: owner={owner}")
     mode = info.st_mode & 0o777
     if mode & 0o022:
         raise ValueError(f"request must not be group/world-writable: mode={mode:o}")
     authority = payload.get("authority") or {}
-    authority_source = str(authority.get("source") or "")
-    expected_owner = {
-        "github-actions": REQUEST_OWNER,
-        "realm-controller": "ubuntu",
-    }.get(authority_source)
-    if expected_owner is None or authority.get("target_user") != "ubuntu":
+    expected_source = "agentos-reconciler" if action == ACTION_EXECUTOR_ONBOARDING_INTEGRATE else "github-actions"
+    if authority.get("source") != expected_source or authority.get("target_user") != "ubuntu":
         raise ValueError("invalid authority envelope")
-    if owner != expected_owner:
-        raise ValueError(f"request owner mismatch for {authority_source}: owner={owner}")
     if authority.get("arbitrary_shell") is not False:
         raise ValueError("arbitrary shell is forbidden")
     return request_id, action, source_commit, (post_key if action == ACTION_PUBLISH_MIO_APPROVED else None)
@@ -338,12 +318,6 @@ def _run_canonical_script(
 
 
 def _execute(action: str, source_commit: str | None, post_key: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    if action == ACTION_RUNNER_WINDOW_PROBE:
-        return {
-            "ok": True,
-            "source_commit": source_commit,
-            "steps": [{"step": "runner_window_probe", "returncode": 0, "stdout": "runner_window_probe=PASS\n", "stderr": ""}],
-        }
     if action == ACTION_REPAIR_TRANSPORT:
         env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
         if source_commit:
@@ -360,14 +334,6 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=600, source_commit=source_commit)
     if action == ACTION_DEPLOY_SOCIAL_RUNTIME:
         return _run_canonical_script("scripts/deploy_social_runtime_user.sh", timeout=180, source_commit=source_commit)
-    if action == ACTION_RECONCILE_CONTENT_SOCIAL:
-        params = params or {}
-        return _run_canonical_script(
-            "scripts/reconcile_content_social_account_user.sh",
-            timeout=780,
-            source_commit=source_commit,
-            env_extra={"AGENTOS_CONTENT_SOCIAL_ACCOUNT_REF": str(params.get("account_ref") or "")},
-        )
     if action == ACTION_DEPLOY_THREADS_GALAXY:
         return _run_canonical_script("scripts/deploy_threads_galaxy_static_user.sh", timeout=600, source_commit=source_commit)
     if action == ACTION_PROVISION_ZIWEI_MASTER_REPO:
@@ -505,24 +471,60 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             timeout=180,
             source_commit=source_commit,
         )
-    if action == ACTION_ACTIVATE_OURSONG_PERSONA:
-        return _run_canonical_script(
-            "scripts/activate_oursong_persona_user.sh",
-            timeout=240,
-            source_commit=source_commit,
+    if action == ACTION_EXECUTOR_ONBOARDING_INTEGRATE:
+        params = params or {}
+        node_id = str(params.get("node_id") or "").strip()
+        provider_hint = str(params.get("provider_hint") or "").strip()
+        surface_id = str(params.get("surface_id") or "").strip()
+        fingerprint = str(params.get("fingerprint") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", node_id):
+            raise ValueError("invalid executor onboarding node_id")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", provider_hint):
+            raise ValueError("invalid executor onboarding provider_hint")
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,192}", surface_id):
+            raise ValueError("invalid executor onboarding surface_id")
+        if not re.fullmatch(r"[0-9a-f]{24}", fingerprint):
+            raise ValueError("invalid executor onboarding fingerprint")
+        from agentos_node.antigravity_relay import AntigravityRelayClient
+        workspace = str(Path.home() / "agentmanager")
+        instruction = (
+            "Complete one AgentOS executor provider integration. "
+            "Read docs/EXECUTOR_SELF_ADOPTION_CONTRACT.md, "
+            "docs/EXECUTOR_PROVIDER_ONBOARDING_PROTOCOL.md, "
+            ".agentos/executors/provider-profile.schema.json, and "
+            ".agentos/executors/_template.json. "
+            f"Target node_id={node_id}; provider_hint={provider_hint}; surface_id={surface_id}; "
+            f"fingerprint={fingerprint}. "
+            "Inspect only provider-owned safe evidence. Implement or update the provider profile, "
+            "trusted adapter, tests, bounded smoke contract, and receipt projection. "
+            "Do not expose credentials, widen permissions, add arbitrary shell authority, or bypass CI. "
+            "Commit the work on a dedicated branch and report the commit/blocked evidence in the relay receipt."
         )
-    if action == ACTION_PROBE_OURSONG_PERSONA:
-        return _run_canonical_script(
-            "scripts/probe_oursong_persona_user.sh",
-            timeout=60,
-            source_commit=source_commit,
+        client = AntigravityRelayClient(Path.home() / "agent-data/runtime/antigravity-relay")
+        capsule = client.submit(
+            project_id="agentos-core",
+            canonical_ir={
+                "schema": "agentos.executor-onboarding-ir/v0.1",
+                "goal": "Integrate a discovered executor provider through the canonical AgentOS protocol",
+                "constraints": [
+                    "provider-specific knowledge stays in the provider adapter",
+                    "no credential exposure",
+                    "no arbitrary shell authority",
+                    "smoke receipt required before READY",
+                ],
+            },
+            instruction=instruction,
+            workspace=workspace,
+            executor_hint="executor-integrator",
         )
-    if action == ACTION_PROBE_PERSONA_PDCA_RUNTIME:
-        return _run_canonical_script(
-            "scripts/probe_mio_pdca_runtime_origin_user.sh",
-            timeout=90,
-            source_commit=source_commit,
-        )
+        return {
+            "ok": True,
+            "integration_state": "INTEGRATION_IN_PROGRESS",
+            "integration_capsule_id": capsule.get("capsule_id"),
+            "executor_candidate_fingerprint": fingerprint,
+            "provider_hint": provider_hint,
+            "node_id": node_id,
+        }
     raise ValueError("unsupported bootstrap action")
 
 
