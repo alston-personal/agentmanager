@@ -1,0 +1,105 @@
+name: Oracle Action Runtime Rollout
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-action-runtime-rollout.yml'
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/engineering_subagent_provider.py'
+      - 'agentos_node/issue117_experience_provider.py'
+      - 'agentos_node/typesafe_skill_install_provider.py'
+      - 'agentos_node/gemini_cli_install_provider.py'
+      - 'agentos_node/action_relay.py'
+      - 'scripts/install_action_relay_user.sh'
+      - 'scripts/repair_antigravity_relay_user.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: oracle-action-runtime-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight exact source generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          python3 -m py_compile             agent_core/executor_job_contract.py             agentos_node/executor_job_adapter.py             agentos_node/executor_job_action_relay.py             agentos_node/engineering_subagent_provider.py
+          bash -n scripts/repair_antigravity_relay_user.sh
+          bash -n scripts/install_action_relay_user.sh
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Roll out exact Action Runtime through Runner Window
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=720             bash scripts/agentos_dispatch.sh agentos.runtime repair "$GITHUB_SHA"             | tee "$RUNNER_TEMP/action-runtime-rollout.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/action-runtime-rollout.txt"
+
+      - name: Verify exact generation receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/action-runtime-rollout.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          docs=[]
+          for line in open(sys.argv[1],encoding='utf-8'):
+              line=line.strip()
+              if line.startswith('{'):
+                  docs.append(json.loads(line))
+          assert docs, 'missing dispatch receipt'
+          receipt=docs[-1].get('receipt') or {}
+          expected=sys.argv[2]
+          assert receipt.get('schema')=='agentos.bootstrap-receipt/v1', receipt
+          assert receipt.get('action')=='agentos.transport.repair', receipt
+          assert receipt.get('source_commit')==expected, receipt
+          assert receipt.get('ok') is True, receipt
+          text='\n'.join(str(step.get('stdout',''))+'\n'+str(step.get('stderr','')) for step in receipt.get('steps',[]))
+          assert 'action_relay_install=PASS' in text, text[-12000:]
+          assert 'action_relay_source_generation_pinned=PASS' in text, text[-12000:]
+          assert f'agentos_source_commit={expected}' in text, text[-12000:]
+          print('oracle_action_runtime_rollout=PASS')
+          print('oracle_action_runtime_source_commit='+expected)
+          PY
+
+      - name: Upload sanitized rollout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-action-runtime-${{ github.run_id }}
+          path: ${{ runner.temp }}/action-runtime-rollout.txt
+          if-no-files-found: warn
+          retention-days: 14
