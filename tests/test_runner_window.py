@@ -68,6 +68,16 @@ def test_runtime_repair_emits_bounded_failure_line():
     assert "'antigravity_repair_line='" in server
 
 
+def test_runtime_repair_projects_bounded_failure_line():
+    script = Path("scripts/repair_antigravity_relay_user.sh").read_text(encoding="utf-8")
+    assert "REPAIR_FAILURE_LINE" in script
+    assert "REPAIR_FAILURE_RC" in script
+    assert "antigravity_repair_line=" in script
+    assert "antigravity_repair_exit=" in script
+    server = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    assert "'antigravity_repair_line='" in server
+
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})
