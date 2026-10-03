@@ -28,6 +28,11 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "hydration_receipt_ok",
     "install_receipt_ok",
     "classification",
+    "executor_returncode",
+    "executor_timed_out",
+    "executor_provider",
+    "worktree_clean",
+    "observed_head",
 )
 _PROVIDER_STATE_FIELDS = (
     "executor_available",
