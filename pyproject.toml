@@ -25,3 +25,6 @@ agentos-one = "agent_core.realm_cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["runtime_core*", "agentos_node*", "agent_core*"]
+
+[tool.setuptools.package-data]
+agentos_node = ["executor_profiles/*.json"]
