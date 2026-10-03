@@ -128,6 +128,8 @@ try {
 
 & $launcher health
 if ($LASTEXITCODE -ne 0) { throw "AgentOS health check failed" }
+& $launcher reconcile
+if ($LASTEXITCODE -ne 0) { throw "AgentOS executor reconcile failed" }
 & $launcher manifest
 if ($LASTEXITCODE -ne 0) { throw "AgentOS manifest check failed" }
 & $launcher verify

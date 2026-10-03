@@ -54,6 +54,7 @@ ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
 ACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
 ACTION_DEPLOY_STUDIO_WEB_MIO = "agentos.studio_web_mio.deploy"
 ACTION_INSTALL_MIO_OBSERVER_TIMER = "agentos.mio_observer.timer.install"
+ACTION_EXECUTOR_ONBOARDING_INTEGRATE = "agentos.executor_onboarding.integrate"
 ACTION_ACTIVATE_OURSONG_PERSONA = "agentos.oursong_persona.activate"
 ACTION_PROBE_OURSONG_PERSONA = "agentos.oursong_persona.status"
 ACTION_PROBE_PERSONA_PDCA_RUNTIME = "agentos.persona_pdca_runtime.probe"
@@ -96,6 +97,7 @@ ALLOWED_ACTIONS = {
     ACTION_PROJECT_MIO_OBSERVER,
     ACTION_DEPLOY_STUDIO_WEB_MIO,
     ACTION_INSTALL_MIO_OBSERVER_TIMER,
+    ACTION_EXECUTOR_ONBOARDING_INTEGRATE,
     ACTION_ACTIVATE_OURSONG_PERSONA,
     ACTION_PROBE_OURSONG_PERSONA,
     ACTION_PROBE_PERSONA_PDCA_RUNTIME,
@@ -157,6 +159,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","studio_commit"}
     elif action == ACTION_RECONCILE_CONTENT_SOCIAL:
         allowed_params={"source_commit","account_ref"}
+    elif action == ACTION_EXECUTOR_ONBOARDING_INTEGRATE:
+        allowed_params={"node_id","provider_hint","surface_id","fingerprint"}
     else:
         allowed_params={"source_commit"}
     unknown = set(params) - allowed_params
@@ -238,6 +242,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     expected_owner = {
         "github-actions": REQUEST_OWNER,
         "realm-controller": "ubuntu",
+        "agentos-reconciler": REQUEST_OWNER,
     }.get(authority_source)
     if expected_owner is None or authority.get("target_user") != "ubuntu":
         raise ValueError("invalid authority envelope")
@@ -523,6 +528,60 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             timeout=90,
             source_commit=source_commit,
         )
+    if action == ACTION_EXECUTOR_ONBOARDING_INTEGRATE:
+        params = params or {}
+        node_id = str(params.get("node_id") or "").strip()
+        provider_hint = str(params.get("provider_hint") or "").strip()
+        surface_id = str(params.get("surface_id") or "").strip()
+        fingerprint = str(params.get("fingerprint") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", node_id):
+            raise ValueError("invalid executor onboarding node_id")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", provider_hint):
+            raise ValueError("invalid executor onboarding provider_hint")
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,192}", surface_id):
+            raise ValueError("invalid executor onboarding surface_id")
+        if not re.fullmatch(r"[0-9a-f]{24}", fingerprint):
+            raise ValueError("invalid executor onboarding fingerprint")
+        from agentos_node.antigravity_relay import AntigravityRelayClient
+        workspace = str(Path.home() / "agentmanager")
+        instruction = (
+            "Complete one AgentOS executor provider integration. "
+            "Read docs/EXECUTOR_SELF_ADOPTION_CONTRACT.md, "
+            "docs/EXECUTOR_PROVIDER_ONBOARDING_PROTOCOL.md, "
+            ".agentos/executors/provider-profile.schema.json, and "
+            ".agentos/executors/_template.json. "
+            f"Target node_id={node_id}; provider_hint={provider_hint}; surface_id={surface_id}; "
+            f"fingerprint={fingerprint}. "
+            "Inspect only provider-owned safe evidence. Implement or update the provider profile, "
+            "trusted adapter, tests, bounded smoke contract, and receipt projection. "
+            "Do not expose credentials, widen permissions, add arbitrary shell authority, or bypass CI. "
+            "Commit the work on a dedicated branch and report the commit/blocked evidence in the relay receipt."
+        )
+        client = AntigravityRelayClient(Path.home() / "agent-data/runtime/antigravity-relay")
+        capsule = client.submit(
+            project_id="agentos-core",
+            canonical_ir={
+                "schema": "agentos.executor-onboarding-ir/v0.1",
+                "goal": "Integrate a discovered executor provider through the canonical AgentOS protocol",
+                "constraints": [
+                    "provider-specific knowledge stays in the provider adapter",
+                    "no credential exposure",
+                    "no arbitrary shell authority",
+                    "smoke receipt required before READY",
+                ],
+            },
+            instruction=instruction,
+            workspace=workspace,
+            executor_hint="executor-integrator",
+        )
+        return {
+            "ok": True,
+            "integration_state": "INTEGRATION_IN_PROGRESS",
+            "integration_capsule_id": capsule.get("capsule_id"),
+            "executor_candidate_fingerprint": fingerprint,
+            "provider_hint": provider_hint,
+            "node_id": node_id,
+        }
     raise ValueError("unsupported bootstrap action")
 
 

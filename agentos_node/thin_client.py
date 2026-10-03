@@ -120,7 +120,7 @@ class ThinClient:
     def capability_manifest(self) -> dict[str, Any]:
         tools = self.discover_tools()
         surface_inventory = self.surface_inventory()
-        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
+        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect', 'agent.executor.discover', 'agent.executor.reconcile']
         if platform.system() == 'Linux':
             caps.extend(['node.ssh.inspect', 'node.ssh.recover', 'node.runner.inspect', 'node.runner.recover'])
         caps.extend(surface_inventory.get('capabilities') or [])
@@ -162,6 +162,8 @@ class ThinClient:
         elif platform.system() == 'Linux':
             caps.extend(_linux_gui_worker_capabilities())
         caps.extend(self.adapters.capabilities())
+        from agentos_node.executor_reconcile import discover_executor_inventory
+        executor_inventory = discover_executor_inventory()
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -174,6 +176,7 @@ class ThinClient:
             'observed_at': _utc_now(),
             'capabilities': sorted(set(caps)),
             'tool_presence': tools,
+            'executor_inventory': executor_inventory,
             'surface_inventory': surface_inventory,
             'adapters': self.adapters.describe(),
             'runtime': observe_runtime(),
@@ -238,6 +241,12 @@ class ThinClient:
                 )
             elif action == 'agent.surface.inspect':
                 result = {'surface_inventory': self.surface_inventory()}
+            elif action == 'agent.executor.discover':
+                from agentos_node.executor_reconcile import discover_executor_inventory
+                result = {'executor_inventory': discover_executor_inventory()}
+            elif action == 'agent.executor.reconcile':
+                from agentos_node.executor_reconcile import reconcile_executor_adoption
+                result = reconcile_executor_adoption(node_id=self.identity.node_id)
             elif action == 'process.inspect':
                 result = self._inspect_processes(task)
             elif action == 'node.ssh.inspect':
