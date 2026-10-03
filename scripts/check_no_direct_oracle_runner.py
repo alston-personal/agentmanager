@@ -6,14 +6,13 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(".github/workflows")
-ALLOW = {
-    "oracle-one-break-glass-repair.yml",
-    "oracle-runner-recovery.yml",
-}
-
-pattern = re.compile(
+DIRECT = re.compile(
     r"runs-on:\s*\[(?=[^\]]*self-hosted)(?=[^\]]*oracle)[^\]]*\]",
     re.IGNORECASE,
+)
+AUTOMATIC = re.compile(
+    r"^\s{2}(push|pull_request|schedule|issues|issue_comment|repository_dispatch|workflow_run)\s*:",
+    re.MULTILINE,
 )
 
 
@@ -39,18 +38,30 @@ def changed_workflows() -> list[Path]:
     ]
 
 
-violations = []
+violations: list[str] = []
+manual_compat: list[str] = []
 for path in changed_workflows():
-    if not path.exists() or path.name in ALLOW:
+    if not path.exists():
         continue
     text = path.read_text(encoding="utf-8", errors="replace")
-    if pattern.search(text):
-        violations.append(str(path))
+    if not DIRECT.search(text):
+        continue
+    trigger = text.split("\njobs:", 1)[0]
+    events = sorted(set(AUTOMATIC.findall(trigger)))
+    if events:
+        violations.append(f"{path}:automatic={','.join(events)}")
+    else:
+        manual_compat.append(str(path))
+
+if manual_compat:
+    print("direct_oracle_manual_compatibility="+str(len(manual_compat)))
+    for item in manual_compat:
+        print("manual_compatibility="+item)
 
 if violations:
-    print("direct_oracle_self_hosted_guard=FAIL")
+    print("direct_oracle_automatic_guard=FAIL")
     for item in violations:
-        print("violation=" + item)
+        print("violation="+item)
     raise SystemExit(2)
 
-print("direct_oracle_self_hosted_guard=PASS")
+print("direct_oracle_automatic_guard=PASS")
