@@ -72,11 +72,22 @@ else
   ensure_shared_dir "$RELAY_ROOT/quarantine"
 fi
 
-git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
-SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
-if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
-  echo "ERROR: Action Relay source generation mismatch: expected=$EXPECTED_SOURCE_COMMIT observed=$SOURCE_COMMIT" >&2
-  exit 4
+if [ -n "$EXPECTED_SOURCE_COMMIT" ]; then
+  git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+  SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)
+  git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"
+  SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
+  if [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
+    echo "ERROR: Action Relay exact source fetch mismatch: expected=$EXPECTED_SOURCE_COMMIT observed=$SOURCE_COMMIT" >&2
+    exit 4
+  fi
+  if ! git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"; then
+    echo "ERROR: Action Relay source commit is not in governed ref: ref=$SOURCE_REF ref_head=$SOURCE_REF_HEAD commit=$SOURCE_COMMIT" >&2
+    exit 4
+  fi
+else
+  git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+  SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
 fi
 
 # Historical Action Relay generations were materialized as a plain directory.
