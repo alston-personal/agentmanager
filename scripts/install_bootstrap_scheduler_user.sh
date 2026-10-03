@@ -72,9 +72,16 @@ git -C "$REPO" archive "$SOURCE_COMMIT" agentos_node agent_core | tar -x -C "$ST
 PYTHONPATH="$STAGE" /usr/bin/python3 -m py_compile   "$STAGE/agentos_node/bootstrap_control.py"   "$STAGE/agentos_node/bootstrap_scheduler.py"   "$STAGE/agent_core/realm_fabric.py"
 
 PYTHONPATH="$STAGE" /usr/bin/python3 - <<'PY'
+from agent_core.executor_job_contract import canonical_executor_job_request
 from agent_core.realm_fabric import RealmFabricStore, ReceiptArchiveStore
 from agentos_node.bootstrap_scheduler import policy_for
+from agentos_node.executor_job_action_relay import ENGINEERING_SUBAGENT_PROVIDERS_REGISTERED
+
+request = canonical_executor_job_request("engineering.windows-thin-client.fix")
+assert request["job_type"] == "engineering.windows-thin-client.fix", request
+assert ENGINEERING_SUBAGENT_PROVIDERS_REGISTERED is True
 print('bootstrap_scheduler_exact_import=PASS')
+print('bootstrap_scheduler_engineering_executor_job=PASS')
 PY
 
 rm -rf "$RELEASE"
