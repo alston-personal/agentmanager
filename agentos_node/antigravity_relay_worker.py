@@ -135,7 +135,18 @@ class AntigravityRelayWorker:
         return [*self.executor, prompt]
 
     def _run_executor(self, capsule: dict[str, Any], workspace: Path) -> dict[str, Any]:
-        argv = self._executor_argv(capsule, workspace)
+        provider = self.provider
+        executor = self.executor
+        hint = str(capsule.get("executor_hint") or "").strip().lower()
+        if hint in {"provider:claude", "provider:agy"}:
+            provider, executor = discover_executor(hint.split(":", 1)[1])
+        if not executor:
+            raise RuntimeError(f"no authorized local Antigravity executor discovered for provider={provider}")
+        prompt = build_prompt(capsule)
+        if provider == "agy":
+            argv = [*executor, "run", "--task", prompt, "--workspace", str(workspace)]
+        else:
+            argv = [*executor, prompt]
         proc = subprocess.Popen(
             argv,
             cwd=str(workspace),
@@ -164,6 +175,8 @@ class AntigravityRelayWorker:
         if timed_out:
             stderr = (stderr or "") + f"\nAgentOS executor timeout after {self.timeout:.1f}s; process group terminated.\n"
         return {
+            "provider": provider,
+            "executor": executor[0] if executor else None,
             "returncode": 124 if timed_out else int(proc.returncode or 0),
             "stdout": (stdout or "")[-100000:],
             "stderr": (stderr or "")[-20000:],
@@ -204,8 +217,8 @@ class AntigravityRelayWorker:
                 "started_at": started,
                 "completed_at": _utc_now(),
                 "executor_user": os.environ.get("USER") or str(os.getuid()),
-                "provider": self.provider,
-                "executor": self.executor[0] if self.executor else None,
+                "provider": result.get("provider") or self.provider,
+                "executor": result.get("executor") or (self.executor[0] if self.executor else None),
                 "returncode": result["returncode"],
                 "ok": result["returncode"] == 0 and not result["timed_out"],
                 "timed_out": result["timed_out"],
