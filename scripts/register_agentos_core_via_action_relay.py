@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 ROOT = Path.cwd()
-RUNTIME = Path('/home/ubuntu/.local/share/agentos/action-relay-runtime')
 SPOOL = Path('/home/ubuntu/agent-data/runtime/action-relay')
 OUT = ROOT / '.agentos/evidence/agentos-core-project-registration.json'
 ACTION = 'agentos.project.register_core'
@@ -15,20 +14,11 @@ sys.path.insert(0, str(ROOT))
 from agentos_node.action_relay import ActionRelayClient
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
-runtime_file = RUNTIME / 'agentos_node/action_relay.py'
-deadline = time.time() + 240
-while time.time() < deadline:
-    try:
-        if runtime_file.is_file() and ACTION in runtime_file.read_text(encoding='utf-8'):
-            break
-    except OSError:
-        pass
-    time.sleep(1)
-else:
-    OUT.write_text(json.dumps({'ok': False, 'stage': 'runtime_ready', 'action': ACTION}, indent=2) + '\n', encoding='utf-8')
-    raise SystemExit(2)
-
 client = ActionRelayClient(SPOOL)
+
+# The action receipt itself is the authoritative capability proof. Do not
+# inspect ubuntu-owned runtime implementation files from the agentos-node
+# runner identity before submitting the governed action.
 payload = client.submit(ACTION, {'replace': True})
 cid = payload['capsule_id']
 deadline = time.time() + 120
