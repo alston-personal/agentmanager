@@ -155,8 +155,14 @@ jobs:
           assert r.get('authorized') is True, r
           assert r.get('credential_exposed') is False, r
           classification=str(r.get('classification') or '')
-          assert classification=='ENGINEERING_EXECUTOR_COMPLETED_PENDING_VERIFICATION', r
+          assert classification=='ENGINEERING_SUBAGENT_SMOKE_COMPLETED_PENDING_VERIFICATION', r
           assert r.get('successful') is False, r
+          assert r.get('executor_provider')=='deterministic-git-probe', r
+          assert r.get('executor_returncode')==0, r
+          assert r.get('executor_timed_out') is False, r
+          assert isinstance(r.get('worktree_clean'), bool), r
+          head=str(r.get('observed_head') or '')
+          assert len(head)==40 and all(ch in '0123456789abcdef' for ch in head), r
           print('main_agent_subagent_receipt=PASS')
           print('main_agent_verification_required=YES')
           PY
