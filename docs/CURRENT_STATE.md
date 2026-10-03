@@ -178,6 +178,8 @@ Implemented endpoints:
 
 ONE negotiates the highest common supported Participant Protocol version from the currently supported set (`1.0`). Enrollment uses a pending request + correlated Participant challenge response + operator approval + claim flow. The challenge response must echo the ONE-issued `request_id`, stable `participant_id`, exact challenge, negotiated protocol, and `ack: ACCEPT`; claim is rejected until ONE records challenge verification. Operator approval is available through `agentos-one participant-approve --code ...`. Claimed enrollment records stable Participant identity separately from `host_runtime_id` and issues a Participant credential to the Host Runtime.
 
+Core deployment acceptance now requires more than `/v1/health`: the effective systemd `ExecStart` and `WorkingDirectory` must reference the exact immutable release being installed, and the live process must answer `GET /v1/participants/protocol` with `agentos.participant-protocol-discovery/v1` supporting protocol `1.0`. A generic health response is no longer sufficient proof that the expected Core generation is serving traffic.
+
 Enrollment/negotiation may advance a Participant to A3 only. Core conformance, capability verification, ONE-routed execution, correlated receipts, and A7 READY remain separate runtime work and must not be inferred from successful enrollment. Missing required v1.0 methods (for example `shutdown`) are preserved explicitly after enrollment.
 
 The first Gemini Web experiment remains A0 until the new runtime surface is deployed and a Host Runtime submits/claims a real enrollment request. This implementation is generic and must be reused by future model, Agent, service, browser, and Executor Participants.
