@@ -277,6 +277,9 @@ def project_executor_job_receipt(
             "hydration_receipt_ok",
             "install_receipt_ok",
             "classification",
+            "executor_returncode",
+            "executor_timed_out",
+            "executor_provider",
         ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:

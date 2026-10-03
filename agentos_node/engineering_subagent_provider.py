@@ -162,10 +162,18 @@ def run_engineering_subagent(
         return _failure("ENGINEERING_RELAY_TIMEOUT")
     if receipt.get("ok") is not True:
         classification = _relay_failure_classification(receipt)
-        return _failure(
+        result = _failure(
             classification,
             executor_available=classification != "ENGINEERING_EXECUTOR_UNAVAILABLE",
         )
+        provider = str(receipt.get("provider") or "").strip().lower()
+        if provider in {"claude", "agy"}:
+            result["executor_provider"] = provider
+        returncode = receipt.get("returncode")
+        if isinstance(returncode, int):
+            result["executor_returncode"] = returncode
+        result["executor_timed_out"] = receipt.get("timed_out") is True
+        return result
 
     # A successful relay process only proves that the delegated worker returned.
     # It deliberately does not prove code correctness or acceptance. Main Agent
