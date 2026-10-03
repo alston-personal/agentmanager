@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+trap 'rc=$?; line=$LINENO; echo "antigravity_repair=FAIL"; echo "antigravity_repair_exit=$rc"; echo "antigravity_repair_line=$line"; exit "$rc"' ERR
+
 if [ "$(id -un)" != "ubuntu" ]; then
   echo "ERROR: run as ubuntu" >&2
   exit 2
