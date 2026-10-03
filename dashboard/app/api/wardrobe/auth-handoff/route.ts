@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
-import { createPwaHandoff, completePwaHandoff, consumePwaHandoff } from '@/lib/auth/pwa-handoff';
+import { createPwaHandoff, completePwaHandoff, readPwaHandoff, consumePwaHandoff } from '@/lib/auth/pwa-handoff';
 
 export async function POST(request: NextRequest) {
   const action = new URL(request.url).searchParams.get('action') || 'start';
@@ -16,17 +16,34 @@ export async function POST(request: NextRequest) {
   if (action === 'exchange') {
     const body = await request.json().catch(() => ({}));
     const handoffId = typeof body?.handoffId === 'string' ? body.handoffId : '';
-    const record = handoffId ? consumePwaHandoff(handoffId) : null;
-    if (!record?.authToken || !verifyToken(record.authToken)) {
+    const record = handoffId ? readPwaHandoff(handoffId) : null;
+    if (!record?.authToken || record.status !== 'ready' || !verifyToken(record.authToken)) {
       return NextResponse.json({ ready: false }, { status: 404, headers: { 'cache-control': 'no-store' } });
     }
-    const response = NextResponse.json({ ready: true }, { headers: { 'cache-control': 'no-store' } });
+
+    const response = NextResponse.json(
+      { ready: true, cookieScope: 'host-only', legacyCookieCleared: true },
+      { headers: { 'cache-control': 'no-store' } }
+    );
+
+    // The exchange runs inside the Home Screen app's cookie jar. Clear the
+    // legacy parent-domain cookie and set only a host-scoped auth token here.
+    // Keep the handoff until the PWA proves /auth/session can read the token.
+    response.cookies.set({
+      name: 'auth_token',
+      value: '',
+      httpOnly: true,
+      secure: true,
+      domain: '.milkcat.org',
+      path: '/',
+      sameSite: 'lax',
+      maxAge: 0,
+    });
     response.cookies.set({
       name: 'auth_token',
       value: record.authToken,
       httpOnly: true,
       secure: true,
-      domain: '.milkcat.org',
       path: '/',
       sameSite: 'lax',
       maxAge: 86400,
@@ -34,18 +51,38 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
+  if (action === 'ack') {
+    const body = await request.json().catch(() => ({}));
+    const handoffId = typeof body?.handoffId === 'string' ? body.handoffId : '';
+    const record = handoffId ? readPwaHandoff(handoffId) : null;
+    const tokens = request.cookies.getAll('auth_token').map((cookie) => cookie.value).filter(Boolean);
+    const token = tokens.find((candidate) => candidate === record?.authToken) || '';
+
+    if (!record?.authToken || !token || !verifyToken(token)) {
+      return NextResponse.json({ acknowledged: false }, { status: 409, headers: { 'cache-control': 'no-store' } });
+    }
+
+    consumePwaHandoff(handoffId);
+    return NextResponse.json({ acknowledged: true }, { headers: { 'cache-control': 'no-store' } });
+  }
+
   return NextResponse.json({ error: 'unsupported action' }, { status: 400 });
 }
 
 export async function GET(request: NextRequest) {
   const handoff = new URL(request.url).searchParams.get('handoff') || '';
-  const token = request.cookies.get('auth_token')?.value || '';
+  const token = request.cookies
+    .getAll('auth_token')
+    .map((cookie) => cookie.value)
+    .find((candidate) => Boolean(verifyToken(candidate))) || '';
+
   if (!handoff || !token || !verifyToken(token)) {
     return new NextResponse('Login not completed. Return to Mio wardrobe and retry.', {
       status: 401,
       headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
     });
   }
+
   try {
     completePwaHandoff(handoff, token);
   } catch {
@@ -54,6 +91,7 @@ export async function GET(request: NextRequest) {
       headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
     });
   }
+
   const safeHandoff = JSON.stringify(handoff);
   const html = `<!doctype html>
 <html lang="zh-Hant">
@@ -92,6 +130,7 @@ export async function GET(request: NextRequest) {
 </script>
 </body>
 </html>`;
+
   return new NextResponse(html, {
     status: 200,
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
