@@ -25,7 +25,7 @@ jobs:
           from pathlib import Path
           exe=shutil.which('codex')
           if not exe:
-              root=Path.home()/'.antigravity-ide-server'/'extensions'
+              root=Path('/home/ubuntu/.antigravity-ide-server/extensions')
               c=[p for p in root.glob('openai.chatgpt-*-linux-arm64/bin/linux-aarch64/codex') if p.is_file()]
               exe=str(max(c,key=lambda p:p.stat().st_mtime_ns)) if c else ''
           print('codex_installed='+('YES' if exe else 'NO'))
