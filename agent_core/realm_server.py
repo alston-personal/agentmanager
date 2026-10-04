@@ -597,6 +597,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                         'claude_ready_count', 'claude_probe_attempts', 'claude_health_classification',
                         'agy_liveness', 'agy_state', 'agy_returncode', 'agy_timed_out',
                         'agy_ready_count', 'agy_probe_attempts', 'agy_health_classification',
+                        'gemini_liveness', 'gemini_state', 'gemini_returncode', 'gemini_timed_out',
+                        'gemini_ready_count', 'gemini_probe_attempts', 'gemini_health_classification',
                         'selected_provider', 'runtime_source_commit',
                     )
                     public_receipt['executor_job_receipt'] = {

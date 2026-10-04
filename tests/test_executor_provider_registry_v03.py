@@ -13,21 +13,25 @@ from agentos_node.executor_provider_registry import (
 from agentos_node.executor_provider_adapters import (
     AntigravityProvider,
     ClaudeCodeProvider,
+    GeminiCliProvider,
     INVOKE_SCHEMA,
 )
 
 
 def test_core_profiles_load_and_bound_adapters():
     profiles = {p["executor_id"]: p for p in load_provider_profiles()}
-    assert {"claude-code", "antigravity"} <= set(profiles)
+    assert {"claude-code", "antigravity", "gemini"} <= set(profiles)
 
     claude = load_provider(profiles["claude-code"])
     antigravity = load_provider(profiles["antigravity"])
+    gemini = load_provider(profiles["gemini"])
 
     assert isinstance(claude, ClaudeCodeProvider)
     assert isinstance(antigravity, AntigravityProvider)
+    assert isinstance(gemini, GeminiCliProvider)
     assert sorted(claude.capabilities()) == ["agent.chat", "code.edit"]
     assert sorted(antigravity.capabilities()) == ["agent.chat", "code.edit"]
+    assert sorted(gemini.capabilities()) == ["agent.chat", "code.edit"]
 
 
 def test_provider_profile_rejects_caller_execution_authority():
@@ -169,3 +173,31 @@ def test_provider_health_classifies_rate_limit(monkeypatch, tmp_path: Path):
 
     result = adapters._health("agy", workspace=tmp_path)
     assert result["classification"] == "RATE_LIMITED"
+
+
+def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    monkeypatch.setattr(adapters, "discover_executor", lambda provider: ("gemini", ["/home/ubuntu/.local/bin/gemini"]))
+    captured = {}
+
+    class Result:
+        returncode = 0
+        stdout = "READY"
+        stderr = ""
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = list(argv)
+        return Result()
+
+    monkeypatch.setattr(adapters.subprocess, "run", fake_run)
+    result = adapters._health("gemini", workspace=workspace, timeout_seconds=1)
+    argv = captured["argv"]
+    assert "--approval-mode" in argv
+    assert argv[argv.index("--approval-mode") + 1] == "plan"
+    assert "-p" in argv
+    assert "--output-format" in argv
+    assert argv[argv.index("--output-format") + 1] == "text"
+    assert result["state"] == "READY"

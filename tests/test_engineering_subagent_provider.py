@@ -562,6 +562,10 @@ def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path:
             "state": "ERROR", "classification": "CLI_CONTRACT", "returncode": 2,
             "timed_out": False, "ready_count": 0, "attempts": 2,
         },
+        "gemini": {
+            "state": "UNAVAILABLE", "classification": "UNAVAILABLE", "returncode": None,
+            "timed_out": False, "ready_count": 0, "attempts": 2,
+        },
     }
     monkeypatch.setattr(provider, "_probe_provider_stability", lambda name, *args, **kwargs: dict(probes[name]))
     monkeypatch.setattr(provider, "_probe_binary_liveness", lambda name: "READY")
@@ -594,3 +598,52 @@ def test_snapshot_health_marks_unhealthy_without_classification_as_contract_inco
     assert result["claude_health_classification"] == "HEALTH_CONTRACT_INCOMPLETE"
     assert result["agy_health_classification"] == "HEALTH_CONTRACT_INCOMPLETE"
     assert result["selected_provider"] == ""
+
+
+def test_snapshot_health_falls_back_to_stable_gemini_when_primary_providers_unhealthy():
+    import agentos_node.engineering_subagent_provider as provider
+
+    snapshot = {
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": "2026-10-04T00:00:00Z",
+        "executors": [
+            _snapshot_row("claude-code", state="UNHEALTHY", stable=False, streak=0, classification="TIMEOUT"),
+            _snapshot_row("antigravity", state="UNHEALTHY", stable=False, streak=0, classification="RATE_LIMITED"),
+            {
+                **_snapshot_row("gemini", state="READY", stable=True, streak=2),
+                "provider_id": "google",
+                "executor_class": "gemini",
+            },
+        ],
+    }
+    result = provider._health_from_snapshot(snapshot)
+    assert result["selected_provider"] == "gemini"
+    assert result["gemini_state"] == "READY"
+    assert result["gemini_ready_count"] == 2
+    assert result["successful"] is True
+
+
+def test_gemini_health_probe_uses_plan_mode(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+    captured = {}
+    monkeypatch.setattr(provider, "discover_executor", lambda name: ("gemini", ["/home/ubuntu/.local/bin/gemini"]))
+
+    class Completed:
+        returncode = 0
+        stdout = "READY"
+        stderr = ""
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = list(argv)
+        return Completed()
+
+    monkeypatch.setattr(provider.subprocess, "run", fake_run)
+    result = provider._probe_model_provider("gemini", workspace, timeout_seconds=1)
+    argv = captured["argv"]
+    assert argv[argv.index("--approval-mode") + 1] == "plan"
+    assert "-p" in argv
+    assert result["state"] == "READY"

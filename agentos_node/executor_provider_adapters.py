@@ -29,6 +29,8 @@ def _provider_command(provider: str, workspace: Path, instruction: str) -> list[
         return None
     if selected == "agy":
         return [*executable, "run", "--task", instruction, "--workspace", str(workspace)]
+    if selected == "gemini":
+        return [*executable, "--skip-trust", "--approval-mode", "plan", "--output-format", "text", "-p", instruction]
     return [
         *executable,
         "--safe-mode",
@@ -255,3 +257,10 @@ class AntigravityProvider(_RelayProvider):
     provider_id = "google-antigravity"
     executor_class = "antigravity"
     relay_provider = "agy"
+
+
+class GeminiCliProvider(_RelayProvider):
+    executor_id = "gemini"
+    provider_id = "google"
+    executor_class = "gemini"
+    relay_provider = "gemini"
