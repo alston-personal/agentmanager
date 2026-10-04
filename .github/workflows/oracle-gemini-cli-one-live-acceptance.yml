@@ -100,3 +100,61 @@ jobs:
           done
           test "$terminal" = 1
           echo 'gemini_cli_one_live_acceptance=PASS'
+
+      - name: Verify Gemini CLI headless read-only health
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=180             bash scripts/agentos_dispatch.sh               agentos.executor job.submit "$GITHUB_SHA"               job_type=gemini.cli.health               | tee "$RUNNER_TEMP/gemini-health-submit.txt"
+
+          job_id="$(python3 - "$RUNNER_TEMP/gemini-health-submit.txt" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs
+          receipt=docs[-1].get('receipt') or {}
+          job=receipt.get('executor_job') or {}
+          assert receipt.get('ok') is True, receipt
+          value=str(job.get('job_id') or '')
+          assert value.startswith('action-'), job
+          print(value)
+          PY
+          )"
+
+          for i in $(seq 1 30); do
+            out="$RUNNER_TEMP/gemini-health-inspect-$i.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=90               bash scripts/agentos_dispatch.sh                 agentos.executor job.inspect "$GITHUB_SHA"                 job_id="$job_id" > "$out"
+            rc=0
+            python3 - "$out" <<'PY' || rc=$?
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          if not docs:
+              raise SystemExit(1)
+          receipt=docs[-1].get('receipt') or {}
+          if receipt.get('executor_job_state')!='completed':
+              raise SystemExit(1)
+          job=receipt.get('executor_job_receipt')
+          if not isinstance(job,dict):
+              raise SystemExit(2)
+          classification=str(job.get('classification') or 'none')
+          print('gemini_cli_health_classification='+classification)
+          print('gemini_cli_health_authorized='+str(job.get('authorized')))
+          if classification=='GEMINI_CLI_HEALTH_READY':
+              assert job.get('authorized') is True, job
+              assert job.get('routable') is True, job
+              assert job.get('credential_exposed') is False, job
+              raise SystemExit(0)
+          raise SystemExit(2)
+          PY
+            if [ "$rc" = 0 ]; then
+              echo 'gemini_cli_health_acceptance=PASS'
+              exit 0
+            fi
+            if [ "$rc" = 2 ]; then
+              echo 'gemini_cli_health_acceptance=TERMINAL_FAIL' >&2
+              cat "$out" >&2
+              exit 2
+            fi
+            sleep 3
+          done
+          echo 'gemini_cli_health_acceptance=TIMEOUT' >&2
+          exit 3
