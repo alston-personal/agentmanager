@@ -21,23 +21,11 @@ jobs:
         run: |
           set -euo pipefail
           echo "runner_user=$(id -un)"
-          echo '=== ACTION RELAY SERVICE ==='
-          systemctl --user show agentos-action-relay.service             -p ActiveState -p SubState -p MainPID -p WorkingDirectory --no-pager
-          pid="$(systemctl --user show agentos-action-relay.service -p MainPID --value)"
-          if [ -n "$pid" ] && [ "$pid" != 0 ]; then
-            echo "action_relay_pid=$pid"
-            echo "action_relay_cwd=$(readlink -f /proc/$pid/cwd)"
-            tr '\0' '\n' < "/proc/$pid/environ"               | grep -E '^AGENTOS_ACTION_RUNTIME_SOURCE_(REF|COMMIT)=' || true
-          fi
+          echo '=== IMMUTABLE GENERATION POINTERS ==='
           echo "action_runtime_head=$(git -C /home/ubuntu/.local/share/agentos/action-runtime rev-parse HEAD 2>/dev/null || true)"
-          echo '=== BOOTSTRAP BUILD WORKER ==='
-          systemctl --user show agentos-bootstrap-build.service             -p ActiveState -p SubState -p MainPID -p WorkingDirectory --no-pager
-          bpid="$(systemctl --user show agentos-bootstrap-build.service -p MainPID --value)"
-          if [ -n "$bpid" ] && [ "$bpid" != 0 ]; then
-            echo "bootstrap_build_pid=$bpid"
-            echo "bootstrap_build_cwd=$(readlink -f /proc/$bpid/cwd)"
-          fi
           echo "bootstrap_current=$(readlink -f /home/ubuntu/.local/share/agentos/bootstrap-scheduler/current 2>/dev/null || true)"
+          echo 'bootstrap_marker:'
+          cat /home/ubuntu/agent-data/runtime/bootstrap-scheduler/enabled 2>/dev/null || true
           echo '=== LATEST BOUNDED HEALTH RECEIPTS ==='
           python3 - <<'PY'
           import json
@@ -58,7 +46,7 @@ jobs:
                   'runtime_source_commit','executor_available','routable','authorized',
               ) if k in d}
               rows.append(safe)
-              if len(rows)>=3:
+              if len(rows)>=5:
                   break
           print(json.dumps(rows,sort_keys=True,separators=(',',':')))
           PY
