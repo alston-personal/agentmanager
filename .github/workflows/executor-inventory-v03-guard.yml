@@ -16,6 +16,9 @@ on:
       - 'agent_core/node_registry.py'
       - 'pyproject.toml'
       - 'tests/test_executor_reconcile.py'
+      - 'tests/test_executor_provider_registry_v03.py'
+      - 'tests/test_antigravity_relay_worker.py'
+      - 'tests/test_engineering_subagent_provider.py'
       - 'tests/test_executor_onboarding.py'
       - 'tests/test_thin_client.py'
       - 'tests/test_node_registry_v01.py'
@@ -36,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check pytest
-          python -m pytest             tests/test_executor_reconcile.py             tests/test_executor_onboarding.py             tests/test_thin_client.py             tests/test_node_registry_v01.py             -q
+          python -m pytest             tests/test_executor_reconcile.py             tests/test_executor_provider_registry_v03.py             tests/test_antigravity_relay_worker.py             tests/test_engineering_subagent_provider.py             tests/test_executor_onboarding.py             tests/test_thin_client.py             tests/test_node_registry_v01.py             -q
 
       - name: Compile inventory runtime
         run: |
@@ -59,7 +62,7 @@ jobs:
           assert rows['claude-code']['implementation']['adapter_module']
           assert rows['antigravity']['implementation']['adapter_module']
           assert rows['codex']['implementation']['adapter_module'] is None
-          assert rows['gemini']['implementation']['adapter_module'] is None
+          assert rows['gemini']['implementation']['adapter_module']
           print('executor_profiles_packaged=PASS')
           print('executor_profile_count='+str(len(rows)))
           PY
