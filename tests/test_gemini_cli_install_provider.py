@@ -47,12 +47,9 @@ def test_oracle_installer_uses_user_owned_npm_prefix_and_local_bin():
 
 
 def test_gemini_cli_install_failure_classification_is_bounded():
-    from agentos_node.gemini_cli_install_provider import _classify_install_failure
-
-    assert _classify_install_failure(2, "ERROR: run as Oracle ubuntu user") == "GEMINI_CLI_ORACLE_UBUNTU_IDENTITY_MISMATCH"
-    assert _classify_install_failure(3, "ERROR: missing prerequisite: npm") == "GEMINI_CLI_PREREQUISITE_MISSING"
-    assert _classify_install_failure(4, "ERROR: AgentOS data root missing") == "GEMINI_CLI_AGENT_DATA_ROOT_UNAVAILABLE"
-    assert _classify_install_failure(1, "npm ERR! code EACCES permission denied") == "GEMINI_CLI_INSTALL_PERMISSION_DENIED"
-    assert _classify_install_failure(1, "npm ERR! network ENOTFOUND") == "GEMINI_CLI_INSTALL_NETWORK"
-    assert _classify_install_failure(1, "npm ERR! code E404") == "GEMINI_CLI_INSTALL_NPM_FAILED"
-    assert _classify_install_failure(7, "opaque failure") == "GEMINI_CLI_INSTALL_COMMAND_FAILED"
+    from agentos_node.gemini_cli_install_provider import _install_failure_classification
+    assert _install_failure_classification("", "npm ERR! code EACCES permission denied") == "GEMINI_CLI_INSTALL_PERMISSION_DENIED"
+    assert _install_failure_classification("", "npm ERR! code EBADENGINE unsupported engine") == "GEMINI_CLI_NODE_INCOMPATIBLE"
+    assert _install_failure_classification("", "npm ERR! code ENOTFOUND") == "GEMINI_CLI_INSTALL_NETWORK"
+    assert _install_failure_classification("", "npm ERR! 404 Not Found") == "GEMINI_CLI_PACKAGE_UNAVAILABLE"
+    assert _install_failure_classification("", "bounded unknown failure") == "GEMINI_CLI_INSTALL_COMMAND_FAILED"
