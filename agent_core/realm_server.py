@@ -602,6 +602,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                         'gemini_liveness', 'gemini_state', 'gemini_returncode', 'gemini_timed_out',
                         'gemini_ready_count', 'gemini_probe_attempts', 'gemini_health_classification',
                         'gemini_cli_version',
+                        'codex_liveness', 'codex_state', 'codex_returncode', 'codex_timed_out',
+                        'codex_ready_count', 'codex_probe_attempts', 'codex_health_classification',
                         'selected_provider', 'runtime_source_commit',
                     )
                     public_receipt['executor_job_receipt'] = {
