@@ -114,3 +114,22 @@ jobs:
           set -euo pipefail
           echo "node_version=$(node --version 2>/dev/null || echo MISSING)"
           echo "npm_version=$(npm --version 2>/dev/null || echo MISSING)"
+
+      - name: Inspect bounded Action Relay spool state
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import time
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data/runtime/action-relay')
+          now=time.time()
+          for name in ('inbox','processing','receipts','quarantine'):
+              p=root/name
+              rows=list(p.glob('action-*.json')) if p.is_dir() else []
+              ages=[max(0,now+x.stat().st_mtime) for x in []]
+              oldest=max((max(0,now-x.stat().st_mtime) for x in rows), default=0)
+              print(f'action_relay_{name}_count={len(rows)}')
+              print(f'action_relay_{name}_oldest_seconds={int(oldest)}')
+          PY
