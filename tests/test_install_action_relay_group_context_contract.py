@@ -80,3 +80,11 @@ def test_installer_recovers_stale_processing_only_when_managed_worker_is_offline
     assert "reconcile_stranded_processing(stale_after=600)" in text
     assert "action_relay_offline_stranded_reconcile=PASS" in text
     assert "inactive Action Relay stranded processing did not reach safe reconciliation threshold" in text
+
+
+def test_installer_reconciles_stale_processing_during_normal_drain():
+    text = INSTALLER.read_text(encoding="utf-8")
+    marker = "processing_clear=0"
+    block = text.split(marker, 1)[1].split('if [ "$processing_clear" -ne 1 ]', 1)[0]
+    assert "reconcile_stranded_processing(stale_after=600)" in block
+    assert "UNKNOWN_SIDE_EFFECT" in block
