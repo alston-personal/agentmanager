@@ -1,0 +1,48 @@
+name: Oracle Executor Snapshot Current Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/oracle-executor-snapshot-current
+    paths:
+      - '.github/workflows/oracle-executor-snapshot-current-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read bounded executor adoption snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          candidates=[
+            Path('/home/ubuntu/.agentos/executor-adoption.json'),
+            Path('/home/agentos-node/.agentos/executor-adoption.json'),
+            Path('/home/ubuntu/agent-data/runtime/executor-adoption.json'),
+          ]
+          for p in candidates:
+              try:
+                  if not p.is_file():
+                      continue
+                  d=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              safe={'schema':d.get('schema'),'observed_at':d.get('observed_at'),'executors':[]}
+              for x in d.get('executors') or []:
+                  if not isinstance(x,dict): continue
+                  safe['executors'].append({k:x.get(k) for k in (
+                      'executor_id','state','discovered','reachable','authorized','healthy',
+                      'ready_streak','stable_routable','provider_error'
+                  ) if k in x})
+              print('executor_snapshot='+json.dumps(safe,sort_keys=True,separators=(',',':')))
+              raise SystemExit(0)
+          print('executor_snapshot=NOT_FOUND')
+          PY
