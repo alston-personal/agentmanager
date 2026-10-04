@@ -155,7 +155,7 @@ Environment=AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT
 Environment=XDG_RUNTIME_DIR=/run/user/1001
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 UMask=0007
-ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT'
+ExecStart=/usr/bin/sg agentos -c 'cd "$RUNTIME_ROOT" && exec /usr/bin/env PYTHONPATH="$RUNTIME_ROOT" AGENTOS_ACTION_RUNTIME_SOURCE_REF="$SOURCE_REF" AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT="$SOURCE_COMMIT" /usr/bin/python3 -m agentos_node.executor_job_action_relay --root "$RELAY_ROOT"'
 Restart=on-failure
 RestartSec=3
 PrivateTmp=true
