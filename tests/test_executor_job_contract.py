@@ -198,3 +198,36 @@ def test_gemini_cli_version_is_a_bounded_receipt_scalar():
     )
     assert receipt["gemini_cli_version"] == "0.99.0"
     assert "stdout" not in receipt
+
+
+def test_executor_receipt_projects_bounded_codex_health_fields():
+    request = canonical_executor_job_request("engineering.executor.health")
+    receipt = project_executor_job_receipt(
+        job_id="action-12345678",
+        request=request,
+        executor_available=True,
+        routable=False,
+        authorized=False,
+        successful=False,
+        result={
+            "classification": "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+            "codex_liveness": "READY",
+            "codex_state": "AUTH_REQUIRED",
+            "codex_returncode": 1,
+            "codex_timed_out": False,
+            "codex_ready_count": 0,
+            "codex_probe_attempts": 2,
+            "codex_health_classification": "AUTH_REQUIRED",
+            "stdout": "must-not-cross",
+            "stderr": "must-not-cross",
+        },
+    )
+    assert receipt["codex_liveness"] == "READY"
+    assert receipt["codex_state"] == "AUTH_REQUIRED"
+    assert receipt["codex_returncode"] == 1
+    assert receipt["codex_timed_out"] is False
+    assert receipt["codex_ready_count"] == 0
+    assert receipt["codex_probe_attempts"] == 2
+    assert receipt["codex_health_classification"] == "AUTH_REQUIRED"
+    assert "stdout" not in receipt
+    assert "stderr" not in receipt
