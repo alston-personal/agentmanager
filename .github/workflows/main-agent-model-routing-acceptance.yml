@@ -94,7 +94,11 @@ jobs:
             export AGENTOS_CONTROLLER_TOKEN="$token"
           }
           : > "$RUNNER_TEMP/routing-health-inspect.txt"
-          for i in $(seq 1 80); do
+          # Snapshot is read-only but shares the single Action Relay queue. A
+          # long three-provider health reconcile may already own that consumer,
+          # so wait up to ~8 minutes rather than expiring just before the
+          # durable snapshot becomes available.
+          for i in $(seq 1 160); do
             if [ "$i" = 1 ] || [ $(( (i - 1) % 20 )) = 0 ]; then
               refresh_oidc
             fi
