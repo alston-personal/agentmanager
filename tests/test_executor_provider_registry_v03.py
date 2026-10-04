@@ -240,6 +240,63 @@ def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp
     assert captured["cwd"] != str(workspace)
 
 
+def test_codex_health_requires_real_bounded_model_probe(monkeypatch, tmp_path: Path):
+    import agentos_node.codex_provider_adapter as codex
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    monkeypatch.setitem(codex.WORKSPACES, "agentos-core", workspace)
+    monkeypatch.setattr(codex, "_discover_codex", lambda: "/usr/local/bin/codex")
+    calls = []
+
+    def fake_run(executable, argv, **kwargs):
+        calls.append((executable, list(argv), kwargs))
+        if argv[:2] == ["login", "status"]:
+            return 0, "Logged in", False
+        return 0, "READY", False
+
+    monkeypatch.setattr(codex, "_run", fake_run)
+    result = codex.CodexProvider().health()
+    assert result["state"] == "READY"
+    assert result["classification"] == "READY"
+    assert calls[0][1] == ["login", "status"]
+    health_argv = calls[1][1]
+    assert "exec" in health_argv
+    assert "--sandbox" in health_argv
+    assert health_argv[health_argv.index("--sandbox") + 1] == "read-only"
+    assert "--ephemeral" in health_argv
+
+
+def test_codex_health_does_not_trust_login_status_when_inference_rejects_auth(monkeypatch, tmp_path: Path):
+    import agentos_node.codex_provider_adapter as codex
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    monkeypatch.setitem(codex.WORKSPACES, "agentos-core", workspace)
+    monkeypatch.setattr(codex, "_discover_codex", lambda: "/usr/local/bin/codex")
+
+    responses = iter([
+        (0, "Logged in", False),
+        (1, "401 Unauthorized token_invalidated", False),
+    ])
+    monkeypatch.setattr(codex, "_run", lambda *args, **kwargs: next(responses))
+    result = codex.CodexProvider().health()
+    assert result["state"] == "AUTH_REQUIRED"
+    assert result["classification"] == "AUTH_RUNTIME_REJECTED"
+    assert result["authorized"] is False
+    assert result["routable"] is False
+
+
+def test_codex_health_reports_install_required_without_binary(monkeypatch):
+    import agentos_node.codex_provider_adapter as codex
+
+    monkeypatch.setattr(codex, "_discover_codex", lambda: None)
+    result = codex.CodexProvider().health()
+    assert result["state"] == "INSTALL_REQUIRED"
+    assert result["classification"] == "INSTALL_REQUIRED"
+    assert result["routable"] is False
+
+
 def test_gemini_provider_health_uses_extended_bounded_timeout(monkeypatch, tmp_path: Path):
     import agentos_node.executor_provider_adapters as adapters
 
