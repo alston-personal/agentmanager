@@ -28,6 +28,24 @@ jobs:
               root=Path('/home/ubuntu/.antigravity-ide-server/extensions')
               c=[p for p in root.glob('openai.chatgpt-*-linux-arm64/bin/linux-aarch64/codex') if p.is_file()]
               exe=str(max(c,key=lambda p:p.stat().st_mtime_ns)) if c else ''
+          if not exe:
+              roots=[Path('/home/ubuntu/.antigravity-ide-server'),Path('/home/ubuntu/.vscode-server'),Path('/home/ubuntu/.local/bin'),Path('/home/ubuntu/bin')]
+              found=[]
+              for root in roots:
+                  if not root.exists():
+                      continue
+                  try:
+                      for p in root.rglob('codex'):
+                          if p.is_file():
+                              found.append(str(p))
+                              if len(found)>=20:
+                                  break
+                  except PermissionError:
+                      pass
+                  if found:
+                      break
+              print('codex_candidates='+('|'.join(found) if found else 'NONE'))
+              exe=found[0] if found else ''
           print('codex_installed='+('YES' if exe else 'NO'))
           if not exe:
               raise SystemExit(3)
