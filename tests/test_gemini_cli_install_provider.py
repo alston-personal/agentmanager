@@ -217,3 +217,11 @@ def test_gemini_cli_health_classifies_retired_oauth_client():
 
     assert _classify_health_failure(1, "IneligibleTierError reasonCode: UNSUPPORTED_CLIENT") == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
     assert _classify_health_failure(1, "This client is no longer supported; migrate to Antigravity") == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
+
+
+def test_gemini_cli_health_classifies_consumer_tier_deprecation():
+    from agentos_node.gemini_cli_install_provider import _classify_health_failure, _classify_gemini_json_error
+
+    text = "IneligibleTierError reasonCode: UNSUPPORTED_CLIENT migrate to the Antigravity suite"
+    assert _classify_health_failure(1, text) == "GEMINI_CLI_CONSUMER_TIER_UNSUPPORTED"
+    assert _classify_gemini_json_error("IneligibleTierError", "UNSUPPORTED_CLIENT", 1, text) == "GEMINI_CLI_CONSUMER_TIER_UNSUPPORTED"
