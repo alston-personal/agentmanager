@@ -264,3 +264,6 @@ class GeminiCliProvider(_RelayProvider):
     provider_id = "google"
     executor_class = "gemini"
     relay_provider = "gemini"
+
+    def health(self) -> dict[str, Any]:
+        return _health(self.relay_provider, timeout_seconds=60.0)

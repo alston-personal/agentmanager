@@ -201,3 +201,15 @@ def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp
     assert "--output-format" in argv
     assert argv[argv.index("--output-format") + 1] == "text"
     assert result["state"] == "READY"
+
+
+def test_gemini_provider_health_uses_extended_bounded_timeout(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    captured = {}
+    monkeypatch.setattr(adapters, "_health", lambda provider, **kwargs: captured.update(provider=provider, **kwargs) or {"state": "READY"})
+    provider = adapters.GeminiCliProvider(tmp_path)
+    result = provider.health()
+    assert result["state"] == "READY"
+    assert captured["provider"] == "gemini"
+    assert captured["timeout_seconds"] == 60.0
