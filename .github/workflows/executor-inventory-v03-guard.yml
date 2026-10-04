@@ -44,7 +44,7 @@ jobs:
       - name: Compile inventory runtime
         run: |
           set -euo pipefail
-          python -m py_compile             agentos_node/executor_reconcile.py             agentos_node/executor_onboarding.py             agentos_node/executor_provider_registry.py             agentos_node/executor_provider_adapters.py             agentos_node/thin_client.py             agentos_node/client_cli.py             agent_core/node_registry.py
+          python -m py_compile             agentos_node/executor_reconcile.py             agentos_node/executor_onboarding.py             agentos_node/executor_provider_registry.py             agentos_node/executor_provider_adapters.py             agentos_node/codex_provider_adapter.py             agentos_node/thin_client.py             agentos_node/client_cli.py             agent_core/node_registry.py
 
       - name: Prove clean wheel carries canonical provider profiles
         run: |
@@ -61,7 +61,7 @@ jobs:
           assert expected <= set(rows), (expected, set(rows))
           assert rows['claude-code']['implementation']['adapter_module']
           assert rows['antigravity']['implementation']['adapter_module']
-          assert rows['codex']['implementation']['adapter_module'] is None
+          assert rows['codex']['implementation']['adapter_module']
           assert rows['gemini']['implementation']['adapter_module']
           print('executor_profiles_packaged=PASS')
           print('executor_profile_count='+str(len(rows)))

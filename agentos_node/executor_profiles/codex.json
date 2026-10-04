@@ -45,8 +45,8 @@
     "strategy": "provider-defined"
   },
   "concurrency": {
-    "model": "provider-defined",
-    "mutex_scope": null
+    "model": "single_process",
+    "mutex_scope": "codex"
   },
   "receipt": {
     "required": true,
@@ -54,15 +54,20 @@
   },
   "smoke": {
     "required": true,
-    "kind": "provider-defined",
-    "expected_safe_evidence": []
+    "kind": "provider-health-model-probe",
+    "expected_safe_evidence": [
+      "installed",
+      "authorized",
+      "healthy",
+      "classification"
+    ]
   },
   "adoption": {
     "reinstall_by_default": false,
     "preserve_existing_identity": true
   },
   "implementation": {
-    "adapter_module": null,
-    "notes": "Provider must implement adapter per EXECUTOR_PROVIDER_ONBOARDING_PROTOCOL.md before this executor can become routable."
+    "adapter_module": "agentos_node.codex_provider_adapter:CodexProvider",
+    "notes": "Provider-owned Codex CLI adapter: PATH/known-location discovery, login status, bounded real-model health probe, semantic invoke, sanitized receipt."
   }
 }

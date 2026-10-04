@@ -45,7 +45,7 @@ JOBS: dict[str, dict[str, str]] = {
         "workload_ref": "surface://engineering-executors",
         "branch": "",
         "goal": "Probe fixed local engineering model providers without mutation.",
-        "acceptance": "Classify Claude, agy, and Gemini explicitly, preserve Gemini unsupported evidence, and select the first stable routable provider from Claude or agy.",
+        "acceptance": "Classify Claude, agy, Gemini, and Codex explicitly; preserve unsupported/non-ready evidence; select only an enabled stable routable provider.",
     },
     "engineering.model.smoke": {
         "workload_ref": "surface://engineering-model-subagent",
@@ -406,9 +406,11 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
     claude = _snapshot_entry(snapshot, "claude-code")
     agy = _snapshot_entry(snapshot, "antigravity")
     gemini = _snapshot_entry(snapshot, "gemini")
+    codex = _snapshot_entry(snapshot, "codex")
     claude_state = _snapshot_state(claude)
     agy_state = _snapshot_state(agy)
     gemini_state = _snapshot_state(gemini)
+    codex_state = _snapshot_state(codex)
     selected_provider = ""
     # Gemini remains observable in the durable snapshot, but consumer OAuth
     # currently classifies as OAUTH_CLIENT_UNSUPPORTED. Do not route Main Agent
@@ -426,7 +428,7 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
         "verdict": "PASS" if ok else "FAIL",
         "runtime_source_commit": str(os.environ.get("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT") or ""),
         "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
-        "executor_available": bool(claude or agy or gemini),
+        "executor_available": bool(claude or agy or gemini or codex),
         "routable": ok,
         "authorized": ok,
         "successful": ok,
@@ -452,6 +454,13 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
         "gemini_ready_count": ready_count(gemini),
         "gemini_probe_attempts": 2,
         "gemini_health_classification": _snapshot_health_classification(gemini),
+        "codex_liveness": "READY" if codex.get("discovered") else "UNAVAILABLE",
+        "codex_state": codex_state,
+        "codex_returncode": 124 if codex_state == "TIMEOUT" else (0 if codex_state == "READY" else None),
+        "codex_timed_out": codex_state == "TIMEOUT",
+        "codex_ready_count": ready_count(codex),
+        "codex_probe_attempts": 2,
+        "codex_health_classification": _snapshot_health_classification(codex),
         "selected_provider": selected_provider,
     }
 
