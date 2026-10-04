@@ -26,7 +26,7 @@ from typing import Any, Sequence
 from .antigravity_relay import RELAY_SCHEMA, RECEIPT_SCHEMA, RelayPaths, share_relay_path
 
 
-SUPPORTED_PROVIDERS = {"claude", "agy", "gemini"}
+SUPPORTED_PROVIDERS = {"claude", "agy", "gemini", "codex"}
 
 
 def _utc_now() -> str:
@@ -74,6 +74,20 @@ def _discover_gemini() -> list[str] | None:
     return None
 
 
+def _discover_codex() -> list[str] | None:
+    # Provider-owned fixed allowlist only. Never accept capsule-supplied paths.
+    candidates = [
+        Path.home() / ".local/bin/codex",
+        Path.home() / ".npm-global/bin/codex",
+        Path("/usr/local/bin/codex"),
+        Path("/usr/bin/codex"),
+    ]
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return [str(candidate)]
+    return None
+
+
 def discover_executor(provider: str | None = None) -> tuple[str, list[str] | None]:
     selected = str(provider or os.environ.get("AGENTOS_ANTIGRAVITY_PROVIDER") or "claude").strip().lower()
     if selected not in SUPPORTED_PROVIDERS:
@@ -82,6 +96,8 @@ def discover_executor(provider: str | None = None) -> tuple[str, list[str] | Non
         return selected, _discover_agy()
     if selected == "gemini":
         return selected, _discover_gemini()
+    if selected == "codex":
+        return selected, _discover_codex()
     return selected, _discover_claude()
 
 
@@ -191,13 +207,30 @@ class AntigravityRelayWorker:
             return [*self.executor, "run", "--task", prompt, "--workspace", str(workspace)]
         if self.provider == "gemini":
             return [*self.executor, "--skip-trust", "--approval-mode", "auto_edit", "--output-format", "text", "-p", prompt]
+        if self.provider == "codex":
+            ir = capsule.get("canonical_ir") if isinstance(capsule.get("canonical_ir"), dict) else {}
+            operation = str(ir.get("operation") or "").strip()
+            if operation not in {"agent.chat", "code.edit"}:
+                raise ValueError("Codex relay operation is not allowlisted")
+            sandbox = "read-only" if operation == "agent.chat" else "workspace-write"
+            return [
+                *self.executor,
+                "-a", "never",
+                "exec",
+                "--skip-git-repo-check",
+                "--sandbox", sandbox,
+                "--color", "never",
+                "--ephemeral",
+                "-C", str(workspace),
+                prompt,
+            ]
         return [*self.executor, prompt]
 
     def _run_executor(self, capsule: dict[str, Any], workspace: Path) -> dict[str, Any]:
         provider = self.provider
         executor = self.executor
         hint = str(capsule.get("executor_hint") or "").strip().lower()
-        if hint in {"provider:claude", "provider:agy", "provider:gemini"}:
+        if hint in {"provider:claude", "provider:agy", "provider:gemini", "provider:codex"}:
             provider, executor = discover_executor(hint.split(":", 1)[1])
         if not executor:
             raise RuntimeError(f"no authorized local Antigravity executor discovered for provider={provider}")
@@ -206,6 +239,23 @@ class AntigravityRelayWorker:
             argv = [*executor, "run", "--task", prompt, "--workspace", str(workspace)]
         elif provider == "gemini":
             argv = [*executor, "--skip-trust", "--approval-mode", "auto_edit", "--output-format", "text", "-p", prompt]
+        elif provider == "codex":
+            ir = capsule.get("canonical_ir") if isinstance(capsule.get("canonical_ir"), dict) else {}
+            operation = str(ir.get("operation") or "").strip()
+            if operation not in {"agent.chat", "code.edit"}:
+                raise ValueError("Codex relay operation is not allowlisted")
+            sandbox = "read-only" if operation == "agent.chat" else "workspace-write"
+            argv = [
+                *executor,
+                "-a", "never",
+                "exec",
+                "--skip-git-repo-check",
+                "--sandbox", sandbox,
+                "--color", "never",
+                "--ephemeral",
+                "-C", str(workspace),
+                prompt,
+            ]
         else:
             argv = [*executor, prompt]
         proc = subprocess.Popen(

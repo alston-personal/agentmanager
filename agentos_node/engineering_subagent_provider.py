@@ -415,7 +415,7 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
     # Gemini remains observable in the durable snapshot, but consumer OAuth
     # currently classifies as OAUTH_CLIENT_UNSUPPORTED. Do not route Main Agent
     # work to it until a supported governed identity is introduced explicitly.
-    for provider, item in (("claude", claude), ("agy", agy)):
+    for provider, item in (("claude", claude), ("agy", agy), ("codex", codex)):
         if item.get("stable_routable") is True:
             selected_provider = provider
             break
@@ -539,12 +539,16 @@ def run_engineering_subagent(
 
     client = AntigravityRelayClient(relay_root)
     if spec.job_type == "engineering.model.smoke":
-        canonical_ir = {"schema": "agentos.engineering-subagent-ir/v1"}
+        canonical_ir = {
+            "schema": "agentos.engineering-subagent-ir/v1",
+            "operation": "agent.chat",
+        }
         instruction = "AgentOS routed model smoke. Do not modify files. Reply exactly READY."
     else:
         canonical_ir = {
             "schema": "agentos.engineering-subagent-ir/v1",
             "goal": JOBS[spec.job_type]["goal"],
+            "operation": "code.edit",
             "constraints": [
                 f"workload_ref={JOBS[spec.job_type]['workload_ref']}",
                 f"branch={JOBS[spec.job_type]['branch'] or 'none'}",
@@ -590,7 +594,7 @@ def run_engineering_subagent(
             executor_available=classification != "ENGINEERING_EXECUTOR_UNAVAILABLE",
         )
         provider = str(receipt.get("provider") or "").strip().lower()
-        if provider in {"claude", "agy", "gemini"}:
+        if provider in {"claude", "agy", "gemini", "codex"}:
             result["executor_provider"] = provider
         else:
             result["executor_provider"] = selected_provider
