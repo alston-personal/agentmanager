@@ -110,7 +110,7 @@ def test_gemini_cli_health_uses_fixed_headless_plan_mode(tmp_path, monkeypatch):
     captured = {}
     class Result:
         returncode = 0
-        stdout = "READY\n"
+        stdout = '{"response":"READY","stats":{},"error":null}'
         stderr = ""
 
     def fake_run(argv, **kwargs):
@@ -131,7 +131,7 @@ def test_gemini_cli_health_uses_fixed_headless_plan_mode(tmp_path, monkeypatch):
     assert argv[argv.index("--approval-mode") + 1] == "plan"
     assert "--skip-trust" in argv
     assert "--output-format" in argv
-    assert argv[argv.index("--output-format") + 1] == "text"
+    assert argv[argv.index("--output-format") + 1] == "json"
 
 
 def test_gemini_cli_health_disables_workspace_hooks_without_changing_home(tmp_path, monkeypatch):
@@ -149,7 +149,7 @@ def test_gemini_cli_health_disables_workspace_hooks_without_changing_home(tmp_pa
     seen = {}
     class Result:
         returncode = 0
-        stdout = "READY"
+        stdout = '{"response":"READY","stats":{},"error":null}'
         stderr = ""
 
     def fake_run(argv, **kwargs):
@@ -168,3 +168,15 @@ def test_gemini_cli_health_disables_workspace_hooks_without_changing_home(tmp_pa
     assert seen["settings"]["hooksConfig"]["enabled"] is False
     assert seen["settings"]["skills"]["enabled"] is False
     assert seen["cwd"] != "/home/ubuntu/agentmanager"
+
+
+def test_gemini_json_error_classification_is_bounded():
+    from agentos_node.gemini_cli_install_provider import _classify_gemini_json_error
+
+    assert _classify_gemini_json_error("FatalAuthenticationError", 1, 1) == "GEMINI_CLI_AUTH_REQUIRED"
+    assert _classify_gemini_json_error("ResourceExhaustedError", 1, 1) == "GEMINI_CLI_RATE_LIMITED"
+    assert _classify_gemini_json_error("FatalConfigError", 1, 1) == "GEMINI_CLI_CONFIG_ERROR"
+    assert _classify_gemini_json_error("BadRequestError", 1, 1) == "GEMINI_CLI_API_REQUEST_ERROR"
+    assert _classify_gemini_json_error("MysteryProviderError", 1, 1) == "GEMINI_CLI_API_ERROR"
+    assert _classify_gemini_json_error("", None, 42) == "GEMINI_CLI_CLI_CONTRACT"
+    assert _classify_gemini_json_error("", None, 53) == "GEMINI_CLI_TURN_LIMIT"

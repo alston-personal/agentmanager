@@ -189,6 +189,27 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
     return "GEMINI_CLI_HEALTH_NONZERO"
 
 
+def _classify_gemini_json_error(error_type: str, error_code: Any, returncode: int) -> str:
+    value = str(error_type or "").strip().casefold()
+    if returncode == 42:
+        return "GEMINI_CLI_CLI_CONTRACT"
+    if returncode == 53:
+        return "GEMINI_CLI_TURN_LIMIT"
+    if "auth" in value or "credential" in value or "login" in value:
+        return "GEMINI_CLI_AUTH_REQUIRED"
+    if any(token in value for token in ("rate", "quota", "resourceexhaust", "resource_exhaust")):
+        return "GEMINI_CLI_RATE_LIMITED"
+    if "config" in value or "settings" in value:
+        return "GEMINI_CLI_CONFIG_ERROR"
+    if "network" in value or "connection" in value or "fetch" in value:
+        return "GEMINI_CLI_NETWORK"
+    if "badrequest" in value or "invalidargument" in value or "input" in value:
+        return "GEMINI_CLI_API_REQUEST_ERROR"
+    if value:
+        return "GEMINI_CLI_API_ERROR"
+    return "GEMINI_CLI_HEALTH_NONZERO"
+
+
 def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
     spec = validate_executor_job(request)
     if spec.job_type != HEALTH_JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
@@ -217,7 +238,7 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         "plan",
         "--skip-trust",
         "--output-format",
-        "text",
+        "json",
     ]
     with tempfile.TemporaryDirectory(prefix="agentos-gemini-health-") as health_dir:
         temp_root = Path(health_dir)
@@ -260,9 +281,28 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         except OSError:
             return _failure("GEMINI_CLI_HEALTH_LAUNCH_ERROR", executor_available=False, routable=False, authorized=False)
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    ready = proc.returncode == 0 and "READY" in combined
+    payload: dict[str, Any] | None = None
+    try:
+        value = json.loads(proc.stdout or "")
+        if isinstance(value, dict):
+            payload = value
+    except json.JSONDecodeError:
+        payload = None
+
+    response = str((payload or {}).get("response") or "").strip()
+    ready = proc.returncode == 0 and response == "READY"
     if not ready:
-        classification = _classify_health_failure(proc.returncode, combined)
+        error = (payload or {}).get("error")
+        if isinstance(error, dict):
+            classification = _classify_gemini_json_error(
+                str(error.get("type") or ""),
+                error.get("code"),
+                int(proc.returncode),
+            )
+        elif proc.returncode == 0:
+            classification = "GEMINI_CLI_JSON_RESPONSE_INVALID"
+        else:
+            classification = _classify_health_failure(proc.returncode, combined)
         authorized = classification not in {"GEMINI_CLI_AUTH_REQUIRED"}
         result = _failure(classification, executor_available=True, routable=False, authorized=authorized)
         result["executor_returncode"] = int(proc.returncode)
