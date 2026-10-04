@@ -171,6 +171,8 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
     text = combined.casefold()
     if timed_out:
         return "GEMINI_CLI_HEALTH_TIMEOUT"
+    if any(token in text for token in ("ineligibletiererror", "unsupported_client", "this client is no longer supported", "migrate to antigravity")):
+        return "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
     if any(token in text for token in ("login", "log in", "sign in", "unauthorized", "authentication required", "not authenticated", "authenticate", "oauth", "credential", "invalid_grant", "reauth")):
         return "GEMINI_CLI_AUTH_REQUIRED"
     if any(token in text for token in ("rate limit", "too many requests", "quota", "resource exhausted")):
@@ -335,7 +337,7 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
             )
         elif classification == "GEMINI_CLI_HEALTH_NONZERO" and proc.returncode == 0:
             classification = "GEMINI_CLI_JSON_RESPONSE_INVALID"
-        authorized = classification not in {"GEMINI_CLI_AUTH_REQUIRED"}
+        authorized = classification not in {"GEMINI_CLI_AUTH_REQUIRED", "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"}
         result = _failure(classification, executor_available=True, routable=False, authorized=authorized)
         diagnostic_tags = _gemini_health_diagnostic_tags(combined, payload)
         result["executor_returncode"] = int(proc.returncode)
