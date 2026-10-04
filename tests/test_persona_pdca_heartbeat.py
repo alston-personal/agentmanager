@@ -19,4 +19,14 @@ class HeartbeatDiscoveryTests(unittest.TestCase):
             self.assertEqual([x[0].name for x in rows],["oursong_alstonhuang","sunlake-milkcat"])
             self.assertEqual({x[2]["cycle"] for x in rows},{0})
 
+    def test_schedules_one_read_only_observation_without_duplicate(self):
+        state={"pending_external_actions":[]}
+        hb.schedule_social_observe("oursong_alstonhuang",state,22,"2026-10-04T10:00:00Z")
+        self.assertEqual(len(state["pending_external_actions"]),1)
+        action=state["pending_external_actions"][0]
+        self.assertEqual(action["capability"],"social.threads.observe")
+        self.assertEqual(action["status"],"candidate")
+        self.assertTrue(action["requires_real_adapter_receipt"])
+        hb.schedule_social_observe("oursong_alstonhuang",state,23,"2026-10-04T11:00:00Z")
+        self.assertEqual(len(state["pending_external_actions"]),1)
 if __name__=="__main__": unittest.main()
