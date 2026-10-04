@@ -31,6 +31,7 @@ def test_core_profiles_load_and_bound_adapters():
     assert isinstance(gemini, GeminiCliProvider)
     assert sorted(claude.capabilities()) == ["agent.chat", "code.edit"]
     assert sorted(antigravity.capabilities()) == ["agent.chat", "code.edit"]
+    assert sorted(gemini.capabilities()) == ["agent.chat", "code.edit"]
 
 
 def test_provider_profile_rejects_caller_execution_authority():
