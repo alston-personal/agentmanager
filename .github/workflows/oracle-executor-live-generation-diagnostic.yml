@@ -74,3 +74,34 @@ jobs:
               break
           print(json.dumps(rows,sort_keys=True,separators=(',',':')))
           PY
+
+      - name: Inspect bounded Gemini install spool state
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data/runtime/action-relay')
+          rows=[]
+          for state in ('inbox','processing','receipts','quarantine'):
+              d=root/state
+              if not d.is_dir():
+                  continue
+              for p in d.glob('action-*.json'):
+                  try:
+                      x=json.loads(p.read_text(encoding='utf-8'))
+                  except Exception:
+                      continue
+                  if x.get('job_type')!='gemini.cli.install' and (x.get('params') or {}).get('request',{}).get('job_type')!='gemini.cli.install':
+                      continue
+                  rows.append({
+                      'state':state,
+                      'capsule_id':x.get('capsule_id') or p.stem,
+                      'age_seconds':max(0,int(time.time()-p.stat().st_mtime)),
+                      'classification':x.get('classification'),
+                      'successful':x.get('successful'),
+                  })
+          print(json.dumps(sorted(rows,key=lambda r:r['age_seconds'])[:10],sort_keys=True,separators=(',',':')))
+          PY
