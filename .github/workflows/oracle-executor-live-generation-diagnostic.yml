@@ -106,3 +106,11 @@ jobs:
                   })
           print(json.dumps(sorted(rows,key=lambda r:r['age_seconds'])[:10],sort_keys=True,separators=(',',':')))
           PY
+
+      - name: Inspect Node and npm prerequisite versions
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "node_version=$(node --version 2>/dev/null || echo MISSING)"
+          echo "npm_version=$(npm --version 2>/dev/null || echo MISSING)"
