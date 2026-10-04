@@ -165,3 +165,46 @@ def test_gemini_cli_health_disables_workspace_hooks_without_changing_home(tmp_pa
     assert seen["settings"]["hooksConfig"]["enabled"] is False
     assert seen["settings"]["skills"]["enabled"] is False
     assert seen["cwd"] != "/home/ubuntu/agentmanager"
+
+
+def test_gemini_install_success_projects_bounded_version(monkeypatch, tmp_path: Path):
+    import json
+    import agentos_node.gemini_cli_install_provider as provider
+
+    root = tmp_path
+    installer = root / "scripts/install_oracle_gemini_cli_one.sh"
+    installer.parent.mkdir(parents=True)
+    installer.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+
+    monkeypatch.setattr(provider, "EXPECTED_HOME", tmp_path)
+    monkeypatch.setattr(provider, "DATA_ROOT", tmp_path / "agent-data")
+    provider.DATA_ROOT.mkdir()
+    monkeypatch.setenv("USER", "ubuntu")
+    monkeypatch.setattr(provider.Path, "home", classmethod(lambda cls: tmp_path))
+
+    receipt = provider.DATA_ROOT / "runtime/gemini-cli-one/install-receipt.json"
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text(json.dumps({
+        "schema": "agentos.gemini-cli-one-install-receipt/v1",
+        "gemini_cli_version": "9.9.9",
+        "cli_installed": True,
+        "one_mcp_configured": True,
+        "session_start_hook_configured": True,
+        "credential_exposed": False,
+        "auth_ready": None,
+        "live_sessionstart_verified": None,
+    }), encoding="utf-8")
+    monkeypatch.setattr(provider, "RECEIPT_FILE", receipt)
+
+    class Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+    monkeypatch.setattr(provider.subprocess, "run", lambda *a, **k: Proc())
+
+    result = provider.run_gemini_cli_install(
+        canonical_gemini_cli_install_request(),
+        runtime_root=root,
+    )
+    assert result["classification"] == "GEMINI_CLI_ONE_INSTALL_PASS"
+    assert result["gemini_cli_version"] == "9.9.9"
