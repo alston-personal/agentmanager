@@ -143,7 +143,17 @@ PY
 
 # Converge to exactly one governed consumer for this spool.
 # Never terminate a consumer while a capsule may have unknown side effects.
-systemctl --user stop agentos-action-relay.service 2>/dev/null || true
+if systemctl --user list-unit-files agentos-action-relay.service >/dev/null 2>&1; then
+  if ! systemctl --user stop agentos-action-relay.service; then
+    echo "ERROR: unable to stop managed Action Relay service" >&2
+    exit 61
+  fi
+fi
+if systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; then
+  echo "ERROR: managed Action Relay service remained active after stop" >&2
+  exit 61
+fi
+echo "action_relay_managed_service_stopped=PASS"
 
 processing_clear=0
 for i in $(seq 1 90); do
@@ -155,7 +165,7 @@ for i in $(seq 1 90); do
 done
 if [ "$processing_clear" -ne 1 ]; then
   echo "ERROR: Action Relay processing did not drain before consumer cleanup" >&2
-  exit 6
+  exit 62
 fi
 echo "action_relay_processing_drain=PASS"
 
@@ -163,6 +173,8 @@ relay_consumer_pids() {
   local pid comm cmdline
   while read -r pid; do
     [ -n "$pid" ] || continue
+    state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)
+    [ "$state" = "Z" ] && continue
     comm=$(cat "/proc/$pid/comm" 2>/dev/null || true)
     case "$comm" in
       python|python3|python3.*) ;;
@@ -197,10 +209,17 @@ for pid in "${stubborn_relay_pids[@]:-}"; do
   [ -n "$pid" ] || continue
   kill -KILL "$pid" 2>/dev/null || true
 done
+for i in $(seq 1 20); do
+  mapfile -t remaining_relay_pids < <(relay_consumer_pids)
+  if [ "${#remaining_relay_pids[@]}" -eq 0 ]; then
+    break
+  fi
+  sleep 0.25
+done
 mapfile -t remaining_relay_pids < <(relay_consumer_pids)
 if [ "${#remaining_relay_pids[@]}" -ne 0 ]; then
   echo "ERROR: stale Action Relay consumer remains after bounded cleanup" >&2
-  exit 6
+  exit 63
 fi
 echo "action_relay_prior_consumers_cleared=PASS"
 
@@ -254,21 +273,21 @@ fi
 mapfile -t live_relay_pids < <(relay_consumer_pids)
 if [ "${#live_relay_pids[@]}" -ne 1 ]; then
   echo "ERROR: expected exactly one canonical Action Relay consumer; observed=${#live_relay_pids[@]}" >&2
-  exit 6
+  exit 64
 fi
 relay_pid="${live_relay_pids[0]}"
 cmdline=$(tr '\0' ' ' < "/proc/$relay_pid/cmdline" 2>/dev/null || true)
 case "$cmdline" in
   *"python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT"*) ;;
-  *) echo "ERROR: canonical Action Relay consumer command mismatch" >&2; exit 6 ;;
+  *) echo "ERROR: canonical Action Relay consumer command mismatch" >&2; exit 65 ;;
 esac
 if ! tr '\0' '\n' < "/proc/$relay_pid/environ" | grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF"; then
   echo "ERROR: canonical Action Relay source-ref environment mismatch" >&2
-  exit 6
+  exit 66
 fi
 if ! tr '\0' '\n' < "/proc/$relay_pid/environ" | grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT"; then
   echo "ERROR: canonical Action Relay source-commit environment mismatch" >&2
-  exit 6
+  exit 67
 fi
 echo "action_relay_single_consumer=PASS"
 echo "action_relay_runtime_generation_env=PASS"
