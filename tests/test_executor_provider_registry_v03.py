@@ -16,22 +16,26 @@ from agentos_node.executor_provider_adapters import (
     GeminiCliProvider,
     INVOKE_SCHEMA,
 )
+from agentos_node.codex_provider_adapter import CodexProvider
 
 
 def test_core_profiles_load_and_bound_adapters():
     profiles = {p["executor_id"]: p for p in load_provider_profiles()}
-    assert {"claude-code", "antigravity", "gemini"} <= set(profiles)
+    assert {"claude-code", "antigravity", "gemini", "codex"} <= set(profiles)
 
     claude = load_provider(profiles["claude-code"])
     antigravity = load_provider(profiles["antigravity"])
     gemini = load_provider(profiles["gemini"])
+    codex = load_provider(profiles["codex"])
 
     assert isinstance(claude, ClaudeCodeProvider)
     assert isinstance(antigravity, AntigravityProvider)
     assert isinstance(gemini, GeminiCliProvider)
+    assert isinstance(codex, CodexProvider)
     assert sorted(claude.capabilities()) == ["agent.chat", "code.edit"]
     assert sorted(antigravity.capabilities()) == ["agent.chat", "code.edit"]
     assert sorted(gemini.capabilities()) == ["agent.chat", "code.edit"]
+    assert sorted(codex.capabilities()) == ["agent.chat", "code.edit"]
 
 
 def test_provider_profile_rejects_caller_execution_authority():
@@ -246,3 +250,47 @@ def test_gemini_provider_health_uses_extended_bounded_timeout(monkeypatch, tmp_p
     assert result["state"] == "READY"
     assert captured["provider"] == "gemini"
     assert captured["timeout_seconds"] == 60.0
+
+
+def test_codex_health_requires_real_model_probe_after_login(monkeypatch, tmp_path: Path):
+    import agentos_node.codex_provider_adapter as codex
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    monkeypatch.setitem(codex.WORKSPACES, "agentos-core", workspace)
+    monkeypatch.setattr(codex, "_discover_codex", lambda: "/home/ubuntu/.local/bin/codex")
+    calls = []
+
+    def fake_run(executable, argv, **kwargs):
+        calls.append(list(argv))
+        if argv[:2] == ["login", "status"]:
+            return 0, "Logged in using ChatGPT", False
+        return 0, "READY", False
+
+    monkeypatch.setattr(codex, "_run", fake_run)
+    result = codex.CodexProvider().health()
+    assert result["state"] == "READY"
+    assert result["routable"] is True
+    assert calls[0] == ["login", "status"]
+    assert "exec" in calls[1]
+    assert "read-only" in calls[1]
+
+
+def test_codex_health_does_not_treat_runtime_401_as_ready(monkeypatch, tmp_path: Path):
+    import agentos_node.codex_provider_adapter as codex
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    monkeypatch.setitem(codex.WORKSPACES, "agentos-core", workspace)
+    monkeypatch.setattr(codex, "_discover_codex", lambda: "/home/ubuntu/.local/bin/codex")
+
+    responses = iter([
+        (0, "Logged in using ChatGPT", False),
+        (1, "401 Unauthorized: Incorrect API key provided", False),
+    ])
+    monkeypatch.setattr(codex, "_run", lambda *args, **kwargs: next(responses))
+    result = codex.CodexProvider().health()
+    assert result["classification"] == "AUTH_RUNTIME_REJECTED"
+    assert result["authorized"] is False
+    assert result["routable"] is False
+    assert result["healthy"] is False
