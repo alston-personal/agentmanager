@@ -529,3 +529,49 @@ def test_snapshot_health_falls_back_to_bounded_provider_exception_type():
     assert result["claude_health_classification"] == "PROVIDER_EXCEPTION_RUNTIMEERROR"
     assert result["agy_health_classification"] == "PROVIDER_EXCEPTION_VALUEERROR"
     assert result["selected_provider"] == ""
+
+
+def test_probe_diagnostic_classifies_cli_rate_network_and_auth():
+    from agentos_node.engineering_subagent_provider import _classify_probe_diagnostic
+    assert _classify_probe_diagnostic(2, "Usage: agy\nunknown command run", timed_out=False) == "CLI_CONTRACT"
+    assert _classify_probe_diagnostic(1, "resource exhausted: quota exceeded", timed_out=False) == "RATE_LIMITED"
+    assert _classify_probe_diagnostic(1, "connection refused", timed_out=False) == "NETWORK"
+    assert _classify_probe_diagnostic(1, "please login", timed_out=False) == "AUTH_REQUIRED"
+    assert _classify_probe_diagnostic(124, "", timed_out=True) == "TIMEOUT"
+
+
+def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+    import agentos_node.executor_reconcile as reconcile
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    monkeypatch.setattr(
+        reconcile,
+        "reconcile_executor_adoption",
+        lambda **kwargs: {"ok": True, "executor_adoption": {"schema": "agentos.executor-adoption/v0.2"}},
+    )
+    probes = {
+        "claude": {
+            "state": "TIMEOUT", "classification": "TIMEOUT", "returncode": 124,
+            "timed_out": True, "ready_count": 0, "attempts": 2,
+        },
+        "agy": {
+            "state": "ERROR", "classification": "CLI_CONTRACT", "returncode": 2,
+            "timed_out": False, "ready_count": 0, "attempts": 2,
+        },
+    }
+    monkeypatch.setattr(provider, "_probe_provider_stability", lambda name, *args, **kwargs: dict(probes[name]))
+    monkeypatch.setattr(provider, "_probe_binary_liveness", lambda name: "READY")
+
+    result = provider._run_executor_health(workspace)
+    assert result["claude_state"] == "TIMEOUT"
+    assert result["claude_health_classification"] == "TIMEOUT"
+    assert result["claude_probe_attempts"] == 2
+    assert result["agy_state"] == "ERROR"
+    assert result["agy_health_classification"] == "CLI_CONTRACT"
+    assert result["agy_probe_attempts"] == 2
+    assert result["selected_provider"] == ""
+    assert result["successful"] is False
