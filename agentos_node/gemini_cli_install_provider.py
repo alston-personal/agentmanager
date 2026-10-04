@@ -43,10 +43,18 @@ def _classify_install_failure(returncode: int, combined: str) -> str:
         return "GEMINI_CLI_PREREQUISITE_MISSING"
     if returncode == 4 or "agentos data root missing" in text:
         return "GEMINI_CLI_AGENT_DATA_ROOT_UNAVAILABLE"
-    if "permission denied" in text or "eacces" in text:
+    if any(token in text for token in ("permission denied", "eacces", "operation not permitted")):
         return "GEMINI_CLI_INSTALL_PERMISSION_DENIED"
-    if any(token in text for token in ("network is unreachable", "enotfound", "eai_again", "connection reset", "etimedout")):
+    if any(token in text for token in (
+        "ebadengine", "unsupported engine", "required: { node", "not compatible with your version of node"
+    )):
+        return "GEMINI_CLI_NODE_INCOMPATIBLE"
+    if any(token in text for token in (
+        "network is unreachable", "enotfound", "eai_again", "connection reset", "socket hang up", "etimedout"
+    )):
         return "GEMINI_CLI_INSTALL_NETWORK"
+    if any(token in text for token in ("e404", "404 not found", "package not found")):
+        return "GEMINI_CLI_PACKAGE_UNAVAILABLE"
     if "npm err!" in text or "npm error" in text:
         return "GEMINI_CLI_INSTALL_NPM_FAILED"
     return "GEMINI_CLI_INSTALL_COMMAND_FAILED"
