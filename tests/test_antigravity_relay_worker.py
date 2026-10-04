@@ -152,6 +152,25 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
             self.assertNotIn("sh", argv)
             self.assertNotIn("bash", argv)
 
+    def test_trusted_provider_hint_selects_gemini_with_headless_argv(self) -> None:
+        with tempfile.TemporaryDirectory() as td, \
+             patch("agentos_node.antigravity_relay_worker.discover_executor", return_value=("gemini", ["/bin/echo"])):
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(workspace / "relay", executor=["/bin/false"], provider="agy")
+            result = worker._run_executor(
+                {
+                    "canonical_ir": {"goal": "probe"},
+                    "instruction": "Return exactly PASS",
+                    "executor_hint": "provider:gemini",
+                },
+                workspace,
+            )
+        self.assertEqual(result["provider"], "gemini")
+        self.assertEqual(result["executor"], "/bin/echo")
+        self.assertEqual(result["returncode"], 0)
+        self.assertIn("--approval-mode auto_edit", result["stdout"])
+        self.assertIn("--output-format text -p", result["stdout"])
+
     def test_trusted_provider_hint_selects_claude_without_caller_argv(self) -> None:
         with tempfile.TemporaryDirectory() as td, \
              patch("agentos_node.antigravity_relay_worker.discover_executor", return_value=("claude", ["/bin/true"])):
