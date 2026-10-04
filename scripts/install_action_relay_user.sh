@@ -180,6 +180,17 @@ fi
 # an in-flight processing capsule impossible to complete.
 processing_clear=0
 for i in $(seq 1 90); do
+  # Fresh processing is allowed to finish normally. A processing capsule older
+  # than the existing conservative 600s threshold cannot be a valid in-flight
+  # execution under the 180s worker timeout; reconcile it as UNKNOWN_SIDE_EFFECT
+  # rather than replaying or waiting forever.
+  PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - "$RELAY_ROOT" <<'PY' || true
+from pathlib import Path
+import sys
+from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
+
+AntigravityRelayWorker(Path(sys.argv[1])).reconcile_stranded_processing(stale_after=600)
+PY
   if ! find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
     processing_clear=1
     break
