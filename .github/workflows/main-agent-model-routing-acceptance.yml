@@ -5,6 +5,12 @@ on:
     branches: [core/integration]
     paths:
       - '.github/workflows/main-agent-model-routing-acceptance.yml'
+      - 'agentos_node/engineering_subagent_provider.py'
+      - 'agentos_node/executor_provider_adapters.py'
+      - 'agentos_node/executor_reconcile.py'
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/executor_job_action_relay.py'
   workflow_dispatch:
 
 permissions:
