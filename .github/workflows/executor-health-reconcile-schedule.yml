@@ -101,6 +101,9 @@ jobs:
           print('agy_state='+str(job.get('agy_state') or 'none'))
           print('agy_ready_count='+str(job.get('agy_ready_count') if isinstance(job.get('agy_ready_count'),int) else 'none'))
           print('agy_health_classification='+str(job.get('agy_health_classification') or 'none'))
+          print('gemini_state='+str(job.get('gemini_state') or 'none'))
+          print('gemini_ready_count='+str(job.get('gemini_ready_count') if isinstance(job.get('gemini_ready_count'),int) else 'none'))
+          print('gemini_health_classification='+str(job.get('gemini_health_classification') or 'none'))
           print('runtime_source_commit='+str(job.get('runtime_source_commit') or 'none'))
           raise SystemExit(0)
           PY
