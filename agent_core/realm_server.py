@@ -116,7 +116,11 @@ def _validate_github_scheduler_claims(payload: dict[str, Any]) -> None:
     )
     if not (canonical_ref or health_carrier):
         raise PermissionError('github oidc ref invalid')
-    if str(payload.get('event_name') or '') not in {'push', 'workflow_dispatch', 'schedule'}:
+    event_name = str(payload.get('event_name') or '')
+    allowed_events = {'push', 'workflow_dispatch', 'schedule'}
+    if health_carrier:
+        allowed_events.add('issue_comment')
+    if event_name not in allowed_events:
         raise PermissionError('github oidc event invalid')
     sha = str(payload.get('sha') or '')
     if not re.fullmatch(r'[0-9a-f]{40}', sha):
