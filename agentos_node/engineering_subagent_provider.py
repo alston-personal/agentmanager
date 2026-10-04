@@ -170,6 +170,31 @@ def _classify_probe_output(returncode: int, text: str, *, timed_out: bool) -> st
     return "ERROR"
 
 
+def _classify_probe_diagnostic(returncode: int, text: str, *, timed_out: bool) -> str:
+    lowered = text.casefold()
+    if any(token in lowered for token in ("login", "sign in", "auth required", "not authenticated", "unauthorized")):
+        return "AUTH_REQUIRED"
+    if timed_out:
+        return "TIMEOUT"
+    if returncode == 0:
+        return "READY"
+    if any(token in lowered for token in (
+        "unknown command", "unrecognized argument", "unrecognized option",
+        "no such option", "invalid option", "usage:",
+    )):
+        return "CLI_CONTRACT"
+    if any(token in lowered for token in (
+        "rate limit", "rate_limit", "quota", "too many requests", "resource exhausted",
+    )):
+        return "RATE_LIMITED"
+    if any(token in lowered for token in (
+        "connection refused", "connection reset", "network is unreachable",
+        "temporary failure", "timed out connecting", "dns",
+    )):
+        return "NETWORK"
+    return "NONZERO"
+
+
 def _probe_binary_liveness(provider: str) -> str:
     try:
         selected, executable = discover_executor(provider)
@@ -235,19 +260,22 @@ def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_second
         text = (completed.stdout or "")[-4000:] + "\n" + (completed.stderr or "")[-4000:]
         return {
             "state": _classify_probe_output(int(completed.returncode), text, timed_out=False),
+            "classification": _classify_probe_diagnostic(int(completed.returncode), text, timed_out=False),
             "returncode": int(completed.returncode),
             "timed_out": False,
         }
     except subprocess.TimeoutExpired as exc:
         out = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else str(exc.stdout or "")
         err = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else str(exc.stderr or "")
+        probe_text = out[-4000:] + "\n" + err[-4000:]
         return {
-            "state": _classify_probe_output(124, out[-4000:] + "\n" + err[-4000:], timed_out=True),
+            "state": _classify_probe_output(124, probe_text, timed_out=True),
+            "classification": _classify_probe_diagnostic(124, probe_text, timed_out=True),
             "returncode": 124,
             "timed_out": True,
         }
     except OSError:
-        return {"state": "UNAVAILABLE", "returncode": None, "timed_out": False}
+        return {"state": "UNAVAILABLE", "classification": "SPAWN_ERROR", "returncode": None, "timed_out": False}
 
 
 def _probe_provider_stability(
@@ -274,8 +302,11 @@ def _probe_provider_stability(
         else:
             state = "ERROR"
     last = results[-1]
+    classifications = [str(item.get("classification") or "") for item in results]
+    classification = next((value for value in classifications if value and value != "READY"), "READY" if state == "READY" else state)
     return {
         "state": state,
+        "classification": classification,
         "returncode": last.get("returncode"),
         "timed_out": any(item.get("timed_out") is True for item in results),
         "ready_count": ready_count,
@@ -399,7 +430,8 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
-    del workspace_path
+    # Keep the durable adoption snapshot current for subsequent model routing,
+    # but use independent bounded two-sample probes for this health receipt.
     try:
         from agentos_node.executor_reconcile import reconcile_executor_adoption
         reconcile_executor_adoption(node_id="oracle-core-node")
@@ -410,7 +442,39 @@ def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
             routable=False,
             authorized=False,
         )
-    return _health_from_snapshot(_load_executor_snapshot())
+
+    claude = _probe_provider_stability("claude", workspace_path, attempts=2)
+    agy = _probe_provider_stability("agy", workspace_path, attempts=2)
+    selected_provider = ""
+    for provider, result in (("claude", claude), ("agy", agy)):
+        if result.get("state") == "READY":
+            selected_provider = provider
+            break
+    ok = bool(selected_provider)
+    return {
+        "verdict": "PASS" if ok else "FAIL",
+        "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+        "executor_available": any(result.get("state") != "UNAVAILABLE" for result in (claude, agy)),
+        "routable": ok,
+        "authorized": ok,
+        "successful": ok,
+        "credential_exposed": False,
+        "claude_liveness": _probe_binary_liveness("claude"),
+        "claude_state": str(claude.get("state") or "ERROR"),
+        "claude_returncode": claude.get("returncode"),
+        "claude_timed_out": bool(claude.get("timed_out")),
+        "claude_ready_count": int(claude.get("ready_count") or 0),
+        "claude_probe_attempts": int(claude.get("attempts") or 0),
+        "claude_health_classification": str(claude.get("classification") or ""),
+        "agy_liveness": _probe_binary_liveness("agy"),
+        "agy_state": str(agy.get("state") or "ERROR"),
+        "agy_returncode": agy.get("returncode"),
+        "agy_timed_out": bool(agy.get("timed_out")),
+        "agy_ready_count": int(agy.get("ready_count") or 0),
+        "agy_probe_attempts": int(agy.get("attempts") or 0),
+        "agy_health_classification": str(agy.get("classification") or ""),
+        "selected_provider": selected_provider,
+    }
 
 
 def _read_executor_health() -> dict[str, Any]:
