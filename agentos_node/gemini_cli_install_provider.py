@@ -173,6 +173,8 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
         return "GEMINI_CLI_HEALTH_TIMEOUT"
     if any(token in text for token in ("login", "log in", "sign in", "unauthorized", "authentication required", "not authenticated", "authenticate", "oauth", "credential", "invalid_grant", "reauth")):
         return "GEMINI_CLI_AUTH_REQUIRED"
+    if any(token in text for token in ("ineligibletiererror", "unsupported_client", "no longer supported for gemini code assist for individuals", "migrate to the antigravity")):
+        return "GEMINI_CLI_CONSUMER_TIER_UNSUPPORTED"
     if any(token in text for token in ("rate limit", "too many requests", "quota", "resource exhausted")):
         return "GEMINI_CLI_RATE_LIMITED"
     if any(token in text for token in ("network is unreachable", "enotfound", "eai_again", "connection reset", "socket hang up", "etimedout")):
@@ -229,6 +231,8 @@ def _classify_gemini_json_error(error_type: str, error_code: Any, returncode: in
         return "GEMINI_CLI_TURN_LIMIT"
     if "auth" in value or "credential" in value or "login" in value:
         return "GEMINI_CLI_AUTH_REQUIRED"
+    if any(token in value for token in ("ineligibletier", "unsupported_client", "antigravity")):
+        return "GEMINI_CLI_CONSUMER_TIER_UNSUPPORTED"
     if any(token in value for token in ("rate", "quota", "resourceexhaust", "resource_exhaust")):
         return "GEMINI_CLI_RATE_LIMITED"
     if "config" in value or "settings" in value:

@@ -210,3 +210,11 @@ def test_gemini_cli_health_diagnostic_tags_are_structural_and_bounded():
     assert "secret@example.com" not in tags
     assert "/home/ubuntu/private" not in tags
     assert len(tags) <= 512
+
+
+def test_gemini_cli_health_classifies_consumer_tier_deprecation():
+    from agentos_node.gemini_cli_install_provider import _classify_health_failure, _classify_gemini_json_error
+
+    text = "IneligibleTierError reasonCode: UNSUPPORTED_CLIENT migrate to the Antigravity suite"
+    assert _classify_health_failure(1, text) == "GEMINI_CLI_CONSUMER_TIER_UNSUPPORTED"
+    assert _classify_gemini_json_error("IneligibleTierError", "UNSUPPORTED_CLIENT", 1, text) == "GEMINI_CLI_CONSUMER_TIER_UNSUPPORTED"
