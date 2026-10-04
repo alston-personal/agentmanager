@@ -289,6 +289,9 @@ class ClaudeCodeProvider(_RelayProvider):
     executor_class = "claude-code"
     relay_provider = "claude"
 
+    def health(self) -> dict[str, Any]:
+        return _health(self.relay_provider, timeout_seconds=60.0)
+
 
 class AntigravityProvider(_RelayProvider):
     executor_id = "antigravity"
