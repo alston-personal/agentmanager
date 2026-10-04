@@ -168,6 +168,8 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
     text = combined.casefold()
     if timed_out:
         return "GEMINI_CLI_HEALTH_TIMEOUT"
+    if returncode == 55:
+        return "GEMINI_CLI_WORKSPACE_UNTRUSTED"
     if any(token in text for token in ("login", "sign in", "unauthorized", "authentication required", "not authenticated")):
         return "GEMINI_CLI_AUTH_REQUIRED"
     if any(token in text for token in ("rate limit", "too many requests", "quota", "resource exhausted")):
@@ -203,6 +205,7 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         "AgentOS Gemini CLI health probe. Do not modify files. Reply exactly READY.",
         "--approval-mode",
         "plan",
+        "--skip-trust",
         "--output-format",
         "text",
     ]
