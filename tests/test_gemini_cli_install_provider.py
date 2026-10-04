@@ -126,5 +126,6 @@ def test_gemini_cli_health_uses_fixed_headless_plan_mode(tmp_path, monkeypatch):
     assert "-p" in argv
     assert "--approval-mode" in argv
     assert argv[argv.index("--approval-mode") + 1] == "plan"
+    assert "--skip-trust" in argv
     assert "--output-format" in argv
     assert argv[argv.index("--output-format") + 1] == "text"
