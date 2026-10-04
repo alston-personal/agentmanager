@@ -219,7 +219,7 @@ def _probe_binary_liveness(provider: str) -> str:
     return "READY" if completed.returncode == 0 else "ERROR"
 
 
-def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_seconds: float = 20.0) -> dict[str, Any]:
+def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_seconds: float = 45.0) -> dict[str, Any]:
     try:
         selected, executable = discover_executor(provider)
     except Exception:
