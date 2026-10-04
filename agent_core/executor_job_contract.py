@@ -98,6 +98,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://gemini-cli",
         read_only=True,
     ),
+    "codex.cli.install": JobTypeSpec(
+        job_type="codex.cli.install",
+        capability="agentos.executor.install.codex-cli",
+        authority="oracle-user-codex-cli-install",
+        executor_class="codex-cli",
+        project_id="agentos-core",
+        workload_ref="surface://codex-cli",
+        read_only=False,
+    ),
     "engineering.subagent.smoke": JobTypeSpec(
         job_type="engineering.subagent.smoke",
         capability="agentos.engineering.probe",
@@ -252,6 +261,10 @@ def canonical_gemini_cli_health_request() -> dict[str, str]:
     return canonical_executor_job_request("gemini.cli.health")
 
 
+def canonical_codex_cli_install_request() -> dict[str, str]:
+    return canonical_executor_job_request("codex.cli.install")
+
+
 def project_executor_job_submission(
     *,
     job_id: str,
@@ -345,6 +358,7 @@ def project_executor_job_receipt(
             "gemini_health_classification",
             "gemini_cli_version",
             "gemini_cli_diagnostic_tags",
+            "codex_cli_version",
             "codex_liveness",
             "codex_state",
             "codex_returncode",
