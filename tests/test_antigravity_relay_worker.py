@@ -182,11 +182,7 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
             self.assertNotIn("bash", argv)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-    def test_gemini_provider_uses_fixed_user_cli_path(self) -> None:
+def test_gemini_provider_uses_fixed_user_cli_path(self) -> None:
         fake_home = Path("/home/ubuntu")
         with patch("agentos_node.antigravity_relay_worker.Path.home", return_value=fake_home), \
              patch.object(Path, "is_file", return_value=True), \
@@ -248,3 +244,7 @@ if __name__ == "__main__":
             )
         self.assertEqual(result["provider"], "gemini")
         self.assertEqual(result["returncode"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
