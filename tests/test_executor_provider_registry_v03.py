@@ -190,6 +190,10 @@ def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp
 
     def fake_run(argv, **kwargs):
         captured["argv"] = list(argv)
+        captured["cwd"] = kwargs.get("cwd")
+        settings = Path(kwargs["cwd"]) / ".gemini" / "settings.json"
+        captured["settings"] = json.loads(settings.read_text(encoding="utf-8"))
+        captured["env"] = dict(kwargs.get("env") or {})
         return Result()
 
     monkeypatch.setattr(adapters.subprocess, "run", fake_run)
@@ -201,6 +205,10 @@ def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp
     assert "--output-format" in argv
     assert argv[argv.index("--output-format") + 1] == "text"
     assert result["state"] == "READY"
+    assert captured["settings"]["hooksConfig"]["enabled"] is False
+    assert captured["settings"]["skills"]["enabled"] is False
+    assert captured["env"]["HOME"] == "/home/ubuntu"
+    assert captured["cwd"] != str(workspace)
 
 
 def test_gemini_provider_health_uses_extended_bounded_timeout(monkeypatch, tmp_path: Path):

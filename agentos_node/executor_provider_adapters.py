@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -58,14 +61,36 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
             "healthy": False,
             "state": "INSTALL_REQUIRED",
         }
+    health_cwd = workspace
+    temp_health_root: tempfile.TemporaryDirectory[str] | None = None
+    run_env = None
+    if provider == "gemini":
+        temp_health_root = tempfile.TemporaryDirectory(prefix="agentos-gemini-health-")
+        health_cwd = Path(temp_health_root.name)
+        settings_dir = health_cwd / ".gemini"
+        settings_dir.mkdir(parents=True, exist_ok=True)
+        (settings_dir / "settings.json").write_text(
+            json.dumps({
+                "hooksConfig": {"enabled": False},
+                "skills": {"enabled": False},
+            }, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        run_env = {
+            **os.environ,
+            "HOME": "/home/ubuntu",
+            "USER": "ubuntu",
+            "CI": "1",
+        }
     try:
         completed = subprocess.run(
             command,
-            cwd=str(workspace),
+            cwd=str(health_cwd),
             capture_output=True,
             text=True,
             timeout=max(1.0, float(timeout_seconds)),
             check=False,
+            env=run_env,
         )
     except subprocess.TimeoutExpired:
         return {
@@ -87,6 +112,9 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
             "state": "UNHEALTHY",
             "classification": "SPAWN_ERROR",
         }
+    finally:
+        if temp_health_root is not None:
+            temp_health_root.cleanup()
 
     combined = (completed.stdout or "")[-4000:] + "\n" + (completed.stderr or "")[-4000:]
     if completed.returncode == 0:
