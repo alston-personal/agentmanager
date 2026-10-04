@@ -86,8 +86,11 @@ def _runtime_consumer_current(*, data_root: Path, source_commit: str) -> bool:
         if not entry.name.isdigit():
             continue
         try:
+            comm = (entry / "comm").read_text(encoding="utf-8").strip()
             raw = (entry / "cmdline").read_bytes()
         except OSError:
+            continue
+        if not (comm == "python" or comm == "python3" or comm.startswith("python3.")):
             continue
         cmdline = raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
         if legacy in cmdline:
