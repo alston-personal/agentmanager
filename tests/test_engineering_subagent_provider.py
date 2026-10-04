@@ -506,3 +506,26 @@ def test_relay_timeout_preserves_selected_provider(tmp_path: Path, monkeypatch):
     assert result["executor_provider"] == "agy"
     assert result["executor_timed_out"] is True
     assert result["successful"] is False
+
+
+def test_snapshot_health_falls_back_to_bounded_provider_exception_type():
+    import agentos_node.engineering_subagent_provider as provider
+
+    snapshot = {
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": "2026-10-04T00:00:00Z",
+        "executors": [
+            {
+                **_snapshot_row("claude-code", state="UNHEALTHY", stable=False, streak=0),
+                "provider_error": "RuntimeError",
+            },
+            {
+                **_snapshot_row("antigravity", state="UNHEALTHY", stable=False, streak=0),
+                "provider_error": "ValueError",
+            },
+        ],
+    }
+    result = provider._health_from_snapshot(snapshot)
+    assert result["claude_health_classification"] == "PROVIDER_EXCEPTION_RUNTIMEERROR"
+    assert result["agy_health_classification"] == "PROVIDER_EXCEPTION_VALUEERROR"
+    assert result["selected_provider"] == ""
