@@ -370,12 +370,14 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
         "claude_timed_out": claude_state == "TIMEOUT",
         "claude_ready_count": ready_count(claude),
         "claude_probe_attempts": 2,
+        "claude_health_classification": str((claude.get("provider_health") or {}).get("classification") or ""),
         "agy_liveness": "READY" if agy.get("discovered") else "UNAVAILABLE",
         "agy_state": agy_state,
         "agy_returncode": 124 if agy_state == "TIMEOUT" else (0 if agy_state == "READY" else None),
         "agy_timed_out": agy_state == "TIMEOUT",
         "agy_ready_count": ready_count(agy),
         "agy_probe_attempts": 2,
+        "agy_health_classification": str((agy.get("provider_health") or {}).get("classification") or ""),
         "selected_provider": selected_provider,
     }
 
