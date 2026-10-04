@@ -456,6 +456,7 @@ def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
     ok = bool(selected_provider)
     return {
         "verdict": "PASS" if ok else "FAIL",
+        "runtime_source_commit": str(os.environ.get("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT") or ""),
         "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
         "executor_available": any(result.get("state") != "UNAVAILABLE" for result in (claude, agy)),
         "routable": ok,
