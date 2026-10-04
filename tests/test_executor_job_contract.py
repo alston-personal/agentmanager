@@ -146,12 +146,18 @@ def test_health_receipt_preserves_only_bounded_provider_classifications():
             "classification": "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
             "claude_health_classification": "TIMEOUT",
             "agy_health_classification": "CLI_CONTRACT",
+            "gemini_health_classification": "READY",
+            "gemini_state": "READY",
+            "gemini_ready_count": 2,
             "stdout": "private",
             "stderr": "private",
         },
     )
     assert receipt["claude_health_classification"] == "TIMEOUT"
     assert receipt["agy_health_classification"] == "CLI_CONTRACT"
+    assert receipt["gemini_health_classification"] == "READY"
+    assert receipt["gemini_state"] == "READY"
+    assert receipt["gemini_ready_count"] == 2
     assert "stdout" not in receipt
     assert "stderr" not in receipt
 
