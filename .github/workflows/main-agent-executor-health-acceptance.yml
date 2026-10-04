@@ -1,6 +1,10 @@
 name: Main Agent Executor Health Acceptance
 
 on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/main-agent-executor-health-acceptance.yml'
   workflow_dispatch:
 
 permissions:
@@ -133,7 +137,7 @@ jobs:
           assert isinstance(r.get('agy_ready_count'), int), r
           assert r.get('agy_probe_attempts') == 2, r
           selected=str(r.get('selected_provider') or '')
-          assert selected in {'claude','agy'}, r
+          assert selected in {'claude','agy','gemini'}, r
           assert r.get('successful') is True, r
           assert r.get('classification')=='ENGINEERING_EXECUTOR_HEALTH_READY', r
           print('executor_health_acceptance=PASS')
