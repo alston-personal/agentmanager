@@ -143,7 +143,7 @@ PY
 
 # Converge to exactly one governed consumer for this spool.
 # Never terminate a consumer while a capsule may have unknown side effects.
-if systemctl --user list-unit-files agentos-action-relay.service >/dev/null 2>&1; then
+if [ -f "$UNIT" ]; then
   if ! systemctl --user stop agentos-action-relay.service; then
     echo "ERROR: unable to stop managed Action Relay service" >&2
     exit 61
