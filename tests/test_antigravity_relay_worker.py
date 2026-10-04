@@ -184,3 +184,67 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_gemini_provider_uses_fixed_user_cli_path(self) -> None:
+        fake_home = Path("/home/ubuntu")
+        with patch("agentos_node.antigravity_relay_worker.Path.home", return_value=fake_home), \
+             patch.object(Path, "is_file", return_value=True), \
+             patch("agentos_node.antigravity_relay_worker.os.access", return_value=True):
+            provider, executor = discover_executor("gemini")
+        self.assertEqual(provider, "gemini")
+        self.assertEqual(executor, ["/home/ubuntu/.local/bin/gemini"])
+
+    def test_gemini_read_only_capsule_uses_plan_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(
+                workspace / "relay",
+                provider="gemini",
+                executor=["/home/ubuntu/.local/bin/gemini"],
+            )
+            argv = worker._executor_argv(
+                {"canonical_ir": {"schema": "agentos.engineering-subagent-ir/v1"}, "instruction": "Reply exactly READY"},
+                workspace,
+            )
+            self.assertIn("--approval-mode", argv)
+            self.assertEqual(argv[argv.index("--approval-mode") + 1], "plan")
+            self.assertIn("--skip-trust", argv)
+            self.assertIn("-p", argv)
+
+    def test_gemini_code_edit_capsule_uses_yolo_only_for_bounded_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(
+                workspace / "relay",
+                provider="gemini",
+                executor=["/home/ubuntu/.local/bin/gemini"],
+            )
+            argv = worker._executor_argv(
+                {
+                    "canonical_ir": {
+                        "schema": "agentos.executor-provider-ir/v0.1",
+                        "operation": "code.edit",
+                        "constraints": ["caller_supplied_executable=false"],
+                    },
+                    "instruction": "Make the bounded change.",
+                },
+                workspace,
+            )
+            self.assertEqual(argv[argv.index("--approval-mode") + 1], "yolo")
+
+    def test_trusted_provider_hint_selects_gemini(self) -> None:
+        with tempfile.TemporaryDirectory() as td, \
+             patch("agentos_node.antigravity_relay_worker.discover_executor", return_value=("gemini", ["/bin/true"])):
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(workspace / "relay", executor=["/bin/false"], provider="agy")
+            result = worker._run_executor(
+                {
+                    "canonical_ir": {"schema": "agentos.engineering-subagent-ir/v1"},
+                    "instruction": "Reply exactly READY",
+                    "executor_hint": "provider:gemini",
+                },
+                workspace,
+            )
+        self.assertEqual(result["provider"], "gemini")
+        self.assertEqual(result["returncode"], 0)
