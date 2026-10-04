@@ -50,3 +50,27 @@ jobs:
                   break
           print(json.dumps(rows,sort_keys=True,separators=(',',':')))
           PY
+          echo '=== LAST RUNTIME REPAIR FAILURE (SANITIZED MARKERS) ==='
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          root=Path('/tmp/agentos-bootstrap-control/receipts')
+          rows=[]
+          for p in sorted(root.glob('agentos.transport.repair-*.json'), key=lambda x:x.stat().st_mtime, reverse=True):
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              if d.get('ok') is True:
+                  continue
+              out={'request_id':d.get('request_id'),'source_commit':d.get('source_commit'),'ok':False}
+              marks=[]
+              for step in d.get('steps') or []:
+                  for line in (str(step.get('stdout') or '')+'\n'+str(step.get('stderr') or '')).splitlines():
+                      if re.search(r'ERROR:|fatal:|action_relay_|legacy_runtime|worktree|antigravity_repair_',line,re.I):
+                          marks.append(line[:500])
+              out['markers']=marks[-30:]
+              rows.append(out)
+              break
+          print(json.dumps(rows,sort_keys=True,separators=(',',':')))
+          PY
