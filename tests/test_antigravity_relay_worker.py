@@ -209,6 +209,51 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported Antigravity executor provider"):
             discover_executor("shell")
 
+    def test_codex_argv_maps_semantic_operation_to_fixed_sandbox(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(
+                workspace / "relay",
+                provider="codex",
+                executor=["/home/ubuntu/.local/bin/codex"],
+            )
+            read_only = worker._executor_argv(
+                {
+                    "canonical_ir": {"operation": "agent.chat"},
+                    "instruction": "Return exactly READY",
+                },
+                workspace,
+            )
+            self.assertEqual(read_only[0], "/home/ubuntu/.local/bin/codex")
+            self.assertIn("exec", read_only)
+            self.assertEqual(read_only[read_only.index("--sandbox") + 1], "read-only")
+            self.assertEqual(read_only[read_only.index("-a") + 1], "never")
+            self.assertIn("--ephemeral", read_only)
+            self.assertEqual(read_only[read_only.index("-C") + 1], str(workspace))
+
+            writable = worker._executor_argv(
+                {
+                    "canonical_ir": {"operation": "code.edit"},
+                    "instruction": "Make the bounded change",
+                },
+                workspace,
+            )
+            self.assertEqual(writable[writable.index("--sandbox") + 1], "workspace-write")
+
+    def test_codex_argv_rejects_missing_semantic_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(
+                workspace / "relay",
+                provider="codex",
+                executor=["/home/ubuntu/.local/bin/codex"],
+            )
+            with self.assertRaisesRegex(ValueError, "operation is not allowlisted"):
+                worker._executor_argv(
+                    {"canonical_ir": {}, "instruction": "noop"},
+                    workspace,
+                )
+
     def test_agy_argv_is_structured_not_shell_text(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             workspace = Path(td)
