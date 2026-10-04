@@ -94,7 +94,11 @@ jobs:
           }, job
           print('executor_health_reconcile=PASS')
           print('selected_provider='+str(job.get('selected_provider') or 'none'))
+          print('claude_state='+str(job.get('claude_state') or 'none'))
+          print('claude_ready_count='+str(job.get('claude_ready_count') if isinstance(job.get('claude_ready_count'),int) else 'none'))
           print('claude_health_classification='+str(job.get('claude_health_classification') or 'none'))
+          print('agy_state='+str(job.get('agy_state') or 'none'))
+          print('agy_ready_count='+str(job.get('agy_ready_count') if isinstance(job.get('agy_ready_count'),int) else 'none'))
           print('agy_health_classification='+str(job.get('agy_health_classification') or 'none'))
           raise SystemExit(0)
           PY
