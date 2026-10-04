@@ -37,6 +37,8 @@ _GITHUB_OIDC_JWKS = 'https://token.actions.githubusercontent.com/.well-known/jwk
 _GITHUB_SCHEDULER_AUDIENCE = 'agentos-scheduler'
 _GITHUB_SCHEDULER_REPOSITORY = 'alston-personal/agentmanager'
 _GITHUB_SCHEDULER_REF = 'refs/heads/core/integration'
+_GITHUB_HEALTH_CARRIER_REF = 'refs/heads/main'
+_GITHUB_HEALTH_CARRIER_WORKFLOW_REF = 'alston-personal/agentmanager/.github/workflows/executor-health-reconcile-schedule.yml@refs/heads/main'
 _GITHUB_JWKS_CACHE: dict[str, Any] = {'expires_at': 0.0, 'keys': {}}
 _GITHUB_JWKS_LOCK = threading.Lock()
 _SHA256_DIGEST_INFO_PREFIX = bytes.fromhex('3031300d060960864801650304020105000420')
@@ -105,7 +107,14 @@ def _validate_github_scheduler_claims(payload: dict[str, Any]) -> None:
         raise PermissionError('github oidc audience invalid')
     if payload.get('repository') != _GITHUB_SCHEDULER_REPOSITORY:
         raise PermissionError('github oidc repository invalid')
-    if payload.get('ref') != _GITHUB_SCHEDULER_REF:
+    ref = str(payload.get('ref') or '')
+    workflow_ref = str(payload.get('workflow_ref') or '')
+    canonical_ref = ref == _GITHUB_SCHEDULER_REF
+    health_carrier = (
+        ref == _GITHUB_HEALTH_CARRIER_REF
+        and workflow_ref == _GITHUB_HEALTH_CARRIER_WORKFLOW_REF
+    )
+    if not (canonical_ref or health_carrier):
         raise PermissionError('github oidc ref invalid')
     if str(payload.get('event_name') or '') not in {'push', 'workflow_dispatch', 'schedule'}:
         raise PermissionError('github oidc event invalid')
