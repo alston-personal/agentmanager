@@ -219,16 +219,26 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         "text",
     ]
     with tempfile.TemporaryDirectory(prefix="agentos-gemini-health-") as health_dir:
-        health_root = Path(health_dir)
-        settings_dir = health_root / ".gemini"
+        temp_root = Path(health_dir)
+        health_root = temp_root / "workspace"
+        health_root.mkdir()
+        cli_home = temp_root / "cli-home"
+        settings_dir = cli_home / ".gemini"
         settings_dir.mkdir(parents=True, exist_ok=True)
         (settings_dir / "settings.json").write_text(
             json.dumps({
+                "security": {"auth": {"selectedType": "oauth-personal"}},
                 "hooksConfig": {"enabled": False},
                 "skills": {"enabled": False},
             }, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        source_settings = EXPECTED_HOME / ".gemini"
+        for credential_name in ("oauth_creds.json", "google_accounts.json"):
+            source = source_settings / credential_name
+            if source.exists():
+                (settings_dir / credential_name).symlink_to(source)
+        env["GEMINI_CLI_HOME"] = str(cli_home)
         try:
             proc = subprocess.run(
                 argv,

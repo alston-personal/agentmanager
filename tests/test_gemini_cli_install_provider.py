@@ -116,7 +116,7 @@ def test_gemini_cli_health_uses_fixed_headless_plan_mode(tmp_path, monkeypatch):
     def fake_run(argv, **kwargs):
         captured["argv"] = list(argv)
         captured["kwargs"] = kwargs
-        settings = Path(kwargs["cwd"]) / ".gemini" / "settings.json"
+        settings = Path(kwargs["env"]["GEMINI_CLI_HOME"]) / ".gemini" / "settings.json"
         captured["settings"] = json.loads(settings.read_text(encoding="utf-8"))
         return Result()
 
@@ -155,13 +155,16 @@ def test_gemini_cli_health_disables_workspace_hooks_without_changing_home(tmp_pa
     def fake_run(argv, **kwargs):
         seen["cwd"] = kwargs["cwd"]
         seen["home"] = kwargs["env"]["HOME"]
-        seen["settings"] = json.loads((Path(kwargs["cwd"]) / ".gemini/settings.json").read_text(encoding="utf-8"))
+        seen["cli_home"] = kwargs["env"]["GEMINI_CLI_HOME"]
+        seen["settings"] = json.loads((Path(seen["cli_home"]) / ".gemini/settings.json").read_text(encoding="utf-8"))
         return Result()
 
     monkeypatch.setattr(provider.subprocess, "run", fake_run)
     result = run_gemini_cli_health(canonical_gemini_cli_health_request())
     assert result["classification"] == "GEMINI_CLI_HEALTH_READY"
     assert seen["home"] == str(fake_home)
+    assert seen["cli_home"]
+    assert seen["settings"]["security"]["auth"]["selectedType"] == "oauth-personal"
     assert seen["settings"]["hooksConfig"]["enabled"] is False
     assert seen["settings"]["skills"]["enabled"] is False
     assert seen["cwd"] != "/home/ubuntu/agentmanager"
