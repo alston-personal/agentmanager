@@ -323,13 +323,29 @@ def _snapshot_entry(snapshot: Mapping[str, Any] | None, executor_id: str) -> dic
     return {}
 
 
+def _snapshot_health_classification(item: Mapping[str, Any]) -> str:
+    health = item.get("provider_health") or {}
+    value = str(health.get("classification") or "").strip()
+    if value:
+        return value
+    provider_error = str(item.get("provider_error") or "").strip()
+    if provider_error:
+        return "PROVIDER_EXCEPTION_" + provider_error.upper()
+    state = str(item.get("state") or "").strip()
+    if state == "AUTH_REQUIRED":
+        return "AUTH_REQUIRED"
+    if state == "TIMEOUT":
+        return "TIMEOUT"
+    return ""
+
+
 def _snapshot_state(item: Mapping[str, Any]) -> str:
     if not item:
         return "UNAVAILABLE"
     if item.get("stable_routable") is True:
         return "READY"
     state = str(item.get("state") or "ERROR")
-    classification = str((item.get("provider_health") or {}).get("classification") or "")
+    classification = _snapshot_health_classification(item)
     if state == "AUTH_REQUIRED":
         return "AUTH_REQUIRED"
     if classification == "TIMEOUT":
@@ -370,14 +386,14 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
         "claude_timed_out": claude_state == "TIMEOUT",
         "claude_ready_count": ready_count(claude),
         "claude_probe_attempts": 2,
-        "claude_health_classification": str((claude.get("provider_health") or {}).get("classification") or ""),
+        "claude_health_classification": _snapshot_health_classification(claude),
         "agy_liveness": "READY" if agy.get("discovered") else "UNAVAILABLE",
         "agy_state": agy_state,
         "agy_returncode": 124 if agy_state == "TIMEOUT" else (0 if agy_state == "READY" else None),
         "agy_timed_out": agy_state == "TIMEOUT",
         "agy_ready_count": ready_count(agy),
         "agy_probe_attempts": 2,
-        "agy_health_classification": str((agy.get("provider_health") or {}).get("classification") or ""),
+        "agy_health_classification": _snapshot_health_classification(agy),
         "selected_provider": selected_provider,
     }
 
