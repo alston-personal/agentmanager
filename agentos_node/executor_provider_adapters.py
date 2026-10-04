@@ -104,7 +104,25 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
             "routable": False,
             "healthy": False,
             "state": "AUTH_REQUIRED",
+            "classification": "AUTH_REQUIRED",
         }
+    lowered = combined.casefold()
+    if any(token in lowered for token in (
+        "unknown command", "unrecognized argument", "unrecognized option",
+        "no such option", "invalid option", "usage:",
+    )):
+        classification = "CLI_CONTRACT"
+    elif any(token in lowered for token in (
+        "rate limit", "rate_limit", "quota", "too many requests", "resource exhausted",
+    )):
+        classification = "RATE_LIMITED"
+    elif any(token in lowered for token in (
+        "connection refused", "connection reset", "network is unreachable",
+        "temporary failure", "timed out connecting", "dns",
+    )):
+        classification = "NETWORK"
+    else:
+        classification = "NONZERO"
     return {
         "installed": True,
         "reachable": True,
@@ -112,7 +130,7 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
         "routable": False,
         "healthy": False,
         "state": "UNHEALTHY",
-        "classification": "NONZERO",
+        "classification": classification,
     }
 
 
