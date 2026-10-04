@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 from typing import Any, Mapping
 
 from agent_core.executor_job_contract import validate_executor_job
@@ -217,26 +218,36 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         "--output-format",
         "text",
     ]
-    try:
-        proc = subprocess.run(
-            argv,
-            cwd="/home/ubuntu/agentmanager",
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=60,
-            check=False,
-            env=env,
+    with tempfile.TemporaryDirectory(prefix="agentos-gemini-health-") as health_dir:
+        health_root = Path(health_dir)
+        settings_dir = health_root / ".gemini"
+        settings_dir.mkdir(parents=True, exist_ok=True)
+        (settings_dir / "settings.json").write_text(
+            json.dumps({
+                "hooksConfig": {"enabled": False},
+                "skills": {"enabled": False},
+            }, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
-    except subprocess.TimeoutExpired:
-        result = _failure("GEMINI_CLI_HEALTH_TIMEOUT", executor_available=True, routable=False, authorized=False)
-        result["executor_returncode"] = 124
-        result["executor_timed_out"] = True
-        return result
-    except OSError:
-        return _failure("GEMINI_CLI_HEALTH_LAUNCH_ERROR", executor_available=False, routable=False, authorized=False)
-
+        try:
+            proc = subprocess.run(
+                argv,
+                cwd=str(health_root),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60,
+                check=False,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            result = _failure("GEMINI_CLI_HEALTH_TIMEOUT", executor_available=True, routable=False, authorized=False)
+            result["executor_returncode"] = 124
+            result["executor_timed_out"] = True
+            return result
+        except OSError:
+            return _failure("GEMINI_CLI_HEALTH_LAUNCH_ERROR", executor_available=False, routable=False, authorized=False)
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     ready = proc.returncode == 0 and "READY" in combined
     if not ready:
