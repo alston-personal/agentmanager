@@ -89,6 +89,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://gemini-cli",
         read_only=False,
     ),
+    "gemini.cli.health": JobTypeSpec(
+        job_type="gemini.cli.health",
+        capability="agentos.executor.health.gemini-cli",
+        authority="bounded-read-only",
+        executor_class="gemini-cli",
+        project_id="agentos-core",
+        workload_ref="surface://gemini-cli",
+        read_only=True,
+    ),
     "engineering.subagent.smoke": JobTypeSpec(
         job_type="engineering.subagent.smoke",
         capability="agentos.engineering.probe",
@@ -228,6 +237,10 @@ def canonical_typesafe_skill_install_request() -> dict[str, str]:
 
 def canonical_gemini_cli_install_request() -> dict[str, str]:
     return canonical_executor_job_request("gemini.cli.install")
+
+
+def canonical_gemini_cli_health_request() -> dict[str, str]:
+    return canonical_executor_job_request("gemini.cli.health")
 
 
 def project_executor_job_submission(
