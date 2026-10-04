@@ -60,6 +60,7 @@ jobs:
           for i in $(seq 1 60); do
             out="$RUNNER_TEMP/gemini-health-inspect-$i.txt"
             AGENTOS_DISPATCH_WAIT_SECONDS=90               bash scripts/agentos_dispatch.sh agentos.executor job.inspect "$GITHUB_SHA" job_id="$job_id" > "$out"
+            set +e
             python3 - "$out" <<'PY'
           import json,sys
           docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
@@ -78,6 +79,7 @@ jobs:
           raise SystemExit(2)
           PY
             rc=$?
+            set -e
             if [ "$rc" = 0 ]; then
               echo 'gemini_cli_health_live_acceptance=PASS'
               exit 0
