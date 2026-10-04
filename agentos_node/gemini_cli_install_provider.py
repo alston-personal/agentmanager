@@ -128,6 +128,7 @@ def run_gemini_cli_install(request: Mapping[str, Any], *, runtime_root: str | Pa
         "authorized": True,
         "successful": bool(receipt_ok),
         "credential_exposed": False,
+        "gemini_cli_version": str(verify.get("gemini_cli_version") or "")[:128],
     }
 
 
