@@ -15,10 +15,6 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: executor-health-reconcile
-  cancel-in-progress: true
-
 jobs:
   reconcile:
     if: >-
@@ -28,6 +24,9 @@ jobs:
         github.actor == 'alstonhuang' &&
         github.event.comment.body == '/agentos reconcile-executor-health'
       )
+    concurrency:
+      group: executor-health-reconcile
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
