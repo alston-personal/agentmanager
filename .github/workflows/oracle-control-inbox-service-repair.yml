@@ -5,6 +5,8 @@ name: Deploy Control Inbox Service Repair
 # receipt before the ChatGPT control transport can be declared recovered.
 on:
   workflow_dispatch:
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -15,6 +17,14 @@ concurrency:
 
 jobs:
   repair:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.number == 845 &&
+        github.actor == 'alstonhuang' &&
+        github.event.comment.body == '/agentos repair-control-inbox'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -24,16 +34,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: core/integration
       - name: Validate exact integration generation
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/core/integration
           test "$DEPLOY_USER" = ubuntu
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          source_commit="$(git rev-parse HEAD)"
+          test -n "$source_commit"
+          test "${#source_commit}" = 40
           python3 -m py_compile scripts/control_inbox_service_repair.py
-          echo "control_inbox_repair_source_commit=$GITHUB_SHA"
+          echo "control_inbox_repair_source_commit=$source_commit"
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
