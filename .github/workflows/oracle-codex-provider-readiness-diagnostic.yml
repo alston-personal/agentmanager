@@ -80,3 +80,35 @@ jobs:
               print('codex_classification=TIMEOUT')
               raise SystemExit(0)
           PY
+
+      - name: Inspect bounded Gemini CLI install state
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          candidates=[
+            Path('/home/ubuntu/.npm-global/bin/gemini'),
+            Path('/home/ubuntu/.local/bin/gemini'),
+            Path('/usr/local/bin/gemini'),
+            Path('/usr/bin/gemini'),
+          ]
+          found=[str(p) for p in candidates if p.is_file()]
+          print('gemini_cli_candidates='+('|'.join(found) if found else 'NONE'))
+          receipt=Path('/home/ubuntu/agent-data/runtime/gemini-cli-one/install-receipt.json')
+          if receipt.is_file():
+              try:
+                  d=json.loads(receipt.read_text(encoding='utf-8'))
+              except Exception:
+                  d={}
+              safe={k:d.get(k) for k in (
+                  'schema','cli_installed','one_mcp_configured',
+                  'session_start_hook_configured','credential_exposed',
+                  'auth_ready','live_sessionstart_verified'
+              ) if k in d}
+              print('gemini_cli_install_receipt='+json.dumps(safe,sort_keys=True,separators=(',',':')))
+          else:
+              print('gemini_cli_install_receipt=NONE')
+          PY
