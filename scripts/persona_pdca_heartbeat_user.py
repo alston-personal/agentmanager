@@ -35,7 +35,7 @@ def active_personas(root):
         out.append((d,c,s))
     return out
 
-def main():
+def schedule_social_observe(slug, state, cycle, stamp):\n    pending=state.get("pending_external_actions")\n    if not isinstance(pending,list): pending=[]\n    active=any(isinstance(x,dict) and x.get("capability")=="social.threads.observe" and x.get("status") in ("candidate","in_progress") for x in pending)\n    if not active:\n        prefix="mio" if slug=="sunlake-milkcat" else slug.replace("_","-")\n        pending.append({"action_id":f"{prefix}-pdca-c{cycle}-social-observe","cycle":cycle,"capability":"social.threads.observe","status":"candidate","created_at":stamp,"reason":"PDCA social read is due","requires_real_adapter_receipt":True})\n    state["pending_external_actions"]=pending[-12:]\n    return state\n\ndef main():
     if os.geteuid()!=1001:
         print("persona_pdca_heartbeat=WRONG_USER",file=sys.stderr); return 2
     if not (DATA_REPO/".git").exists():
