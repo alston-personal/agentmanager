@@ -647,3 +647,24 @@ def test_gemini_health_probe_uses_plan_mode(tmp_path: Path, monkeypatch):
     assert argv[argv.index("--approval-mode") + 1] == "plan"
     assert "-p" in argv
     assert result["state"] == "READY"
+
+
+def test_provider_stability_uses_provider_specific_timeout_budget(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    calls = []
+    def fake_probe(name, workspace, *, timeout_seconds=20.0):
+        calls.append((name, timeout_seconds))
+        return {
+            "state": "READY",
+            "classification": "READY",
+            "returncode": 0,
+            "timed_out": False,
+        }
+
+    monkeypatch.setattr(provider, "_probe_model_provider", fake_probe)
+    provider._probe_provider_stability("claude", tmp_path, attempts=2)
+    provider._probe_provider_stability("gemini", tmp_path, attempts=2)
+
+    assert calls[:2] == [("claude", 20.0), ("claude", 20.0)]
+    assert calls[2:] == [("gemini", 45.0), ("gemini", 45.0)]
