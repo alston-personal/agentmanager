@@ -87,6 +87,7 @@ def test_gemini_cli_health_classification_is_bounded():
     assert _classify_health_failure(1, "network is unreachable") == "GEMINI_CLI_NETWORK"
     assert _classify_health_failure(7, "opaque") == "GEMINI_CLI_HEALTH_NONZERO"
     assert _classify_health_failure(124, "", timed_out=True) == "GEMINI_CLI_HEALTH_TIMEOUT"
+    assert _classify_health_failure(55, "") == "GEMINI_CLI_WORKSPACE_UNTRUSTED"
 
 
 def test_gemini_cli_health_uses_fixed_headless_plan_mode(tmp_path, monkeypatch):
@@ -121,5 +122,6 @@ def test_gemini_cli_health_uses_fixed_headless_plan_mode(tmp_path, monkeypatch):
     assert "-p" in argv
     assert "--approval-mode" in argv
     assert argv[argv.index("--approval-mode") + 1] == "plan"
+    assert "--skip-trust" in argv
     assert "--output-format" in argv
     assert argv[argv.index("--output-format") + 1] == "text"
