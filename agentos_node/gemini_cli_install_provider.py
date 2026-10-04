@@ -258,3 +258,73 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         "executor_returncode": 0,
         "executor_timed_out": False,
     }
+
+
+HEALTH_JOB_TYPE = "gemini.cli.health"
+HEALTH_PROVIDER_ID = "oracle-gemini-cli-one-health-v1"
+
+def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
+    spec = validate_executor_job(request)
+    if spec.job_type != HEALTH_JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
+        return _failure("GEMINI_CLI_HEALTH_CONTRACT_MISMATCH", executor_available=False, routable=False, authorized=False)
+    home = Path.home()
+    if home != EXPECTED_HOME or os.environ.get("USER") not in (None, "", "ubuntu"):
+        return _failure("GEMINI_CLI_ORACLE_UBUNTU_IDENTITY_MISMATCH", executor_available=False, routable=False, authorized=False)
+    gemini = EXPECTED_HOME / ".local/bin/gemini"
+    if not gemini.is_file():
+        return _failure("GEMINI_CLI_BINARY_UNAVAILABLE", executor_available=False, routable=False, authorized=False)
+    try:
+        proc = subprocess.run(
+            [str(gemini), "-p", "AgentOS provider health probe. Do not use tools. Reply exactly READY."],
+            cwd=str(_runtime_root()),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=45,
+            check=False,
+            env={
+                **os.environ,
+                "HOME": str(EXPECTED_HOME),
+                "USER": "ubuntu",
+                "CI": "1",
+            },
+        )
+    except subprocess.TimeoutExpired:
+        return _failure("GEMINI_CLI_HEALTH_TIMEOUT")
+    except OSError:
+        return _failure("GEMINI_CLI_HEALTH_LAUNCH_ERROR", executor_available=False, routable=False, authorized=False)
+
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    lowered = combined.casefold()
+    if any(token in lowered for token in ("login", "sign in", "unauthorized", "authentication required")):
+        return _failure("GEMINI_CLI_AUTH_REQUIRED", authorized=False, routable=False)
+    if any(token in lowered for token in ("rate limit", "too many requests", "quota", "resource exhausted")):
+        return _failure("GEMINI_CLI_RATE_LIMITED", routable=False)
+    ok = proc.returncode == 0 and "READY" in combined
+    return {
+        "verdict": "PASS" if ok else "FAIL",
+        "classification": "GEMINI_CLI_HEALTH_READY" if ok else "GEMINI_CLI_HEALTH_NONZERO",
+        "executor_available": True,
+        "routable": bool(ok),
+        "authorized": bool(ok),
+        "successful": bool(ok),
+        "credential_exposed": False,
+    }
+
+
+def register_gemini_cli_health_provider(*, registry: ExecutorJobProviderRegistry = DEFAULT_PROVIDERS) -> bool:
+    existing = registry.get(HEALTH_JOB_TYPE)
+    if existing is not None:
+        return existing.provider_id == HEALTH_PROVIDER_ID and existing.executor_class == EXECUTOR_CLASS
+
+    def handler(request: Mapping[str, Any]) -> Mapping[str, Any]:
+        return run_gemini_cli_health(request)
+
+    registry.register(
+        job_type=HEALTH_JOB_TYPE,
+        provider_id=HEALTH_PROVIDER_ID,
+        executor_class=EXECUTOR_CLASS,
+        handler=handler,
+    )
+    return True
