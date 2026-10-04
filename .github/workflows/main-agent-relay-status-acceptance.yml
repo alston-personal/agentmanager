@@ -7,6 +7,8 @@ on:
     paths:
       - '.github/workflows/main-agent-relay-status-acceptance.yml'
       - 'agentos_node/antigravity_relay_worker.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/repair_antigravity_relay_user.sh'
   workflow_dispatch:
 
 permissions:
@@ -89,6 +91,7 @@ jobs:
               'relay_status_receipts_count=',
               'relay_status_inbox_oldest_seconds=',
               'relay_status_processing_oldest_seconds=',
+              'relay_status_stale_processing=',
               'relay_status=',
           )
           for line in evidence:
@@ -96,6 +99,9 @@ jobs:
               k,v=line.split('=',1)
               vals[k]=v
           assert vals.get('relay_status')=='PASS', vals
+          assert vals.get('relay_status_antigravity_service')=='active', vals
+          assert vals.get('relay_status_action_service')=='active', vals
+          assert vals.get('relay_status_stale_processing')=='NO', vals
           for key in ('relay_status_inbox_count','relay_status_processing_count','relay_status_receipts_count',
                       'relay_status_inbox_oldest_seconds','relay_status_processing_oldest_seconds'):
               assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)

@@ -451,6 +451,8 @@ def _relay_status() -> dict[str, Any]:
 
     antigravity = active("agentos-antigravity-relay.service")
     action_relay = active("agentos-action-relay.service")
+    stale_processing = processing_count > 0 and processing_oldest >= 600
+    healthy = antigravity == "active" and action_relay == "active" and not stale_processing
     markers = [
         f"relay_status_antigravity_service={antigravity}",
         f"relay_status_action_service={action_relay}",
@@ -459,7 +461,8 @@ def _relay_status() -> dict[str, Any]:
         f"relay_status_receipts_count={receipts_count}",
         f"relay_status_inbox_oldest_seconds={inbox_oldest}",
         f"relay_status_processing_oldest_seconds={processing_oldest}",
-        "relay_status=PASS",
+        "relay_status_stale_processing=" + ("YES" if stale_processing else "NO"),
+        "relay_status=" + ("PASS" if healthy else "FAIL"),
     ]
     return {
         "ok": True,

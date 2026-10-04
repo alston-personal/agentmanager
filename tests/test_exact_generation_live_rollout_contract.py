@@ -27,6 +27,27 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertNotIn('runtime source generation mismatch: ref=$SOURCE_REF observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT', text)
         self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', text)
 
+    def test_relay_status_fails_closed_on_inactive_worker_or_stale_processing(self):
+        bootstrap = _text(BOOTSTRAP)
+        workflow = _text(ROOT / ".github" / "workflows" / "main-agent-relay-status-acceptance.yml")
+        self.assertIn('stale_processing = processing_count > 0 and processing_oldest >= 600', bootstrap)
+        self.assertIn('antigravity == "active" and action_relay == "active" and not stale_processing', bootstrap)
+        self.assertIn('relay_status_stale_processing=', bootstrap)
+        self.assertIn('assert vals.get(\'relay_status_antigravity_service\')==\'active\'', workflow)
+        self.assertIn('assert vals.get(\'relay_status_action_service\')==\'active\'', workflow)
+        self.assertIn('assert vals.get(\'relay_status_stale_processing\')==\'NO\'', workflow)
+
+    def test_transport_repair_restarts_and_requires_active_antigravity_relay(self):
+        text = _text(REPAIR)
+        self.assertIn('REPAIR_STAGE="restart_antigravity_relay"', text)
+        self.assertIn('systemctl --user daemon-reload', text)
+        self.assertIn('systemctl --user enable agentos-antigravity-relay.service', text)
+        self.assertIn('timeout 30s systemctl --user restart agentos-antigravity-relay.service', text)
+        self.assertIn('systemctl --user show -p ActiveState --value agentos-antigravity-relay.service', text)
+        self.assertIn('systemctl --user is-active --quiet agentos-antigravity-relay.service', text)
+        self.assertIn('antigravity_restart_converged=PASS', text)
+        self.assertNotIn('antigravity_restart_pending=YES', text)
+
     def test_action_relay_installer_accepts_exact_ancestor_after_lane_advances(self):
         text = _text(ACTION_INSTALLER)
         self.assertIn('SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)', text)
