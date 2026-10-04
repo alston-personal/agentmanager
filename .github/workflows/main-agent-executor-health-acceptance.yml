@@ -94,8 +94,25 @@ jobs:
           set -euo pipefail
           job_id="${{ steps.submit.outputs.job_id }}"
           terminal=0
+          refresh_oidc() {
+            local url token
+            url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+            curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc-refresh.json"
+            token="$(python3 - "$RUNNER_TEMP/oidc-refresh.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+            )"
+            echo "::add-mask::$token"
+            export AGENTOS_CONTROLLER_TOKEN="$token"
+          }
           : > "$RUNNER_TEMP/health-inspect.txt"
           for i in $(seq 1 60); do
+            if [ "$i" = 1 ] || [ $(( (i - 1) % 20 )) = 0 ]; then
+              refresh_oidc
+            fi
             out="$RUNNER_TEMP/health-inspect-$i.txt"
             AGENTOS_DISPATCH_WAIT_SECONDS=90               bash scripts/agentos_dispatch.sh                 agentos.executor job.inspect "$GITHUB_SHA"                 job_id="$job_id" > "$out"
             cat "$out" >> "$RUNNER_TEMP/health-inspect.txt"
