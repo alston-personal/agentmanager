@@ -35,22 +35,18 @@ def _failure(classification: str, *, executor_available: bool = True, routable: 
     }
 
 
-def _classify_install_failure(returncode: int, combined: str) -> str:
-    text = combined.casefold()
-    if returncode == 2 or "run as oracle ubuntu user" in text:
-        return "GEMINI_CLI_ORACLE_UBUNTU_IDENTITY_MISMATCH"
-    if returncode == 3 or "missing prerequisite" in text:
-        return "GEMINI_CLI_PREREQUISITE_MISSING"
-    if returncode == 4 or "agentos data root missing" in text:
-        return "GEMINI_CLI_AGENT_DATA_ROOT_UNAVAILABLE"
-    if "permission denied" in text or "eacces" in text:
-        return "GEMINI_CLI_INSTALL_PERMISSION_DENIED"
-    if any(token in text for token in ("network is unreachable", "enotfound", "eai_again", "connection reset", "etimedout")):
-        return "GEMINI_CLI_INSTALL_NETWORK"
-    if "npm err!" in text or "npm error" in text:
-        return "GEMINI_CLI_INSTALL_NPM_FAILED"
-    return "GEMINI_CLI_INSTALL_COMMAND_FAILED"
 
+def _install_failure_classification(stdout: str, stderr: str) -> str:
+    text = (str(stdout or "") + "\n" + str(stderr or "")).casefold()
+    if any(token in text for token in ("eacces", "permission denied", "operation not permitted")):
+        return "GEMINI_CLI_INSTALL_PERMISSION_DENIED"
+    if any(token in text for token in ("ebadengine", "unsupported engine", "required: { node", "not compatible with your version of node")):
+        return "GEMINI_CLI_NODE_INCOMPATIBLE"
+    if any(token in text for token in ("enotfound", "eai_again", "network is unreachable", "connection reset", "socket hang up", "etimedout")):
+        return "GEMINI_CLI_INSTALL_NETWORK"
+    if any(token in text for token in ("e404", "404 not found", "package not found")):
+        return "GEMINI_CLI_PACKAGE_UNAVAILABLE"
+    return "GEMINI_CLI_INSTALL_COMMAND_FAILED"
 
 def run_gemini_cli_install(request: Mapping[str, Any], *, runtime_root: str | Path | None = None) -> dict[str, Any]:
     spec = validate_executor_job(request)
@@ -91,7 +87,7 @@ def run_gemini_cli_install(request: Mapping[str, Any], *, runtime_root: str | Pa
         return _failure("GEMINI_CLI_INSTALL_LAUNCH_ERROR")
 
     if proc.returncode != 0:
-        return _failure(_classify_install_failure(proc.returncode, (proc.stdout or "") + "\n" + (proc.stderr or "")))
+        return _failure(_install_failure_classification(proc.stdout, proc.stderr))
     if not RECEIPT_FILE.is_file() or RECEIPT_FILE.is_symlink():
         return _failure("GEMINI_CLI_INSTALL_RECEIPT_MISSING")
     try:
