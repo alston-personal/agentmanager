@@ -68,3 +68,18 @@ def test_scheduler_oidc_claims_reject_other_default_branch_workflow():
     claims["workflow_ref"] = "alston-personal/agentmanager/.github/workflows/other.yml@refs/heads/main"
     with pytest.raises(PermissionError):
         _validate_github_scheduler_claims(claims)
+
+
+def test_scheduler_oidc_health_carrier_accepts_issue_comment_event():
+    claims = _claims()
+    claims["ref"] = "refs/heads/main"
+    claims["event_name"] = "issue_comment"
+    claims["workflow_ref"] = "alston-personal/agentmanager/.github/workflows/executor-health-reconcile-schedule.yml@refs/heads/main"
+    _validate_github_scheduler_claims(claims)
+
+
+def test_scheduler_oidc_canonical_workflow_rejects_issue_comment_event():
+    claims = _claims()
+    claims["event_name"] = "issue_comment"
+    with pytest.raises(PermissionError):
+        _validate_github_scheduler_claims(claims)
