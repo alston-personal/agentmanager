@@ -48,6 +48,7 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "agy_probe_attempts",
     "agy_health_classification",
     "selected_provider",
+    "runtime_source_commit",
 )
 _PROVIDER_STATE_FIELDS = (
     "executor_available",

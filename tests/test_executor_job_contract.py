@@ -154,3 +154,22 @@ def test_health_receipt_preserves_only_bounded_provider_classifications():
     assert receipt["agy_health_classification"] == "CLI_CONTRACT"
     assert "stdout" not in receipt
     assert "stderr" not in receipt
+
+
+def test_health_receipt_may_project_runtime_source_commit_only_as_scalar():
+    request = canonical_executor_job_request("engineering.executor.health")
+    receipt = project_executor_job_receipt(
+        job_id="job-health-generation-123",
+        request=request,
+        executor_available=True,
+        routable=False,
+        authorized=False,
+        successful=False,
+        result={
+            "classification": "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+            "runtime_source_commit": "a" * 40,
+            "stdout": "must not cross",
+        },
+    )
+    assert receipt["runtime_source_commit"] == "a" * 40
+    assert "stdout" not in receipt

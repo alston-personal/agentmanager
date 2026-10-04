@@ -315,6 +315,7 @@ def project_executor_job_receipt(
             "agy_probe_attempts",
             "agy_health_classification",
             "selected_provider",
+            "runtime_source_commit",
         ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:

@@ -407,6 +407,7 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
 
     return {
         "verdict": "PASS" if ok else "FAIL",
+        "runtime_source_commit": str(os.environ.get("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT") or ""),
         "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
         "executor_available": bool(claude or agy),
         "routable": ok,
