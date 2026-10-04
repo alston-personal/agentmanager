@@ -138,3 +138,34 @@ def test_provider_receipt_is_sanitized(monkeypatch, tmp_path: Path):
     assert receipt["classification"] == "COMPLETED"
     assert "stdout" not in receipt
     assert "stderr" not in receipt
+
+
+def test_provider_health_classifies_cli_contract_without_leaking_output(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    monkeypatch.setattr(adapters, "_provider_command", lambda *args, **kwargs: ["agy", "run"])
+    class Result:
+        returncode = 2
+        stdout = ""
+        stderr = "Usage: agy [OPTIONS] COMMAND\nError: unknown command run"
+    monkeypatch.setattr(adapters.subprocess, "run", lambda *args, **kwargs: Result())
+
+    result = adapters._health("agy", workspace=tmp_path)
+    assert result["state"] == "UNHEALTHY"
+    assert result["classification"] == "CLI_CONTRACT"
+    assert "stderr" not in result
+    assert "stdout" not in result
+
+
+def test_provider_health_classifies_rate_limit(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    monkeypatch.setattr(adapters, "_provider_command", lambda *args, **kwargs: ["agy"])
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "resource exhausted: quota exceeded"
+    monkeypatch.setattr(adapters.subprocess, "run", lambda *args, **kwargs: Result())
+
+    result = adapters._health("agy", workspace=tmp_path)
+    assert result["classification"] == "RATE_LIMITED"
