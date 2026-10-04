@@ -541,7 +541,7 @@ def test_probe_diagnostic_classifies_cli_rate_network_and_auth():
     assert _classify_probe_diagnostic(124, "", timed_out=True) == "TIMEOUT"
 
 
-def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path: Path, monkeypatch):
+def test_executor_health_refreshes_once_and_routes_from_durable_snapshot(tmp_path: Path, monkeypatch):
     import agentos_node.engineering_subagent_provider as provider
     import agentos_node.executor_reconcile as reconcile
 
@@ -549,39 +549,44 @@ def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path:
     workspace.mkdir()
     (workspace / ".git").mkdir()
 
+    snapshot = {
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": "2026-10-04T00:00:00Z",
+        "executors": [
+            _snapshot_row("claude-code", state="UNHEALTHY", stable=False, streak=0, classification="TIMEOUT"),
+            _snapshot_row("antigravity", state="UNHEALTHY", stable=False, streak=0, classification="RATE_LIMITED"),
+            {
+                **_snapshot_row("gemini", state="READY", stable=True, streak=2),
+                "provider_id": "google",
+                "executor_class": "gemini",
+            },
+        ],
+    }
+    calls = []
     monkeypatch.setattr(
         reconcile,
         "reconcile_executor_adoption",
-        lambda **kwargs: {"ok": True, "executor_adoption": {"schema": "agentos.executor-adoption/v0.2"}},
+        lambda **kwargs: calls.append(kwargs) or {"ok": True, "executor_adoption": snapshot},
     )
-    probes = {
-        "claude": {
-            "state": "TIMEOUT", "classification": "TIMEOUT", "returncode": 124,
-            "timed_out": True, "ready_count": 0, "attempts": 2,
-        },
-        "agy": {
-            "state": "ERROR", "classification": "CLI_CONTRACT", "returncode": 2,
-            "timed_out": False, "ready_count": 0, "attempts": 2,
-        },
-        "gemini": {
-            "state": "UNAVAILABLE", "classification": "UNAVAILABLE", "returncode": None,
-            "timed_out": False, "ready_count": 0, "attempts": 2,
-        },
-    }
-    monkeypatch.setattr(provider, "_probe_provider_stability", lambda name, *args, **kwargs: dict(probes[name]))
-    monkeypatch.setattr(provider, "_probe_binary_liveness", lambda name: "READY")
-
+    monkeypatch.setattr(
+        provider,
+        "_probe_provider_stability",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("health must not duplicate inline model probes")),
+    )
     monkeypatch.setenv("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT", "f" * 40)
+
     result = provider._run_executor_health(workspace)
+
+    assert len(calls) == 1
     assert result["runtime_source_commit"] == "f" * 40
     assert result["claude_state"] == "TIMEOUT"
     assert result["claude_health_classification"] == "TIMEOUT"
-    assert result["claude_probe_attempts"] == 2
     assert result["agy_state"] == "ERROR"
-    assert result["agy_health_classification"] == "CLI_CONTRACT"
-    assert result["agy_probe_attempts"] == 2
-    assert result["selected_provider"] == ""
-    assert result["successful"] is False
+    assert result["agy_health_classification"] == "RATE_LIMITED"
+    assert result["gemini_state"] == "READY"
+    assert result["gemini_ready_count"] == 2
+    assert result["selected_provider"] == "gemini"
+    assert result["successful"] is True
 
 
 def test_snapshot_health_marks_unhealthy_without_classification_as_contract_incomplete():
