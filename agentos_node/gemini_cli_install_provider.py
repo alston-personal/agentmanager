@@ -170,7 +170,7 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
     text = combined.casefold()
     if timed_out:
         return "GEMINI_CLI_HEALTH_TIMEOUT"
-    if any(token in text for token in ("login", "sign in", "unauthorized", "authentication required", "not authenticated")):
+    if any(token in text for token in ("login", "log in", "sign in", "unauthorized", "authentication required", "not authenticated", "authenticate", "oauth")):
         return "GEMINI_CLI_AUTH_REQUIRED"
     if any(token in text for token in ("rate limit", "too many requests", "quota", "resource exhausted")):
         return "GEMINI_CLI_RATE_LIMITED"
@@ -180,8 +180,10 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
         return "GEMINI_CLI_CLI_CONTRACT"
     if any(token in text for token in ("workspace trust", "folder trust", "not trusted", "trust this folder", "untrusted workspace")):
         return "GEMINI_CLI_WORKSPACE_TRUST_REQUIRED"
-    if any(token in text for token in ("settings.json", "fatalconfigerror", "invalid configuration", "config error")):
+    if any(token in text for token in ("settings.json", "fatalconfigerror", "invalid configuration", "config error", "failed to load settings")):
         return "GEMINI_CLI_CONFIG_ERROR"
+    if any(token in text for token in ("unsupported engine", "ebadengine", "requires node", "node version")):
+        return "GEMINI_CLI_NODE_INCOMPATIBLE"
     if any(token in text for token in ("sessionstart", "hook failed", "hook error", "hooks")):
         return "GEMINI_CLI_HOOK_ERROR"
     if any(token in text for token in ("mcp", "agentos-one")):
