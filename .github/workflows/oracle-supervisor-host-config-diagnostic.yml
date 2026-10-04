@@ -1,0 +1,51 @@
+name: Oracle Supervisor Host Config Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/oracle-supervisor-host-config
+    paths:
+      - '.github/workflows/oracle-supervisor-host-config-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect safe host-local autonomy configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "shared_repo_head=$(git -C /home/ubuntu/agentmanager rev-parse HEAD)"
+          echo "core_current=$(readlink -f /home/ubuntu/agent-data/runtime/core/current 2>/dev/null || true)"
+          if [ -L /home/ubuntu/agent-data/runtime/core/current ]; then
+            current="$(readlink -f /home/ubuntu/agent-data/runtime/core/current)"
+            echo "core_current_head=$(git -C "$current" rev-parse HEAD 2>/dev/null || true)"
+          fi
+          for unit in agentos-core-supervisor.service agentos-employee-worker-host.service agentos-employee-wake-node.service; do
+            echo "SERVICE=$unit"
+            systemctl --user is-active "$unit" || true
+            systemctl --user is-enabled "$unit" || true
+            systemctl --user show "$unit" -p WorkingDirectory -p FragmentPath --no-pager || true
+          done
+          for f in /home/ubuntu/.config/agentos/core-supervisor.env /home/ubuntu/.config/agentos/core-supervisor-delivery.env /home/ubuntu/.config/agentos/employee-worker-host.env; do
+            [ -r "$f" ] || continue
+            echo "ENVFILE=$f"
+            grep -E '^(AGENTOS_EMPLOYEE_RUNTIME_ROOT|AGENTOS_SUPERVISOR_DELIVERY_MODE|AGENTOS_SUPERVISOR_ONE_DATA_ROOT|AGENTOS_EMPLOYEE_WAKE_ROOT|AGENTOS_EMPLOYEE_WORKER_NODE_ID|AGENTOS_EMPLOYEE_WORKER_HOST_STATE_ROOT|AGENTOS_EMPLOYEE_WORKER_STATE_ROOT|AGENTOS_EMPLOYEE_WORKER_POLL_SECONDS|AGENTOS_EMPLOYEE_WORKER_LEASE_SECONDS)=' "$f" || true
+          done
+          for p in /home/ubuntu/agent-data/employee-wakes /home/ubuntu/agent-data/employee-runtime /home/ubuntu/agent-data/employee-worker-host /home/ubuntu/agent-data/employee-worker-state; do
+            if [ -e "$p" ]; then stat -c 'PATH=%n uid=%u gid=%g mode=%a' "$p"; else echo "PATH_MISSING=$p"; fi
+          done
+          REMOTE
