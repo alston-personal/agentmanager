@@ -26,7 +26,7 @@ from typing import Any, Sequence
 from .antigravity_relay import RELAY_SCHEMA, RECEIPT_SCHEMA, RelayPaths, share_relay_path
 
 
-SUPPORTED_PROVIDERS = {"claude", "agy"}
+SUPPORTED_PROVIDERS = {"claude", "agy", "gemini"}
 
 
 def _utc_now() -> str:
@@ -67,12 +67,21 @@ def _discover_agy() -> list[str] | None:
     return None
 
 
+def _discover_gemini() -> list[str] | None:
+    candidate = Path.home() / ".local/bin/gemini"
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return [str(candidate)]
+    return None
+
+
 def discover_executor(provider: str | None = None) -> tuple[str, list[str] | None]:
     selected = str(provider or os.environ.get("AGENTOS_ANTIGRAVITY_PROVIDER") or "claude").strip().lower()
     if selected not in SUPPORTED_PROVIDERS:
         raise ValueError(f"unsupported Antigravity executor provider: {selected}")
     if selected == "agy":
         return selected, _discover_agy()
+    if selected == "gemini":
+        return selected, _discover_gemini()
     return selected, _discover_claude()
 
 
@@ -174,25 +183,49 @@ class AntigravityRelayWorker:
             reconciled += 1
         return reconciled
 
+    @staticmethod
+    def _gemini_mode(capsule: dict[str, Any]) -> str:
+        ir = capsule.get("canonical_ir") if isinstance(capsule.get("canonical_ir"), dict) else {}
+        operation = str(ir.get("operation") or "").strip()
+        constraints = [str(x) for x in (ir.get("constraints") or []) if isinstance(x, str)]
+        mutating_branch = any(x.startswith("branch=") and x != "branch=none" for x in constraints)
+        return "yolo" if operation == "code.edit" or mutating_branch else "plan"
+
     def _executor_argv(self, capsule: dict[str, Any], workspace: Path) -> list[str]:
         if not self.executor:
             raise RuntimeError(f"no authorized local Antigravity executor discovered for provider={self.provider}")
         prompt = build_prompt(capsule)
         if self.provider == "agy":
             return [*self.executor, "run", "--task", prompt, "--workspace", str(workspace)]
+        if self.provider == "gemini":
+            return [
+                *self.executor,
+                "-p", prompt,
+                "--approval-mode", self._gemini_mode(capsule),
+                "--skip-trust",
+                "--output-format", "text",
+            ]
         return [*self.executor, prompt]
 
     def _run_executor(self, capsule: dict[str, Any], workspace: Path) -> dict[str, Any]:
         provider = self.provider
         executor = self.executor
         hint = str(capsule.get("executor_hint") or "").strip().lower()
-        if hint in {"provider:claude", "provider:agy"}:
+        if hint in {"provider:claude", "provider:agy", "provider:gemini"}:
             provider, executor = discover_executor(hint.split(":", 1)[1])
         if not executor:
             raise RuntimeError(f"no authorized local Antigravity executor discovered for provider={provider}")
         prompt = build_prompt(capsule)
         if provider == "agy":
             argv = [*executor, "run", "--task", prompt, "--workspace", str(workspace)]
+        elif provider == "gemini":
+            argv = [
+                *executor,
+                "-p", prompt,
+                "--approval-mode", self._gemini_mode(capsule),
+                "--skip-trust",
+                "--output-format", "text",
+            ]
         else:
             argv = [*executor, prompt]
         proc = subprocess.Popen(
