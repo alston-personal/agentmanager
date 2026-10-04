@@ -71,3 +71,12 @@ def test_installer_drains_processing_before_stopping_managed_worker():
     assert drain < stop
     assert "action_relay_processing_handoff=PASS" in text
     assert "processing appeared during drain/stop handoff" in text
+
+
+def test_installer_recovers_stale_processing_only_when_managed_worker_is_offline():
+    text = INSTALLER.read_text(encoding="utf-8")
+    assert "if ! systemctl --user is-active --quiet agentos-action-relay.service" in text
+    assert "AntigravityRelayWorker" in text
+    assert "reconcile_stranded_processing(stale_after=600)" in text
+    assert "action_relay_offline_stranded_reconcile=PASS" in text
+    assert "inactive Action Relay stranded processing did not reach safe reconciliation threshold" in text
