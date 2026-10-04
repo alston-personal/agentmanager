@@ -1,0 +1,64 @@
+name: Oracle Codex Provider Readiness Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/oracle-codex-provider-readiness
+    paths:
+      - '.github/workflows/oracle-codex-provider-readiness-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe existing Codex extension without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,shutil,subprocess
+          from pathlib import Path
+          exe=shutil.which('codex')
+          if not exe:
+              root=Path.home()/'.antigravity-ide-server'/'extensions'
+              c=[p for p in root.glob('openai.chatgpt-*-linux-arm64/bin/linux-aarch64/codex') if p.is_file()]
+              exe=str(max(c,key=lambda p:p.stat().st_mtime_ns)) if c else ''
+          print('codex_installed='+('YES' if exe else 'NO'))
+          if not exe:
+              raise SystemExit(3)
+          try:
+              p=subprocess.run(
+                  [exe,'exec','--skip-git-repo-check','--sandbox','read-only','--color','never',
+                   'AgentOS provider health probe. Do not modify files. Reply exactly READY.'],
+                  cwd='/home/ubuntu/agentmanager',
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  timeout=45,
+                  env={**os.environ,'CI':'1'},
+                  check=False,
+              )
+              combined=(p.stdout or '')+'\n'+(p.stderr or '')
+              print('codex_returncode='+str(p.returncode))
+              print('codex_ready='+('YES' if p.returncode==0 and 'READY' in combined else 'NO'))
+              lowered=combined.casefold()
+              if 'login' in lowered or 'sign in' in lowered or 'unauthorized' in lowered:
+                  print('codex_classification=AUTH_REQUIRED')
+              elif 'rate limit' in lowered or 'too many requests' in lowered or 'quota' in lowered:
+                  print('codex_classification=RATE_LIMITED')
+              elif p.returncode==0 and 'READY' in combined:
+                  print('codex_classification=READY')
+              else:
+                  print('codex_classification=NONZERO')
+          except subprocess.TimeoutExpired:
+              print('codex_returncode=124')
+              print('codex_ready=NO')
+              print('codex_classification=TIMEOUT')
+              raise SystemExit(0)
+          PY
