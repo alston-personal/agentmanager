@@ -9,7 +9,8 @@ REPAIR = ROOT / "scripts" / "repair_antigravity_relay_user.sh"
 def test_action_relay_installer_keeps_single_service_and_loads_executor_job_extension():
     text = INSTALLER.read_text(encoding="utf-8")
     assert 'UNIT="$UNIT_DIR/agentos-action-relay.service"' in text
-    assert "agentos_node.executor_job_action_relay --root $RELAY_ROOT" in text
+    assert 'agentos_node.executor_job_action_relay --root "$RELAY_ROOT"' in text
+    assert 'PYTHONPATH="$RUNTIME_ROOT"' in text
     assert "from agentos_node.executor_job_action_relay import ACTION, ACTIONS" in text
     assert "assert ACTION in ACTIONS" in text
     assert "agentos-action-relay-executor" not in text
