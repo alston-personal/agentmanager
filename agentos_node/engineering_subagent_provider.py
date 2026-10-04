@@ -286,7 +286,11 @@ def _probe_provider_stability(
     *,
     attempts: int = 2,
 ) -> dict[str, Any]:
-    results = [_probe_model_provider(provider, workspace_path) for _ in range(max(1, int(attempts)))]
+    timeout_seconds = 45.0 if provider == "gemini" else 20.0
+    results = [
+        _probe_model_provider(provider, workspace_path, timeout_seconds=timeout_seconds)
+        for _ in range(max(1, int(attempts)))
+    ]
     ready_count = sum(1 for item in results if item.get("state") == "READY")
     total = len(results)
     if ready_count == total:
