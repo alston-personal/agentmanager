@@ -191,9 +191,10 @@ def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp
     def fake_run(argv, **kwargs):
         captured["argv"] = list(argv)
         captured["cwd"] = kwargs.get("cwd")
-        settings = Path(kwargs["cwd"]) / ".gemini" / "settings.json"
+        env = dict(kwargs.get("env") or {})
+        settings = Path(env["GEMINI_CLI_HOME"]) / ".gemini" / "settings.json"
         captured["settings"] = json.loads(settings.read_text(encoding="utf-8"))
-        captured["env"] = dict(kwargs.get("env") or {})
+        captured["env"] = env
         return Result()
 
     monkeypatch.setattr(adapters.subprocess, "run", fake_run)
@@ -205,9 +206,11 @@ def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp
     assert "--output-format" in argv
     assert argv[argv.index("--output-format") + 1] == "text"
     assert result["state"] == "READY"
+    assert captured["settings"]["security"]["auth"]["selectedType"] == "oauth-personal"
     assert captured["settings"]["hooksConfig"]["enabled"] is False
     assert captured["settings"]["skills"]["enabled"] is False
     assert captured["env"]["HOME"] == "/home/ubuntu"
+    assert captured["env"]["GEMINI_CLI_HOME"]
     assert captured["cwd"] != str(workspace)
 
 
