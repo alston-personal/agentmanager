@@ -12,6 +12,8 @@ on:
       - 'agentos_node/engineering_subagent_provider.py'
       - 'agentos_node/executor_provider_registry.py'
       - 'agentos_node/executor_provider_adapters.py'
+      - 'agentos_node/codex_provider_adapter.py'
+      - 'agentos_node/executor_profiles/**'
       - 'agentos_node/executor_reconcile.py'
       - 'agentos_node/antigravity_relay_worker.py'
       - '.agentos/executors/**'
