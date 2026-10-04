@@ -213,6 +213,7 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         "AgentOS Gemini CLI health probe. Do not modify files. Reply exactly READY.",
         "--approval-mode",
         "plan",
+        "--skip-trust",
         "--output-format",
         "text",
     ]
