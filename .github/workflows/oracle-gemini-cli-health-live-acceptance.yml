@@ -1,0 +1,95 @@
+name: Oracle Gemini CLI Health Live Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-gemini-cli-health-live-acceptance.yml'
+      - 'agentos_node/gemini_cli_install_provider.py'
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/executor_job_action_relay.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Probe Gemini CLI through bounded executor job
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=180             bash scripts/agentos_dispatch.sh agentos.executor job.submit "$GITHUB_SHA" job_type=gemini.cli.health             | tee "$RUNNER_TEMP/gemini-health-submit.txt"
+
+          job_id="$(python3 - "$RUNNER_TEMP/gemini-health-submit.txt" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          receipt=(docs[-1].get('receipt') or {}) if docs else {}
+          job=receipt.get('executor_job') or {}
+          assert receipt.get('ok') is True, receipt
+          value=str(job.get('job_id') or '')
+          assert value.startswith('action-'), job
+          print(value)
+          PY
+          )"
+
+          for i in $(seq 1 60); do
+            out="$RUNNER_TEMP/gemini-health-inspect-$i.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=90               bash scripts/agentos_dispatch.sh agentos.executor job.inspect "$GITHUB_SHA" job_id="$job_id" > "$out"
+            set +e
+            python3 - "$out" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          if not docs:
+              raise SystemExit(1)
+          receipt=docs[-1].get('receipt') or {}
+          if receipt.get('executor_job_state')!='completed':
+              raise SystemExit(1)
+          job=receipt.get('executor_job_receipt') or {}
+          classification=str(job.get('classification') or 'none')
+          print('gemini_cli_health_classification='+classification)
+          print('gemini_cli_health_authorized='+str(job.get('authorized')))
+          print('gemini_cli_health_routable='+str(job.get('routable')))
+          if classification=='GEMINI_CLI_HEALTH_READY' and job.get('successful') is True:
+              raise SystemExit(0)
+          raise SystemExit(2)
+          PY
+            rc=$?
+            set -e
+            if [ "$rc" = 0 ]; then
+              echo 'gemini_cli_health_live_acceptance=PASS'
+              exit 0
+            fi
+            if [ "$rc" = 2 ]; then
+              echo 'gemini_cli_health_live_acceptance=TERMINAL_FAIL'
+              cat "$out"
+              exit 2
+            fi
+            sleep 3
+          done
+          echo 'gemini_cli_health_live_acceptance=TIMEOUT'
+          exit 3
