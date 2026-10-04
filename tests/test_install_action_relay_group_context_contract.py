@@ -43,3 +43,13 @@ def test_installer_converges_to_one_exact_generation_consumer_fail_closed():
     assert 'AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT' in text
     assert 'action_relay_single_consumer=PASS' in text
     assert 'action_relay_runtime_generation_env=PASS' in text
+
+
+def test_installer_cutover_is_fresh_node_safe_zombie_safe_and_stage_specific():
+    text = INSTALLER.read_text(encoding="utf-8")
+    assert 'if [ -f "$UNIT" ]; then' in text
+    assert 'managed Action Relay service remained active after stop' in text
+    assert 'awk \'{print $3}\' "/proc/$pid/stat"' in text
+    assert '[ "$state" = "Z" ] && continue' in text
+    for code in ("61", "62", "63", "64", "65", "66", "67"):
+        assert f"exit {code}" in text
