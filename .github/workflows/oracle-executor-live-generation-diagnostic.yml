@@ -133,3 +133,51 @@ jobs:
               print(f'action_relay_{name}_count={len(rows)}')
               print(f'action_relay_{name}_oldest_seconds={int(oldest)}')
           PY
+
+      - name: Classify latest Gemini CLI health failure without raw output
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data/runtime/action-relay/receipts')
+          rows=[]
+          for p in sorted(root.glob('action-*.json'), key=lambda x:x.stat().st_mtime, reverse=True):
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              if d.get('job_type')!='gemini.cli.health':
+                  continue
+              text=((d.get('stdout') or '')+'\n'+(d.get('stderr') or '')+'\n'+(d.get('error') or '')).casefold()
+              cats=[]
+              patterns={
+                  'AUTH':r'login|sign in|unauthorized|authentication|required auth|not authenticated',
+                  'HOOK':r'hook|sessionstart|session start',
+                  'MCP':r'\bmcp\b|agentos-one',
+                  'CONFIG':r'config|settings\.json|fatalconfig|invalid settings',
+                  'INPUT':r'unknown option|unknown argument|invalid argument|usage:|fatalinput',
+                  'APPROVAL':r'approval|plan mode',
+                  'MODEL':r'model|gemini-[0-9]|no model',
+                  'RATE':r'rate limit|too many requests|quota|resource exhausted',
+                  'NETWORK':r'enotfound|eai_again|network|connection|socket|timeout',
+                  'PROJECT':r'project id|projectid|google cloud project',
+                  'SANDBOX':r'sandbox|docker|podman|seatbelt',
+              }
+              for name,pat in patterns.items():
+                  if re.search(pat,text):
+                      cats.append(name)
+              rows.append({
+                  'capsule_id':d.get('capsule_id') or p.stem,
+                  'returncode':d.get('executor_returncode') if 'executor_returncode' in d else d.get('returncode'),
+                  'classification':d.get('classification'),
+                  'categories':cats,
+                  'stdout_nonempty':bool(d.get('stdout')),
+                  'stderr_nonempty':bool(d.get('stderr')),
+                  'error_nonempty':bool(d.get('error')),
+              })
+              break
+          print(json.dumps(rows,sort_keys=True,separators=(',',':')))
+          PY
