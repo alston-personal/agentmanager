@@ -33,7 +33,7 @@ def test_action_relay_exec_pins_exact_runtime_import_path_inside_sg():
 def test_installer_converges_to_one_exact_generation_consumer_fail_closed():
     text = INSTALLER.read_text(encoding="utf-8")
     assert 'systemctl --user stop agentos-action-relay.service' in text
-    assert 'processing did not drain before consumer cleanup' in text
+    assert 'processing did not drain before managed stop' in text
     assert 'action_relay_processing_drain=PASS' in text
     assert 'relay_consumer_pids()' in text
     assert 'cat "/proc/$pid/comm"' in text
@@ -62,3 +62,12 @@ def test_generation_check_does_not_read_cross_uid_proc_environ():
     assert "systemctl --user show agentos-action-relay.service -p WorkingDirectory --value" in text
     assert 'git -C "$RUNTIME_ROOT" rev-parse HEAD' in text
     assert "action_relay_runtime_generation_unit=PASS" in text
+
+
+def test_installer_drains_processing_before_stopping_managed_worker():
+    text = INSTALLER.read_text(encoding="utf-8")
+    drain = text.index("action_relay_processing_drain=PASS")
+    stop = text.index("systemctl --user stop agentos-action-relay.service")
+    assert drain < stop
+    assert "action_relay_processing_handoff=PASS" in text
+    assert "processing appeared during drain/stop handoff" in text
