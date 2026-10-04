@@ -31,7 +31,14 @@ def parse_env(text: str) -> dict[str, str]:
             continue
         key, separator, value = line.partition("=")
         if not separator:
-            raise RepairFailure(f"environment_malformed_missing_equals_line_{line_number}")
+            previous = text.splitlines()[line_number - 2] if line_number > 1 else ""
+            previous_continuation = previous.rstrip().endswith("\\")
+            export_like = line.lstrip().startswith("export ")
+            raise RepairFailure(
+                "environment_malformed_missing_equals_line_"
+                f"{line_number}_prev_cont_{int(previous_continuation)}"
+                f"_exportlike_{int(export_like)}"
+            )
         if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
             raise RepairFailure(f"environment_malformed_invalid_key_line_{line_number}")
         if key in result:
