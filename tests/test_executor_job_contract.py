@@ -179,3 +179,22 @@ def test_health_receipt_may_project_runtime_source_commit_only_as_scalar():
     )
     assert receipt["runtime_source_commit"] == "a" * 40
     assert "stdout" not in receipt
+
+
+def test_gemini_cli_version_is_a_bounded_receipt_scalar():
+    request = canonical_executor_job_request("gemini.cli.install")
+    receipt = project_executor_job_receipt(
+        job_id="job-gemini-version-1234",
+        request=request,
+        executor_available=True,
+        routable=True,
+        authorized=True,
+        successful=True,
+        result={
+            "classification": "GEMINI_CLI_ONE_INSTALL_PASS",
+            "gemini_cli_version": "0.99.0",
+            "stdout": "must-not-cross",
+        },
+    )
+    assert receipt["gemini_cli_version"] == "0.99.0"
+    assert "stdout" not in receipt
