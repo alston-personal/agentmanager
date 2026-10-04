@@ -13,21 +13,25 @@ from agentos_node.executor_provider_registry import (
 from agentos_node.executor_provider_adapters import (
     AntigravityProvider,
     ClaudeCodeProvider,
+    GeminiProvider,
     INVOKE_SCHEMA,
 )
 
 
 def test_core_profiles_load_and_bound_adapters():
     profiles = {p["executor_id"]: p for p in load_provider_profiles()}
-    assert {"claude-code", "antigravity"} <= set(profiles)
+    assert {"claude-code", "antigravity", "gemini"} <= set(profiles)
 
     claude = load_provider(profiles["claude-code"])
     antigravity = load_provider(profiles["antigravity"])
+    gemini = load_provider(profiles["gemini"])
 
     assert isinstance(claude, ClaudeCodeProvider)
     assert isinstance(antigravity, AntigravityProvider)
+    assert isinstance(gemini, GeminiProvider)
     assert sorted(claude.capabilities()) == ["agent.chat", "code.edit"]
     assert sorted(antigravity.capabilities()) == ["agent.chat", "code.edit"]
+    assert sorted(gemini.capabilities()) == ["agent.chat", "code.edit"]
 
 
 def test_provider_profile_rejects_caller_execution_authority():
@@ -169,3 +173,17 @@ def test_provider_health_classifies_rate_limit(monkeypatch, tmp_path: Path):
 
     result = adapters._health("agy", workspace=tmp_path)
     assert result["classification"] == "RATE_LIMITED"
+
+
+def test_gemini_health_command_is_fixed_read_only_plan_mode(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    monkeypatch.setattr(adapters, "discover_executor", lambda provider: ("gemini", ["/home/ubuntu/.local/bin/gemini"]))
+    argv = adapters._provider_command("gemini", tmp_path, "Reply exactly READY.")
+    assert argv == [
+        "/home/ubuntu/.local/bin/gemini",
+        "-p", "Reply exactly READY.",
+        "--approval-mode", "plan",
+        "--skip-trust",
+        "--output-format", "text",
+    ]
