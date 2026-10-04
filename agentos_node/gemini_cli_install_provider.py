@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -191,6 +192,35 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
     return "GEMINI_CLI_HEALTH_NONZERO"
 
 
+def _gemini_health_diagnostic_tags(combined: str, payload: Mapping[str, Any] | None) -> str:
+    tags: list[str] = []
+    if isinstance(payload, Mapping):
+        keys = sorted(str(k) for k in payload.keys())
+        if keys:
+            tags.append("payload_keys=" + ",".join(keys[:12]))
+        error = payload.get("error")
+        if isinstance(error, Mapping):
+            error_keys = sorted(str(k) for k in error.keys())
+            if error_keys:
+                tags.append("error_keys=" + ",".join(error_keys[:12]))
+            error_type = str(error.get("type") or "").strip()
+            if re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,80}", error_type):
+                tags.append("error_type=" + error_type)
+            error_code = str(error.get("code") or "").strip()
+            if re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", error_code):
+                tags.append("error_code=" + error_code)
+    symbols: list[str] = []
+    for token in re.findall(r"\b[A-Z][A-Z0-9_]{2,64}\b|\b[A-Za-z][A-Za-z0-9]*(?:Error|Exception)\b", combined or ""):
+        if token not in symbols:
+            symbols.append(token)
+        if len(symbols) >= 8:
+            break
+    if symbols:
+        tags.append("symbols=" + ",".join(symbols))
+    if not tags:
+        tags.append("shape=opaque-nonzero")
+    return ";".join(tags)[:512]
+
 def _classify_gemini_json_error(error_type: str, error_code: Any, returncode: int, error_text: str = "") -> str:
     value = (str(error_type or "") + " " + str(error_text or "")).strip().casefold()
     if returncode == 42:
@@ -309,6 +339,7 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         result = _failure(classification, executor_available=True, routable=False, authorized=authorized)
         result["executor_returncode"] = int(proc.returncode)
         result["executor_timed_out"] = False
+        result["gemini_cli_diagnostic_tags"] = _gemini_health_diagnostic_tags(combined, payload)
         return result
 
     return {

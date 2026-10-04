@@ -196,3 +196,17 @@ def test_gemini_cli_health_classification_reads_nested_error_message():
 
     assert _classify_gemini_json_error("", None, 1, '{"message":"Please reauthenticate credentials"}') == "GEMINI_CLI_AUTH_REQUIRED"
     assert _classify_gemini_json_error("", None, 1, '{"message":"RESOURCE_EXHAUSTED quota exceeded"}') == "GEMINI_CLI_RATE_LIMITED"
+
+
+def test_gemini_cli_health_diagnostic_tags_are_structural_and_bounded():
+    from agentos_node.gemini_cli_install_provider import _gemini_health_diagnostic_tags
+
+    payload = {"error": {"type": "MysteryProviderError", "code": "E_UNKNOWN", "message": "secret@example.com /home/ubuntu/private"}}
+    tags = _gemini_health_diagnostic_tags("FATAL MysteryProviderError E_UNKNOWN opaque text", payload)
+    assert "payload_keys=error" in tags
+    assert "error_keys=code,message,type" in tags
+    assert "error_type=MysteryProviderError" in tags
+    assert "error_code=E_UNKNOWN" in tags
+    assert "secret@example.com" not in tags
+    assert "/home/ubuntu/private" not in tags
+    assert len(tags) <= 512
