@@ -161,7 +161,11 @@ def test_read_only_smoke_is_deterministic_and_does_not_require_model(tmp_path: P
 def _snapshot_row(executor_id: str, *, state: str, stable: bool, streak: int, classification: str = ""):
     return {
         "executor_id": executor_id,
-        "provider_id": "anthropic" if executor_id == "claude-code" else "google-antigravity",
+        "provider_id": (
+            "anthropic" if executor_id == "claude-code"
+            else "google" if executor_id == "gemini"
+            else "google-antigravity"
+        ),
         "executor_class": executor_id,
         "state": state,
         "adopted": True,
@@ -562,6 +566,10 @@ def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path:
             "state": "ERROR", "classification": "CLI_CONTRACT", "returncode": 2,
             "timed_out": False, "ready_count": 0, "attempts": 2,
         },
+        "gemini": {
+            "state": "READY", "classification": "READY", "returncode": 0,
+            "timed_out": False, "ready_count": 2, "attempts": 2,
+        },
     }
     monkeypatch.setattr(provider, "_probe_provider_stability", lambda name, *args, **kwargs: dict(probes[name]))
     monkeypatch.setattr(provider, "_probe_binary_liveness", lambda name: "READY")
@@ -575,8 +583,11 @@ def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path:
     assert result["agy_state"] == "ERROR"
     assert result["agy_health_classification"] == "CLI_CONTRACT"
     assert result["agy_probe_attempts"] == 2
-    assert result["selected_provider"] == ""
-    assert result["successful"] is False
+    assert result["gemini_state"] == "READY"
+    assert result["gemini_health_classification"] == "READY"
+    assert result["gemini_probe_attempts"] == 2
+    assert result["selected_provider"] == "gemini"
+    assert result["successful"] is True
 
 
 def test_snapshot_health_marks_unhealthy_without_classification_as_contract_incomplete():
@@ -594,3 +605,111 @@ def test_snapshot_health_marks_unhealthy_without_classification_as_contract_inco
     assert result["claude_health_classification"] == "HEALTH_CONTRACT_INCOMPLETE"
     assert result["agy_health_classification"] == "HEALTH_CONTRACT_INCOMPLETE"
     assert result["selected_provider"] == ""
+
+
+def test_snapshot_health_selects_stable_gemini_when_primary_providers_unhealthy():
+    import agentos_node.engineering_subagent_provider as provider
+
+    snapshot = {
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": "2026-10-04T06:47:00Z",
+        "executors": [
+            _snapshot_row("claude-code", state="UNHEALTHY", stable=False, streak=0, classification="TIMEOUT"),
+            _snapshot_row("antigravity", state="UNHEALTHY", stable=False, streak=0, classification="RATE_LIMITED"),
+            _snapshot_row("gemini", state="READY", stable=True, streak=2),
+        ],
+    }
+    result = provider._health_from_snapshot(snapshot)
+    assert result["classification"] == "ENGINEERING_EXECUTOR_HEALTH_READY"
+    assert result["selected_provider"] == "gemini"
+    assert result["gemini_state"] == "READY"
+    assert result["gemini_ready_count"] == 2
+    assert result["successful"] is True
+
+
+def test_gemini_health_probe_uses_fixed_plan_mode(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    captured = {}
+    monkeypatch.setattr(
+        provider,
+        "discover_executor",
+        lambda name: ("gemini", ["/home/ubuntu/.local/bin/gemini"]),
+    )
+
+    class Completed:
+        returncode = 0
+        stdout = "READY"
+        stderr = ""
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = list(argv)
+        return Completed()
+
+    monkeypatch.setattr(provider.subprocess, "run", fake_run)
+    result = provider._probe_model_provider("gemini", workspace, timeout_seconds=1)
+
+    argv = captured["argv"]
+    assert "-p" in argv
+    assert "--approval-mode" in argv
+    assert argv[argv.index("--approval-mode") + 1] == "plan"
+    assert "--skip-trust" in argv
+    assert "--output-format" in argv
+    assert result["state"] == "READY"
+    assert result["classification"] == "READY"
+
+
+def test_model_smoke_routes_through_gemini_when_selected(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    monkeypatch.setattr(
+        provider,
+        "_read_executor_health",
+        lambda: {
+            "verdict": "PASS",
+            "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
+            "executor_available": True,
+            "routable": True,
+            "authorized": True,
+            "successful": True,
+            "credential_exposed": False,
+            "selected_provider": "gemini",
+        },
+    )
+
+    submitted = {}
+    class FakeClient:
+        def __init__(self, root):
+            self.root = root
+        def submit(self, **kwargs):
+            submitted.update(kwargs)
+            return {"capsule_id": "relay-gemini"}
+        def receipt(self, capsule_id):
+            return {
+                "ok": True,
+                "provider": "gemini",
+                "returncode": 0,
+                "timed_out": False,
+            }
+
+    monkeypatch.setattr(provider, "AntigravityRelayClient", FakeClient)
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.model.smoke"),
+        relay_root=tmp_path / "relay",
+        workspace=workspace,
+        timeout_seconds=1,
+    )
+
+    assert submitted["executor_hint"] == "provider:gemini"
+    assert result["classification"] == "ENGINEERING_MODEL_SMOKE_COMPLETED_PENDING_VERIFICATION"
+    assert result["executor_provider"] == "gemini"
+    assert result["selected_provider"] == "gemini"
+    assert result["executor_returncode"] == 0
