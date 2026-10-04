@@ -35,11 +35,17 @@ JOBS: dict[str, dict[str, str]] = {
         "goal": "Prove the governed engineering Subagent can inspect the canonical AgentOS repository without mutation.",
         "acceptance": "Inspect current HEAD and repository status, make no changes, and return a concrete bounded result.",
     },
+    "engineering.executor.snapshot": {
+        "workload_ref": "surface://engineering-executors",
+        "branch": "",
+        "goal": "Read the durable engineering executor health snapshot without invoking a model.",
+        "acceptance": "Select only a provider already marked stable_routable by the reconciler; fail closed on stale or missing snapshot.",
+    },
     "engineering.executor.health": {
         "workload_ref": "surface://engineering-executors",
         "branch": "",
         "goal": "Probe fixed local engineering model providers without mutation.",
-        "acceptance": "Classify Claude and agy as READY, AUTH_REQUIRED, TIMEOUT, ERROR, or UNAVAILABLE and select the first READY provider.",
+        "acceptance": "Classify Claude, agy, and Gemini as READY, FLAKY, AUTH_REQUIRED, TIMEOUT, ERROR, or UNAVAILABLE and select the first READY provider.",
     },
     "engineering.model.smoke": {
         "workload_ref": "surface://engineering-model-subagent",
@@ -544,6 +550,8 @@ def run_engineering_subagent(
         return _run_read_only_smoke(workspace_path)
     if spec.job_type == "engineering.executor.health":
         return _run_executor_health(workspace_path)
+    if spec.job_type == "engineering.executor.snapshot":
+        return _read_executor_health()
 
     health = _read_executor_health()
     selected_provider = str(health.get("selected_provider") or "")
