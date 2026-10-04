@@ -141,6 +141,46 @@ print('actions='+','.join(sorted(ACTIONS)))
 PY
 )
 
+# Converge to exactly one governed consumer for this spool.
+# Never terminate a consumer while a capsule may have unknown side effects.
+systemctl --user stop agentos-action-relay.service 2>/dev/null || true
+if find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
+  echo "ERROR: Action Relay processing is non-empty; refusing consumer cleanup" >&2
+  exit 6
+fi
+
+mapfile -t stale_relay_pids < <(
+  pgrep -u "$(id -u)" -f "python3 -m agentos_node\.(action_relay|executor_job_action_relay) --root $RELAY_ROOT" || true
+)
+for pid in "${stale_relay_pids[@]:-}"; do
+  [ -n "$pid" ] || continue
+  cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+  case "$cmdline" in
+    *"python3 -m agentos_node.action_relay --root $RELAY_ROOT"*|*"python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT"*)
+      kill -TERM "$pid" 2>/dev/null || true
+      ;;
+  esac
+done
+
+for i in $(seq 1 20); do
+  if ! pgrep -u "$(id -u)" -f "python3 -m agentos_node\.(action_relay|executor_job_action_relay) --root $RELAY_ROOT" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.25
+done
+mapfile -t stubborn_relay_pids < <(
+  pgrep -u "$(id -u)" -f "python3 -m agentos_node\.(action_relay|executor_job_action_relay) --root $RELAY_ROOT" || true
+)
+for pid in "${stubborn_relay_pids[@]:-}"; do
+  [ -n "$pid" ] || continue
+  kill -KILL "$pid" 2>/dev/null || true
+done
+if pgrep -u "$(id -u)" -f "python3 -m agentos_node\.(action_relay|executor_job_action_relay) --root $RELAY_ROOT" >/dev/null 2>&1; then
+  echo "ERROR: stale Action Relay consumer remains after bounded cleanup" >&2
+  exit 6
+fi
+echo "action_relay_prior_consumers_cleared=PASS"
+
 cat > "$UNIT" <<EOF
 [Unit]
 Description=AgentOS Governed Action Relay (ubuntu identity, agentos boundary)
@@ -165,8 +205,8 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now agentos-action-relay.service
-systemctl --user restart agentos-action-relay.service
+systemctl --user enable agentos-action-relay.service
+systemctl --user start agentos-action-relay.service
 
 stable=0
 for i in $(seq 1 20); do
@@ -187,6 +227,25 @@ if [ "$stable" -lt 3 ]; then
   echo 'action_relay_install=FAIL' >&2
   exit 4
 fi
+
+mapfile -t live_relay_pids < <(
+  pgrep -u "$(id -u)" -f "python3 -m agentos_node\.executor_job_action_relay --root $RELAY_ROOT" || true
+)
+if [ "${#live_relay_pids[@]}" -ne 1 ]; then
+  echo "ERROR: expected exactly one canonical Action Relay consumer; observed=${#live_relay_pids[@]}" >&2
+  exit 6
+fi
+relay_pid="${live_relay_pids[0]}"
+if pgrep -u "$(id -u)" -f "python3 -m agentos_node\.action_relay --root $RELAY_ROOT" >/dev/null 2>&1; then
+  echo "ERROR: legacy Action Relay consumer is still present" >&2
+  exit 6
+fi
+tr '\0' '\n' < "/proc/$relay_pid/environ" > "$RUNTIME_ROOT/.relay-env-check"
+grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF" "$RUNTIME_ROOT/.relay-env-check"
+grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT" "$RUNTIME_ROOT/.relay-env-check"
+rm -f "$RUNTIME_ROOT/.relay-env-check"
+echo "action_relay_single_consumer=PASS"
+echo "action_relay_runtime_generation_env=PASS"
 
 # Capability availability is installed-state evidence, not a source-code claim.
 # Publish only after the exact immutable runtime imports both fixed semantic

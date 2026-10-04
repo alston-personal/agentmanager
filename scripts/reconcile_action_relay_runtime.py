@@ -72,6 +72,46 @@ def _service_active(repo: Path) -> bool:
     return result.returncode == 0
 
 
+def _runtime_consumer_current(*, data_root: Path, source_commit: str) -> bool:
+    relay_root = str((data_root / "runtime" / "action-relay").resolve())
+    canonical = f"/usr/bin/python3 -m agentos_node.executor_job_action_relay --root {relay_root}"
+    legacy = f"/usr/bin/python3 -m agentos_node.action_relay --root {relay_root}"
+    matches = []
+    proc_root = Path("/proc")
+    try:
+        entries = list(proc_root.iterdir())
+    except OSError:
+        return False
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            raw = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue
+        cmdline = raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
+        if legacy in cmdline:
+            return False
+        if canonical not in cmdline:
+            continue
+        try:
+            env_raw = (entry / "environ").read_bytes()
+        except OSError:
+            return False
+        env = {
+            part.split(b"=", 1)[0].decode("utf-8", "replace"):
+            part.split(b"=", 1)[1].decode("utf-8", "replace")
+            for part in env_raw.split(b"\0")
+            if b"=" in part
+        }
+        if env.get("AGENTOS_ACTION_RUNTIME_SOURCE_REF") != SOURCE_REF:
+            return False
+        if env.get("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT") != source_commit:
+            return False
+        matches.append(entry.name)
+    return len(matches) == 1
+
+
 def _timer_enabled(repo: Path) -> bool:
     result = _run(["systemctl", "--user", "is-enabled", "--quiet", RECONCILE_TIMER], cwd=repo, timeout=20)
     return result.returncode == 0
@@ -146,7 +186,11 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
         raise RuntimeError("action_relay_reconcile_checkout_not_current_core_integration")
 
     marker = data_root / "runtime" / "action-relay" / "capabilities.json"
-    if _marker_current(marker, source_commit=current) and _service_active(repo):
+    if (
+        _marker_current(marker, source_commit=current)
+        and _service_active(repo)
+        and _runtime_consumer_current(data_root=data_root, source_commit=current)
+    ):
         timer_installed = _ensure_reconcile_timer(repo=repo, data_root=data_root)
         return {
             "schema": "agentos.action-relay-generation-reconcile/v1",
@@ -173,6 +217,8 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
         raise RuntimeError("action_relay_reconcile_marker_mismatch")
     if not _service_active(repo):
         raise RuntimeError("action_relay_reconcile_service_not_active")
+    if not _runtime_consumer_current(data_root=data_root, source_commit=current):
+        raise RuntimeError("action_relay_reconcile_runtime_generation_mismatch")
     timer_installed = _ensure_reconcile_timer(repo=repo, data_root=data_root)
 
     return {
