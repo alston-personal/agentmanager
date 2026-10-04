@@ -147,7 +147,12 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
             "classification": "AUTH_REQUIRED",
         }
     lowered = combined.casefold()
-    if any(token in lowered for token in (
+    if provider == "gemini" and any(token in lowered for token in (
+        "ineligibletiererror", "unsupported_client",
+        "this client is no longer supported", "migrate to antigravity",
+    )):
+        classification = "OAUTH_CLIENT_UNSUPPORTED"
+    elif any(token in lowered for token in (
         "unknown command", "unrecognized argument", "unrecognized option",
         "no such option", "invalid option", "usage:",
     )):

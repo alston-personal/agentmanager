@@ -132,7 +132,7 @@ jobs:
           assert r.get('classification')=='ENGINEERING_EXECUTOR_HEALTH_READY', r
           assert r.get('successful') is True, r
           selected=str(r.get('selected_provider') or '')
-          assert selected in {'claude','agy','gemini'}, r
+          assert selected in {'claude','agy'}, r
           with open(sys.argv[2],'a',encoding='utf-8') as f:
               f.write('selected_provider='+selected+'\n')
           print('model_routing_health_gate=PASS')
@@ -228,7 +228,7 @@ jobs:
           r=json.load(open(sys.argv[1],encoding='utf-8'))
           assert r.get('job_type')=='engineering.model.smoke', r
           assert r.get('classification')=='ENGINEERING_MODEL_SMOKE_COMPLETED_PENDING_VERIFICATION', r
-          assert r.get('executor_provider') in {'claude','agy','gemini'}, r
+          assert r.get('executor_provider') in {'claude','agy'}, r
           assert r.get('selected_provider') == r.get('executor_provider'), r
           assert r.get('executor_returncode')==0, r
           assert r.get('executor_timed_out') is False, r
