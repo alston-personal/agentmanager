@@ -142,55 +142,25 @@ PY
 )
 
 # Converge to exactly one governed consumer for this spool.
-# Never terminate a consumer while a capsule may have unknown side effects.
-# If a previous failed cutover left the managed service inactive with stranded
-# processing, normal draining is impossible. Reuse the worker's conservative
-# UNKNOWN_SIDE_EFFECT reconciliation after each capsule reaches the existing
-# >=600s safety threshold. Never replay it.
+# Never terminate a live consumer while a capsule may have unknown side effects.
+# If the managed worker is already inactive, any leftover processing capsule is
+# by definition interrupted. Reuse ActionRelayWorker's native at-most-once
+# recovery: emit outcome=unknown, replayed=false, then quarantine.
 if ! systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; then
-  offline_recovered=0
-  for i in $(seq 1 140); do
-    if ! find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
-      offline_recovered=1
-      break
-    fi
-    PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - "$RELAY_ROOT" <<'PY' || true
+  PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - "$RELAY_ROOT" <<'PY'
 from pathlib import Path
 import sys
-from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
+from agentos_node.action_relay import ActionRelayWorker
 
-root = Path(sys.argv[1])
-worker = AntigravityRelayWorker(root)
-worker.reconcile_stranded_processing(stale_after=600)
+recovered = ActionRelayWorker(Path(sys.argv[1])).recover_interrupted()
+print("action_relay_interrupted_recovered=" + str(len(recovered)))
 PY
-    if ! find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
-      offline_recovered=1
-      break
-    fi
-    sleep 5
-  done
-  if [ "$offline_recovered" -ne 1 ]; then
-    echo "ERROR: inactive Action Relay stranded processing did not reach safe reconciliation threshold" >&2
-    exit 62
-  fi
-  echo "action_relay_offline_stranded_reconcile=PASS"
+  echo "action_relay_offline_interrupted_recovery=PASS"
 fi
 
-# Drain while the current worker is still alive; stopping it first would make
-# an in-flight processing capsule impossible to complete.
+# With a live managed worker, allow fresh processing to finish normally.
 processing_clear=0
 for i in $(seq 1 90); do
-  # Fresh processing is allowed to finish normally. A processing capsule older
-  # than the existing conservative 600s threshold cannot be a valid in-flight
-  # execution under the 180s worker timeout; reconcile it as UNKNOWN_SIDE_EFFECT
-  # rather than replaying or waiting forever.
-  PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - "$RELAY_ROOT" <<'PY' || true
-from pathlib import Path
-import sys
-from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
-
-AntigravityRelayWorker(Path(sys.argv[1])).reconcile_stranded_processing(stale_after=600)
-PY
   if ! find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
     processing_clear=1
     break
