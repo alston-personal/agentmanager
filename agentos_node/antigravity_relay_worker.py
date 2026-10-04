@@ -204,6 +204,8 @@ class AntigravityRelayWorker:
         prompt = build_prompt(capsule)
         if provider == "agy":
             argv = [*executor, "run", "--task", prompt, "--workspace", str(workspace)]
+        elif provider == "gemini":
+            argv = [*executor, "--skip-trust", "--approval-mode", "auto_edit", "--output-format", "text", "-p", prompt]
         else:
             argv = [*executor, prompt]
         proc = subprocess.Popen(
