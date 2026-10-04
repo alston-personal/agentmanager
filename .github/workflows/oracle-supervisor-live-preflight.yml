@@ -54,20 +54,8 @@ jobs:
               except Exception as e:
                   roots[str(p)]={'error':type(e).__name__}
           out['roots']=roots
-          out['service_units']=cmd(['bash','-lc',r"""
-            for f in /home/ubuntu/.config/systemd/user/agentos-core-supervisor.service /home/ubuntu/.config/systemd/user/agentos-employee-worker-host.service /home/ubuntu/.config/systemd/user/agentos-employee-wake-node.service; do
-              [ -f "$f" ] || continue
-              echo "UNIT=$f"
-              grep -E '^(WorkingDirectory|EnvironmentFile|ReadWritePaths|ReadOnlyPaths|ExecStart)=' "$f" || true
-            done
-          ""'])
-          out['safe_host_env']=cmd(['bash','-lc',r"""
-            for f in /home/ubuntu/.config/agentos/core-supervisor.env /home/ubuntu/.config/agentos/employee-worker-host.env; do
-              [ -r "$f" ] || continue
-              echo "ENVFILE=$f"
-              grep -E '^(AGENTOS_EMPLOYEE_RUNTIME_ROOT|AGENTOS_SUPERVISOR_DELIVERY_MODE|AGENTOS_SUPERVISOR_ONE_DATA_ROOT|AGENTOS_EMPLOYEE_WAKE_ROOT|AGENTOS_EMPLOYEE_WORKER_NODE_ID|AGENTOS_EMPLOYEE_WORKER_HOST_STATE_ROOT|AGENTOS_EMPLOYEE_WORKER_STATE_ROOT)=' "$f" || true
-            done
-          ""'])
+          out['service_units']=cmd(['bash','-lc',"for f in /home/ubuntu/.config/systemd/user/agentos-core-supervisor.service /home/ubuntu/.config/systemd/user/agentos-employee-worker-host.service /home/ubuntu/.config/systemd/user/agentos-employee-wake-node.service; do [ -f \"$f\" ] || continue; echo UNIT=$f; grep -E '^(WorkingDirectory|EnvironmentFile|ReadWritePaths|ReadOnlyPaths|ExecStart)=' \"$f\" || true; done"])
+          out['safe_host_env']=cmd(['bash','-lc',"for f in /home/ubuntu/.config/agentos/core-supervisor.env /home/ubuntu/.config/agentos/employee-worker-host.env; do [ -r \"$f\" ] || continue; echo ENVFILE=$f; grep -E '^(AGENTOS_EMPLOYEE_RUNTIME_ROOT|AGENTOS_SUPERVISOR_DELIVERY_MODE|AGENTOS_SUPERVISOR_ONE_DATA_ROOT|AGENTOS_EMPLOYEE_WAKE_ROOT|AGENTOS_EMPLOYEE_WORKER_NODE_ID|AGENTOS_EMPLOYEE_WORKER_HOST_STATE_ROOT|AGENTOS_EMPLOYEE_WORKER_STATE_ROOT)=' \"$f\" || true; done"])
 
           # Read only safe node/capability projection through repository runtime.
           try:
