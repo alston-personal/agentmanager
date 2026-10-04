@@ -174,6 +174,16 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
         return "GEMINI_CLI_RATE_LIMITED"
     if any(token in text for token in ("network is unreachable", "enotfound", "eai_again", "connection reset", "socket hang up", "etimedout")):
         return "GEMINI_CLI_NETWORK"
+    if any(token in text for token in ("unknown argument", "unknown option", "unrecognized option", "invalid option", "approval-mode")):
+        return "GEMINI_CLI_CLI_CONTRACT"
+    if any(token in text for token in ("workspace trust", "folder trust", "not trusted", "trust this folder", "untrusted workspace")):
+        return "GEMINI_CLI_WORKSPACE_TRUST_REQUIRED"
+    if any(token in text for token in ("settings.json", "fatalconfigerror", "invalid configuration", "config error")):
+        return "GEMINI_CLI_CONFIG_ERROR"
+    if any(token in text for token in ("sessionstart", "hook failed", "hook error", "hooks")):
+        return "GEMINI_CLI_HOOK_ERROR"
+    if any(token in text for token in ("mcp", "agentos-one")):
+        return "GEMINI_CLI_MCP_ERROR"
     return "GEMINI_CLI_HEALTH_NONZERO"
 
 

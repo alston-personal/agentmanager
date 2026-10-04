@@ -85,6 +85,11 @@ def test_gemini_cli_health_classification_is_bounded():
     assert _classify_health_failure(1, "Please login to continue") == "GEMINI_CLI_AUTH_REQUIRED"
     assert _classify_health_failure(1, "resource exhausted: quota") == "GEMINI_CLI_RATE_LIMITED"
     assert _classify_health_failure(1, "network is unreachable") == "GEMINI_CLI_NETWORK"
+    assert _classify_health_failure(1, "Unknown argument: --approval-mode") == "GEMINI_CLI_CLI_CONTRACT"
+    assert _classify_health_failure(1, "Workspace trust is required") == "GEMINI_CLI_WORKSPACE_TRUST_REQUIRED"
+    assert _classify_health_failure(1, "settings.json invalid configuration") == "GEMINI_CLI_CONFIG_ERROR"
+    assert _classify_health_failure(1, "SessionStart hook failed") == "GEMINI_CLI_HOOK_ERROR"
+    assert _classify_health_failure(1, "agentos-one MCP unavailable") == "GEMINI_CLI_MCP_ERROR"
     assert _classify_health_failure(7, "opaque") == "GEMINI_CLI_HEALTH_NONZERO"
     assert _classify_health_failure(124, "", timed_out=True) == "GEMINI_CLI_HEALTH_TIMEOUT"
 
