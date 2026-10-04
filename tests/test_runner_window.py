@@ -229,3 +229,16 @@ def test_oursong_status_maps_to_fixed_bootstrap_action():
         "capability": "persona.runtime",
         "operation": "oursong.status",
     }
+
+
+def test_realm_scheduler_public_projection_keeps_bounded_executor_health_diagnostics():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    block = text.split("public_receipt['executor_job_receipt']", 1)[1].split("return {", 1)[0]
+    for field in (
+        "'claude_health_classification'",
+        "'agy_health_classification'",
+        "'runtime_source_commit'",
+    ):
+        assert field in block
+    assert "'stdout'" not in block
+    assert "'stderr'" not in block
