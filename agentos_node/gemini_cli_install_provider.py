@@ -11,7 +11,9 @@ from agent_core.executor_job_contract import validate_executor_job
 from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS, ExecutorJobProviderRegistry
 
 JOB_TYPE = "gemini.cli.install"
+HEALTH_JOB_TYPE = "gemini.cli.health"
 PROVIDER_ID = "oracle-gemini-cli-one-install-v1"
+HEALTH_PROVIDER_ID = "oracle-gemini-cli-one-health-v1"
 EXECUTOR_CLASS = "gemini-cli"
 EXPECTED_HOME = Path("/home/ubuntu")
 DATA_ROOT = EXPECTED_HOME / "agent-data"
@@ -148,4 +150,100 @@ def register_gemini_cli_install_provider(*, registry: ExecutorJobProviderRegistr
         executor_class=EXECUTOR_CLASS,
         handler=handler,
     )
+
+    existing_health = registry.get(HEALTH_JOB_TYPE)
+    if existing_health is None:
+        registry.register(
+            job_type=HEALTH_JOB_TYPE,
+            provider_id=HEALTH_PROVIDER_ID,
+            executor_class=EXECUTOR_CLASS,
+            handler=lambda request: run_gemini_cli_health(request),
+        )
+    elif existing_health.provider_id != HEALTH_PROVIDER_ID or existing_health.executor_class != EXECUTOR_CLASS:
+        raise RuntimeError("Gemini CLI health provider already registered differently")
     return True
+
+
+def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool = False) -> str:
+    text = combined.casefold()
+    if timed_out:
+        return "GEMINI_CLI_HEALTH_TIMEOUT"
+    if any(token in text for token in ("login", "sign in", "unauthorized", "authentication required", "not authenticated")):
+        return "GEMINI_CLI_AUTH_REQUIRED"
+    if any(token in text for token in ("rate limit", "too many requests", "quota", "resource exhausted")):
+        return "GEMINI_CLI_RATE_LIMITED"
+    if any(token in text for token in ("network is unreachable", "enotfound", "eai_again", "connection reset", "socket hang up", "etimedout")):
+        return "GEMINI_CLI_NETWORK"
+    return "GEMINI_CLI_HEALTH_NONZERO"
+
+
+def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
+    spec = validate_executor_job(request)
+    if spec.job_type != HEALTH_JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
+        return _failure("GEMINI_CLI_HEALTH_CONTRACT_MISMATCH", executor_available=False, routable=False, authorized=False)
+
+    home = Path.home()
+    if home != EXPECTED_HOME or os.environ.get("USER") not in (None, "", "ubuntu"):
+        return _failure("GEMINI_CLI_ORACLE_UBUNTU_IDENTITY_MISMATCH", executor_available=False, routable=False, authorized=False)
+
+    gemini = EXPECTED_HOME / ".local/bin/gemini"
+    if not gemini.is_file() or gemini.is_symlink() and not gemini.exists():
+        return _failure("GEMINI_CLI_INSTALL_REQUIRED", executor_available=False, routable=False, authorized=False)
+
+    env = {
+        **os.environ,
+        "HOME": str(EXPECTED_HOME),
+        "USER": "ubuntu",
+        "PATH": f"{EXPECTED_HOME}/.local/bin:{EXPECTED_HOME}/.local/share/agentos/npm-global/bin:" + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "CI": "1",
+    }
+    argv = [
+        str(gemini),
+        "-p",
+        "AgentOS Gemini CLI health probe. Do not modify files. Reply exactly READY.",
+        "--approval-mode",
+        "plan",
+        "--output-format",
+        "text",
+    ]
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd="/home/ubuntu/agentmanager",
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=60,
+            check=False,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        result = _failure("GEMINI_CLI_HEALTH_TIMEOUT", executor_available=True, routable=False, authorized=False)
+        result["executor_returncode"] = 124
+        result["executor_timed_out"] = True
+        return result
+    except OSError:
+        return _failure("GEMINI_CLI_HEALTH_LAUNCH_ERROR", executor_available=False, routable=False, authorized=False)
+
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    ready = proc.returncode == 0 and "READY" in combined
+    if not ready:
+        classification = _classify_health_failure(proc.returncode, combined)
+        authorized = classification not in {"GEMINI_CLI_AUTH_REQUIRED"}
+        result = _failure(classification, executor_available=True, routable=False, authorized=authorized)
+        result["executor_returncode"] = int(proc.returncode)
+        result["executor_timed_out"] = False
+        return result
+
+    return {
+        "verdict": "PASS",
+        "classification": "GEMINI_CLI_HEALTH_READY",
+        "executor_available": True,
+        "routable": True,
+        "authorized": True,
+        "successful": True,
+        "credential_exposed": False,
+        "executor_returncode": 0,
+        "executor_timed_out": False,
+    }
