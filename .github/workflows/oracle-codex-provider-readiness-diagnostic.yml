@@ -95,7 +95,13 @@ jobs:
             Path('/usr/local/bin/gemini'),
             Path('/usr/bin/gemini'),
           ]
-          found=[str(p) for p in candidates if p.is_file()]
+          found=[]
+          for p in candidates:
+              try:
+                  if p.is_file():
+                      found.append(str(p))
+              except PermissionError:
+                  continue
           print('gemini_cli_candidates='+('|'.join(found) if found else 'NONE'))
           receipt=Path('/home/ubuntu/agent-data/runtime/gemini-cli-one/install-receipt.json')
           if receipt.is_file():
@@ -104,7 +110,7 @@ jobs:
               except Exception:
                   d={}
               safe={k:d.get(k) for k in (
-                  'schema','cli_installed','one_mcp_configured',
+                  'schema','gemini_cli_version','cli_installed','one_mcp_configured',
                   'session_start_hook_configured','credential_exposed',
                   'auth_ready','live_sessionstart_verified'
               ) if k in d}
