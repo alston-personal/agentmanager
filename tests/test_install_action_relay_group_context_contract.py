@@ -21,3 +21,10 @@ def test_publisher_has_no_generic_execution_surface():
     assert "os.system" not in text
     assert "shell=True" not in text
     assert "capability_marker_payload" in text
+
+
+def test_action_relay_exec_pins_exact_runtime_import_path_inside_sg():
+    text = INSTALLER.read_text(encoding="utf-8")
+    assert 'cd "$RUNTIME_ROOT" && exec /usr/bin/env PYTHONPATH="$RUNTIME_ROOT"' in text
+    assert 'AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT="$SOURCE_COMMIT"' in text
+    assert '/usr/bin/python3 -m agentos_node.executor_job_action_relay' in text
