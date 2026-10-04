@@ -53,3 +53,11 @@ def test_installer_cutover_is_fresh_node_safe_zombie_safe_and_stage_specific():
     assert '[ "$state" = "Z" ] && continue' in text
     for code in ("61", "62", "63", "64", "65", "66", "67"):
         assert f"exit {code}" in text
+
+
+def test_generation_env_check_does_not_use_grep_q_pipeline_under_pipefail():
+    text = INSTALLER.read_text(encoding="utf-8")
+    assert 'relay_env_check=$(mktemp)' in text
+    assert 'tr \'\\0\' \'\\n\' < "/proc/$relay_pid/environ" > "$relay_env_check"' in text
+    assert '| grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_REF=' not in text
+    assert '| grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=' not in text

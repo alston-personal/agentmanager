@@ -281,14 +281,19 @@ case "$cmdline" in
   *"python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT"*) ;;
   *) echo "ERROR: canonical Action Relay consumer command mismatch" >&2; exit 65 ;;
 esac
-if ! tr '\0' '\n' < "/proc/$relay_pid/environ" | grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF"; then
+relay_env_check=$(mktemp)
+tr '\0' '\n' < "/proc/$relay_pid/environ" > "$relay_env_check"
+if ! grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF" "$relay_env_check"; then
+  rm -f "$relay_env_check"
   echo "ERROR: canonical Action Relay source-ref environment mismatch" >&2
   exit 66
 fi
-if ! tr '\0' '\n' < "/proc/$relay_pid/environ" | grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT"; then
+if ! grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT" "$relay_env_check"; then
+  rm -f "$relay_env_check"
   echo "ERROR: canonical Action Relay source-commit environment mismatch" >&2
   exit 67
 fi
+rm -f "$relay_env_check"
 echo "action_relay_single_consumer=PASS"
 echo "action_relay_runtime_generation_env=PASS"
 
