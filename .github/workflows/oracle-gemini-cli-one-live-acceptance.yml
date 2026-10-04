@@ -80,6 +80,7 @@ jobs:
           classification=str(job.get('classification') or 'none')
           print('gemini_cli_live_classification='+classification)
           print('gemini_cli_install_receipt_ok='+str(job.get('install_receipt_ok')))
+          print('gemini_cli_version='+str(job.get('gemini_cli_version') or 'none'))
           if classification!='GEMINI_CLI_ONE_INSTALL_PASS' or job.get('install_receipt_ok') is not True:
               raise SystemExit(2)
           assert job.get('credential_exposed') is False, job
