@@ -77,3 +77,5 @@ echo "oursong_runtime_release=${RELEASE}"
 echo "oursong_activate=PASS"
 echo "oursong_timer=agentos-persona-social@oursong_alstonhuang.timer"
 systemctl --user --no-pager --full status agentos-persona-social@oursong_alstonhuang.timer || true
+
+# Generic heartbeat generation includes read-only social observation scheduling.
