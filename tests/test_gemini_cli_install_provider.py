@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from agent_core.executor_job_contract import canonical_gemini_cli_install_request
+from agent_core.executor_job_contract import canonical_executor_job_request, canonical_gemini_cli_install_request
 from agentos_node.executor_job_adapter import ExecutorJobProviderRegistry
 from agentos_node.gemini_cli_install_provider import (
     EXECUTOR_CLASS,
