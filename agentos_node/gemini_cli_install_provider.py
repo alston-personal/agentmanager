@@ -337,9 +337,13 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
             classification = "GEMINI_CLI_JSON_RESPONSE_INVALID"
         authorized = classification not in {"GEMINI_CLI_AUTH_REQUIRED"}
         result = _failure(classification, executor_available=True, routable=False, authorized=authorized)
+        diagnostic_tags = _gemini_health_diagnostic_tags(combined, payload)
         result["executor_returncode"] = int(proc.returncode)
         result["executor_timed_out"] = False
-        result["gemini_cli_diagnostic_tags"] = _gemini_health_diagnostic_tags(combined, payload)
+        result["gemini_cli_diagnostic_tags"] = diagnostic_tags
+        result["gemini_health_classification"] = classification
+        result["gemini_state"] = diagnostic_tags
+        result["gemini_returncode"] = int(proc.returncode)
         return result
 
     return {
