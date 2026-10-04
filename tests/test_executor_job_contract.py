@@ -131,3 +131,26 @@ def test_typesafe_job_cannot_override_fixed_installer(field, value):
     request[field] = value
     with pytest.raises(ExecutorJobContractError):
         validate_executor_job(request)
+
+
+def test_health_receipt_preserves_only_bounded_provider_classifications():
+    request = canonical_executor_job_request("engineering.executor.health")
+    receipt = project_executor_job_receipt(
+        job_id="job-health-1234",
+        request=request,
+        executor_available=True,
+        routable=False,
+        authorized=False,
+        successful=False,
+        result={
+            "classification": "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+            "claude_health_classification": "TIMEOUT",
+            "agy_health_classification": "CLI_CONTRACT",
+            "stdout": "private",
+            "stderr": "private",
+        },
+    )
+    assert receipt["claude_health_classification"] == "TIMEOUT"
+    assert receipt["agy_health_classification"] == "CLI_CONTRACT"
+    assert "stdout" not in receipt
+    assert "stderr" not in receipt
