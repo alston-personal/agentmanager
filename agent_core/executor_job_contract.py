@@ -344,6 +344,7 @@ def project_executor_job_receipt(
             "gemini_probe_attempts",
             "gemini_health_classification",
             "gemini_cli_version",
+    "gemini_cli_diagnostic_tags",
             "selected_provider",
             "runtime_source_commit",
         ):
