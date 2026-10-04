@@ -367,6 +367,8 @@ def _snapshot_health_classification(item: Mapping[str, Any]) -> str:
         return "AUTH_REQUIRED"
     if state == "TIMEOUT":
         return "TIMEOUT"
+    if state in {"UNHEALTHY", "ERROR"}:
+        return "HEALTH_CONTRACT_INCOMPLETE"
     return ""
 
 
