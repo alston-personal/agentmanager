@@ -87,8 +87,11 @@ def _runtime_consumer_current(*, data_root: Path, source_commit: str) -> bool:
             continue
         try:
             comm = (entry / "comm").read_text(encoding="utf-8").strip()
+            stat_fields = (entry / "stat").read_text(encoding="utf-8").split()
             raw = (entry / "cmdline").read_bytes()
         except OSError:
+            continue
+        if len(stat_fields) >= 3 and stat_fields[2] == "Z":
             continue
         if not (comm == "python" or comm == "python3" or comm.startswith("python3.")):
             continue
