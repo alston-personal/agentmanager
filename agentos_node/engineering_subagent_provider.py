@@ -233,6 +233,14 @@ def _probe_model_provider(provider: str, workspace_path: Path, *, timeout_second
     )
     if selected == "agy":
         argv = [*executable, "run", "--task", prompt, "--workspace", str(workspace_path)]
+    elif selected == "gemini":
+        argv = [
+            *executable,
+            "-p", prompt,
+            "--approval-mode", "plan",
+            "--skip-trust",
+            "--output-format", "text",
+        ]
     else:
         # Health probing must isolate model/auth/network readiness from project
         # customizations. Safe mode preserves authentication/model selection but
@@ -393,10 +401,12 @@ def _snapshot_state(item: Mapping[str, Any]) -> str:
 def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
     claude = _snapshot_entry(snapshot, "claude-code")
     agy = _snapshot_entry(snapshot, "antigravity")
+    gemini = _snapshot_entry(snapshot, "gemini")
     claude_state = _snapshot_state(claude)
     agy_state = _snapshot_state(agy)
+    gemini_state = _snapshot_state(gemini)
     selected_provider = ""
-    for provider, item in (("claude", claude), ("agy", agy)):
+    for provider, item in (("claude", claude), ("agy", agy), ("gemini", gemini)):
         if item.get("stable_routable") is True:
             selected_provider = provider
             break
@@ -409,7 +419,7 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
         "verdict": "PASS" if ok else "FAIL",
         "runtime_source_commit": str(os.environ.get("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT") or ""),
         "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
-        "executor_available": bool(claude or agy),
+        "executor_available": bool(claude or agy or gemini),
         "routable": ok,
         "authorized": ok,
         "successful": ok,
@@ -428,6 +438,13 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
         "agy_ready_count": ready_count(agy),
         "agy_probe_attempts": 2,
         "agy_health_classification": _snapshot_health_classification(agy),
+        "gemini_liveness": "READY" if gemini.get("discovered") else "UNAVAILABLE",
+        "gemini_state": gemini_state,
+        "gemini_returncode": 124 if gemini_state == "TIMEOUT" else (0 if gemini_state == "READY" else None),
+        "gemini_timed_out": gemini_state == "TIMEOUT",
+        "gemini_ready_count": ready_count(gemini),
+        "gemini_probe_attempts": 2,
+        "gemini_health_classification": _snapshot_health_classification(gemini),
         "selected_provider": selected_provider,
     }
 
@@ -448,8 +465,9 @@ def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
 
     claude = _probe_provider_stability("claude", workspace_path, attempts=2)
     agy = _probe_provider_stability("agy", workspace_path, attempts=2)
+    gemini = _probe_provider_stability("gemini", workspace_path, attempts=2)
     selected_provider = ""
-    for provider, result in (("claude", claude), ("agy", agy)):
+    for provider, result in (("claude", claude), ("agy", agy), ("gemini", gemini)):
         if result.get("state") == "READY":
             selected_provider = provider
             break
@@ -458,7 +476,7 @@ def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
         "verdict": "PASS" if ok else "FAIL",
         "runtime_source_commit": str(os.environ.get("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT") or ""),
         "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
-        "executor_available": any(result.get("state") != "UNAVAILABLE" for result in (claude, agy)),
+        "executor_available": any(result.get("state") != "UNAVAILABLE" for result in (claude, agy, gemini)),
         "routable": ok,
         "authorized": ok,
         "successful": ok,
@@ -477,6 +495,13 @@ def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
         "agy_ready_count": int(agy.get("ready_count") or 0),
         "agy_probe_attempts": int(agy.get("attempts") or 0),
         "agy_health_classification": str(agy.get("classification") or ""),
+        "gemini_liveness": _probe_binary_liveness("gemini"),
+        "gemini_state": str(gemini.get("state") or "ERROR"),
+        "gemini_returncode": gemini.get("returncode"),
+        "gemini_timed_out": bool(gemini.get("timed_out")),
+        "gemini_ready_count": int(gemini.get("ready_count") or 0),
+        "gemini_probe_attempts": int(gemini.get("attempts") or 0),
+        "gemini_health_classification": str(gemini.get("classification") or ""),
         "selected_provider": selected_provider,
     }
 
@@ -580,7 +605,7 @@ def run_engineering_subagent(
             executor_available=classification != "ENGINEERING_EXECUTOR_UNAVAILABLE",
         )
         provider = str(receipt.get("provider") or "").strip().lower()
-        if provider in {"claude", "agy"}:
+        if provider in {"claude", "agy", "gemini"}:
             result["executor_provider"] = provider
         else:
             result["executor_provider"] = selected_provider
