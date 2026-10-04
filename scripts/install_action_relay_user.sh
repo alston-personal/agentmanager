@@ -143,6 +143,22 @@ PY
 
 # Converge to exactly one governed consumer for this spool.
 # Never terminate a consumer while a capsule may have unknown side effects.
+# Drain while the current worker is still alive; stopping it first would make
+# an in-flight processing capsule impossible to complete.
+processing_clear=0
+for i in $(seq 1 90); do
+  if ! find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
+    processing_clear=1
+    break
+  fi
+  sleep 1
+done
+if [ "$processing_clear" -ne 1 ]; then
+  echo "ERROR: Action Relay processing did not drain before managed stop" >&2
+  exit 62
+fi
+echo "action_relay_processing_drain=PASS"
+
 if [ -f "$UNIT" ]; then
   if ! systemctl --user stop agentos-action-relay.service; then
     echo "ERROR: unable to stop managed Action Relay service" >&2
@@ -155,19 +171,13 @@ if systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; 
 fi
 echo "action_relay_managed_service_stopped=PASS"
 
-processing_clear=0
-for i in $(seq 1 90); do
-  if ! find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
-    processing_clear=1
-    break
-  fi
-  sleep 1
-done
-if [ "$processing_clear" -ne 1 ]; then
-  echo "ERROR: Action Relay processing did not drain before consumer cleanup" >&2
+# Close the drain/stop race fail-closed. Never clean up consumers if a capsule
+# entered processing after the last pre-stop observation.
+if find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
+  echo "ERROR: Action Relay processing appeared during drain/stop handoff" >&2
   exit 62
 fi
-echo "action_relay_processing_drain=PASS"
+echo "action_relay_processing_handoff=PASS"
 
 relay_consumer_pids() {
   local pid comm cmdline
