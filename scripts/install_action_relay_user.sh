@@ -281,20 +281,33 @@ case "$cmdline" in
   *"python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT"*) ;;
   *) echo "ERROR: canonical Action Relay consumer command mismatch" >&2; exit 65 ;;
 esac
-relay_env_check=$(mktemp)
-tr '\0' '\n' < "/proc/$relay_pid/environ" > "$relay_env_check"
-if ! grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF" "$relay_env_check"; then
-  rm -f "$relay_env_check"
-  echo "ERROR: canonical Action Relay source-ref environment mismatch" >&2
-  exit 66
-fi
-if ! grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT" "$relay_env_check"; then
-  rm -f "$relay_env_check"
-  echo "ERROR: canonical Action Relay source-commit environment mismatch" >&2
-  exit 67
-fi
-rm -f "$relay_env_check"
+# Do not inspect /proc/<pid>/environ here. The canonical worker is launched
+# through sg(1), so the observed Python consumer may be a peer uid even though
+# this installer owns the ubuntu user unit. hidepid/Yama configurations can
+# legitimately deny cross-uid environ reads. Verify the exact generation at
+# source-owned boundaries instead: the installed unit must pin both variables,
+# its WorkingDirectory must be the immutable worktree, and that worktree HEAD
+# must equal the requested exact commit.
+unit_ref=$(systemctl --user show agentos-action-relay.service -p Environment --value)
+case " $unit_ref " in
+  *" AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF "*) ;;
+  *) echo "ERROR: canonical Action Relay unit source-ref environment mismatch" >&2; exit 66 ;;
+esac
+case " $unit_ref " in
+  *" AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT "*) ;;
+  *) echo "ERROR: canonical Action Relay unit source-commit environment mismatch" >&2; exit 67 ;;
+esac
+unit_cwd=$(systemctl --user show agentos-action-relay.service -p WorkingDirectory --value)
+test "$(readlink -f "$unit_cwd")" = "$(readlink -f "$RUNTIME_ROOT")" || {
+  echo "ERROR: canonical Action Relay working directory mismatch" >&2
+  exit 68
+}
+test "$(git -C "$RUNTIME_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT" || {
+  echo "ERROR: canonical Action Relay runtime HEAD mismatch" >&2
+  exit 69
+}
 echo "action_relay_single_consumer=PASS"
+echo "action_relay_runtime_generation_unit=PASS"
 echo "action_relay_runtime_generation_env=PASS"
 
 # Capability availability is installed-state evidence, not a source-code claim.
