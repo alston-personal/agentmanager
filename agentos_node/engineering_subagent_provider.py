@@ -45,7 +45,7 @@ JOBS: dict[str, dict[str, str]] = {
         "workload_ref": "surface://engineering-executors",
         "branch": "",
         "goal": "Probe fixed local engineering model providers without mutation.",
-        "acceptance": "Classify Claude, agy, and Gemini as READY, FLAKY, AUTH_REQUIRED, TIMEOUT, ERROR, or UNAVAILABLE and select the first READY provider.",
+        "acceptance": "Classify Claude, agy, and Gemini explicitly, preserve Gemini unsupported evidence, and select the first stable routable provider from Claude or agy.",
     },
     "engineering.model.smoke": {
         "workload_ref": "surface://engineering-model-subagent",
@@ -410,7 +410,10 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
     agy_state = _snapshot_state(agy)
     gemini_state = _snapshot_state(gemini)
     selected_provider = ""
-    for provider, item in (("claude", claude), ("agy", agy), ("gemini", gemini)):
+    # Gemini remains observable in the durable snapshot, but consumer OAuth
+    # currently classifies as OAUTH_CLIENT_UNSUPPORTED. Do not route Main Agent
+    # work to it until a supported governed identity is introduced explicitly.
+    for provider, item in (("claude", claude), ("agy", agy)):
         if item.get("stable_routable") is True:
             selected_provider = provider
             break
