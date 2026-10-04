@@ -410,7 +410,10 @@ def test_model_smoke_uses_minimal_read_only_capsule(tmp_path: Path, monkeypatch)
         timeout_seconds=1,
     )
 
-    assert submitted["canonical_ir"] == {"schema": "agentos.engineering-subagent-ir/v1"}
+    assert submitted["canonical_ir"] == {
+        "schema": "agentos.engineering-subagent-ir/v1",
+        "operation": "agent.chat",
+    }
     assert submitted["instruction"] == "AgentOS routed model smoke. Do not modify files. Reply exactly READY."
     assert submitted["executor_hint"] == "provider:agy"
     assert result["selected_provider"] == "agy"
@@ -608,6 +611,30 @@ def test_snapshot_health_marks_unhealthy_without_classification_as_contract_inco
     assert result["claude_health_classification"] == "HEALTH_CONTRACT_INCOMPLETE"
     assert result["agy_health_classification"] == "HEALTH_CONTRACT_INCOMPLETE"
     assert result["selected_provider"] == ""
+
+
+def test_snapshot_health_selects_stable_codex_after_primary_providers_fail():
+    import agentos_node.engineering_subagent_provider as provider
+
+    snapshot = {
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": "2026-10-04T00:00:00Z",
+        "executors": [
+            _snapshot_row("claude-code", state="UNHEALTHY", stable=False, streak=0, classification="TIMEOUT"),
+            _snapshot_row("antigravity", state="UNHEALTHY", stable=False, streak=0, classification="RATE_LIMITED"),
+            {
+                **_snapshot_row("codex", state="READY", stable=True, streak=2, classification="READY"),
+                "provider_id": "openai",
+                "executor_class": "codex",
+            },
+        ],
+    }
+    result = provider._health_from_snapshot(snapshot)
+    assert result["selected_provider"] == "codex"
+    assert result["codex_state"] == "READY"
+    assert result["codex_ready_count"] == 2
+    assert result["classification"] == "ENGINEERING_EXECUTOR_HEALTH_READY"
+    assert result["successful"] is True
 
 
 def test_snapshot_health_preserves_stable_gemini_but_does_not_route_it():
