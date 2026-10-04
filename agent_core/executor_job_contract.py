@@ -107,6 +107,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://engineering-subagent",
         read_only=True,
     ),
+    "engineering.executor.snapshot": JobTypeSpec(
+        job_type="engineering.executor.snapshot",
+        capability="agentos.engineering.executor-snapshot",
+        authority="bounded-read-only",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="surface://engineering-executors",
+        read_only=True,
+    ),
     "engineering.executor.health": JobTypeSpec(
         job_type="engineering.executor.health",
         capability="agentos.engineering.executor-health",
