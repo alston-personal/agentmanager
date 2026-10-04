@@ -33,7 +33,10 @@ def test_action_relay_exec_pins_exact_runtime_import_path_inside_sg():
 def test_installer_converges_to_one_exact_generation_consumer_fail_closed():
     text = INSTALLER.read_text(encoding="utf-8")
     assert 'systemctl --user stop agentos-action-relay.service' in text
-    assert 'processing is non-empty; refusing consumer cleanup' in text
+    assert 'processing did not drain before consumer cleanup' in text
+    assert 'action_relay_processing_drain=PASS' in text
+    assert 'relay_consumer_pids()' in text
+    assert 'cat "/proc/$pid/comm"' in text
     assert 'agentos_node\\.(action_relay|executor_job_action_relay)' in text
     assert 'action_relay_prior_consumers_cleared=PASS' in text
     assert 'expected exactly one canonical Action Relay consumer' in text
