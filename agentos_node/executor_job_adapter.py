@@ -54,6 +54,7 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "gemini_ready_count",
     "gemini_probe_attempts",
     "gemini_health_classification",
+    "gemini_cli_version",
     "selected_provider",
     "runtime_source_commit",
 )
