@@ -35,6 +35,7 @@ def _failure(classification: str, *, executor_available: bool = True, routable: 
         "authorized": authorized,
         "successful": False,
         "credential_exposed": False,
+        "gemini_cli_version": str(verify.get("gemini_cli_version") or "")[:128],
     }
 
 
