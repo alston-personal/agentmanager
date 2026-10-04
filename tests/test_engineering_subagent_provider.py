@@ -20,6 +20,7 @@ class FakeRelay:
 def test_engineering_job_contracts_are_fixed_and_bounded():
     expected = {
         "engineering.subagent.smoke": ("surface://engineering-subagent", "bounded-read-only", True),
+        "engineering.executor.snapshot": ("surface://engineering-executors", "bounded-read-only", True),
         "engineering.executor.health": ("surface://engineering-executors", "bounded-read-only", True),
         "engineering.model.smoke": ("surface://engineering-model-subagent", "bounded-read-only", True),
         "engineering.windows-thin-client.fix": ("issue://892", "bounded-code-fix", False),
@@ -668,3 +669,34 @@ def test_provider_stability_uses_provider_specific_timeout_budget(tmp_path: Path
 
     assert calls[:2] == [("claude", 20.0), ("claude", 20.0)]
     assert calls[2:] == [("gemini", 45.0), ("gemini", 45.0)]
+
+
+def test_executor_snapshot_job_reads_durable_health_without_model_probe(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+    expected = {
+        "verdict": "PASS",
+        "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
+        "executor_available": True,
+        "routable": True,
+        "authorized": True,
+        "successful": True,
+        "credential_exposed": False,
+        "selected_provider": "gemini",
+    }
+    monkeypatch.setattr(provider, "_read_executor_health", lambda: dict(expected))
+    monkeypatch.setattr(
+        provider,
+        "_run_executor_health",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("snapshot job must not probe models")),
+    )
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.executor.snapshot"),
+        relay_root=tmp_path / "relay",
+        workspace=workspace,
+        timeout_seconds=1,
+    )
+    assert result == expected
