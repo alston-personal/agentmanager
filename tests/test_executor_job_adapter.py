@@ -208,3 +208,16 @@ def test_provider_sanitizer_retains_only_bounded_engineering_diagnostics():
     assert "stdout" not in safe
     assert "stderr" not in safe
     assert "path" not in safe
+
+
+def test_adapter_preserves_bounded_gemini_cli_version():
+    from agentos_node.executor_job_adapter import _sanitize_provider_result
+
+    result = _sanitize_provider_result({
+        "gemini_cli_version": "0.99.0",
+        "stdout": "must-not-cross",
+        "stderr": "must-not-cross",
+    })
+    assert result["gemini_cli_version"] == "0.99.0"
+    assert "stdout" not in result
+    assert "stderr" not in result
