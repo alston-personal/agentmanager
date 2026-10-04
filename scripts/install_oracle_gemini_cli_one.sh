@@ -14,12 +14,19 @@ done
 data_root="${AGENT_DATA_ROOT:-$HOME/agent-data}"
 test -d "$data_root" || { echo "ERROR: AgentOS data root missing" >&2; exit 4; }
 
-if ! command -v gemini >/dev/null 2>&1; then
-  npm install -g @google/gemini-cli@latest
+gemini_bin="$(command -v gemini 2>/dev/null || true)"
+if [ -z "$gemini_bin" ]; then
+  npm_prefix="$HOME/.local/share/agentos/npm-global"
+  local_bin="$HOME/.local/bin"
+  mkdir -p "$npm_prefix" "$local_bin"
+  npm install --prefix "$npm_prefix" -g @google/gemini-cli@latest
+  test -x "$npm_prefix/bin/gemini"
+  ln -sfn "$npm_prefix/bin/gemini" "$local_bin/gemini"
+  gemini_bin="$local_bin/gemini"
 fi
 
-command -v gemini >/dev/null 2>&1
-gemini_version="$(gemini --version 2>/dev/null | head -n 1 || true)"
+test -x "$gemini_bin"
+gemini_version="$("$gemini_bin" --version 2>/dev/null | head -n 1 || true)"
 test -n "$gemini_version"
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
