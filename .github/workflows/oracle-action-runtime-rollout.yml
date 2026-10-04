@@ -20,6 +20,8 @@ on:
       - 'agentos_node/issue117_experience_provider.py'
       - 'agentos_node/typesafe_skill_install_provider.py'
       - 'agentos_node/gemini_cli_install_provider.py'
+      - 'agentos_node/codex_cli_install_provider.py'
+      - 'scripts/install_oracle_codex_cli.sh'
       - 'agentos_node/action_relay.py'
       - 'agent_core/realm_server.py'
       - 'scripts/install_action_relay_user.sh'
@@ -50,7 +52,8 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/core/integration'
           printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
-          python3 -m py_compile             agent_core/executor_job_contract.py             agentos_node/executor_job_adapter.py             agentos_node/executor_job_action_relay.py             agentos_node/engineering_subagent_provider.py             agentos_node/executor_reconcile.py
+          python3 -m py_compile             agent_core/executor_job_contract.py             agentos_node/executor_job_adapter.py             agentos_node/executor_job_action_relay.py             agentos_node/engineering_subagent_provider.py             agentos_node/executor_reconcile.py             agentos_node/codex_cli_install_provider.py             agentos_node/codex_provider_adapter.py
+          bash -n scripts/install_oracle_codex_cli.sh
           bash -n scripts/repair_antigravity_relay_user.sh
           bash -n scripts/install_action_relay_user.sh
 
