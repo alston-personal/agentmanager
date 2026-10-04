@@ -579,7 +579,7 @@ def test_executor_health_refreshes_once_and_routes_from_durable_snapshot(tmp_pat
 
     assert len(calls) == 1
     assert result["runtime_source_commit"] == "f" * 40
-    assert result["claude_state"] == "ERROR"
+    assert result["claude_state"] == "TIMEOUT"
     assert result["claude_health_classification"] == "TIMEOUT"
     assert result["agy_state"] == "ERROR"
     assert result["agy_health_classification"] == "RATE_LIMITED"
