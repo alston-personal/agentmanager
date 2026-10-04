@@ -575,3 +575,20 @@ def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path:
     assert result["agy_probe_attempts"] == 2
     assert result["selected_provider"] == ""
     assert result["successful"] is False
+
+
+def test_snapshot_health_marks_unhealthy_without_classification_as_contract_incomplete():
+    import agentos_node.engineering_subagent_provider as provider
+
+    snapshot = {
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": "2026-10-04T00:00:00Z",
+        "executors": [
+            _snapshot_row("claude-code", state="UNHEALTHY", stable=False, streak=0),
+            _snapshot_row("antigravity", state="UNHEALTHY", stable=False, streak=0),
+        ],
+    }
+    result = provider._health_from_snapshot(snapshot)
+    assert result["claude_health_classification"] == "HEALTH_CONTRACT_INCOMPLETE"
+    assert result["agy_health_classification"] == "HEALTH_CONTRACT_INCOMPLETE"
+    assert result["selected_provider"] == ""
