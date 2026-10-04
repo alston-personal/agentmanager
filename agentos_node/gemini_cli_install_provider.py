@@ -35,6 +35,23 @@ def _failure(classification: str, *, executor_available: bool = True, routable: 
     }
 
 
+def _classify_install_failure(returncode: int, combined: str) -> str:
+    text = combined.casefold()
+    if returncode == 2 or "run as oracle ubuntu user" in text:
+        return "GEMINI_CLI_ORACLE_UBUNTU_IDENTITY_MISMATCH"
+    if returncode == 3 or "missing prerequisite" in text:
+        return "GEMINI_CLI_PREREQUISITE_MISSING"
+    if returncode == 4 or "agentos data root missing" in text:
+        return "GEMINI_CLI_AGENT_DATA_ROOT_UNAVAILABLE"
+    if "permission denied" in text or "eacces" in text:
+        return "GEMINI_CLI_INSTALL_PERMISSION_DENIED"
+    if any(token in text for token in ("network is unreachable", "enotfound", "eai_again", "connection reset", "etimedout")):
+        return "GEMINI_CLI_INSTALL_NETWORK"
+    if "npm err!" in text or "npm error" in text:
+        return "GEMINI_CLI_INSTALL_NPM_FAILED"
+    return "GEMINI_CLI_INSTALL_COMMAND_FAILED"
+
+
 def run_gemini_cli_install(request: Mapping[str, Any], *, runtime_root: str | Path | None = None) -> dict[str, Any]:
     spec = validate_executor_job(request)
     if spec.job_type != JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
@@ -74,7 +91,7 @@ def run_gemini_cli_install(request: Mapping[str, Any], *, runtime_root: str | Pa
         return _failure("GEMINI_CLI_INSTALL_LAUNCH_ERROR")
 
     if proc.returncode != 0:
-        return _failure("GEMINI_CLI_INSTALL_COMMAND_FAILED")
+        return _failure(_classify_install_failure(proc.returncode, (proc.stdout or "") + "\n" + (proc.stderr or "")))
     if not RECEIPT_FILE.is_file() or RECEIPT_FILE.is_symlink():
         return _failure("GEMINI_CLI_INSTALL_RECEIPT_MISSING")
     try:
