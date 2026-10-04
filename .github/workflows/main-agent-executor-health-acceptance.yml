@@ -1,15 +1,6 @@
 name: Main Agent Executor Health Acceptance
 
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/main-agent-executor-health-acceptance.yml'
-      - 'agent_core/executor_job_contract.py'
-      - 'agentos_node/executor_job_adapter.py'
-      - 'agentos_node/engineering_subagent_provider.py'
-      - 'agent_core/realm_server.py'
   workflow_dispatch:
 
 permissions:
