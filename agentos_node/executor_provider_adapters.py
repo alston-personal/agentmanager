@@ -66,20 +66,30 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
     run_env = None
     if provider == "gemini":
         temp_health_root = tempfile.TemporaryDirectory(prefix="agentos-gemini-health-")
-        health_cwd = Path(temp_health_root.name)
-        settings_dir = health_cwd / ".gemini"
+        temp_root = Path(temp_health_root.name)
+        health_cwd = temp_root / "workspace"
+        health_cwd.mkdir()
+        cli_home = temp_root / "cli-home"
+        settings_dir = cli_home / ".gemini"
         settings_dir.mkdir(parents=True, exist_ok=True)
         (settings_dir / "settings.json").write_text(
             json.dumps({
+                "security": {"auth": {"selectedType": "oauth-personal"}},
                 "hooksConfig": {"enabled": False},
                 "skills": {"enabled": False},
             }, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        source_settings = Path("/home/ubuntu/.gemini")
+        for credential_name in ("oauth_creds.json", "google_accounts.json"):
+            source = source_settings / credential_name
+            if source.exists():
+                (settings_dir / credential_name).symlink_to(source)
         run_env = {
             **os.environ,
             "HOME": "/home/ubuntu",
             "USER": "ubuntu",
+            "GEMINI_CLI_HOME": str(cli_home),
             "CI": "1",
         }
     try:
