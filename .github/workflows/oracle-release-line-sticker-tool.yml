@@ -26,6 +26,8 @@ jobs:
       acceptance_anchors: |-
         LINE 靜態貼圖製作工具
         圖片只在你的瀏覽器內處理
+        自動去背
+        恢復自動去背結果
         下載全部三張 PNG
       credit_account: ''
       credit_cost: 0
