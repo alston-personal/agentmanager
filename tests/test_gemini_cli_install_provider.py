@@ -56,3 +56,52 @@ def test_gemini_cli_install_failure_classification_is_bounded():
     assert _classify_install_failure(1, "npm ERR! network ENOTFOUND") == "GEMINI_CLI_INSTALL_NETWORK"
     assert _classify_install_failure(1, "npm ERR! code E404") == "GEMINI_CLI_INSTALL_NPM_FAILED"
     assert _classify_install_failure(7, "opaque failure") == "GEMINI_CLI_INSTALL_COMMAND_FAILED"
+
+
+def test_gemini_cli_health_contract_is_read_only():
+    from agent_core.executor_job_contract import canonical_executor_job_request, validate_executor_job
+    request = canonical_executor_job_request("gemini.cli.health")
+    spec = validate_executor_job(request)
+    assert spec.executor_class == "gemini-cli"
+    assert spec.capability == "agentos.executor.health.gemini-cli"
+    assert spec.authority == "bounded-read-only"
+    assert spec.read_only is True
+
+
+def test_gemini_cli_health_uses_plan_mode_and_classifies_auth(monkeypatch):
+    import agentos_node.gemini_cli_health_provider as provider
+
+    class FakePath:
+        def is_file(self): return True
+    monkeypatch.setattr(provider, "GEMINI_BIN", FakePath())
+    monkeypatch.setattr(provider.os, "access", lambda *args: True)
+    monkeypatch.setattr(provider.Path, "home", staticmethod(lambda: provider.EXPECTED_HOME))
+    monkeypatch.setenv("USER", "ubuntu")
+
+    captured = {}
+    class Completed:
+        returncode = 1
+        stdout = ""
+        stderr = "Please login to continue"
+    def fake_run(argv, **kwargs):
+        captured["argv"] = list(argv)
+        return Completed()
+    monkeypatch.setattr(provider.subprocess, "run", fake_run)
+
+    result = provider.run_gemini_cli_health(
+        canonical_executor_job_request("gemini.cli.health")
+    )
+    argv = captured["argv"]
+    assert "--approval-mode" in argv
+    assert argv[argv.index("--approval-mode") + 1] == "plan"
+    assert "--output-format" in argv
+    assert argv[argv.index("--output-format") + 1] == "json"
+    assert "yolo" not in argv
+    assert result["classification"] == "GEMINI_CLI_AUTH_REQUIRED"
+    assert result["credential_exposed"] is False
+
+
+def test_gemini_cli_health_classifies_ready_and_rate_limit():
+    from agentos_node.gemini_cli_health_provider import _classify
+    assert _classify(0, '{"response":"READY"}') == "GEMINI_CLI_HEALTH_READY"
+    assert _classify(1, "resource exhausted: quota exceeded") == "GEMINI_CLI_RATE_LIMITED"
