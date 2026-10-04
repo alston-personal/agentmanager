@@ -51,13 +51,14 @@ def test_installer_cutover_is_fresh_node_safe_zombie_safe_and_stage_specific():
     assert 'managed Action Relay service remained active after stop' in text
     assert 'awk \'{print $3}\' "/proc/$pid/stat"' in text
     assert '[ "$state" = "Z" ] && continue' in text
-    for code in ("61", "62", "63", "64", "65", "66", "67"):
+    for code in ("61", "62", "63", "64", "65", "66", "67", "68", "69"):
         assert f"exit {code}" in text
 
 
-def test_generation_env_check_does_not_use_grep_q_pipeline_under_pipefail():
+def test_generation_check_does_not_read_cross_uid_proc_environ():
     text = INSTALLER.read_text(encoding="utf-8")
-    assert 'relay_env_check=$(mktemp)' in text
-    assert 'tr \'\\0\' \'\\n\' < "/proc/$relay_pid/environ" > "$relay_env_check"' in text
-    assert '| grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_REF=' not in text
-    assert '| grep -Fxq "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=' not in text
+    assert '"/proc/$relay_pid/environ"' not in text
+    assert "systemctl --user show agentos-action-relay.service -p Environment --value" in text
+    assert "systemctl --user show agentos-action-relay.service -p WorkingDirectory --value" in text
+    assert 'git -C "$RUNTIME_ROOT" rev-parse HEAD' in text
+    assert "action_relay_runtime_generation_unit=PASS" in text
