@@ -1,6 +1,10 @@
 name: Executor Health Reconcile Schedule Carrier
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/executor-health-reconcile-schedule.yml'
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
