@@ -454,11 +454,13 @@ def _health_from_snapshot(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
-    # Keep the durable adoption snapshot current for subsequent model routing,
-    # but use independent bounded two-sample probes for this health receipt.
+    # Refresh provider health exactly once, then route exclusively from the
+    # durable adoption snapshot. Stability is represented by ready_streak
+    # across independent reconcile observations; do not duplicate inline
+    # provider probes here because they serialize the Action Relay for minutes.
     try:
         from agentos_node.executor_reconcile import reconcile_executor_adoption
-        reconcile_executor_adoption(node_id="oracle-core-node")
+        refreshed = reconcile_executor_adoption(node_id="oracle-core-node")
     except Exception:
         return _failure(
             "ENGINEERING_EXECUTOR_HEALTH_REFRESH_FAILED",
@@ -467,47 +469,12 @@ def _run_executor_health(workspace_path: Path) -> dict[str, Any]:
             authorized=False,
         )
 
-    claude = _probe_provider_stability("claude", workspace_path, attempts=2)
-    agy = _probe_provider_stability("agy", workspace_path, attempts=2)
-    gemini = _probe_provider_stability("gemini", workspace_path, attempts=2)
-    selected_provider = ""
-    for provider, result in (("claude", claude), ("agy", agy), ("gemini", gemini)):
-        if result.get("state") == "READY":
-            selected_provider = provider
-            break
-    ok = bool(selected_provider)
-    return {
-        "verdict": "PASS" if ok else "FAIL",
-        "runtime_source_commit": str(os.environ.get("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT") or ""),
-        "classification": "ENGINEERING_EXECUTOR_HEALTH_READY" if ok else "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
-        "executor_available": any(result.get("state") != "UNAVAILABLE" for result in (claude, agy, gemini)),
-        "routable": ok,
-        "authorized": ok,
-        "successful": ok,
-        "credential_exposed": False,
-        "claude_liveness": _probe_binary_liveness("claude"),
-        "claude_state": str(claude.get("state") or "ERROR"),
-        "claude_returncode": claude.get("returncode"),
-        "claude_timed_out": bool(claude.get("timed_out")),
-        "claude_ready_count": int(claude.get("ready_count") or 0),
-        "claude_probe_attempts": int(claude.get("attempts") or 0),
-        "claude_health_classification": str(claude.get("classification") or ""),
-        "agy_liveness": _probe_binary_liveness("agy"),
-        "agy_state": str(agy.get("state") or "ERROR"),
-        "agy_returncode": agy.get("returncode"),
-        "agy_timed_out": bool(agy.get("timed_out")),
-        "agy_ready_count": int(agy.get("ready_count") or 0),
-        "agy_probe_attempts": int(agy.get("attempts") or 0),
-        "agy_health_classification": str(agy.get("classification") or ""),
-        "gemini_liveness": _probe_binary_liveness("gemini"),
-        "gemini_state": str(gemini.get("state") or "ERROR"),
-        "gemini_returncode": gemini.get("returncode"),
-        "gemini_timed_out": bool(gemini.get("timed_out")),
-        "gemini_ready_count": int(gemini.get("ready_count") or 0),
-        "gemini_probe_attempts": int(gemini.get("attempts") or 0),
-        "gemini_health_classification": str(gemini.get("classification") or ""),
-        "selected_provider": selected_provider,
-    }
+    snapshot = refreshed.get("executor_adoption") if isinstance(refreshed, Mapping) else None
+    if not isinstance(snapshot, Mapping):
+        snapshot = _load_executor_snapshot()
+    result = _health_from_snapshot(snapshot)
+    result["runtime_source_commit"] = str(os.environ.get("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT") or "")
+    return result
 
 
 def _read_executor_health() -> dict[str, Any]:
