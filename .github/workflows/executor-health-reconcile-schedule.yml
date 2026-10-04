@@ -94,6 +94,7 @@ jobs:
           }, job
           print('executor_health_reconcile=PASS')
           print('selected_provider='+str(job.get('selected_provider') or 'none'))
+          print('runtime_source_commit='+str(job.get('runtime_source_commit') or 'none'))
           print('claude_state='+str(job.get('claude_state') or 'none'))
           print('claude_ready_count='+str(job.get('claude_ready_count') if isinstance(job.get('claude_ready_count'),int) else 'none'))
           print('claude_health_classification='+str(job.get('claude_health_classification') or 'none'))
