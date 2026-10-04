@@ -1,0 +1,47 @@
+name: Oracle Raw Health Receipt Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/raw-health-receipt
+    paths:
+      - '.github/workflows/oracle-raw-health-receipt-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read latest bounded health receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data/runtime/action-relay/receipts')
+          out=[]
+          for p in sorted(root.glob('action-*.json'), key=lambda x:x.stat().st_mtime, reverse=True):
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              if d.get('job_type')!='engineering.executor.health':
+                  continue
+              allowed=(
+                  'schema','capsule_id','action','job_type','classification','selected_provider',
+                  'claude_liveness','claude_state','claude_returncode','claude_timed_out',
+                  'claude_ready_count','claude_probe_attempts','claude_health_classification',
+                  'agy_liveness','agy_state','agy_returncode','agy_timed_out',
+                  'agy_ready_count','agy_probe_attempts','agy_health_classification',
+                  'runtime_source_commit','executor_available','routable','authorized','successful'
+              )
+              out.append({k:d.get(k) for k in allowed if k in d})
+              if len(out)>=3:
+                  break
+          print(json.dumps(out,sort_keys=True,separators=(',',':')))
+          PY
