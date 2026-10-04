@@ -1,0 +1,83 @@
+name: Recover Oracle Employee Wake Node
+
+on:
+  push:
+    branches:
+      - ops/recover-oracle-employee-wake-node
+    paths:
+      - '.github/workflows/recover-oracle-employee-wake-node.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Restart existing least-privilege wake node and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="${DEPLOY_HOST_SOURCE#*://}"
+          host="${host%%/*}"
+          host="${host%%:*}"
+          test -n "$host"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@$host" bash -s <<'REMOTE'
+          set -euo pipefail
+          config=/home/ubuntu/agent-data/employee-wake-node/client.json
+          wake=/home/ubuntu/agent-data/employee-wakes
+          unit=/home/ubuntu/.config/systemd/user/agentos-employee-wake-node.service
+          nodes=/home/ubuntu/agent-data/realm/nodes.json
+
+          test -s "$config" || { echo 'WAKE_NODE_CONFIG_MISSING'; exit 20; }
+          test -d "$wake" || { echo 'WAKE_ROOT_MISSING'; exit 21; }
+          test -s "$unit" || { echo 'WAKE_NODE_UNIT_MISSING'; exit 22; }
+          test -s "$nodes" || { echo 'NODE_REGISTRY_MISSING'; exit 23; }
+
+          grep -q -- '--wake-root /home/ubuntu/agent-data/employee-wakes' "$unit"
+          grep -q -- '--runtime-root /home/ubuntu/agent-data/employee-runtime' "$unit"
+          grep -q 'agentos_node.employee_wake_node' "$unit"
+
+          systemctl --user daemon-reload
+          systemctl --user restart agentos-employee-wake-node.service
+          systemctl --user is-active --quiet agentos-employee-wake-node.service
+
+          for i in $(seq 1 20); do
+            if python3 - "$nodes" <<'PY'
+          import json,sys
+          from datetime import datetime,timezone
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          n=(d.get('nodes') or {}).get('oracle-employee-wake-node') or {}
+          hb=str(n.get('last_heartbeat_at') or n.get('heartbeat_at') or '')
+          caps=set(n.get('capabilities') or [])
+          if not hb:
+              raise SystemExit(1)
+          try:
+              dt=datetime.fromisoformat(hb.replace('Z','+00:00'))
+              age=(datetime.now(timezone.utc)-dt).total_seconds()
+          except Exception:
+              raise SystemExit(1)
+          assert age < 20, age
+          assert 'agent.employee.wake.deliver' in caps, caps
+          forbidden={'shell.exec','filesystem.write'}
+          assert not (forbidden & caps), caps
+          print('wake_node_heartbeat_age_seconds='+str(int(age)))
+          print('wake_node_capability=agent.employee.wake.deliver')
+          print('wake_node_recovery=PASS')
+          PY
+            then exit 0; fi
+            sleep 2
+          done
+          echo 'WAKE_NODE_HEARTBEAT_NOT_FRESH' >&2
+          exit 24
+          REMOTE
