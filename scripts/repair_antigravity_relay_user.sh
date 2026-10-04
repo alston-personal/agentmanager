@@ -197,7 +197,27 @@ grep -Fq "cwd = \"$ACTION_RUNTIME\"" "$CODEX_CONFIG"
 grep -Fq "PYTHONPATH = \"$ACTION_RUNTIME\"" "$CODEX_CONFIG"
 echo "codex_experience_mcp_exact_runtime=PASS"
 
+REPAIR_STAGE="restart_antigravity_relay"
+systemctl --user daemon-reload
+systemctl --user enable agentos-antigravity-relay.service >/dev/null
+systemctl --user reset-failed agentos-antigravity-relay.service >/dev/null 2>&1 || true
+timeout 30s systemctl --user restart agentos-antigravity-relay.service
+ANTIGRAVITY_ACTIVE=0
+for i in $(seq 1 30); do
+  if [ "$(systemctl --user show -p ActiveState --value agentos-antigravity-relay.service 2>/dev/null || true)" = "active" ]; then
+    ANTIGRAVITY_ACTIVE=1
+    break
+  fi
+  sleep 1
+done
+if [ "$ANTIGRAVITY_ACTIVE" != "1" ]; then
+  systemctl --user status --no-pager agentos-antigravity-relay.service >&2 || true
+  echo "ERROR: Antigravity relay did not converge active" >&2
+  exit 9
+fi
+
 REPAIR_STAGE="final_runtime_acceptance"
+systemctl --user is-active --quiet agentos-antigravity-relay.service
 systemctl --user is-active --quiet agentos-action-relay.service
 systemctl --user is-active --quiet agentos-realm-fabric.service
 for i in $(seq 1 20); do
@@ -222,7 +242,7 @@ echo "antigravity_group_context=agentos"
 echo "antigravity_provider=$PROVIDER"
 echo "antigravity_worker_sha256=$WORKER_SHA256"
 echo "antigravity_runtime_manifest=$MANIFEST"
-echo "antigravity_restart_pending=YES"
+echo "antigravity_restart_converged=PASS"
 echo "action_relay_install=PASS"
 echo "action_relay_source_generation_pinned=PASS"
 echo "one_experience_seed=PASS"
