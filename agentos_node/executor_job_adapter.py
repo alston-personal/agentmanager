@@ -56,6 +56,7 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "gemini_health_classification",
     "gemini_cli_version",
     "gemini_cli_diagnostic_tags",
+    "codex_cli_version",
     "codex_liveness",
     "codex_state",
     "codex_returncode",
