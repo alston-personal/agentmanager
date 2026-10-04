@@ -175,6 +175,28 @@ def test_provider_health_classifies_rate_limit(monkeypatch, tmp_path: Path):
     assert result["classification"] == "RATE_LIMITED"
 
 
+def test_gemini_health_classifies_retired_consumer_oauth_without_leaking_output(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    monkeypatch.setattr(adapters, "_provider_command", lambda *args, **kwargs: ["gemini"])
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "IneligibleTierError: unsupported_client; this client is no longer supported"
+
+    monkeypatch.setattr(adapters.subprocess, "run", lambda *args, **kwargs: Result())
+    result = adapters._health("gemini", workspace=workspace, timeout_seconds=1)
+    assert result["state"] == "UNHEALTHY"
+    assert result["classification"] == "OAUTH_CLIENT_UNSUPPORTED"
+    assert result["authorized"] is False
+    assert result["routable"] is False
+    assert "stderr" not in result
+    assert "stdout" not in result
+
+
 def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp_path: Path):
     import agentos_node.executor_provider_adapters as adapters
 
