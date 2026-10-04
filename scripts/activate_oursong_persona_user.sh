@@ -45,6 +45,8 @@ python3 "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"
 install -m 0755 "${RELEASE}/scripts/persona_pdca_heartbeat_user.py" "${HOME}/.local/bin/agentos-persona-pdca-heartbeat"
 systemctl --user daemon-reload
 systemctl --user start agentos-persona-pdca-heartbeat.service
+HB_STATE="$(git -C "${HOME}/agent-data" show origin/main:personas/oursong_alstonhuang/pdca/state.json 2>/dev/null || true)"
+python3 -c 'import json,sys; s=json.load(sys.stdin); assert int(s.get("cycle") or 0)>=1; assert s.get("last_tick_at"); print("oursong_heartbeat_cutover=PASS"); print("oursong_heartbeat_cycle="+str(s["cycle"])); print("oursong_heartbeat_last_tick_at="+str(s["last_tick_at"]))' <<<"${HB_STATE}"
 
 mkdir -p "${PROFILE_ROOT}"
 chmod 700 "${PROFILE_ROOT}"
