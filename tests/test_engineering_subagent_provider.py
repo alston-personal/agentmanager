@@ -585,8 +585,9 @@ def test_executor_health_refreshes_once_and_routes_from_durable_snapshot(tmp_pat
     assert result["agy_health_classification"] == "RATE_LIMITED"
     assert result["gemini_state"] == "READY"
     assert result["gemini_ready_count"] == 2
-    assert result["selected_provider"] == "gemini"
-    assert result["successful"] is True
+    assert result["selected_provider"] == ""
+    assert result["classification"] == "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER"
+    assert result["successful"] is False
 
 
 def test_snapshot_health_marks_unhealthy_without_classification_as_contract_incomplete():
@@ -606,7 +607,7 @@ def test_snapshot_health_marks_unhealthy_without_classification_as_contract_inco
     assert result["selected_provider"] == ""
 
 
-def test_snapshot_health_falls_back_to_stable_gemini_when_primary_providers_unhealthy():
+def test_snapshot_health_preserves_stable_gemini_but_does_not_route_it():
     import agentos_node.engineering_subagent_provider as provider
 
     snapshot = {
@@ -623,10 +624,11 @@ def test_snapshot_health_falls_back_to_stable_gemini_when_primary_providers_unhe
         ],
     }
     result = provider._health_from_snapshot(snapshot)
-    assert result["selected_provider"] == "gemini"
+    assert result["selected_provider"] == ""
     assert result["gemini_state"] == "READY"
     assert result["gemini_ready_count"] == 2
-    assert result["successful"] is True
+    assert result["classification"] == "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER"
+    assert result["successful"] is False
 
 
 def test_gemini_health_probe_uses_plan_mode(tmp_path: Path, monkeypatch):
