@@ -67,6 +67,7 @@ def test_current_marker_service_and_timer_do_not_reinstall(monkeypatch, tmp_path
 
     monkeypatch.setattr(reconcile, "_run", fake_run)
     monkeypatch.setattr(reconcile, "_service_active", lambda repo: True)
+    monkeypatch.setattr(reconcile, "_runtime_consumer_current", lambda **kwargs: True)
     monkeypatch.setattr(reconcile, "_timer_enabled", lambda repo: True)
     result = reconcile.reconcile(repo=repo, data_root=data)
     assert result["status"] == "current"
@@ -92,6 +93,7 @@ def test_current_generation_bootstraps_missing_independent_timer(monkeypatch, tm
 
     monkeypatch.setattr(reconcile, "_run", fake_run)
     monkeypatch.setattr(reconcile, "_service_active", lambda repo: True)
+    monkeypatch.setattr(reconcile, "_runtime_consumer_current", lambda **kwargs: True)
     monkeypatch.setattr(reconcile, "_timer_enabled", lambda repo: next(timer_states))
     result = reconcile.reconcile(repo=repo, data_root=data)
     assert result["status"] == "current"
@@ -121,6 +123,7 @@ def test_generation_drift_runs_fixed_relay_installer_then_ensures_timer(monkeypa
     timer_states = iter([False, True])
     monkeypatch.setattr(reconcile, "_run", fake_run)
     monkeypatch.setattr(reconcile, "_service_active", lambda repo: True)
+    monkeypatch.setattr(reconcile, "_runtime_consumer_current", lambda **kwargs: True)
     monkeypatch.setattr(reconcile, "_timer_enabled", lambda repo: next(timer_states))
     result = reconcile.reconcile(repo=repo, data_root=data)
     assert result["status"] == "reconciled"
@@ -195,3 +198,28 @@ def test_legacy_maintenance_no_longer_owns_relay_generation_reconcile():
     source = (Path(__file__).resolve().parents[1] / "scripts" / "maintenance.py").read_text(encoding="utf-8")
     assert 'run_script("reconcile_action_relay_runtime.py")' not in source
     assert "agentos-action-relay-reconcile.timer" in source
+
+
+def test_current_marker_but_stale_consumer_forces_reinstall(monkeypatch, tmp_path):
+    repo, data = _repo(tmp_path)
+    _git_current(monkeypatch)
+    _write_marker(data)
+    runtime_states = iter([False, True])
+    calls = []
+
+    def fake_run(argv, *, cwd, env=None, timeout=120):
+        calls.append((list(argv), dict(env or {})))
+        if argv[:3] == ["git", "fetch", "--no-tags"]:
+            return Proc(returncode=0)
+        if argv == ["bash", str(repo / "scripts" / "install_action_relay_user.sh")]:
+            return Proc(returncode=0)
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(reconcile, "_run", fake_run)
+    monkeypatch.setattr(reconcile, "_service_active", lambda repo: True)
+    monkeypatch.setattr(reconcile, "_runtime_consumer_current", lambda **kwargs: next(runtime_states))
+    monkeypatch.setattr(reconcile, "_timer_enabled", lambda repo: True)
+
+    result = reconcile.reconcile(repo=repo, data_root=data)
+    assert result["status"] == "reconciled"
+    assert any(call[0] == ["bash", str(repo / "scripts" / "install_action_relay_user.sh")] for call in calls)
