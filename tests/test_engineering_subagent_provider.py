@@ -566,7 +566,9 @@ def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path:
     monkeypatch.setattr(provider, "_probe_provider_stability", lambda name, *args, **kwargs: dict(probes[name]))
     monkeypatch.setattr(provider, "_probe_binary_liveness", lambda name: "READY")
 
+    monkeypatch.setenv("AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT", "f" * 40)
     result = provider._run_executor_health(workspace)
+    assert result["runtime_source_commit"] == "f" * 40
     assert result["claude_state"] == "TIMEOUT"
     assert result["claude_health_classification"] == "TIMEOUT"
     assert result["claude_probe_attempts"] == 2
