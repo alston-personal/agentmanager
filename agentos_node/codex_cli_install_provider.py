@@ -9,9 +9,12 @@ from typing import Any, Mapping
 
 from agent_core.executor_job_contract import validate_executor_job
 from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS, ExecutorJobProviderRegistry
+from agentos_node.codex_provider_adapter import CodexProvider
 
 JOB_TYPE = "codex.cli.install"
+HEALTH_JOB_TYPE = "codex.cli.health"
 PROVIDER_ID = "oracle-codex-cli-install-v1"
+HEALTH_PROVIDER_ID = "oracle-codex-cli-health-v1"
 EXECUTOR_CLASS = "codex-cli"
 EXPECTED_HOME = Path("/home/ubuntu")
 DATA_ROOT = EXPECTED_HOME / "agent-data"
@@ -120,6 +123,49 @@ def run_codex_cli_install(request: Mapping[str, Any], *, runtime_root: str | Pat
     }
 
 
+
+
+def run_codex_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
+    spec = validate_executor_job(request)
+    if spec.job_type != HEALTH_JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
+        return _failure("CODEX_CLI_HEALTH_CONTRACT_MISMATCH", executor_available=False, routable=False, authorized=False)
+
+    raw = CodexProvider().health()
+    classification = str(raw.get("classification") or "UNCLASSIFIED")
+    if classification == "READY" and raw.get("healthy") is True and raw.get("routable") is True:
+        return {
+            "verdict": "PASS",
+            "classification": "CODEX_CLI_HEALTH_READY",
+            "executor_available": True,
+            "routable": True,
+            "authorized": True,
+            "successful": True,
+            "credential_exposed": False,
+            "executor_returncode": 0,
+            "executor_timed_out": False,
+        }
+
+    mapped = {
+        "INSTALL_REQUIRED": "CODEX_CLI_INSTALL_REQUIRED",
+        "AUTH_REQUIRED": "CODEX_CLI_AUTH_REQUIRED",
+        "AUTH_RUNTIME_REJECTED": "CODEX_CLI_AUTH_RUNTIME_REJECTED",
+        "RATE_LIMITED": "CODEX_CLI_RATE_LIMITED",
+        "TIMEOUT": "CODEX_CLI_HEALTH_TIMEOUT",
+        "NETWORK": "CODEX_CLI_NETWORK",
+        "WORKSPACE_UNAVAILABLE": "CODEX_CLI_WORKSPACE_UNAVAILABLE",
+        "NONZERO": "CODEX_CLI_HEALTH_NONZERO",
+    }.get(classification, "CODEX_CLI_" + classification)
+    result = _failure(
+        mapped,
+        executor_available=bool(raw.get("installed")),
+        routable=False,
+        authorized=bool(raw.get("authorized")),
+    )
+    result["executor_timed_out"] = bool(raw.get("timed_out"))
+    if raw.get("timed_out") is True:
+        result["executor_returncode"] = 124
+    return result
+
 def register_codex_cli_install_provider(*, registry: ExecutorJobProviderRegistry = DEFAULT_PROVIDERS, runtime_root: str | Path | None = None) -> bool:
     root = Path(runtime_root) if runtime_root is not None else _runtime_root()
     installer = root / "scripts/install_oracle_codex_cli.sh"
@@ -137,4 +183,15 @@ def register_codex_cli_install_provider(*, registry: ExecutorJobProviderRegistry
         executor_class=EXECUTOR_CLASS,
         handler=lambda request: run_codex_cli_install(request, runtime_root=root),
     )
+
+    existing_health = registry.get(HEALTH_JOB_TYPE)
+    if existing_health is None:
+        registry.register(
+            job_type=HEALTH_JOB_TYPE,
+            provider_id=HEALTH_PROVIDER_ID,
+            executor_class=EXECUTOR_CLASS,
+            handler=run_codex_cli_health,
+        )
+    elif existing_health.provider_id != HEALTH_PROVIDER_ID or existing_health.executor_class != EXECUTOR_CLASS:
+        raise RuntimeError("Codex CLI health provider already registered differently")
     return True
