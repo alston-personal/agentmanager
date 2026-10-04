@@ -35,3 +35,12 @@ def test_gemini_cli_request_is_semantic_only():
     }
     for field in ("command", "argv", "path", "env", "token", "credential"):
         assert field not in request
+
+
+def test_oracle_installer_uses_user_owned_npm_prefix_and_local_bin():
+    text = Path("scripts/install_oracle_gemini_cli_one.sh").read_text(encoding="utf-8")
+    assert 'npm_prefix="$HOME/.local/share/agentos/npm-global"' in text
+    assert 'local_bin="$HOME/.local/bin"' in text
+    assert 'npm install --prefix "$npm_prefix" -g @google/gemini-cli@latest' in text
+    assert 'ln -sfn "$npm_prefix/bin/gemini" "$local_bin/gemini"' in text
+    assert 'npm install -g @google/gemini-cli@latest' not in text
