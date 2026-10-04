@@ -180,3 +180,12 @@ def test_gemini_json_error_classification_is_bounded():
     assert _classify_gemini_json_error("MysteryProviderError", 1, 1) == "GEMINI_CLI_API_ERROR"
     assert _classify_gemini_json_error("", None, 42) == "GEMINI_CLI_CLI_CONTRACT"
     assert _classify_gemini_json_error("", None, 53) == "GEMINI_CLI_TURN_LIMIT"
+
+
+def test_gemini_cli_health_classification_covers_auth_and_node_signals():
+    from agentos_node.gemini_cli_install_provider import _classify_health_failure
+
+    assert _classify_health_failure(1, "Please authenticate to continue") == "GEMINI_CLI_AUTH_REQUIRED"
+    assert _classify_health_failure(1, "OAuth login required") == "GEMINI_CLI_AUTH_REQUIRED"
+    assert _classify_health_failure(1, "failed to load settings") == "GEMINI_CLI_CONFIG_ERROR"
+    assert _classify_health_failure(1, "EBADENGINE requires Node >=20") == "GEMINI_CLI_NODE_INCOMPATIBLE"
