@@ -191,8 +191,8 @@ def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool 
     return "GEMINI_CLI_HEALTH_NONZERO"
 
 
-def _classify_gemini_json_error(error_type: str, error_code: Any, returncode: int) -> str:
-    value = str(error_type or "").strip().casefold()
+def _classify_gemini_json_error(error_type: str, error_code: Any, returncode: int, error_text: str = "") -> str:
+    value = (str(error_type or "") + " " + str(error_text or "")).strip().casefold()
     if returncode == 42:
         return "GEMINI_CLI_CLI_CONTRACT"
     if returncode == 53:
