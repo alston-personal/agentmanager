@@ -210,3 +210,10 @@ def test_gemini_cli_health_diagnostic_tags_are_structural_and_bounded():
     assert "secret@example.com" not in tags
     assert "/home/ubuntu/private" not in tags
     assert len(tags) <= 512
+
+
+def test_gemini_cli_health_classifies_retired_oauth_client():
+    from agentos_node.gemini_cli_install_provider import _classify_health_failure
+
+    assert _classify_health_failure(1, "IneligibleTierError reasonCode: UNSUPPORTED_CLIENT") == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
+    assert _classify_health_failure(1, "This client is no longer supported; migrate to Antigravity") == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
