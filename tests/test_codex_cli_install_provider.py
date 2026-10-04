@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent_core.executor_job_contract import canonical_codex_cli_install_request
+from agent_core.executor_job_contract import (
+    canonical_codex_cli_health_request,
+    canonical_codex_cli_install_request,
+)
 from agentos_node.codex_cli_install_provider import (
     EXECUTOR_CLASS,
     PROVIDER_ID,
     register_codex_cli_install_provider,
+    run_codex_cli_health,
     run_codex_cli_install,
 )
 from agentos_node.executor_job_adapter import ExecutorJobProviderRegistry
@@ -77,3 +81,72 @@ def test_codex_install_provider_registers_only_fixed_job(tmp_path: Path):
     assert binding is not None
     assert binding.provider_id == PROVIDER_ID
     assert binding.executor_class == EXECUTOR_CLASS
+
+
+def test_codex_health_maps_ready(monkeypatch):
+    import agentos_node.codex_cli_install_provider as provider
+
+    monkeypatch.setattr(provider.CodexProvider, "health", lambda self: {
+        "installed": True,
+        "reachable": True,
+        "authorized": True,
+        "routable": True,
+        "healthy": True,
+        "state": "READY",
+        "classification": "READY",
+    })
+    result = run_codex_cli_health(canonical_codex_cli_health_request())
+    assert result["classification"] == "CODEX_CLI_HEALTH_READY"
+    assert result["successful"] is True
+    assert result["authorized"] is True
+    assert result["routable"] is True
+
+
+def test_codex_health_maps_auth_runtime_rejected(monkeypatch):
+    import agentos_node.codex_cli_install_provider as provider
+
+    monkeypatch.setattr(provider.CodexProvider, "health", lambda self: {
+        "installed": True,
+        "reachable": True,
+        "authorized": False,
+        "routable": False,
+        "healthy": False,
+        "state": "AUTH_REQUIRED",
+        "classification": "AUTH_RUNTIME_REJECTED",
+        "timed_out": False,
+    })
+    result = run_codex_cli_health(canonical_codex_cli_health_request())
+    assert result["classification"] == "CODEX_CLI_AUTH_RUNTIME_REJECTED"
+    assert result["successful"] is False
+    assert result["authorized"] is False
+
+
+def test_codex_health_maps_rate_limit(monkeypatch):
+    import agentos_node.codex_cli_install_provider as provider
+
+    monkeypatch.setattr(provider.CodexProvider, "health", lambda self: {
+        "installed": True,
+        "reachable": True,
+        "authorized": True,
+        "routable": False,
+        "healthy": False,
+        "state": "UNHEALTHY",
+        "classification": "RATE_LIMITED",
+        "rate_limited": True,
+        "timed_out": False,
+    })
+    result = run_codex_cli_health(canonical_codex_cli_health_request())
+    assert result["classification"] == "CODEX_CLI_RATE_LIMITED"
+    assert result["successful"] is False
+    assert result["authorized"] is True
+
+
+def test_codex_install_registration_also_registers_health(tmp_path: Path):
+    script = tmp_path / "scripts" / "install_oracle_codex_cli.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/bash\n", encoding="utf-8")
+    registry = ExecutorJobProviderRegistry()
+    assert register_codex_cli_install_provider(registry=registry, runtime_root=tmp_path) is True
+    health = registry.get("codex.cli.health")
+    assert health is not None
+    assert health.executor_class == EXECUTOR_CLASS
