@@ -124,6 +124,34 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
         self.assertEqual(provider, "agy")
         self.assertEqual(executor, ["/home/ubuntu/.local/bin/agy"])
 
+    def test_gemini_provider_uses_fixed_ubuntu_cli_path(self) -> None:
+        fake_home = Path("/home/ubuntu")
+        with patch("agentos_node.antigravity_relay_worker.Path.home", return_value=fake_home), \
+             patch.object(Path, "is_file", return_value=True), \
+             patch("agentos_node.antigravity_relay_worker.os.access", return_value=True):
+            provider, executor = discover_executor("gemini")
+        self.assertEqual(provider, "gemini")
+        self.assertEqual(executor, ["/home/ubuntu/.local/bin/gemini"])
+
+    def test_gemini_argv_uses_headless_auto_edit_without_shell_text(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(
+                workspace / "relay",
+                provider="gemini",
+                executor=["/home/ubuntu/.local/bin/gemini"],
+            )
+            argv = worker._executor_argv(
+                {"canonical_ir": {"goal": "probe"}, "instruction": "Make the bounded edit"},
+                workspace,
+            )
+            self.assertEqual(argv[0], "/home/ubuntu/.local/bin/gemini")
+            self.assertIn("--approval-mode", argv)
+            self.assertEqual(argv[argv.index("--approval-mode") + 1], "auto_edit")
+            self.assertIn("-p", argv)
+            self.assertNotIn("sh", argv)
+            self.assertNotIn("bash", argv)
+
     def test_trusted_provider_hint_selects_claude_without_caller_argv(self) -> None:
         with tempfile.TemporaryDirectory() as td, \
              patch("agentos_node.antigravity_relay_worker.discover_executor", return_value=("claude", ["/bin/true"])):
