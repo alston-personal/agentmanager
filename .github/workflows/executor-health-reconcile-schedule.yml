@@ -95,6 +95,8 @@ jobs:
           }, job
           print('executor_health_reconcile=PASS')
           print('selected_provider='+str(job.get('selected_provider') or 'none'))
+          print('claude_health_classification='+str(job.get('claude_health_classification') or 'none'))
+          print('agy_health_classification='+str(job.get('agy_health_classification') or 'none'))
           raise SystemExit(0)
           PY
             then
