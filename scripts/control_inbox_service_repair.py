@@ -26,12 +26,16 @@ class RepairFailure(Exception):
 
 def parse_env(text: str) -> dict[str, str]:
     result: dict[str, str] = {}
-    for line in text.splitlines():
+    for line_number, line in enumerate(text.splitlines(), start=1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         key, separator, value = line.partition("=")
-        if not separator or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or key in result:
-            raise RepairFailure("environment_malformed")
+        if not separator:
+            raise RepairFailure(f"environment_malformed_missing_equals_line_{line_number}")
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
+            raise RepairFailure(f"environment_malformed_invalid_key_line_{line_number}")
+        if key in result:
+            raise RepairFailure(f"environment_malformed_duplicate_key_line_{line_number}")
         result[key] = value
     return result
 
