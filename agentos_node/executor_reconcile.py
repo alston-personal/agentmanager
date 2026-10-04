@@ -225,6 +225,7 @@ def reconcile_executor_adoption(
             "authorized": bool(item.get("authorized")),
             "healthy": bool(item.get("healthy")),
             "provider_health": dict(item.get("provider_health") or {}),
+            "provider_error": str(item.get("provider_error") or ""),
         })
 
     counts: dict[str, int] = {}
