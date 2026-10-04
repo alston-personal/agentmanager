@@ -62,10 +62,8 @@ def normalize_env_shape(text: str) -> tuple[str, bool]:
         malformed.append(index)
     if not malformed:
         return text, False
-    if len(malformed) != 1:
-        raise RepairFailure("environment_shape_not_safely_normalizable")
-    index = malformed[0]
-    return "".join(line for i, line in enumerate(lines) if i != index), True
+    malformed_set = set(malformed)
+    return "".join(line for i, line in enumerate(lines) if i not in malformed_set), True
 
 
 def valid_token(value: str) -> bool:
