@@ -64,7 +64,7 @@
     "preserve_existing_identity": true
   },
   "implementation": {
-    "adapter_module": null,
-    "notes": "Provider must implement adapter per EXECUTOR_PROVIDER_ONBOARDING_PROTOCOL.md before this executor can become routable."
+    "adapter_module": "agentos_node.executor_provider_adapters:GeminiProvider",
+    "notes": "Bounded Gemini CLI adapter using the existing ubuntu-owned relay, fixed workspace allowlist, secret-free receipts, and governed stable-routable adoption."
   }
 }
