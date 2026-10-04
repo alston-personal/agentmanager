@@ -239,3 +239,34 @@ def test_reconcile_requires_two_ready_snapshots_before_stable_routing(tmp_path, 
     assert row3["ready_streak"] == 0
     assert row3["stable_routable"] is False
     assert row3["provider_health"]["classification"] == "TIMEOUT"
+
+
+def test_reconcile_persists_provider_error_type_without_message(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        executor_reconcile,
+        "discover_executor_inventory",
+        lambda **kwargs: {
+            "schema": executor_reconcile.SCHEMA,
+            "provider_profile_schema": "agentos.executor-provider-profile/v0.1",
+            "executors": [{
+                "executor_id": "demo",
+                "provider_id": "demo-provider",
+                "executor_class": "demo-class",
+                "state": "UNHEALTHY",
+                "adoptable": True,
+                "routable": False,
+                "profile_valid": True,
+                "adapter_registered": True,
+                "discovered": True,
+                "reachable": True,
+                "authorized": False,
+                "healthy": False,
+                "provider_error": "RuntimeError",
+                "capabilities": [],
+            }],
+        },
+    )
+    payload = executor_reconcile.reconcile_executor_adoption(state_root=tmp_path)["executor_adoption"]
+    row = payload["executors"][0]
+    assert row["provider_error"] == "RuntimeError"
+    assert "secret" not in json.dumps(row)
