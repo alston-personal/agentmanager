@@ -484,6 +484,16 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'persona_pdca_runtime_units_found=',
                     'persona_pdca_runtime_probe=',
                 )
+            elif action == bootstrap_control.ACTION_ACTIVATE_OURSONG_PERSONA:
+                safe_prefixes = (
+                    'oursong_heartbeat_cutover=',
+                    'oursong_heartbeat_cycle=',
+                    'oursong_heartbeat_last_tick_at=',
+                    'persona_pdca_heartbeat=',
+                    'persona_pdca_heartbeat_at=',
+                    'persona_pdca_tick=',
+                    'oursong_persona_activation=',
+                )
             elif action == bootstrap_control.ACTION_PROBE_OURSONG_PERSONA:
                 safe_prefixes = (
                     'oursong_status=',
