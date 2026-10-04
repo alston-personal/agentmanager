@@ -562,6 +562,10 @@ def test_executor_health_receipt_uses_direct_bounded_two_sample_probes(tmp_path:
             "state": "ERROR", "classification": "CLI_CONTRACT", "returncode": 2,
             "timed_out": False, "ready_count": 0, "attempts": 2,
         },
+        "gemini": {
+            "state": "UNAVAILABLE", "classification": "UNAVAILABLE", "returncode": None,
+            "timed_out": False, "ready_count": 0, "attempts": 2,
+        },
     }
     monkeypatch.setattr(provider, "_probe_provider_stability", lambda name, *args, **kwargs: dict(probes[name]))
     monkeypatch.setattr(provider, "_probe_binary_liveness", lambda name: "READY")
