@@ -47,6 +47,27 @@ def parse_env(text: str) -> dict[str, str]:
     return result
 
 
+def normalize_env_shape(text: str) -> tuple[str, bool]:
+    lines = text.splitlines(keepends=True)
+    malformed: list[int] = []
+    for index, line in enumerate(lines):
+        raw = line.rstrip("\r\n")
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if "=" in raw:
+            continue
+        previous = lines[index - 1].rstrip("\r\n") if index > 0 else ""
+        if previous.rstrip().endswith("\\") or raw.lstrip().startswith("export "):
+            raise RepairFailure("environment_shape_not_safely_normalizable")
+        malformed.append(index)
+    if not malformed:
+        return text, False
+    if len(malformed) != 1:
+        raise RepairFailure("environment_shape_not_safely_normalizable")
+    index = malformed[0]
+    return "".join(line for i, line in enumerate(lines) if i != index), True
+
+
 def valid_token(value: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9_.-]+", value))
 
@@ -146,7 +167,8 @@ def repair() -> dict[str, object]:
     if binding.returncode or binding.stdout.strip() != str(ENV_PATH) + " (ignore_errors=no)":
         raise RepairFailure("service_configuration_binding_mismatch")
     original = read_private(ENV_PATH)
-    env = parse_env(original)
+    normalized, shape_changed = normalize_env_shape(original)
+    env = parse_env(normalized)
     for key, expected in {"AGENTOS_CONTROL_REPOSITORY": "alston-personal/agentmanager",
                           "AGENTOS_CONTROL_ISSUE": "50", "AGENTOS_CONTROL_ALLOWED_LOGIN": "alstonhuang",
                           "AGENTOS_ONE_URL": "http://127.0.0.1:8780"}.items():
@@ -170,7 +192,7 @@ def repair() -> dict[str, object]:
     elif one_before != 200:
         raise RepairFailure("one_controller_unavailable")
 
-    repaired = replace_credentials(original, updates)
+    repaired = replace_credentials(normalized, updates)
     # Re-read before writing: another deployment must not be silently overwritten.
     if read_private(ENV_PATH) != original:
         raise RepairFailure("configuration_changed_during_preflight")
@@ -196,7 +218,7 @@ def repair() -> dict[str, object]:
         raise
     return {"schema": "agentos.control-inbox-repair/v1", "ok": True,
             "github_before_http": github_before, "controller_before_http": one_before,
-            "credentials_changed": changed, "bridge_active": True,
+            "credentials_changed": bool(updates), "configuration_shape_repaired": shape_changed, "bridge_active": True,
             "github_read_ok": True, "controller_auth_ok": True,
             "action_allowlist_preserved": True, "durable_state_preserved": True,
             "credential_exposed": False, "end_to_end_verified": False}
