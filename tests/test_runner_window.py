@@ -238,6 +238,9 @@ def test_realm_scheduler_public_projection_keeps_bounded_executor_health_diagnos
     for field in (
         "'claude_health_classification'",
         "'agy_health_classification'",
+        "'gemini_health_classification'",
+        "'gemini_state'",
+        "'gemini_ready_count'",
         "'runtime_source_commit'",
     ):
         assert field in block
