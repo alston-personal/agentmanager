@@ -73,18 +73,18 @@ def test_installer_drains_processing_before_stopping_managed_worker():
     assert "processing appeared during drain/stop handoff" in text
 
 
-def test_installer_recovers_stale_processing_only_when_managed_worker_is_offline():
+def test_installer_uses_native_action_relay_interrupted_recovery_only_when_worker_is_offline():
     text = INSTALLER.read_text(encoding="utf-8")
     assert "if ! systemctl --user is-active --quiet agentos-action-relay.service" in text
-    assert "AntigravityRelayWorker" in text
-    assert "reconcile_stranded_processing(stale_after=600)" in text
-    assert "action_relay_offline_stranded_reconcile=PASS" in text
-    assert "inactive Action Relay stranded processing did not reach safe reconciliation threshold" in text
+    assert "from agentos_node.action_relay import ActionRelayWorker" in text
+    assert "ActionRelayWorker(Path(sys.argv[1])).recover_interrupted()" in text
+    assert "action_relay_offline_interrupted_recovery=PASS" in text
+    assert "AntigravityRelayWorker" not in text
 
 
-def test_installer_reconciles_stale_processing_during_normal_drain():
+def test_installer_does_not_recover_processing_while_live_worker_is_draining():
     text = INSTALLER.read_text(encoding="utf-8")
     marker = "processing_clear=0"
     block = text.split(marker, 1)[1].split('if [ "$processing_clear" -ne 1 ]', 1)[0]
-    assert "reconcile_stranded_processing(stale_after=600)" in block
-    assert "UNKNOWN_SIDE_EFFECT" in block
+    assert "recover_interrupted" not in block
+    assert "reconcile_stranded_processing" not in block
