@@ -39,12 +39,14 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "claude_timed_out",
     "claude_ready_count",
     "claude_probe_attempts",
+    "claude_health_classification",
     "agy_liveness",
     "agy_state",
     "agy_returncode",
     "agy_timed_out",
     "agy_ready_count",
     "agy_probe_attempts",
+    "agy_health_classification",
     "selected_provider",
 )
 _PROVIDER_STATE_FIELDS = (
