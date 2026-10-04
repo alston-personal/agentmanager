@@ -44,3 +44,12 @@ def test_oracle_installer_uses_user_owned_npm_prefix_and_local_bin():
     assert 'npm install --prefix "$npm_prefix" -g @google/gemini-cli@latest' in text
     assert 'ln -sfn "$npm_prefix/bin/gemini" "$local_bin/gemini"' in text
     assert 'npm install -g @google/gemini-cli@latest' not in text
+
+
+def test_gemini_cli_install_failure_classification_is_bounded():
+    from agentos_node.gemini_cli_install_provider import _install_failure_classification
+    assert _install_failure_classification("", "npm ERR! code EACCES permission denied") == "GEMINI_CLI_INSTALL_PERMISSION_DENIED"
+    assert _install_failure_classification("", "npm ERR! code EBADENGINE unsupported engine") == "GEMINI_CLI_NODE_INCOMPATIBLE"
+    assert _install_failure_classification("", "npm ERR! code ENOTFOUND") == "GEMINI_CLI_INSTALL_NETWORK"
+    assert _install_failure_classification("", "npm ERR! 404 Not Found") == "GEMINI_CLI_PACKAGE_UNAVAILABLE"
+    assert _install_failure_classification("", "bounded unknown failure") == "GEMINI_CLI_INSTALL_COMMAND_FAILED"
