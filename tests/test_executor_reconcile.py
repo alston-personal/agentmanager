@@ -270,3 +270,47 @@ def test_reconcile_persists_provider_error_type_without_message(tmp_path, monkey
     row = payload["executors"][0]
     assert row["provider_error"] == "RuntimeError"
     assert "secret" not in json.dumps(row)
+
+
+class ExplodingProvider(ReadyProvider):
+    def health(self):
+        raise RuntimeError("private details must not persist")
+
+
+class UnclassifiedUnhealthyProvider(ReadyProvider):
+    def health(self):
+        return {
+            "reachable": True,
+            "authorized": False,
+            "routable": False,
+            "healthy": False,
+            "state": "UNHEALTHY",
+        }
+
+
+def test_health_exception_gets_bounded_provider_classification(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    root.mkdir()
+    (root / "demo.json").write_text(
+        json.dumps(_profile("tests.fake_demo_provider")),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(executor_provider_registry, "_load_symbol", lambda spec: ExplodingProvider())
+    item = executor_reconcile.discover_executor_inventory(profile_root=root)["executors"][0]
+    assert item["state"] == "UNHEALTHY"
+    assert item["provider_error"] == "RuntimeError"
+    assert item["provider_health"]["classification"] == "PROVIDER_EXCEPTION_RUNTIMEERROR"
+    assert "private details" not in json.dumps(item)
+
+
+def test_nonready_health_without_classification_gets_safe_fallback(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    root.mkdir()
+    (root / "demo.json").write_text(
+        json.dumps(_profile("tests.fake_demo_provider")),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(executor_provider_registry, "_load_symbol", lambda spec: UnclassifiedUnhealthyProvider())
+    item = executor_reconcile.discover_executor_inventory(profile_root=root)["executors"][0]
+    assert item["state"] == "UNHEALTHY"
+    assert item["provider_health"]["classification"] == "UNCLASSIFIED_UNHEALTHY"

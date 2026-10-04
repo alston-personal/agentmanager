@@ -69,12 +69,14 @@ def _state_from_provider(
         if not isinstance(discovered, dict):
             raise ValueError("discover() must return object")
     except Exception as exc:
+        error_type = _bounded_error(exc)
         base.update({
             "state": "UNHEALTHY",
             "discovered": False,
             "authorized": False,
             "healthy": False,
-            "provider_error": _bounded_error(exc),
+            "provider_error": error_type,
+            "provider_health": {"classification": "PROVIDER_EXCEPTION_" + error_type.upper()},
         })
         return base
 
@@ -96,12 +98,14 @@ def _state_from_provider(
         if not isinstance(health, dict):
             raise ValueError("health() must return object")
     except Exception as exc:
+        error_type = _bounded_error(exc)
         base.update({
             "state": "UNHEALTHY",
             "discovered": bool(discovered.get("installed") or discovered.get("detected")),
             "authorized": False,
             "healthy": False,
-            "provider_error": _bounded_error(exc),
+            "provider_error": error_type,
+            "provider_health": {"classification": "PROVIDER_EXCEPTION_" + error_type.upper()},
         })
         return base
 
@@ -111,24 +115,36 @@ def _state_from_provider(
     routable = bool(health.get("routable"))
     healthy = bool(health.get("healthy"))
 
+    provider_health = {
+        key: health.get(key)
+        for key in (
+            "classification",
+            "reachable",
+            "authorized",
+            "routable",
+            "healthy",
+            "busy",
+            "rate_limited",
+        )
+        if key in health
+    }
+    if not str(provider_health.get("classification") or "").strip():
+        health_state = str(health.get("state") or "").strip()
+        if health_state == "AUTH_REQUIRED":
+            provider_health["classification"] = "AUTH_REQUIRED"
+        elif not installed:
+            provider_health["classification"] = "INSTALL_REQUIRED"
+        elif not reachable:
+            provider_health["classification"] = "UNREACHABLE"
+        elif not healthy or not routable or not authorized:
+            provider_health["classification"] = "UNCLASSIFIED_UNHEALTHY"
+
     base.update({
         "discovered": installed,
         "reachable": reachable,
         "authorized": authorized,
         "healthy": healthy,
-        "provider_health": {
-            key: health.get(key)
-            for key in (
-                "classification",
-                "reachable",
-                "authorized",
-                "routable",
-                "healthy",
-                "busy",
-                "rate_limited",
-            )
-            if key in health
-        },
+        "provider_health": provider_health,
     })
 
     if not installed:
