@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProvider } from '@/lib/auth/providers';
 import { generateToken } from '@/lib/auth';
+import { completePwaHandoff } from '@/lib/auth/pwa-handoff';
 
 export async function GET(
   request: NextRequest,
@@ -46,10 +47,34 @@ export async function GET(
     // 3. Generate our JWT token
     const token = generateToken(username, { provider: profile.provider, subject: profile.subject, avatarUrl: profile.avatarUrl });
 
-    // 4. Set HttpOnly cookie and redirect back to root
+    // 4. Resolve the post-login target. For Mio Wardrobe PWA handoff,
+    // complete the one-time handoff server-side while the freshly issued JWT
+    // is still in memory. This avoids relying on Safari/WebKit committing an
+    // auth cookie before a follow-up request reads it.
     const returnToCookie = request.cookies.get('oauth_return_to')?.value;
     const returnTo = returnToCookie ? decodeURIComponent(returnToCookie) : '/';
-    const response = NextResponse.redirect(new URL(returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/', siteUrl));
+    const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
+
+    let directPwaHandoffCompleted = false;
+    try {
+      const parsedReturnTo = new URL(safeReturnTo, siteUrl);
+      const siteOrigin = new URL(siteUrl).origin;
+      const handoffId = parsedReturnTo.origin === siteOrigin
+        && parsedReturnTo.pathname === '/dashboard/api/wardrobe/auth-handoff'
+        ? parsedReturnTo.searchParams.get('handoff')
+        : null;
+      if (handoffId && /^[A-Za-z0-9_-]{32,128}$/.test(handoffId)) {
+        completePwaHandoff(handoffId, token);
+        directPwaHandoffCompleted = true;
+      }
+    } catch (handoffError) {
+      console.error('Direct PWA auth handoff failed:', handoffError);
+    }
+
+    const redirectTarget = directPwaHandoffCompleted
+      ? '/personas/mio/wardrobe/?authHandoff=completed'
+      : safeReturnTo;
+    const response = NextResponse.redirect(new URL(redirectTarget, siteUrl));
     
     // Remove the legacy parent-domain cookie so iOS/WebKit cannot keep two
     // same-name auth_token cookies with different scopes.
