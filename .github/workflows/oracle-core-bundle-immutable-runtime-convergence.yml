@@ -155,9 +155,24 @@ jobs:
             echo "core_bundle_runtime=$unit:immutable"
           done
           if systemctl --user is-active --quiet agentos-employee-worker-host.service; then
-            pid="$(systemctl --user show agentos-employee-worker-host.service -p MainPID --value)"
-            cwd="$(readlink -f "/proc/$pid/cwd")"
-            case "$cwd" in "$RELEASE"|"$RELEASE"/*) ;; *) echo "ERROR: worker host cwd=$cwd" >&2; exit 21;; esac
+            worker_runtime_ok=0
+            worker_cwd=""
+            for _ in $(seq 1 20); do
+              pid="$(systemctl --user show agentos-employee-worker-host.service -p MainPID --value 2>/dev/null || true)"
+              if [ -n "$pid" ] && [ "$pid" != 0 ] && [ -d "/proc/$pid" ]; then
+                worker_cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+                case "$worker_cwd" in
+                  "$RELEASE"|"$RELEASE"/*) worker_runtime_ok=1; break;;
+                esac
+              fi
+              sleep 0.5
+            done
+            if [ "$worker_runtime_ok" -ne 1 ]; then
+              echo "ERROR: worker host did not stabilize on immutable release cwd=${worker_cwd:-unreadable}" >&2
+              systemctl --user --no-pager --full status agentos-employee-worker-host.service >&2 || true
+              journalctl --user -u agentos-employee-worker-host.service -n 40 --no-pager >&2 || true
+              exit 21
+            fi
             echo "core_bundle_runtime=agentos-employee-worker-host.service:immutable"
           fi
 
