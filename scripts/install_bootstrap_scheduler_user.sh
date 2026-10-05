@@ -103,7 +103,7 @@ WorkingDirectory=$RELEASE
 Environment=PYTHONPATH=$RELEASE
 Environment=AGENTOS_BOOTSTRAP_ROOT=/tmp/agentos-bootstrap-control
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
-ExecStart=/usr/bin/sg agentos -c 'exec /usr/bin/python3 -m agentos_node.bootstrap_scheduler --role $role --worker-id $worker'
+ExecStart=/usr/bin/python3 -m agentos_node.bootstrap_scheduler --role $role --worker-id $worker
 Restart=always
 RestartSec=2
 CPUAccounting=true
@@ -136,27 +136,11 @@ for unit in "${UNITS[@]}"; do
   systemctl --user enable "$unit" >/dev/null
   systemctl --user restart "$unit"
   systemctl --user is-active --quiet "$unit"
-  MAIN_PID="$(systemctl --user show "$unit" -p MainPID --value)"
-  test -n "$MAIN_PID" && test "$MAIN_PID" != 0
-  WORKER_PID=""
-  for candidate in $(pgrep -P "$MAIN_PID" || true) "$MAIN_PID"; do
-    [ -r "/proc/$candidate/cmdline" ] || continue
-    cmd="$(tr '\0' ' ' < "/proc/$candidate/cmdline")"
-    if [[ "$cmd" == *"agentos_node.bootstrap_scheduler"* ]]; then
-      WORKER_PID="$candidate"
-      break
-    fi
-  done
-  test -n "$WORKER_PID"
-  CWD="$(readlink -f "/proc/$WORKER_PID/cwd")"
+  PID="$(systemctl --user show "$unit" -p MainPID --value)"
+  test -n "$PID" && test "$PID" != 0
+  CWD="$(readlink -f "/proc/$PID/cwd")"
   test "$CWD" = "$RELEASE"
-  AGENTOS_GID="$(getent group agentos | cut -d: -f3)"
-  awk -v gid="$AGENTOS_GID" '
-    /^Gid:/ { for (i=2;i<=NF;i++) if ($i==gid) found=1 }
-    /^Groups:/ { for (i=2;i<=NF;i++) if ($i==gid) found=1 }
-    END { exit(found ? 0 : 1) }
-  ' "/proc/$WORKER_PID/status"
-  echo "bootstrap_scheduler_unit=$unit:active:release=$CWD:group=agentos"
+  echo "bootstrap_scheduler_unit=$unit:active:release=$CWD"
 done
 
 worker_status_ready=0

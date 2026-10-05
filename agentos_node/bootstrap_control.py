@@ -10,6 +10,7 @@ from pathlib import Path
 import pwd
 import re
 import signal
+import shlex
 import subprocess
 from datetime import datetime, timezone
 from typing import Any
@@ -374,15 +375,37 @@ def _run_canonical_script(
 
 def _restart_antigravity_relay() -> dict[str, Any]:
     from agentos_node.action_relay import ActionRelayClient
-    from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
 
-    # Reconcile stale processing explicitly before restart. A processing capsule
-    # may have produced unknown side effects, so it is quarantined with a
-    # deterministic UNKNOWN_SIDE_EFFECT receipt and is never replayed.
+    # Reconcile stale processing through a narrow group-boundary helper before
+    # restart. The scheduler itself keeps its normal user context; only this
+    # fixed, non-replay quarantine operation enters the shared agentos group.
     relay_root = Path(os.environ.get("AGENT_DATA_ROOT") or "/home/ubuntu/agent-data") / "runtime" / "antigravity-relay"
-    quarantined = AntigravityRelayWorker(relay_root).reconcile_stranded_processing(
-        stale_after=RELAY_STALE_PROCESSING_SECONDS,
+    runtime_root = Path(__file__).resolve().parents[1]
+    reconcile_cmd = " ".join([
+        "/usr/bin/env",
+        "PYTHONPATH=" + shlex.quote(str(runtime_root)),
+        "/usr/bin/python3",
+        "-m",
+        "agentos_node.antigravity_relay_worker",
+        "--root",
+        shlex.quote(str(relay_root)),
+        "--reconcile-only",
+    ])
+    reconcile = subprocess.run(
+        ["/usr/bin/sg", "agentos", "-c", reconcile_cmd],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+        cwd=str(runtime_root),
     )
+    if reconcile.returncode != 0:
+        raise RuntimeError(f"relay stale quarantine helper failed rc={reconcile.returncode}")
+    try:
+        reconcile_payload = json.loads(reconcile.stdout or "{}")
+        quarantined = int(reconcile_payload.get("reconciled") or 0)
+    except Exception as exc:
+        raise RuntimeError("relay stale quarantine helper returned invalid result") from exc
 
     client = ActionRelayClient("/home/ubuntu/agent-data/runtime/action-relay")
     capsule = client.submit("agentos.antigravity.restart", {"service": "agentos-antigravity-relay"})
