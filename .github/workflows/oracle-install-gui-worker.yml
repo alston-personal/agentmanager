@@ -1,10 +1,6 @@
 name: Oracle Install GUI Worker
 on:
   workflow_dispatch:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.agentos/commands/oracle-gui-worker-install.json'
 permissions:
   contents: read
 jobs:
