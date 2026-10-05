@@ -143,7 +143,7 @@ def delete_invoice(invoice_id: str, request: Request):
     session = require_user(request)
     actor = str(session.get("username") or session.get("subject") or "milkcat-user")
     try:
-        return store.soft_delete(invoice_id, actor)
+        return store.hard_delete(invoice_id, actor)
     except KeyError:
         raise HTTPException(status_code=404, detail="invoice_not_found")
 
@@ -157,7 +157,7 @@ def delete_invoices(body: DeleteBatchBody, request: Request):
         raise HTTPException(status_code=422, detail="invoice_ids_required")
     if len(ids) > 500:
         raise HTTPException(status_code=422, detail="too_many_invoices")
-    return store.soft_delete_many(ids, actor)
+    return store.hard_delete_many(ids, actor)
 
 
 @app.get("/v1/invoices/{invoice_id}/original")
