@@ -551,11 +551,46 @@ class InvoiceStore:
         sha = hashlib.sha256(image_bytes).hexdigest()
         with self.connect() as db:
             found = db.execute("""
-              SELECT i.*, d.sha256, d.original_filename
+              SELECT i.*, d.sha256, d.original_filename, d.id AS matched_document_id,
+                     d.batch_id, d.source_type, d.data_scope
               FROM documents d LEFT JOIN invoices i ON i.document_id=d.id
               WHERE d.sha256=?
             """, (sha,)).fetchone()
             if found:
+                if "deleted_at" in found.keys() and found["deleted_at"]:
+                    restored_at = utcnow()
+                    db.execute(
+                        """UPDATE invoices SET
+                             deleted_at=NULL,
+                             status='processing',
+                             confidence_json='{}',
+                             updated_at=?
+                           WHERE id=?""",
+                        (restored_at, found["id"]),
+                    )
+                    db.execute(
+                        """INSERT OR IGNORE INTO intake_batches(
+                             id,source_type,data_scope,status,item_count,created_at,updated_at
+                           ) VALUES(?,?,?,?,?,?,?)""",
+                        (batch_id, source_type, self.data_scope, "open", 0, restored_at, restored_at),
+                    )
+                    db.execute(
+                        """UPDATE documents SET batch_id=?, source_type=?, data_scope=?
+                           WHERE id=?""",
+                        (batch_id, source_type, self.data_scope, found["matched_document_id"]),
+                    )
+                    db.execute(
+                        "UPDATE intake_batches SET item_count=item_count+1, updated_at=? WHERE id=?",
+                        (restored_at, batch_id),
+                    )
+                    restored = db.execute("""
+                      SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope
+                      FROM invoices i JOIN documents d ON d.id=i.document_id
+                      WHERE i.id=?
+                    """, (found["id"],)).fetchone()
+                    payload = self._row_payload(restored, duplicate=False)
+                    payload["restored"] = True
+                    return payload
                 return self._row_payload(found, duplicate=True)
 
         ext = ".jpg"
@@ -815,6 +850,52 @@ class InvoiceStore:
               ORDER BY i.created_at DESC LIMIT ?
             """, (limit,)).fetchall()
             return [self._row_payload(row) for row in rows]
+
+    def hard_delete(self, invoice_id: str, actor: str) -> dict[str, Any]:
+        """Permanently delete one invoice, its derived data, document row and original file."""
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT i.id AS invoice_id, i.document_id, d.stored_path, d.batch_id
+                   FROM invoices i JOIN documents d ON d.id=i.document_id
+                   WHERE i.id=?""",
+                (invoice_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+            stored_path = Path(row["stored_path"])
+            document_id = row["document_id"]
+            batch_id = row["batch_id"]
+
+            db.execute("DELETE FROM reviews WHERE invoice_id=?", (invoice_id,))
+            db.execute("DELETE FROM invoice_line_items WHERE invoice_id=?", (invoice_id,))
+            db.execute("DELETE FROM extractions WHERE document_id=?", (document_id,))
+            db.execute("DELETE FROM invoices WHERE id=?", (invoice_id,))
+            db.execute("DELETE FROM documents WHERE id=?", (document_id,))
+            if batch_id:
+                db.execute(
+                    """UPDATE intake_batches
+                       SET item_count=CASE WHEN item_count>0 THEN item_count-1 ELSE 0 END,
+                           updated_at=?
+                       WHERE id=?""",
+                    (utcnow(), batch_id),
+                )
+
+        try:
+            stored_path.unlink(missing_ok=True)
+        except OSError:
+            # DB deletion is authoritative; orphan cleanup can be handled separately.
+            pass
+        return {"ok": True, "invoice_id": invoice_id, "permanent": True}
+
+    def hard_delete_many(self, invoice_ids: list[str], actor: str) -> dict[str, Any]:
+        deleted = []
+        for invoice_id in invoice_ids:
+            try:
+                self.hard_delete(invoice_id, actor)
+                deleted.append(invoice_id)
+            except KeyError:
+                continue
+        return {"ok": True, "deleted": deleted, "count": len(deleted), "permanent": True}
 
     def soft_delete(self, invoice_id: str, actor: str) -> dict[str, Any]:
         now = utcnow()
