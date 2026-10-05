@@ -576,7 +576,6 @@ def _realm_node_inspect(node_id: str) -> dict[str, Any]:
     heartbeat_age = node.get("heartbeat_age_seconds")
     runtime = node.get("runtime") if isinstance(node.get("runtime"), dict) else {}
     runtime_status = str(runtime.get("status") or "unknown")
-    runtime_ref = str(runtime.get("source_ref") or "")
     runtime_commit = str(runtime.get("source_commit") or "")
     if runtime_commit and not re.fullmatch(r"[0-9a-f]{40}", runtime_commit):
         runtime_commit = "invalid"
@@ -590,7 +589,6 @@ def _realm_node_inspect(node_id: str) -> dict[str, Any]:
         "realm_node_capability_count=" + str(len(caps)),
         "realm_node_desktop_capable=" + ("YES" if "desktop.session.inspect" in caps else "NO"),
         "realm_node_runtime_status=" + runtime_status,
-        "realm_node_runtime_source_ref=" + runtime_ref,
         "realm_node_runtime_source_commit=" + runtime_commit,
         "realm_node_inspect=PASS",
     ]
