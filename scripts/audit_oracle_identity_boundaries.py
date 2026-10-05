@@ -95,8 +95,11 @@ def _classify(rel: str, text: str, policy: dict[str, Any]) -> dict[str, Any] | N
     # and lacks an explicit group boundary. This is the class that has already
     # caused production PermissionError/recovery failures.
     if has_shared_data and mutation and node_execution_proven and not bounded_group:
-        risk = "P0"
-        classification = "unbounded-cross-owner-mutation"
+        # Static source evidence can nominate a cross-owner risk but cannot prove
+        # the effective runtime identity/ownership of the live host. Promotion
+        # to P0 is policy-driven after live or manual confirmation.
+        risk = "P1"
+        classification = "cross-owner-mutation-candidate"
         tags.append("implicit-group-risk")
     elif has_shared_data and mutation and user_systemd and not bounded_group:
         # user-systemd alone does not prove a cross-owner mutation. Hosted SSH
