@@ -73,6 +73,31 @@ def normalize_roc_date(text: str) -> str | None:
     return None
 
 
+VENDOR_SUFFIX_RE = re.compile(
+    r"([\u4e00-\u9fffA-Za-z0-9·・()（）&\-]{2,32}(?:股份有限公司|有限公司|企業社|商行|實業社|工作室|餐廳|飯店|旅店|商店|門市|分店|公司|行|店))"
+)
+
+
+def normalize_vendor_name(text: str) -> str | None:
+    blocked = (
+        "統一發票", "發票", "收執聯", "扣抵聯", "存根聯", "營業稅",
+        "銷售額", "合計", "總計", "買受人", "銷售人", "統一編號",
+    )
+    candidates: list[str] = []
+    for line in (text or "").splitlines():
+        compact = re.sub(r"\s+", "", line).strip("：:-—")
+        if not compact or any(token in compact for token in blocked):
+            continue
+        for m in VENDOR_SUFFIX_RE.finditer(compact):
+            name = m.group(1).strip()
+            if 2 <= len(name) <= 36 and name not in candidates:
+                candidates.append(name)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: (len(x), x.count("公司")), reverse=True)
+    return candidates[0]
+
+
 def money_values(text: str) -> list[int]:
     out: list[int] = []
     for raw in re.findall(r"(?<!\d)\d[\d,\.\s]{1,12}(?!\d)", text):
@@ -146,8 +171,6 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
     """
     image = Image.open(BytesIO(image_bytes))
     image = ImageOps.exif_transpose(image).convert("RGB")
-    if image.height > image.width * 1.08:
-        image = image.rotate(90, expand=True)
 
     rapid = extract_template_invoice(image_bytes)
     fields = {
@@ -205,11 +228,18 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
         raw["fallback_used"].append("invoice_date")
 
     if any(fields[k] is None for k in ("amount_before_tax", "tax_amount", "total_amount")):
-        amount_texts = [
-            ocr_image(amount_crop, psm=6, whitelist="0123456789,.-"),
-            ocr_image(amount_crop, psm=11, whitelist="0123456789,.-"),
-            ocr_image(amount_crop, psm=12, whitelist="0123456789,.-"),
+        amount_regions = [
+            amount_crop,
+            crop_rel(image, (0.18, 0.24, 0.95, 0.90)),
+            crop_rel(image, (0.04, 0.42, 0.96, 0.97)),
+            image,
         ]
+        amount_texts = []
+        for region in amount_regions:
+            amount_texts.extend([
+                ocr_image(region, psm=6, whitelist="0123456789,.-"),
+                ocr_image(region, psm=11, whitelist="0123456789,.-"),
+            ])
         subtotal, tax, total, amount_conf = choose_amounts(amount_texts)
         fallback_amounts = {
             "amount_before_tax": subtotal,
@@ -231,6 +261,19 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
             confidence["seller_tax_id"] = 0.72
         raw["stamp_text"] = stamp_text
         raw["fallback_used"].append("seller_tax_id")
+
+    if not fields["vendor_name"]:
+        vendor_texts = [
+            rapid.get("raw_text") or "",
+            ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng"),
+            ocr_image(crop_rel(image, (0.45, 0.48, 0.98, 0.98)), psm=11, lang="chi_tra+eng"),
+        ]
+        vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
+        if vendor:
+            fields["vendor_name"] = vendor
+            confidence["vendor_name"] = 0.68
+        raw["vendor_texts"] = vendor_texts
+        raw["fallback_used"].append("vendor_name")
 
     # A mathematically derived 5% split is useful for assistance but is not enough
     # by itself for unattended posting; keep that case in review.
