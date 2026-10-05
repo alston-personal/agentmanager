@@ -67,7 +67,12 @@
         "invoice-ocr",
         "fengshui",
         "leopardcat-tarot"
-      ]
+      ],
+      "runtime_candidates": [
+        "vopc5750"
+      ],
+      "source_truth": "unverified_local_ahead_possible",
+      "notes": "Do not treat Oracle or GitHub copy as newest until vopc5750 local source is reconciled with exact provenance. Node liveness and executor liveness must be proven separately."
     },
     {
       "id": "content.write",
@@ -264,5 +269,26 @@
     "EXTEND": "Existing semantic owner fits but lacks required behavior. Extend at the owner boundary with non-regression evidence.",
     "CREATE": "No semantic owner fits without distortion. Register new capability before product implementation.",
     "PRODUCT_ONLY": "Requirement is domain policy/UI/composition; no shared capability change is warranted."
+  },
+  "executor_onboarding": {
+    "node": "vopc5750",
+    "target_surfaces": [
+      {
+        "surface": "OpenAI Codex",
+        "executor_id": "executor.codex.vopc5750",
+        "backend": "must_be_probed"
+      },
+      {
+        "surface": "Gemini",
+        "executor_id": "executor.gemini.vopc5750",
+        "backend": "must_be_probed"
+      },
+      {
+        "surface": "Claude Code",
+        "executor_id": "executor.claude-code.vopc5750",
+        "backend": "must_be_probed"
+      }
+    ],
+    "invariant": "surface installed != executor available; every executor requires separate probe, routability, authority and terminal receipt evidence"
   }
 }
