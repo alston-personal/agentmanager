@@ -8,6 +8,8 @@ on:
       - '.github/workflows/oracle-bootstrap-scheduler-rollout.yml'
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/bootstrap_scheduler.py'
+      - 'agentos_node/antigravity_relay.py'
+      - 'agentos_node/antigravity_relay_worker.py'
       - 'agent_core/executor_job_contract.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
