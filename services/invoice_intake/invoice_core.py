@@ -23,6 +23,73 @@ from capabilities.stamp_recognition.runtime import StampStore, detect_stamp_regi
 ESSENTIAL_FIELDS = ("invoice_number", "invoice_date", "amount_before_tax", "total_amount")
 
 
+def classify_review(
+    fields: dict[str, Any],
+    confidence: dict[str, float],
+    *,
+    derived_amounts: bool = False,
+    stamp_recognition: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return field-level review guidance without conflating uncertainty with failure."""
+    hard_fields: list[str] = []
+    quick_fields: list[str] = []
+    reasons: list[str] = []
+
+    for key in ESSENTIAL_FIELDS:
+        if fields.get(key) in (None, ""):
+            hard_fields.append(key)
+            reasons.append(f"missing:{key}")
+        elif confidence.get(key, 0.0) < 0.80:
+            hard_fields.append(key)
+            reasons.append(f"low_confidence:{key}")
+
+    for key in ("vendor_name", "seller_tax_id"):
+        if fields.get(key) in (None, ""):
+            hard_fields.append(key)
+            reasons.append(f"missing:{key}")
+
+    vendor_conf = confidence.get("vendor_name", 0.0)
+    if fields.get("vendor_name") not in (None, "") and vendor_conf < 0.80:
+        quick_fields.append("vendor_name")
+        reasons.append("confirm:vendor_name")
+
+    seller_conf = confidence.get("seller_tax_id", 0.0)
+    if fields.get("seller_tax_id") not in (None, "") and seller_conf < 0.80:
+        quick_fields.append("seller_tax_id")
+        reasons.append("confirm:seller_tax_id")
+
+    if derived_amounts:
+        for key in ("amount_before_tax", "tax_amount", "total_amount"):
+            if fields.get(key) not in (None, "") and key not in quick_fields:
+                quick_fields.append(key)
+        reasons.append("confirm:derived_amounts")
+
+    stamp = stamp_recognition or {}
+    decision = stamp.get("decision")
+    if decision in {"unknown_stamp", "uncertain"} and fields.get("vendor_name") and fields.get("seller_tax_id"):
+        for key in ("vendor_name", "seller_tax_id"):
+            if key not in quick_fields:
+                quick_fields.append(key)
+        reasons.append(f"confirm:stamp_{decision}")
+
+    hard_fields = list(dict.fromkeys(hard_fields))
+    quick_fields = [x for x in dict.fromkeys(quick_fields) if x not in hard_fields]
+
+    if hard_fields:
+        status = "needs_review"
+    elif quick_fields:
+        status = "quick_confirm"
+    else:
+        status = "extracted"
+
+    return {
+        "status": status,
+        "required_fields": hard_fields,
+        "confirm_fields": quick_fields,
+        "reasons": reasons,
+    }
+
+
 def utcnow() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -412,15 +479,19 @@ def extract_legacy_invoice(image_bytes: bytes, *, stamp_store: StampStore | None
         "total_amount": "printed_or_handwritten_amount",
     }
 
-    review_required = (
-        any(fields.get(k) in (None, "") for k in ESSENTIAL_FIELDS)
-        or any(confidence.get(k, 0.0) < 0.80 for k in ESSENTIAL_FIELDS)
-        or derived_amounts
-        or not fields.get("seller_tax_id")
-        or not fields.get("vendor_name")
-        or confidence.get("vendor_name", 0) < 0.80
+    review = classify_review(
+        fields,
+        confidence,
+        derived_amounts=derived_amounts,
+        stamp_recognition=raw.get("stamp_recognition") or {},
     )
-    return Extraction(fields=fields, confidence=confidence, raw=raw, review_required=review_required)
+    raw["review"] = review
+    return Extraction(
+        fields=fields,
+        confidence=confidence,
+        raw=raw,
+        review_required=review["status"] != "extracted",
+    )
 
 
 def extract_invoice(image_bytes: bytes, *, stamp_store: StampStore | None = None) -> Extraction:
@@ -730,7 +801,8 @@ class InvoiceStore:
                 extraction = extract_invoice(image_bytes, stamp_store=self.stamp_store)
                 extraction_id = str(uuid.uuid4())
                 updated = utcnow()
-                status = "needs_review" if extraction.review_required else "extracted"
+                review = extraction.raw.get("review") or {}
+                status = str(review.get("status") or ("needs_review" if extraction.review_required else "extracted"))
                 f = extraction.fields
 
                 with self.connect() as db:

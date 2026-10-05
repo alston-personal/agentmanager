@@ -2,6 +2,7 @@ import unittest
 
 from services.invoice_intake.invoice_core import (
     choose_amounts,
+    classify_review,
     extract_line_items_from_text,
     normalize_vendor_name,
 )
@@ -31,6 +32,65 @@ class InvoiceRealUserRegressionTests(unittest.TestCase):
 
     def test_line_items_reject_arithmetic_mismatch(self):
         self.assertEqual(extract_line_items_from_text("加工費 2 500 800"), [])
+
+    def test_vendor_078_is_quick_confirm_not_full_review(self):
+        fields = {
+            "invoice_number": "AB12345678",
+            "invoice_date": "2026-10-05",
+            "vendor_name": "好日子食品有限公司",
+            "seller_tax_id": "16908319",
+            "amount_before_tax": 1000,
+            "tax_amount": 50,
+            "total_amount": 1050,
+        }
+        confidence = {
+            "invoice_number": 0.95,
+            "invoice_date": 0.90,
+            "vendor_name": 0.78,
+            "seller_tax_id": 0.88,
+            "amount_before_tax": 0.98,
+            "tax_amount": 0.98,
+            "total_amount": 0.98,
+        }
+        review = classify_review(fields, confidence)
+        self.assertEqual(review["status"], "quick_confirm")
+        self.assertEqual(review["required_fields"], [])
+        self.assertEqual(review["confirm_fields"], ["vendor_name"])
+
+    def test_missing_core_field_stays_needs_review(self):
+        fields = {
+            "invoice_number": None,
+            "invoice_date": "2026-10-05",
+            "vendor_name": "好日子食品有限公司",
+            "seller_tax_id": "16908319",
+            "amount_before_tax": 1000,
+            "tax_amount": 50,
+            "total_amount": 1050,
+        }
+        confidence = {key: 0.98 for key in fields}
+        review = classify_review(fields, confidence)
+        self.assertEqual(review["status"], "needs_review")
+        self.assertIn("invoice_number", review["required_fields"])
+
+    def test_confirmed_stamp_with_complete_high_confidence_can_extract(self):
+        fields = {
+            "invoice_number": "AB12345678",
+            "invoice_date": "2026-10-05",
+            "vendor_name": "好日子食品有限公司",
+            "seller_tax_id": "16908319",
+            "amount_before_tax": 1000,
+            "tax_amount": 50,
+            "total_amount": 1050,
+        }
+        confidence = {key: 0.99 for key in fields}
+        review = classify_review(
+            fields,
+            confidence,
+            stamp_recognition={"status": "MATCHED_CONFIRMED", "decision": "same_stamp"},
+        )
+        self.assertEqual(review["status"], "extracted")
+        self.assertEqual(review["required_fields"], [])
+        self.assertEqual(review["confirm_fields"], [])
 
     def test_amounts_recovered_from_scattered_numeric_ocr(self):
         texts = [
