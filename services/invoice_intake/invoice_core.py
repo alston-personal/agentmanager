@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -14,7 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageEnhance, ImageOps
-from services.invoice_intake.template_ocr import extract_template_invoice
+from services.invoice_intake.template_ocr import extract_template_invoice, valid_tax_id, seller_region_text
+from services.invoice_intake import vision_ocr
 
 ESSENTIAL_FIELDS = ("invoice_number", "invoice_date", "amount_before_tax", "total_amount")
 
@@ -190,7 +192,7 @@ class Extraction:
     review_required: bool
 
 
-def extract_invoice(image_bytes: bytes) -> Extraction:
+def extract_legacy_invoice(image_bytes: bytes) -> Extraction:
     """Template-first production extraction with legacy Tesseract fallback.
 
     Known Taiwan invoice/receipt layouts use RapidOCR + semantic validation first.
@@ -228,7 +230,7 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
     invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
     date_crop = crop_rel(image, (0.43, 0.11, 0.79, 0.30))
     amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
-    stamp_crop = crop_rel(image, (0.66, 0.58, 0.96, 0.96))
+    stamp_crop = crop_rel(image, (0.60, 0.38, 0.98, 0.96))
 
     if not fields["invoice_number"]:
         invoice_texts = [
@@ -289,7 +291,7 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
                 if candidate not in tax_ids:
                     tax_ids.append(candidate)
         valid = [x for x in tax_ids if valid_tax_id(x)]
-        chosen = (valid or tax_ids or [None])[0]
+        chosen = valid[0] if len(valid) == 1 else None
         if chosen:
             fields["seller_tax_id"] = chosen
             confidence["seller_tax_id"] = 0.88 if chosen in valid else 0.68
@@ -297,10 +299,9 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
         raw["fallback_used"].append("seller_tax_id_stamp")
 
     if not fields["vendor_name"]:
-        vendor_texts = [
-            rapid.get("raw_text") or "",
-            ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng"),
-        ]
+        vendor_texts = [seller_region_text(rapid.get("raw_text") or "")]
+        if rapid.get("document_type") != "three_part_uniform_invoice":
+            vendor_texts.append(ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng"))
         vendor_texts.extend(ocr_stamp_text(crop_rel(image, (0.42, 0.42, 0.99, 0.99))))
         vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
         if vendor:
@@ -336,8 +337,60 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
         any(fields.get(k) in (None, "") for k in ESSENTIAL_FIELDS)
         or any(confidence.get(k, 0.0) < 0.80 for k in ESSENTIAL_FIELDS)
         or derived_amounts
+        or not fields.get("seller_tax_id")
+        or not fields.get("vendor_name")
+        or confidence.get("vendor_name", 0) < 0.80
     )
     return Extraction(fields=fields, confidence=confidence, raw=raw, review_required=review_required)
+
+
+def extract_invoice(image_bytes: bytes) -> Extraction:
+    """Compare whole-image vision with the existing reader on identical bytes.
+
+    off: local OCR; shadow: local fields + comparison; primary: vision fields.
+    Vision candidates always require review; no guessed confidence or auto posting.
+    """
+    config = vision_ocr.configuration()
+    legacy_error = None
+    try:
+        legacy = extract_legacy_invoice(image_bytes)
+    except Exception as exc:
+        if config['mode'] != 'primary' or config['status'] != 'CONFIGURED':
+            raise
+        legacy_error = type(exc).__name__
+        legacy = Extraction(dict.fromkeys(vision_ocr.CORE_FIELDS), {},
+                            {'engine': 'legacy-error', 'error_type': legacy_error}, True)
+    legacy.raw['image_sha256'] = hashlib.sha256(image_bytes).hexdigest()
+    legacy.raw['vision'] = dict(config)
+    if config['status'] != 'CONFIGURED':
+        if config['mode'] != 'off':
+            legacy.review_required = True
+        return legacy
+    try:
+        result = vision_ocr.read_invoice(image_bytes,
+            api_key=os.environ.get('GEMINI_API_KEY', ''), model=config['model'])
+        fields, issues = vision_ocr.validated_fields(result['payload'])
+    except Exception as exc:
+        legacy.raw['vision']['status'] = str(exc) if isinstance(exc, vision_ocr.VisionError) else 'INVALID_RESPONSE'
+        legacy.review_required = True
+        return legacy
+    result.update({'status': 'SUCCEEDED', 'mode': config['mode'], 'validation_issues': issues})
+    comparison = {key: {'legacy': legacy.fields.get(key), 'vision': fields.get(key),
+                        'equal': legacy.fields.get(key) == fields.get(key)} for key in vision_ocr.CORE_FIELDS}
+    legacy.raw['vision'] = result
+    legacy.raw['comparison'] = comparison
+    if config['mode'] == 'shadow':
+        # Disagreement must not silently pass as a successful extraction.
+        legacy.review_required |= bool(issues or result['payload']['needs_review'] or
+                                       any(not v['equal'] for v in comparison.values()))
+        return legacy
+    return Extraction(fields, {}, {
+        'engine': 'gemini-whole-image-v1', 'image_sha256': result['image_sha256'],
+        'vision': result, 'comparison': comparison,
+        'legacy': {'fields': legacy.fields, 'confidence': legacy.confidence,
+                   'raw': {k: v for k, v in legacy.raw.items() if k not in {'vision', 'comparison'}}},
+        'field_sources': {k: 'whole_image_vision' if v is not None else None for k, v in fields.items()},
+    }, True)
 
 
 class InvoiceStore:
@@ -601,13 +654,19 @@ class InvoiceStore:
             row = db.execute("""
               SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope,
                      (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
-                      ORDER BY e.created_at DESC LIMIT 1) AS extraction_engine
+                      ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine
               FROM invoices i JOIN documents d ON d.id=i.document_id
               WHERE i.id=?
             """, (invoice_id,)).fetchone()
             if not row:
                 raise KeyError(invoice_id)
-            return self._row_payload(row)
+            payload = self._row_payload(row)
+            extraction = db.execute(
+                "SELECT payload_json FROM extractions WHERE document_id=? ORDER BY rowid DESC LIMIT 1",
+                (row['document_id'],),
+            ).fetchone()
+            payload['recognition'] = json.loads(extraction['payload_json']) if extraction else None
+            return payload
 
     def get_original(self, invoice_id: str) -> dict[str, Any]:
         """Return validated metadata for the immutable original image."""
@@ -668,7 +727,7 @@ class InvoiceStore:
             rows = db.execute("""
               SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope,
                      (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
-                      ORDER BY e.created_at DESC LIMIT 1) AS extraction_engine
+                      ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine
               FROM invoices i JOIN documents d ON d.id=i.document_id
               ORDER BY i.created_at DESC LIMIT ?
             """, (limit,)).fetchall()

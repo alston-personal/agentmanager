@@ -5,7 +5,9 @@ import re
 from typing import Any
 
 from PIL import Image, ImageOps
-from rapidocr import RapidOCR
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from rapidocr import RapidOCR
 
 INV_RE = re.compile(r"([A-Z]{2})\s*[- ]?\s*(\d{8})")
 
@@ -179,7 +181,20 @@ def choose_three_part_amounts(text: str) -> tuple[int | None, int | None, int | 
     return None, None, total, False
 
 
+def seller_region_text(text: str) -> str:
+    """Only text after an explicit seller/stamp anchor; never the buyer header."""
+    lines = (text or '').splitlines()
+    for i, line in enumerate(lines):
+        compact = re.sub(r"\s+", "", line)
+        if any(anchor in compact for anchor in ('營業人蓋用', '統一發票專用章', '銷售人名稱')):
+            # The company can be immediately above the stamp's inner title.
+            start = i if '營業人蓋用' in compact or '銷售人名稱' in compact else max(0, i - 1)
+            return '\n'.join(lines[start:])
+    return ''
+
+
 def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
+    from rapidocr import RapidOCR
     engine = RapidOCR()
     text, page_conf = ocr_page(engine, image_bytes)
     doc_type, template_conf = classify(text)
@@ -208,8 +223,9 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
     if fields["invoice_date"]:
         confidence["invoice_date"] = min(0.98, max(0.88, page_conf))
 
-    ids = [v for v in tax_id_candidates(text) if valid_tax_id(v)]
-    if ids:
+    seller_text = seller_region_text(text) if doc_type == "three_part_uniform_invoice" else text
+    ids = [v for v in tax_id_candidates(seller_text) if valid_tax_id(v)]
+    if len(ids) == 1:
         fields["seller_tax_id"] = ids[0]
         confidence["seller_tax_id"] = 0.92
 
