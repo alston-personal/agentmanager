@@ -179,6 +179,47 @@ def test_provider_health_classifies_rate_limit(monkeypatch, tmp_path: Path):
     assert result["classification"] == "RATE_LIMITED"
 
 
+def test_claude_timeout_uses_partial_output_for_auth_classification(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    monkeypatch.setattr(adapters, "_provider_command", lambda *args, **kwargs: ["claude"])
+    def timeout(*args, **kwargs):
+        raise adapters.subprocess.TimeoutExpired(
+            cmd=["claude"],
+            timeout=1,
+            output=b"",
+            stderr=b"Please login to continue",
+        )
+    monkeypatch.setattr(adapters.subprocess, "run", timeout)
+
+    result = adapters._health("claude", workspace=tmp_path, timeout_seconds=1)
+    assert result["classification"] == "AUTH_REQUIRED"
+    assert result["state"] == "AUTH_REQUIRED"
+    assert result["authorized"] is False
+    assert result["routable"] is False
+    assert "stdout" not in result
+    assert "stderr" not in result
+
+
+def test_claude_timeout_preserves_timeout_when_partial_output_is_opaque(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    monkeypatch.setattr(adapters, "_provider_command", lambda *args, **kwargs: ["claude"])
+    def timeout(*args, **kwargs):
+        raise adapters.subprocess.TimeoutExpired(
+            cmd=["claude"],
+            timeout=1,
+            output=b"starting",
+            stderr=b"",
+        )
+    monkeypatch.setattr(adapters.subprocess, "run", timeout)
+
+    result = adapters._health("claude", workspace=tmp_path, timeout_seconds=1)
+    assert result["classification"] == "TIMEOUT"
+    assert result["state"] == "UNHEALTHY"
+    assert result["routable"] is False
+
+
 def test_gemini_health_classifies_retired_consumer_oauth_without_leaking_output(monkeypatch, tmp_path: Path):
     import agentos_node.executor_provider_adapters as adapters
 

@@ -26,6 +26,40 @@ def _auth_required(text: str) -> bool:
     ))
 
 
+def _bounded_process_text(stdout: Any, stderr: Any) -> str:
+    def norm(value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", "replace")
+        return str(value or "")
+    return norm(stdout)[-4000:] + "\n" + norm(stderr)[-4000:]
+
+
+def _classify_failure_text(provider: str, text: str, *, timed_out: bool = False) -> str:
+    lowered = str(text or "").casefold()
+    if _auth_required(text):
+        return "AUTH_REQUIRED"
+    if provider == "gemini" and any(token in lowered for token in (
+        "ineligibletiererror", "unsupported_client",
+        "this client is no longer supported", "migrate to antigravity",
+    )):
+        return "OAUTH_CLIENT_UNSUPPORTED"
+    if any(token in lowered for token in (
+        "unknown command", "unrecognized argument", "unrecognized option",
+        "no such option", "invalid option", "usage:",
+    )):
+        return "CLI_CONTRACT"
+    if any(token in lowered for token in (
+        "rate limit", "rate_limit", "quota", "too many requests", "resource exhausted",
+    )):
+        return "RATE_LIMITED"
+    if any(token in lowered for token in (
+        "connection refused", "connection reset", "network is unreachable",
+        "temporary failure", "timed out connecting", "dns",
+    )):
+        return "NETWORK"
+    return "TIMEOUT" if timed_out else "NONZERO"
+
+
 def _provider_command(provider: str, workspace: Path, instruction: str) -> list[str] | None:
     selected, executable = discover_executor(provider)
     if not executable:
@@ -102,15 +136,17 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
             check=False,
             env=run_env,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        combined = _bounded_process_text(exc.stdout, exc.stderr)
+        classification = _classify_failure_text(provider, combined, timed_out=True)
         return {
             "installed": True,
-            "reachable": True,
-            "authorized": False,
+            "reachable": classification != "NETWORK",
+            "authorized": classification not in {"AUTH_REQUIRED", "OAUTH_CLIENT_UNSUPPORTED"},
             "routable": False,
             "healthy": False,
-            "state": "UNHEALTHY",
-            "classification": "TIMEOUT",
+            "state": "AUTH_REQUIRED" if classification == "AUTH_REQUIRED" else "UNHEALTHY",
+            "classification": classification,
         }
     except OSError:
         return {
@@ -136,45 +172,14 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
             "healthy": True,
             "state": "READY",
         }
-    if _auth_required(combined):
-        return {
-            "installed": True,
-            "reachable": True,
-            "authorized": False,
-            "routable": False,
-            "healthy": False,
-            "state": "AUTH_REQUIRED",
-            "classification": "AUTH_REQUIRED",
-        }
-    lowered = combined.casefold()
-    if provider == "gemini" and any(token in lowered for token in (
-        "ineligibletiererror", "unsupported_client",
-        "this client is no longer supported", "migrate to antigravity",
-    )):
-        classification = "OAUTH_CLIENT_UNSUPPORTED"
-    elif any(token in lowered for token in (
-        "unknown command", "unrecognized argument", "unrecognized option",
-        "no such option", "invalid option", "usage:",
-    )):
-        classification = "CLI_CONTRACT"
-    elif any(token in lowered for token in (
-        "rate limit", "rate_limit", "quota", "too many requests", "resource exhausted",
-    )):
-        classification = "RATE_LIMITED"
-    elif any(token in lowered for token in (
-        "connection refused", "connection reset", "network is unreachable",
-        "temporary failure", "timed out connecting", "dns",
-    )):
-        classification = "NETWORK"
-    else:
-        classification = "NONZERO"
+    classification = _classify_failure_text(provider, combined)
     return {
         "installed": True,
-        "reachable": True,
-        "authorized": False,
+        "reachable": classification != "NETWORK",
+        "authorized": classification not in {"AUTH_REQUIRED", "OAUTH_CLIENT_UNSUPPORTED"},
         "routable": False,
         "healthy": False,
-        "state": "UNHEALTHY",
+        "state": "AUTH_REQUIRED" if classification == "AUTH_REQUIRED" else "UNHEALTHY",
         "classification": classification,
     }
 
