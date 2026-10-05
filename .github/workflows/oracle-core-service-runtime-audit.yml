@@ -1,0 +1,86 @@
+name: Oracle Core Service Runtime Audit
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-core-service-runtime-audit.yml'
+      - 'scripts/install_systemd_user.sh'
+      - '.agent/governance/runtime_ownership.json'
+      - '.agent/governance/oracle_identity_boundaries.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect live Core user-service runtime roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          RELEASE_ROOT=/home/ubuntu/agent-data/releases/core
+          MUTABLE_ROOT=/home/ubuntu/agentmanager
+          CURRENT=/home/ubuntu/agent-data/runtime/core/current
+          echo "core_current=$(readlink -f "$CURRENT" 2>/dev/null || true)"
+          services=(
+            os-chronos.service
+            agent-maintenance.service
+            tg-commander.service
+            teams-commander.service
+            cat-ink-syncer.service
+            os-lobster.service
+            agentos-core-supervisor.service
+            agentos-employee-worker-host.service
+            agentos-employee-wake-node.service
+            agentos-product-work-intent-reconciler.service
+          )
+          mutable=0
+          immutable=0
+          inactive=0
+          other=0
+          for unit in "${services[@]}"; do
+            active="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+            pid="$(systemctl --user show "$unit" -p MainPID --value 2>/dev/null || true)"
+            wd="$(systemctl --user show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
+            cwd=""
+            if [ -n "$pid" ] && [ "$pid" != 0 ] && [ -d "/proc/$pid" ]; then
+              cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+            fi
+            observed="${cwd:-$wd}"
+            class=other
+            case "$observed" in
+              "$RELEASE_ROOT"/*) class=immutable; immutable=$((immutable+1));;
+              "$MUTABLE_ROOT"|"$MUTABLE_ROOT"/*) class=mutable; mutable=$((mutable+1));;
+              "")
+                if [ "$active" = inactive ] || [ -z "$active" ]; then class=inactive; inactive=$((inactive+1)); else other=$((other+1)); fi
+                ;;
+              *) other=$((other+1));;
+            esac
+            printf 'core_service=%s active=%s runtime_class=%s\n' "$unit" "${active:-unknown}" "$class"
+            printf 'core_service_runtime=%s cwd=%s\n' "$unit" "${observed:-none}"
+          done
+          echo "core_runtime_immutable_count=$immutable"
+          echo "core_runtime_mutable_count=$mutable"
+          echo "core_runtime_inactive_count=$inactive"
+          echo "core_runtime_other_count=$other"
+          if [ "$mutable" -gt 0 ]; then
+            echo "oracle_core_runtime_audit=DRIFT"
+          else
+            echo "oracle_core_runtime_audit=PASS"
+          fi
+          REMOTE
