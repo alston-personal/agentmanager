@@ -1,0 +1,231 @@
+{
+  "schema": "agentos.portfolio-registry/v1",
+  "generated_at": "2026-10-05",
+  "canonical_branch": "core/integration",
+  "statuses": [
+    "BUILD",
+    "RUN",
+    "SUPPORT",
+    "ASSET",
+    "HOLD",
+    "BACKLOG",
+    "SUNSET"
+  ],
+  "rules": {
+    "max_build": 1,
+    "support_scope": "SUPPORT may only address BUILD/RUN blockers, reliability regressions, or repeated manual toil.",
+    "run_scope": "RUN preserves minimum viable operation; feature expansion requires explicit promotion.",
+    "asset_scope": "ASSET preserves accumulated value without implying active development.",
+    "idea_scope": "New ideas are registered before work starts; capture does not imply commitment."
+  },
+  "items": [
+    {
+      "id": "agentos-core",
+      "name": "AgentOS / ONE",
+      "type": "platform",
+      "status": "SUPPORT",
+      "production": true,
+      "growth_asset": true,
+      "next_gate": "Stable governed dispatch -> executor -> receipt path for active portfolio work."
+    },
+    {
+      "id": "atlas",
+      "name": "Atlas portfolio governor",
+      "type": "governance",
+      "status": "SUPPORT",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Enforce portfolio status, WIP limits, blocker classification and intake gate."
+    },
+    {
+      "id": "milkcat-world",
+      "name": "Milkcat World",
+      "type": "platform_brand",
+      "status": "RUN",
+      "production": true,
+      "growth_asset": true,
+      "next_gate": "Keep core entry/auth/credits/navigation healthy without broad world expansion."
+    },
+    {
+      "id": "mio",
+      "name": "Mio",
+      "type": "persona_media_asset",
+      "status": "RUN",
+      "production": true,
+      "users": true,
+      "growth_asset": true,
+      "next_gate": "Maintain publishing, engagement and account continuity with bounded maintenance."
+    },
+    {
+      "id": "mio-wardrobe",
+      "name": "Mio Wardrobe",
+      "type": "product",
+      "status": "RUN",
+      "production": true,
+      "users": true,
+      "growth_asset": true,
+      "next_gate": "Login, image visibility, try-on and mobile flow work reliably."
+    },
+    {
+      "id": "iftv",
+      "name": "IFTV",
+      "type": "media_automation",
+      "status": "RUN",
+      "production": false,
+      "growth_asset": true,
+      "revenue_candidate": true,
+      "next_gate": "Produce repeatable real videos and measure cost, quality, distribution and monetization signal."
+    },
+    {
+      "id": "invoice-ocr",
+      "name": "Handwritten Invoice OCR",
+      "type": "b2b_product",
+      "status": "HOLD",
+      "production": false,
+      "users": true,
+      "growth_asset": true,
+      "revenue_candidate": true,
+      "next_gate": "Pass revenue-readiness audit: no duplicate capture, unsafe auto-accept, traceability loss or export blocker."
+    },
+    {
+      "id": "line-sticker",
+      "name": "LINE Sticker Tool",
+      "type": "creator_product",
+      "status": "RUN",
+      "production": true,
+      "growth_asset": true,
+      "revenue_candidate": true,
+      "next_gate": "Reliable single-image -> background removal -> LINE Creator-ready asset loop."
+    },
+    {
+      "id": "fengshui",
+      "name": "Fengshui Layout Overlay",
+      "type": "consumer_product",
+      "status": "RUN",
+      "production": true,
+      "users": true,
+      "growth_asset": true,
+      "next_gate": "Direction correctness, analytics and authentication remain reliable."
+    },
+    {
+      "id": "leopardcat-tarot",
+      "name": "Leopardcat Tarot",
+      "type": "consumer_product_ip",
+      "status": "RUN",
+      "production": true,
+      "users": true,
+      "growth_asset": true,
+      "next_gate": "Stable reading flow plus usage/monetization evidence."
+    },
+    {
+      "id": "rootnexus",
+      "name": "RootNexus",
+      "type": "learning_product",
+      "status": "RUN",
+      "production": true,
+      "growth_asset": true,
+      "next_gate": "Resolve scalable knowledge/word expansion without full rewrite."
+    },
+    {
+      "id": "zeus-writer-engine",
+      "name": "Zeus Writer",
+      "type": "content_capability",
+      "status": "RUN",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Continue canonical assigned writing project from durable editorial state."
+    },
+    {
+      "id": "zeus-ip-library",
+      "name": "Zeus Writer IP Library",
+      "type": "content_ip",
+      "status": "ASSET",
+      "production": true,
+      "users": true,
+      "growth_asset": true,
+      "next_gate": "Create canonical inventory of works, series, publication state and continuation ownership."
+    },
+    {
+      "id": "layoutlib",
+      "name": "LayoutLib",
+      "type": "capability_product",
+      "status": "RUN",
+      "production": true,
+      "users": true,
+      "growth_asset": true,
+      "next_gate": "Complete governed live POC receipt acceptance without expanding core-owned product logic."
+    },
+    {
+      "id": "vendor-reputation",
+      "name": "Vendor Reputation",
+      "type": "product_data",
+      "status": "HOLD",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Decide whether market validation justifies renewed product work after governance handoff."
+    },
+    {
+      "id": "group-buy",
+      "name": "Community Group Buy",
+      "type": "utility_product",
+      "status": "HOLD",
+      "production": false,
+      "growth_asset": false,
+      "next_gate": "Only resume with concrete current operator/user demand."
+    },
+    {
+      "id": "wish-market",
+      "name": "Wish / Bounty Market",
+      "type": "business_concept",
+      "status": "BACKLOG",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Preserve specification; no implementation until WIP slot and revenue rationale exist."
+    },
+    {
+      "id": "collector-auction",
+      "name": "Collector Endorsement Auction",
+      "type": "business_concept",
+      "status": "BACKLOG",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Preserve business model; no implementation until explicitly promoted."
+    },
+    {
+      "id": "anime-meme",
+      "name": "Ocean Current Anime Meme",
+      "type": "content_experiment",
+      "status": "RUN",
+      "production": true,
+      "growth_asset": true,
+      "next_gate": "Continue bounded content experiments; no platform expansion."
+    },
+    {
+      "id": "agentos-research",
+      "name": "AgentOS Research",
+      "type": "research_asset",
+      "status": "ASSET",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Preserve benchmarks, drafts and reproducible evidence without consuming BUILD capacity."
+    },
+    {
+      "id": "auth",
+      "name": "Shared Auth",
+      "type": "shared_capability",
+      "status": "SUPPORT",
+      "production": true,
+      "growth_asset": true,
+      "next_gate": "Authentication handoff is reliable across active RUN products."
+    },
+    {
+      "id": "credits",
+      "name": "Milkcat Credits",
+      "type": "shared_capability",
+      "status": "SUPPORT",
+      "production": true,
+      "growth_asset": true,
+      "next_gate": "Common accounting semantics are stable before wider monetization use."
+    }
+  ]
+}
