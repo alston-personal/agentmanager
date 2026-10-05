@@ -136,16 +136,26 @@ for unit in "${UNITS[@]}"; do
   systemctl --user enable "$unit" >/dev/null
   systemctl --user restart "$unit"
   systemctl --user is-active --quiet "$unit"
-  PID="$(systemctl --user show "$unit" -p MainPID --value)"
-  test -n "$PID" && test "$PID" != 0
-  CWD="$(readlink -f "/proc/$PID/cwd")"
+  MAIN_PID="$(systemctl --user show "$unit" -p MainPID --value)"
+  test -n "$MAIN_PID" && test "$MAIN_PID" != 0
+  WORKER_PID=""
+  for candidate in $(pgrep -P "$MAIN_PID" || true) "$MAIN_PID"; do
+    [ -r "/proc/$candidate/cmdline" ] || continue
+    cmd="$(tr '\0' ' ' < "/proc/$candidate/cmdline")"
+    if [[ "$cmd" == *"agentos_node.bootstrap_scheduler"* ]]; then
+      WORKER_PID="$candidate"
+      break
+    fi
+  done
+  test -n "$WORKER_PID"
+  CWD="$(readlink -f "/proc/$WORKER_PID/cwd")"
   test "$CWD" = "$RELEASE"
   AGENTOS_GID="$(getent group agentos | cut -d: -f3)"
   awk -v gid="$AGENTOS_GID" '
     /^Gid:/ { for (i=2;i<=NF;i++) if ($i==gid) found=1 }
     /^Groups:/ { for (i=2;i<=NF;i++) if ($i==gid) found=1 }
     END { exit(found ? 0 : 1) }
-  ' "/proc/$PID/status"
+  ' "/proc/$WORKER_PID/status"
   echo "bootstrap_scheduler_unit=$unit:active:release=$CWD:group=agentos"
 done
 
