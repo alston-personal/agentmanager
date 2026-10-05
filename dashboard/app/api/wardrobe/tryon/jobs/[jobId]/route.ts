@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
-import { isMilkcatAdmin } from '@/lib/auth/roles';
 import { readJob } from '@/lib/tryon-jobs';
 
 function authorized(request: NextRequest) {
   const token = request.cookies.get('auth_token')?.value;
   if (!token) return false;
   const identity = verifyToken(token);
-  return Boolean(identity?.username && isMilkcatAdmin(identity));
+  return Boolean(identity?.username);
 }
 
 export async function GET(
@@ -15,7 +14,7 @@ export async function GET(
   context: { params: Promise<{ jobId: string }> }
 ) {
   if (!authorized(request)) {
-    return NextResponse.json({ error: 'Admin authentication required' }, { status: 401 });
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
 
   try {
