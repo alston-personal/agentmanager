@@ -38,7 +38,9 @@ jobs:
             services/invoice_intake/invoice_core.py \
             services/invoice_intake/template_ocr.py \
             capabilities/financial_intake/adapter.py \
-            capabilities/financial_intake/winton.py
+            capabilities/financial_intake/winton.py \
+            capabilities/stamp_recognition/model.py \
+            capabilities/stamp_recognition/runtime.py
           PYTHONPATH=. /tmp/invoice-intake-validate/bin/python - <<'PY'
           import json
           from pathlib import Path
@@ -88,7 +90,9 @@ jobs:
           PYTHONPATH=. /tmp/invoice-intake-validate/bin/python -m unittest \
             tests.test_invoice_intake_db \
             tests.test_invoice_real_user_regression \
-            tests.test_invoice_vision
+            tests.test_invoice_vision \
+            tests.test_stamp_recognition_capability \
+            tests.test_stamp_recognition_runtime
           echo 'invoice_intake_db_boundary=PASS'
           echo 'invoice_real_user_regression=PASS'
           echo 'invoice_intake_python_syntax=PASS'
@@ -120,7 +124,8 @@ jobs:
           tar -czf - \
             services/invoice_intake \
             capabilities/__init__.py \
-            capabilities/financial_intake | \
+            capabilities/financial_intake \
+            capabilities/stamp_recognition | \
             ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               'set -euo pipefail; BASE=/home/ubuntu/invoice-intake-service; rm -rf "$BASE/app-new"; mkdir -p "$BASE/app-new"; tar -C "$BASE/app-new" -xzf -'
 
