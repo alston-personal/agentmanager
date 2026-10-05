@@ -374,6 +374,15 @@ def _run_canonical_script(
 
 def _restart_antigravity_relay() -> dict[str, Any]:
     from agentos_node.action_relay import ActionRelayClient
+    from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
+
+    # Reconcile stale processing explicitly before restart. A processing capsule
+    # may have produced unknown side effects, so it is quarantined with a
+    # deterministic UNKNOWN_SIDE_EFFECT receipt and is never replayed.
+    relay_root = Path(os.environ.get("AGENT_DATA_ROOT") or "/home/ubuntu/agent-data") / "runtime" / "antigravity-relay"
+    quarantined = AntigravityRelayWorker(relay_root).reconcile_stranded_processing(
+        stale_after=RELAY_STALE_PROCESSING_SECONDS,
+    )
 
     client = ActionRelayClient("/home/ubuntu/agent-data/runtime/action-relay")
     capsule = client.submit("agentos.antigravity.restart", {"service": "agentos-antigravity-relay"})
@@ -388,6 +397,7 @@ def _restart_antigravity_relay() -> dict[str, Any]:
     ok = bool(receipt and receipt.get("ok") is True and receipt.get("service") == "agentos-antigravity-relay.service")
     markers = [
         "relay_restart_service=agentos-antigravity-relay.service",
+        f"relay_restart_quarantined_stale={quarantined}",
         "relay_restart=" + ("PASS" if ok else "FAIL"),
     ]
     return {
