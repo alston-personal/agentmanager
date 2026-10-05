@@ -344,6 +344,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'node_id', 'candidate_commit'}
         elif action in {bootstrap_control.ACTION_REALM_NODE_INSPECT, bootstrap_control.ACTION_REALM_DESKTOP_PROBE}:
             allowed_params |= {'node_id'}
+        elif action in {bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE, bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE}:
+            allowed_params |= {'prompt'}
         elif action == bootstrap_control.ACTION_EXECUTOR_JOB_SUBMIT:
             allowed_params |= {'job_type'}
         elif action == bootstrap_control.ACTION_EXECUTOR_JOB_INSPECT:
@@ -452,6 +454,26 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 safe_prefixes = (
                     'realm_desktop_node_id=',
                     'realm_desktop_probe=',
+                )
+            elif action == bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE:
+                safe_prefixes = (
+                    'google_flow_generate=',
+                    'google_flow_host=',
+                    'google_flow_video_visible=',
+                    'google_flow_output=',
+                    'google_flow_bytes=',
+                    'google_flow_sha256=',
+                    'google_flow_artifact_root=',
+                )
+            elif action == bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE:
+                safe_prefixes = (
+                    'google_vids_generate=',
+                    'google_vids_host=',
+                    'google_vids_video_visible=',
+                    'google_vids_output=',
+                    'google_vids_bytes=',
+                    'google_vids_sha256=',
+                    'google_vids_artifact_root=',
                 )
             elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
                 safe_prefixes = (
