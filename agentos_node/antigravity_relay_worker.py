@@ -19,8 +19,10 @@ import json
 import os
 from pathlib import Path
 import signal
+import stat
 import subprocess
 import time
+import uuid
 from typing import Any, Sequence
 
 from .antigravity_relay import RELAY_SCHEMA, RECEIPT_SCHEMA, RelayPaths, share_relay_path
@@ -151,6 +153,51 @@ class AntigravityRelayWorker:
         inbox = sorted(self.paths.inbox.glob("relay-*.json"))
         return inbox[0] if inbox else None
 
+    def _unknown_side_effect_receipt(self, source: Path) -> tuple[str, dict[str, Any]]:
+        capsule_id = source.stem
+        created_at = None
+        try:
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            capsule_id = str(payload.get("capsule_id") or capsule_id).strip() or capsule_id
+            created_at = payload.get("created_at")
+        except Exception:
+            pass
+        return capsule_id, {
+            "schema": RECEIPT_SCHEMA,
+            "capsule_id": capsule_id,
+            "started_at": str(created_at or _utc_now()),
+            "completed_at": _utc_now(),
+            "executor_user": os.environ.get("USER") or str(os.getuid()),
+            "provider": self.provider,
+            "ok": False,
+            "error": "StrandedProcessingCapsule: prior execution state UNKNOWN; automatic replay disabled",
+            "classification": "UNKNOWN_SIDE_EFFECT",
+            "timed_out": False,
+        }
+
+    def _publish_unknown_receipt(self, source: Path) -> None:
+        capsule_id, receipt = self._unknown_side_effect_receipt(source)
+        target = self.paths.receipts / f"{capsule_id}.json"
+        if target.exists():
+            return
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        share_relay_path(tmp)
+        tmp.replace(target)
+        share_relay_path(target)
+
+    def _quarantine_whole_processing_spool(self, quarantine: Path, sources: list[Path]) -> int:
+        if not sources:
+            return 0
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        target = quarantine / f"processing-spool-{stamp}-{uuid.uuid4().hex[:8]}"
+        # Rename at the parent-directory boundary. This deliberately does not
+        # require ownership of peer-created files inside processing/.
+        self.paths.processing.replace(target)
+        self.paths.processing.mkdir(parents=True, exist_ok=False)
+        share_relay_path(self.paths.processing, directory=True)
+        return len(sources)
+
     def reconcile_stranded_processing(self, *, stale_after: float | None = None) -> int:
         self._ensure_shared_spool()
         threshold = max(600.0, float(stale_after if stale_after is not None else self.timeout * 3.0))
@@ -158,46 +205,55 @@ class AntigravityRelayWorker:
         quarantine.mkdir(parents=True, exist_ok=True)
         share_relay_path(quarantine, directory=True)
         now = time.time()
-        reconciled = 0
-        for source in sorted(self.paths.processing.glob("relay-*.json")):
+
+        all_sources = sorted(self.paths.processing.glob("relay-*.json"))
+        stale_sources: list[Path] = []
+        for source in all_sources:
             try:
                 age = max(0.0, now - source.stat().st_mtime)
             except FileNotFoundError:
                 continue
-            if age < threshold:
-                continue
-            capsule_id = source.stem
-            created_at = None
-            try:
-                payload = json.loads(source.read_text(encoding="utf-8"))
-                capsule_id = str(payload.get("capsule_id") or capsule_id).strip() or capsule_id
-                created_at = payload.get("created_at")
-            except Exception:
-                payload = {}
-            receipt = {
-                "schema": RECEIPT_SCHEMA,
-                "capsule_id": capsule_id,
-                "started_at": str(created_at or _utc_now()),
-                "completed_at": _utc_now(),
-                "executor_user": os.environ.get("USER") or str(os.getuid()),
-                "provider": self.provider,
-                "ok": False,
-                "error": "StrandedProcessingCapsule: prior execution state UNKNOWN; automatic replay disabled",
-                "classification": "UNKNOWN_SIDE_EFFECT",
-                "timed_out": False,
-            }
-            target = self.paths.receipts / f"{capsule_id}.json"
-            if not target.exists():
-                tmp = target.with_suffix(target.suffix + ".tmp")
-                tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-                share_relay_path(tmp)
-                tmp.replace(target)
-                share_relay_path(target)
-            quarantined = quarantine / source.name
-            source.replace(quarantined)
-            share_relay_path(quarantined)
-            reconciled += 1
-        return reconciled
+            if age >= threshold:
+                stale_sources.append(source)
+
+        if not stale_sources:
+            return 0
+
+        # Persist UNKNOWN_SIDE_EFFECT receipts before moving forensic evidence.
+        for source in stale_sources:
+            self._publish_unknown_receipt(source)
+
+        all_current = sorted(self.paths.processing.glob("relay-*.json"))
+        all_stale = len(all_current) == len(stale_sources) and {p.name for p in all_current} == {p.name for p in stale_sources}
+        mode = self.paths.processing.stat().st_mode
+        entry_mutation_allowed = os.access(self.paths.processing, os.W_OK | os.X_OK) and not bool(mode & stat.S_ISVTX)
+
+        # Historical spools may be owned by another authorized identity. If the
+        # directory itself does not permit entry mutation, quarantine the entire
+        # stale spool atomically through its writable parent instead of changing
+        # peer file ownership. Never do this if any fresh processing exists.
+        if not entry_mutation_allowed:
+            if not all_stale:
+                raise PermissionError("processing spool is not writable and contains non-stale work")
+            return self._quarantine_whole_processing_spool(quarantine, all_current)
+
+        reconciled = 0
+        try:
+            for source in stale_sources:
+                quarantined = quarantine / source.name
+                source.replace(quarantined)
+                try:
+                    share_relay_path(quarantined)
+                except PermissionError:
+                    pass
+                reconciled += 1
+            return reconciled
+        except PermissionError:
+            # Fall back only before any partial file-level mutation and only when
+            # the complete processing set is stale.
+            if reconciled != 0 or not all_stale:
+                raise
+            return self._quarantine_whole_processing_spool(quarantine, all_current)
 
     def _executor_argv(self, capsule: dict[str, Any], workspace: Path) -> list[str]:
         if not self.executor:

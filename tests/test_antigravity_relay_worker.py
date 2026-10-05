@@ -41,6 +41,51 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
             self.assertEqual(receipt["classification"], "UNKNOWN_SIDE_EFFECT")
             self.assertIn("automatic replay disabled", receipt["error"])
 
+    def test_peer_owned_stale_spool_can_be_quarantined_by_parent_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "inbox").mkdir(parents=True)
+            (root / "processing").mkdir()
+            (root / "receipts").mkdir()
+            stranded = root / "processing" / "relay-peer.json"
+            stranded.write_text(json.dumps({
+                "schema": "agentos.antigravity-relay/v1",
+                "capsule_id": "relay-peer",
+                "created_at": "2026-01-01T00:00:00Z",
+            }), encoding="utf-8")
+            old = time.time() - 1200
+            os.utime(stranded, (old, old))
+            worker = AntigravityRelayWorker(root, executor=["/bin/true"])
+            with patch("agentos_node.antigravity_relay._shared_gid", return_value=os.getgid()), \
+                 patch("agentos_node.antigravity_relay_worker.os.access", return_value=False):
+                self.assertEqual(worker.reconcile_stranded_processing(stale_after=600), 1)
+            self.assertTrue((root / "processing").is_dir())
+            self.assertFalse(any((root / "processing").glob("relay-*.json")))
+            quarantined = list((root / "quarantine").glob("processing-spool-*/relay-peer.json"))
+            self.assertEqual(len(quarantined), 1)
+            receipt = json.loads((root / "receipts" / "relay-peer.json").read_text(encoding="utf-8"))
+            self.assertEqual(receipt["classification"], "UNKNOWN_SIDE_EFFECT")
+
+    def test_directory_quarantine_refuses_when_fresh_processing_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "inbox").mkdir(parents=True)
+            (root / "processing").mkdir()
+            (root / "receipts").mkdir()
+            stale = root / "processing" / "relay-stale.json"
+            fresh = root / "processing" / "relay-fresh.json"
+            stale.write_text(json.dumps({"capsule_id": "relay-stale"}), encoding="utf-8")
+            fresh.write_text(json.dumps({"capsule_id": "relay-fresh"}), encoding="utf-8")
+            old = time.time() - 1200
+            os.utime(stale, (old, old))
+            worker = AntigravityRelayWorker(root, executor=["/bin/true"])
+            with patch("agentos_node.antigravity_relay._shared_gid", return_value=os.getgid()), \
+                 patch("agentos_node.antigravity_relay_worker.os.access", return_value=False):
+                with self.assertRaises(PermissionError):
+                    worker.reconcile_stranded_processing(stale_after=600)
+            self.assertTrue(stale.exists())
+            self.assertTrue(fresh.exists())
+
     def test_fresh_processing_is_not_quarantined(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
