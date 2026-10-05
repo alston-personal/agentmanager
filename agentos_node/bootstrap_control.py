@@ -23,6 +23,8 @@ ACTION_RELAY_STATUS = "agentos.relay.status"
 ACTION_SCHEDULER_STATUS = "agentos.scheduler.status"
 ACTION_RELAY_RESTART = "agentos.relay.restart"
 ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
+ACTION_REALM_NODE_INSPECT = "agentos.realm_node.inspect"
+ACTION_REALM_DESKTOP_PROBE = "agentos.realm_desktop.probe"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
 ACTION_RECONCILE_CONTENT_SOCIAL = "agentos.content_social.reconcile"
@@ -71,6 +73,8 @@ ALLOWED_ACTIONS = {
     ACTION_SCHEDULER_STATUS,
     ACTION_RELAY_RESTART,
     ACTION_NODE_TRANSACTIONAL_OTA,
+    ACTION_REALM_NODE_INSPECT,
+    ACTION_REALM_DESKTOP_PROBE,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
     ACTION_RECONCILE_CONTENT_SOCIAL,
@@ -173,6 +177,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","account_ref"}
     elif action == ACTION_NODE_TRANSACTIONAL_OTA:
         allowed_params={"source_commit","node_id","candidate_commit"}
+    elif action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE}:
+        allowed_params={"source_commit","node_id"}
     elif action == ACTION_EXECUTOR_JOB_SUBMIT:
         allowed_params={"source_commit","job_type"}
     elif action == ACTION_EXECUTOR_JOB_INSPECT:
@@ -205,6 +211,10 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
             raise ValueError("invalid OTA node_id")
         if not COMMIT_RE.fullmatch(candidate_commit):
             raise ValueError("candidate_commit must be an exact lowercase 40-hex commit SHA")
+    if action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE}:
+        node_id=str(params.get("node_id") or "")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", node_id):
+            raise ValueError("invalid Realm node_id")
     if action == ACTION_EXECUTOR_JOB_SUBMIT:
         job_type=str(params.get("job_type") or "")
         from agent_core.executor_job_contract import canonical_executor_job_request
@@ -528,6 +538,92 @@ def _relay_status() -> dict[str, Any]:
     }
 
 
+
+def _realm_node_inspect(node_id: str) -> dict[str, Any]:
+    from agent_core.node_registry import NodeRegistry
+
+    nodes = NodeRegistry().node_map().get("nodes") or []
+    node = next((item for item in nodes if str(item.get("node_id") or "") == node_id), None)
+    if node is None:
+        markers = [
+            f"realm_node_id={node_id}",
+            "realm_node_status=NOT_REGISTERED",
+            "realm_node_status_reason=node_not_registered",
+            "realm_node_heartbeat_age_seconds=unknown",
+            "realm_node_desktop_capable=NO",
+            "realm_node_inspect=NOT_REGISTERED",
+        ]
+        return {
+            "ok": True,
+            "steps": [{"step": "realm_node_inspect", "returncode": 0, "stdout": "\n".join(markers) + "\n", "stderr": ""}],
+        }
+
+    caps = set(node.get("capabilities") or [])
+    heartbeat_age = node.get("heartbeat_age_seconds")
+    markers = [
+        f"realm_node_id={node_id}",
+        "realm_node_status=" + str(node.get("status") or "unknown"),
+        "realm_node_status_reason=" + str(node.get("status_reason") or ""),
+        "realm_node_heartbeat_age_seconds=" + (str(int(heartbeat_age)) if isinstance(heartbeat_age, (int, float)) else "unknown"),
+        "realm_node_platform=" + str(node.get("platform") or ""),
+        "realm_node_role=" + str(node.get("role") or ""),
+        "realm_node_capability_count=" + str(len(caps)),
+        "realm_node_desktop_capable=" + ("YES" if "desktop.session.inspect" in caps else "NO"),
+        "realm_node_inspect=PASS",
+    ]
+    return {
+        "ok": True,
+        "steps": [{"step": "realm_node_inspect", "returncode": 0, "stdout": "\n".join(markers) + "\n", "stderr": ""}],
+    }
+
+
+def _realm_desktop_probe(node_id: str) -> dict[str, Any]:
+    from agent_core.node_registry import NodeRegistry
+    from agent_core.realm_fabric import RealmFabricStore
+
+    nodes = NodeRegistry().node_map().get("nodes") or []
+    node = next((item for item in nodes if str(item.get("node_id") or "") == node_id), None)
+    if node is None:
+        classification = "NOT_REGISTERED"
+    elif str(node.get("status") or "") != "online":
+        classification = "OFFLINE"
+    elif "desktop.session.inspect" not in set(node.get("capabilities") or []):
+        classification = "CAPABILITY_MISSING"
+    else:
+        task_id = "runner-window-desktop-probe-" + node_id + "-" + str(int(time.time()))
+        fabric = RealmFabricStore()
+        fabric.queue_task(node_id, {
+            "schema": "agentos.node-task/v0.1",
+            "task_id": task_id,
+            "action": "desktop.session.inspect",
+            "cognition_ids_used": [],
+        })
+        deadline = time.monotonic() + 45
+        receipt = None
+        while time.monotonic() < deadline:
+            receipt = fabric.get_receipt(task_id)
+            if receipt is not None:
+                break
+            time.sleep(1)
+        if receipt is None:
+            classification = "TIMEOUT"
+        elif receipt.get("ok") is not True:
+            classification = "ERROR"
+        elif bool((receipt.get("desktop") or {}).get("interactive")):
+            classification = "READY"
+        else:
+            classification = "NOT_INTERACTIVE"
+
+    markers = [
+        f"realm_desktop_node_id={node_id}",
+        f"realm_desktop_probe={classification}",
+    ]
+    return {
+        "ok": True,
+        "steps": [{"step": "realm_desktop_probe", "returncode": 0, "stdout": "\n".join(markers) + "\n", "stderr": ""}],
+    }
+
+
 def _execute(action: str, source_commit: str | None, post_key: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
     if action == ACTION_RUNNER_WINDOW_PROBE:
         return {
@@ -545,6 +641,16 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return result
     if action == ACTION_RELAY_RESTART:
         result = _restart_antigravity_relay()
+        result["source_commit"] = source_commit
+        return result
+    if action == ACTION_REALM_NODE_INSPECT:
+        params = params or {}
+        result = _realm_node_inspect(str(params.get("node_id") or ""))
+        result["source_commit"] = source_commit
+        return result
+    if action == ACTION_REALM_DESKTOP_PROBE:
+        params = params or {}
+        result = _realm_desktop_probe(str(params.get("node_id") or ""))
         result["source_commit"] = source_commit
         return result
     if action == ACTION_NODE_TRANSACTIONAL_OTA:
