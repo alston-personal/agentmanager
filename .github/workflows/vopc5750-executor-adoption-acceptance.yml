@@ -1,0 +1,39 @@
+name: VOPC5750 Executor Adoption Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/antigravity_relay_worker.py'
+      - 'agentos_node/executor_provider_adapters.py'
+      - 'agentos_node/codex_provider_adapter.py'
+      - 'agentos_node/executor_reconcile.py'
+      - 'agentos_node/thin_client.py'
+      - 'agent_core/runner_window.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - 'agent_core/realm_server.py'
+      - '.agentos/executors/**'
+      - '.github/workflows/vopc5750-executor-adoption-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  node-inspect:
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.realm
+      operation: inspect
+      payload_json: '{"node_id":"vopc5750"}'
+
+  executor-reconcile:
+    needs: node-inspect
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.executor
+      operation: reconcile
+      payload_json: '{"node_id":"vopc5750"}'
