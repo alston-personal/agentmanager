@@ -113,6 +113,7 @@ ALLOWED_ACTIONS = {
     ACTION_EXECUTOR_JOB_INSPECT,
 }
 MAX_REQUEST_AGE_SECONDS = 900
+RELAY_STALE_PROCESSING_SECONDS = 600
 REQUEST_OWNER = "agentos-node"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -451,7 +452,7 @@ def _relay_status() -> dict[str, Any]:
 
     antigravity = active("agentos-antigravity-relay.service")
     action_relay = active("agentos-action-relay.service")
-    stale_processing = processing_count > 0 and processing_oldest >= 600
+    stale_processing = processing_count > 0 and processing_oldest >= RELAY_STALE_PROCESSING_SECONDS
     healthy = antigravity == "active" and action_relay == "active" and not stale_processing
     markers = [
         f"relay_status_antigravity_service={antigravity}",
