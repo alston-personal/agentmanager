@@ -848,10 +848,11 @@ class InvoiceStore:
                         json.dumps(extraction.confidence, ensure_ascii=False), updated, invoice_id,
                     ))
                     done = db.execute("""
-                      SELECT i.*, d.sha256, d.original_filename
+                      SELECT i.*, d.sha256, d.original_filename,
+                             ? AS extraction_payload
                       FROM invoices i JOIN documents d ON d.id=i.document_id
                       WHERE i.id=?
-                    """, (invoice_id,)).fetchone()
+                    """, (json.dumps(extraction.raw, ensure_ascii=False), invoice_id)).fetchone()
                     payload = self._row_payload(done)
                     payload["engine"] = extraction.raw["engine"]
                     return payload
@@ -880,7 +881,9 @@ class InvoiceStore:
             row = db.execute("""
               SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope,
                      (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
-                      ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine
+                      ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine,
+                     (SELECT e.payload_json FROM extractions e WHERE e.document_id=i.document_id
+                      ORDER BY e.rowid DESC LIMIT 1) AS extraction_payload
               FROM invoices i JOIN documents d ON d.id=i.document_id
               WHERE i.id=? AND i.deleted_at IS NULL
             """, (invoice_id,)).fetchone()
@@ -951,6 +954,11 @@ class InvoiceStore:
             "batch_id": row["batch_id"] if "batch_id" in row.keys() else None,
             "source_type": row["source_type"] if "source_type" in row.keys() else None,
             "data_scope": row["data_scope"] if "data_scope" in row.keys() else None,
+            "review": (
+                (json.loads(row["extraction_payload"]).get("review") or {})
+                if "extraction_payload" in row.keys() and row["extraction_payload"]
+                else {}
+            ),
         }
 
     def recent(self, limit: int = 30) -> list[dict[str, Any]]:
@@ -959,7 +967,9 @@ class InvoiceStore:
             rows = db.execute("""
               SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope,
                      (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
-                      ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine
+                      ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine,
+                     (SELECT e.payload_json FROM extractions e WHERE e.document_id=i.document_id
+                      ORDER BY e.rowid DESC LIMIT 1) AS extraction_payload
               FROM invoices i JOIN documents d ON d.id=i.document_id
               WHERE i.deleted_at IS NULL
               ORDER BY i.created_at DESC LIMIT ?
