@@ -26,6 +26,7 @@ ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
 ACTION_REALM_NODE_INSPECT = "agentos.realm_node.inspect"
 ACTION_REALM_DESKTOP_PROBE = "agentos.realm_desktop.probe"
 ACTION_REALM_EXECUTOR_RECONCILE = "agentos.realm_executor.reconcile"
+ACTION_REALM_PROJECT_INSPECT = "agentos.realm_project.inspect"
 ACTION_GOOGLE_FLOW_GENERATE = "agentos.google_flow.generate"
 ACTION_GOOGLE_VIDS_GENERATE = "agentos.google_vids.generate"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
@@ -79,6 +80,7 @@ ALLOWED_ACTIONS = {
     ACTION_REALM_NODE_INSPECT,
     ACTION_REALM_DESKTOP_PROBE,
     ACTION_REALM_EXECUTOR_RECONCILE,
+    ACTION_REALM_PROJECT_INSPECT,
     ACTION_GOOGLE_FLOW_GENERATE,
     ACTION_GOOGLE_VIDS_GENERATE,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -185,6 +187,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","node_id","candidate_commit"}
     elif action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE, ACTION_REALM_EXECUTOR_RECONCILE}:
         allowed_params={"source_commit","node_id"}
+    elif action == ACTION_REALM_PROJECT_INSPECT:
+        allowed_params={"source_commit","node_id","project_id"}
     elif action in {ACTION_GOOGLE_FLOW_GENERATE, ACTION_GOOGLE_VIDS_GENERATE}:
         allowed_params={"source_commit","prompt"}
     elif action == ACTION_EXECUTOR_JOB_SUBMIT:
@@ -219,10 +223,14 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
             raise ValueError("invalid OTA node_id")
         if not COMMIT_RE.fullmatch(candidate_commit):
             raise ValueError("candidate_commit must be an exact lowercase 40-hex commit SHA")
-    if action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE, ACTION_REALM_EXECUTOR_RECONCILE}:
+    if action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE, ACTION_REALM_EXECUTOR_RECONCILE, ACTION_REALM_PROJECT_INSPECT}:
         node_id=str(params.get("node_id") or "")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", node_id):
             raise ValueError("invalid Realm node_id")
+    if action == ACTION_REALM_PROJECT_INSPECT:
+        project_id=str(params.get("project_id") or "")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", project_id):
+            raise ValueError("invalid Realm project_id")
     if action in {ACTION_GOOGLE_FLOW_GENERATE, ACTION_GOOGLE_VIDS_GENERATE}:
         prompt=str(params.get("prompt") or "")
         if not (1 <= len(prompt) <= 1600):
@@ -750,6 +758,68 @@ def _realm_executor_reconcile(node_id: str) -> dict[str, Any]:
         "steps": [{"step": "realm_executor_reconcile", "returncode": 0, "stdout": "\n".join(markers) + "\n", "stderr": ""}],
     }
 
+
+
+def _realm_project_inspect(node_id: str, project_id: str) -> dict[str, Any]:
+    from agent_core.node_registry import NodeRegistry
+    from agent_core.realm_fabric import RealmFabricStore
+
+    nodes = NodeRegistry().node_map().get("nodes") or []
+    node = next((item for item in nodes if str(item.get("node_id") or "") == node_id), None)
+    classification = "UNKNOWN"
+    project: dict[str, Any] = {}
+    if node is None:
+        classification = "NOT_REGISTERED"
+    elif str(node.get("status") or "") != "online":
+        classification = "OFFLINE"
+    elif "agent.project.inspect" not in set(node.get("capabilities") or []):
+        classification = "CAPABILITY_MISSING"
+    else:
+        task_id = "runner-window-project-inspect-" + node_id + "-" + str(int(time.time()))
+        fabric = RealmFabricStore()
+        fabric.queue_task(node_id, {
+            "schema": "agentos.node-task/v0.1",
+            "task_id": task_id,
+            "action": "agent.project.inspect",
+            "project_id": project_id,
+            "cognition_ids_used": [],
+        })
+        deadline = time.monotonic() + 90
+        receipt = None
+        while time.monotonic() < deadline:
+            receipt = fabric.get_receipt(task_id)
+            if receipt is not None:
+                break
+            time.sleep(1)
+        if receipt is None:
+            classification = "TIMEOUT"
+        elif receipt.get("ok") is not True:
+            classification = "ERROR"
+        else:
+            raw = receipt.get("project_inspection")
+            project = dict(raw) if isinstance(raw, dict) else {}
+            state = str(project.get("state") or "UNKNOWN")
+            classification = state if state in {"FOUND", "NOT_FOUND", "AMBIGUOUS"} else "UNKNOWN"
+
+    markers = [
+        f"realm_project_node_id={node_id}",
+        f"realm_project_id={project_id}",
+        f"realm_project_inspect={classification}",
+        f"realm_project_match_count={int(project.get('match_count') or 0)}",
+        f"realm_project_git_repository={str(project.get('git_repository') is True).lower()}",
+        f"realm_project_git_head={str(project.get('git_head') or '')}",
+        f"realm_project_git_branch={str(project.get('git_branch') or '')[:128]}",
+        f"realm_project_worktree_clean={str(project.get('worktree_clean')).lower() if project.get('worktree_clean') is not None else 'unknown'}",
+        f"realm_project_dirty_count={int(project.get('dirty_count') or 0)}",
+        f"realm_project_untracked_count={int(project.get('untracked_count') or 0)}",
+        f"realm_project_remote_identity={str(project.get('remote_identity') or '')[:160]}",
+        f"realm_project_last_commit_at={str(project.get('last_commit_at') or '')[:64]}",
+    ]
+    return {
+        "ok": True,
+        "steps": [{"step": "realm_project_inspect", "returncode": 0, "stdout": "\n".join(markers) + "\n", "stderr": ""}],
+    }
+
 def _execute(action: str, source_commit: str | None, post_key: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
     if action == ACTION_RUNNER_WINDOW_PROBE:
         return {
@@ -782,6 +852,14 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_REALM_EXECUTOR_RECONCILE:
         params = params or {}
         result = _realm_executor_reconcile(str(params.get("node_id") or ""))
+        result["source_commit"] = source_commit
+        return result
+    if action == ACTION_REALM_PROJECT_INSPECT:
+        params = params or {}
+        result = _realm_project_inspect(
+            str(params.get("node_id") or ""),
+            str(params.get("project_id") or ""),
+        )
         result["source_commit"] = source_commit
         return result
     if action == ACTION_GOOGLE_FLOW_GENERATE:
