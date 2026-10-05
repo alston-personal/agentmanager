@@ -67,15 +67,30 @@ def normalize_env_shape(text: str) -> tuple[str, bool]:
     if not malformed:
         return text, False
     # EnvironmentFile ignores independent lines without '=' (systemd.exec).
-    # Prove independence conservatively across the whole file: quotes and
-    # backslashes can span physical lines, including comment continuations.
+    # systemd v249's KEY state treats quotes literally until '='; a quote in
+    # an independent non-assignment or comment cannot open a multiline value.
+    # Quotes in assignments and backslashes still reject normalization.
     # Python splitlines also recognizes separators that systemd does not.
-    lexical_unsafe = sum(
-        int(any(char in "\"'\\" or (ord(char) < 32 and char not in "\t\r\n")
-                or ord(char) == 127 or char in "\x85\u2028\u2029\ufeff"
-                for char in line) or re.search(r"\r(?!\n)", line) is not None)
-        for line in lines
-    )
+    ignored = set(malformed)
+    structural = dict(assignment_quotes=0, ignored_quotes=0, comment_quotes=0,
+                      backslash=0, control=0, bare_cr=0)
+    lexical_unsafe = 0
+    for index, line in enumerate(lines):
+        quoted = any(char in "\"'" for char in line)
+        comment = not line.strip() or line.lstrip().startswith("#")
+        assignment_quote = quoted and index not in ignored and not comment
+        structural["assignment_quotes"] += int(assignment_quote)
+        structural["ignored_quotes"] += int(quoted and index in ignored)
+        structural["comment_quotes"] += int(quoted and comment)
+        escaped = "\\" in line
+        control = any((ord(char) < 32 and char not in "\t\r\n")
+                      or ord(char) == 127 or char in "\x85\u2028\u2029\ufeff"
+                      for char in line)
+        bare_cr = re.search(r"\r(?!\n)", line) is not None
+        structural["backslash"] += int(escaped)
+        structural["control"] += int(control)
+        structural["bare_cr"] += int(bare_cr)
+        lexical_unsafe += int(assignment_quote or escaped or control or bare_cr)
     if len(malformed) > MAX_IGNORED_LINES or continuation_count or export_count or lexical_unsafe:
         # A parser's first failing line cannot prove the total defect count.
         # Report structural counts only; never include line text, keys or values.
@@ -84,8 +99,8 @@ def normalize_env_shape(text: str) -> tuple[str, bool]:
             f"_missing_equals_{len(malformed)}"
             f"_prev_cont_{continuation_count}_exportlike_{export_count}"
             f"_lexical_unsafe_{lexical_unsafe}"
+            + "".join(f"_{name}_{count}" for name, count in structural.items())
         )
-    ignored = set(malformed)
     return "".join(line for i, line in enumerate(lines) if i not in ignored), True
 
 

@@ -10,8 +10,12 @@ A source merge proves implementation, not live operation. A live receipt proves 
 Control Inbox maintenance (#845) run 37260607129 on 2026-10-05 confirmed seven
 non-assignment lines and stopped before auth, mutation, or restart. The helper
 now bounds normalization to seven lines that systemd would independently ignore;
-whole-file quote, escape, control/separator, BOM, and bare-CR guards reject ambiguous
-multiline syntax. Assignments, allowlist, and durable state remain preserved.
+assignment quote and whole-file escape, control/separator, BOM, and bare-CR guards
+reject ambiguous multiline syntax. Quotes in independent ignored lines/comments
+remain harmless under systemd's parser. Run 37277811979 stopped before mutation
+with seven ignored lines and one unclassified lexical flag; source now reports
+character classes as aggregate counts. The host's class remains unverified.
+Assignments, allowlist, and durable state remain preserved.
 This source change still requires explicit maintenance deployment authorization.
 Offline tests do not establish host configuration, Control Inbox recovery, Node
 freshness, or Mio DM readiness. See
