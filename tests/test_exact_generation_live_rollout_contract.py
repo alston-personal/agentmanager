@@ -44,6 +44,17 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         text = _text(REALM_SERVER)
         self.assertIn("'relay_status_stale_processing=',", text)
 
+    def test_relay_status_projects_exact_runtime_generations(self):
+        bootstrap = _text(BOOTSTRAP)
+        realm = _text(REALM_SERVER)
+        self.assertIn('relay_status_antigravity_source_commit=', bootstrap)
+        self.assertIn('relay_status_action_source_commit=', bootstrap)
+        self.assertIn('AGENTOS_RUNTIME_SOURCE_COMMIT', bootstrap)
+        self.assertIn('AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT', bootstrap)
+        self.assertIn("'relay_status_antigravity_source_commit=',", realm)
+        self.assertIn("'relay_status_action_source_commit=',", realm)
+
+
     def test_bootstrap_scheduler_keeps_stable_direct_worker_lifecycle(self):
         installer = _text(ROOT / "scripts" / "install_bootstrap_scheduler_user.sh")
         self.assertIn("ExecStart=/usr/bin/python3 -m agentos_node.bootstrap_scheduler", installer)
