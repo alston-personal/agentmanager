@@ -43,6 +43,12 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         text = _text(REALM_SERVER)
         self.assertIn("'relay_status_stale_processing=',", text)
 
+    def test_relay_restart_explicitly_quarantines_stale_processing(self):
+        bootstrap = _text(BOOTSTRAP)
+        self.assertIn("reconcile_stranded_processing(", bootstrap)
+        self.assertIn("stale_after=RELAY_STALE_PROCESSING_SECONDS", bootstrap)
+        self.assertIn("relay_restart_quarantined_stale=", bootstrap)
+
     def test_transport_repair_restarts_and_requires_active_antigravity_relay(self):
         text = _text(REPAIR)
         self.assertIn('REPAIR_STAGE="restart_antigravity_relay"', text)
