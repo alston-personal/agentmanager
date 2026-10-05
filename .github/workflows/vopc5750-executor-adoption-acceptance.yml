@@ -53,27 +53,46 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          AGENTOS_DISPATCH_WAIT_SECONDS=120 \
-            bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" \
-            | tee "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
-          python3 - "$RUNNER_TEMP/vopc5750-runtime-generation.txt" "$GITHUB_SHA" <<'PY'
+          : > "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
+          converged=0
+          for i in $(seq 1 36); do
+            out="$RUNNER_TEMP/vopc5750-runtime-generation-$i.txt"
+            if AGENTOS_DISPATCH_WAIT_SECONDS=60 \
+              bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" > "$out" 2>&1; then
+              cat "$out" >> "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
+              if python3 - "$out" "$GITHUB_SHA" <<'PY'
           import json,sys
           docs=[json.loads(line) for line in open(sys.argv[1],encoding='utf-8') if line.lstrip().startswith('{')]
-          assert docs, 'missing relay status receipt'
+          if not docs:
+              raise SystemExit(1)
           receipt=docs[-1].get('receipt') or {}
-          assert receipt.get('ok') is True, receipt
+          if receipt.get('ok') is not True:
+              raise SystemExit(1)
           vals={}
           for item in receipt.get('evidence') or []:
               if '=' in item:
                   k,v=item.split('=',1)
                   vals[k]=v
           expected=sys.argv[2]
-          assert vals.get('relay_status')=='PASS', vals
-          assert vals.get('relay_status_antigravity_source_commit')==expected, vals
-          assert vals.get('relay_status_action_source_commit')==expected, vals
-          print('vopc5750_control_runtime_generation=PASS')
-          print('vopc5750_control_runtime_source_commit='+expected)
+          ok=(
+              vals.get('relay_status')=='PASS'
+              and vals.get('relay_status_antigravity_source_commit')==expected
+              and vals.get('relay_status_action_source_commit')==expected
+          )
+          raise SystemExit(0 if ok else 1)
           PY
+              then
+                converged=1
+                break
+              fi
+            else
+              cat "$out" >> "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
+            fi
+            sleep 5
+          done
+          test "$converged" = 1
+          echo "vopc5750_control_runtime_generation=PASS"
+          echo "vopc5750_control_runtime_source_commit=$GITHUB_SHA"
 
       - name: Upload bounded runtime gate receipt
         if: always()
