@@ -584,6 +584,18 @@ class InvoiceStore:
                     )
                 raise
 
+    def reprocess(self, invoice_id: str) -> dict[str, Any]:
+        """Re-run OCR for an existing immutable original without creating a new record."""
+        with self.connect() as db:
+            row = db.execute("SELECT id FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+            db.execute(
+                "UPDATE invoices SET status='processing', updated_at=? WHERE id=?",
+                (utcnow(), invoice_id),
+            )
+        return self.process(invoice_id)
+
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
         with self.connect() as db:
             row = db.execute("""
