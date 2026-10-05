@@ -103,7 +103,7 @@ WorkingDirectory=$RELEASE
 Environment=PYTHONPATH=$RELEASE
 Environment=AGENTOS_BOOTSTRAP_ROOT=/tmp/agentos-bootstrap-control
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
-ExecStart=/usr/bin/python3 -m agentos_node.bootstrap_scheduler --role $role --worker-id $worker
+ExecStart=/usr/bin/sg agentos -c 'exec /usr/bin/python3 -m agentos_node.bootstrap_scheduler --role $role --worker-id $worker'
 Restart=always
 RestartSec=2
 CPUAccounting=true
@@ -140,7 +140,13 @@ for unit in "${UNITS[@]}"; do
   test -n "$PID" && test "$PID" != 0
   CWD="$(readlink -f "/proc/$PID/cwd")"
   test "$CWD" = "$RELEASE"
-  echo "bootstrap_scheduler_unit=$unit:active:release=$CWD"
+  AGENTOS_GID="$(getent group agentos | cut -d: -f3)"
+  awk -v gid="$AGENTOS_GID" '
+    /^Gid:/ { for (i=2;i<=NF;i++) if ($i==gid) found=1 }
+    /^Groups:/ { for (i=2;i<=NF;i++) if ($i==gid) found=1 }
+    END { exit(found ? 0 : 1) }
+  ' "/proc/$PID/status"
+  echo "bootstrap_scheduler_unit=$unit:active:release=$CWD:group=agentos"
 done
 
 worker_status_ready=0

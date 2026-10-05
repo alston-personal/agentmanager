@@ -43,6 +43,12 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         text = _text(REALM_SERVER)
         self.assertIn("'relay_status_stale_processing=',", text)
 
+    def test_bootstrap_scheduler_workers_enter_agentos_group_explicitly(self):
+        installer = _text(ROOT / "scripts" / "install_bootstrap_scheduler_user.sh")
+        self.assertIn("ExecStart=/usr/bin/sg agentos -c", installer)
+        self.assertIn('getent group agentos', installer)
+        self.assertIn('"/proc/$PID/status"', installer)
+
     def test_relay_restart_explicitly_quarantines_stale_processing(self):
         bootstrap = _text(BOOTSTRAP)
         self.assertIn("reconcile_stranded_processing(", bootstrap)
