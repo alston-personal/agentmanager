@@ -1,0 +1,53 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "media.video.compose.google-vids",
+  "display_name": "Google Vids Video Composer",
+  "semantic_owner": "media-generation",
+  "version": "0.1.0",
+  "lifecycle": "declared",
+  "contract": {
+    "input_schema": "agentos.google-vids-compose-job/v1",
+    "inputs": [
+      "script or creative brief",
+      "approved media assets",
+      "optional voice/avatar instructions",
+      "output format"
+    ],
+    "outputs": [
+      "composed video project or exported video artifact",
+      "agentos.media-generation-receipt/v1"
+    ],
+    "side_effects": [
+      "uses an authenticated Google web session",
+      "may create or modify Google Vids projects",
+      "may invoke Gemini media generation features"
+    ]
+  },
+  "invocation": {
+    "kind": "gui-provider",
+    "service_url": "https://vids.google.com/",
+    "preferred_runtime": "capability://desktop.plan.execute",
+    "runtime_owner": "node://vopc5750",
+    "fallback_runtime": "participant://host/browser-bridge"
+  },
+  "discovery": {
+    "governance_directory": true,
+    "provider_id": "service://media.google-vids.web",
+    "reuse_before_build": true
+  },
+  "policy": {
+    "authenticated_session_required": true,
+    "feature_availability_must_be_probed_at_runtime": true,
+    "credentials_must_not_enter_prompts_manifests_receipts_or_logs": true,
+    "explicit_export_or_publish_effect_receipt_required": true,
+    "no_anti_bot_bypass": true,
+    "human_challenge_must_pause_for_user": true,
+    "provider_ui_drift_requires_probe_before_automation": true
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}
