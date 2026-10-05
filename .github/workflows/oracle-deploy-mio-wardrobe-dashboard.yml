@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: oracle-mio-wardrobe-dashboard-deploy
+  group: oracle-dashboard-production-deploy
   cancel-in-progress: false
 
 jobs:
