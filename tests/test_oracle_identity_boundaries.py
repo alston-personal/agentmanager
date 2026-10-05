@@ -30,6 +30,14 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         self.assertNotEqual(row["risk"], "P0")
         self.assertTrue(row["has_explicit_group_boundary"])
 
+    def test_confirmed_migration_overrides_heuristic_classification(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        self.assertIn(".agent/scripts/agentos-core-supervisor.service", policy["confirmed_migrations"])
+
+    def test_auditor_excludes_itself_from_runtime_findings(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        self.assertTrue(audit._excluded("scripts/audit_oracle_identity_boundaries.py", policy["audit_excludes"]))
+
     def test_interactive_ubuntu_path_is_classified_not_globally_banned(self):
         policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
         row = audit._classify(
