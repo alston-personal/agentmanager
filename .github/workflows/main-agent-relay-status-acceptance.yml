@@ -127,6 +127,7 @@ jobs:
               assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)
           assert vals.get('relay_status_antigravity_service')=='active', vals
           assert vals.get('relay_status_action_service')=='active', vals
+          assert vals.get('relay_status_stale_processing') in {'YES','NO'}, vals
           processing=int(vals.get('relay_status_processing_count') or '0')
           processing_oldest=int(vals.get('relay_status_processing_oldest_seconds') or '0')
           explicit_stale=vals.get('relay_status_stale_processing')
@@ -201,11 +202,13 @@ jobs:
               vals.get('relay_status')=='PASS'
               and vals.get('relay_status_antigravity_service')=='active'
               and vals.get('relay_status_action_service')=='active'
+              and vals.get('relay_status_stale_processing')=='NO'
               and processing==0
               and not stale
           )
           if not healthy:
               raise SystemExit(1)
+          assert vals.get('relay_status_stale_processing')=='NO', vals
           json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
           print('relay_status_acceptance=PASS')
           for key in sorted(vals):
