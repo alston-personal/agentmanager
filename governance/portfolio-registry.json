@@ -316,6 +316,71 @@
       "growth_asset": true,
       "next_gate": "Demonstrate authorized read-only optimization scans and a clear channel/business outcome before any write authority or BUILD promotion.",
       "evidence_ref": "governance/youtube-ai-manager-employee.json"
+    },
+    {
+      "id": "universal-matching-core",
+      "name": "Universal Matching Core",
+      "type": "shared_matching_capability",
+      "status": "ASSET",
+      "production": false,
+      "growth_asset": true,
+      "canonical_repository": "alston-personal/universal-matching-core",
+      "next_gate": "Evaluate reuse through adapters for existing portfolio demand before adding features; preserve independent core semantics.",
+      "evidence": "Python matching/resource-allocation core covers task-worker, group participation and time-slot booking; includes opt-in SQLite durable reservation pilot.",
+      "potential_reuse": [
+        "wish-market",
+        "group-buy",
+        "agentos-core"
+      ]
+    },
+    {
+      "id": "scriptless-qa-agent",
+      "name": "Scriptless QA Agent",
+      "type": "qa_product_capability",
+      "status": "ASSET",
+      "production": false,
+      "growth_asset": true,
+      "canonical_repository": "alston-personal/scriptless-qa-agent",
+      "revenue_candidate": false,
+      "next_gate": "Use on current Milkcat/AgentOS web flows as an internal dogfood acceptance tool before considering standalone monetization.",
+      "evidence": "Natural-language Playwright QA with evidence capture, bug/repro reports, login checkpoints, risk-gated actions and runtime handoff."
+    },
+    {
+      "id": "acas",
+      "name": "ACAS",
+      "type": "adaptive_learning_core",
+      "status": "ASSET",
+      "production": false,
+      "growth_asset": true,
+      "canonical_repository": "alston-personal/acas",
+      "next_gate": "Map overlap/complementarity with RootNexus and Hanzi assets before any new learning-system implementation.",
+      "evidence": "Universal Communication IR, multidimensional mastery model, latency-aware fluency and adaptive memory scheduler with CLI/web/test structure.",
+      "potential_reuse": [
+        "rootnexus",
+        "hanzi-root"
+      ]
+    },
+    {
+      "id": "ziwei-master",
+      "name": "ZiWei Master",
+      "type": "deterministic_culture_engine",
+      "status": "HOLD",
+      "production": false,
+      "growth_asset": true,
+      "canonical_repository": "alston-personal/ziwei-master",
+      "next_gate": "Preserve deterministic chart engine and structured IR; only resume with a clear product/distribution relation to existing culture products.",
+      "evidence": "Rule-first deterministic Zi Wei chart computation, versioned provenance, renderer and interpretation separation."
+    },
+    {
+      "id": "chamber-echo",
+      "name": "Chamber Protocol / Echo",
+      "type": "decentralized_social_archive_product",
+      "status": "ASSET",
+      "production": true,
+      "growth_asset": true,
+      "canonical_repository": "alston-personal/chamber",
+      "next_gate": "Verify current live surface/runtime before deciding RUN vs preserved ASSET; do not expand social graph or scrapers yet.",
+      "evidence": "Handoff records browser extension, decentralized Echo feed, encrypted local reveal, media fallback and deployed /echo plus /chamber-api surfaces."
     }
   ],
   "orphan_discovery": {
@@ -323,7 +388,13 @@
     "sources": [
       "governance/product-migrations.json",
       "AICC_PROJECTS_LIST.txt",
-      "recent accessible GitHub issues/PRs"
+      "recent accessible GitHub issues/PRs",
+      "alston-personal repository inventory",
+      "alston-personal/universal-matching-core/README.md",
+      "alston-personal/scriptless-qa-agent/README.zh-TW.md",
+      "alston-personal/acas/README.md",
+      "alston-personal/ziwei-master/README.md",
+      "alston-personal/chamber/handoff.md"
     ],
     "rule": "Discovery registers existing evidence without promoting work. Newly discovered items default to HOLD or ASSET unless current operating evidence requires RUN."
   }
