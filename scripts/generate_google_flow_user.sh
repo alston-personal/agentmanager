@@ -28,7 +28,9 @@ fi
 chmod 700 "$OUT_ROOT"
 echo "google_flow_runtime_preflight=PASS"
 
-timeout 900s "$PY" - "$CDP_URL" "$OUT_ROOT" "$PROMPT" <<'PY'
+ERR_FILE="$(mktemp)"
+set +e
+timeout 900s "$PY" - "$CDP_URL" "$OUT_ROOT" "$PROMPT" 2>"$ERR_FILE" <<'PY'
 from __future__ import annotations
 import hashlib,json,os,re,sys,time
 from datetime import datetime,timezone
@@ -254,3 +256,13 @@ with sync_playwright() as p:
     print("google_flow_sha256="+sha)
     print("google_flow_artifact_root="+str(run_dir))
 PY
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
+  last="$(tail -n 1 "$ERR_FILE" 2>/dev/null | tr '\n\r\t' '   ' | tr -cd '[:alnum:] _./:(),\[\]-' | cut -c1-300)"
+  [ -n "$last" ] || last="python_exit_$rc"
+  echo "google_flow_runtime_error=$last"
+  rm -f "$ERR_FILE"
+  exit 0
+fi
+rm -f "$ERR_FILE"
