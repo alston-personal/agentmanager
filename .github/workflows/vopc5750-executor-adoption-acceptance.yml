@@ -23,15 +23,69 @@ permissions:
   id-token: write
 
 jobs:
-  runtime-converge:
-    uses: ./.github/workflows/agentos-dispatch.yml
-    with:
-      capability: agentos.runtime
-      operation: repair
-      payload_json: '{}'
+  runtime-generation-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Verify deployed control runtime generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=120 \
+            bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" \
+            | tee "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
+          python3 - "$RUNNER_TEMP/vopc5750-runtime-generation.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          docs=[json.loads(line) for line in open(sys.argv[1],encoding='utf-8') if line.lstrip().startswith('{')]
+          assert docs, 'missing relay status receipt'
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('ok') is True, receipt
+          vals={}
+          for item in receipt.get('evidence') or []:
+              if '=' in item:
+                  k,v=item.split('=',1)
+                  vals[k]=v
+          expected=sys.argv[2]
+          assert vals.get('relay_status')=='PASS', vals
+          assert vals.get('relay_status_antigravity_source_commit')==expected, vals
+          assert vals.get('relay_status_action_source_commit')==expected, vals
+          print('vopc5750_control_runtime_generation=PASS')
+          print('vopc5750_control_runtime_source_commit='+expected)
+          PY
+
+      - name: Upload bounded runtime gate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vopc5750-runtime-generation-${{ github.run_id }}
+          path: ${{ runner.temp }}/vopc5750-runtime-generation.txt
+          if-no-files-found: warn
+          retention-days: 7
 
   node-inspect:
-    needs: runtime-converge
+    needs: runtime-generation-gate
     uses: ./.github/workflows/agentos-dispatch.yml
     with:
       capability: node.realm
