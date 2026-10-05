@@ -78,10 +78,18 @@ def _classify(rel: str, text: str, policy: dict[str, Any]) -> dict[str, Any] | N
     # runtime, appears capable of mutation, crosses/mentions service identities,
     # and lacks an explicit group boundary. This is the class that has already
     # caused production PermissionError/recovery failures.
-    if has_shared_data and mutation and (user_systemd or has_node_identity) and not bounded_group:
+    if has_shared_data and mutation and has_node_identity and not bounded_group:
         risk = "P0"
         classification = "unbounded-cross-owner-mutation"
         tags.append("implicit-group-risk")
+    elif has_shared_data and mutation and user_systemd and not bounded_group:
+        # user-systemd alone does not prove a cross-owner mutation. Hosted SSH
+        # and ubuntu-owned installers commonly reference shared runtime paths
+        # without crossing identities. Keep these visible for review, but do not
+        # promote them to production P0 without explicit agentos-node evidence.
+        risk = "P1"
+        classification = "user-runtime-mutation-review"
+        tags.append("identity-owner-unproven")
 
     return {
         "path": rel,
