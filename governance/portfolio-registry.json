@@ -306,6 +306,16 @@
       "growth_asset": true,
       "next_gate": "Treat as legacy automation asset; avoid reviving a parallel orchestration control plane without explicit need.",
       "evidence_ref": "AICC_PROJECTS_LIST.txt"
+    },
+    {
+      "id": "youtube-ai-manager",
+      "name": "YouTube AI Manager",
+      "type": "media_capability",
+      "status": "HOLD",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Demonstrate authorized read-only optimization scans and a clear channel/business outcome before any write authority or BUILD promotion.",
+      "evidence_ref": "governance/youtube-ai-manager-employee.json"
     }
   ],
   "orphan_discovery": {
