@@ -46,6 +46,7 @@ test -s "$SRC/wardrobe/index.html"
 grep -Fq '澪的內心窗口' "$SRC/observer/index.html"
 grep -Fq 'data-tryon-auth-banner' "$SRC/wardrobe/index.html"
 grep -Fq '登入／重新授權' "$SRC/wardrobe/index.html"
+grep -Fq 'AI 試穿需要登入' "$SRC/wardrobe/index.html"
 grep -Fq 'data-tryon-action' "$SRC/wardrobe/index.html"
 grep -Fq 'data-mobile-tryon-action' "$SRC/wardrobe/index.html"
 grep -Fq '正在等待試穿結果' "$SRC/wardrobe/index.html"
@@ -69,6 +70,7 @@ for i in $(seq 1 20); do
   if printf '%s' "$OBSERVER" | grep -Fq '澪的內心窗口' \
     && printf '%s' "$WARDROBE" | grep -Fq 'data-tryon-auth-banner' \
     && printf '%s' "$WARDROBE" | grep -Fq '登入／重新授權' \
+    && printf '%s' "$WARDROBE" | grep -Fq 'AI 試穿需要登入' \
     && printf '%s' "$WARDROBE" | grep -Fq 'data-tryon-action' \
     && printf '%s' "$RELEASE" | grep -Fq "\"studio_commit\":\"$STUDIO_COMMIT\""; then
     echo "studio_web_mio_public_observer=PASS"
