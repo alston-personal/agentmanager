@@ -1,6 +1,6 @@
 {
   "schema": "agentos.oracle-identity-boundaries/v1",
-  "policy_version": "2026.10.05.1",
+  "policy_version": "2026.10.05.2",
   "shared_group": "agentos",
   "roots": {
     "source_cache": {
@@ -33,7 +33,10 @@
     "/usr/bin/sg agentos -c",
     "chgrp agentos",
     "SHARED_GROUP = \"agentos\"",
-    "group=agentos"
+    "group=agentos",
+    "Group=agentos",
+    "[\"/usr/bin/sg\", \"agentos\", \"-c\"",
+    "['/usr/bin/sg', 'agentos', '-c'"
   ],
   "mutation_markers": [
     "write_text(",
@@ -113,6 +116,53 @@
       "runtime_audit_run": 37271204862,
       "immutable_count": 10,
       "mutable_count": 0
+    }
+  },
+  "audit_overrides": {
+    ".github/workflows/oracle-runner-hosted-readonly-inspect.yml": {
+      "risk": "P2",
+      "classification": "read-only-inspection",
+      "reason": "hosted SSH workflow inspects runner/scheduler state and does not mutate shared runtime"
+    },
+    ".github/workflows/oracle-runner-probe.yml": {
+      "risk": "P2",
+      "classification": "diagnostic-evidence",
+      "reason": "agentos-node runner probe reads host permissions/state and only commits repository evidence"
+    },
+    ".github/workflows/governance-directory-audit.yml": {
+      "risk": "P1",
+      "classification": "dedicated-agentos-node-authority",
+      "reason": "governance mutations are performed by the declared agentos-node governance authority"
+    },
+    ".github/workflows/oracle-realm-node-self-update.yml": {
+      "risk": "P1",
+      "classification": "governed-realm-store-boundary",
+      "reason": "shared Realm state is mutated through RealmFabricStore; source edits occur only in the ephemeral Actions checkout"
+    },
+    ".github/workflows/oracle-exact-generation-executor-job-rollout.yml": {
+      "risk": "P1",
+      "classification": "governed-bootstrap-protocol-boundary",
+      "reason": "cross-user work is submitted through fixed bootstrap request/receipt contracts into an immutable scheduler generation"
+    },
+    ".github/workflows/oracle-x-auth-inspect.yml": {
+      "risk": "P1",
+      "classification": "governed-action-relay-boundary",
+      "reason": "runtime convergence and X auth inspection use bounded Action Relay contracts; probe is read-only"
+    },
+    ".github/workflows/oracle-install-storage-resource-publisher.yml": {
+      "risk": "P1",
+      "classification": "dedicated-agentos-node-service",
+      "reason": "installed system service declares User=agentos-node and Group=agentos before updating the shared resource registry"
+    },
+    "agentos_node/bootstrap_control.py": {
+      "risk": "P1",
+      "classification": "bounded-control-boundary",
+      "reason": "cross-owner recovery enters the shared agentos group only through fixed bounded helpers"
+    },
+    ".github/workflows/oracle-hosted-recovery.yml": {
+      "risk": "P1",
+      "classification": "hosted-recovery-review",
+      "reason": "hosted SSH recovery crosses several authorities but does not execute as the self-hosted agentos-node runner; split remains recommended"
     }
   }
 }
