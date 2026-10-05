@@ -268,6 +268,60 @@ def test_recent_claude_timeout_is_deferred_fail_closed(tmp_path, monkeypatch):
     assert row["stable_routable"] is False
 
 
+def test_recent_agy_rate_limit_is_deferred_fail_closed(tmp_path, monkeypatch):
+    fixed_now = "2026-10-05T02:09:00Z"
+    previous = {
+        "schema": executor_reconcile.ADOPTION_SCHEMA,
+        "observed_at": "2026-10-05T02:08:00Z",
+        "executors": [{
+            "executor_id": "antigravity",
+            "provider_id": "google-antigravity",
+            "executor_class": "antigravity",
+            "state": "UNHEALTHY",
+            "adopted": True,
+            "routable": False,
+            "stable_routable": False,
+            "ready_streak": 0,
+            "capabilities": ["agent.chat", "code.edit"],
+            "profile_valid": True,
+            "adapter_registered": True,
+            "discovered": True,
+            "reachable": True,
+            "authorized": False,
+            "healthy": False,
+            "provider_health": {"classification": "RATE_LIMITED"},
+            "provider_error": "",
+            "last_probed_at": "2026-10-05T02:08:00Z",
+        }],
+    }
+    (tmp_path / "executor-adoption.json").write_text(json.dumps(previous), encoding="utf-8")
+
+    profile = {
+        **_profile("tests.fake_demo_provider"),
+        "executor_id": "antigravity",
+        "provider_id": "google-antigravity",
+        "executor_class": "antigravity",
+        "capabilities": ["agent.chat", "code.edit"],
+    }
+    class RateLimitedProvider(ReadyProvider):
+        def discover(self):
+            return {"installed": True}
+        def health(self):
+            raise AssertionError("recent rate limit must not be synchronously reprobed")
+
+    monkeypatch.setattr(executor_reconcile, "_utc_now", lambda: fixed_now)
+    monkeypatch.setattr(executor_reconcile, "load_provider_profiles", lambda root=None: [profile])
+    monkeypatch.setattr(executor_reconcile, "load_provider", lambda candidate: RateLimitedProvider())
+
+    row = executor_reconcile.reconcile_executor_adoption(state_root=tmp_path)["executor_adoption"]["executors"][0]
+    assert row["state"] == "UNHEALTHY"
+    assert row["provider_health"]["classification"] == "RATE_LIMITED"
+    assert row["health_deferred"] is True
+    assert row["last_probed_at"] == "2026-10-05T02:08:00Z"
+    assert row["ready_streak"] == 0
+    assert row["stable_routable"] is False
+
+
 def test_expired_claude_timeout_cooldown_reprobes(tmp_path, monkeypatch):
     fixed_now = "2026-10-05T02:10:01Z"
     previous = {
