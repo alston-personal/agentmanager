@@ -16,6 +16,7 @@ from agentos_node.executor_provider_registry import (
 
 SCHEMA = "agentos.executor-inventory/v0.2"
 ADOPTION_SCHEMA = "agentos.executor-adoption/v0.2"
+CLAUDE_TIMEOUT_COOLDOWN_SECONDS = 300.0
 
 
 def _utc_now() -> str:
@@ -170,12 +171,31 @@ def discover_executor_inventory(
     *,
     profile_root: str | Path | None = None,
     probe_health: bool = True,
+    deferred_health: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     profiles = load_provider_profiles(profile_root)
+
+    deferred_health = deferred_health or {}
 
     def inspect_profile(profile: dict[str, Any]) -> dict[str, Any]:
         try:
             provider = load_provider(profile)
+            executor_id = str(profile.get("executor_id") or "")
+            prior = deferred_health.get(executor_id)
+            if probe_health and isinstance(prior, dict):
+                current = _state_from_provider(profile, provider, probe_health=False)
+                if current.get("discovered") is True:
+                    current.update({
+                        "state": str(prior.get("state") or "UNHEALTHY"),
+                        "reachable": bool(prior.get("reachable")),
+                        "authorized": bool(prior.get("authorized")),
+                        "healthy": bool(prior.get("healthy")),
+                        "routable": False,
+                        "provider_health": dict(prior.get("provider_health") or {}),
+                        "provider_error": str(prior.get("provider_error") or ""),
+                        "health_deferred": True,
+                    })
+                return current
             return _state_from_provider(profile, provider, probe_health=probe_health)
         except Exception as exc:
             return {
@@ -217,7 +237,6 @@ def reconcile_executor_adoption(
     root = Path(state_root) if state_root is not None else _state_root()
     root.mkdir(parents=True, exist_ok=True)
 
-    inventory = discover_executor_inventory(profile_root=profile_root)
     previous_by_executor: dict[str, dict[str, Any]] = {}
     previous_path = root / "executor-adoption.json"
     if previous_path.exists():
@@ -231,6 +250,26 @@ def reconcile_executor_adoption(
                 }
         except Exception:
             previous_by_executor = {}
+
+    now_text = _utc_now()
+    now = datetime.fromisoformat(now_text.replace("Z", "+00:00"))
+    deferred_health: dict[str, dict[str, Any]] = {}
+    prior_claude = previous_by_executor.get("claude-code") or {}
+    prior_classification = str((prior_claude.get("provider_health") or {}).get("classification") or "")
+    last_probed_text = str(prior_claude.get("last_probed_at") or "")
+    if prior_classification == "TIMEOUT" and last_probed_text:
+        try:
+            last_probed = datetime.fromisoformat(last_probed_text.replace("Z", "+00:00"))
+            age = (now - last_probed.astimezone(timezone.utc)).total_seconds()
+        except Exception:
+            age = CLAUDE_TIMEOUT_COOLDOWN_SECONDS
+        if 0 <= age < CLAUDE_TIMEOUT_COOLDOWN_SECONDS:
+            deferred_health["claude-code"] = prior_claude
+
+    inventory = discover_executor_inventory(
+        profile_root=profile_root,
+        deferred_health=deferred_health,
+    )
 
     adopted = []
     for item in inventory["executors"]:
@@ -255,6 +294,12 @@ def reconcile_executor_adoption(
             "healthy": bool(item.get("healthy")),
             "provider_health": dict(item.get("provider_health") or {}),
             "provider_error": str(item.get("provider_error") or ""),
+            "health_deferred": item.get("health_deferred") is True,
+            "last_probed_at": (
+                str(prior.get("last_probed_at") or "")
+                if item.get("health_deferred") is True
+                else now_text
+            ),
         })
 
     counts: dict[str, int] = {}
@@ -264,7 +309,7 @@ def reconcile_executor_adoption(
 
     payload = {
         "schema": ADOPTION_SCHEMA,
-        "observed_at": _utc_now(),
+        "observed_at": now_text,
         "inventory_schema": inventory["schema"],
         "provider_profile_schema": inventory["provider_profile_schema"],
         "executors": adopted,
