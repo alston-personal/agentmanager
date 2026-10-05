@@ -5,6 +5,7 @@ on:
     branches: [core/integration]
     paths:
       - '.github/workflows/main-agent-model-routing-acceptance.yml'
+      - '.github/workflows/oracle-action-runtime-rollout.yml'
       - 'agentos_node/engineering_subagent_provider.py'
       - 'agentos_node/executor_provider_adapters.py'
       - 'agentos_node/codex_provider_adapter.py'
