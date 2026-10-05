@@ -25,12 +25,7 @@ jobs:
       receipt_schema: studio-web.invoice-intake-release/v1
       acceptance_anchors: |-
         查看這張完整辨識結果
-        開啟相機連續掃描
         已掃描發票
-        選擇相片／掃描圖檔
-        本批總數
-        匯出給文中
-        匯出已確認給文中
       credit_account: ''
       credit_cost: 0
     secrets:
