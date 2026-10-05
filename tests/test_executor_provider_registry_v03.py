@@ -436,3 +436,32 @@ def test_codex_health_does_not_treat_runtime_401_as_ready(monkeypatch, tmp_path:
     assert result["authorized"] is False
     assert result["routable"] is False
     assert result["healthy"] is False
+
+
+def test_provider_default_workspace_can_follow_node_environment(monkeypatch, tmp_path: Path):
+    import importlib
+    import agentos_node.executor_provider_adapters as adapters
+
+    workspace = tmp_path / "agentmanager"
+    workspace.mkdir()
+    monkeypatch.setenv("AGENTOS_CORE_WORKSPACE", str(workspace))
+    assert adapters._default_core_workspace() == workspace
+
+
+def test_provider_default_relay_root_uses_client_home_off_legacy_host(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    client_home = tmp_path / ".agentos"
+    monkeypatch.setenv("AGENTOS_CLIENT_HOME", str(client_home))
+    monkeypatch.delenv("AGENTOS_RELAY_ROOT", raising=False)
+    monkeypatch.setattr(adapters.Path, "home", classmethod(lambda cls: tmp_path))
+    assert adapters._default_relay_root() == client_home / "runtime" / "antigravity-relay"
+
+
+def test_codex_default_workspace_can_follow_node_environment(monkeypatch, tmp_path: Path):
+    import agentos_node.codex_provider_adapter as codex
+
+    workspace = tmp_path / "agentmanager"
+    workspace.mkdir()
+    monkeypatch.setenv("AGENTOS_CORE_WORKSPACE", str(workspace))
+    assert codex._default_core_workspace() == workspace
