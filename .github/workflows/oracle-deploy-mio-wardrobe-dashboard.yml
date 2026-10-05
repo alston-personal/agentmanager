@@ -5,7 +5,7 @@ on:
     branches: [core/integration]
     paths:
       - 'dashboard/app/api/wardrobe/**'
-      - 'dashboard/app/api/auth/session/route.ts'
+      - 'dashboard/app/api/auth/**'
       - 'dashboard/lib/tryon-jobs.ts'
       - 'dashboard/lib/wardrobe-*.ts'
       - 'dashboard/lib/wardrobe-*.mjs'
@@ -40,6 +40,20 @@ jobs:
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$GITHUB_SHA' && git show '$GITHUB_SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh' > /tmp/deploy-mio-wardrobe-dashboard.sh && chmod 700 /tmp/deploy-mio-wardrobe-dashboard.sh && /tmp/deploy-mio-wardrobe-dashboard.sh '$GITHUB_SHA' '$GITHUB_RUN_ID'"
+
+      - name: Verify OAuth handoff release contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          CALLBACK="$LIVE/app/api/auth/callback/[provider]/route.ts"
+          test -f "$CALLBACK"
+          grep -F "completePwaHandoff(handoffId, token)" "$CALLBACK"
+          grep -F "authHandoff=completed" "$CALLBACK"
+          echo "mio_oauth_direct_handoff_release=PASS"
+          REMOTE
 
       - name: Exercise authenticated live try-on
         shell: bash
