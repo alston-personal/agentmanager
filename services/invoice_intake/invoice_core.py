@@ -325,8 +325,6 @@ class InvoiceStore:
               created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_invoices_created ON invoices(created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_documents_batch ON documents(batch_id);
-            CREATE INDEX IF NOT EXISTS idx_documents_scope_source ON documents(data_scope, source_type);
             """)
             document_columns = {row["name"] for row in db.execute("PRAGMA table_info(documents)")}
             if "batch_id" not in document_columns:
@@ -335,6 +333,8 @@ class InvoiceStore:
                 db.execute("ALTER TABLE documents ADD COLUMN source_type TEXT NOT NULL DEFAULT 'unknown'")
             if "data_scope" not in document_columns:
                 db.execute("ALTER TABLE documents ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_documents_batch ON documents(batch_id)")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_documents_scope_source ON documents(data_scope, source_type)")
 
     def ingest(
         self,
