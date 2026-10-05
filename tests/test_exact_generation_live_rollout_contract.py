@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPAIR = ROOT / "scripts" / "repair_antigravity_relay_user.sh"
 BOOTSTRAP = ROOT / "agentos_node" / "bootstrap_control.py"
+REALM_SERVER = ROOT / "agent_core" / "realm_server.py"
 ACTION_INSTALLER = ROOT / "scripts" / "install_action_relay_user.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "oracle-exact-generation-executor-job-rollout.yml"
 LEGACY_BOOTSTRAP_WORKFLOW = ROOT / ".github" / "workflows" / "oracle-bootstrap-transport-control-plane.yml"
@@ -37,6 +38,10 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertIn('assert vals.get(\'relay_status_antigravity_service\')==\'active\'', workflow)
         self.assertIn('assert vals.get(\'relay_status_action_service\')==\'active\'', workflow)
         self.assertIn('assert vals.get(\'relay_status_stale_processing\')==\'NO\'', workflow)
+
+    def test_relay_stale_processing_survives_runner_window_projection(self):
+        text = _text(REALM_SERVER)
+        self.assertIn("'relay_status_stale_processing=',", text)
 
     def test_transport_repair_restarts_and_requires_active_antigravity_relay(self):
         text = _text(REPAIR)
