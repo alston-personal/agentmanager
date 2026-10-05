@@ -108,6 +108,67 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             self.assertFalse(second["duplicate"])
             self.assertNotEqual(second["invoice_id"], first_id)
 
+    def test_legacy_complete_review_row_becomes_quick_confirm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            image = jpeg_bytes()
+            payload = store.ingest(image, "legacy-review.jpg", "image/jpeg", source_type="upload")
+            invoice_id = payload["invoice_id"]
+            with store.connect() as db:
+                document_id = db.execute(
+                    "SELECT document_id FROM invoices WHERE id=?", (invoice_id,)
+                ).fetchone()["document_id"]
+                db.execute(
+                    """UPDATE invoices SET invoice_number=?,invoice_date=?,vendor_name=?,seller_tax_id=?,
+                       amount_before_tax=?,tax_amount=?,total_amount=?,status=?,confidence_json=?
+                       WHERE id=?""",
+                    (
+                        "AB12345678", "2026-10-05", "好日子食品有限公司", "16908319",
+                        1000, 50, 1050, "needs_review",
+                        '{"invoice_number":0.95,"invoice_date":0.90,"vendor_name":0.78,"seller_tax_id":0.88,"amount_before_tax":0.98,"tax_amount":0.98,"total_amount":0.98}',
+                        invoice_id,
+                    ),
+                )
+                db.execute(
+                    "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                    (
+                        "legacy-extraction", document_id, "legacy",
+                        '{"engine":"legacy","template":{"matched":true,"document_type":"three_part_uniform_invoice","visual_amounts":true}}',
+                        "2026-10-05T00:00:00Z",
+                    ),
+                )
+            changed = store._reclassify_legacy_review_rows()
+            self.assertEqual(changed, 1)
+            self.assertEqual(store.get_invoice(invoice_id)["status"], "quick_confirm")
+
+    def test_legacy_missing_core_field_stays_needs_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            payload = store.ingest(jpeg_bytes(), "legacy-missing.jpg", "image/jpeg", source_type="upload")
+            invoice_id = payload["invoice_id"]
+            with store.connect() as db:
+                document_id = db.execute(
+                    "SELECT document_id FROM invoices WHERE id=?", (invoice_id,)
+                ).fetchone()["document_id"]
+                db.execute(
+                    """UPDATE invoices SET invoice_number=NULL,invoice_date=?,vendor_name=?,seller_tax_id=?,
+                       amount_before_tax=?,tax_amount=?,total_amount=?,status=?,confidence_json=?
+                       WHERE id=?""",
+                    (
+                        "2026-10-05", "好日子食品有限公司", "16908319",
+                        1000, 50, 1050, "needs_review",
+                        '{"invoice_date":0.90,"vendor_name":0.78,"seller_tax_id":0.88,"amount_before_tax":0.98,"tax_amount":0.98,"total_amount":0.98}',
+                        invoice_id,
+                    ),
+                )
+                db.execute(
+                    "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                    ("legacy-extraction-missing", document_id, "legacy", '{"engine":"legacy"}', "2026-10-05T00:00:00Z"),
+                )
+            changed = store._reclassify_legacy_review_rows()
+            self.assertEqual(changed, 0)
+            self.assertEqual(store.get_invoice(invoice_id)["status"], "needs_review")
+
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
