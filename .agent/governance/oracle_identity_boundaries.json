@@ -1,0 +1,59 @@
+{
+  "schema": "agentos.oracle-identity-boundaries/v1",
+  "policy_version": "2026.10.05.1",
+  "shared_group": "agentos",
+  "roots": {
+    "source_cache": {
+      "path": "/home/ubuntu/agentmanager",
+      "classification": "ubuntu-source-cache-only",
+      "production_runtime_allowed": false
+    },
+    "shared_data": {
+      "path": "/home/ubuntu/agent-data",
+      "classification": "transitional-shared-runtime",
+      "required_group": "agentos",
+      "implicit_supplementary_group_for_mutation_allowed": false,
+      "target_state": "dedicated-service-identity-or-bounded-group-boundary"
+    },
+    "node_home": {
+      "path": "/home/agentos-node",
+      "classification": "dedicated-node-identity"
+    }
+  },
+  "ubuntu_required_path_hints": [
+    "browser",
+    "chatgpt",
+    "gemini",
+    "threads",
+    "gui",
+    "claude",
+    "codex"
+  ],
+  "bounded_group_markers": [
+    "/usr/bin/sg agentos -c",
+    "chgrp agentos",
+    "SHARED_GROUP = \"agentos\"",
+    "group=agentos"
+  ],
+  "mutation_markers": [
+    "write_text(",
+    ".replace(",
+    ".unlink(",
+    "mkdir ",
+    "install ",
+    "cp ",
+    "mv ",
+    "rm ",
+    "rsync ",
+    "chmod ",
+    "chown ",
+    "chgrp "
+  ],
+  "review_roots": [
+    ".github/workflows",
+    ".agent/scripts",
+    "agent_core",
+    "agentos_node",
+    "scripts"
+  ]
+}
