@@ -1,0 +1,24 @@
+name: Mutable Core Checkout Guard
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/check_no_mutable_core_checkout_mutation.py'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/check_no_mutable_core_checkout_mutation.py'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject workflow mutations of mutable Core checkout
+        run: python3 scripts/check_no_mutable_core_checkout_mutation.py
