@@ -108,11 +108,30 @@ def main() -> int:
     seen=set(str(x) for x in state.get("seen_message_ids") or [])
     try:
         with sync_playwright() as p:
-            launch_args={"headless":not args.headed,"viewport":{"width":1280,"height":900}}
-            if args.channel:
-                launch_args["channel"]=args.channel
-            context=p.chromium.launch_persistent_context(str(PROFILE),**launch_args)
-            page=context.pages[0] if context.pages else context.new_page()
+            browser=None
+            context=None
+            page=None
+            owns_context=False
+            transport="persistent_profile"
+            cdp_url=os.environ.get("AGENTOS_WEB_DM_CDP_URL") or ("http://127.0.0.1:9222" if sys.platform!="darwin" else "")
+            if cdp_url:
+                try:
+                    browser=p.chromium.connect_over_cdp(cdp_url,timeout=5000)
+                    if browser.contexts:
+                        context=browser.contexts[0]
+                        page=context.new_page()
+                        transport="gui_worker_cdp"
+                except Exception:
+                    browser=None
+                    context=None
+                    page=None
+            if page is None:
+                launch_args={"headless":not args.headed,"viewport":{"width":1280,"height":900}}
+                if args.channel:
+                    launch_args["channel"]=args.channel
+                context=p.chromium.launch_persistent_context(str(PROFILE),**launch_args)
+                page=context.pages[0] if context.pages else context.new_page()
+                owns_context=True
             page.goto(INBOX_URL,wait_until="domcontentloaded",timeout=30000)
             page.wait_for_timeout(1500)
             url=page.url
@@ -127,13 +146,26 @@ def main() -> int:
                             break
                     if "login" in url or "accountscenter" in url:
                         print("threads_web_dm_bridge=LOGIN_REQUIRED")
-                        context.close(); return 4
+                        if owns_context:
+                            context.close()
+                        else:
+                            page.close()
+                        return 4
                 else:
                     print("threads_web_dm_bridge=LOGIN_REQUIRED")
-                    context.close(); return 4
+                    if owns_context:
+                        context.close()
+                    else:
+                        page.close()
+                    return 4
             if args.login_only:
                 print("threads_web_dm_bridge=SESSION_READY")
-                context.close(); return 0
+                print("threads_web_dm_transport="+transport)
+                if owns_context:
+                    context.close()
+                else:
+                    page.close()
+                return 0
 
             events=extract_text(page)
             fresh=dedupe_new_events(events,seen)
@@ -152,13 +184,17 @@ def main() -> int:
                 "last_scan_new_count":len(fresh),
             }
             save_state(state)
-            context.close()
+            if owns_context:
+                context.close()
+            else:
+                page.close()
     except Exception as exc:
         print("threads_web_dm_bridge=ERROR")
         print("threads_web_dm_error_type="+type(exc).__name__)
         return 6
 
     print("threads_web_dm_bridge=PASS")
+    print("threads_web_dm_transport="+transport)
     print("threads_web_dm_new_events="+str(len(fresh)))
     print("threads_web_dm_inbound_events="+str(sum(1 for x in fresh if x.direction=="inbound")))
     return 0
