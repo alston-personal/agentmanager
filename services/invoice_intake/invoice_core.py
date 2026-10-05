@@ -111,6 +111,42 @@ def money_values(text: str) -> list[int]:
     return out
 
 
+def extract_line_items_from_text(text: str) -> list[dict[str, Any]]:
+    """Best-effort line item candidates from OCR text; never invent values."""
+    items: list[dict[str, Any]] = []
+    blocked = ("發票", "銷售額", "營業稅", "總計", "合計", "統一編號", "日期", "買受人", "銷售人")
+    for line in (text or "").splitlines():
+        clean = re.sub(r"\s+", " ", line).strip()
+        if not clean or any(token in clean for token in blocked):
+            continue
+        nums = []
+        for raw in re.findall(r"(?<!\d)\d[\d,.]*(?!\d)", clean):
+            digits = re.sub(r"[^0-9]", "", raw)
+            value = int(digits) if digits else None
+            if value is not None:
+                nums.append((raw, value))
+        if len(nums) < 3:
+            continue
+        quantity, unit_price, amount = [x[1] for x in nums[-3:]]
+        if quantity <= 0 or unit_price < 0 or amount <= 0:
+            continue
+        tolerance = max(1, round(amount * 0.02))
+        if abs(quantity * unit_price - amount) > tolerance:
+            continue
+        first_numeric = clean.find(nums[-3][0])
+        description = clean[:first_numeric].strip(" :-—")
+        if not description or len(description) > 80:
+            continue
+        items.append({
+            "description": description,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "amount": amount,
+            "confidence": 0.72,
+        })
+    return items
+
+
 def choose_amounts(texts: list[str]) -> tuple[int | None, int | None, int | None, float]:
     best: tuple[int | None, int | None, int | None, float] = (None, None, None, 0.0)
     for text in texts:
@@ -213,11 +249,13 @@ def extract_legacy_invoice(image_bytes: bytes) -> Extraction:
         "total_amount": None,
     }
     confidence = {k: 0.0 for k in fields}
+    local_line_items = extract_line_items_from_text(rapid.get("raw_text") or "")
     raw: dict[str, Any] = {
         "engine": "rapidocr-template-v1+tesseract-fallback",
         "template": rapid,
         "fallback_used": [],
         "image_size": list(image.size),
+        "line_items": local_line_items,
     }
 
     if rapid.get("matched"):
@@ -456,6 +494,20 @@ class InvoiceStore:
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS invoice_line_items(
+              id TEXT PRIMARY KEY,
+              invoice_id TEXT NOT NULL REFERENCES invoices(id),
+              line_no INTEGER NOT NULL,
+              description TEXT,
+              quantity TEXT,
+              unit_price INTEGER,
+              amount INTEGER,
+              source TEXT NOT NULL,
+              confidence_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(invoice_id,line_no)
+            );
             CREATE TABLE IF NOT EXISTS reviews(
               id TEXT PRIMARY KEY,
               invoice_id TEXT NOT NULL REFERENCES invoices(id),
@@ -465,7 +517,11 @@ class InvoiceStore:
               created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_invoices_created ON invoices(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_invoice_line_items_invoice ON invoice_line_items(invoice_id,line_no);
             """)
+            invoice_columns = {row["name"] for row in db.execute("PRAGMA table_info(invoices)")}
+            if "deleted_at" not in invoice_columns:
+                db.execute("ALTER TABLE invoices ADD COLUMN deleted_at TEXT")
             document_columns = {row["name"] for row in db.execute("PRAGMA table_info(documents)")}
             if "batch_id" not in document_columns:
                 db.execute("ALTER TABLE documents ADD COLUMN batch_id TEXT REFERENCES intake_batches(id)")
@@ -583,7 +639,7 @@ class InvoiceStore:
                 row = db.execute("""
                   SELECT i.*, d.stored_path, d.sha256, d.original_filename
                   FROM invoices i JOIN documents d ON d.id=i.document_id
-                  WHERE i.id=?
+                  WHERE i.id=? AND i.deleted_at IS NULL
                 """, (invoice_id,)).fetchone()
                 if not row:
                     raise KeyError(invoice_id)
@@ -610,6 +666,26 @@ class InvoiceStore:
                             updated,
                         ),
                     )
+                    db.execute("DELETE FROM invoice_line_items WHERE invoice_id=?", (invoice_id,))
+                    vision_payload = ((extraction.raw.get("vision") or {}).get("payload") or {})
+                    line_items = vision_payload.get("line_items") or extraction.raw.get("line_items") or []
+                    for idx, item in enumerate(line_items, start=1):
+                        db.execute(
+                            """INSERT INTO invoice_line_items(
+                                 id,invoice_id,line_no,description,quantity,unit_price,amount,
+                                 source,confidence_json,created_at,updated_at
+                               ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                            (
+                                str(uuid.uuid4()), invoice_id, idx,
+                                item.get("description"),
+                                None if item.get("quantity") is None else str(item.get("quantity")),
+                                item.get("unit_price"),
+                                item.get("amount"),
+                                "whole_image_vision" if vision_payload else "ocr",
+                                "{}",
+                                updated, updated,
+                            ),
+                        )
                     db.execute("""
                       UPDATE invoices SET
                         invoice_number=?, invoice_date=?, vendor_name=?, seller_tax_id=?,
@@ -656,7 +732,7 @@ class InvoiceStore:
                      (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
                       ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine
               FROM invoices i JOIN documents d ON d.id=i.document_id
-              WHERE i.id=?
+              WHERE i.id=? AND i.deleted_at IS NULL
             """, (invoice_id,)).fetchone()
             if not row:
                 raise KeyError(invoice_id)
@@ -666,6 +742,12 @@ class InvoiceStore:
                 (row['document_id'],),
             ).fetchone()
             payload['recognition'] = json.loads(extraction['payload_json']) if extraction else None
+            items = db.execute(
+                """SELECT line_no,description,quantity,unit_price,amount,source,confidence_json
+                   FROM invoice_line_items WHERE invoice_id=? ORDER BY line_no""",
+                (invoice_id,),
+            ).fetchall()
+            payload['line_items'] = [dict(item) for item in items]
             return payload
 
     def get_original(self, invoice_id: str) -> dict[str, Any]:
@@ -729,9 +811,45 @@ class InvoiceStore:
                      (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
                       ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine
               FROM invoices i JOIN documents d ON d.id=i.document_id
+              WHERE i.deleted_at IS NULL
               ORDER BY i.created_at DESC LIMIT ?
             """, (limit,)).fetchall()
             return [self._row_payload(row) for row in rows]
+
+    def soft_delete(self, invoice_id: str, actor: str) -> dict[str, Any]:
+        now = utcnow()
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT id,deleted_at FROM invoices WHERE id=?",
+                (invoice_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+            if row["deleted_at"] is None:
+                db.execute(
+                    "UPDATE invoices SET deleted_at=?, updated_at=? WHERE id=?",
+                    (now, now, invoice_id),
+                )
+                db.execute(
+                    "INSERT INTO reviews VALUES(?,?,?,?,?,?)",
+                    (
+                        str(uuid.uuid4()), invoice_id, actor,
+                        json.dumps({"deleted_at": None}, ensure_ascii=False),
+                        json.dumps({"deleted_at": now}, ensure_ascii=False),
+                        now,
+                    ),
+                )
+        return {"ok": True, "invoice_id": invoice_id, "deleted_at": now}
+
+    def soft_delete_many(self, invoice_ids: list[str], actor: str) -> dict[str, Any]:
+        deleted = []
+        for invoice_id in invoice_ids:
+            try:
+                self.soft_delete(invoice_id, actor)
+                deleted.append(invoice_id)
+            except KeyError:
+                continue
+        return {"ok": True, "deleted": deleted, "count": len(deleted)}
 
     def review(self, invoice_id: str, actor: str, fields: dict[str, Any]) -> dict[str, Any]:
         allowed = {"invoice_number", "invoice_date", "vendor_name", "seller_tax_id", "amount_before_tax", "tax_amount", "total_amount"}

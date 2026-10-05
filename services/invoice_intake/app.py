@@ -13,7 +13,7 @@ from services.invoice_intake.invoice_core import InvoiceStore
 from services.invoice_intake.vision_ocr import configuration
 from capabilities.financial_intake import WintonExcelAdapter, canonical_from_invoice_payload
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 DATA_ROOT = Path(os.environ.get("INVOICE_DATA_ROOT", "/home/ubuntu/agent-data/invoice-intake"))
 MAX_UPLOAD = 12 * 1024 * 1024
 DASHBOARD_SESSION = os.environ.get("DASHBOARD_SESSION_URL", "http://127.0.0.1:3000/dashboard/api/auth/session")
@@ -46,6 +46,10 @@ class ReviewBody(BaseModel):
 
 
 class WintonBatchBody(BaseModel):
+    invoice_ids: list[str]
+
+
+class DeleteBatchBody(BaseModel):
     invoice_ids: list[str]
 
 
@@ -132,6 +136,28 @@ def get_invoice(invoice_id: str, request: Request):
 def recent(request: Request, limit: int = 30):
     require_user(request)
     return {"ok": True, "items": store.recent(limit)}
+
+
+@app.delete("/v1/invoices/{invoice_id}")
+def delete_invoice(invoice_id: str, request: Request):
+    session = require_user(request)
+    actor = str(session.get("username") or session.get("subject") or "milkcat-user")
+    try:
+        return store.soft_delete(invoice_id, actor)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="invoice_not_found")
+
+
+@app.post("/v1/invoices/delete")
+def delete_invoices(body: DeleteBatchBody, request: Request):
+    session = require_user(request)
+    actor = str(session.get("username") or session.get("subject") or "milkcat-user")
+    ids = list(dict.fromkeys(str(x).strip() for x in body.invoice_ids if str(x).strip()))
+    if not ids:
+        raise HTTPException(status_code=422, detail="invoice_ids_required")
+    if len(ids) > 500:
+        raise HTTPException(status_code=422, detail="too_many_invoices")
+    return store.soft_delete_many(ids, actor)
 
 
 @app.get("/v1/invoices/{invoice_id}/original")
