@@ -254,8 +254,9 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
 
 
 class InvoiceStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, data_scope: str = "production"):
         self.root = root
+        self.data_scope = data_scope
         self.originals = root / "originals"
         self.db_path = root / "invoice-intake.sqlite3"
         self.processing_lock = threading.Lock()
@@ -272,6 +273,15 @@ class InvoiceStore:
     def _init_db(self) -> None:
         with self.connect() as db:
             db.executescript("""
+            CREATE TABLE IF NOT EXISTS intake_batches(
+              id TEXT PRIMARY KEY,
+              source_type TEXT NOT NULL,
+              data_scope TEXT NOT NULL,
+              status TEXT NOT NULL,
+              item_count INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS documents(
               id TEXT PRIMARY KEY,
               sha256 TEXT NOT NULL UNIQUE,
@@ -279,6 +289,9 @@ class InvoiceStore:
               mime_type TEXT NOT NULL,
               size_bytes INTEGER NOT NULL,
               stored_path TEXT NOT NULL,
+              batch_id TEXT REFERENCES intake_batches(id),
+              source_type TEXT NOT NULL DEFAULT 'unknown',
+              data_scope TEXT NOT NULL DEFAULT 'production',
               created_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS extractions(
@@ -313,13 +326,32 @@ class InvoiceStore:
             );
             CREATE INDEX IF NOT EXISTS idx_invoices_created ON invoices(created_at DESC);
             """)
+            document_columns = {row["name"] for row in db.execute("PRAGMA table_info(documents)")}
+            if "batch_id" not in document_columns:
+                db.execute("ALTER TABLE documents ADD COLUMN batch_id TEXT REFERENCES intake_batches(id)")
+            if "source_type" not in document_columns:
+                db.execute("ALTER TABLE documents ADD COLUMN source_type TEXT NOT NULL DEFAULT 'unknown'")
+            if "data_scope" not in document_columns:
+                db.execute("ALTER TABLE documents ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_documents_batch ON documents(batch_id)")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_documents_scope_source ON documents(data_scope, source_type)")
 
-    def ingest(self, image_bytes: bytes, filename: str, mime_type: str) -> dict[str, Any]:
+    def ingest(
+        self,
+        image_bytes: bytes,
+        filename: str,
+        mime_type: str,
+        *,
+        source_type: str = "unknown",
+        batch_id: str | None = None,
+    ) -> dict[str, Any]:
         """Persist immutable original and provisional DB row quickly.
 
         OCR intentionally runs later so continuous scanning is not blocked
         by Tesseract latency.
         """
+        source_type = source_type if source_type in {"camera", "upload", "api", "unknown"} else "unknown"
+        batch_id = batch_id or str(uuid.uuid4())
         sha = hashlib.sha256(image_bytes).hexdigest()
         with self.connect() as db:
             found = db.execute("""
@@ -350,8 +382,24 @@ class InvoiceStore:
 
         with self.connect() as db:
             db.execute(
-                "INSERT INTO documents VALUES(?,?,?,?,?,?,?)",
-                (document_id, sha, filename, mime_type, len(image_bytes), str(target), created),
+                """INSERT OR IGNORE INTO intake_batches(
+                     id,source_type,data_scope,status,item_count,created_at,updated_at
+                   ) VALUES(?,?,?,?,?,?,?)""",
+                (batch_id, source_type, self.data_scope, "open", 0, created, created),
+            )
+            db.execute(
+                """INSERT INTO documents(
+                     id,sha256,original_filename,mime_type,size_bytes,stored_path,
+                     batch_id,source_type,data_scope,created_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    document_id, sha, filename, mime_type, len(image_bytes), str(target),
+                    batch_id, source_type, self.data_scope, created,
+                ),
+            )
+            db.execute(
+                "UPDATE intake_batches SET item_count=item_count+1, updated_at=? WHERE id=?",
+                (created, batch_id),
             )
             db.execute("""
               INSERT INTO invoices(
@@ -383,6 +431,9 @@ class InvoiceStore:
             "engine": "tesseract-layout-v2-async",
             "sha256": sha,
             "original_filename": filename,
+            "batch_id": batch_id,
+            "source_type": source_type,
+            "data_scope": self.data_scope,
         }
 
     def process(self, invoice_id: str) -> dict[str, Any]:
@@ -449,7 +500,7 @@ class InvoiceStore:
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
         with self.connect() as db:
             row = db.execute("""
-              SELECT i.*, d.sha256, d.original_filename,
+              SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope,
                      (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
                       ORDER BY e.created_at DESC LIMIT 1) AS extraction_engine
               FROM invoices i JOIN documents d ON d.id=i.document_id
@@ -507,13 +558,16 @@ class InvoiceStore:
             "engine": row["extraction_engine"] if "extraction_engine" in row.keys() and row["extraction_engine"] else None,
             "sha256": row["sha256"] if "sha256" in row.keys() else None,
             "original_filename": row["original_filename"] if "original_filename" in row.keys() else None,
+            "batch_id": row["batch_id"] if "batch_id" in row.keys() else None,
+            "source_type": row["source_type"] if "source_type" in row.keys() else None,
+            "data_scope": row["data_scope"] if "data_scope" in row.keys() else None,
         }
 
     def recent(self, limit: int = 30) -> list[dict[str, Any]]:
         limit = max(1, min(100, limit))
         with self.connect() as db:
             rows = db.execute("""
-              SELECT i.*, d.sha256, d.original_filename,
+              SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope,
                      (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
                       ORDER BY e.created_at DESC LIMIT 1) AS extraction_engine
               FROM invoices i JOIN documents d ON d.id=i.document_id

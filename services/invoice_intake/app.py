@@ -5,19 +5,20 @@ import os
 import urllib.request
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from services.invoice_intake.invoice_core import InvoiceStore
 from capabilities.financial_intake import WintonExcelAdapter, canonical_from_invoice_payload
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 DATA_ROOT = Path(os.environ.get("INVOICE_DATA_ROOT", "/home/ubuntu/agent-data/invoice-intake"))
 MAX_UPLOAD = 12 * 1024 * 1024
 DASHBOARD_SESSION = os.environ.get("DASHBOARD_SESSION_URL", "http://127.0.0.1:3000/dashboard/api/auth/session")
 
-store = InvoiceStore(DATA_ROOT)
+DATA_SCOPE = os.environ.get("INVOICE_DATA_SCOPE", "production")
+store = InvoiceStore(DATA_ROOT, data_scope=DATA_SCOPE)
 app = FastAPI(title="Milkcat Invoice Intake", version=VERSION)
 
 
@@ -65,6 +66,9 @@ def status(request: Request):
         "continuous_scan": True,
         "immutable_originals": True,
         "database": "sqlite",
+        "data_scope": DATA_SCOPE,
+        "batch_tracking": True,
+        "source_tracking": True,
     }
 
 
@@ -73,6 +77,8 @@ async def ingest(
     request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    source_type: str = Form("unknown"),
+    batch_id: str | None = Form(None),
 ):
     require_user(request)
     mime = (file.content_type or "").lower()
@@ -84,7 +90,13 @@ async def ingest(
     if not data:
         raise HTTPException(status_code=400, detail="empty_image")
     try:
-        payload = store.ingest(data, file.filename or "camera.jpg", mime)
+        payload = store.ingest(
+            data,
+            file.filename or "camera.jpg",
+            mime,
+            source_type=source_type,
+            batch_id=batch_id,
+        )
         if not payload.get("duplicate") and payload.get("status") == "processing":
             background_tasks.add_task(store.process, payload["invoice_id"])
         return payload
