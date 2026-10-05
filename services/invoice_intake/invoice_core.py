@@ -569,15 +569,15 @@ class InvoiceStore:
                         (restored_at, found["id"]),
                     )
                     db.execute(
-                        """UPDATE documents SET batch_id=?, source_type=?, data_scope=?
-                           WHERE id=?""",
-                        (batch_id, source_type, self.data_scope, found["matched_document_id"]),
-                    )
-                    db.execute(
                         """INSERT OR IGNORE INTO intake_batches(
                              id,source_type,data_scope,status,item_count,created_at,updated_at
                            ) VALUES(?,?,?,?,?,?,?)""",
                         (batch_id, source_type, self.data_scope, "open", 0, restored_at, restored_at),
+                    )
+                    db.execute(
+                        """UPDATE documents SET batch_id=?, source_type=?, data_scope=?
+                           WHERE id=?""",
+                        (batch_id, source_type, self.data_scope, found["matched_document_id"]),
                     )
                     db.execute(
                         "UPDATE intake_batches SET item_count=item_count+1, updated_at=? WHERE id=?",
