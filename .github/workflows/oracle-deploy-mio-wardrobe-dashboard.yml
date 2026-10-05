@@ -55,7 +55,7 @@ jobs:
           echo "mio_oauth_direct_handoff_release=PASS"
           REMOTE
 
-      - name: Exercise authenticated live try-on
+      - name: Exercise ordinary-user authenticated live try-on
         shell: bash
         run: |
           set -euo pipefail
@@ -63,8 +63,7 @@ jobs:
           set -euo pipefail
           LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
           CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
-          ADMIN=/home/ubuntu/.config/milkcat/admin-identities
-          test -d "$LIVE" && test -f "$CONFIG" && test -f "$ADMIN"
+          test -d "$LIVE" && test -f "$CONFIG"
           test -d "$LIVE/node_modules/jsonwebtoken"
 
           JWT_SECRET_VALUE="$(python3 - "$CONFIG" <<'PY'
@@ -78,21 +77,21 @@ jobs:
                   break
           PY
           )"
-          ADMIN_KEY="$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN" | head -n1 | tr -d '\r')"
-          test -n "$JWT_SECRET_VALUE" && test -n "$ADMIN_KEY"
+          test -n "$JWT_SECRET_VALUE"
 
-          export JWT_SECRET_VALUE ADMIN_KEY
+          export JWT_SECRET_VALUE
           TOKEN="$(cd "$LIVE" && node - <<'NODE'
           const jwt=require('jsonwebtoken');
-          const key=process.env.ADMIN_KEY||'', secret=process.env.JWT_SECRET_VALUE||'';
-          let provider='',subject='',username='e2e-admin';
-          const marker=':username:';
-          if(key.includes(marker)){ const i=key.indexOf(marker); provider=key.slice(0,i); username=key.slice(i+marker.length); subject='e2e-probe-subject'; }
-          else { const i=key.indexOf(':'); if(i<1) process.exit(3); provider=key.slice(0,i); subject=key.slice(i+1); }
-          process.stdout.write(jwt.sign({username,provider,subject,exp:Math.floor(Date.now()/1000)+900},secret));
+          const secret=process.env.JWT_SECRET_VALUE||'';
+          process.stdout.write(jwt.sign({
+            username:'wardrobe-e2e-user',
+            provider:'e2e',
+            subject:'ordinary-user',
+            exp:Math.floor(Date.now()/1000)+900
+          },secret));
           NODE
           )"
-          unset JWT_SECRET_VALUE ADMIN_KEY
+          unset JWT_SECRET_VALUE
 
           BASE=https://studio.milkcat.org
           BODY=/tmp/mio-live-create-$$.json
@@ -133,7 +132,7 @@ jobs:
               test "$bytes" -gt 1000
               file "$IMG" | grep -Ei 'image|webp|png|jpeg'
               echo "mio_live_asset_bytes=$bytes"
-              echo "mio_production_tryon=PASS"
+              echo "mio_production_tryon_user_auth=PASS"
               OK=1
               break
             fi
