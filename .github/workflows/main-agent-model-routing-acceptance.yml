@@ -51,6 +51,26 @@ jobs:
           echo "::add-mask::$token"
           printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
 
+      - name: Ensure exact Action Runtime generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=720 \
+            bash scripts/agentos_dispatch.sh agentos.runtime repair "$GITHUB_SHA" \
+            | tee "$RUNNER_TEMP/routing-runtime-rollout.txt"
+          python3 - "$RUNNER_TEMP/routing-runtime-rollout.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs, 'missing runtime repair receipt'
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('schema')=='agentos.bootstrap-receipt/v1', receipt
+          assert receipt.get('ok') is True, receipt
+          assert receipt.get('source_commit')==sys.argv[2], receipt
+          assert receipt.get('failure_class') in (None,''), receipt
+          print('model_routing_exact_runtime=PASS')
+          print('model_routing_runtime_source_commit='+sys.argv[2])
+          PY
+
       - name: Refresh stable executor health snapshot
         id: health_submit
         shell: bash
@@ -249,6 +269,7 @@ jobs:
         with:
           name: main-agent-model-routing-${{ github.run_id }}
           path: |
+            ${{ runner.temp }}/routing-runtime-rollout.txt
             ${{ runner.temp }}/routing-health-submit.txt
             ${{ runner.temp }}/routing-health-inspect.txt
             ${{ runner.temp }}/routing-health-terminal.json
