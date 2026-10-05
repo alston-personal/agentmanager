@@ -55,5 +55,32 @@
     "agent_core",
     "agentos_node",
     "scripts"
+  ],
+  "confirmed_migrations": {
+    ".agent/scripts/agentos-core-supervisor.service": {
+      "severity": "P0",
+      "reason": "production service runs directly from source-cache-only /home/ubuntu/agentmanager while mutating shared employee runtime",
+      "target": "immutable release runtime under declared core release controller"
+    },
+    ".agent/scripts/agentos-employee-wake-node.service": {
+      "severity": "P0",
+      "reason": "production wake daemon runs from mutable source checkout and reads checkout-local .env",
+      "target": "immutable node runtime plus external configuration"
+    },
+    ".agent/scripts/agentos-employee-worker-host.service": {
+      "severity": "P1",
+      "reason": "group boundary is explicit and safe, but code still executes from mutable source checkout",
+      "target": "immutable employee runtime release"
+    }
+  },
+  "known_good_boundaries": {
+    "scripts/install_realm_fabric_user.sh": "explicit sg agentos boundary for shared Realm state",
+    "scripts/install_action_relay_user.sh": "explicit sg agentos boundary for shared Action Relay spool",
+    "scripts/install_control_inbox_bridge_user.sh": "materializes exact Realm runtime instead of executing bridge from shared checkout"
+  },
+  "audit_excludes": [
+    "scripts/audit_oracle_identity_boundaries.py",
+    "tests/**",
+    ".agentos/evidence/**"
   ]
 }
