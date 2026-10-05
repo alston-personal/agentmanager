@@ -16,10 +16,10 @@ jobs:
   inspect:
     if: github.actor == 'alstonhuang'
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 4
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
-      - name: Queue desktop session inspect and collect receipt
+      - name: Queue desktop session inspect or governed media-provider probe
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
@@ -27,28 +27,141 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json,time
+          import copy,json,time
           from pathlib import Path
+          from urllib.parse import urlparse
           from agent_core.realm_fabric import RealmFabricStore
+
           cmd=json.load(open('.agentos/commands/realm-desktop-inspect.json',encoding='utf-8'))
           assert cmd.get('schema') == 'agentos.realm-command/v0.1', cmd
           assert cmd.get('action') == 'realm.desktop.inspect', cmd
           node_id=str(cmd.get('node_id') or '')
           assert node_id == 'vopc5750', node_id
+          mode=str(cmd.get('mode') or 'session-inspect')
+
+          fabric=RealmFabricStore()
           task_id='desktop-inspect-'+node_id+'-'+str(int(time.time()))
-          task={'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'desktop.session.inspect','cognition_ids_used':[]}
-          RealmFabricStore().queue_task(node_id,task)
-          deadline=time.time()+45
+
+          if mode == 'google-media-provider-probe':
+              targets=cmd.get('probe_targets') or []
+              allow={
+                  'google-flow':'https://flow.google.com/',
+                  'google-vids':'https://vids.google.com/',
+              }
+              assert isinstance(targets,list) and targets, targets
+              seen=set()
+              steps=[]
+              for raw in targets:
+                  provider_id=str(raw.get('id') or '')
+                  url=str(raw.get('url') or '')
+                  assert provider_id in allow, provider_id
+                  assert url == allow[provider_id], (provider_id,url)
+                  parsed=urlparse(url)
+                  assert parsed.scheme == 'https' and parsed.hostname in {'flow.google.com','vids.google.com'}
+                  assert provider_id not in seen
+                  seen.add(provider_id)
+                  steps.extend([
+                      {'action':'desktop.open_url','url':url},
+                      {'action':'desktop.wait','seconds':7},
+                      {'action':'desktop.windows.inspect'},
+                      {'action':'desktop.screenshot','quality':30},
+                  ])
+              assert seen == set(allow), seen
+              task={
+                  'schema':'agentos.node-task/v0.1',
+                  'task_id':task_id,
+                  'action':'desktop.plan.execute',
+                  'plan':{
+                      'schema':'agentos.desktop-plan/v0.1',
+                      'stop_on_error':True,
+                      'experience_ids':[
+                          'capability://media.video.generate.google-flow',
+                          'capability://media.video.compose.google-vids',
+                      ],
+                      'steps':steps,
+                  },
+                  'cognition_ids_used':[],
+              }
+          else:
+              assert mode == 'session-inspect', mode
+              task={
+                  'schema':'agentos.node-task/v0.1',
+                  'task_id':task_id,
+                  'action':'desktop.session.inspect',
+                  'cognition_ids_used':[],
+              }
+
+          fabric.queue_task(node_id,task)
+          deadline=time.time()+(120 if mode == 'google-media-provider-probe' else 45)
+          receipt=None
           while time.time()<deadline:
-              r=RealmFabricStore().get_receipt(task_id)
-              if r:
-                  Path('/tmp/realm-desktop-inspect-result.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n',encoding='utf-8')
-                  assert r.get('ok') is True, r
-                  print('desktop_session_inspect=PASS')
-                  print(json.dumps(r,sort_keys=True))
-                  raise SystemExit(0)
+              receipt=fabric.get_receipt(task_id)
+              if receipt:
+                  break
               time.sleep(2)
-          raise TimeoutError(task_id)
+          if receipt is None:
+              raise TimeoutError(task_id)
+          assert receipt.get('ok') is True, receipt
+
+          if mode == 'google-media-provider-probe':
+              assert receipt.get('plan_ok') is True, receipt
+              results=receipt.get('results') or []
+              providers=[]
+              targets=cmd['probe_targets']
+              for index,target in enumerate(targets):
+                  base=index*4
+                  inspect=(results[base+2].get('result') or {}) if len(results)>base+2 else {}
+                  shot=(results[base+3].get('result') or {}) if len(results)>base+3 else {}
+                  windows=inspect.get('windows') or []
+                  titles=[str(w.get('title') or '') for w in windows if str(w.get('title') or '').strip()]
+                  title_blob='\n'.join(titles).lower()
+                  login_terms=('sign in','google accounts','登入','帳戶登入')
+                  if any(term in title_blob for term in login_terms):
+                      status='AUTH_REQUIRED'
+                  elif target['id']=='google-flow' and 'flow' in title_blob:
+                      status='READY'
+                  elif target['id']=='google-vids' and ('google vids' in title_blob or 'vids' in title_blob):
+                      status='READY'
+                  else:
+                      status='UNKNOWN'
+                  safe_shot={k:v for k,v in shot.items() if k!='image_base64'}
+                  providers.append({
+                      'id':target['id'],
+                      'url':target['url'],
+                      'status':status,
+                      'window_titles':titles[:25],
+                      'processes':sorted({str(w.get('process_name') or '') for w in windows if w.get('process_name')}),
+                      'screenshot':safe_shot,
+                  })
+              evidence={
+                  'schema':'agentos.google-media-provider-probe/v1',
+                  'node_id':node_id,
+                  'task_id':task_id,
+                  'mode':mode,
+                  'writes_performed':False,
+                  'generation_attempted':False,
+                  'login_credentials_captured':False,
+                  'anti_bot_bypass_attempted':False,
+                  'providers':providers,
+                  'receipt_summary':{
+                      'ok':receipt.get('ok'),
+                      'plan_ok':receipt.get('plan_ok'),
+                      'elapsed_ms':receipt.get('elapsed_ms'),
+                      'steps_completed':receipt.get('steps_completed'),
+                      'experience_ids_used':receipt.get('experience_ids_used') or [],
+                  },
+              }
+              out=Path('/tmp/google-media-provider-probe-result.json')
+              out.write_text(json.dumps(evidence,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+              print('google_media_provider_probe=PASS')
+              for item in providers:
+                  print(item['id']+'='+item['status'])
+          else:
+              Path('/tmp/realm-desktop-inspect-result.json').write_text(
+                  json.dumps(receipt,indent=2,sort_keys=True)+'\n',encoding='utf-8'
+              )
+              print('desktop_session_inspect=PASS')
+              print(json.dumps(receipt,sort_keys=True))
           PY
 
       - name: Publish non-sensitive session evidence
@@ -56,13 +169,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f /tmp/realm-desktop-inspect-result.json || exit 0
           mkdir -p .agentos/evidence
-          cp /tmp/realm-desktop-inspect-result.json .agentos/evidence/realm-desktop-inspect-current.json
+          SRC=
+          DST=
+          MSG=
+          if [ -s /tmp/google-media-provider-probe-result.json ]; then
+            SRC=/tmp/google-media-provider-probe-result.json
+            DST=.agentos/evidence/google-media-provider-probe-current.json
+            MSG='evidence(media): record Google web provider probe'
+          elif [ -s /tmp/realm-desktop-inspect-result.json ]; then
+            SRC=/tmp/realm-desktop-inspect-result.json
+            DST=.agentos/evidence/realm-desktop-inspect-current.json
+            MSG='evidence(agentos): record desktop session inspection'
+          else
+            exit 0
+          fi
+          cp "$SRC" "$DST"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/realm-desktop-inspect-current.json
+          git add "$DST"
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): record desktop session inspection'
+          git commit -m "$MSG"
           git pull --rebase origin main
           git push origin HEAD:main
