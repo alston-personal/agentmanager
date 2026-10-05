@@ -115,6 +115,15 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
         if row:
             rows.append(row)
 
+    overrides = policy.get("audit_overrides") or {}
+    for row in rows:
+        item = overrides.get(row["path"])
+        if item:
+            row["risk"] = str(item["risk"])
+            row["classification"] = str(item["classification"])
+            row["review_reason"] = str(item["reason"])
+            row["tags"] = sorted(set([*row.get("tags", []), "reviewed-boundary"]))
+
     confirmed = policy.get("confirmed_migrations") or {}
     for row in rows:
         item = confirmed.get(row["path"])
