@@ -448,6 +448,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'realm_node_role=',
                     'realm_node_capability_count=',
                     'realm_node_desktop_capable=',
+                    'realm_node_runtime_status=',
+                    'realm_node_runtime_source_commit=',
                     'realm_node_inspect=',
                 )
             elif action == bootstrap_control.ACTION_REALM_DESKTOP_PROBE:
