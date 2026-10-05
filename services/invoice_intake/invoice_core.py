@@ -120,8 +120,9 @@ def extract_line_items_from_text(text: str) -> list[dict[str, Any]]:
         if not clean or any(token in clean for token in blocked):
             continue
         nums = []
-        for raw in re.findall(r"(?<!\d)\d[\d,.]*?(?!\d)", clean):
-            value = _amount_token(raw)
+        for raw in re.findall(r"(?<!\d)\d[\d,.]*(?!\d)", clean):
+            digits = re.sub(r"[^0-9]", "", raw)
+            value = int(digits) if digits else None
             if value is not None:
                 nums.append((raw, value))
         if len(nums) < 3:
