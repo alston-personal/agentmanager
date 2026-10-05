@@ -369,9 +369,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", default=str(Path.home() / "agent-data/runtime/antigravity-relay"))
     parser.add_argument("--provider", choices=sorted(SUPPORTED_PROVIDERS), default=None)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--reconcile-only", action="store_true")
     parser.add_argument("--interval", type=float, default=1.0)
     args = parser.parse_args(argv)
     worker = AntigravityRelayWorker(args.root, provider=args.provider)
+    if args.reconcile_only:
+        reconciled = worker.reconcile_stranded_processing(stale_after=600.0)
+        print(json.dumps({
+            "status": "reconciled",
+            "provider": worker.provider,
+            "reconciled": reconciled,
+        }, ensure_ascii=False, sort_keys=True))
+        return 0
     if args.once:
         worker.reconcile_stranded_processing()
         print(json.dumps(worker.process_one() or {"status": "idle", "provider": worker.provider}, ensure_ascii=False, indent=2))
