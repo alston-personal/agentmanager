@@ -7,6 +7,7 @@ import re
 import sqlite3
 import subprocess
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from typing import Any
 from PIL import Image, ImageEnhance, ImageOps
 from services.invoice_intake.template_ocr import extract_template_invoice, valid_tax_id, seller_region_text
 from services.invoice_intake import vision_ocr
+from capabilities.stamp_recognition.runtime import StampStore, detect_stamp_regions, fingerprint_stamp
 
 ESSENTIAL_FIELDS = ("invoice_number", "invoice_date", "amount_before_tax", "total_amount")
 
@@ -228,7 +230,7 @@ class Extraction:
     review_required: bool
 
 
-def extract_legacy_invoice(image_bytes: bytes) -> Extraction:
+def extract_legacy_invoice(image_bytes: bytes, *, stamp_store: StampStore | None = None) -> Extraction:
     """Template-first production extraction with legacy Tesseract fallback.
 
     Known Taiwan invoice/receipt layouts use RapidOCR + semantic validation first.
@@ -263,6 +265,42 @@ def extract_legacy_invoice(image_bytes: bytes) -> Extraction:
             if key in fields and value not in (None, ""):
                 fields[key] = value
                 confidence[key] = float((rapid.get("confidence") or {}).get(key) or 0.0)
+
+    # Match a cropped/normalized stamp before expensive stamp OCR. A text/entity
+    # agreement is never sufficient to claim the same physical stamp.
+    stamp_started = time.perf_counter()
+    stamp_regions = detect_stamp_regions(image_bytes)
+    raw["stamp_recognition"] = {
+        "status": "NO_STAMP_CANDIDATE" if not stamp_regions else "CANDIDATE",
+        "regions": [
+            {"box": list(region.box), "confidence": region.confidence, "color_hint": region.color_hint}
+            for region in stamp_regions
+        ],
+    }
+    if stamp_store is not None and stamp_regions:
+        stamp_fp = fingerprint_stamp(image_bytes, stamp_regions[0])
+        stamp_match = stamp_store.match(stamp_fp)
+        raw["stamp_recognition"].update({
+            "decision": stamp_match.decision,
+            "score": stamp_match.score,
+            "stamp_id": stamp_match.stamp_id,
+            "entity_id": stamp_match.entity_id,
+            "algorithm": stamp_fp.algorithm,
+            "version": stamp_fp.version,
+        })
+        if stamp_match.decision == "same_stamp" and stamp_match.stamp_id:
+            remembered = stamp_store.resolve_verified_attributes(stamp_match.stamp_id)
+            if not fields["vendor_name"] and remembered.get("vendor_name"):
+                fields["vendor_name"] = remembered["vendor_name"]
+                confidence["vendor_name"] = 0.99
+            if not fields["seller_tax_id"] and remembered.get("seller_tax_id"):
+                fields["seller_tax_id"] = remembered["seller_tax_id"]
+                confidence["seller_tax_id"] = 0.99
+            raw["stamp_recognition"]["status"] = "MATCHED_CONFIRMED"
+            raw["stamp_recognition"]["remembered_attributes"] = sorted(
+                key for key in ("vendor_name", "seller_tax_id") if remembered.get(key)
+            )
+    raw["stamp_recognition"]["latency_ms"] = round((time.perf_counter() - stamp_started) * 1000, 1)
 
     # Legacy crops remain as a recovery path only.
     invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
@@ -361,11 +399,14 @@ def extract_legacy_invoice(image_bytes: bytes) -> Extraction:
     if rapid.get("matched") and rapid.get("document_type") == "three_part_uniform_invoice":
         derived_amounts = not bool(rapid.get("visual_amounts"))
 
+    stamp_matched = (raw.get("stamp_recognition") or {}).get("status") == "MATCHED_CONFIRMED"
     raw["field_sources"] = {
         "invoice_number": "template_or_printed",
         "invoice_date": "template_or_handwritten",
-        "vendor_name": "stamp_or_printed" if fields["vendor_name"] else None,
-        "seller_tax_id": "stamp_or_printed" if fields["seller_tax_id"] else None,
+        "vendor_name": ("stamp_registry" if stamp_matched and fields["vendor_name"] else
+                        "stamp_or_printed" if fields["vendor_name"] else None),
+        "seller_tax_id": ("stamp_registry" if stamp_matched and fields["seller_tax_id"] else
+                          "stamp_or_printed" if fields["seller_tax_id"] else None),
         "amount_before_tax": "printed_or_handwritten_amount",
         "tax_amount": "printed_or_handwritten_amount",
         "total_amount": "printed_or_handwritten_amount",
@@ -382,7 +423,7 @@ def extract_legacy_invoice(image_bytes: bytes) -> Extraction:
     return Extraction(fields=fields, confidence=confidence, raw=raw, review_required=review_required)
 
 
-def extract_invoice(image_bytes: bytes) -> Extraction:
+def extract_invoice(image_bytes: bytes, *, stamp_store: StampStore | None = None) -> Extraction:
     """Compare whole-image vision with the existing reader on identical bytes.
 
     off: local OCR; shadow: local fields + comparison; primary: vision fields.
@@ -391,7 +432,7 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
     config = vision_ocr.configuration()
     legacy_error = None
     try:
-        legacy = extract_legacy_invoice(image_bytes)
+        legacy = extract_legacy_invoice(image_bytes, stamp_store=stamp_store)
     except Exception as exc:
         if config['mode'] != 'primary' or config['status'] != 'CONFIGURED':
             raise
@@ -438,6 +479,8 @@ class InvoiceStore:
         self.originals = root / "originals"
         self.db_path = root / "invoice-intake.sqlite3"
         self.processing_lock = threading.Lock()
+        stamp_db = Path(os.environ.get("STAMP_REGISTRY_PATH", str(root / "stamp-recognition.sqlite3")))
+        self.stamp_store = StampStore(stamp_db)
         self.originals.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -684,7 +727,7 @@ class InvoiceStore:
 
             try:
                 image_bytes = image_path.read_bytes()
-                extraction = extract_invoice(image_bytes)
+                extraction = extract_invoice(image_bytes, stamp_store=self.stamp_store)
                 extraction_id = str(uuid.uuid4())
                 updated = utcnow()
                 status = "needs_review" if extraction.review_required else "extracted"
@@ -959,11 +1002,45 @@ class InvoiceStore:
                 "INSERT INTO reviews VALUES(?,?,?,?,?,?)",
                 (str(uuid.uuid4()), invoice_id, actor, json.dumps(before, ensure_ascii=False), json.dumps(dict(after), ensure_ascii=False), now),
             )
-            doc = db.execute("SELECT sha256,original_filename FROM documents WHERE id=?", (after["document_id"],)).fetchone()
+            doc = db.execute("SELECT sha256,original_filename,stored_path FROM documents WHERE id=?", (after["document_id"],)).fetchone()
             merged = dict(after)
             merged["sha256"] = doc["sha256"]
             merged["original_filename"] = doc["original_filename"]
-            return self._row_payload(sqlite3.Row if False else _DictRow(merged))
+
+        # Human review confirms business attributes. For an unknown visual stamp,
+        # enroll the cropped fingerprint as a new physical stamp. A near/uncertain
+        # visual match is deliberately not auto-enrolled as either old or new.
+        try:
+            image_bytes = Path(doc["stored_path"]).read_bytes()
+            regions = detect_stamp_regions(image_bytes)
+            if regions and current.get("vendor_name") and current.get("seller_tax_id"):
+                fp = fingerprint_stamp(image_bytes, regions[0])
+                match = self.stamp_store.match(fp)
+                if match.decision == "unknown_stamp":
+                    self.stamp_store.learn_confirmed(
+                        fp,
+                        entity_id=str(current.get("seller_tax_id")),
+                        canonical_label=str(current.get("vendor_name")),
+                        verified_attributes={
+                            "vendor_name": current.get("vendor_name"),
+                            "seller_tax_id": current.get("seller_tax_id"),
+                        },
+                    )
+                elif match.decision == "same_stamp" and match.stamp_id:
+                    self.stamp_store.learn_confirmed(
+                        fp,
+                        stamp_id=match.stamp_id,
+                        entity_id=match.entity_id,
+                        canonical_label=str(current.get("vendor_name")),
+                        verified_attributes={
+                            "vendor_name": current.get("vendor_name"),
+                            "seller_tax_id": current.get("seller_tax_id"),
+                        },
+                    )
+        except (OSError, ValueError, sqlite3.Error):
+            # Review must remain authoritative even if optional stamp learning fails.
+            pass
+        return self._row_payload(sqlite3.Row if False else _DictRow(merged))
 
 
 class _DictRow(dict):
