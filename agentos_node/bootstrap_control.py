@@ -25,6 +25,7 @@ ACTION_RELAY_RESTART = "agentos.relay.restart"
 ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
 ACTION_REALM_NODE_INSPECT = "agentos.realm_node.inspect"
 ACTION_REALM_DESKTOP_PROBE = "agentos.realm_desktop.probe"
+ACTION_REALM_EXECUTOR_RECONCILE = "agentos.realm_executor.reconcile"
 ACTION_GOOGLE_FLOW_GENERATE = "agentos.google_flow.generate"
 ACTION_GOOGLE_VIDS_GENERATE = "agentos.google_vids.generate"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
@@ -77,6 +78,7 @@ ALLOWED_ACTIONS = {
     ACTION_NODE_TRANSACTIONAL_OTA,
     ACTION_REALM_NODE_INSPECT,
     ACTION_REALM_DESKTOP_PROBE,
+    ACTION_REALM_EXECUTOR_RECONCILE,
     ACTION_GOOGLE_FLOW_GENERATE,
     ACTION_GOOGLE_VIDS_GENERATE,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -181,7 +183,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","account_ref"}
     elif action == ACTION_NODE_TRANSACTIONAL_OTA:
         allowed_params={"source_commit","node_id","candidate_commit"}
-    elif action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE}:
+    elif action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE, ACTION_REALM_EXECUTOR_RECONCILE}:
         allowed_params={"source_commit","node_id"}
     elif action in {ACTION_GOOGLE_FLOW_GENERATE, ACTION_GOOGLE_VIDS_GENERATE}:
         allowed_params={"source_commit","prompt"}
@@ -217,7 +219,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
             raise ValueError("invalid OTA node_id")
         if not COMMIT_RE.fullmatch(candidate_commit):
             raise ValueError("candidate_commit must be an exact lowercase 40-hex commit SHA")
-    if action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE}:
+    if action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE, ACTION_REALM_EXECUTOR_RECONCILE}:
         node_id=str(params.get("node_id") or "")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", node_id):
             raise ValueError("invalid Realm node_id")
@@ -636,6 +638,88 @@ def _realm_desktop_probe(node_id: str) -> dict[str, Any]:
     }
 
 
+
+def _realm_executor_reconcile(node_id: str) -> dict[str, Any]:
+    from agent_core.node_registry import NodeRegistry
+    from agent_core.realm_fabric import RealmFabricStore
+
+    nodes = NodeRegistry().node_map().get("nodes") or []
+    node = next((item for item in nodes if str(item.get("node_id") or "") == node_id), None)
+    classification = "UNKNOWN"
+    executor_rows: list[dict[str, Any]] = []
+    if node is None:
+        classification = "NOT_REGISTERED"
+    elif str(node.get("status") or "") != "online":
+        classification = "OFFLINE"
+    elif "agent.executor.reconcile" not in set(node.get("capabilities") or []):
+        classification = "CAPABILITY_MISSING"
+    else:
+        task_id = "runner-window-executor-reconcile-" + node_id + "-" + str(int(time.time()))
+        fabric = RealmFabricStore()
+        fabric.queue_task(node_id, {
+            "schema": "agentos.node-task/v0.1",
+            "task_id": task_id,
+            "action": "agent.executor.reconcile",
+            "cognition_ids_used": [],
+        })
+        deadline = time.monotonic() + 150
+        receipt = None
+        while time.monotonic() < deadline:
+            receipt = fabric.get_receipt(task_id)
+            if receipt is not None:
+                break
+            time.sleep(1)
+        if receipt is None:
+            classification = "TIMEOUT"
+        elif receipt.get("ok") is not True:
+            classification = "ERROR"
+        else:
+            adoption = receipt.get("executor_adoption") or {}
+            raw_rows = adoption.get("executors") or []
+            for raw in raw_rows:
+                if not isinstance(raw, dict):
+                    continue
+                executor_id = str(raw.get("executor_id") or "")
+                if executor_id not in {"codex", "gemini", "claude-code"}:
+                    continue
+                executor_rows.append({
+                    "executor_id": executor_id,
+                    "state": str(raw.get("state") or "UNKNOWN"),
+                    "classification": str((raw.get("provider_health") or {}).get("classification") or ""),
+                    "stable_routable": raw.get("stable_routable") is True,
+                })
+            by_id = {row["executor_id"]: row for row in executor_rows}
+            states = [by_id.get(name, {}).get("state", "MISSING") for name in ("codex", "gemini", "claude-code")]
+            stable = [bool(by_id.get(name, {}).get("stable_routable")) for name in ("codex", "gemini", "claude-code")]
+            if all(state == "READY" for state in states) and all(stable):
+                classification = "READY"
+            elif all(state == "READY" for state in states):
+                classification = "READY_WARMING"
+            elif any(state == "AUTH_REQUIRED" for state in states):
+                classification = "AUTH_REQUIRED"
+            elif any(state == "READY" for state in states):
+                classification = "PARTIAL"
+            else:
+                classification = "UNAVAILABLE"
+
+    by_id = {row["executor_id"]: row for row in executor_rows}
+    markers = [
+        f"realm_executor_node_id={node_id}",
+        f"realm_executor_reconcile={classification}",
+    ]
+    for executor_id in ("codex", "gemini", "claude-code"):
+        safe_id = executor_id.replace("-", "_")
+        row = by_id.get(executor_id) or {}
+        markers.extend([
+            f"realm_executor_{safe_id}_state={row.get('state', 'UNKNOWN')}",
+            f"realm_executor_{safe_id}_classification={row.get('classification', '')}",
+            f"realm_executor_{safe_id}_stable_routable={str(bool(row.get('stable_routable'))).lower()}",
+        ])
+    return {
+        "ok": True,
+        "steps": [{"step": "realm_executor_reconcile", "returncode": 0, "stdout": "\n".join(markers) + "\n", "stderr": ""}],
+    }
+
 def _execute(action: str, source_commit: str | None, post_key: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
     if action == ACTION_RUNNER_WINDOW_PROBE:
         return {
@@ -663,6 +747,11 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_REALM_DESKTOP_PROBE:
         params = params or {}
         result = _realm_desktop_probe(str(params.get("node_id") or ""))
+        result["source_commit"] = source_commit
+        return result
+    if action == ACTION_REALM_EXECUTOR_RECONCILE:
+        params = params or {}
+        result = _realm_executor_reconcile(str(params.get("node_id") or ""))
         result["source_commit"] = source_commit
         return result
     if action == ACTION_GOOGLE_FLOW_GENERATE:
