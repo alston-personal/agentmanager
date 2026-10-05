@@ -1,0 +1,106 @@
+{
+  "schema": "agentos.portfolio-policy/v1",
+  "purpose": "Prevent scope diffusion while preserving running products, accumulated IP and shared infrastructure.",
+  "north_star": "Establish one repeatable revenue loop, then use AgentOS to reduce the human effort required to operate it.",
+  "wip_limits": {
+    "BUILD": 1,
+    "INFRA_BLOCKER": 1,
+    "RUN_MAINTENANCE": 2,
+    "EXPERIMENTAL_BUILD": 0
+  },
+  "intake": [
+    "Register every new project, product, capability, content IP, experiment or material idea before implementation.",
+    "If it duplicates or extends an existing registry item, merge it into that item instead of creating parallel scope.",
+    "If it does not affect current BUILD or RUN operation, default to BACKLOG.",
+    "Promotion to BUILD requires an available BUILD slot plus explicit next gate and stop condition."
+  ],
+  "status_contracts": {
+    "BUILD": {
+      "allowed": [
+        "customer/revenue validation",
+        "necessary delivery work",
+        "blocker fixes"
+      ],
+      "forbidden": [
+        "unbounded adjacent features",
+        "speculative platformization"
+      ]
+    },
+    "RUN": {
+      "allowed": [
+        "minimum viable operation",
+        "promised operating cadence",
+        "blocking defect fixes",
+        "essential analytics"
+      ],
+      "forbidden": [
+        "major redesign",
+        "new unrelated feature families",
+        "platform rewrite"
+      ]
+    },
+    "SUPPORT": {
+      "allowed": [
+        "BUILD blocker",
+        "RUN blocker",
+        "reliability regression",
+        "repeated manual toil reduction"
+      ],
+      "forbidden": [
+        "speculative abstractions",
+        "provider/capability expansion without portfolio demand"
+      ]
+    },
+    "ASSET": {
+      "allowed": [
+        "preservation",
+        "cataloguing",
+        "provenance",
+        "low-cost distribution"
+      ],
+      "forbidden": [
+        "implicit active-development commitment"
+      ]
+    },
+    "HOLD": {
+      "allowed": [
+        "preservation",
+        "evidence gathering"
+      ],
+      "forbidden": [
+        "feature development without promotion"
+      ]
+    },
+    "BACKLOG": {
+      "allowed": [
+        "specification capture"
+      ],
+      "forbidden": [
+        "implementation",
+        "deployment work"
+      ]
+    },
+    "SUNSET": {
+      "allowed": [
+        "data export",
+        "archival",
+        "decommission safety"
+      ],
+      "forbidden": [
+        "new scope"
+      ]
+    }
+  },
+  "promotion_gate": {
+    "required": [
+      "current evidence",
+      "owner",
+      "next_gate",
+      "stop_condition",
+      "dependencies",
+      "expected portfolio impact"
+    ],
+    "build_question": "Does this materially improve the probability of establishing or scaling the current revenue loop?",
+    "support_question": "Would not doing this block BUILD/RUN or force recurring manual intervention?"
+  }
+}
