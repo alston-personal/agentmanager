@@ -6,17 +6,9 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-action-runtime-rollout.yml'
-      - 'agent_core/executor_job_contract.py'
-      - 'agentos_node/executor_job_adapter.py'
-      - 'agentos_node/executor_job_action_relay.py'
-      - 'agentos_node/engineering_subagent_provider.py'
+      # Provider/routing paths are intentionally owned by Main Agent Model Routing Acceptance,
+      # which converges the exact runtime generation before health and model smoke.
       - 'agentos_node/executor_provider_registry.py'
-      - 'agentos_node/executor_provider_adapters.py'
-      - 'agentos_node/codex_provider_adapter.py'
-      - 'agentos_node/executor_profiles/**'
-      - 'agentos_node/executor_reconcile.py'
-      - 'agentos_node/antigravity_relay_worker.py'
-      - '.agentos/executors/**'
       - 'agentos_node/issue117_experience_provider.py'
       - 'agentos_node/typesafe_skill_install_provider.py'
       - 'agentos_node/gemini_cli_install_provider.py'
