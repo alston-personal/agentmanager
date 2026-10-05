@@ -44,9 +44,11 @@ Before authentication or mutation, shape normalization now allows at most seven
 independent non-assignment lines, bounded to that observed incident count.
 [systemd's EnvironmentFile contract](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)
 ignores independent lines without `=`. To avoid deleting portions of multiline
-values, the helper rejects the entire normalization if an assignment contains a
-quote, or any line contains a backslash, forbidden control/separator character,
-BOM, or bare CR. Quotes in independent ignored lines or comments are literal:
+values, the helper rejects only an assignment whose quote state remains open at
+physical end-of-line, or any line containing a backslash, forbidden
+control/separator character, BOM, or bare CR. Balanced single- or double-quoted
+assignment values remain byte-for-byte preserved. Quotes in independent ignored
+lines or comments are literal:
 [systemd v249's parser](https://github.com/systemd/systemd/blob/v249/src/basic/env-file.c)
 enters quoted-value states only after `=`. It also rejects
 export directives and more than seven non-assignment lines. Surviving assignments
@@ -54,7 +56,7 @@ must pass the existing strict key, duplicate, scope, allowlist, state, and auth
 checks; their original bytes are preserved except rejected credential replacement.
 Comments and blank lines are preserved. Failure codes report only aggregate
 `missing_equals`, `prev_cont`, `exportlike`, and `lexical_unsafe` counts, plus
-assignment/ignored/comment quote, backslash, control, and bare-CR line counts;
+assignment/open-assignment/ignored/comment quote, backslash, control, and bare-CR line counts;
 never line contents, keys, credentials, or values. Success reports the removed line count.
 The first parser failure alone cannot establish the total malformed line count.
 The follow-up authorized run [37277811979](https://github.com/alston-personal/agentmanager/actions/runs/37277811979)
@@ -64,9 +66,15 @@ lexically flagged line. That receipt does not identify its character class.
 The former whole-file quote check could reject harmless quoted text; the refined
 classification above also makes any remaining rejection distinguishable without
 exposing configuration. This does not prove which class occurred on the host or
-that maintenance will succeed. This new generation requires explicit maintenance
-deployment authorization; the prior one-shot authorization was consumed by run
-37277811979.
+that maintenance will succeed. The next authorized run [37279391137](https://github.com/alston-personal/agentmanager/actions/runs/37279391137)
+at 2026-10-05 15:44 Asia/Taipei executed integration source
+`5f6ed8cb938374b0b8983ea6b97afce3f4d32d67` and stopped before auth, writes,
+or restart with `assignment_quotes_1`, `assignment_open_quotes_0` unavailable in
+that generation, and all reported backslash/control/bare-CR counts zero. The
+remaining false positive is therefore one quoted assignment line. This source
+generation narrows rejection to physically open quote state while preserving
+balanced quoted values. It requires a new explicit maintenance deployment
+authorization; the prior one-shot authorization was consumed by run 37279391137.
 After maintenance, ChatGPT must submit a new short-lived bounded command through
 #50 and observe its result. Expired commands must not be replayed. Only after
 that transport receipt should Node freshness and the correct Mio DM session be
