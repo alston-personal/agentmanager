@@ -247,3 +247,42 @@ def test_shape_only_repair_restores_original_bytes_when_postcheck_fails(host, mo
     assert path.read_bytes() == original
     assert len(restarts) == 2
     assert restarts[-1] == original
+
+
+@pytest.mark.parametrize("fragment", [
+    'private-fragment says "retry"',
+    "private-fragment's notice",
+    '"private-fragment with an unmatched opening quote',
+    "private-fragment with an unmatched closing quote'",
+])
+def test_quotes_in_independent_ignored_lines_do_not_open_multiline_values(fragment):
+    original = CONFIG.replace("\n", "\r\n")
+    malformed = original.replace("AGENTOS_GITHUB_TOKEN=", fragment + "\r\n" +
+                                 "private-fragment\r\n" * 6 + "AGENTOS_GITHUB_TOKEN=", 1)
+    assert repair.normalize_env_shape(malformed) == (original, True)
+
+
+def test_quoted_comments_are_preserved_byte_for_byte():
+    original = '# comment has "quotes" and an apostrophe\'\r\n' + CONFIG.replace("\n", "\r\n")
+    assert repair.normalize_env_shape("private-fragment\r\n" * 7 + original) == (original, True)
+
+
+@pytest.mark.parametrize("prefix, expected", [
+    ('CUSTOM_SETTING="multiline\nprivate-fragment\n"\n', "_assignment_quotes_1_ignored_quotes_1"),
+    ("CUSTOM_SETTING=value\\\nprivate-fragment\n", "_backslash_1_control_0_bare_cr_0"),
+    ("# comment\\\nprivate-fragment\n", "_backslash_1_control_0_bare_cr_0"),
+    ("private-fragment\x1b\n", "_backslash_0_control_1_bare_cr_0"),
+    ("private-fragment\r", "_backslash_0_control_0_bare_cr_1"),
+])
+def test_rejection_identifies_structural_class_without_line_contents(host, capsys, prefix, expected):
+    path, calls = host
+    original = prefix + CONFIG
+    path.write_bytes(original.encode("utf-8"))
+    assert repair.main() == 1
+    output = capsys.readouterr().out
+    assert expected in output
+    assert "private-fragment" not in output
+    assert "CUSTOM_SETTING" not in output
+    assert "old_github" not in output
+    assert path.read_bytes() == original.encode("utf-8")
+    assert not any("restart" in args for args in calls)
