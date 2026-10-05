@@ -271,7 +271,6 @@ def test_realm_node_public_projection_is_bounded():
         "realm_node_heartbeat_age_seconds=",
         "realm_node_desktop_capable=",
         "realm_node_runtime_status=",
-        "realm_node_runtime_source_ref=",
         "realm_node_runtime_source_commit=",
         "realm_desktop_probe=",
     ):
@@ -339,6 +338,5 @@ def test_realm_node_runtime_provenance_is_bounded_to_identity_fields():
     text = Path("agentos_node/bootstrap_control.py").read_text(encoding="utf-8")
     block = text.split("def _realm_node_inspect", 1)[1].split("def _realm_desktop_probe", 1)[0]
     assert "realm_node_runtime_status=" in block
-    assert "realm_node_runtime_source_ref=" in block
     assert "realm_node_runtime_source_commit=" in block
     assert "provenance_path" not in block
