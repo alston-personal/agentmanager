@@ -111,6 +111,41 @@ def money_values(text: str) -> list[int]:
     return out
 
 
+def extract_line_items_from_text(text: str) -> list[dict[str, Any]]:
+    """Best-effort line item candidates from OCR text; never invent values."""
+    items: list[dict[str, Any]] = []
+    blocked = ("發票", "銷售額", "營業稅", "總計", "合計", "統一編號", "日期", "買受人", "銷售人")
+    for line in (text or "").splitlines():
+        clean = re.sub(r"\s+", " ", line).strip()
+        if not clean or any(token in clean for token in blocked):
+            continue
+        nums = []
+        for raw in re.findall(r"(?<!\d)\d[\d,.]*?(?!\d)", clean):
+            value = _amount_token(raw)
+            if value is not None:
+                nums.append((raw, value))
+        if len(nums) < 3:
+            continue
+        quantity, unit_price, amount = [x[1] for x in nums[-3:]]
+        if quantity <= 0 or unit_price < 0 or amount <= 0:
+            continue
+        tolerance = max(1, round(amount * 0.02))
+        if abs(quantity * unit_price - amount) > tolerance:
+            continue
+        first_numeric = clean.find(nums[-3][0])
+        description = clean[:first_numeric].strip(" :-—")
+        if not description or len(description) > 80:
+            continue
+        items.append({
+            "description": description,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "amount": amount,
+            "confidence": 0.72,
+        })
+    return items
+
+
 def choose_amounts(texts: list[str]) -> tuple[int | None, int | None, int | None, float]:
     best: tuple[int | None, int | None, int | None, float] = (None, None, None, 0.0)
     for text in texts:
@@ -213,11 +248,13 @@ def extract_legacy_invoice(image_bytes: bytes) -> Extraction:
         "total_amount": None,
     }
     confidence = {k: 0.0 for k in fields}
+    local_line_items = extract_line_items_from_text(rapid.get("raw_text") or "")
     raw: dict[str, Any] = {
         "engine": "rapidocr-template-v1+tesseract-fallback",
         "template": rapid,
         "fallback_used": [],
         "image_size": list(image.size),
+        "line_items": local_line_items,
     }
 
     if rapid.get("matched"):
