@@ -69,17 +69,31 @@ def normalize_env_shape(text: str) -> tuple[str, bool]:
     # EnvironmentFile ignores independent lines without '=' (systemd.exec).
     # systemd v249's KEY state treats quotes literally until '='; a quote in
     # an independent non-assignment or comment cannot open a multiline value.
-    # Quotes in assignments and backslashes still reject normalization.
+    # Balanced quotes within one assignment line are preserved. Only an
+    # assignment whose quote state remains open at physical EOL can absorb a
+    # following ignored line. Backslashes still reject normalization.
     # Python splitlines also recognizes separators that systemd does not.
     ignored = set(malformed)
-    structural = dict(assignment_quotes=0, ignored_quotes=0, comment_quotes=0,
+    structural = dict(assignment_quotes=0, assignment_open_quotes=0,
+                      ignored_quotes=0, comment_quotes=0,
                       backslash=0, control=0, bare_cr=0)
     lexical_unsafe = 0
     for index, line in enumerate(lines):
         quoted = any(char in "\"'" for char in line)
         comment = not line.strip() or line.lstrip().startswith("#")
         assignment_quote = quoted and index not in ignored and not comment
+        assignment_open_quote = False
+        if assignment_quote:
+            value = line.rstrip("\r\n").partition("=")[2]
+            quote_state = ""
+            for char in value:
+                if not quote_state and char in "\"'":
+                    quote_state = char
+                elif quote_state and char == quote_state:
+                    quote_state = ""
+            assignment_open_quote = bool(quote_state)
         structural["assignment_quotes"] += int(assignment_quote)
+        structural["assignment_open_quotes"] += int(assignment_open_quote)
         structural["ignored_quotes"] += int(quoted and index in ignored)
         structural["comment_quotes"] += int(quoted and comment)
         escaped = "\\" in line
@@ -90,7 +104,7 @@ def normalize_env_shape(text: str) -> tuple[str, bool]:
         structural["backslash"] += int(escaped)
         structural["control"] += int(control)
         structural["bare_cr"] += int(bare_cr)
-        lexical_unsafe += int(assignment_quote or escaped or control or bare_cr)
+        lexical_unsafe += int(assignment_open_quote or escaped or control or bare_cr)
     if len(malformed) > MAX_IGNORED_LINES or continuation_count or export_count or lexical_unsafe:
         # A parser's first failing line cannot prove the total defect count.
         # Report structural counts only; never include line text, keys or values.
