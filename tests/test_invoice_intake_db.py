@@ -108,6 +108,55 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             self.assertFalse(second["duplicate"])
             self.assertNotEqual(second["invoice_id"], first_id)
 
+    def test_recent_and_get_invoice_expose_review_guidance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            image = jpeg_bytes()
+            created = store.ingest(
+                image,
+                "review-guidance.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-review-guidance",
+            )
+            invoice_id = created["invoice_id"]
+            document_id = created["document_id"]
+            payload = {
+                "engine": "test-engine",
+                "review": {
+                    "status": "quick_confirm",
+                    "required_fields": [],
+                    "confirm_fields": ["vendor_name"],
+                    "reasons": ["confirm:vendor_name"],
+                },
+            }
+            with store.connect() as db:
+                db.execute(
+                    "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                    ("ex-review", document_id, "test-engine", __import__("json").dumps(payload), "2026-10-05T00:00:00Z"),
+                )
+                db.execute(
+                    """UPDATE invoices SET
+                         invoice_number='AB12345678',
+                         invoice_date='2026-10-05',
+                         vendor_name='測試公司',
+                         seller_tax_id='16908319',
+                         amount_before_tax=1000,
+                         tax_amount=50,
+                         total_amount=1050,
+                         status='quick_confirm'
+                       WHERE id=?""",
+                    (invoice_id,),
+                )
+
+            one = store.get_invoice(invoice_id)
+            self.assertEqual(one["review"]["status"], "quick_confirm")
+            self.assertEqual(one["review"]["confirm_fields"], ["vendor_name"])
+
+            recent = store.recent(10)
+            found = next(item for item in recent if item["invoice_id"] == invoice_id)
+            self.assertEqual(found["review"]["confirm_fields"], ["vendor_name"])
+
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
