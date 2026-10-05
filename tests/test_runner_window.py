@@ -275,3 +275,22 @@ def test_realm_node_public_projection_is_bounded():
         assert marker in text
     assert "token_hash" not in text.split("ACTION_REALM_NODE_INSPECT", 1)[1].split("ACTION_NODE_TRANSACTIONAL_OTA", 1)[0]
 
+def test_google_media_generation_public_intents_are_bounded():
+    flow, flow_params = resolve_intent(
+        "media.google-flow",
+        "generate",
+        source_commit="4" * 40,
+        payload={"prompt": "test scene"},
+    )
+    assert flow.action == bc.ACTION_GOOGLE_FLOW_GENERATE
+    assert flow_params == {"source_commit": "4" * 40, "prompt": "test scene"}
+
+    vids, vids_params = resolve_intent(
+        "media.google-vids",
+        "generate",
+        source_commit="5" * 40,
+        payload={"prompt": "test scene"},
+    )
+    assert vids.action == bc.ACTION_GOOGLE_VIDS_GENERATE
+    assert vids_params == {"source_commit": "5" * 40, "prompt": "test scene"}
+
