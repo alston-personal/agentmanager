@@ -268,7 +268,7 @@ def test_quoted_comments_are_preserved_byte_for_byte():
 
 
 @pytest.mark.parametrize("prefix, expected", [
-    ('CUSTOM_SETTING="multiline\nprivate-fragment\n"\n', "_assignment_quotes_1_ignored_quotes_1"),
+    ('CUSTOM_SETTING="multiline\nprivate-fragment\n"\n', "_assignment_quotes_1_assignment_open_quotes_1_ignored_quotes_1"),
     ("CUSTOM_SETTING=value\\\nprivate-fragment\n", "_backslash_1_control_0_bare_cr_0"),
     ("# comment\\\nprivate-fragment\n", "_backslash_1_control_0_bare_cr_0"),
     ("private-fragment\x1b\n", "_backslash_0_control_1_bare_cr_0"),
@@ -285,4 +285,37 @@ def test_rejection_identifies_structural_class_without_line_contents(host, capsy
     assert "CUSTOM_SETTING" not in output
     assert "old_github" not in output
     assert path.read_bytes() == original.encode("utf-8")
+    assert not any("restart" in args for args in calls)
+
+
+@pytest.mark.parametrize("quoted_value", [
+    '"retain this value"',
+    "'retain this value'",
+    '"retain \'single\' quotes too"',
+    "'retain \"double\" quotes too'",
+])
+def test_balanced_assignment_quotes_do_not_block_ignored_line_repair(quoted_value):
+    original = CONFIG.replace("CUSTOM_HOST_SETTING=retain-this-value",
+                              "CUSTOM_HOST_SETTING=" + quoted_value)
+    malformed = "private-fragment\n" * 7 + original
+    normalized, changed = repair.normalize_env_shape(malformed)
+    assert changed is True
+    assert normalized == original
+    assert repair.parse_env(normalized)["CUSTOM_HOST_SETTING"] == quoted_value
+
+
+@pytest.mark.parametrize("assignment", [
+    'CUSTOM_HOST_SETTING="unterminated\n',
+    "CUSTOM_HOST_SETTING='unterminated\n",
+])
+def test_open_assignment_quote_still_fails_closed(host, capsys, assignment):
+    path, calls = host
+    original = assignment + "private-fragment\n" + CONFIG
+    path.write_text(original)
+    assert repair.main() == 1
+    output = capsys.readouterr().out
+    assert "_assignment_quotes_1_assignment_open_quotes_1" in output
+    assert "private-fragment" not in output
+    assert "CUSTOM_HOST_SETTING" not in output
+    assert path.read_text() == original
     assert not any("restart" in args for args in calls)
