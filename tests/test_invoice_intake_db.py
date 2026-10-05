@@ -77,6 +77,37 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             self.assertEqual(second["source_type"], "camera")
             self.assertEqual(store.get_invoice(invoice_id)["invoice_id"], invoice_id)
 
+    def test_hard_delete_removes_sha_and_allows_fresh_rescan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            image = jpeg_bytes()
+            first = store.ingest(
+                image,
+                "delete-me.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-delete-a",
+            )
+            first_id = first["invoice_id"]
+            original = store.get_original(first_id)["path"]
+            self.assertTrue(Path(original).exists())
+
+            deleted = store.hard_delete(first_id, "tester")
+            self.assertTrue(deleted["permanent"])
+            self.assertFalse(Path(original).exists())
+            with self.assertRaises(KeyError):
+                store.get_invoice(first_id)
+
+            second = store.ingest(
+                image,
+                "delete-me.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-delete-b",
+            )
+            self.assertFalse(second["duplicate"])
+            self.assertNotEqual(second["invoice_id"], first_id)
+
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
