@@ -25,6 +25,8 @@ ACTION_RELAY_RESTART = "agentos.relay.restart"
 ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
 ACTION_REALM_NODE_INSPECT = "agentos.realm_node.inspect"
 ACTION_REALM_DESKTOP_PROBE = "agentos.realm_desktop.probe"
+ACTION_GOOGLE_FLOW_GENERATE = "agentos.google_flow.generate"
+ACTION_GOOGLE_VIDS_GENERATE = "agentos.google_vids.generate"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
 ACTION_RECONCILE_CONTENT_SOCIAL = "agentos.content_social.reconcile"
@@ -75,6 +77,8 @@ ALLOWED_ACTIONS = {
     ACTION_NODE_TRANSACTIONAL_OTA,
     ACTION_REALM_NODE_INSPECT,
     ACTION_REALM_DESKTOP_PROBE,
+    ACTION_GOOGLE_FLOW_GENERATE,
+    ACTION_GOOGLE_VIDS_GENERATE,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
     ACTION_RECONCILE_CONTENT_SOCIAL,
@@ -179,6 +183,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","node_id","candidate_commit"}
     elif action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE}:
         allowed_params={"source_commit","node_id"}
+    elif action in {ACTION_GOOGLE_FLOW_GENERATE, ACTION_GOOGLE_VIDS_GENERATE}:
+        allowed_params={"source_commit","prompt"}
     elif action == ACTION_EXECUTOR_JOB_SUBMIT:
         allowed_params={"source_commit","job_type"}
     elif action == ACTION_EXECUTOR_JOB_INSPECT:
@@ -215,6 +221,12 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         node_id=str(params.get("node_id") or "")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", node_id):
             raise ValueError("invalid Realm node_id")
+    if action in {ACTION_GOOGLE_FLOW_GENERATE, ACTION_GOOGLE_VIDS_GENERATE}:
+        prompt=str(params.get("prompt") or "")
+        if not (1 <= len(prompt) <= 1600):
+            raise ValueError("invalid Google media prompt length")
+        if "\x00" in prompt:
+            raise ValueError("invalid Google media prompt")
     if action == ACTION_EXECUTOR_JOB_SUBMIT:
         job_type=str(params.get("job_type") or "")
         from agent_core.executor_job_contract import canonical_executor_job_request
@@ -653,6 +665,22 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         result = _realm_desktop_probe(str(params.get("node_id") or ""))
         result["source_commit"] = source_commit
         return result
+    if action == ACTION_GOOGLE_FLOW_GENERATE:
+        params = params or {}
+        return _run_canonical_script(
+            "scripts/generate_google_flow_user.sh",
+            timeout=960,
+            source_commit=source_commit,
+            env_extra={"AGENTOS_GOOGLE_MEDIA_PROMPT": str(params.get("prompt") or "")},
+        )
+    if action == ACTION_GOOGLE_VIDS_GENERATE:
+        params = params or {}
+        return _run_canonical_script(
+            "scripts/generate_google_vids_user.sh",
+            timeout=960,
+            source_commit=source_commit,
+            env_extra={"AGENTOS_GOOGLE_MEDIA_PROMPT": str(params.get("prompt") or "")},
+        )
     if action == ACTION_NODE_TRANSACTIONAL_OTA:
         params=params or {}
         return _run_canonical_script(

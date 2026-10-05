@@ -1,0 +1,126 @@
+name: Google Media Live Production Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'scripts/generate_google_flow_user.sh'
+      - 'scripts/generate_google_vids_user.sh'
+      - 'agent_core/runner_window.py'
+      - 'agent_core/realm_server.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - '.github/workflows/google-media-live-production-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: google-media-live-production
+  cancel-in-progress: false
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+      MEDIA_PROMPT: >-
+        A cinematic 8-second shot of a quiet mountain trail at golden hour.
+        A gentle breeze moves the grass and leaves, the camera slowly pushes forward,
+        natural realistic lighting, subtle ambient sound, no text, no logos.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Wait for live Google media intents
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for _ in $(seq 1 90); do
+            code="$(curl -sS -o "$RUNNER_TEMP/catalog.json" -w '%{http_code}' --max-time 8 \
+              -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+              "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+            if [ "$code" = 200 ] && python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          intents={(x.get('capability'),x.get('operation')) for x in (d.get('intents') or [])}
+          assert ('media.google-flow','generate') in intents
+          assert ('media.google-vids','generate') in intents
+          PY
+            then
+              ok=1
+              break
+            fi
+            sleep 4
+          done
+          test "$ok" = 1
+          echo "google_media_intents_live=PASS"
+
+      - name: Generate with Google Flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(python3 - <<'PY'
+          import json,os
+          print(json.dumps({"prompt":os.environ["MEDIA_PROMPT"]},separators=(",",":")))
+          PY
+          )"
+          set +e
+          AGENTOS_DISPATCH_WAIT_SECONDS=1000 bash scripts/agentos_dispatch.sh \
+            media.google-flow generate "$GITHUB_SHA" --payload-json "$payload" \
+            | tee "$RUNNER_TEMP/google-flow.txt"
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/google-flow.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/google-flow.txt"
+          exit "$rc"
+
+      - name: Generate with Google Vids
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(python3 - <<'PY'
+          import json,os
+          print(json.dumps({"prompt":os.environ["MEDIA_PROMPT"]},separators=(",",":")))
+          PY
+          )"
+          set +e
+          AGENTOS_DISPATCH_WAIT_SECONDS=1000 bash scripts/agentos_dispatch.sh \
+            media.google-vids generate "$GITHUB_SHA" --payload-json "$payload" \
+            | tee "$RUNNER_TEMP/google-vids.txt"
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/google-vids.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/google-vids.txt"
+          exit "$rc"
+
+      - name: Upload bounded receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-media-live-production-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/google-flow.txt
+            ${{ runner.temp }}/google-vids.txt
+          if-no-files-found: warn
+          retention-days: 14

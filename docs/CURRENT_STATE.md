@@ -188,3 +188,16 @@ Runner Window now has explicit bounded public intents for Realm Node health and 
 
 Callers no longer need to target an Oracle runner merely to inspect an enrolled Windows node. They submit the public intent to Runner Window, which routes the fixed control action through the canonical Core control lane. Raw node tokens, task payload flexibility, screenshot bytes and arbitrary shell execution are not exposed through these intents.
 
+## Google Flow / Google Vids live generation through Runner Window
+
+Google Flow and Google Vids now have bounded Runner Window generation intents backed by the Oracle persistent Chromium GUI profile:
+
+- `media.google-flow generate`
+- `media.google-vids generate`
+
+Both accept only a bounded UTF-8 prompt and route to the GUI scheduler lane with the shared `oracle-gui-profile` mutex plus provider-specific locks. The implementation uses the existing persistent browser profile over CDP and never exposes Google credentials through the public dispatch contract.
+
+Generation receipts expose only bounded status markers plus durable artifact metadata when a clip can be downloaded. Provider-specific UI drift is reported as a classified state such as `AUTH_REQUIRED`, `UI_UNRECOGNIZED`, `GENERATION_FAILED`, `TIMEOUT`, or `GENERATED_NOT_DOWNLOADED` rather than being misreported as success.
+
+The live acceptance workflow uses the same prompt for Flow and Vids so output quality, latency and provider behavior can be compared on equivalent input. Generated files are kept under `/home/ubuntu/agent-data/artifacts/google-flow/` and `/home/ubuntu/agent-data/artifacts/google-vids/` when download succeeds.
+
