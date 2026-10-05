@@ -243,3 +243,35 @@ def test_realm_scheduler_public_projection_keeps_bounded_executor_health_diagnos
         assert field in block
     assert "'stdout'" not in block
     assert "'stderr'" not in block
+
+def test_realm_node_public_intents_are_bounded():
+    inspect, inspect_params = resolve_intent(
+        "node.realm",
+        "inspect",
+        source_commit="2" * 40,
+        payload={"node_id": "vopc5750"},
+    )
+    assert inspect.action == bc.ACTION_REALM_NODE_INSPECT
+    assert inspect_params == {"source_commit": "2" * 40, "node_id": "vopc5750"}
+
+    probe, probe_params = resolve_intent(
+        "node.desktop",
+        "probe",
+        source_commit="3" * 40,
+        payload={"node_id": "vopc5750"},
+    )
+    assert probe.action == bc.ACTION_REALM_DESKTOP_PROBE
+    assert probe_params == {"source_commit": "3" * 40, "node_id": "vopc5750"}
+
+
+def test_realm_node_public_projection_is_bounded():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    for marker in (
+        "realm_node_status=",
+        "realm_node_heartbeat_age_seconds=",
+        "realm_node_desktop_capable=",
+        "realm_desktop_probe=",
+    ):
+        assert marker in text
+    assert "token_hash" not in text.split("ACTION_REALM_NODE_INSPECT", 1)[1].split("ACTION_NODE_TRANSACTIONAL_OTA", 1)[0]
+
