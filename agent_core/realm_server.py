@@ -466,6 +466,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'google_flow_artifact_root=',
                     'google_flow_runtime_preflight=',
                     'google_flow_executor_user=',
+                    'google_flow_runtime_error=',
                 )
             elif action == bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE:
                 safe_prefixes = (
@@ -478,6 +479,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'google_vids_artifact_root=',
                     'google_vids_runtime_preflight=',
                     'google_vids_executor_user=',
+                    'google_vids_runtime_error=',
                 )
             elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
                 safe_prefixes = (
