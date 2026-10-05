@@ -9,7 +9,15 @@ from pathlib import Path
 from typing import Any
 
 INVOKE_SCHEMA = "agentos.executor-provider-invoke/v0.1"
-WORKSPACES = {"agentos-core": Path("/home/ubuntu/agentmanager")}
+def _default_core_workspace() -> Path:
+    explicit = os.environ.get("AGENTOS_CORE_WORKSPACE")
+    if explicit:
+        return Path(explicit).expanduser()
+    legacy = Path("/home/ubuntu/agentmanager")
+    return legacy if legacy.is_dir() else Path.cwd()
+
+
+WORKSPACES = {"agentos-core": _default_core_workspace()}
 RECEIPT_ROOT = Path.home() / ".agentos" / "provider-receipts" / "codex"
 
 
