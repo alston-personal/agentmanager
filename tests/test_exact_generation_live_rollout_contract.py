@@ -57,6 +57,15 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertIn('parser.add_argument("--reconcile-only", action="store_true")', worker)
         self.assertIn("reconcile_stranded_processing(stale_after=600.0)", worker)
 
+    def test_relay_quarantine_helper_failure_is_bounded_classification_only(self):
+        bootstrap = _text(BOOTSTRAP)
+        self.assertIn('class=permission_denied', bootstrap)
+        self.assertIn('class=group_entry_failed', bootstrap)
+        self.assertIn('class=invalid_spool', bootstrap)
+        self.assertIn('class=unexpected', bootstrap)
+        self.assertNotIn('reconcile.stderr}', bootstrap)
+        self.assertNotIn('reconcile.stdout}', bootstrap)
+
     def test_transport_repair_restarts_and_requires_active_antigravity_relay(self):
         text = _text(REPAIR)
         self.assertIn('REPAIR_STAGE="restart_antigravity_relay"', text)
