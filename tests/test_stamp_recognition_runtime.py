@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from io import BytesIO
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from PIL import Image, ImageDraw
 from capabilities.stamp_recognition.runtime import (
     StampRegion, StampStore, detect_stamp_regions, fingerprint_similarity, fingerprint_stamp
 )
+from services.invoice_intake.invoice_core import extract_legacy_invoice
 
 
 def synthetic_invoice(offset=(0, 0), shade=(210, 30, 30)):
@@ -58,6 +60,47 @@ class StampRuntimeTests(unittest.TestCase):
             self.assertFalse(matched.requires_confirmation)
             attrs = store.resolve_verified_attributes(stamp_id)
             self.assertEqual(attrs["seller_tax_id"], "16908319")
+
+    def test_confirmed_same_stamp_skips_stamp_ocr(self):
+        image = synthetic_invoice()
+        fp = fingerprint_stamp(image, detect_stamp_regions(image)[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StampStore(Path(tmp) / "stamp.sqlite3")
+            store.learn_confirmed(
+                fp,
+                entity_id="16908319",
+                canonical_label="測試企業有限公司",
+                verified_attributes={"vendor_name": "測試企業有限公司", "seller_tax_id": "16908319"},
+            )
+            template = {
+                "matched": True,
+                "document_type": "three_part_uniform_invoice",
+                "raw_text": "",
+                "fields": {
+                    "invoice_number": "AB12345678",
+                    "invoice_date": "2026-10-05",
+                    "amount_before_tax": 1000,
+                    "tax_amount": 50,
+                    "total_amount": 1050,
+                },
+                "confidence": {
+                    "invoice_number": 0.98,
+                    "invoice_date": 0.98,
+                    "amount_before_tax": 0.98,
+                    "tax_amount": 0.98,
+                    "total_amount": 0.98,
+                },
+                "visual_amounts": True,
+                "total_amount": 1050,
+            }
+            with patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
+                 patch("services.invoice_intake.invoice_core.ocr_stamp_text") as stamp_ocr:
+                result = extract_legacy_invoice(image, stamp_store=store)
+            stamp_ocr.assert_not_called()
+            self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
+            self.assertEqual(result.fields["seller_tax_id"], "16908319")
+            self.assertEqual(result.raw["stamp_recognition"]["status"], "MATCHED_CONFIRMED")
+            self.assertEqual(result.raw["field_sources"]["vendor_name"], "stamp_registry")
 
     def test_unknown_stamp_never_auto_resolves_from_text(self):
         a = synthetic_invoice()
