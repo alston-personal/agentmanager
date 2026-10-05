@@ -4,6 +4,8 @@ from unittest.mock import patch
 from io import BytesIO
 from pathlib import Path
 
+FIXTURE_ROOT = Path('benchmarks/invoice_handwriting/fixtures')
+
 from PIL import Image, ImageDraw
 
 from capabilities.stamp_recognition.runtime import (
@@ -101,6 +103,25 @@ class StampRuntimeTests(unittest.TestCase):
             self.assertEqual(result.fields["seller_tax_id"], "16908319")
             self.assertEqual(result.raw["stamp_recognition"]["status"], "MATCHED_CONFIRMED")
             self.assertEqual(result.raw["field_sources"]["vendor_name"], "stamp_registry")
+
+    def test_public_invoice_fixtures_detect_stamp_candidates(self):
+        # Real public invoice photos catch detector assumptions that synthetic
+        # red/blue drawings do not. These three fixtures visibly contain seller stamps.
+        fixture_names = [
+            "tw-2part-my04200253.jpg",
+            "tw-3part-rp54268249.jpg",
+            "tw-triplicate-wikimedia.jpg",
+        ]
+        detected = {}
+        for name in fixture_names:
+            data = (FIXTURE_ROOT / name).read_bytes()
+            regions = detect_stamp_regions(data)
+            detected[name] = regions
+        self.assertGreaterEqual(
+            sum(bool(regions) for regions in detected.values()),
+            2,
+            {name: [r.box for r in regions] for name, regions in detected.items()},
+        )
 
     def test_unknown_stamp_never_auto_resolves_from_text(self):
         a = synthetic_invoice()
