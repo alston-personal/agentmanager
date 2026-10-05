@@ -7,11 +7,14 @@
 
 A source merge proves implementation, not live operation. A live receipt proves only the exact source generation, route, capability, executor and effect named by that receipt.
 
-Control Inbox maintenance (#845) now classifies unsafe environment shape using
-aggregate structural counts before auth or mutation. This preserves the existing
-single-orphan normalization boundary; it does not broaden configuration repair
-authority. Offline classification tests do not establish host configuration,
-Control Inbox recovery, Node freshness, or Mio DM readiness. See
+Control Inbox maintenance (#845) run 37260607129 on 2026-10-05 confirmed seven
+non-assignment lines and stopped before auth, mutation, or restart. The helper
+now bounds normalization to seven lines that systemd would independently ignore;
+whole-file quote, escape, control/separator, BOM, and bare-CR guards reject ambiguous
+multiline syntax. Assignments, allowlist, and durable state remain preserved.
+This source change still requires explicit maintenance deployment authorization.
+Offline tests do not establish host configuration, Control Inbox recovery, Node
+freshness, or Mio DM readiness. See
 `docs/CONTROL_INBOX_SERVICE_REPAIR.md` for the deployment/receipt boundary.
 
 ## Canonical authority hierarchy

@@ -151,7 +151,7 @@ def test_credential_replacement_cannot_change_allowlist():
 
 
 @pytest.mark.parametrize("prefix, counts", [
-    ("private-fragment-a\nprivate-fragment-b\n", (2, 0, 0)),
+    ("private-fragment\n" * 8, (8, 0, 0)),
     ("CUSTOM_SETTING=value\\\nprivate-fragment\n", (1, 1, 0)),
     ("export private-fragment\n", (1, 0, 1)),
     ("CUSTOM_SETTING=value\\\nexport private-fragment\nsecond-fragment\n", (2, 1, 1)),
@@ -181,3 +181,69 @@ def test_single_orphan_normalization_preserves_every_other_line():
     malformed = original.replace("AGENTOS_GITHUB_TOKEN=", "private-fragment\r\nAGENTOS_GITHUB_TOKEN=", 1)
     assert repair.normalize_env_shape(malformed) == (original, True)
     assert repair.normalize_env_shape(original) == (original, False)
+
+
+@pytest.mark.parametrize("count", range(1, 8))
+def test_bounded_ignored_lines_preserve_all_other_bytes(count):
+    original = CONFIG.replace("\n", "\r\n")
+    lines = original.splitlines(keepends=True)
+    for index in reversed(range(count)):
+        lines.insert(index + 1, "private-fragment\r\n")
+    malformed = "".join(lines)
+    assert repair.normalize_env_shape(malformed) == (original, True)
+    assert repair.parse_env(repair.normalize_env_shape(malformed)[0]) == repair.parse_env(original)
+
+
+@pytest.mark.parametrize("prefix", [
+    'CUSTOM_SETTING="multiline\nprivate-fragment\n"\n',
+    "CUSTOM_SETTING='multiline\nprivate-fragment\n'\n",
+    "CUSTOM_SETTING=escaped\\ value\nprivate-fragment\n",
+    "# comment-continuation\\\nprivate-fragment\n",
+    "private-fragment\x00\n",
+    "private-fragment\v\n",
+    "private-fragment\x85\n",
+    "private-fragment\u2028\n",
+    "private-fragment\u2029\n",
+    "private-fragment\ufeff\n",
+    "private-fragment\r",
+])
+def test_ambiguous_lexical_shape_never_reaches_auth_or_mutation(host, monkeypatch, capsys, prefix):
+    path, calls = host
+    original = prefix + CONFIG
+    path.write_bytes(original.encode("utf-8"))
+    monkeypatch.setattr(repair, "http_status", lambda *args: pytest.fail("must fail before auth"))
+    assert repair.main() == 1
+    output = capsys.readouterr().out
+    assert "environment_shape_not_safely_normalizable" in output
+    assert "_lexical_unsafe_" in output
+    assert "private-fragment" not in output
+    assert "CUSTOM_SETTING" not in output
+    assert "old_github" not in output
+    assert path.read_bytes() == original.encode("utf-8")
+    assert not any("restart" in args for args in calls)
+
+
+def test_seven_ignored_lines_are_repaired_only_after_auth_and_preserve_host_settings(host):
+    path, calls = host
+    path.write_text("private-fragment\n" * 7 + CONFIG)
+    result = repair.repair()
+    assert path.read_text() == CONFIG
+    assert result["configuration_shape_repaired"] is True
+    assert result["configuration_ignored_lines_removed"] == 7
+    assert result["credentials_changed"] is False
+    assert result["end_to_end_verified"] is False
+    assert [args[-1] for args in calls if "restart" in args] == [repair.UNIT]
+
+
+def test_shape_only_repair_restores_original_bytes_when_postcheck_fails(host, monkeypatch):
+    path, _ = host
+    original = ("private-fragment\n" * 7 + CONFIG).replace("\n", "\r\n").encode("utf-8")
+    path.write_bytes(original)
+    restarts = []
+    monkeypatch.setattr(repair, "restart_bridge", lambda: restarts.append(path.read_bytes()))
+    monkeypatch.setattr(repair, "http_status", lambda *args: 502 if restarts else 200)
+    with pytest.raises(repair.RepairFailure, match="github_postcheck_failed"):
+        repair.repair()
+    assert path.read_bytes() == original
+    assert len(restarts) == 2
+    assert restarts[-1] == original
