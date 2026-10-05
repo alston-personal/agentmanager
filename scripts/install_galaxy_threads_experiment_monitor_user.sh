@@ -75,18 +75,18 @@ TIMER="$UNIT_DIR/agentos-galaxy-experiment-monitor.timer"
 LOG_DIR="$HOME/agent-data/logs"
 LOG="$LOG_DIR/galaxy-experiment-monitor.log"
 
-test -f "$REPO/scripts/monitor_galaxy_threads_experiment_user.py"
-test -f "$REPO/scripts/monitor_social_post_experiment_user.py"
-test -f "$REPO/scripts/run_social_post_experiment_queue_user.py"
-test -f "$REPO/scripts/sync_sunlake_milkcat_persona_user.py"
-test -f "$REPO/scripts/evolve_mio_persona_ir_user.py"
-test -f "$REPO/scripts/mio_persona_social_loop_user.py"
-test -f "$REPO/scripts/sync_mio_pdca_social_outcome_user.py"
+test -f "$RELEASE/scripts/monitor_galaxy_threads_experiment_user.py"
+test -f "$RELEASE/scripts/monitor_social_post_experiment_user.py"
+test -f "$RELEASE/scripts/run_social_post_experiment_queue_user.py"
+test -f "$RELEASE/scripts/sync_sunlake_milkcat_persona_user.py"
+test -f "$RELEASE/scripts/evolve_mio_persona_ir_user.py"
+test -f "$RELEASE/scripts/mio_persona_social_loop_user.py"
+test -f "$RELEASE/scripts/sync_mio_pdca_social_outcome_user.py"
 mkdir -p "$UNIT_DIR" "$LOG_DIR"
 
 # Diagnose the real ubuntu-owned relay executor; do not expose binary paths,
 # account state, credentials, model output, or user-private files.
-PYTHONPATH="$REPO" python3 - <<'PY'
+PYTHONPATH="$RELEASE" python3 - <<'PY'
 from pathlib import Path
 from agentos_node.antigravity_relay_worker import discover_executor
 for provider in ('claude','agy'):
@@ -139,7 +139,7 @@ PY
 # Check whether the separately installed, already allowlisted AGY executor can
 # answer a harmless JSON prompt. Bounded, one check per six hours; never print
 # its model output, login state, file locations or any credential.
-python3 - "$REPO" <<'PY'
+python3 - "$RELEASE" <<'PY'
 import json,os,subprocess,sys,time
 from pathlib import Path
 from agentos_node.antigravity_relay_worker import discover_executor
@@ -187,8 +187,8 @@ After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=$REPO
-Environment=PYTHONPATH=$REPO
+WorkingDirectory=$RELEASE
+Environment=PYTHONPATH=$RELEASE
 UMask=0007
 ExecStart=/usr/bin/python3 -m agentos_node.antigravity_relay_worker --provider agy --root $MIO_RELAY_ROOT
 Restart=on-failure
@@ -203,7 +203,7 @@ systemctl --user enable --now agentos-mio-agy-relay.service >/dev/null
 systemctl --user is-active --quiet agentos-mio-agy-relay.service
 echo 'mio_agy_relay=ACTIVE'
 # Read-only scope diagnostics; never log access tokens or OAuth responses.
-PYTHONPATH="$REPO" python3 "$REPO/scripts/diagnose_mio_threads_search_scope_user.py" || echo 'mio_search_scope_probe=unavailable'
+PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/diagnose_mio_threads_search_scope_user.py" || echo 'mio_search_scope_probe=unavailable'
 # Relay restart is a targeted repair, not part of normal monitor reinstallation.
 # Keep the background executor undisturbed during subsequent code deployments.
 
@@ -216,13 +216,14 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=$REPO
+WorkingDirectory=$RELEASE
+Environment=PYTHONPATH=$RELEASE
 Environment=AGENTOS_MIO_RELAY_ROOT=$MIO_RELAY_ROOT
-ExecStart=/usr/bin/python3 $REPO/scripts/monitor_galaxy_threads_experiment_user.py
-ExecStart=/usr/bin/python3 $REPO/scripts/run_social_post_experiment_queue_user.py
+ExecStart=/usr/bin/python3 $RELEASE/scripts/monitor_galaxy_threads_experiment_user.py
+ExecStart=/usr/bin/python3 $RELEASE/scripts/run_social_post_experiment_queue_user.py
 # Order is causal: observe -> persist event -> evolve current self -> decide/reply.
 # If canonical sync/evolution fails, do not answer from stale or isolated context.
-ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py && /usr/bin/python3 $REPO/scripts/evolve_mio_persona_ir_user.py && /usr/bin/python3 $REPO/scripts/mio_persona_social_loop_user.py && /usr/bin/python3 $REPO/scripts/sync_mio_pdca_social_outcome_user.py || { echo mio_persona_cycle=DEFERRED; exit 0; }'
+ExecStartPost=/bin/sh -c '/usr/bin/python3 $RELEASE/scripts/sync_sunlake_milkcat_persona_user.py && /usr/bin/python3 $RELEASE/scripts/evolve_mio_persona_ir_user.py && /usr/bin/python3 $RELEASE/scripts/mio_persona_social_loop_user.py && /usr/bin/python3 $RELEASE/scripts/sync_mio_pdca_social_outcome_user.py || { echo mio_persona_cycle=DEFERRED; exit 0; }'
 StandardOutput=append:$LOG
 StandardError=append:$LOG
 
@@ -293,7 +294,7 @@ systemctl --user is-active --quiet agentos-galaxy-experiment-monitor.timer
 # directly. This is idempotent: after the service cycle advanced the IR it
 # emits NO_CHANGE; if the service deferred IR evolution, installation fails
 # here instead of silently claiming the growth loop is live.
-PYTHONPATH="$REPO" /usr/bin/python3 "$REPO/scripts/evolve_mio_persona_ir_user.py"
+PYTHONPATH="$RELEASE" /usr/bin/python3 "$RELEASE/scripts/evolve_mio_persona_ir_user.py"
 
 # Emit only IDs for the newly observed reader comment; never expose the
 # surrounding private monitor snapshot or other commenters in run logs.
@@ -346,6 +347,11 @@ print('galaxy_experiment_monitor_reply_catalog='+json.dumps(list(seen.values()),
 PY
 fi
 
+ln -sfn "$RELEASE" "$CURRENT"
+test "$(readlink -f "$CURRENT")" = "$RELEASE"
+echo "galaxy_experiment_monitor_source_commit=$SOURCE_COMMIT"
+echo "galaxy_experiment_monitor_current=$CURRENT"
+echo "galaxy_experiment_monitor_mutable_checkout_write=NONE"
 echo "galaxy_experiment_monitor_install=PASS"
 echo "galaxy_experiment_monitor_interval=10m"
 echo "galaxy_experiment_monitor_log=$LOG"
