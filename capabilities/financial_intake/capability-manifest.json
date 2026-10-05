@@ -29,6 +29,7 @@
       "invoice.extract",
       "receipt.extract",
       "document.deduplicate",
+      "document.stamp-recognition",
       "accounting.validate",
       "accounting.adapter"
     ]
