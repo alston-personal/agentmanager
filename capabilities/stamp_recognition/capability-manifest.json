@@ -1,0 +1,50 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "document.stamp-recognition",
+  "display_name": "Document Stamp Recognition",
+  "semantic_owner": "document-understanding",
+  "version": "0.1.0",
+  "lifecycle": "candidate",
+  "contract": {
+    "inputs": [
+      "document.image",
+      "document.region",
+      "stamp.sample"
+    ],
+    "outputs": [
+      "stamp.detection",
+      "stamp.fingerprint",
+      "stamp.match",
+      "stamp.entity"
+    ],
+    "side_effects": [
+      "stamp.sample.learn",
+      "stamp.entity.update"
+    ]
+  },
+  "capabilities": [
+    "stamp.detect",
+    "stamp.fingerprint",
+    "stamp.match",
+    "stamp.learn",
+    "stamp.resolve-entity"
+  ],
+  "consumers": [
+    "document.financial-intake",
+    "document.contract-intake",
+    "document.receipt-intake",
+    "document.form-intake"
+  ],
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true,
+    "human_confirmation_required_for_new_entity": true
+  },
+  "matching_policy": {
+    "same_stamp": "high_visual_similarity_and_consistent_layout",
+    "same_entity_new_stamp": "same_verified_entity_but_visual_fingerprint_differs",
+    "uncertain": "do_not_auto_apply_entity_fields"
+  }
+}
