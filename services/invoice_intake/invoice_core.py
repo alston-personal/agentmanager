@@ -7,6 +7,7 @@ import re
 import sqlite3
 import subprocess
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from typing import Any
 from PIL import Image, ImageEnhance, ImageOps
 from services.invoice_intake.template_ocr import extract_template_invoice, valid_tax_id, seller_region_text
 from services.invoice_intake import vision_ocr
+from capabilities.stamp_recognition.runtime import StampStore, detect_stamp_regions, fingerprint_stamp
 
 ESSENTIAL_FIELDS = ("invoice_number", "invoice_date", "amount_before_tax", "total_amount")
 
