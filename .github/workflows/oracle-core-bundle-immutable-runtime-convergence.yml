@@ -1,0 +1,158 @@
+name: Oracle Core Bundle Immutable Runtime Convergence
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-core-bundle-immutable-runtime-convergence
+  cancel-in-progress: false
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Converge Core service bundle to exact immutable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_COMMIT="$1"
+          REPO=/home/ubuntu/agentmanager
+          DATA_ROOT=/home/ubuntu/agent-data
+          RELEASE_ROOT="$DATA_ROOT/releases/core"
+          RUNTIME_ROOT="$DATA_ROOT/runtime/core"
+          RELEASE="$RELEASE_ROOT/$SOURCE_COMMIT"
+          CURRENT="$RUNTIME_ROOT/current"
+          UNIT_DIR=/home/ubuntu/.config/systemd/user
+          BACKUP="$(mktemp -d /tmp/agentos-core-units.XXXXXX)"
+          UNITS=(
+            os-chronos.service
+            agent-maintenance.service
+            agent-maintenance.timer
+            tg-commander.service
+            teams-commander.service
+            cat-ink-syncer.service
+            os-lobster.service
+            agentos-core-supervisor.service
+            agentos-employee-worker-host.service
+          )
+          SERVICES=(
+            os-chronos.service
+            tg-commander.service
+            teams-commander.service
+            cat-ink-syncer.service
+            os-lobster.service
+            agentos-core-supervisor.service
+            agentos-employee-worker-host.service
+          )
+          mkdir -p "$RELEASE_ROOT" "$RUNTIME_ROOT"
+
+          test -d "$REPO/.git"
+          test -f "$REPO/.env"
+          git -C "$REPO" fetch --no-tags origin "$SOURCE_COMMIT" >/dev/null
+          git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
+
+          for unit in "${UNITS[@]}"; do
+            [ -f "$UNIT_DIR/$unit" ] && cp -a "$UNIT_DIR/$unit" "$BACKUP/$unit"
+          done
+          : > "$BACKUP/active-services"
+          for unit in "${SERVICES[@]}"; do
+            systemctl --user is-active --quiet "$unit" 2>/dev/null && echo "$unit" >> "$BACKUP/active-services" || true
+          done
+          systemctl --user is-active --quiet agent-maintenance.timer 2>/dev/null && echo agent-maintenance.timer >> "$BACKUP/active-services" || true
+
+          rollback() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "core_bundle_rollback=START" >&2
+              for unit in "${UNITS[@]}"; do
+                if [ -f "$BACKUP/$unit" ]; then
+                  cp -a "$BACKUP/$unit" "$UNIT_DIR/$unit"
+                fi
+              done
+              systemctl --user daemon-reload || true
+              while read -r unit; do
+                [ -n "$unit" ] && systemctl --user restart "$unit" || true
+              done < "$BACKUP/active-services"
+              echo "core_bundle_rollback=DONE" >&2
+            fi
+            rm -rf "$BACKUP"
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          if [ ! -e "$RELEASE/.git" ]; then
+            git -C "$REPO" worktree add --detach "$RELEASE" "$SOURCE_COMMIT"
+          fi
+          test "$(git -C "$RELEASE" rev-parse HEAD)" = "$SOURCE_COMMIT"
+          [ -e "$RELEASE/.env" ] || ln -s "$REPO/.env" "$RELEASE/.env"
+
+          set -a
+          source "$REPO/.env"
+          [ -f /home/ubuntu/.agentos.secrets ] && source /home/ubuntu/.agentos.secrets
+          set +a
+          test "${AGENT_MODE:-CLIENT}" = CORE
+
+          INSTALL_JSON="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          printf '%s\n' "$INSTALL_JSON"
+          printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("mode")=="systemd", d'
+
+          # Preserve availability: everything that was active before must be active after.
+          while read -r unit; do
+            [ -n "$unit" ] || continue
+            systemctl --user is-active --quiet "$unit"
+            echo "core_bundle_preserved_active=$unit"
+          done < "$BACKUP/active-services"
+
+          # Critical autonomous-control services must be live regardless of old state.
+          systemctl --user is-active --quiet os-chronos.service
+          systemctl --user is-active --quiet agentos-core-supervisor.service
+          if [ "${AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE:-0}" = 1 ]; then
+            systemctl --user is-active --quiet agentos-employee-worker-host.service
+          fi
+
+          # Actual running processes, not merely unit text, must execute from the immutable release.
+          for unit in os-chronos.service tg-commander.service cat-ink-syncer.service agentos-core-supervisor.service; do
+            pid="$(systemctl --user show "$unit" -p MainPID --value)"
+            test -n "$pid" && test "$pid" != 0
+            cwd="$(readlink -f "/proc/$pid/cwd")"
+            case "$cwd" in
+              "$RELEASE"|"$RELEASE"/*) ;;
+              *) echo "ERROR: $unit still runs from non-release cwd=$cwd" >&2; exit 20;;
+            esac
+            echo "core_bundle_runtime=$unit:immutable"
+          done
+          if systemctl --user is-active --quiet agentos-employee-worker-host.service; then
+            pid="$(systemctl --user show agentos-employee-worker-host.service -p MainPID --value)"
+            cwd="$(readlink -f "/proc/$pid/cwd")"
+            case "$cwd" in "$RELEASE"|"$RELEASE"/*) ;; *) echo "ERROR: worker host cwd=$cwd" >&2; exit 21;; esac
+            echo "core_bundle_runtime=agentos-employee-worker-host.service:immutable"
+          fi
+
+          ln -sfn "$RELEASE" "$CURRENT"
+          test "$(readlink -f "$CURRENT")" = "$RELEASE"
+          echo "core_bundle_source_commit=$SOURCE_COMMIT"
+          echo "core_bundle_release=$RELEASE"
+          echo "core_bundle_current=$CURRENT"
+          echo "core_bundle_immutable_runtime=PASS"
+          trap - EXIT
+          rm -rf "$BACKUP"
+          REMOTE
