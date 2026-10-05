@@ -59,10 +59,11 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
 
     def test_relay_quarantine_helper_failure_is_bounded_classification_only(self):
         bootstrap = _text(BOOTSTRAP)
-        self.assertIn('class=permission_denied', bootstrap)
-        self.assertIn('class=group_entry_failed', bootstrap)
-        self.assertIn('class=invalid_spool', bootstrap)
-        self.assertIn('class=unexpected', bootstrap)
+        self.assertIn('failure = "permission_denied"', bootstrap)
+        self.assertIn('failure = "group_entry_failed"', bootstrap)
+        self.assertIn('failure = "invalid_spool"', bootstrap)
+        self.assertIn('failure = "unexpected"', bootstrap)
+        self.assertIn('class={failure}', bootstrap)
         self.assertNotIn('reconcile.stderr}', bootstrap)
         self.assertNotIn('reconcile.stdout}', bootstrap)
 
