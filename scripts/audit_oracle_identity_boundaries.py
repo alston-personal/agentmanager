@@ -33,6 +33,11 @@ def _under_review_root(rel: str, roots: list[str]) -> bool:
     return any(rel == root or rel.startswith(root.rstrip("/") + "/") for root in roots)
 
 
+def _excluded(rel: str, patterns: list[str]) -> bool:
+    from fnmatch import fnmatch
+    return any(fnmatch(rel, pattern) for pattern in patterns)
+
+
 def _classify(rel: str, text: str, policy: dict[str, Any]) -> dict[str, Any] | None:
     source_cache = policy["roots"]["source_cache"]["path"]
     shared_data = policy["roots"]["shared_data"]["path"]
@@ -95,10 +100,21 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
         rel = path.relative_to(root).as_posix()
         if not _under_review_root(rel, policy["review_roots"]):
             continue
+        if _excluded(rel, policy.get("audit_excludes") or []):
+            continue
         text = path.read_text(encoding="utf-8", errors="replace")
         row = _classify(rel, text, policy)
         if row:
             rows.append(row)
+
+    confirmed = policy.get("confirmed_migrations") or {}
+    for row in rows:
+        item = confirmed.get(row["path"])
+        if item:
+            row["risk"] = str(item["severity"])
+            row["classification"] = "confirmed-migration"
+            row["confirmed_reason"] = str(item["reason"])
+            row["target_state"] = str(item["target"])
 
     rows.sort(key=lambda r: (r["risk"], r["path"]))
     counts = Counter(row["risk"] for row in rows)
@@ -111,6 +127,7 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
             "p0": counts.get("P0", 0),
             "p1": counts.get("P1", 0),
             "p2": counts.get("P2", 0),
+            "confirmed_migrations": sum(1 for row in rows if row["classification"] == "confirmed-migration"),
             "classifications": dict(sorted(classes.items())),
         },
         "findings": rows,
