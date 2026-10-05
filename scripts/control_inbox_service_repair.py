@@ -18,6 +18,8 @@ ENV_PATH = Path("/home/ubuntu/.config/agentos/control-inbox.env")
 CONTROLLER_PATH = Path("/home/ubuntu/.config/agentos/controller.env")
 GITHUB_READ = "https://api.github.com/repos/alston-personal/agentmanager/issues/50/comments?per_page=1"
 ONE_READ = "http://127.0.0.1:8780/v1/controller/nodes"
+# Incident #845's observed count is the maintenance budget, not unlimited cleanup.
+MAX_IGNORED_LINES = 7
 
 
 class RepairFailure(Exception):
@@ -64,16 +66,27 @@ def normalize_env_shape(text: str) -> tuple[str, bool]:
         export_count += int(raw.lstrip().startswith("export "))
     if not malformed:
         return text, False
-    if len(malformed) != 1 or continuation_count or export_count:
+    # EnvironmentFile ignores independent lines without '=' (systemd.exec).
+    # Prove independence conservatively across the whole file: quotes and
+    # backslashes can span physical lines, including comment continuations.
+    # Python splitlines also recognizes separators that systemd does not.
+    lexical_unsafe = sum(
+        int(any(char in "\"'\\" or (ord(char) < 32 and char not in "\t\r\n")
+                or ord(char) == 127 or char in "\x85\u2028\u2029\ufeff"
+                for char in line) or re.search(r"\r(?!\n)", line) is not None)
+        for line in lines
+    )
+    if len(malformed) > MAX_IGNORED_LINES or continuation_count or export_count or lexical_unsafe:
         # A parser's first failing line cannot prove the total defect count.
         # Report structural counts only; never include line text, keys or values.
         raise RepairFailure(
             "environment_shape_not_safely_normalizable"
             f"_missing_equals_{len(malformed)}"
             f"_prev_cont_{continuation_count}_exportlike_{export_count}"
+            f"_lexical_unsafe_{lexical_unsafe}"
         )
-    index = malformed[0]
-    return "".join(line for i, line in enumerate(lines) if i != index), True
+    ignored = set(malformed)
+    return "".join(line for i, line in enumerate(lines) if i not in ignored), True
 
 
 def valid_token(value: str) -> bool:
@@ -227,6 +240,7 @@ def repair() -> dict[str, object]:
     return {"schema": "agentos.control-inbox-repair/v1", "ok": True,
             "github_before_http": github_before, "controller_before_http": one_before,
             "credentials_changed": bool(updates), "configuration_shape_repaired": shape_changed, "bridge_active": True,
+            "configuration_ignored_lines_removed": len(original.splitlines()) - len(normalized.splitlines()),
             "github_read_ok": True, "controller_auth_ok": True,
             "action_allowlist_preserved": True, "durable_state_preserved": True,
             "credential_exposed": False, "end_to_end_verified": False}
