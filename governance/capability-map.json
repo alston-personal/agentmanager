@@ -1,0 +1,268 @@
+{
+  "schema": "agentos.capability-map/v1",
+  "generated_at": "2026-10-05",
+  "purpose": "Map reusable semantic capabilities to their current owners/carriers so product work composes existing blocks before creating new ones.",
+  "principles": [
+    "capability_id names a semantic owner, not a repository or executor",
+    "repositories and products may provide or consume multiple capabilities",
+    "reuse does not imply moving implementation into AgentOS Core",
+    "adapters may connect independent product libraries to AgentOS without making them Core-owned",
+    "new capability creation requires evidence that existing capabilities cannot represent the need without semantic distortion"
+  ],
+  "capabilities": [
+    {
+      "id": "dispatch.execute",
+      "kind": "shared_runtime",
+      "owners": [
+        "agentos-core"
+      ],
+      "carriers": [
+        "alston-personal/agentmanager"
+      ],
+      "consumers": [
+        "portfolio-wide"
+      ]
+    },
+    {
+      "id": "receipt.observe",
+      "kind": "shared_runtime",
+      "owners": [
+        "agentos-core"
+      ],
+      "carriers": [
+        "alston-personal/agentmanager"
+      ],
+      "consumers": [
+        "portfolio-wide"
+      ]
+    },
+    {
+      "id": "browser.session",
+      "kind": "shared_runtime",
+      "owners": [
+        "agentos-core"
+      ],
+      "carriers": [
+        "GUI Worker",
+        "Playwright"
+      ],
+      "consumers": [
+        "mio",
+        "mio-wardrobe",
+        "scriptless-qa-agent"
+      ]
+    },
+    {
+      "id": "browser.qa.explore",
+      "kind": "qa",
+      "owners": [
+        "scriptless-qa-agent"
+      ],
+      "carriers": [
+        "alston-personal/scriptless-qa-agent"
+      ],
+      "consumers": [
+        "milkcat-world",
+        "mio-wardrobe",
+        "invoice-ocr",
+        "fengshui",
+        "leopardcat-tarot"
+      ]
+    },
+    {
+      "id": "content.write",
+      "kind": "content",
+      "owners": [
+        "zeus-writer-engine"
+      ],
+      "carriers": [
+        "alston-personal/zeus-writer"
+      ],
+      "consumers": [
+        "zeus-ip-library",
+        "media workflows"
+      ]
+    },
+    {
+      "id": "content.publish",
+      "kind": "content",
+      "owners": [
+        "agentos-core"
+      ],
+      "carriers": [
+        "runtime_core/content_publish.py",
+        "runtime_core/content_publish_social.py"
+      ],
+      "consumers": [
+        "mio",
+        "zeus-writer-engine",
+        "anime-meme",
+        "iftv"
+      ]
+    },
+    {
+      "id": "media.video.generate",
+      "kind": "media",
+      "owners": [
+        "iftv"
+      ],
+      "carriers": [
+        "alston-personal/if-tv-station",
+        "governed media providers"
+      ],
+      "consumers": [
+        "iftv",
+        "mio"
+      ]
+    },
+    {
+      "id": "document.ocr.invoice",
+      "kind": "document_ai",
+      "owners": [
+        "invoice-ocr"
+      ],
+      "carriers": [
+        "alston-personal/studio-web"
+      ],
+      "consumers": [
+        "invoice-ocr"
+      ]
+    },
+    {
+      "id": "matching.reserve",
+      "kind": "matching",
+      "owners": [
+        "universal-matching-core"
+      ],
+      "carriers": [
+        "alston-personal/universal-matching-core"
+      ],
+      "consumers": [
+        "wish-market",
+        "group-buy"
+      ],
+      "notes": "Potential AgentOS use must be evaluated through an adapter; do not merge semantic ownership into Core by default."
+    },
+    {
+      "id": "learning.communication-ir",
+      "kind": "learning",
+      "owners": [
+        "acas"
+      ],
+      "carriers": [
+        "alston-personal/acas"
+      ],
+      "consumers": [
+        "rootnexus",
+        "hanzi-root"
+      ]
+    },
+    {
+      "id": "learning.content-expand",
+      "kind": "learning",
+      "owners": [
+        "rootnexus"
+      ],
+      "carriers": [
+        "rootnexus runtime"
+      ],
+      "consumers": [
+        "rootnexus"
+      ],
+      "notes": "Overlap with ACAS/Hanzi requires audit before new implementation."
+    },
+    {
+      "id": "identity.auth",
+      "kind": "shared_service",
+      "owners": [
+        "auth"
+      ],
+      "carriers": [
+        "Milkcat shared auth"
+      ],
+      "consumers": [
+        "milkcat-world",
+        "mio-wardrobe",
+        "fengshui",
+        "leopardcat-tarot"
+      ]
+    },
+    {
+      "id": "economy.credits",
+      "kind": "shared_service",
+      "owners": [
+        "credits"
+      ],
+      "carriers": [
+        "Milkcat Credits"
+      ],
+      "consumers": [
+        "milkcat-world",
+        "fengshui",
+        "leopardcat-tarot",
+        "wish-market"
+      ]
+    },
+    {
+      "id": "layout.3d",
+      "kind": "spatial",
+      "owners": [
+        "layoutlib"
+      ],
+      "carriers": [
+        "alston-personal/layoutlib"
+      ],
+      "consumers": [
+        "milkcat-world"
+      ]
+    },
+    {
+      "id": "culture.ziwei.compute",
+      "kind": "deterministic_domain",
+      "owners": [
+        "ziwei-master"
+      ],
+      "carriers": [
+        "alston-personal/ziwei-master"
+      ],
+      "consumers": [
+        "ziwei-master"
+      ]
+    },
+    {
+      "id": "social.archive",
+      "kind": "social",
+      "owners": [
+        "chamber-echo"
+      ],
+      "carriers": [
+        "alston-personal/chamber"
+      ],
+      "consumers": [
+        "chamber-echo"
+      ]
+    },
+    {
+      "id": "capability.learn",
+      "kind": "meta_capability",
+      "owners": [
+        "agentos-core"
+      ],
+      "carriers": [
+        "agentos_node/capability_runtime.py",
+        "agentos_node/capability_store.py",
+        "agentos_node/capability_consolidator.py"
+      ],
+      "consumers": [
+        "capability owners"
+      ],
+      "notes": "Existing governed candidate/canonical capability state mechanism."
+    }
+  ],
+  "intake_decision": {
+    "REUSE": "Existing semantic owner fits. Compose via adapter/configuration.",
+    "EXTEND": "Existing semantic owner fits but lacks required behavior. Extend at the owner boundary with non-regression evidence.",
+    "CREATE": "No semantic owner fits without distortion. Register new capability before product implementation.",
+    "PRODUCT_ONLY": "Requirement is domain policy/UI/composition; no shared capability change is warranted."
+  }
+}
