@@ -123,8 +123,29 @@ jobs:
           set -euo pipefail
           BASE=/home/ubuntu/invoice-intake-service
           DATA=/home/ubuntu/agent-data/invoice-intake
+          RESET_MARKER=/home/ubuntu/agent-data/invoice-intake-production-reset-v1.done
           PORT=18767
-          mkdir -p "$BASE" "$DATA" /home/ubuntu/.config/systemd/user
+          mkdir -p "$BASE" /home/ubuntu/.config/systemd/user
+
+          if [ ! -f "$RESET_MARKER" ]; then
+            systemctl --user stop invoice-intake.service 2>/dev/null || true
+            if [ -d "$DATA" ]; then
+              stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+              backup="/home/ubuntu/agent-data/releases/invoice-intake-reset/$stamp"
+              mkdir -p "$(dirname "$backup")"
+              mv "$DATA" "$backup"
+              echo "invoice_intake_legacy_data_backup=$backup"
+            fi
+            mkdir -p "$DATA"
+            {
+              echo "reset_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "reason=separate production data from development/test scans"
+            } > "$RESET_MARKER"
+            echo "invoice_intake_production_data_reset=PASS"
+          else
+            mkdir -p "$DATA"
+            echo "invoice_intake_production_data_reset=SKIP already_done"
+          fi
 
           install_packages() {
             mapfile -t BAD_APT < <(grep -RIl 'antigravity-auto-updater-dev' /etc/apt/sources.list.d 2>/dev/null || true)
@@ -168,6 +189,7 @@ jobs:
           WorkingDirectory=/home/ubuntu/invoice-intake-service/app
           Environment=PYTHONPATH=/home/ubuntu/invoice-intake-service/app
           Environment=INVOICE_DATA_ROOT=/home/ubuntu/agent-data/invoice-intake
+          Environment=INVOICE_DATA_SCOPE=production
           Environment=DASHBOARD_SESSION_URL=http://127.0.0.1:3000/dashboard/api/auth/session
           ExecStart=/home/ubuntu/invoice-intake-service/.venv/bin/uvicorn services.invoice_intake.app:app --host 127.0.0.1 --port 18767
           Restart=on-failure
