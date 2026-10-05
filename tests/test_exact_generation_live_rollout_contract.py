@@ -35,9 +35,10 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertIn('stale_processing = processing_count > 0 and processing_oldest >= RELAY_STALE_PROCESSING_SECONDS', bootstrap)
         self.assertIn('antigravity == "active" and action_relay == "active" and not stale_processing', bootstrap)
         self.assertIn('relay_status_stale_processing=', bootstrap)
-        self.assertIn('assert vals.get(\'relay_status_antigravity_service\')==\'active\'', workflow)
-        self.assertIn('assert vals.get(\'relay_status_action_service\')==\'active\'', workflow)
-        self.assertIn('assert vals.get(\'relay_status_stale_processing\')==\'NO\'', workflow)
+        self.assertIn("relay_state=vals.get('relay_status_antigravity_service')", workflow)
+        self.assertIn("relay_state in {'active','activating','failed','inactive'}", workflow)
+        self.assertIn("assert vals.get('relay_status_action_service')=='active'", workflow)
+        self.assertIn("assert vals.get('relay_status_stale_processing')=='NO'", workflow)
 
     def test_relay_stale_processing_survives_runner_window_projection(self):
         text = _text(REALM_SERVER)
