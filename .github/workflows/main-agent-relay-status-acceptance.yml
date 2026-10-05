@@ -90,7 +90,10 @@ jobs:
               if '=' in str(line):
                   k,v=str(line).split('=',1); vals[k]=v
           state=vals.get('relay_status_antigravity_service')
-          raise SystemExit(0 if state!='activating' else 1)
+          stale=vals.get('relay_status_stale_processing')
+          # Explicit stale processing is itself terminal evidence requiring
+          # recovery, even when the relay service is stuck activating.
+          raise SystemExit(0 if state!='activating' or stale=='YES' else 1)
           PY
             then
               cp "$out" "$RUNNER_TEMP/relay-status-preflight-terminal.txt"
@@ -125,7 +128,7 @@ jobs:
           for key in ('relay_status_inbox_count','relay_status_processing_count','relay_status_receipts_count',
                       'relay_status_inbox_oldest_seconds','relay_status_processing_oldest_seconds'):
               assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)
-          assert vals.get('relay_status_antigravity_service')=='active', vals
+          relay_state=vals.get('relay_status_antigravity_service')
           assert vals.get('relay_status_action_service')=='active', vals
           assert vals.get('relay_status_stale_processing') in {'YES','NO'}, vals
           processing=int(vals.get('relay_status_processing_count') or '0')
@@ -135,8 +138,9 @@ jobs:
           status=vals.get('relay_status')
           assert status in {'PASS','FAIL'}, vals
           if status=='PASS':
+              assert relay_state=='active', vals
               assert not stale, vals
-          needs_recovery=(status=='FAIL' and stale)
+          needs_recovery=(status=='FAIL' and stale and relay_state in {'active','activating','failed','inactive'})
           assert status=='PASS' or needs_recovery, vals
           with open(sys.argv[3],'a',encoding='utf-8') as out:
               out.write('needs_recovery='+('true' if needs_recovery else 'false')+'\n')
