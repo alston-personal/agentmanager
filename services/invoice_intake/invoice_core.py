@@ -554,6 +554,7 @@ class InvoiceStore:
         self.stamp_store = StampStore(stamp_db)
         self.originals.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        self._reclassify_legacy_review_rows()
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=15)
@@ -645,6 +646,66 @@ class InvoiceStore:
                 db.execute("ALTER TABLE documents ADD COLUMN data_scope TEXT NOT NULL DEFAULT 'production'")
             db.execute("CREATE INDEX IF NOT EXISTS idx_documents_batch ON documents(batch_id)")
             db.execute("CREATE INDEX IF NOT EXISTS idx_documents_scope_source ON documents(data_scope, source_type)")
+
+    def _reclassify_legacy_review_rows(self) -> int:
+        """Downgrade stale legacy needs_review rows to quick_confirm when safe.
+
+        Never auto-promote legacy rows to extracted. Rows produced by the new
+        field-level classifier already carry raw.review and are left untouched.
+        """
+        changed = 0
+        with self.connect() as db:
+            rows = db.execute("""
+              SELECT i.*
+              FROM invoices i
+              WHERE i.status='needs_review' AND i.deleted_at IS NULL
+            """).fetchall()
+            for row in rows:
+                extraction = db.execute(
+                    "SELECT payload_json FROM extractions WHERE document_id=? ORDER BY rowid DESC LIMIT 1",
+                    (row["document_id"],),
+                ).fetchone()
+                if not extraction:
+                    continue
+                try:
+                    raw = json.loads(extraction["payload_json"] or "{}")
+                    if raw.get("review"):
+                        continue
+                    confidence = json.loads(row["confidence_json"] or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+
+                fields = {
+                    "invoice_number": row["invoice_number"],
+                    "invoice_date": row["invoice_date"],
+                    "vendor_name": row["vendor_name"],
+                    "seller_tax_id": row["seller_tax_id"],
+                    "amount_before_tax": row["amount_before_tax"],
+                    "tax_amount": row["tax_amount"],
+                    "total_amount": row["total_amount"],
+                }
+                legacy_raw = ((raw.get("legacy") or {}).get("raw") or {})
+                template = raw.get("template") or legacy_raw.get("template") or {}
+                derived_amounts = bool(
+                    template.get("matched")
+                    and template.get("document_type") == "three_part_uniform_invoice"
+                    and not bool(template.get("visual_amounts"))
+                )
+                stamp = raw.get("stamp_recognition") or legacy_raw.get("stamp_recognition") or {}
+                review = classify_review(
+                    fields,
+                    confidence,
+                    derived_amounts=derived_amounts,
+                    stamp_recognition=stamp,
+                )
+                if review["status"] != "quick_confirm":
+                    continue
+                db.execute(
+                    "UPDATE invoices SET status='quick_confirm', updated_at=? WHERE id=?",
+                    (utcnow(), row["id"]),
+                )
+                changed += 1
+        return changed
 
     def ingest(
         self,
