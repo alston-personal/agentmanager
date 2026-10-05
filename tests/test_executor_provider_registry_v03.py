@@ -277,7 +277,7 @@ def test_gemini_health_uses_plan_mode_and_fixed_headless_prompt(monkeypatch, tmp
     assert captured["settings"]["security"]["auth"]["selectedType"] == "oauth-personal"
     assert captured["settings"]["hooksConfig"]["enabled"] is False
     assert captured["settings"]["skills"]["enabled"] is False
-    assert captured["env"]["HOME"] == "/home/ubuntu"
+    assert captured["env"]["HOME"] == str(Path.home())
     assert captured["env"]["GEMINI_CLI_HOME"]
     assert captured["cwd"] != str(workspace)
 
