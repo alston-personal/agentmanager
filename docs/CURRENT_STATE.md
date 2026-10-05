@@ -201,3 +201,13 @@ Generation receipts expose only bounded status markers plus durable artifact met
 
 The live acceptance workflow uses the same prompt for Flow and Vids so output quality, latency and provider behavior can be compared on equivalent input. Generated files are kept under `/home/ubuntu/agent-data/artifacts/google-flow/` and `/home/ubuntu/agent-data/artifacts/google-vids/` when download succeeds.
 
+## Runner Window GUI worker repair
+
+Oracle GUI Worker installation/repair is exposed as the bounded public intent `browser.gui install`. Automatic repair carriers must use the hosted reusable AgentOS dispatch path rather than adding a push-triggered direct-Oracle workflow. The existing direct Oracle installer remains manual-only as a break-glass/legacy surface.
+
+The governed path is:
+
+`hosted carrier -> Runner Window -> maintenance scheduler lane -> agentos.gui_worker.install -> persistent Chromium/CDP + display/VNC services`
+
+The bounded command file `.agentos/commands/oracle-gui-worker-install.json` may trigger the hosted repair carrier. This keeps runner selection and Oracle execution authority inside Runner Window while preserving the existing installer implementation.
+
