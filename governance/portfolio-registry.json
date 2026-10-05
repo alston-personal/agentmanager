@@ -337,13 +337,20 @@
       "id": "scriptless-qa-agent",
       "name": "Scriptless QA Agent",
       "type": "qa_product_capability",
-      "status": "ASSET",
+      "status": "SUPPORT",
       "production": false,
       "growth_asset": true,
       "canonical_repository": "alston-personal/scriptless-qa-agent",
       "revenue_candidate": false,
-      "next_gate": "Use on current Milkcat/AgentOS web flows as an internal dogfood acceptance tool before considering standalone monetization.",
-      "evidence": "Natural-language Playwright QA with evidence capture, bug/repro reports, login checkpoints, risk-gated actions and runtime handoff."
+      "next_gate": "Recover vopc5750 freshness, reconcile local Scriptless QA source without overwriting local work, then prove AgentOS invocation and sanitized receipt through attached executors.",
+      "evidence": "Natural-language Playwright QA with evidence capture, bug/repro reports, login checkpoints, risk-gated actions and runtime handoff.",
+      "blocker": "Freshest working copy may be on vopc5750 rather than Oracle/GitHub; canonical source identity is not yet verified.",
+      "dependencies": [
+        "vopc5750 node freshness",
+        "Runner Window",
+        "executor lifecycle",
+        "source reconciliation"
+      ]
     },
     {
       "id": "acas",
