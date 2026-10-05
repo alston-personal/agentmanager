@@ -26,6 +26,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("node.realm", "inspect", bc.ACTION_REALM_NODE_INSPECT, frozenset({"node_id"})),
     RunnerWindowIntent("node.desktop", "probe", bc.ACTION_REALM_DESKTOP_PROBE, frozenset({"node_id"})),
     RunnerWindowIntent("node.executor", "reconcile", bc.ACTION_REALM_EXECUTOR_RECONCILE, frozenset({"node_id"})),
+    RunnerWindowIntent("node.project", "inspect", bc.ACTION_REALM_PROJECT_INSPECT, frozenset({"node_id", "project_id"})),
     RunnerWindowIntent("media.google-flow", "generate", bc.ACTION_GOOGLE_FLOW_GENERATE, frozenset({"prompt"})),
     RunnerWindowIntent("media.google-vids", "generate", bc.ACTION_GOOGLE_VIDS_GENERATE, frozenset({"prompt"})),
     RunnerWindowIntent("browser.gui", "install", bc.ACTION_INSTALL_GUI_WORKER),
