@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -335,6 +336,49 @@ def test_codex_health_reports_install_required_without_binary(monkeypatch):
     result = codex.CodexProvider().health()
     assert result["state"] == "INSTALL_REQUIRED"
     assert result["classification"] == "INSTALL_REQUIRED"
+    assert result["routable"] is False
+
+
+def test_claude_recent_timeout_uses_snapshot_cooldown(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    root = tmp_path / ".agentos"
+    root.mkdir()
+    monkeypatch.setenv("AGENTOS_CLIENT_HOME", str(root))
+    (root / "executor-adoption.json").write_text(json.dumps({
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "executors": [{
+            "executor_id": "claude-code",
+            "provider_health": {"classification": "TIMEOUT"},
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setattr(adapters, "_health", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("cooldown must skip model probe")))
+
+    result = adapters.ClaudeCodeProvider(tmp_path).health()
+    assert result["classification"] == "TIMEOUT"
+    assert result["routable"] is False
+    assert result["healthy"] is False
+
+
+def test_agy_recent_rate_limit_uses_snapshot_cooldown(monkeypatch, tmp_path: Path):
+    import agentos_node.executor_provider_adapters as adapters
+
+    root = tmp_path / ".agentos"
+    root.mkdir()
+    monkeypatch.setenv("AGENTOS_CLIENT_HOME", str(root))
+    (root / "executor-adoption.json").write_text(json.dumps({
+        "schema": "agentos.executor-adoption/v0.2",
+        "observed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "executors": [{
+            "executor_id": "antigravity",
+            "provider_health": {"classification": "RATE_LIMITED"},
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setattr(adapters, "_health", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("cooldown must skip model probe")))
+
+    result = adapters.AntigravityProvider(tmp_path).health()
+    assert result["classification"] == "RATE_LIMITED"
     assert result["routable"] is False
 
 
