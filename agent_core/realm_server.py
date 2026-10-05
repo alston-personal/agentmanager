@@ -435,6 +435,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'relay_status_receipts_count=',
                     'relay_status_inbox_oldest_seconds=',
                     'relay_status_processing_oldest_seconds=',
+                    'relay_status_antigravity_source_commit=',
+                    'relay_status_action_source_commit=',
                     'relay_status_stale_processing=',
                     'relay_status=',
                 )
