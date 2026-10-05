@@ -400,7 +400,20 @@ def _restart_antigravity_relay() -> dict[str, Any]:
         cwd=str(runtime_root),
     )
     if reconcile.returncode != 0:
-        raise RuntimeError(f"relay stale quarantine helper failed rc={reconcile.returncode}")
+        stderr = str(reconcile.stderr or "").casefold()
+        stdout = str(reconcile.stdout or "").casefold()
+        combined = stderr + "\n" + stdout
+        if "permission denied" in combined:
+            failure = "permission_denied"
+        elif "invalid group" in combined or "does not exist" in combined and "group" in combined:
+            failure = "group_entry_failed"
+        elif "no such file or directory" in combined:
+            failure = "invalid_spool"
+        else:
+            failure = "unexpected"
+        raise RuntimeError(
+            f"relay stale quarantine helper failed rc={reconcile.returncode} class={failure}"
+        )
     try:
         reconcile_payload = json.loads(reconcile.stdout or "{}")
         quarantined = int(reconcile_payload.get("reconciled") or 0)
