@@ -851,6 +851,52 @@ class InvoiceStore:
             """, (limit,)).fetchall()
             return [self._row_payload(row) for row in rows]
 
+    def hard_delete(self, invoice_id: str, actor: str) -> dict[str, Any]:
+        """Permanently delete one invoice, its derived data, document row and original file."""
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT i.id AS invoice_id, i.document_id, d.stored_path, d.batch_id
+                   FROM invoices i JOIN documents d ON d.id=i.document_id
+                   WHERE i.id=?""",
+                (invoice_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+            stored_path = Path(row["stored_path"])
+            document_id = row["document_id"]
+            batch_id = row["batch_id"]
+
+            db.execute("DELETE FROM reviews WHERE invoice_id=?", (invoice_id,))
+            db.execute("DELETE FROM invoice_line_items WHERE invoice_id=?", (invoice_id,))
+            db.execute("DELETE FROM extractions WHERE document_id=?", (document_id,))
+            db.execute("DELETE FROM invoices WHERE id=?", (invoice_id,))
+            db.execute("DELETE FROM documents WHERE id=?", (document_id,))
+            if batch_id:
+                db.execute(
+                    """UPDATE intake_batches
+                       SET item_count=CASE WHEN item_count>0 THEN item_count-1 ELSE 0 END,
+                           updated_at=?
+                       WHERE id=?""",
+                    (utcnow(), batch_id),
+                )
+
+        try:
+            stored_path.unlink(missing_ok=True)
+        except OSError:
+            # DB deletion is authoritative; orphan cleanup can be handled separately.
+            pass
+        return {"ok": True, "invoice_id": invoice_id, "permanent": True}
+
+    def hard_delete_many(self, invoice_ids: list[str], actor: str) -> dict[str, Any]:
+        deleted = []
+        for invoice_id in invoice_ids:
+            try:
+                self.hard_delete(invoice_id, actor)
+                deleted.append(invoice_id)
+            except KeyError:
+                continue
+        return {"ok": True, "deleted": deleted, "count": len(deleted), "permanent": True}
+
     def soft_delete(self, invoice_id: str, actor: str) -> dict[str, Any]:
         now = utcnow()
         with self.connect() as db:
