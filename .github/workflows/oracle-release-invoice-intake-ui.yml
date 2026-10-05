@@ -19,7 +19,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 43d5e9462f95559c9f829d2d40397514ee47cb50
+      source_sha: ec858f9c54a519f639a897c25dceaef21bb06fe6
       route: invoice-intake
       backup_key: invoice-intake-ui
       receipt_schema: studio-web.invoice-intake-release/v1
