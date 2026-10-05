@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -58,6 +59,44 @@ def _classify_failure_text(provider: str, text: str, *, timed_out: bool = False)
     )):
         return "NETWORK"
     return "TIMEOUT" if timed_out else "NONZERO"
+
+
+def _recent_snapshot_classification(
+    executor_id: str,
+    *,
+    classifications: set[str],
+    max_age_seconds: float = 300.0,
+) -> str:
+    path = Path(os.environ.get("AGENTOS_CLIENT_HOME") or (Path.home() / ".agentos")) / "executor-adoption.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema") != "agentos.executor-adoption/v0.2":
+            return ""
+        observed = datetime.fromisoformat(str(payload.get("observed_at") or "").replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
+        if age < 0 or age > max(1.0, float(max_age_seconds)):
+            return ""
+        for item in payload.get("executors") or []:
+            if not isinstance(item, dict) or str(item.get("executor_id") or "") != executor_id:
+                continue
+            health = item.get("provider_health") or {}
+            classification = str(health.get("classification") or "").strip()
+            return classification if classification in classifications else ""
+    except Exception:
+        return ""
+    return ""
+
+
+def _cooldown_health(classification: str) -> dict[str, Any]:
+    return {
+        "installed": True,
+        "reachable": classification != "NETWORK",
+        "authorized": classification not in {"AUTH_REQUIRED", "OAUTH_CLIENT_UNSUPPORTED"},
+        "routable": False,
+        "healthy": False,
+        "state": "AUTH_REQUIRED" if classification == "AUTH_REQUIRED" else "UNHEALTHY",
+        "classification": classification,
+    }
 
 
 def _provider_command(provider: str, workspace: Path, instruction: str) -> list[str] | None:
@@ -300,6 +339,13 @@ class ClaudeCodeProvider(_RelayProvider):
     relay_provider = "claude"
 
     def health(self) -> dict[str, Any]:
+        recent = _recent_snapshot_classification(
+            self.executor_id,
+            classifications={"TIMEOUT"},
+            max_age_seconds=300.0,
+        )
+        if recent:
+            return _cooldown_health(recent)
         return _health(self.relay_provider, timeout_seconds=60.0)
 
 
@@ -308,6 +354,16 @@ class AntigravityProvider(_RelayProvider):
     provider_id = "google-antigravity"
     executor_class = "antigravity"
     relay_provider = "agy"
+
+    def health(self) -> dict[str, Any]:
+        recent = _recent_snapshot_classification(
+            self.executor_id,
+            classifications={"RATE_LIMITED"},
+            max_age_seconds=300.0,
+        )
+        if recent:
+            return _cooldown_health(recent)
+        return _health(self.relay_provider)
 
 
 class GeminiCliProvider(_RelayProvider):
