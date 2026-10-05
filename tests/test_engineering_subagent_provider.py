@@ -331,6 +331,68 @@ def test_model_smoke_routes_through_health_selected_provider(tmp_path: Path, mon
     assert result["successful"] is False
 
 
+def test_model_smoke_routes_codex_through_provider_adapter_not_relay(tmp_path: Path, monkeypatch):
+    import agentos_node.engineering_subagent_provider as provider
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    monkeypatch.setattr(
+        provider,
+        "_read_executor_health",
+        lambda: {
+            "verdict": "PASS",
+            "classification": "ENGINEERING_EXECUTOR_HEALTH_READY",
+            "executor_available": True,
+            "routable": True,
+            "authorized": True,
+            "successful": True,
+            "credential_exposed": False,
+            "selected_provider": "codex",
+        },
+    )
+
+    calls = {}
+    class FakeCodex:
+        def invoke(self, request):
+            calls["request"] = dict(request)
+            return {"ok": True, "state": "completed", "invocation_id": "codex-test"}
+        def receipt(self, invocation_id):
+            calls["receipt_id"] = invocation_id
+            return {
+                "ok": True,
+                "state": "completed",
+                "successful": True,
+                "classification": "READY",
+                "returncode": 0,
+                "timed_out": False,
+            }
+
+    class FailRelay:
+        def __init__(self, root):
+            raise AssertionError("Codex must not depend on Antigravity relay")
+
+    monkeypatch.setattr(provider, "CodexProvider", FakeCodex)
+    monkeypatch.setattr(provider, "AntigravityRelayClient", FailRelay)
+
+    result = provider.run_engineering_subagent(
+        canonical_executor_job_request("engineering.model.smoke"),
+        relay_root=tmp_path / "relay",
+        workspace=workspace,
+        timeout_seconds=1,
+    )
+
+    assert calls["request"]["schema"] == provider.CODEX_INVOKE_SCHEMA
+    assert calls["request"]["operation"] == "agent.chat"
+    assert calls["request"]["workspace_ref"] == "agentos-core"
+    assert calls["receipt_id"] == "codex-test"
+    assert result["classification"] == "ENGINEERING_MODEL_SMOKE_COMPLETED_PENDING_VERIFICATION"
+    assert result["executor_provider"] == "codex"
+    assert result["executor_returncode"] == 0
+    assert result["executor_timed_out"] is False
+
+
 def test_engineering_job_fails_before_relay_when_no_provider_is_healthy(tmp_path: Path, monkeypatch):
     import agentos_node.engineering_subagent_provider as provider
 
