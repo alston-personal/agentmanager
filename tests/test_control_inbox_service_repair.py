@@ -148,3 +148,36 @@ def test_duplicate_environment_keys_fail_closed():
 def test_credential_replacement_cannot_change_allowlist():
     with pytest.raises(repair.RepairFailure, match="credential_update_invalid"):
         repair.replace_credentials(CONFIG, {"AGENTOS_CONTROL_ALLOWED_ACTIONS": "shell.exec"})
+
+
+@pytest.mark.parametrize("prefix, counts", [
+    ("private-fragment-a\nprivate-fragment-b\n", (2, 0, 0)),
+    ("CUSTOM_SETTING=value\\\nprivate-fragment\n", (1, 1, 0)),
+    ("export private-fragment\n", (1, 0, 1)),
+    ("CUSTOM_SETTING=value\\\nexport private-fragment\nsecond-fragment\n", (2, 1, 1)),
+])
+def test_unsafe_shape_reports_all_structural_counts_without_host_changes(
+        host, monkeypatch, capsys, prefix, counts):
+    path, calls = host
+    original = prefix + CONFIG
+    path.write_text(original)
+    monkeypatch.setattr(repair, "http_status", lambda *args: pytest.fail("must fail before auth"))
+    assert repair.main() == 1
+    output = capsys.readouterr().out
+    missing, continuation, export = counts
+    expected = ("environment_shape_not_safely_normalizable"
+                f"_missing_equals_{missing}_prev_cont_{continuation}_exportlike_{export}")
+    assert expected in output
+    assert "private-fragment" not in output
+    assert "second-fragment" not in output
+    assert "CUSTOM_SETTING" not in output
+    assert "old_github" not in output
+    assert path.read_text() == original
+    assert not any("restart" in args for args in calls)
+
+
+def test_single_orphan_normalization_preserves_every_other_line():
+    original = "# keep comment\r\n\r\n" + CONFIG.replace("\n", "\r\n")
+    malformed = original.replace("AGENTOS_GITHUB_TOKEN=", "private-fragment\r\nAGENTOS_GITHUB_TOKEN=", 1)
+    assert repair.normalize_env_shape(malformed) == (original, True)
+    assert repair.normalize_env_shape(original) == (original, False)

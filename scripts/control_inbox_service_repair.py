@@ -50,6 +50,8 @@ def parse_env(text: str) -> dict[str, str]:
 def normalize_env_shape(text: str) -> tuple[str, bool]:
     lines = text.splitlines(keepends=True)
     malformed: list[int] = []
+    continuation_count = 0
+    export_count = 0
     for index, line in enumerate(lines):
         raw = line.rstrip("\r\n")
         if not raw.strip() or raw.lstrip().startswith("#"):
@@ -57,13 +59,19 @@ def normalize_env_shape(text: str) -> tuple[str, bool]:
         if "=" in raw:
             continue
         previous = lines[index - 1].rstrip("\r\n") if index > 0 else ""
-        if previous.rstrip().endswith("\\") or raw.lstrip().startswith("export "):
-            raise RepairFailure("environment_shape_not_safely_normalizable")
         malformed.append(index)
+        continuation_count += int(previous.rstrip().endswith("\\"))
+        export_count += int(raw.lstrip().startswith("export "))
     if not malformed:
         return text, False
-    if len(malformed) != 1:
-        raise RepairFailure("environment_shape_not_safely_normalizable")
+    if len(malformed) != 1 or continuation_count or export_count:
+        # A parser's first failing line cannot prove the total defect count.
+        # Report structural counts only; never include line text, keys or values.
+        raise RepairFailure(
+            "environment_shape_not_safely_normalizable"
+            f"_missing_equals_{len(malformed)}"
+            f"_prev_cont_{continuation_count}_exportlike_{export_count}"
+        )
     index = malformed[0]
     return "".join(line for i, line in enumerate(lines) if i != index), True
 

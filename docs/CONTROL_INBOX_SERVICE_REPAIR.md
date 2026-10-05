@@ -34,6 +34,12 @@ rebuild; this maintenance path deliberately does not invoke it because that
 script resets the host action allowlist.
 
 The sanitized deployment receipt explicitly reports `end_to_end_verified=false`.
+Before authentication or mutation, the existing shape normalizer permits only
+one standalone non-assignment line to be removed. Multiple non-assignment lines,
+previous-line continuations, or export directives still fail closed. Failure
+codes report only aggregate `missing_equals`, `prev_cont`, and `exportlike`
+counts, never line contents, keys, credentials, or values. The first parser
+failure alone does not establish that the file has exactly one malformed line.
 After maintenance, ChatGPT must submit a new short-lived bounded command through
 #50 and observe its result. Expired commands must not be replayed. Only after
 that transport receipt should Node freshness and the correct Mio DM session be
