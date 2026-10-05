@@ -19,6 +19,7 @@ from agent_core.executor_job_contract import validate_executor_job
 from agentos_node.antigravity_relay import AntigravityRelayClient
 from agentos_node.antigravity_relay_worker import discover_executor
 from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS, ExecutorJobProviderRegistry
+from agentos_node.codex_provider_adapter import CodexProvider, INVOKE_SCHEMA as CODEX_INVOKE_SCHEMA
 
 EXECUTOR_CLASS = "antigravity-engineering"
 PROVIDER_ID = "agentos-engineering-subagent-v1"
@@ -537,7 +538,6 @@ def run_engineering_subagent(
     if not selected_provider:
         return health
 
-    client = AntigravityRelayClient(relay_root)
     if spec.job_type == "engineering.model.smoke":
         canonical_ir = {
             "schema": "agentos.engineering-subagent-ir/v1",
@@ -558,6 +558,64 @@ def run_engineering_subagent(
             ],
         }
         instruction = _instruction(spec.job_type)
+
+    if selected_provider == "codex":
+        operation = str(canonical_ir.get("operation") or "").strip()
+        provider = CodexProvider()
+        try:
+            invocation = provider.invoke({
+                "schema": CODEX_INVOKE_SCHEMA,
+                "operation": operation,
+                "project_id": "agentos-core",
+                "workspace_ref": "agentos-core",
+                "instruction": instruction,
+            })
+            invocation_id = str(invocation.get("invocation_id") or "")
+            receipt = provider.receipt(invocation_id)
+        except Exception:
+            result = _failure("ENGINEERING_CODEX_PROVIDER_INVOKE_FAILED")
+            result["selected_provider"] = selected_provider
+            result["executor_provider"] = selected_provider
+            return result
+
+        if receipt.get("state") != "completed":
+            result = _failure("ENGINEERING_CODEX_PROVIDER_RECEIPT_PENDING")
+            result["selected_provider"] = selected_provider
+            result["executor_provider"] = selected_provider
+            return result
+        if receipt.get("successful") is not True:
+            result = _failure(
+                "ENGINEERING_EXECUTOR_TIMEOUT"
+                if receipt.get("timed_out") is True
+                else "ENGINEERING_EXECUTOR_NONZERO"
+            )
+            result["selected_provider"] = selected_provider
+            result["executor_provider"] = selected_provider
+            returncode = receipt.get("returncode")
+            if isinstance(returncode, int):
+                result["executor_returncode"] = returncode
+            result["executor_timed_out"] = receipt.get("timed_out") is True
+            return result
+
+        return {
+            "verdict": "PASS",
+            "classification": (
+                "ENGINEERING_MODEL_SMOKE_COMPLETED_PENDING_VERIFICATION"
+                if spec.job_type == "engineering.model.smoke"
+                else "ENGINEERING_EXECUTOR_COMPLETED_PENDING_VERIFICATION"
+            ),
+            "executor_available": True,
+            "routable": True,
+            "authorized": True,
+            "successful": False,
+            "credential_exposed": False,
+            "executor_provider": selected_provider,
+            "selected_provider": selected_provider,
+            "executor_returncode": int(receipt.get("returncode") or 0),
+            "executor_timed_out": receipt.get("timed_out") is True,
+        }
+
+    client = AntigravityRelayClient(relay_root)
     try:
         capsule = client.submit(
             project_id="agentos-core",
