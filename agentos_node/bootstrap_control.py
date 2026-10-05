@@ -391,6 +391,16 @@ def _restart_antigravity_relay() -> dict[str, Any]:
         shlex.quote(str(relay_root)),
         "--reconcile-only",
     ])
+    stop = subprocess.run(
+        ["systemctl", "--user", "stop", "agentos-antigravity-relay.service"],
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    if stop.returncode != 0:
+        raise RuntimeError("relay stop before stale quarantine failed")
+
     reconcile = subprocess.run(
         ["/usr/bin/sg", "agentos", "-c", reconcile_cmd],
         text=True,
