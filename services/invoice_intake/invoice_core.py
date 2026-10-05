@@ -154,6 +154,34 @@ def crop_rel(image: Image.Image, box: tuple[float, float, float, float]) -> Imag
     return image.crop((int(w*l), int(h*t), int(w*r), int(h*b)))
 
 
+def stamp_variants(image: Image.Image) -> list[Image.Image]:
+    """Return OCR-friendly variants for red/blue/black stamps on white paper."""
+    rgb = image.convert("RGB")
+    r, g, b = rgb.split()
+    variants = [
+        ImageOps.autocontrast(ImageOps.grayscale(rgb)),
+        ImageOps.autocontrast(r),
+        ImageOps.autocontrast(g),
+        ImageOps.autocontrast(b),
+    ]
+    # Red stamps are usually much darker in G/B than the white paper;
+    # blue stamps are often strongest in R/G. Channel variants make those
+    # strokes survive even when grayscale contrast is weak.
+    return variants
+
+
+def ocr_stamp_text(image: Image.Image, *, digits_only: bool = False) -> list[str]:
+    texts: list[str] = []
+    whitelist = "0123456789" if digits_only else None
+    lang = "eng" if digits_only else "chi_tra+eng"
+    for variant in stamp_variants(image):
+        for psm in (6, 11, 12):
+            text = ocr_image(variant, psm=psm, whitelist=whitelist, lang=lang)
+            if text.strip() and text not in texts:
+                texts.append(text)
+    return texts
+
+
 @dataclass
 class Extraction:
     fields: dict[str, Any]
@@ -254,26 +282,32 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
         raw["fallback_used"].append("amounts")
 
     if not fields["seller_tax_id"]:
-        stamp_text = ocr_image(stamp_crop, psm=11, whitelist="0123456789")
-        tax_ids = re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text))
-        if tax_ids:
-            fields["seller_tax_id"] = tax_ids[0]
-            confidence["seller_tax_id"] = 0.72
-        raw["stamp_text"] = stamp_text
-        raw["fallback_used"].append("seller_tax_id")
+        stamp_texts = ocr_stamp_text(stamp_crop, digits_only=True)
+        tax_ids: list[str] = []
+        for stamp_text in stamp_texts:
+            for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text)):
+                if candidate not in tax_ids:
+                    tax_ids.append(candidate)
+        valid = [x for x in tax_ids if valid_tax_id(x)]
+        chosen = (valid or tax_ids or [None])[0]
+        if chosen:
+            fields["seller_tax_id"] = chosen
+            confidence["seller_tax_id"] = 0.88 if chosen in valid else 0.68
+        raw["stamp_texts"] = stamp_texts
+        raw["fallback_used"].append("seller_tax_id_stamp")
 
     if not fields["vendor_name"]:
         vendor_texts = [
             rapid.get("raw_text") or "",
             ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng"),
-            ocr_image(crop_rel(image, (0.45, 0.48, 0.98, 0.98)), psm=11, lang="chi_tra+eng"),
         ]
+        vendor_texts.extend(ocr_stamp_text(crop_rel(image, (0.42, 0.42, 0.99, 0.99))))
         vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
         if vendor:
             fields["vendor_name"] = vendor
-            confidence["vendor_name"] = 0.68
+            confidence["vendor_name"] = 0.78
         raw["vendor_texts"] = vendor_texts
-        raw["fallback_used"].append("vendor_name")
+        raw["fallback_used"].append("vendor_name_stamp_aware")
 
     # A mathematically derived 5% split is useful for assistance but is not enough
     # by itself for unattended posting; keep that case in review.
@@ -287,6 +321,16 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
     # all three amounts are present, they may include a tax-derived split.
     if rapid.get("matched") and rapid.get("document_type") == "three_part_uniform_invoice":
         derived_amounts = not bool(rapid.get("visual_amounts"))
+
+    raw["field_sources"] = {
+        "invoice_number": "template_or_printed",
+        "invoice_date": "template_or_handwritten",
+        "vendor_name": "stamp_or_printed" if fields["vendor_name"] else None,
+        "seller_tax_id": "stamp_or_printed" if fields["seller_tax_id"] else None,
+        "amount_before_tax": "printed_or_handwritten_amount",
+        "tax_amount": "printed_or_handwritten_amount",
+        "total_amount": "printed_or_handwritten_amount",
+    }
 
     review_required = (
         any(fields.get(k) in (None, "") for k in ESSENTIAL_FIELDS)
