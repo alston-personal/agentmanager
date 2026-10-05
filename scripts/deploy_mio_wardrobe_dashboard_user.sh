@@ -3,6 +3,7 @@ set -euo pipefail
 
 SOURCE_SHA="${1:?source sha required}"
 RUN_ID="${2:?run id required}"
+RUN_ATTEMPT="${3:?run attempt required}"
 REPO=/home/ubuntu/agentmanager
 RELEASE_ROOT=/home/ubuntu/agent-data/releases/dashboard/apps
 RUNTIME_ROOT=/home/ubuntu/agent-data/runtime/dashboard
@@ -11,7 +12,7 @@ CONFIG_DIR=/home/ubuntu/.config/milkcat
 CONFIG="$CONFIG_DIR/dashboard.env.local"
 UNIT_DIR=/home/ubuntu/.config/systemd/user
 UNIT="$UNIT_DIR/agentos-dashboard.service"
-RELEASE="$RELEASE_ROOT/$SOURCE_SHA-$RUN_ID"
+RELEASE="$RELEASE_ROOT/$SOURCE_SHA-$RUN_ID-$RUN_ATTEMPT"
 STAGE="$RELEASE"
 PREV_LIVE="$(readlink -f "$LIVE" 2>/dev/null || true)"
 SWITCHED=0
@@ -37,6 +38,7 @@ trap finish EXIT
 
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
 [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+[[ "$RUN_ATTEMPT" =~ ^[0-9]+$ ]]
 test -d "$REPO/.git"
 
 git -C "$REPO" fetch --no-tags origin "$SOURCE_SHA"
@@ -91,7 +93,7 @@ echo "mio_dashboard_build_path=PASS"
 
 cp "$CONFIG" "$RELEASE/.env.local"
 chmod 600 "$RELEASE/.env.local"
-printf 'source_sha=%s\nrun_id=%s\nstate=candidate\n' "$SOURCE_SHA" "$RUN_ID" > "$RELEASE/RELEASE_RECEIPT"
+printf 'source_sha=%s\nrun_id=%s\nrun_attempt=%s\nstate=candidate\n' "$SOURCE_SHA" "$RUN_ID" "$RUN_ATTEMPT" > "$RELEASE/RELEASE_RECEIPT"
 
 # Canary exact release before switching production.
 (
@@ -180,6 +182,6 @@ assert j.get('handoffId') and j.get('signInUrl')
 print('mio_dashboard_auth_handoff=PASS')
 PY
 
-printf 'source_sha=%s\nrun_id=%s\nstate=active\nrelease=%s\n' "$SOURCE_SHA" "$RUN_ID" "$RELEASE" > "$RELEASE/RELEASE_RECEIPT"
+printf 'source_sha=%s\nrun_id=%s\nrun_attempt=%s\nstate=active\nrelease=%s\n' "$SOURCE_SHA" "$RUN_ID" "$RUN_ATTEMPT" "$RELEASE" > "$RELEASE/RELEASE_RECEIPT"
 SWITCHED=0
 echo "mio_dashboard_immutable_release=PASS"
