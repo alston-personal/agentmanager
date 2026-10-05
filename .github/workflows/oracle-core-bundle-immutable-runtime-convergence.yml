@@ -155,25 +155,21 @@ jobs:
             echo "core_bundle_runtime=$unit:immutable"
           done
           if systemctl --user is-active --quiet agentos-employee-worker-host.service; then
-            worker_runtime_ok=0
-            worker_cwd=""
-            for _ in $(seq 1 20); do
-              pid="$(systemctl --user show agentos-employee-worker-host.service -p MainPID --value 2>/dev/null || true)"
-              if [ -n "$pid" ] && [ "$pid" != 0 ] && [ -d "/proc/$pid" ]; then
-                worker_cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
-                case "$worker_cwd" in
-                  "$RELEASE"|"$RELEASE"/*) worker_runtime_ok=1; break;;
-                esac
-              fi
-              sleep 0.5
-            done
-            if [ "$worker_runtime_ok" -ne 1 ]; then
-              echo "ERROR: worker host did not stabilize on immutable release cwd=${worker_cwd:-unreadable}" >&2
-              systemctl --user --no-pager --full status agentos-employee-worker-host.service >&2 || true
-              journalctl --user -u agentos-employee-worker-host.service -n 40 --no-pager >&2 || true
+            worker_wd="$(systemctl --user show agentos-employee-worker-host.service -p WorkingDirectory --value)"
+            test "$(readlink -f "$worker_wd")" = "$RELEASE" || {
+              echo "ERROR: worker host unit WorkingDirectory is not exact release: $worker_wd" >&2
               exit 21
-            fi
+            }
+            worker_exec="$(systemctl --user show agentos-employee-worker-host.service -p ExecStart --value)"
+            case "$worker_exec" in
+              *"/usr/bin/sg agentos -c"*employee_worker_host_daemon*) ;;
+              *) echo "ERROR: worker host lost bounded agentos execution boundary" >&2; exit 22;;
+            esac
+            worker_pid="$(systemctl --user show agentos-employee-worker-host.service -p MainPID --value)"
+            test -n "$worker_pid" && test "$worker_pid" != 0
+            systemctl --user --no-pager --full status agentos-employee-worker-host.service | grep -q 'employee_worker_host_daemon'
             echo "core_bundle_runtime=agentos-employee-worker-host.service:immutable"
+            echo "core_bundle_worker_group_boundary=PASS"
           fi
 
           ln -sfn "$RELEASE" "$CURRENT"
