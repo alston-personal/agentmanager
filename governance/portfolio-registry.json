@@ -226,6 +226,95 @@
       "production": true,
       "growth_asset": true,
       "next_gate": "Common accounting semantics are stable before wider monetization use."
+    },
+    {
+      "id": "arcanaforge",
+      "name": "ArcanaForge",
+      "type": "product",
+      "status": "HOLD",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Preserve canonical product provenance and only resume product work through its product-owned repo/gates.",
+      "evidence_ref": "governance/product-migrations.json"
+    },
+    {
+      "id": "character-blueprint",
+      "name": "Character Blueprint",
+      "type": "product_capability",
+      "status": "HOLD",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Preserve existing v0.4 work; canonical repository establishment remains a separate governed decision.",
+      "evidence_ref": "governance/product-migrations.json"
+    },
+    {
+      "id": "model2ir",
+      "name": "Model2IR",
+      "type": "library_capability",
+      "status": "ASSET",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Preserve v0.9.1 lineage and migration evidence; do not continue implementation in core.",
+      "evidence_ref": "governance/product-migrations.json"
+    },
+    {
+      "id": "assetmaster",
+      "name": "AssetMaster",
+      "type": "legacy_product_asset",
+      "status": "ASSET",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Inventory retained finance/portfolio functionality before any decision to revive, merge or sunset.",
+      "evidence_ref": "AICC_PROJECTS_LIST.txt"
+    },
+    {
+      "id": "beauty-pk",
+      "name": "Beauty-PK",
+      "type": "legacy_product_asset",
+      "status": "HOLD",
+      "production": false,
+      "growth_asset": false,
+      "next_gate": "Preserve legacy status; require explicit current product rationale before revival.",
+      "evidence_ref": "AICC_PROJECTS_LIST.txt"
+    },
+    {
+      "id": "history-synthesizer",
+      "name": "History Synthesizer",
+      "type": "legacy_capability",
+      "status": "ASSET",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Deduplicate legacy history-synthesizer identities and preserve reusable synthesis logic.",
+      "evidence_ref": "AICC_PROJECTS_LIST.txt"
+    },
+    {
+      "id": "y2help-web",
+      "name": "y2help-web",
+      "type": "legacy_product_asset",
+      "status": "HOLD",
+      "production": false,
+      "growth_asset": false,
+      "next_gate": "Preserve legacy status; no work without a current user/problem signal.",
+      "evidence_ref": "AICC_PROJECTS_LIST.txt"
+    },
+    {
+      "id": "n8n-live",
+      "name": "n8n-live",
+      "type": "legacy_automation_asset",
+      "status": "ASSET",
+      "production": false,
+      "growth_asset": true,
+      "next_gate": "Treat as legacy automation asset; avoid reviving a parallel orchestration control plane without explicit need.",
+      "evidence_ref": "AICC_PROJECTS_LIST.txt"
     }
-  ]
+  ],
+  "orphan_discovery": {
+    "last_run": "2026-10-05",
+    "sources": [
+      "governance/product-migrations.json",
+      "AICC_PROJECTS_LIST.txt",
+      "recent accessible GitHub issues/PRs"
+    ],
+    "rule": "Discovery registers existing evidence without promoting work. Newly discovered items default to HOLD or ASSET unless current operating evidence requires RUN."
+  }
 }
