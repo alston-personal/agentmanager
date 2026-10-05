@@ -52,29 +52,35 @@ jobs:
           echo "rollout_source_ref=core/integration"
           echo "rollout_source_commit=$GITHUB_SHA"
 
-      - name: Publish bounded bootstrap hook and request exact transport generation
+      - name: Verify immutable bootstrap runtime and request exact transport generation
         shell: bash
         run: |
           set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
           ROOT=/tmp/agentos-bootstrap-control
           REQUESTS="$ROOT/requests"
           RECEIPTS="$ROOT/receipts"
           REQUEST_ID="exact-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           REQUEST="$REQUESTS/$REQUEST_ID.request.json"
           RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+          SCHED_MARKER=/home/ubuntu/agent-data/runtime/bootstrap-scheduler/enabled
 
-          python3 -m py_compile agentos_node/bootstrap_control.py scripts/update_scheduler_board.py
-          test -w "$LIVE/scripts/update_scheduler_board.py"
-          test -w "$LIVE/agentos_node" || test -w "$LIVE/agentos_node/bootstrap_control.py"
-          cat scripts/update_scheduler_board.py > "$LIVE/scripts/update_scheduler_board.py"
-          if [ -e "$LIVE/agentos_node/bootstrap_control.py" ]; then
-            cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          else
-            cp agentos_node/bootstrap_control.py "$LIVE/agentos_node/bootstrap_control.py"
-          fi
-          chmod 0664 "$LIVE/scripts/update_scheduler_board.py" "$LIVE/agentos_node/bootstrap_control.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/scripts/update_scheduler_board.py"
+          # The scheduler is now an immutable exact-generation runtime. This
+          # acceptance workflow must never refresh it by copying files into the
+          # mutable /home/ubuntu/agentmanager source cache.
+          test -f "$SCHED_MARKER"
+          SCHED_COMMIT="$(sed -n 's/^source_commit=//p' "$SCHED_MARKER" | head -n 1)"
+          SCHED_RELEASE="$(sed -n 's/^release=//p' "$SCHED_MARKER" | head -n 1)"
+          test "$SCHED_COMMIT" = "$GITHUB_SHA"
+          case "$SCHED_RELEASE" in
+            /home/ubuntu/.local/share/agentos/bootstrap-scheduler/releases/"$GITHUB_SHA") ;;
+            *) echo "ERROR: scheduler release is not exact immutable generation: $SCHED_RELEASE" >&2; exit 4;;
+          esac
+          test -f "$SCHED_RELEASE/agentos_node/bootstrap_control.py"
+          test -f "$SCHED_RELEASE/scripts/update_scheduler_board.py"
+          PYTHONPATH="$SCHED_RELEASE" python3 -m py_compile \
+            "$SCHED_RELEASE/agentos_node/bootstrap_control.py" \
+            "$SCHED_RELEASE/scripts/update_scheduler_board.py"
+          echo "executor_rollout_scheduler_generation=PASS"
 
           for i in $(seq 1 120); do
             [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
