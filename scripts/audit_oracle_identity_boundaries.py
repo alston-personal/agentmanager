@@ -45,6 +45,17 @@ def _classify(rel: str, text: str, policy: dict[str, Any]) -> dict[str, Any] | N
     has_source_cache = source_cache in text
     has_shared_data = shared_data in text or "AGENT_DATA_ROOT" in text
     has_node_identity = "agentos-node" in text or "/home/agentos-node" in text
+    direct_oracle_runner = bool(re.search(
+        r"runs-on:\s*\[(?=[^\]]*self-hosted)(?=[^\]]*oracle)[^\]]*\]",
+        text,
+        re.IGNORECASE,
+    ))
+    explicit_node_user = bool(re.search(
+        r"(?:id\s+-un[^\n]{0,80}agentos-node|User\s*=\s*agentos-node)",
+        text,
+        re.IGNORECASE,
+    ))
+    node_execution_proven = direct_oracle_runner or explicit_node_user
     user_systemd = "systemctl --user" in text or ".config/systemd/user" in text or "[Service]" in text
     bounded_group = any(marker in text for marker in policy["bounded_group_markers"])
     mutation = any(marker in text for marker in policy["mutation_markers"])
@@ -70,7 +81,11 @@ def _classify(rel: str, text: str, policy: dict[str, Any]) -> dict[str, Any] | N
     if user_systemd:
         tags.append("user-systemd")
     if has_node_identity:
-        tags.append("agentos-node")
+        tags.append("agentos-node-reference")
+    if direct_oracle_runner:
+        tags.append("direct-oracle-runner")
+    if explicit_node_user:
+        tags.append("explicit-agentos-node-user")
     if bounded_group:
         tags.append("explicit-agentos-group-boundary")
 
@@ -78,7 +93,7 @@ def _classify(rel: str, text: str, policy: dict[str, Any]) -> dict[str, Any] | N
     # runtime, appears capable of mutation, crosses/mentions service identities,
     # and lacks an explicit group boundary. This is the class that has already
     # caused production PermissionError/recovery failures.
-    if has_shared_data and mutation and has_node_identity and not bounded_group:
+    if has_shared_data and mutation and node_execution_proven and not bounded_group:
         risk = "P0"
         classification = "unbounded-cross-owner-mutation"
         tags.append("implicit-group-risk")
