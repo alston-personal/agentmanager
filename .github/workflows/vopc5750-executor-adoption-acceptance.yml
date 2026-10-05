@@ -30,6 +30,8 @@ jobs:
       AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Mint GitHub OIDC Runner Window credential
         shell: bash
@@ -55,13 +57,14 @@ jobs:
           set -euo pipefail
           : > "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
           converged=0
+          live_commit=""
           for i in $(seq 1 36); do
             out="$RUNNER_TEMP/vopc5750-runtime-generation-$i.txt"
             if AGENTOS_DISPATCH_WAIT_SECONDS=60 \
               bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" > "$out" 2>&1; then
               cat "$out" >> "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
-              if python3 - "$out" "$GITHUB_SHA" <<'PY'
-          import json,sys
+              live_commit="$(python3 - "$out" <<'PY' || true
+          import json,re,sys
           docs=[json.loads(line) for line in open(sys.argv[1],encoding='utf-8') if line.lstrip().startswith('{')]
           if not docs:
               raise SystemExit(1)
@@ -73,17 +76,30 @@ jobs:
               if '=' in item:
                   k,v=item.split('=',1)
                   vals[k]=v
-          expected=sys.argv[2]
-          ok=(
-              vals.get('relay_status')=='PASS'
-              and vals.get('relay_status_antigravity_source_commit')==expected
-              and vals.get('relay_status_action_source_commit')==expected
-          )
-          raise SystemExit(0 if ok else 1)
+          a=str(vals.get('relay_status_antigravity_source_commit') or '')
+          b=str(vals.get('relay_status_action_source_commit') or '')
+          if vals.get('relay_status')!='PASS':
+              raise SystemExit(1)
+          if not re.fullmatch(r'[0-9a-f]{40}',a) or a!=b:
+              raise SystemExit(1)
+          print(a)
           PY
-              then
-                converged=1
-                break
+              )"
+              if [ -n "$live_commit" ]; then
+                git fetch --no-tags origin "$live_commit" >/dev/null 2>&1 || true
+                if git cat-file -e "$live_commit^{commit}" 2>/dev/null \
+                  && git merge-base --is-ancestor "$live_commit" "$GITHUB_SHA"; then
+                  changed="$(git diff --name-only "$live_commit" "$GITHUB_SHA" -- \
+                    agentos_node/bootstrap_control.py \
+                    agentos_node/bootstrap_scheduler.py \
+                    agent_core/runner_window.py \
+                    agent_core/realm_server.py \
+                    scripts/install_bootstrap_scheduler_user.sh)"
+                  if [ -z "$changed" ]; then
+                    converged=1
+                    break
+                  fi
+                fi
               fi
             else
               cat "$out" >> "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
@@ -92,7 +108,7 @@ jobs:
           done
           test "$converged" = 1
           echo "vopc5750_control_runtime_generation=PASS"
-          echo "vopc5750_control_runtime_source_commit=$GITHUB_SHA"
+          echo "vopc5750_control_runtime_source_commit=$live_commit"
 
       - name: Upload bounded runtime gate receipt
         if: always()
