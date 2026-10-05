@@ -161,6 +161,10 @@ jobs:
               f.write('selected_provider='+selected+'\n')
           print('model_routing_health_gate=PASS')
           print('model_routing_health_selected_provider='+selected)
+          for provider in ('claude','agy','gemini','codex'):
+              print(f'model_routing_{provider}_state='+str(r.get(provider+'_state') or 'none'))
+              print(f'model_routing_{provider}_ready_count='+str(r.get(provider+'_ready_count') if r.get(provider+'_ready_count') is not None else 'none'))
+              print(f'model_routing_{provider}_health_classification='+str(r.get(provider+'_health_classification') or 'none'))
           PY
       - name: Submit health-routed model smoke
         id: submit
