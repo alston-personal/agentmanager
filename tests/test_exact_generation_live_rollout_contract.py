@@ -43,17 +43,19 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         text = _text(REALM_SERVER)
         self.assertIn("'relay_status_stale_processing=',", text)
 
-    def test_bootstrap_scheduler_workers_enter_agentos_group_explicitly(self):
+    def test_bootstrap_scheduler_keeps_stable_direct_worker_lifecycle(self):
         installer = _text(ROOT / "scripts" / "install_bootstrap_scheduler_user.sh")
-        self.assertIn("ExecStart=/usr/bin/sg agentos -c", installer)
-        self.assertIn('getent group agentos', installer)
-        self.assertIn('"/proc/$PID/status"', installer)
+        self.assertIn("ExecStart=/usr/bin/python3 -m agentos_node.bootstrap_scheduler", installer)
+        self.assertNotIn("ExecStart=/usr/bin/sg agentos -c", installer)
 
-    def test_relay_restart_explicitly_quarantines_stale_processing(self):
+    def test_relay_restart_uses_bounded_agentos_group_quarantine_helper(self):
         bootstrap = _text(BOOTSTRAP)
-        self.assertIn("reconcile_stranded_processing(", bootstrap)
-        self.assertIn("stale_after=RELAY_STALE_PROCESSING_SECONDS", bootstrap)
+        worker = _text(ROOT / "agentos_node" / "antigravity_relay_worker.py")
+        self.assertIn('["/usr/bin/sg", "agentos", "-c", reconcile_cmd]', bootstrap)
+        self.assertIn('"--reconcile-only"', bootstrap)
         self.assertIn("relay_restart_quarantined_stale=", bootstrap)
+        self.assertIn('parser.add_argument("--reconcile-only", action="store_true")', worker)
+        self.assertIn("reconcile_stranded_processing(stale_after=600.0)", worker)
 
     def test_transport_repair_restarts_and_requires_active_antigravity_relay(self):
         text = _text(REPAIR)
