@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -170,13 +171,14 @@ def discover_executor_inventory(
     profile_root: str | Path | None = None,
     probe_health: bool = True,
 ) -> dict[str, Any]:
-    executors: list[dict[str, Any]] = []
-    for profile in load_provider_profiles(profile_root):
+    profiles = load_provider_profiles(profile_root)
+
+    def inspect_profile(profile: dict[str, Any]) -> dict[str, Any]:
         try:
             provider = load_provider(profile)
-            executors.append(_state_from_provider(profile, provider, probe_health=probe_health))
+            return _state_from_provider(profile, provider, probe_health=probe_health)
         except Exception as exc:
-            executors.append({
+            return {
                 "executor_id": str(profile.get("executor_id") or "unknown"),
                 "provider_id": str(profile.get("provider_id") or "unknown"),
                 "executor_class": str(profile.get("executor_class") or "unknown"),
@@ -186,7 +188,18 @@ def discover_executor_inventory(
                 "routable": False,
                 "state": "REGISTRATION_REQUIRED",
                 "provider_error": _bounded_error(exc),
-            })
+            }
+
+    # Provider health probes are independent bounded operations. Run them
+    # concurrently so one slow provider (for example, a 60s timeout) does not
+    # serialize every other provider probe. executor order remains canonical
+    # because executor.map preserves input ordering.
+    if probe_health and len(profiles) > 1:
+        workers = min(4, len(profiles))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="executor-health") as pool:
+            executors = list(pool.map(inspect_profile, profiles))
+    else:
+        executors = [inspect_profile(profile) for profile in profiles]
 
     return {
         "schema": SCHEMA,

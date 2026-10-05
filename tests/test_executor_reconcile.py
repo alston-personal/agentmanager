@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 
 from agentos_node import executor_reconcile
@@ -159,6 +160,26 @@ def test_reconcile_persists_state_counts(tmp_path, monkeypatch):
             "REGISTRATION_REQUIRED": 1,
         },
     }
+
+
+def test_health_inventory_probes_registered_providers_concurrently(monkeypatch):
+    profiles = [
+        {**_profile("tests.fake_demo_provider"), "executor_id": "demo-a"},
+        {**_profile("tests.fake_demo_provider"), "executor_id": "demo-b"},
+    ]
+    barrier = threading.Barrier(2, timeout=2)
+
+    class BarrierProvider(ReadyProvider):
+        def health(self):
+            barrier.wait()
+            return super().health()
+
+    monkeypatch.setattr(executor_reconcile, "load_provider_profiles", lambda root=None: profiles)
+    monkeypatch.setattr(executor_reconcile, "load_provider", lambda profile: BarrierProvider())
+
+    inventory = executor_reconcile.discover_executor_inventory()
+    assert [row["executor_id"] for row in inventory["executors"]] == ["demo-a", "demo-b"]
+    assert all(row["state"] == "READY" for row in inventory["executors"])
 
 
 def test_fast_inventory_defers_provider_health(tmp_path, monkeypatch):
