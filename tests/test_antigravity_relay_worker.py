@@ -61,7 +61,7 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
                 self.assertEqual(worker.reconcile_stranded_processing(stale_after=600), 1)
             self.assertTrue((root / "processing").is_dir())
             self.assertFalse(any((root / "processing").glob("relay-*.json")))
-            quarantined = list((root / "quarantine").glob("processing-spool-*/relay-peer.json"))
+            quarantined = list(root.glob("quarantine-processing-*/relay-peer.json"))
             self.assertEqual(len(quarantined), 1)
             receipt = json.loads((root / "receipts" / "relay-peer.json").read_text(encoding="utf-8"))
             self.assertEqual(receipt["classification"], "UNKNOWN_SIDE_EFFECT")
