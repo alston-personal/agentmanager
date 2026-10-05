@@ -344,6 +344,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'node_id', 'candidate_commit'}
         elif action in {bootstrap_control.ACTION_REALM_NODE_INSPECT, bootstrap_control.ACTION_REALM_DESKTOP_PROBE, bootstrap_control.ACTION_REALM_EXECUTOR_RECONCILE}:
             allowed_params |= {'node_id'}
+        elif action == bootstrap_control.ACTION_REALM_PROJECT_INSPECT:
+            allowed_params |= {'node_id', 'project_id'}
         elif action in {bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE, bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE}:
             allowed_params |= {'prompt'}
         elif action == bootstrap_control.ACTION_EXECUTOR_JOB_SUBMIT:
@@ -458,6 +460,21 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 safe_prefixes = (
                     'realm_desktop_node_id=',
                     'realm_desktop_probe=',
+                )
+            elif action == bootstrap_control.ACTION_REALM_PROJECT_INSPECT:
+                safe_prefixes = (
+                    'realm_project_node_id=',
+                    'realm_project_id=',
+                    'realm_project_inspect=',
+                    'realm_project_match_count=',
+                    'realm_project_git_repository=',
+                    'realm_project_git_head=',
+                    'realm_project_git_branch=',
+                    'realm_project_worktree_clean=',
+                    'realm_project_dirty_count=',
+                    'realm_project_untracked_count=',
+                    'realm_project_remote_identity=',
+                    'realm_project_last_commit_at=',
                 )
             elif action == bootstrap_control.ACTION_REALM_EXECUTOR_RECONCILE:
                 safe_prefixes = (
