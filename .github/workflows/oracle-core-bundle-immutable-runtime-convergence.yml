@@ -79,6 +79,20 @@ jobs:
           done
           systemctl --user is-active --quiet agent-maintenance.timer 2>/dev/null && echo agent-maintenance.timer >> "$BACKUP/active-services" || true
 
+          # Preserve the live Employee Worker Host intent during migration. The
+          # historical host may have been activated before the enable toggle was
+          # persisted in the shared .env. Reuse only its existing bounded
+          # host-local environment; do not infer or invent wake/node identity.
+          if grep -qx 'agentos-employee-worker-host.service' "$BACKUP/active-services"; then
+            WORKER_ENV=/home/ubuntu/.config/agentos/employee-worker-host.env
+            test -f "$WORKER_ENV"
+            set -a
+            source "$WORKER_ENV"
+            export AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE=1
+            set +a
+            echo "core_bundle_worker_intent=PRESERVE_ACTIVE"
+          fi
+
           rollback() {
             rc=$?
             if [ "$rc" -ne 0 ]; then
