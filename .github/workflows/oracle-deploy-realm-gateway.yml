@@ -113,8 +113,8 @@ jobs:
           assert r.get('source_commit') == source_commit, r
           assert r.get('ok') is True, r
           assert s.get('node') == 'oracle', s
-          assert s.get('worker_role') == 'control', s
-          assert s.get('worker_id') == 'oracle-control', s
+          assert s.get('worker_role') == 'maintenance', s
+          assert s.get('worker_id') == 'oracle-maintenance', s
           assert 'oracle-core-runtime' in set(s.get('locks') or []), s
           text='\n'.join((step.get('stdout','')+'\n'+step.get('stderr','')) for step in r.get('steps',[]))
           assert f'route_source={source_commit}:dashboard/app/api/agentos/[...path]/route.ts' in text, text[-12000:]
