@@ -56,9 +56,12 @@ SUBMIT="$(mktemp)"
 trap 'rm -f "$SUBMIT"' EXIT
 
 submit_attempts=1
-if [ "$CAPABILITY" = "agentos.executor" ] && [ "$OPERATION" = "job.inspect" ]; then
-  # job.inspect is a bounded read-only status query. Retrying its Runner Window
-  # request creation is replay-safe; mutating/general operations remain single-shot.
+if { [ "$CAPABILITY" = "agentos.executor" ] && [ "$OPERATION" = "job.inspect" ]; } \
+  || { [ "$CAPABILITY" = "agentos.relay" ] && [ "$OPERATION" = "status" ]; } \
+  || { [ "$CAPABILITY" = "agentos.scheduler" ] && [ "$OPERATION" = "status" ]; } \
+  || { [ "$CAPABILITY" = "agentos.dispatch" ] && [ "$OPERATION" = "probe" ]; }; then
+  # Bounded read-only queries are replay-safe at request creation. Retry only
+  # transient ingress failures; mutating/general operations remain single-shot.
   submit_attempts=4
 fi
 
