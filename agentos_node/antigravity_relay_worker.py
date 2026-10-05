@@ -21,6 +21,7 @@ from pathlib import Path
 import signal
 import stat
 import subprocess
+import shutil
 import time
 import uuid
 from typing import Any, Sequence
@@ -46,6 +47,9 @@ def _discover_claude() -> list[str] | None:
         candidate = Path(explicit).expanduser()
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return [str(candidate), "--print", "--output-format", "text", "--effort", "low"]
+    found = shutil.which("claude")
+    if found:
+        return [str(Path(found).resolve()), "--print", "--output-format", "text", "--effort", "low"]
     patterns = [
         str(Path.home() / ".antigravity-ide-server/extensions/anthropic.claude-code-*-linux-arm64/resources/native-binary/claude"),
         str(Path.home() / ".antigravity-ide-server/extensions/anthropic.claude-code-*/resources/native-binary/claude"),
@@ -61,19 +65,19 @@ def _discover_claude() -> list[str] | None:
 
 
 def _discover_agy() -> list[str] | None:
-    # Deliberately fixed to the ubuntu-owned AgentOS CLI location. Do not turn
-    # this into arbitrary command text from a capsule or environment variable.
     candidate = Path.home() / ".local/bin/agy"
     if candidate.is_file() and os.access(candidate, os.X_OK):
         return [str(candidate)]
-    return None
+    found = shutil.which("agy")
+    return [str(Path(found).resolve())] if found else None
 
 
 def _discover_gemini() -> list[str] | None:
     candidate = Path.home() / ".local/bin/gemini"
     if candidate.is_file() and os.access(candidate, os.X_OK):
         return [str(candidate)]
-    return None
+    found = shutil.which("gemini")
+    return [str(Path(found).resolve())] if found else None
 
 
 def _discover_codex() -> list[str] | None:
@@ -87,7 +91,8 @@ def _discover_codex() -> list[str] | None:
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return [str(candidate)]
-    return None
+    found = shutil.which("codex")
+    return [str(Path(found).resolve())] if found else None
 
 
 def discover_executor(provider: str | None = None) -> tuple[str, list[str] | None]:

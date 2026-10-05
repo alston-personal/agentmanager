@@ -13,9 +13,28 @@ from agentos_node.antigravity_relay import AntigravityRelayClient
 from agentos_node.antigravity_relay_worker import discover_executor
 
 INVOKE_SCHEMA = "agentos.executor-provider-invoke/v0.1"
-RELAY_ROOT = Path("/home/ubuntu/agent-data/runtime/antigravity-relay")
+def _default_relay_root() -> Path:
+    explicit = os.environ.get("AGENTOS_RELAY_ROOT")
+    if explicit:
+        return Path(explicit).expanduser()
+    legacy = Path("/home/ubuntu/agent-data/runtime/antigravity-relay")
+    if legacy.parent.exists():
+        return legacy
+    state_root = Path(os.environ.get("AGENTOS_CLIENT_HOME") or (Path.home() / ".agentos"))
+    return state_root / "runtime" / "antigravity-relay"
+
+
+def _default_core_workspace() -> Path:
+    explicit = os.environ.get("AGENTOS_CORE_WORKSPACE")
+    if explicit:
+        return Path(explicit).expanduser()
+    legacy = Path("/home/ubuntu/agentmanager")
+    return legacy if legacy.is_dir() else Path.cwd()
+
+
+RELAY_ROOT = _default_relay_root()
 WORKSPACES = {
-    "agentos-core": Path("/home/ubuntu/agentmanager"),
+    "agentos-core": _default_core_workspace(),
 }
 _OPAQUE_ID = re.compile(r"^relay-[A-Za-z0-9._-]{8,120}$")
 
@@ -153,15 +172,15 @@ def _health(provider: str, *, workspace: Path | None = None, timeout_seconds: fl
             }, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        source_settings = Path("/home/ubuntu/.gemini")
+        source_settings = Path.home() / ".gemini"
         for credential_name in ("oauth_creds.json", "google_accounts.json"):
             source = source_settings / credential_name
             if source.exists():
                 (settings_dir / credential_name).symlink_to(source)
         run_env = {
             **os.environ,
-            "HOME": "/home/ubuntu",
-            "USER": "ubuntu",
+            "HOME": str(Path.home()),
+            "USER": os.environ.get("USER") or os.environ.get("USERNAME") or Path.home().name,
             "GEMINI_CLI_HOME": str(cli_home),
             "CI": "1",
         }
@@ -229,8 +248,8 @@ class _RelayProvider:
     executor_class = ""
     relay_provider = ""
 
-    def __init__(self, root: str | Path = RELAY_ROOT) -> None:
-        self.root = Path(root)
+    def __init__(self, root: str | Path | None = None) -> None:
+        self.root = Path(root) if root is not None else _default_relay_root()
 
     def discover(self) -> dict[str, Any]:
         _selected, executable = discover_executor(self.relay_provider)

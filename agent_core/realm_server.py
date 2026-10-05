@@ -342,7 +342,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'studio_commit'}
         elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
             allowed_params |= {'node_id', 'candidate_commit'}
-        elif action in {bootstrap_control.ACTION_REALM_NODE_INSPECT, bootstrap_control.ACTION_REALM_DESKTOP_PROBE}:
+        elif action in {bootstrap_control.ACTION_REALM_NODE_INSPECT, bootstrap_control.ACTION_REALM_DESKTOP_PROBE, bootstrap_control.ACTION_REALM_EXECUTOR_RECONCILE}:
             allowed_params |= {'node_id'}
         elif action in {bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE, bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE}:
             allowed_params |= {'prompt'}
@@ -454,6 +454,20 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 safe_prefixes = (
                     'realm_desktop_node_id=',
                     'realm_desktop_probe=',
+                )
+            elif action == bootstrap_control.ACTION_REALM_EXECUTOR_RECONCILE:
+                safe_prefixes = (
+                    'realm_executor_node_id=',
+                    'realm_executor_reconcile=',
+                    'realm_executor_codex_state=',
+                    'realm_executor_codex_classification=',
+                    'realm_executor_codex_stable_routable=',
+                    'realm_executor_gemini_state=',
+                    'realm_executor_gemini_classification=',
+                    'realm_executor_gemini_stable_routable=',
+                    'realm_executor_claude_code_state=',
+                    'realm_executor_claude_code_classification=',
+                    'realm_executor_claude_code_stable_routable=',
                 )
             elif action == bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE:
                 safe_prefixes = (
