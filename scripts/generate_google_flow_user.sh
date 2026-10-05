@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$(id -un)" != "ubuntu" ]; then
-  echo "google_flow_generate=WRONG_USER" >&2
-  exit 2
+EXEC_USER="$(id -un)"
+if [ "$EXEC_USER" != "ubuntu" ]; then
+  echo "google_flow_generate=WRONG_USER"
+  echo "google_flow_executor_user=$EXEC_USER"
+  exit 0
 fi
 
-ROOT="$HOME/.local/share/agentos/gui-worker"
+ROOT="/home/ubuntu/.local/share/agentos/gui-worker"
 PY="$ROOT/venv/bin/python"
 CDP_URL="http://127.0.0.1:9222"
 OUT_ROOT="/home/ubuntu/agent-data/artifacts/google-flow"
 PROMPT="${AGENTOS_GOOGLE_MEDIA_PROMPT:-A cinematic 8-second shot of a quiet mountain trail at golden hour. A gentle breeze moves the grass and leaves, the camera slowly pushes forward, natural realistic lighting, subtle ambient sound, no text, no logos.}"
-test -x "$PY"
-mkdir -p "$OUT_ROOT"
+if [ ! -x "$PY" ]; then
+  echo "google_flow_generate=GUI_PYTHON_MISSING"
+  exit 0
+fi
+if ! curl -fsS --max-time 3 "$CDP_URL/json/version" >/dev/null; then
+  echo "google_flow_generate=CDP_UNAVAILABLE"
+  exit 0
+fi
+if ! mkdir -p "$OUT_ROOT"; then
+  echo "google_flow_generate=ARTIFACT_ROOT_UNWRITABLE"
+  exit 0
+fi
 chmod 700 "$OUT_ROOT"
+echo "google_flow_runtime_preflight=PASS"
 
 timeout 900s "$PY" - "$CDP_URL" "$OUT_ROOT" "$PROMPT" <<'PY'
 from __future__ import annotations
