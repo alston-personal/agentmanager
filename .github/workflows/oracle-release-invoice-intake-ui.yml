@@ -19,7 +19,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 6a7345150e84463fb06ddcb28e2d580a223834b0
+      source_sha: 43d5e9462f95559c9f829d2d40397514ee47cb50
       route: invoice-intake
       backup_key: invoice-intake-ui
       receipt_schema: studio-web.invoice-intake-release/v1
@@ -27,6 +27,8 @@ jobs:
         查看這張完整辨識結果
         開啟相機連續掃描
         已掃描發票
+        選擇相片／掃描圖檔
+        本批總數
         匯出給文中
         匯出已確認給文中
       credit_account: ''
