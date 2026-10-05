@@ -164,7 +164,7 @@ def generate_markdown():
     workers = runner_pool.get("workers") if isinstance(runner_pool.get("workers"), dict) else {}
     md.append(
         "Queue depth: "
-        + ", ".join(f"{role}={queue_depth.get(role, 0)}" for role in ("gui", "social", "control", "build"))
+        + ", ".join(f"{role}={queue_depth.get(role, 0)}" for role in ("gui", "social", "control", "maintenance", "build"))
     )
     md.append("\n| Worker | Role | State | Current Job | Priority | Locks | Heartbeat |")
     md.append("| :--- | :---: | :---: | :--- | :---: | :--- | :--- |")

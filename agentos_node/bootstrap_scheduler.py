@@ -39,8 +39,8 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_RELAY_RESTART: ActionPolicy("control", 7, "high", ("agentos.relay.restart",), ("oracle-antigravity-relay",)),
     bc.ACTION_EXECUTOR_JOB_SUBMIT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
     bc.ACTION_EXECUTOR_JOB_INSPECT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
-    bc.ACTION_NODE_TRANSACTIONAL_OTA: ActionPolicy("control", 16, "high", ("node.runtime.ota",), ("node-runtime-ota",)),
-    bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("control", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
+    bc.ACTION_NODE_TRANSACTIONAL_OTA: ActionPolicy("maintenance", 16, "high", ("node.runtime.ota",), ("node-runtime-ota",)),
+    bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("maintenance", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
     bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui"), queue_ttl_seconds=90),
@@ -62,21 +62,21 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_PUBLISH_GALAXY_DAY1: ActionPolicy("social", PUBLISH, "normal", ("threads.api.write",), ("threads:oursong",)),
     bc.ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES: ActionPolicy("social", PUBLISH, "normal", ("threads.api.write",), ("threads:oursong",)),
     bc.ACTION_PROBE_MIO_IMAGE_CONTAINER: ActionPolicy("build", 45, "normal", ("asset.processing",)),
-    bc.ACTION_PROJECT_MIO_OBSERVER: ActionPolicy("control", LOW, "low", ("observer.update",), ("oracle-core-runtime",)),
-    bc.ACTION_DEPLOY_STUDIO_WEB_MIO: ActionPolicy("control", LOW, "low", ("deployment",), ("oracle-core-runtime",)),
-    bc.ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR: ActionPolicy("control", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
-    bc.ACTION_INSTALL_MIO_OBSERVER_TIMER: ActionPolicy("control", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
-    bc.ACTION_DEPLOY_SOCIAL_RUNTIME: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
-    bc.ACTION_RECONCILE_CONTENT_SOCIAL: ActionPolicy("control", 35, "normal", ("content.social.reconcile",), ("content-social-runtime",)),
-    bc.ACTION_DEPLOY_THREADS_GALAXY: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
-    bc.ACTION_RECONCILE_CONTROL_INBOX: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
-    bc.ACTION_DEPLOY_REALM_GATEWAY: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
-    bc.ACTION_PROVISION_ZIWEI_MASTER_REPO: ActionPolicy("control", MAINTENANCE, "low", ("repository.provision",), ("oracle-core-runtime",)),
-    bc.ACTION_DEPLOY_MIO_TELEGRAM: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
-    bc.ACTION_INSTALL_GUI_WORKER: ActionPolicy("control", MAINTENANCE, "low", ("node.gui.install",), ("oracle-core-runtime",)),
+    bc.ACTION_PROJECT_MIO_OBSERVER: ActionPolicy("maintenance", LOW, "low", ("observer.update",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_STUDIO_WEB_MIO: ActionPolicy("maintenance", LOW, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR: ActionPolicy("maintenance", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
+    bc.ACTION_INSTALL_MIO_OBSERVER_TIMER: ActionPolicy("maintenance", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_SOCIAL_RUNTIME: ActionPolicy("maintenance", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_RECONCILE_CONTENT_SOCIAL: ActionPolicy("maintenance", 35, "normal", ("content.social.reconcile",), ("content-social-runtime",)),
+    bc.ACTION_DEPLOY_THREADS_GALAXY: ActionPolicy("maintenance", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_RECONCILE_CONTROL_INBOX: ActionPolicy("maintenance", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_REALM_GATEWAY: ActionPolicy("maintenance", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_PROVISION_ZIWEI_MASTER_REPO: ActionPolicy("maintenance", MAINTENANCE, "low", ("repository.provision",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_MIO_TELEGRAM: ActionPolicy("maintenance", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_INSTALL_GUI_WORKER: ActionPolicy("maintenance", MAINTENANCE, "low", ("node.gui.install",), ("oracle-core-runtime",)),
     bc.ACTION_SMOKE_GUI_WORKER: ActionPolicy("gui", 25, "normal", ("browser.cdp", "browser.gui"), ("oracle-gui-profile",)),
-    bc.ACTION_DEPLOY_MIO_TRYON: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
-    bc.ACTION_INSTALL_ORACLE_EXEC: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_MIO_TRYON: ActionPolicy("maintenance", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_INSTALL_ORACLE_EXEC: ActionPolicy("maintenance", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
 }
 
 DEFAULT_POLICY = ActionPolicy("control", MAINTENANCE, "low", ("agentos.bootstrap.execute",), ("oracle-core-runtime",))
@@ -120,7 +120,7 @@ def _request_summary(path: Path) -> tuple[int, str, str, dict[str, Any]]:
 
 
 def _queue_depths(requests: Path) -> dict[str, int]:
-    depths = {"control": 0, "social": 0, "gui": 0, "build": 0}
+    depths = {"control": 0, "maintenance": 0, "social": 0, "gui": 0, "build": 0}
     for path in requests.glob("*.request.json"):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -831,7 +831,7 @@ def route_failover_once(*, worker_id: str = "agentos-router", failover_after_sec
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--role", choices=("control", "social", "gui", "build", "router"), required=True)
+    parser.add_argument("--role", choices=("control", "maintenance", "social", "gui", "build", "router"), required=True)
     parser.add_argument("--worker-id", required=True)
     parser.add_argument("--poll-seconds", type=float, default=0.75)
     parser.add_argument("--lock-timeout-seconds", type=float, default=120.0)

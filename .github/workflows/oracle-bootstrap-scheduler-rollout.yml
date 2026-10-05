@@ -74,7 +74,7 @@ jobs:
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
           python3 -c "import json; d=json.load(open('/home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json',encoding='utf-8')); print('scheduler_queue_depth='+json.dumps(d.get('queue_depth') or {},sort_keys=True,separators=(',',':'))); [print('scheduler_worker='+wid+':'+str(row.get('role'))+':'+str(row.get('state'))) for wid,row in sorted((d.get('workers') or {}).items())]"
-          for unit in agentos-bootstrap-control.service agentos-bootstrap-social-1.service agentos-bootstrap-social-2.service agentos-bootstrap-gui.service agentos-bootstrap-build.service agentos-bootstrap-router.service; do
+          for unit in agentos-bootstrap-control.service agentos-bootstrap-maintenance.service agentos-bootstrap-social-1.service agentos-bootstrap-social-2.service agentos-bootstrap-gui.service agentos-bootstrap-build.service agentos-bootstrap-router.service; do
             systemctl --user is-active --quiet "$unit"
             systemctl --user show "$unit" -p CPUQuotaPerSecUSec -p MemoryHigh -p MemoryMax --no-pager
           done

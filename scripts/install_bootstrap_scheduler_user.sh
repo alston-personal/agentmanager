@@ -33,6 +33,7 @@ mkdir -p "$STAGE" "$WORK/units"
 
 UNITS=(
   agentos-bootstrap-control.service
+  agentos-bootstrap-maintenance.service
   agentos-bootstrap-social-1.service
   agentos-bootstrap-social-2.service
   agentos-bootstrap-gui.service
@@ -117,7 +118,8 @@ WantedBy=default.target
 EOF
 }
 
-write_unit agentos-bootstrap-control.service control oracle-control 100% 2G 4G
+write_unit agentos-bootstrap-control.service control oracle-control 50% 512M 1G
+write_unit agentos-bootstrap-maintenance.service maintenance oracle-maintenance 100% 2G 4G
 write_unit agentos-bootstrap-social-1.service social oracle-social-1 75% 1G 2G
 write_unit agentos-bootstrap-social-2.service social oracle-social-2 75% 1G 2G
 write_unit agentos-bootstrap-gui.service gui oracle-gui 125% 2G 3G
@@ -143,7 +145,7 @@ done
 
 worker_status_ready=0
 for _ in $(seq 1 30); do
-  if [ -s "$STATE_ROOT/status.json" ] && python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build','agentos-router'}; raise SystemExit(0 if expected <= set(d.get('workers') or {}) else 1)"; then
+  if [ -s "$STATE_ROOT/status.json" ] && python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); expected={'oracle-control','oracle-maintenance','oracle-social-1','oracle-social-2','oracle-gui','oracle-build','agentos-router'}; raise SystemExit(0 if expected <= set(d.get('workers') or {}) else 1)"; then
     worker_status_ready=1
     break
   fi
@@ -151,7 +153,7 @@ for _ in $(seq 1 30); do
 done
 test "$worker_status_ready" = 1
 
-python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); assert d.get('schema')=='agentos.bootstrap-scheduler-status/v1',d; expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build','agentos-router'}; workers=d.get('workers') or {}; assert expected <= set(workers), expected-set(workers); print('bootstrap_scheduler_worker_count='+str(len(expected))); print('bootstrap_scheduler_status=PASS')"
+python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); assert d.get('schema')=='agentos.bootstrap-scheduler-status/v1',d; expected={'oracle-control','oracle-maintenance','oracle-social-1','oracle-social-2','oracle-gui','oracle-build','agentos-router'}; workers=d.get('workers') or {}; assert expected <= set(workers), expected-set(workers); print('bootstrap_scheduler_worker_count='+str(len(expected))); print('bootstrap_scheduler_status=PASS')"
 
 ln -sfn "$RELEASE" "$CURRENT"
 rollback_marker=0

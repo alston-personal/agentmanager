@@ -24,6 +24,17 @@ class InteractiveQueueTtlTests(unittest.TestCase):
         self.assertEqual(policy.role, "gui")
         self.assertEqual(policy.queue_ttl_seconds, 90)
 
+    def test_fast_control_actions_do_not_share_maintenance_lane(self) -> None:
+        self.assertEqual(policy_for(bc.ACTION_RELAY_STATUS).role, "control")
+        self.assertEqual(policy_for(bc.ACTION_SCHEDULER_STATUS).role, "control")
+        self.assertEqual(policy_for(bc.ACTION_RELAY_RESTART).role, "control")
+
+    def test_long_running_control_actions_use_maintenance_lane(self) -> None:
+        self.assertEqual(policy_for(bc.ACTION_REPAIR_TRANSPORT).role, "maintenance")
+        self.assertEqual(policy_for(bc.ACTION_DEPLOY_REALM_GATEWAY).role, "maintenance")
+        self.assertEqual(policy_for(bc.ACTION_NODE_TRANSACTIONAL_OTA).role, "maintenance")
+        self.assertEqual(policy_for(bc.ACTION_INSTALL_GUI_WORKER).role, "maintenance")
+
     def test_expired_login_handoff_becomes_failure_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
