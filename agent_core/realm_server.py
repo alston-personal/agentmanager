@@ -431,6 +431,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'relay_status_receipts_count=',
                     'relay_status_inbox_oldest_seconds=',
                     'relay_status_processing_oldest_seconds=',
+                    'relay_status_stale_processing=',
                     'relay_status=',
                 )
             elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
