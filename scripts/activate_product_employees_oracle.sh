@@ -23,8 +23,23 @@ set +a
 [ "${AGENT_MODE:-CLIENT}" = "CORE" ] || { echo "Product Employee activation requires AGENT_MODE=CORE" >&2; exit 2; }
 DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
 case "$DATA_ROOT" in /*) ;; *) echo "AGENT_DATA_ROOT must be absolute" >&2; exit 2;; esac
+
+# Product Employee runtime is a consumer of the accepted Core generation, not
+# an authority to execute from whichever mutable checkout invoked this script.
+CORE_CURRENT="$DATA_ROOT/runtime/core/current"
+CORE_RUNTIME="$(readlink -f "$CORE_CURRENT" 2>/dev/null || true)"
+case "$CORE_RUNTIME" in
+  "$DATA_ROOT/releases/core/"*) ;;
+  *) echo "Product Employee activation requires accepted immutable Core current release" >&2; exit 2;;
+esac
+ROOT="$CORE_RUNTIME"
+ENV_FILE="$ROOT/.env"
+WAKE_UNIT_SRC="$ROOT/.agent/scripts/agentos-employee-wake-node.service"
+WORK_INTENT_UNIT_SRC="$ROOT/.agent/scripts/agentos-product-work-intent-reconciler.service"
+WORK_INTENT_TIMER_SRC="$ROOT/.agent/scripts/agentos-product-work-intent-reconciler.timer"
 [ -f "$DATA_ROOT/realm/fabric.json" ] || { echo "Missing existing Realm fabric" >&2; exit 2; }
 [ -f "$DATA_ROOT/realm/nodes.json" ] || { echo "Missing existing Node registry" >&2; exit 2; }
+[ -f "$ENV_FILE" ] || { echo "Missing accepted Core release environment link" >&2; exit 2; }
 [ -f "$WAKE_UNIT_SRC" ] || { echo "Missing wake node service asset" >&2; exit 2; }
 [ -f "$WORK_INTENT_UNIT_SRC" ] || { echo "Missing product work-intent reconciler service asset" >&2; exit 2; }
 [ -f "$WORK_INTENT_TIMER_SRC" ] || { echo "Missing product work-intent reconciler timer asset" >&2; exit 2; }
@@ -120,6 +135,7 @@ PY
 done
 [ "$ready" -eq 1 ] || { echo "Wake node did not advertise exact bounded capability" >&2; exit 4; }
 
+echo "product_employee_core_runtime=$ROOT"
 echo "product_employee_activation=PASS"
 echo "wake_node_id=$WAKE_NODE_ID"
 echo "wake_capability=agent.employee.wake.deliver"

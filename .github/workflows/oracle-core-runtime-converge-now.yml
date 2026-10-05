@@ -1,26 +1,18 @@
 name: Oracle Core Runtime Converge Now
+
 on:
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
-  converge:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 8
+  retired:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Refresh bootstrap runtime and restart bounded services
-        shell: bash
+      - name: Legacy mutable-checkout repair is retired
         run: |
-          set -euo pipefail
-          test "$(id -un)" = "agentos-node"
-          test -f /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
-          cmp -s agentos_node/bootstrap_control.py /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py || {
-            cat agentos_node/bootstrap_control.py > /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
-          }
-          grep -q 'ACTION_READ_THREADS_WEB_DM' /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
-          grep -q 'ACTION_INSPECT_MIO_RECENT' /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
-          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user restart os-chronos.service
-          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user restart agentos-core-supervisor.service || true
-          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user is-active os-chronos.service
-          echo mio_social_runtime_repair=PASS
+          echo 'legacy_core_runtime_converge=RETIRED'
+          echo 'reason=Core production runtime is governed by immutable /home/ubuntu/agent-data/releases/core generations.'
+          echo 'mutable_checkout_mutation=FORBIDDEN'
+          echo 'Use the governed Core immutable-runtime convergence/deployment path instead.'
