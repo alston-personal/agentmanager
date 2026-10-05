@@ -340,3 +340,60 @@ def test_realm_node_runtime_provenance_is_bounded_to_identity_fields():
     assert "realm_node_runtime_status=" in block
     assert "realm_node_runtime_source_commit=" in block
     assert "provenance_path" not in block
+
+
+def test_realm_project_inspect_is_bounded_public_intent():
+    intent, params = resolve_intent(
+        "node.project",
+        "inspect",
+        source_commit="8" * 40,
+        payload={"node_id": "vopc5750", "project_id": "scriptless-qa-agent"},
+    )
+    assert intent.action == bc.ACTION_REALM_PROJECT_INSPECT
+    assert params == {
+        "source_commit": "8" * 40,
+        "node_id": "vopc5750",
+        "project_id": "scriptless-qa-agent",
+    }
+    assert public_intent_for_action(bc.ACTION_REALM_PROJECT_INSPECT) == {
+        "capability": "node.project",
+        "operation": "inspect",
+    }
+
+
+def test_realm_project_inspect_rejects_caller_path():
+    with pytest.raises(ValueError):
+        resolve_intent(
+            "node.project",
+            "inspect",
+            source_commit="8" * 40,
+            payload={
+                "node_id": "vopc5750",
+                "project_id": "scriptless-qa-agent",
+                "path": r"C:\\Users\\someone\\project",
+            },
+        )
+
+
+def test_realm_project_public_projection_is_bounded_and_pathless():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    block = text.split("ACTION_REALM_PROJECT_INSPECT", 1)[1].split(
+        "ACTION_REALM_EXECUTOR_RECONCILE", 1
+    )[0]
+    for marker in (
+        "realm_project_node_id=",
+        "realm_project_id=",
+        "realm_project_inspect=",
+        "realm_project_match_count=",
+        "realm_project_git_repository=",
+        "realm_project_git_head=",
+        "realm_project_git_branch=",
+        "realm_project_worktree_clean=",
+        "realm_project_dirty_count=",
+        "realm_project_untracked_count=",
+        "realm_project_remote_identity=",
+        "realm_project_last_commit_at=",
+    ):
+        assert marker in text
+    assert "realm_project_path=" not in text
+    assert "provenance_path" not in block
