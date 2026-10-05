@@ -532,6 +532,27 @@ def _relay_status() -> dict[str, Any]:
 
     antigravity = active("agentos-antigravity-relay.service")
     action_relay = active("agentos-action-relay.service")
+
+    def source_commit(unit: str, key: str) -> str:
+        proc = subprocess.run(
+            ["systemctl", "--user", "show", unit, "-p", "Environment", "--value"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        env_text = str(proc.stdout or "")
+        match = re.search(r"(?:^|\\s)" + re.escape(key) + r"=([0-9a-f]{40})(?:\\s|$)", env_text)
+        return match.group(1) if match else ""
+
+    antigravity_source_commit = source_commit(
+        "agentos-antigravity-relay.service",
+        "AGENTOS_RUNTIME_SOURCE_COMMIT",
+    )
+    action_source_commit = source_commit(
+        "agentos-action-relay.service",
+        "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT",
+    )
     stale_processing = processing_count > 0 and processing_oldest >= RELAY_STALE_PROCESSING_SECONDS
     healthy = antigravity == "active" and action_relay == "active" and not stale_processing
     markers = [
@@ -542,6 +563,8 @@ def _relay_status() -> dict[str, Any]:
         f"relay_status_receipts_count={receipts_count}",
         f"relay_status_inbox_oldest_seconds={inbox_oldest}",
         f"relay_status_processing_oldest_seconds={processing_oldest}",
+        f"relay_status_antigravity_source_commit={antigravity_source_commit}",
+        f"relay_status_action_source_commit={action_source_commit}",
         "relay_status_stale_processing=" + ("YES" if stale_processing else "NO"),
         "relay_status=" + ("PASS" if healthy else "FAIL"),
     ]
