@@ -104,6 +104,19 @@ async def ingest(
         raise HTTPException(status_code=422, detail=f"invoice_ingest_failed:{type(exc).__name__}") from exc
 
 
+@app.post("/v1/invoices/{invoice_id}/reprocess")
+def reprocess_invoice(invoice_id: str, request: Request):
+    """Re-run OCR against the existing immutable original."""
+    require_user(request)
+    try:
+        result = store.reprocess(invoice_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="invoice_not_found")
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"invoice_reprocess_failed:{type(exc).__name__}") from exc
+    return {"ok": True, "invoice": result}
+
+
 @app.get("/v1/invoices/{invoice_id}")
 def get_invoice(invoice_id: str, request: Request):
     require_user(request)

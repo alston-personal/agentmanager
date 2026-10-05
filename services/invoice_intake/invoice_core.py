@@ -73,6 +73,31 @@ def normalize_roc_date(text: str) -> str | None:
     return None
 
 
+VENDOR_SUFFIX_RE = re.compile(
+    r"([\u4e00-\u9fffA-Za-z0-9·・()（）&\-]{2,32}(?:股份有限公司|有限公司|企業社|商行|實業社|工作室|餐廳|飯店|旅店|商店|門市|分店|公司|行|店))"
+)
+
+
+def normalize_vendor_name(text: str) -> str | None:
+    blocked = (
+        "統一發票", "發票", "收執聯", "扣抵聯", "存根聯", "營業稅",
+        "銷售額", "合計", "總計", "買受人", "銷售人", "統一編號",
+    )
+    candidates: list[str] = []
+    for line in (text or "").splitlines():
+        compact = re.sub(r"\s+", "", line).strip("：:-—")
+        if not compact or any(token in compact for token in blocked):
+            continue
+        for m in VENDOR_SUFFIX_RE.finditer(compact):
+            name = m.group(1).strip()
+            if 2 <= len(name) <= 36 and name not in candidates:
+                candidates.append(name)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: (len(x), x.count("公司")), reverse=True)
+    return candidates[0]
+
+
 def money_values(text: str) -> list[int]:
     out: list[int] = []
     for raw in re.findall(r"(?<!\d)\d[\d,\.\s]{1,12}(?!\d)", text):
@@ -129,6 +154,34 @@ def crop_rel(image: Image.Image, box: tuple[float, float, float, float]) -> Imag
     return image.crop((int(w*l), int(h*t), int(w*r), int(h*b)))
 
 
+def stamp_variants(image: Image.Image) -> list[Image.Image]:
+    """Return OCR-friendly variants for red/blue/black stamps on white paper."""
+    rgb = image.convert("RGB")
+    r, g, b = rgb.split()
+    variants = [
+        ImageOps.autocontrast(ImageOps.grayscale(rgb)),
+        ImageOps.autocontrast(r),
+        ImageOps.autocontrast(g),
+        ImageOps.autocontrast(b),
+    ]
+    # Red stamps are usually much darker in G/B than the white paper;
+    # blue stamps are often strongest in R/G. Channel variants make those
+    # strokes survive even when grayscale contrast is weak.
+    return variants
+
+
+def ocr_stamp_text(image: Image.Image, *, digits_only: bool = False) -> list[str]:
+    texts: list[str] = []
+    whitelist = "0123456789" if digits_only else None
+    lang = "eng" if digits_only else "chi_tra+eng"
+    for variant in stamp_variants(image):
+        for psm in (6, 11, 12):
+            text = ocr_image(variant, psm=psm, whitelist=whitelist, lang=lang)
+            if text.strip() and text not in texts:
+                texts.append(text)
+    return texts
+
+
 @dataclass
 class Extraction:
     fields: dict[str, Any]
@@ -146,8 +199,6 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
     """
     image = Image.open(BytesIO(image_bytes))
     image = ImageOps.exif_transpose(image).convert("RGB")
-    if image.height > image.width * 1.08:
-        image = image.rotate(90, expand=True)
 
     rapid = extract_template_invoice(image_bytes)
     fields = {
@@ -205,11 +256,18 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
         raw["fallback_used"].append("invoice_date")
 
     if any(fields[k] is None for k in ("amount_before_tax", "tax_amount", "total_amount")):
-        amount_texts = [
-            ocr_image(amount_crop, psm=6, whitelist="0123456789,.-"),
-            ocr_image(amount_crop, psm=11, whitelist="0123456789,.-"),
-            ocr_image(amount_crop, psm=12, whitelist="0123456789,.-"),
+        amount_regions = [
+            amount_crop,
+            crop_rel(image, (0.18, 0.24, 0.95, 0.90)),
+            crop_rel(image, (0.04, 0.42, 0.96, 0.97)),
+            image,
         ]
+        amount_texts = []
+        for region in amount_regions:
+            amount_texts.extend([
+                ocr_image(region, psm=6, whitelist="0123456789,.-"),
+                ocr_image(region, psm=11, whitelist="0123456789,.-"),
+            ])
         subtotal, tax, total, amount_conf = choose_amounts(amount_texts)
         fallback_amounts = {
             "amount_before_tax": subtotal,
@@ -224,13 +282,32 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
         raw["fallback_used"].append("amounts")
 
     if not fields["seller_tax_id"]:
-        stamp_text = ocr_image(stamp_crop, psm=11, whitelist="0123456789")
-        tax_ids = re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text))
-        if tax_ids:
-            fields["seller_tax_id"] = tax_ids[0]
-            confidence["seller_tax_id"] = 0.72
-        raw["stamp_text"] = stamp_text
-        raw["fallback_used"].append("seller_tax_id")
+        stamp_texts = ocr_stamp_text(stamp_crop, digits_only=True)
+        tax_ids: list[str] = []
+        for stamp_text in stamp_texts:
+            for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text)):
+                if candidate not in tax_ids:
+                    tax_ids.append(candidate)
+        valid = [x for x in tax_ids if valid_tax_id(x)]
+        chosen = (valid or tax_ids or [None])[0]
+        if chosen:
+            fields["seller_tax_id"] = chosen
+            confidence["seller_tax_id"] = 0.88 if chosen in valid else 0.68
+        raw["stamp_texts"] = stamp_texts
+        raw["fallback_used"].append("seller_tax_id_stamp")
+
+    if not fields["vendor_name"]:
+        vendor_texts = [
+            rapid.get("raw_text") or "",
+            ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng"),
+        ]
+        vendor_texts.extend(ocr_stamp_text(crop_rel(image, (0.42, 0.42, 0.99, 0.99))))
+        vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
+        if vendor:
+            fields["vendor_name"] = vendor
+            confidence["vendor_name"] = 0.78
+        raw["vendor_texts"] = vendor_texts
+        raw["fallback_used"].append("vendor_name_stamp_aware")
 
     # A mathematically derived 5% split is useful for assistance but is not enough
     # by itself for unattended posting; keep that case in review.
@@ -244,6 +321,16 @@ def extract_invoice(image_bytes: bytes) -> Extraction:
     # all three amounts are present, they may include a tax-derived split.
     if rapid.get("matched") and rapid.get("document_type") == "three_part_uniform_invoice":
         derived_amounts = not bool(rapid.get("visual_amounts"))
+
+    raw["field_sources"] = {
+        "invoice_number": "template_or_printed",
+        "invoice_date": "template_or_handwritten",
+        "vendor_name": "stamp_or_printed" if fields["vendor_name"] else None,
+        "seller_tax_id": "stamp_or_printed" if fields["seller_tax_id"] else None,
+        "amount_before_tax": "printed_or_handwritten_amount",
+        "tax_amount": "printed_or_handwritten_amount",
+        "total_amount": "printed_or_handwritten_amount",
+    }
 
     review_required = (
         any(fields.get(k) in (None, "") for k in ESSENTIAL_FIELDS)
@@ -496,6 +583,18 @@ class InvoiceStore:
                         (utcnow(), invoice_id),
                     )
                 raise
+
+    def reprocess(self, invoice_id: str) -> dict[str, Any]:
+        """Re-run OCR for an existing immutable original without creating a new record."""
+        with self.connect() as db:
+            row = db.execute("SELECT id FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+            db.execute(
+                "UPDATE invoices SET status='processing', updated_at=? WHERE id=?",
+                (utcnow(), invoice_id),
+            )
+        return self.process(invoice_id)
 
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
         with self.connect() as db:
