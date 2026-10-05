@@ -111,8 +111,15 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
     for row in rows:
         item = confirmed.get(row["path"])
         if item:
-            row["risk"] = str(item["severity"])
-            row["classification"] = "confirmed-migration"
+            status = str(item.get("status") or "pending")
+            if status == "live_immutable_complete":
+                row["risk"] = "P2"
+                row["classification"] = "resolved-live-migration"
+                row["resolved_status"] = status
+                row["live_acceptance"] = item.get("live_acceptance") or {}
+            else:
+                row["risk"] = str(item["severity"])
+                row["classification"] = "confirmed-migration"
             row["confirmed_reason"] = str(item["reason"])
             row["target_state"] = str(item["target"])
 
@@ -128,6 +135,7 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
             "p1": counts.get("P1", 0),
             "p2": counts.get("P2", 0),
             "confirmed_migrations": sum(1 for row in rows if row["classification"] == "confirmed-migration"),
+            "resolved_live_migrations": sum(1 for row in rows if row["classification"] == "resolved-live-migration"),
             "classifications": dict(sorted(classes.items())),
         },
         "findings": rows,
