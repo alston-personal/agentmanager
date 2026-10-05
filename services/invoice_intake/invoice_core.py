@@ -551,11 +551,46 @@ class InvoiceStore:
         sha = hashlib.sha256(image_bytes).hexdigest()
         with self.connect() as db:
             found = db.execute("""
-              SELECT i.*, d.sha256, d.original_filename
+              SELECT i.*, d.sha256, d.original_filename, d.id AS matched_document_id,
+                     d.batch_id, d.source_type, d.data_scope
               FROM documents d LEFT JOIN invoices i ON i.document_id=d.id
               WHERE d.sha256=?
             """, (sha,)).fetchone()
             if found:
+                if "deleted_at" in found.keys() and found["deleted_at"]:
+                    restored_at = utcnow()
+                    db.execute(
+                        """UPDATE invoices SET
+                             deleted_at=NULL,
+                             status='processing',
+                             confidence_json='{}',
+                             updated_at=?
+                           WHERE id=?""",
+                        (restored_at, found["id"]),
+                    )
+                    db.execute(
+                        """UPDATE documents SET batch_id=?, source_type=?, data_scope=?
+                           WHERE id=?""",
+                        (batch_id, source_type, self.data_scope, found["matched_document_id"]),
+                    )
+                    db.execute(
+                        """INSERT OR IGNORE INTO intake_batches(
+                             id,source_type,data_scope,status,item_count,created_at,updated_at
+                           ) VALUES(?,?,?,?,?,?,?)""",
+                        (batch_id, source_type, self.data_scope, "open", 0, restored_at, restored_at),
+                    )
+                    db.execute(
+                        "UPDATE intake_batches SET item_count=item_count+1, updated_at=? WHERE id=?",
+                        (restored_at, batch_id),
+                    )
+                    restored = db.execute("""
+                      SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope
+                      FROM invoices i JOIN documents d ON d.id=i.document_id
+                      WHERE i.id=?
+                    """, (found["id"],)).fetchone()
+                    payload = self._row_payload(restored, duplicate=False)
+                    payload["restored"] = True
+                    return payload
                 return self._row_payload(found, duplicate=True)
 
         ext = ".jpg"
