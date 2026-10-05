@@ -294,3 +294,13 @@ def test_google_media_generation_public_intents_are_bounded():
     assert vids.action == bc.ACTION_GOOGLE_VIDS_GENERATE
     assert vids_params == {"source_commit": "5" * 40, "prompt": "test scene"}
 
+def test_browser_gui_install_public_intent():
+    intent, params = resolve_intent(
+        "browser.gui",
+        "install",
+        source_commit="6" * 40,
+        payload={},
+    )
+    assert intent.action == bc.ACTION_INSTALL_GUI_WORKER
+    assert params == {"source_commit": "6" * 40}
+
