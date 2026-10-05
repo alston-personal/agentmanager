@@ -58,9 +58,10 @@ jobs:
           assert r.get("executor_uid")==1001,r
           assert r.get("source_commit")==sys.argv[2],r
           scheduler=r.get("scheduler") or {}
-          assert scheduler.get("worker_role")=="control",scheduler
-          assert scheduler.get("worker_id")=="oracle-control",scheduler
-          print("agentos_scheduler_worker="+scheduler["worker_id"]+":control")
+          assert scheduler.get("worker_role")=="maintenance",scheduler
+          assert scheduler.get("worker_id")=="oracle-maintenance",scheduler
+          assert "deployment" in (scheduler.get("requested_capabilities") or []),scheduler
+          print("agentos_scheduler_worker="+scheduler["worker_id"]+":maintenance")
           assert r.get("ok") is True,r
           text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
           assert "studio_web_mio_public_observer=PASS" in text,text[-16000:]
