@@ -19,6 +19,17 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         self.assertEqual(row["risk"], "P0")
         self.assertEqual(row["classification"], "unbounded-cross-owner-mutation")
 
+    def test_user_systemd_shared_mutation_without_node_identity_is_p1_review(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        row = audit._classify(
+            "scripts/example.sh",
+            "AGENT_DATA_ROOT=/home/ubuntu/agent-data\nsystemctl --user restart x\nmv a b",
+            policy,
+        )
+        self.assertIsNotNone(row)
+        self.assertEqual(row["risk"], "P1")
+        self.assertEqual(row["classification"], "user-runtime-mutation-review")
+
     def test_explicit_group_boundary_removes_p0(self):
         policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
         row = audit._classify(
