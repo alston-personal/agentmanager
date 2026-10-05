@@ -23,6 +23,8 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("agentos.executor", "job.submit", bc.ACTION_EXECUTOR_JOB_SUBMIT, frozenset({"job_type"})),
     RunnerWindowIntent("agentos.executor", "job.inspect", bc.ACTION_EXECUTOR_JOB_INSPECT, frozenset({"job_id"})),
     RunnerWindowIntent("node.runtime", "transactional-ota", bc.ACTION_NODE_TRANSACTIONAL_OTA, frozenset({"node_id", "candidate_commit"})),
+    RunnerWindowIntent("node.realm", "inspect", bc.ACTION_REALM_NODE_INSPECT, frozenset({"node_id"})),
+    RunnerWindowIntent("node.desktop", "probe", bc.ACTION_REALM_DESKTOP_PROBE, frozenset({"node_id"})),
     RunnerWindowIntent("browser.gui", "smoke", bc.ACTION_SMOKE_GUI_WORKER),
     RunnerWindowIntent("social.runtime", "deploy", bc.ACTION_DEPLOY_SOCIAL_RUNTIME),
     RunnerWindowIntent("content.social", "reconcile", bc.ACTION_RECONCILE_CONTENT_SOCIAL, frozenset({"account_ref"})),
