@@ -26,7 +26,10 @@ def main() -> int:
             violations.append((rel, "legacy_oracle_ingress_concurrency"))
     dispatch_client = DISPATCH_CLIENT.read_text(encoding="utf-8", errors="replace")
     inspect_retry_required = {
-        "inspect_retry_scope": 'if [ "$CAPABILITY" = "agentos.executor" ] && [ "$OPERATION" = "job.inspect" ]' in dispatch_client,
+        "inspect_retry_scope": '[ "$CAPABILITY" = "agentos.executor" ] && [ "$OPERATION" = "job.inspect" ]' in dispatch_client,
+        "relay_status_retry_scope": '[ "$CAPABILITY" = "agentos.relay" ] && [ "$OPERATION" = "status" ]' in dispatch_client,
+        "scheduler_status_retry_scope": '[ "$CAPABILITY" = "agentos.scheduler" ] && [ "$OPERATION" = "status" ]' in dispatch_client,
+        "dispatch_probe_retry_scope": '[ "$CAPABILITY" = "agentos.dispatch" ] && [ "$OPERATION" = "probe" ]' in dispatch_client,
         "inspect_retry_bound": "submit_attempts=4" in dispatch_client,
         "transient_codes": "429|502|503|504" in dispatch_client,
         "generic_submit_default_single_shot": "submit_attempts=1" in dispatch_client,
