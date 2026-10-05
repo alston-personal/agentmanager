@@ -98,9 +98,29 @@
       "next_gate",
       "stop_condition",
       "dependencies",
-      "expected portfolio impact"
+      "expected portfolio impact",
+      "capability_decomposition",
+      "reuse_review"
     ],
     "build_question": "Does this materially improve the probability of establishing or scaling the current revenue loop?",
     "support_question": "Would not doing this block BUILD/RUN or force recurring manual intervention?"
+  },
+  "architecture_principle": {
+    "capability_first": true,
+    "statement": "Products are compositions of reusable capabilities. A project/repository is a carrier, not the primary unit of reusable architecture.",
+    "intake_order": [
+      "decompose requested outcome into domain-specific and shared capabilities",
+      "query the capability map/registry for existing semantic owners",
+      "reuse existing capability through adapter/composition when compatible",
+      "extend an existing capability only when the semantic owner remains the same",
+      "create a new capability only when no existing semantic owner fits without distortion",
+      "create product-specific implementation only for domain logic, composition, UI, policy or adapter concerns"
+    ],
+    "anti_patterns": [
+      "reimplementing auth, queueing, publishing, browser automation, matching, credits, analytics or other shared concerns inside each product",
+      "creating a repository before capability ownership is understood",
+      "treating a project name as proof that a new capability is required",
+      "generalizing a product-specific behavior into Core without evidence of cross-product reuse"
+    ]
   }
 }
