@@ -60,17 +60,38 @@
     ".agent/scripts/agentos-core-supervisor.service": {
       "severity": "P0",
       "reason": "production service runs directly from source-cache-only /home/ubuntu/agentmanager while mutating shared employee runtime",
-      "target": "immutable release runtime under declared core release controller"
+      "target": "immutable release runtime under declared core release controller",
+      "status": "live_immutable_complete",
+      "live_acceptance": {
+        "core_bundle_convergence_run": 37271897923,
+        "core_runtime_audit_run": 37271204862,
+        "core_runtime_audit_attempt": "latest",
+        "mutable_count": 0
+      }
     },
     ".agent/scripts/agentos-employee-wake-node.service": {
       "severity": "P0",
       "reason": "production wake daemon runs from mutable source checkout and reads checkout-local .env",
-      "target": "immutable node runtime plus external configuration"
+      "target": "immutable node runtime plus external configuration",
+      "status": "live_immutable_complete",
+      "live_acceptance": {
+        "core_bundle_convergence_run": 37271897923,
+        "core_runtime_audit_run": 37271204862,
+        "core_runtime_audit_attempt": "latest",
+        "mutable_count": 0
+      }
     },
     ".agent/scripts/agentos-employee-worker-host.service": {
       "severity": "P1",
       "reason": "group boundary is explicit and safe, but code still executes from mutable source checkout",
-      "target": "immutable employee runtime release"
+      "target": "immutable employee runtime release",
+      "status": "live_immutable_complete",
+      "live_acceptance": {
+        "core_bundle_convergence_run": 37271897923,
+        "core_runtime_audit_run": 37271204862,
+        "core_runtime_audit_attempt": "latest",
+        "mutable_count": 0
+      }
     }
   },
   "known_good_boundaries": {
@@ -82,5 +103,16 @@
     "scripts/audit_oracle_identity_boundaries.py",
     "tests/**",
     ".agentos/evidence/**"
-  ]
+  ],
+  "live_acceptance": {
+    "oracle_core_bundle": {
+      "status": "PASS",
+      "accepted_release": "1387daab2309bcbc4e9098a5744cef5eff59a669",
+      "convergence_run": 37271897923,
+      "product_employee_unit_convergence_run": 37272281279,
+      "runtime_audit_run": 37271204862,
+      "immutable_count": 10,
+      "mutable_count": 0
+    }
+  }
 }
