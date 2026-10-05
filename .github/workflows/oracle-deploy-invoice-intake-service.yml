@@ -85,8 +85,11 @@ jobs:
           assert b"AB12345678" in exported.payload
           print("invoice_winton_adapter_contract=PASS")
           PY
-          PYTHONPATH=. /tmp/invoice-intake-validate/bin/python -m unittest tests.test_invoice_intake_db
+          PYTHONPATH=. /tmp/invoice-intake-validate/bin/python -m unittest \
+            tests.test_invoice_intake_db \
+            tests.test_invoice_real_user_regression
           echo 'invoice_intake_db_boundary=PASS'
+          echo 'invoice_real_user_regression=PASS'
           echo 'invoice_intake_python_syntax=PASS'
 
   deploy:
