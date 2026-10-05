@@ -215,19 +215,38 @@ jobs:
           systemctl --user enable --now invoice-intake.service
           systemctl --user restart invoice-intake.service
 
+          health_ok=0
+          : > /tmp/invoice-intake-health.json
           for i in $(seq 1 40); do
             if curl -fsS "http://127.0.0.1:$PORT/healthz" > /tmp/invoice-intake-health.json 2>/dev/null; then
               if python3 - <<'PY'
           import json
-          x=json.load(open('/tmp/invoice-intake-health.json'))
+          from pathlib import Path
+          p=Path('/tmp/invoice-intake-health.json')
+          try:
+              x=json.loads(p.read_text())
+          except Exception:
+              raise SystemExit(1)
           raise SystemExit(0 if x.get('ok') is True and x.get('service') == 'invoice-intake' else 1)
           PY
               then
+                health_ok=1
                 break
               fi
             fi
             sleep 1
           done
+
+          if [ "$health_ok" -ne 1 ]; then
+            echo 'invoice_intake_health=FAIL'
+            echo '--- systemctl status ---'
+            systemctl --user --no-pager --full status invoice-intake.service || true
+            echo '--- journalctl ---'
+            journalctl --user -u invoice-intake.service -n 120 --no-pager || true
+            echo '--- raw health body ---'
+            cat /tmp/invoice-intake-health.json 2>/dev/null || true
+            exit 1
+          fi
 
           python3 - <<'PY'
           import json
