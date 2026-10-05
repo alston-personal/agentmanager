@@ -342,6 +342,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'studio_commit'}
         elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
             allowed_params |= {'node_id', 'candidate_commit'}
+        elif action in {bootstrap_control.ACTION_REALM_NODE_INSPECT, bootstrap_control.ACTION_REALM_DESKTOP_PROBE}:
+            allowed_params |= {'node_id'}
         elif action == bootstrap_control.ACTION_EXECUTOR_JOB_SUBMIT:
             allowed_params |= {'job_type'}
         elif action == bootstrap_control.ACTION_EXECUTOR_JOB_INSPECT:
@@ -433,6 +435,23 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'relay_status_processing_oldest_seconds=',
                     'relay_status_stale_processing=',
                     'relay_status=',
+                )
+            elif action == bootstrap_control.ACTION_REALM_NODE_INSPECT:
+                safe_prefixes = (
+                    'realm_node_id=',
+                    'realm_node_status=',
+                    'realm_node_status_reason=',
+                    'realm_node_heartbeat_age_seconds=',
+                    'realm_node_platform=',
+                    'realm_node_role=',
+                    'realm_node_capability_count=',
+                    'realm_node_desktop_capable=',
+                    'realm_node_inspect=',
+                )
+            elif action == bootstrap_control.ACTION_REALM_DESKTOP_PROBE:
+                safe_prefixes = (
+                    'realm_desktop_node_id=',
+                    'realm_desktop_probe=',
                 )
             elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
                 safe_prefixes = (
