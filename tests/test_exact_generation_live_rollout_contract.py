@@ -30,7 +30,8 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
     def test_relay_status_fails_closed_on_inactive_worker_or_stale_processing(self):
         bootstrap = _text(BOOTSTRAP)
         workflow = _text(ROOT / ".github" / "workflows" / "main-agent-relay-status-acceptance.yml")
-        self.assertIn('stale_processing = processing_count > 0 and processing_oldest >= 600', bootstrap)
+        self.assertIn('RELAY_STALE_PROCESSING_SECONDS = 600', bootstrap)
+        self.assertIn('stale_processing = processing_count > 0 and processing_oldest >= RELAY_STALE_PROCESSING_SECONDS', bootstrap)
         self.assertIn('antigravity == "active" and action_relay == "active" and not stale_processing', bootstrap)
         self.assertIn('relay_status_stale_processing=', bootstrap)
         self.assertIn('assert vals.get(\'relay_status_antigravity_service\')==\'active\'', workflow)
