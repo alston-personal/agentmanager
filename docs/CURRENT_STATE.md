@@ -7,6 +7,13 @@
 
 A source merge proves implementation, not live operation. A live receipt proves only the exact source generation, route, capability, executor and effect named by that receipt.
 
+Control Inbox maintenance (#845) now classifies unsafe environment shape using
+aggregate structural counts before auth or mutation. This preserves the existing
+single-orphan normalization boundary; it does not broaden configuration repair
+authority. Offline classification tests do not establish host configuration,
+Control Inbox recovery, Node freshness, or Mio DM readiness. See
+`docs/CONTROL_INBOX_SERVICE_REPAIR.md` for the deployment/receipt boundary.
+
 ## Canonical authority hierarchy
 
 1. New explicit user intent and accepted governance constraints.
