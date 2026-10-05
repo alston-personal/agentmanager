@@ -318,3 +318,17 @@ Every successful Realm heartbeat writes a local non-secret liveness marker at `s
 This watchdog is an immediate reliability layer, not the final machine lifecycle architecture. The intended next boundary is to separate a machine-level AgentOS Node Daemon (heartbeat, transport, recovery, OTA and health) from the interactive session adapter (desktop, GUI Worker, Antigravity, Codex, Claude and Gemini). Loss of the interactive user session must eventually degrade only interactive capabilities, not make the entire Node disappear from the Realm.
 
 Windows Node Ready therefore requires recovery acceptance in addition to enrollment: process termination and intentional Scheduled Task stop must self-recover without human intervention, fresh heartbeat must return, and a governed task receipt must succeed after recovery.
+
+## Google web media providers
+
+Google Flow and Google Vids are now represented as governed AgentOS media providers rather than assumed API integrations.
+
+- `capability://media.video.generate.google-flow` represents Google Flow as an authenticated web/GUI provider for generative filmmaking.
+- `capability://media.video.compose.google-vids` represents Google Vids as an authenticated web/GUI provider for composition, editing and export workflows when those features are available to the active account.
+- Both capabilities begin in `declared` lifecycle state. Public reachability alone is not verification.
+- The canonical first acceptance is a read-only provider probe through the existing Realm desktop-inspection lane on `vopc5750`. The probe opens only allowlisted Flow and Vids URLs, waits for each page, inspects visible window titles/processes, and records only non-sensitive screenshot metadata after stripping image bytes.
+- Probe classification is conservative: `READY`, `AUTH_REQUIRED`, or `UNKNOWN`. It does not generate media, enter credentials, purchase credits, or bypass provider challenges.
+- Provider-specific quota discovery and effect execution require later evidence and remain subject to ordinary capability, policy and receipt gates.
+
+The current probe command is carried by `.agentos/commands/realm-desktop-inspect.json`; this reuses an existing governed desktop lane instead of adding another direct Oracle workflow.
+

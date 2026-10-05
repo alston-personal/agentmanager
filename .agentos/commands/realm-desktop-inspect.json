@@ -2,5 +2,16 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.desktop.inspect",
   "node_id": "vopc5750",
-  "nonce": "desktop-session-inspect-after-update-20260826"
+  "mode": "google-media-provider-probe",
+  "probe_targets": [
+    {
+      "id": "google-flow",
+      "url": "https://flow.google.com/"
+    },
+    {
+      "id": "google-vids",
+      "url": "https://vids.google.com/"
+    }
+  ],
+  "nonce": "google-media-provider-probe-20261005"
 }
