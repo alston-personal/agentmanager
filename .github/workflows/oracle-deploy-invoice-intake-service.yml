@@ -85,6 +85,8 @@ jobs:
           assert b"AB12345678" in exported.payload
           print("invoice_winton_adapter_contract=PASS")
           PY
+          PYTHONPATH=. /tmp/invoice-intake-validate/bin/python -m unittest tests.test_invoice_intake_db
+          echo 'invoice_intake_db_boundary=PASS'
           echo 'invoice_intake_python_syntax=PASS'
 
   deploy:
@@ -249,6 +251,9 @@ jobs:
           assert x['service'] == 'invoice-intake', x
           assert x['continuous_scan'] is True, x
           assert x['immutable_originals'] is True, x
+          assert x['data_scope'] == 'production', x
+          assert x['batch_tracking'] is True, x
+          assert x['source_tracking'] is True, x
           print('invoice_intake_public_status=PASS')
           PY
 
