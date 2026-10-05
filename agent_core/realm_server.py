@@ -449,7 +449,6 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'realm_node_capability_count=',
                     'realm_node_desktop_capable=',
                     'realm_node_runtime_status=',
-                    'realm_node_runtime_source_ref=',
                     'realm_node_runtime_source_commit=',
                     'realm_node_inspect=',
                 )
