@@ -49,6 +49,23 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
         self.assertTrue(audit._excluded("scripts/audit_oracle_identity_boundaries.py", policy["audit_excludes"]))
 
+    def test_review_override_downgrades_verified_protocol_boundary(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        row = audit._classify(
+            ".github/workflows/oracle-exact-generation-executor-job-rollout.yml",
+            "AGENT_DATA_ROOT=/home/ubuntu/agent-data\nagentos-node\nwrite_text(",
+            policy,
+        )
+        self.assertEqual(row["risk"], "P0")
+        override = policy["audit_overrides"][".github/workflows/oracle-exact-generation-executor-job-rollout.yml"]
+        self.assertEqual(override["risk"], "P1")
+        self.assertEqual(override["classification"], "governed-bootstrap-protocol-boundary")
+
+    def test_structured_sg_and_systemd_group_are_bounded_markers(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        self.assertIn('["/usr/bin/sg", "agentos", "-c"', policy["bounded_group_markers"])
+        self.assertIn("Group=agentos", policy["bounded_group_markers"])
+
     def test_interactive_ubuntu_path_is_classified_not_globally_banned(self):
         policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
         row = audit._classify(
