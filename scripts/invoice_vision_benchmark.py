@@ -2,53 +2,18 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import sys
-import urllib.error
 import urllib.request
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 DEFAULT_MODEL = os.environ.get("GEMINI_INVOICE_MODEL", "gemini-3.8-flash")
-ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
-SCHEMA = {
-    "type": "object",
-    "properties": {
-        "document_type": {"type": ["string", "null"]},
-        "invoice_number": {"type": ["string", "null"]},
-        "invoice_date": {"type": ["string", "null"], "description": "Gregorian YYYY-MM-DD"},
-        "buyer_name": {"type": ["string", "null"]},
-        "buyer_tax_id": {"type": ["string", "null"]},
-        "seller_name": {"type": ["string", "null"]},
-        "seller_tax_id": {"type": ["string", "null"]},
-        "amount_before_tax": {"type": ["integer", "null"]},
-        "tax_amount": {"type": ["integer", "null"]},
-        "total_amount": {"type": ["integer", "null"]},
-        "needs_review": {"type": "boolean"},
-        "uncertain_fields": {"type": "array", "items": {"type": "string"}}
-    },
-    "required": [
-        "document_type","invoice_number","invoice_date","buyer_name","buyer_tax_id",
-        "seller_name","seller_tax_id","amount_before_tax","tax_amount","total_amount",
-        "needs_review","uncertain_fields"
-    ],
-    "additionalProperties": False
-}
-
-PROMPT = """You are extracting fields from a photographed Taiwanese uniform invoice.
-Read the actual document image, including handwriting. Do not guess hidden or illegible values.
-Rules:
-- invoice_number is two uppercase letters plus eight digits, or null.
-- invoice_date must be Gregorian YYYY-MM-DD. Convert ROC year by adding 1911.
-- Monetary fields are integer New Taiwan Dollars without commas.
-- If a value is not visually supported, return null and include that field in uncertain_fields.
-- needs_review must be true whenever any core field is uncertain.
-- Never infer a monetary value only because numbers happen to satisfy arithmetic.
-Return only the requested JSON structure."""
+# Share the exact production prompt, schema and transport.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from services.invoice_intake.vision_ocr import PROMPT, SCHEMA, read_invoice
 
 def fetch_image(image_url: str) -> tuple[bytes, str]:
     req = urllib.request.Request(
@@ -67,54 +32,7 @@ def fetch_image(image_url: str) -> tuple[bytes, str]:
 
 def call_gemini(api_key: str, model: str, image_url: str) -> dict[str, Any]:
     image_bytes, image_mime = fetch_image(image_url)
-    body = {
-        "model": model,
-        "input": [
-            {"type": "text", "text": PROMPT},
-            {
-                "type": "image",
-                "data": base64.b64encode(image_bytes).decode("ascii"),
-                "mime_type": image_mime,
-            }
-        ],
-        "response_format": {
-            "type": "text",
-            "mime_type": "application/json",
-            "schema": SCHEMA
-        },
-        "generation_config": {"thinking_level": "minimal"}
-    }
-    req = urllib.request.Request(
-        ENDPOINT,
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": api_key,
-            "Api-Revision": "2026-05-20",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=90) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"gemini_http_{exc.code}:{detail[:1200]}") from exc
-
-    text = payload.get("output_text")
-    if not text:
-        for step in payload.get("steps") or []:
-            if step.get("type") != "model_output":
-                continue
-            for content in step.get("content") or []:
-                if content.get("type") == "text" and content.get("text"):
-                    text = content["text"]
-                    break
-            if text:
-                break
-    if not text:
-        raise RuntimeError("missing_output_text:" + json.dumps(payload, ensure_ascii=False)[:1200])
-    return json.loads(text)
+    return read_invoice(image_bytes, api_key=api_key, model=model)["payload"]
 
 def norm(v: Any) -> Any:
     if isinstance(v, str):
@@ -145,10 +63,25 @@ def score(expected: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--manifest", required=True)
+    inputs = ap.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--manifest")
+    inputs.add_argument("--image", help="Local immutable original: compare both readers without DB writes")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--out", default="")
     args = ap.parse_args()
+
+    if args.image:
+        from dataclasses import asdict
+        from services.invoice_intake.invoice_core import extract_invoice
+        os.environ['INVOICE_VISION_MODE'] = 'shadow'
+        os.environ['GEMINI_INVOICE_MODEL'] = args.model
+        result = asdict(extract_invoice(Path(args.image).read_bytes()))
+        rendered = json.dumps(result, ensure_ascii=False, indent=2)
+        if args.out:
+            Path(args.out).write_text(rendered, encoding='utf-8')
+        else:
+            print(rendered)
+        return 0 if result['raw']['vision']['status'] == 'SUCCEEDED' else 2
 
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:

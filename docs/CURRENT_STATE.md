@@ -332,3 +332,37 @@ Google Flow and Google Vids are now represented as governed AgentOS media provid
 
 The current probe command is carried by `.agentos/commands/realm-desktop-inspect.json`; this reuses an existing governed desktop lane instead of adding another direct Oracle workflow.
 
+
+## Invoice whole-image comparison candidate
+
+`services/invoice_intake/vision_ocr.py` extends the existing financial-intake reader
+with the Gemini Interactions transport previously used only by the benchmark.
+`INVOICE_VISION_MODE=off|shadow|primary` defaults to off. Both enabled modes require
+`GEMINI_API_KEY` and an explicit `GEMINI_INVOICE_MODEL`; CONFIGURED is not READY.
+The existing service deployment reads an optional private
+`/home/ubuntu/invoice-intake-service/vision.env` (restrict it to the service owner).
+No credentials are committed, copied from another service, or enabled by default.
+The provider receives the exact archived image bytes, independently of legacy OCR.
+Shadow mode records differences without replacing fields; primary uses validated
+vision candidates and always requires human review. Missing credentials, provider
+failure and rate limits remain explicit and cannot be presented as vision success.
+
+Buyer, line-item and stamp text/address/contact candidates are preserved in the
+existing immutable extraction JSON. The authenticated invoice detail API exposes
+`recognition`; no public route or automatic stamp learning is added. Physical
+stamp identity remains owned by `document.stamp-recognition`, whose current
+contract alone does not prove matching or a populated stamp database.
+
+The local template reader no longer selects the first page-wide tax ID as the
+seller of a three-part invoice, and vendor selection excludes the buyer header.
+A vendor without sufficient confidence requires review. The legacy stamp fallback
+now imports its checksum validator rather than failing when that path executes.
+
+Verification: `tests/test_invoice_vision.py`, existing invoice DB/regression tests,
+and the existing public fixture recall gate. Production model quality, credential
+availability, frontend consumption of extended fields, and Oracle runtime parity
+remain unverified until a pinned rollout and node receipt exist. Run
+`python scripts/invoice_vision_benchmark.py --image /path/to/original.jpg --model MODEL --out /private/comparison.json`
+to compare the same archived bytes without writing to the production database.
+Model responses are provisional evidence, not ground truth; use independent human
+labels and additional samples before promoting accuracy claims.

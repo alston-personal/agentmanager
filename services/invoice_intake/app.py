@@ -10,9 +10,10 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from services.invoice_intake.invoice_core import InvoiceStore
+from services.invoice_intake.vision_ocr import configuration
 from capabilities.financial_intake import WintonExcelAdapter, canonical_from_invoice_payload
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 DATA_ROOT = Path(os.environ.get("INVOICE_DATA_ROOT", "/home/ubuntu/agent-data/invoice-intake"))
 MAX_UPLOAD = 12 * 1024 * 1024
 DASHBOARD_SESSION = os.environ.get("DASHBOARD_SESSION_URL", "http://127.0.0.1:3000/dashboard/api/auth/session")
@@ -63,6 +64,7 @@ def status(request: Request):
         "ocr_engine": "rapidocr-template-v1+tesseract-fallback",
         "authenticated": bool(session.get("loggedIn")),
         "role": session.get("role") if session.get("loggedIn") else None,
+        "vision": configuration(),
         "continuous_scan": True,
         "immutable_originals": True,
         "database": "sqlite",

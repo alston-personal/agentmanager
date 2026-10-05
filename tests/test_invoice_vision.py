@@ -1,0 +1,117 @@
+import base64
+import json
+import os
+import tempfile
+import unittest
+from io import BytesIO
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+from PIL import Image
+from services.invoice_intake import vision_ocr as vision
+from services.invoice_intake.invoice_core import Extraction, InvoiceStore, extract_invoice
+from services.invoice_intake.template_ocr import seller_region_text, extract_template_invoice
+
+
+def fixture():
+    p = dict.fromkeys(vision.TEXT_FIELDS + vision.MONEY_FIELDS)
+    p.update(invoice_number='AB12345678', invoice_date='2026-09-21', seller_name='測試商行',
+             seller_tax_id='16908319', buyer_name='買方測試有限公司', amount_before_tax=1000,
+             tax_amount=50, total_amount=1050, needs_review=False, uncertain_fields=[],
+             line_items=[{'description': '加工', 'quantity': 1000, 'unit_price': 1, 'amount': 1000}],
+             stamp_text='測試商行 16908319', seller_address='測試地址')
+    return p
+
+
+def image_bytes():
+    b=BytesIO()
+    Image.new('RGB', (32, 24), 'white').save(b, format='PNG')
+    return b.getvalue()
+
+
+def legacy():
+    f={k: fixture().get('seller_name' if k=='vendor_name' else k) for k in vision.CORE_FIELDS}
+    f['vendor_name']='買方測試有限公司'
+    return Extraction(f, {}, {'engine':'legacy'}, False)
+
+
+class VisionTests(unittest.TestCase):
+    def test_exact_original_bytes_and_prompt_sent(self):
+        response=MagicMock()
+        response.__enter__.return_value.read.return_value=json.dumps({'output_text':json.dumps(fixture())}).encode()
+        data=image_bytes()
+        with patch.object(vision.urllib.request, 'urlopen', return_value=response) as call:
+            result=vision.read_invoice(data, api_key='test-secret', model='configured-model')
+        body=json.loads(call.call_args.args[0].data)
+        self.assertEqual(base64.b64decode(body['input'][1]['data']),data)
+        self.assertEqual(body['input'][0]['text'],vision.PROMPT)
+        self.assertEqual(result['payload']['seller_address'],'測試地址')
+        self.assertNotIn('test-secret',json.dumps(result))
+
+    def test_invalid_payload_rejected(self):
+        for bad in ([], {}, dict(fixture(), total_amount=True), dict(fixture(), line_items=[{}]),
+                    dict(fixture(), needs_review='false')):
+            with self.assertRaises(ValueError): vision.validate_payload(bad)
+
+    def test_uncertain_and_invalid_values_never_become_fields(self):
+        p=fixture();p.update(invoice_date='2026-02-30', seller_tax_id='123', uncertain_fields=['seller_name'])
+        f, issues=vision.validated_fields(p)
+        self.assertIsNone(f['invoice_date']);self.assertIsNone(f['seller_tax_id']);self.assertIsNone(f['vendor_name'])
+        p=fixture();p['tax_amount']=51
+        f,issues=vision.validated_fields(p)
+        self.assertIn('amount_sum_mismatch',issues)
+        self.assertEqual(f['tax_amount'],51)  # validation must not rewrite the image reading
+
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_primary_retains_details_comparison_and_requires_review(self):
+        result={'payload':fixture(), 'image_sha256':'test', 'model':'test'}
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice',return_value=legacy()), \
+             patch.object(vision,'read_invoice',return_value=result):
+            with tempfile.TemporaryDirectory() as tmp:
+                store=InvoiceStore(Path(tmp),data_scope='test')
+                initial=store.ingest(image_bytes(),'test.png','image/png')
+                store.process(initial['invoice_id'])
+                persisted=store.get_invoice(initial['invoice_id'])
+                self.assertEqual(persisted['fields']['vendor_name'],'測試商行')
+                self.assertEqual(persisted['status'],'needs_review')
+                raw=persisted['recognition']
+                self.assertEqual(raw['vision']['payload']['line_items'][0]['quantity'],1000)
+                self.assertFalse(raw['comparison']['vendor_name']['equal'])
+                self.assertEqual(Path(store.get_original(initial['invoice_id'])['path']).read_bytes(),image_bytes())
+
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'shadow','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_shadow_disagreement_retains_legacy_and_requires_review(self):
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice',return_value=legacy()), \
+             patch.object(vision,'read_invoice',return_value={'payload':fixture()}):
+            result=extract_invoice(image_bytes())
+        self.assertEqual(result.fields['vendor_name'],'買方測試有限公司')
+        self.assertTrue(result.review_required)
+
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_provider_failure_falls_back_without_claiming_vision_success(self):
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice',return_value=legacy()), \
+             patch.object(vision,'read_invoice',side_effect=vision.VisionError('RATE_LIMITED')):
+            result=extract_invoice(image_bytes())
+        self.assertEqual(result.raw['vision']['status'],'RATE_LIMITED')
+        self.assertTrue(result.review_required)
+
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':''})
+    def test_missing_credentials_no_network(self):
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice',return_value=legacy()), \
+             patch.object(vision,'read_invoice') as read:
+            result=extract_invoice(image_bytes())
+        read.assert_not_called()
+        self.assertEqual(result.raw['vision']['status'],'CREDENTIAL_MISSING')
+        self.assertTrue(result.review_required)
+
+    def test_buyer_header_is_excluded_from_seller_text(self):
+        text='三聯式\n買受人\n買方有限公司\n12345678\n營業人蓋用統一發票專用章\n測試商行\n16908319'
+        self.assertNotIn('12345678',seller_region_text(text))
+        self.assertIn('16908319',seller_region_text(text))
+        self.assertEqual(seller_region_text('買受人\n12345678'),'')
+        with patch('rapidocr.RapidOCR'), patch('services.invoice_intake.template_ocr.ocr_page',return_value=(text,.95)):
+            result=extract_template_invoice(b'fake')
+        self.assertEqual(result['fields']['seller_tax_id'],'16908319')
+
+
+if __name__=='__main__': unittest.main()

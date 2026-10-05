@@ -87,7 +87,8 @@ jobs:
           PY
           PYTHONPATH=. /tmp/invoice-intake-validate/bin/python -m unittest \
             tests.test_invoice_intake_db \
-            tests.test_invoice_real_user_regression
+            tests.test_invoice_real_user_regression \
+            tests.test_invoice_vision
           echo 'invoice_intake_db_boundary=PASS'
           echo 'invoice_real_user_regression=PASS'
           echo 'invoice_intake_python_syntax=PASS'
@@ -195,6 +196,7 @@ jobs:
           Environment=PYTHONPATH=/home/ubuntu/invoice-intake-service/app
           Environment=INVOICE_DATA_ROOT=/home/ubuntu/agent-data/invoice-intake
           Environment=INVOICE_DATA_SCOPE=production
+          EnvironmentFile=-/home/ubuntu/invoice-intake-service/vision.env
           Environment=DASHBOARD_SESSION_URL=http://127.0.0.1:3000/dashboard/api/auth/session
           ExecStart=/home/ubuntu/invoice-intake-service/.venv/bin/uvicorn services.invoice_intake.app:app --host 127.0.0.1 --port 18767
           Restart=on-failure
