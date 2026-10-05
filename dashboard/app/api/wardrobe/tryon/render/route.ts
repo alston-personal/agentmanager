@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
-import { isMilkcatAdmin } from '@/lib/auth/roles';
 import {
   DEFAULT_CHARACTER_ID,
   createTryOnJob,
@@ -9,17 +8,18 @@ import {
   normalizeSelectedLayers,
 } from '@/lib/tryon-jobs';
 
-function getAdmin(request: NextRequest) {
-  const token = request.cookies.get('auth_token')?.value;
-  if (!token) return null;
-  const identity = verifyToken(token);
-  if (!identity || !identity.username || !isMilkcatAdmin(identity)) return null;
-  return identity;
+function getAuthenticatedUser(request: NextRequest) {
+  const tokens = request.cookies.getAll('auth_token').map((cookie) => cookie.value).filter(Boolean);
+  for (const token of tokens) {
+    const identity = verifyToken(token);
+    if (identity?.username) return identity;
+  }
+  return null;
 }
 
 export async function POST(request: NextRequest) {
-  const admin = getAdmin(request);
-  if (!admin) return NextResponse.json({ error: 'Admin authentication required' }, { status: 401 });
+  const user = getAuthenticatedUser(request);
+  if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
   try {
     const body = await request.json();
