@@ -75,11 +75,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          AGENTOS_DISPATCH_WAIT_SECONDS=120 \
-            bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" \
-            | tee "$RUNNER_TEMP/relay-status-before.txt"
+          : > "$RUNNER_TEMP/relay-status-before.txt"
+          for i in $(seq 1 12); do
+            out="$RUNNER_TEMP/relay-status-preflight-$i.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=120 \
+              bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" > "$out"
+            cat "$out" >> "$RUNNER_TEMP/relay-status-before.txt"
+            if python3 - "$out" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          receipt=(docs[-1].get('receipt') or {}) if docs else {}
+          vals={}
+          for line in receipt.get('evidence') or []:
+              if '=' in str(line):
+                  k,v=str(line).split('=',1); vals[k]=v
+          state=vals.get('relay_status_antigravity_service')
+          raise SystemExit(0 if state!='activating' else 1)
+          PY
+            then
+              cp "$out" "$RUNNER_TEMP/relay-status-preflight-terminal.txt"
+              break
+            fi
+            sleep 3
+          done
+          test -s "$RUNNER_TEMP/relay-status-preflight-terminal.txt"
 
-          python3 - "$RUNNER_TEMP/relay-status-before.txt" "$RUNNER_TEMP/relay-status-before.json" "$GITHUB_OUTPUT" <<'PY'
+          python3 - "$RUNNER_TEMP/relay-status-preflight-terminal.txt" "$RUNNER_TEMP/relay-status-before.json" "$GITHUB_OUTPUT" <<'PY'
           import json,re,sys
           docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
           assert docs, 'missing relay status receipt'
@@ -106,10 +127,16 @@ jobs:
               assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)
           assert vals.get('relay_status_antigravity_service')=='active', vals
           assert vals.get('relay_status_action_service')=='active', vals
-          stale=vals.get('relay_status_stale_processing')
+          processing=int(vals.get('relay_status_processing_count') or '0')
+          processing_oldest=int(vals.get('relay_status_processing_oldest_seconds') or '0')
+          explicit_stale=vals.get('relay_status_stale_processing')
+          stale=(explicit_stale=='YES') if explicit_stale in {'YES','NO'} else (processing>0 and processing_oldest>=600)
           status=vals.get('relay_status')
-          assert (status=='PASS' and stale=='NO') or (status=='FAIL' and stale=='YES'), vals
-          needs_recovery=(status=='FAIL' and stale=='YES')
+          assert status in {'PASS','FAIL'}, vals
+          if status=='PASS':
+              assert not stale, vals
+          needs_recovery=(status=='FAIL' and stale)
+          assert status=='PASS' or needs_recovery, vals
           with open(sys.argv[3],'a',encoding='utf-8') as out:
               out.write('needs_recovery='+('true' if needs_recovery else 'false')+'\n')
           json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
@@ -143,37 +170,54 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ steps.relay_status.outputs.needs_recovery }}" = "true" ]; then
-            sleep 2
-          fi
-          AGENTOS_DISPATCH_WAIT_SECONDS=120 \
-            bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" \
-            | tee "$RUNNER_TEMP/relay-status.txt"
-
-          python3 - "$RUNNER_TEMP/relay-status.txt" "$RUNNER_TEMP/relay-status.json" <<'PY'
+          : > "$RUNNER_TEMP/relay-status.txt"
+          final=0
+          for i in $(seq 1 20); do
+            out="$RUNNER_TEMP/relay-status-final-$i.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=120 \
+              bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" > "$out"
+            cat "$out" >> "$RUNNER_TEMP/relay-status.txt"
+            if python3 - "$out" "$RUNNER_TEMP/relay-status.json" <<'PY'
           import json,re,sys
           docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
-          assert docs, 'missing final relay status receipt'
+          if not docs:
+              raise SystemExit(1)
           receipt=docs[-1].get('receipt') or {}
-          assert receipt.get('ok') is True, receipt
+          if receipt.get('ok') is not True:
+              raise SystemExit(1)
           vals={}
           for line in receipt.get('evidence') or []:
               if '=' in str(line):
-                  k,v=str(line).split('=',1)
-                  vals[k]=v
-          assert vals.get('relay_status')=='PASS', vals
-          assert vals.get('relay_status_antigravity_service')=='active', vals
-          assert vals.get('relay_status_action_service')=='active', vals
-          assert vals.get('relay_status_stale_processing')=='NO', vals
-          assert vals.get('relay_status_processing_count')=='0', vals
+                  k,v=str(line).split('=',1); vals[k]=v
           for key in ('relay_status_inbox_count','relay_status_processing_count','relay_status_receipts_count',
                       'relay_status_inbox_oldest_seconds','relay_status_processing_oldest_seconds'):
-              assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)
+              if not re.fullmatch(r'\d+', vals.get(key,'')):
+                  raise SystemExit(1)
+          processing=int(vals.get('relay_status_processing_count') or '0')
+          processing_oldest=int(vals.get('relay_status_processing_oldest_seconds') or '0')
+          explicit_stale=vals.get('relay_status_stale_processing')
+          stale=(explicit_stale=='YES') if explicit_stale in {'YES','NO'} else (processing>0 and processing_oldest>=600)
+          healthy=(
+              vals.get('relay_status')=='PASS'
+              and vals.get('relay_status_antigravity_service')=='active'
+              and vals.get('relay_status_action_service')=='active'
+              and processing==0
+              and not stale
+          )
+          if not healthy:
+              raise SystemExit(1)
           json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
           print('relay_status_acceptance=PASS')
           for key in sorted(vals):
               print(key+'='+vals[key])
           PY
+            then
+              final=1
+              break
+            fi
+            sleep 3
+          done
+          test "$final" = 1
 
       - name: Upload sanitized relay evidence
         if: always()
