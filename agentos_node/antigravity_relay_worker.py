@@ -190,9 +190,10 @@ class AntigravityRelayWorker:
         if not sources:
             return 0
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        target = quarantine / f"processing-spool-{stamp}-{uuid.uuid4().hex[:8]}"
-        # Rename at the parent-directory boundary. This deliberately does not
-        # require ownership of peer-created files inside processing/.
+        # Historical quarantine/ itself may be peer-owned from an earlier
+        # agentos-node generation. Use the relay root as the sole rename
+        # boundary so recovery never depends on mutating that legacy tree.
+        target = self.paths.root / f"quarantine-processing-{stamp}-{uuid.uuid4().hex[:8]}"
         self.paths.processing.replace(target)
         self.paths.processing.mkdir(parents=True, exist_ok=False)
         share_relay_path(self.paths.processing, directory=True)
