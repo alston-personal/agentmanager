@@ -8,11 +8,26 @@ fi
 
 REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
-# This installer executes as ubuntu. Materialize its companion scripts from the
-# immutable triggering commit here, instead of requiring the agentos-node
-# runner identity to overwrite ubuntu-owned live files.
-if printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
-  for rel in \
+RUNTIME_BASE="$HOME/.local/share/agentos/galaxy-experiment-monitor"
+RELEASE_ROOT="$RUNTIME_BASE/releases"
+CURRENT="$RUNTIME_BASE/current"
+
+printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$' || {
+  echo "galaxy_experiment_monitor_install=SOURCE_COMMIT_REQUIRED" >&2
+  exit 2
+}
+test -d "$REPO/.git" || { echo "galaxy_experiment_monitor_install=REPO_MISSING" >&2; exit 2; }
+
+git -C "$REPO" fetch --no-tags origin "$SOURCE_COMMIT" >/dev/null
+git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
+mkdir -p "$RELEASE_ROOT"
+RELEASE="$RELEASE_ROOT/$SOURCE_COMMIT"
+if [ ! -d "$RELEASE" ]; then
+  TMP_RELEASE="$(mktemp -d "$RELEASE_ROOT/.tmp.XXXXXX")"
+  cleanup_release() { rm -rf "$TMP_RELEASE"; }
+  trap cleanup_release EXIT
+  git -C "$REPO" archive "$SOURCE_COMMIT" \
+    agentos_node \
     scripts/monitor_galaxy_threads_experiment_user.py \
     scripts/monitor_social_post_experiment_user.py \
     scripts/run_social_post_experiment_queue_user.py \
@@ -21,15 +36,19 @@ if printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
     scripts/mio_persona_social_loop_user.py \
     scripts/sync_mio_pdca_social_outcome_user.py \
     scripts/diagnose_mio_threads_search_scope_user.py \
-    agentos_node/persona_life.py \
-    agentos_node/social/post_experiment.py; do
-    tmp="$(mktemp)"
-    git -C "$REPO" show "$SOURCE_COMMIT:$rel" > "$tmp"
-    install -m 0644 "$tmp" "$REPO/$rel"
-    rm -f "$tmp"
-  done
-  echo "galaxy_experiment_monitor_companions=SYNCED_FROM_SOURCE_COMMIT"
+    | tar -x -C "$TMP_RELEASE"
+  python3 -m compileall -q "$TMP_RELEASE/agentos_node" "$TMP_RELEASE/scripts"
+  cat > "$TMP_RELEASE/GENERATION" <<EOF
+source_ref=core/integration
+source_commit=$SOURCE_COMMIT
+EOF
+  chmod -R go-w "$TMP_RELEASE"
+  mv "$TMP_RELEASE" "$RELEASE"
+  trap - EXIT
 fi
+test -f "$RELEASE/GENERATION"
+grep -q "^source_commit=$SOURCE_COMMIT$" "$RELEASE/GENERATION"
+echo "galaxy_experiment_monitor_release=$RELEASE"
 
 # Persona IR/event sync is part of the live social decision path and must be
 # able to read/write the private canonical my-agent-data repo as ubuntu.
