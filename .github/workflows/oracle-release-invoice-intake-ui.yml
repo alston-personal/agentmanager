@@ -19,13 +19,14 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: cecc48f85d6c0c531c3085ae7c298ae8e94a8da3
+      source_sha: 89c410aa04463a1e98c5666214ce47bf34989e1d
       route: invoice-intake
       backup_key: invoice-intake-ui
       receipt_schema: studio-web.invoice-intake-release/v1
       acceptance_anchors: |-
         查看這張完整辨識結果
         已掃描發票
+        快速確認
       credit_account: ''
       credit_cost: 0
     secrets:
