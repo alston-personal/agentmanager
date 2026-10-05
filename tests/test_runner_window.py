@@ -304,3 +304,29 @@ def test_browser_gui_install_public_intent():
     assert intent.action == bc.ACTION_INSTALL_GUI_WORKER
     assert params == {"source_commit": "6" * 40}
 
+
+
+def test_realm_executor_reconcile_is_bounded_public_intent():
+    intent, params = resolve_intent(
+        "node.executor",
+        "reconcile",
+        source_commit="7" * 40,
+        payload={"node_id": "vopc5750"},
+    )
+    assert intent.action == bc.ACTION_REALM_EXECUTOR_RECONCILE
+    assert params == {"source_commit": "7" * 40, "node_id": "vopc5750"}
+    assert public_intent_for_action(bc.ACTION_REALM_EXECUTOR_RECONCILE) == {
+        "capability": "node.executor",
+        "operation": "reconcile",
+    }
+
+
+def test_realm_executor_reconcile_public_projection_is_bounded():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    for marker in (
+        "realm_executor_reconcile=",
+        "realm_executor_codex_state=",
+        "realm_executor_gemini_state=",
+        "realm_executor_claude_code_state=",
+    ):
+        assert marker in text
