@@ -173,3 +173,13 @@ Historical or migration-only unless explicitly reactivated:
 Primary entry points: `README.md`, `ONBOARDING.md`, `AGENTS.md`, this file, `docs/AGENTOS_NODE.md`, `docs/CORE_BRANCH_MAP.md`, `docs/CORE_WORKER_MODEL.md`, and `docs/PROJECT_REPO_MAP.md`.
 
 Architecture-sensitive accepted changes must update the relevant canonical entry point. Implementation/live evidence outranks stale prose. Historical claims belong in evidence/migration records, not current reality.
+
+## Runner Window Realm Node inspection
+
+Runner Window now has explicit bounded public intents for Realm Node health and interactive desktop reachability:
+
+- `node.realm inspect node_id=<id>` reads the canonical NodeRegistry projection and returns only bounded non-secret status markers such as heartbeat age, effective status, platform, role, capability count and whether the node advertises `desktop.session.inspect`.
+- `node.desktop probe node_id=<id>` is an active liveness check. It requires the node to be currently online and to advertise `desktop.session.inspect`, then queues that fixed task through RealmFabric and waits for a bounded receipt. The result is classified as `READY`, `NOT_INTERACTIVE`, `OFFLINE`, `CAPABILITY_MISSING`, `NOT_REGISTERED`, `TIMEOUT`, or `ERROR`.
+
+Callers no longer need to target an Oracle runner merely to inspect an enrolled Windows node. They submit the public intent to Runner Window, which routes the fixed control action through the canonical Core control lane. Raw node tokens, task payload flexibility, screenshot bytes and arbitrary shell execution are not exposed through these intents.
+
