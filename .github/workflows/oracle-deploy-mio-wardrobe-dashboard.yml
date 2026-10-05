@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$GITHUB_SHA' && git show '$GITHUB_SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh' > /tmp/deploy-mio-wardrobe-dashboard.sh && chmod 700 /tmp/deploy-mio-wardrobe-dashboard.sh && /tmp/deploy-mio-wardrobe-dashboard.sh '$GITHUB_SHA' '$GITHUB_RUN_ID'"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$GITHUB_SHA' && git show '$GITHUB_SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh' > /tmp/deploy-mio-wardrobe-dashboard.sh && chmod 700 /tmp/deploy-mio-wardrobe-dashboard.sh && /tmp/deploy-mio-wardrobe-dashboard.sh '$GITHUB_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
 
       - name: Verify OAuth handoff release contract
         shell: bash
