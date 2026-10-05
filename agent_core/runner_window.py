@@ -27,6 +27,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("node.desktop", "probe", bc.ACTION_REALM_DESKTOP_PROBE, frozenset({"node_id"})),
     RunnerWindowIntent("media.google-flow", "generate", bc.ACTION_GOOGLE_FLOW_GENERATE, frozenset({"prompt"})),
     RunnerWindowIntent("media.google-vids", "generate", bc.ACTION_GOOGLE_VIDS_GENERATE, frozenset({"prompt"})),
+    RunnerWindowIntent("browser.gui", "install", bc.ACTION_INSTALL_GUI_WORKER),
     RunnerWindowIntent("browser.gui", "smoke", bc.ACTION_SMOKE_GUI_WORKER),
     RunnerWindowIntent("social.runtime", "deploy", bc.ACTION_DEPLOY_SOCIAL_RUNTIME),
     RunnerWindowIntent("content.social", "reconcile", bc.ACTION_RECONCILE_CONTENT_SOCIAL, frozenset({"account_ref"})),
