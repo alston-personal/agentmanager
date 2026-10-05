@@ -22,7 +22,7 @@ def test_node_ota_public_intent_maps_to_governed_action():
 
 def test_node_ota_scheduler_is_control_plane_routed():
     policy = policy_for(bc.ACTION_NODE_TRANSACTIONAL_OTA)
-    assert policy.role == "control"
+    assert policy.role == "maintenance"
     assert "node.runtime.ota" in set(policy.capabilities)
     assert "node-runtime-ota" in set(policy.locks)
 
