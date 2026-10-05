@@ -16,7 +16,10 @@ from agentos_node.executor_provider_registry import (
 
 SCHEMA = "agentos.executor-inventory/v0.2"
 ADOPTION_SCHEMA = "agentos.executor-adoption/v0.2"
-CLAUDE_TIMEOUT_COOLDOWN_SECONDS = 300.0
+HEALTH_COOLDOWNS: dict[tuple[str, str], float] = {
+    ("claude-code", "TIMEOUT"): 300.0,
+    ("antigravity", "RATE_LIMITED"): 300.0,
+}
 
 
 def _utc_now() -> str:
@@ -254,17 +257,19 @@ def reconcile_executor_adoption(
     now_text = _utc_now()
     now = datetime.fromisoformat(now_text.replace("Z", "+00:00"))
     deferred_health: dict[str, dict[str, Any]] = {}
-    prior_claude = previous_by_executor.get("claude-code") or {}
-    prior_classification = str((prior_claude.get("provider_health") or {}).get("classification") or "")
-    last_probed_text = str(prior_claude.get("last_probed_at") or "")
-    if prior_classification == "TIMEOUT" and last_probed_text:
+    for (executor_id, classification), cooldown_seconds in HEALTH_COOLDOWNS.items():
+        prior = previous_by_executor.get(executor_id) or {}
+        prior_classification = str((prior.get("provider_health") or {}).get("classification") or "")
+        last_probed_text = str(prior.get("last_probed_at") or "")
+        if prior_classification != classification or not last_probed_text:
+            continue
         try:
             last_probed = datetime.fromisoformat(last_probed_text.replace("Z", "+00:00"))
             age = (now - last_probed.astimezone(timezone.utc)).total_seconds()
         except Exception:
-            age = CLAUDE_TIMEOUT_COOLDOWN_SECONDS
-        if 0 <= age < CLAUDE_TIMEOUT_COOLDOWN_SECONDS:
-            deferred_health["claude-code"] = prior_claude
+            age = cooldown_seconds
+        if 0 <= age < cooldown_seconds:
+            deferred_health[executor_id] = prior
 
     inventory = discover_executor_inventory(
         profile_root=profile_root,
