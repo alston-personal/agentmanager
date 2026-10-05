@@ -1,0 +1,46 @@
+name: Oracle Identity Boundary Audit
+
+on:
+  pull_request:
+    paths:
+      - '.agent/governance/oracle_identity_boundaries.json'
+      - '.agent/governance/runtime_ownership.json'
+      - '.agent/scripts/**'
+      - 'agent_core/**'
+      - 'agentos_node/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agent/governance/oracle_identity_boundaries.json'
+      - '.agent/governance/runtime_ownership.json'
+      - '.agent/scripts/**'
+      - 'agent_core/**'
+      - 'agentos_node/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate identity boundary inventory
+        run: |
+          mkdir -p artifacts
+          python3 scripts/audit_oracle_identity_boundaries.py             --json-out artifacts/oracle-identity-boundaries.json             --markdown-out artifacts/oracle-identity-boundaries.md
+          cat artifacts/oracle-identity-boundaries.md
+      - name: Contract tests
+        run: python3 -m unittest tests.test_oracle_identity_boundaries
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: oracle-identity-boundary-audit-${{ github.run_id }}
+          path: artifacts/
