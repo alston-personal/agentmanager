@@ -68,6 +68,48 @@ jobs:
                   print(line)
           PY
 
+      - name: Start login when session is required
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROBE_RECEIPT="$RUNNER_TEMP/threads-web-dm-login-probe-receipt.json"
+          STATE=$(python3 - "$PROBE_RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8"))
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          state="UNKNOWN"
+          for line in text.splitlines():
+              if line.startswith("threads_web_dm_login_session_state="):
+                  state=line.split("=",1)[1]
+          print(state)
+          PY
+          )
+          if [ "$STATE" != "LOGIN_REQUIRED" ]; then
+            echo "threads_web_dm_login_start=SKIPPED"
+            exit 0
+          fi
+          REQUEST_ID="threads-web-dm-login-start-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/threads-web-dm-login-start-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=120 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.social_threads_web_dm.login_start "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
+          assert r.get("action")=="agentos.social_threads_web_dm.login_start",r
+          assert r.get("source_commit")==expected,r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="gui",scheduler
+          assert scheduler.get("worker_id")=="oracle-gui",scheduler
+          assert r.get("ok") is True,r
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          assert "threads_web_dm_login_start=PASS" in text,text[-8000:]
+          for line in text.splitlines():
+              if line.startswith(("threads_web_dm_login_mode=","threads_web_dm_login_browser_persistent=","threads_web_dm_login_remote_view=")):
+                  print(line)
+          PY
       - name: Read via bounded bootstrap action
         shell: bash
         run: |
