@@ -23,7 +23,15 @@ permissions:
   id-token: write
 
 jobs:
+  runtime-converge:
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: agentos.runtime
+      operation: repair
+      payload_json: '{}'
+
   node-inspect:
+    needs: runtime-converge
     uses: ./.github/workflows/agentos-dispatch.yml
     with:
       capability: node.realm
