@@ -928,6 +928,38 @@ def extract_legacy_invoice(
     )
 
 
+def vision_route_reason(legacy: "Extraction") -> str | None:
+    """Return why paid whole-image Vision is needed, or None when local OCR is sufficient."""
+    review = legacy.raw.get("review") or {}
+    status = str(review.get("status") or "")
+    if legacy.review_required or status in {"recognition_insufficient", "needs_review", "quick_confirm"}:
+        return "local_review_required"
+
+    required = (
+        "invoice_number", "invoice_date", "vendor_name", "seller_tax_id",
+        "amount_before_tax", "total_amount",
+    )
+    missing = [key for key in required if legacy.fields.get(key) in (None, "")]
+    if missing:
+        return "missing:" + ",".join(missing)
+
+    low_conf = [
+        key for key in required
+        if float(legacy.confidence.get(key, 0.0) or 0.0) < 0.80
+    ]
+    if low_conf:
+        return "low_confidence:" + ",".join(low_conf)
+
+    template = legacy.raw.get("template") or {}
+    if (
+        template.get("document_type") == "three_part_uniform_invoice"
+        and not (legacy.raw.get("line_items") or [])
+    ):
+        return "missing_line_items"
+
+    return None
+
+
 def extract_invoice(
     image_bytes: bytes,
     *,
@@ -954,6 +986,22 @@ def extract_invoice(
     if config['status'] != 'CONFIGURED':
         if config['mode'] != 'off':
             legacy.review_required = True
+        return legacy
+
+    # Cost-aware routing: primary Vision is paid enrichment, not the default path.
+    # If local OCR is already complete and high-confidence, stop here without
+    # consuming multimodal tokens. Shadow mode still always runs for evaluation.
+    route_reason = vision_route_reason(legacy)
+    legacy.raw['vision_route'] = {
+        'decision': 'invoke' if (config['mode'] == 'shadow' or route_reason) else 'skip',
+        'reason': route_reason or 'local_sufficient',
+    }
+    if config['mode'] == 'primary' and route_reason is None:
+        legacy.raw['vision'] = {
+            **dict(config),
+            'status': 'SKIPPED_LOCAL_SUFFICIENT',
+            'mode': config['mode'],
+        }
         return legacy
     try:
         vision_started = time.perf_counter()
