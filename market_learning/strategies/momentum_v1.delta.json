@@ -1,0 +1,15 @@
+{
+  "schema": "agentos.market-strategy-delta/v1",
+  "delta_id": "delta-momentum-v1",
+  "strategy_id": "master-momentum-v1",
+  "base_ref": "market-base-v1",
+  "set": {
+    "features.price_action": 1.8,
+    "features.volume": 1.6,
+    "features.foreign_flow": 0.8,
+    "prediction.horizons": ["1d", "3d"]
+  },
+  "add": {
+    "patterns.preferred": ["breakout", "trend_acceleration", "volume_confirmation"]
+  }
+}
