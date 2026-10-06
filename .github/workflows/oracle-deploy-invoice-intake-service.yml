@@ -122,6 +122,8 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       INVOICE_PORT: '18767'
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_INVOICE_MODEL: gemini-3.8-flash
     steps:
       - uses: actions/checkout@v4
 
@@ -144,6 +146,15 @@ jobs:
             capabilities/ocr_memory | \
             ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               'set -euo pipefail; BASE=/home/ubuntu/invoice-intake-service; rm -rf "$BASE/app-new"; mkdir -p "$BASE/app-new"; tar -C "$BASE/app-new" -xzf -'
+
+          test -n "${GEMINI_API_KEY:-}" || { echo 'invoice_vision_secret=MISSING'; exit 1; }
+          {
+            printf '%s\n' 'INVOICE_VISION_MODE=primary'
+            printf 'GEMINI_INVOICE_MODEL=%s\n' "${GEMINI_INVOICE_MODEL}"
+            printf 'GEMINI_API_KEY=%s\n' "${GEMINI_API_KEY}"
+          } | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              'umask 077; cat > /home/ubuntu/invoice-intake-service/vision.env'
+          echo 'invoice_vision_env=CONFIGURED'
 
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             'bash -s' <<'REMOTE'
@@ -320,7 +331,11 @@ jobs:
           assert x['data_scope'] == 'production', x
           assert x['batch_tracking'] is True, x
           assert x['source_tracking'] is True, x
-          print('invoice_intake_vision=' + json.dumps(x.get('vision') or {}, ensure_ascii=False, sort_keys=True))
+          vision=x.get('vision') or {}
+          assert vision.get('mode') == 'primary', vision
+          assert vision.get('status') == 'CONFIGURED', vision
+          assert vision.get('model') == 'gemini-3.8-flash', vision
+          print('invoice_intake_vision=' + json.dumps(vision, ensure_ascii=False, sort_keys=True))
           print('invoice_intake_public_status=PASS')
           PY
 
