@@ -34,7 +34,7 @@ jobs:
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='deploy-receipt-spool-isolation-20261002-1644'
+          tid='deploy-receipt-retry-fix-20261006-1017'
           ps=r'''$ErrorActionPreference='Stop'
           $dst=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos_node\thin_client_transport.py'
           Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/feat/desktop-demo-recorder/agentos_node/thin_client_transport.py' -OutFile $dst
@@ -68,8 +68,8 @@ jobs:
           else:
               raise SystemExit('deploy_receipt_missing')
           time.sleep(15)
-          vid='verify-receipt-spool-isolation-20261002-1644'
-          code="import inspect,agentos_node.thin_client_transport as m; s=inspect.getsource(m.ThinClientTransport._flush_spooled_receipts); src=open(m.__file__,encoding='utf-8').read(); print('HAS_RECEIPT_SPOOL='+str('pending-receipts' in src and '_persist_and_submit_receipt' in src)); print('HAS_SPOOL_ISOLATION='+str('utf-8-sig' in src and 'quarantined malformed/unflushable receipt' in src)); print(m.__file__)"
+          vid='verify-receipt-retry-fix-20261006-1017'
+          code="import inspect,agentos_node.thin_client_transport as m; s=inspect.getsource(m.ThinClientTransport._flush_spooled_receipts); src=open(m.__file__,encoding='utf-8').read(); print('HAS_RECEIPT_SPOOL='+str('pending-receipts' in src and '_persist_and_submit_receipt' in src)); print('HAS_SPOOL_ISOLATION='+str('utf-8-sig' in src and 'receipt flush deferred' in src and 'quarantined malformed receipt' in src)); print(m.__file__)"
           if f.get_receipt(vid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1','task_id':vid,'action':'shell.exec',
