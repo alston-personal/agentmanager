@@ -19,7 +19,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 65852106ceb673cf872c9c99f3f024b3ea404dfa
+      source_sha: 8884bb94a4ec5c7ae76cdd25bdd60c9e9aa16839
       route: line-sticker
       backup_key: line-sticker-tool
       receipt_schema: studio-web.line-sticker-release/v1
