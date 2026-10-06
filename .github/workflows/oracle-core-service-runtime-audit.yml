@@ -62,6 +62,12 @@ jobs:
               cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
             fi
             observed="${cwd:-$wd}"
+            # Employee Worker Host intentionally uses an sg/setpriv wrapper.
+            # For that unit the systemd WorkingDirectory is the runtime authority;
+            # MainPID may be the wrapper rather than the Python worker.
+            if [ "$unit" = agentos-employee-worker-host.service ] && [ -n "$wd" ]; then
+              observed="$wd"
+            fi
             class=other
             case "$observed" in
               "$RELEASE_ROOT"/*) class=immutable; immutable=$((immutable+1));;
