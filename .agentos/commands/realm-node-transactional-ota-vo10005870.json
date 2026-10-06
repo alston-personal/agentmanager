@@ -2,5 +2,7 @@
   "schema": "agentos.realm-node-transactional-ota/v0.1",
   "node_id": "VO10005870",
   "action": "realm.node.transactional_ota",
-  "source_commit": "c6b8ac3eef942b651bbe5b19443f83979607b3d1"
+  "source_commit": "c6b8ac3eef942b651bbe5b19443f83979607b3d1",
+  "attempt": 2,
+  "tooling_note": "bounded-acceptance-stage"
 }
