@@ -121,6 +121,7 @@ jobs:
           text='\n'.join((step.get('stdout','')+'\n'+step.get('stderr','')) for step in r.get('steps',[]))
           assert f'route_source={source_commit}:dashboard/app/api/agentos/[...path]/route.ts' in text, text[-12000:]
           assert 'dashboard_build=PASS' in text, text[-12000:]
+          assert 'dashboard_cutover_downtime_budget=PASS' in text, text[-12000:]
           assert 'realm_gateway_bootstrap_local=PASS' in text, text[-12000:]
           assert 'realm_gateway_bootstrap_public=PASS' in text, text[-12000:]
           assert f'realm_gateway_source_commit={source_commit}' in text, text[-12000:]
