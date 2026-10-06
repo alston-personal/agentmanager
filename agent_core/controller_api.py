@@ -20,6 +20,9 @@ CONTROLLER_ACTION_CAPABILITY = {
     'desktop.windows.inspect': 'desktop.windows.inspect',
     'desktop.screenshot': 'desktop.screenshot',
     'desktop.open_url': 'desktop.open_url',
+    'desktop.window.stage': 'desktop.windows.tile',
+    'desktop.pointer.click': 'desktop.mouse',
+    'desktop.text.insert': 'desktop.keyboard',
     'node.runtime.converge': 'shell.exec',
     'node.ssh.inspect': 'node.ssh.inspect',
     'node.ssh.recover': 'node.ssh.recover',
@@ -475,6 +478,51 @@ print('agentos_source_commit='+source_commit)
             'nodes': observations,
         }
 
+    @staticmethod
+    def _typed_desktop_task(task_id: str, action: str, request: dict[str, Any]) -> dict[str, Any]:
+        base = {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': task_id,
+            'controller_action': action,
+            'cognition_ids_used': list(request.get('cognition_ids_used') or []),
+        }
+        if action == 'desktop.window.stage':
+            title = str(request.get('title_contains') or '').strip()
+            zone = str(request.get('zone') or '').strip().lower()
+            if not title or len(title) > 120:
+                raise ValueError('desktop.window.stage requires title_contains 1..120 chars')
+            if zone not in {'left', 'right', 'full'}:
+                raise ValueError('desktop.window.stage zone must be left|right|full')
+            reserve_top = int(request.get('reserve_top_px') if request.get('reserve_top_px') is not None else 8)
+            margin = int(request.get('margin_px') if request.get('margin_px') is not None else 4)
+            if not 0 <= reserve_top <= 160:
+                raise ValueError('desktop.window.stage reserve_top_px must be 0..160')
+            if not 0 <= margin <= 40:
+                raise ValueError('desktop.window.stage margin_px must be 0..40')
+            return {
+                **base,
+                'action': 'desktop.windows.tile',
+                'windows': [{'title_contains': title, 'zone': zone}],
+                'reserve_top_px': reserve_top,
+                'margin_px': margin,
+            }
+        if action == 'desktop.pointer.click':
+            if 'x' not in request or 'y' not in request:
+                raise ValueError('desktop.pointer.click requires x and y')
+            x, y = int(request['x']), int(request['y'])
+            if not 0 <= x <= 16383 or not 0 <= y <= 16383:
+                raise ValueError('desktop.pointer.click coordinates out of bounds')
+            button = str(request.get('button') or 'left').strip().lower()
+            if button not in {'left', 'right'}:
+                raise ValueError('desktop.pointer.click button must be left|right')
+            return {**base, 'action': 'desktop.mouse', 'operation': 'click', 'x': x, 'y': y, 'button': button}
+        if action == 'desktop.text.insert':
+            text = str(request.get('text') or '')
+            if not text or len(text) > 1000:
+                raise ValueError('desktop.text.insert text must contain 1..1000 characters')
+            return {**base, 'action': 'desktop.keyboard', 'operation': 'type', 'text': text}
+        raise ValueError(f'unsupported typed desktop action: {action}')
+
     def dispatch(self, node_id: str, request: dict[str, Any]) -> dict[str, Any]:
         action = str(request.get('action') or '').strip()
         if action == 'realm.runtime.rollout':
@@ -493,7 +541,16 @@ print('agentos_source_commit='+source_commit)
         existing = self._existing_task(task_id)
         if existing is not None:
             existing_action = str(existing.get('action') or '')
-            compatible = existing_action == action or (action == 'node.runtime.converge' and existing_action == 'shell.exec')
+            typed_node_actions = {
+                'desktop.window.stage': 'desktop.windows.tile',
+                'desktop.pointer.click': 'desktop.mouse',
+                'desktop.text.insert': 'desktop.keyboard',
+            }
+            compatible = (
+                existing_action == action
+                or (action == 'node.runtime.converge' and existing_action == 'shell.exec')
+                or existing_action == typed_node_actions.get(action)
+            )
             if existing.get('node_id') != node_id or not compatible:
                 raise ValueError(f'task_id already belongs to another request: {task_id}')
             return {
@@ -510,6 +567,8 @@ print('agentos_source_commit='+source_commit)
                 cwd=self._maintenance_cwd(node),
                 platform_name=str(node.get('platform') or ''),
             )
+        elif action in {'desktop.window.stage', 'desktop.pointer.click', 'desktop.text.insert'}:
+            task = self._typed_desktop_task(task_id, action, request)
         else:
             task = {
                 'schema': 'agentos.node-task/v0.1',
