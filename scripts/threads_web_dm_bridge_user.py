@@ -280,6 +280,25 @@ def main() -> int:
                             except Exception:
                                 pass
                     if not opened:
+                        for compose_url in ("https://www.threads.com/messages/new","https://www.threads.com/messages/compose"):
+                            try:
+                                page.goto(compose_url,wait_until="domcontentloaded",timeout=15000)
+                                page.wait_for_timeout(1200)
+                                visible_input=False
+                                for sel in ('input[type="text"]','input[type="search"]','input'):
+                                    loc=page.locator(sel)
+                                    try:
+                                        if any(loc.nth(i).is_visible() for i in range(loc.count())):
+                                            visible_input=True
+                                            break
+                                    except Exception:
+                                        pass
+                                if visible_input:
+                                    opened=True
+                                    break
+                            except Exception:
+                                pass
+                    if not opened:
                         print("mio_dm_oursong_acceptance=NO_NEW_MESSAGE_CONTROL")
                         if owns_context:
                             context.close()
