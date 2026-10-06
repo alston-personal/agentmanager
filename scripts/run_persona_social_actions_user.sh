@@ -35,6 +35,24 @@ ROOT="$DATA_REPO/$PERSONA_PATH"
 test -f "$ROOT/pdca/state.json"
 test -f "$ROOT/events/events.jsonl"
 
+# Fail closed on durable-state corruption. A malformed persona state must be
+# reported as DEGRADED before any adapter/cognition work can consume it.
+if ! python3 - "$ROOT/pdca/state.json" <<'PY'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1])
+try:
+    json.loads(p.read_text(encoding="utf-8"))
+except (OSError,json.JSONDecodeError) as exc:
+    print("persona_social_state_integrity=DEGRADED error="+type(exc).__name__)
+    raise SystemExit(3)
+print("persona_social_state_integrity=PASS")
+PY
+then
+  echo "persona_social_action_runtime=DEGRADED_STATE" >&2
+  exit 3
+fi
+
 # Resolve the PDCA-selected read before cognition. This is the existing worker
 # lane consuming a durable intent, not another independent patrol cron.
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
