@@ -1662,9 +1662,18 @@ class InvoiceStore:
                             updated, invoice_id,
                         ),
                     )
+                amount_retry = (enriched.raw.get("vision") or {}).get("amount_retry") or {}
+                amount_presence = "".join(
+                    "1" if fields.get(key) is not None else "0"
+                    for key in vision_ocr.MONEY_FIELDS
+                )
                 print(
                     "invoice_vision_enrichment="
                     f"completed status:{new_status} "
+                    f"money_present:{amount_presence} "
+                    f"amount_retry_attempts:{amount_retry.get('attempt_count', 0)} "
+                    f"amount_retry_conflicts:{len(amount_retry.get('conflicts') or {}) if isinstance(amount_retry, dict) else 0} "
+                    f"amount_retry_status:{amount_retry.get('status') if isinstance(amount_retry, dict) else None} "
                     f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
                 )
                 if new_status in {"recognition_insufficient", "needs_review"}:
