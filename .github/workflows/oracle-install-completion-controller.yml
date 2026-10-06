@@ -291,6 +291,34 @@ jobs:
           echo 'completion_lobster_runtime=PASS immutable_release=1'
           echo 'completion_watchdog=PASS timer=active'
 
+          # Real-work acceptance: do not manually transition the Market Master item.
+          # The live Lobster loop must discover it from the projected board and claim it.
+          MARKET_CLAIMED=0
+          for attempt in $(seq 1 18); do
+            STATUS=$(python3 - "$STATE" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf8'))
+          item=data.get('items',{}).get('market-master-1200-mvp') or {}
+          print(item.get('status','missing'))
+          PY
+            )
+            echo "market_master_claim_probe attempt=$attempt status=$STATUS"
+            if [ "$STATUS" != "accepted" ] && [ "$STATUS" != "missing" ]; then
+              MARKET_CLAIMED=1
+              break
+            fi
+            sleep 10
+          done
+          test "$MARKET_CLAIMED" = 1
+          python3 - "$STATE" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf8'))
+          item=data['items']['market-master-1200-mvp']
+          history=item.get('history') or []
+          assert any(h.get('event') == 'transition' and h.get('to') == 'in_progress' for h in history), item
+          print('market_master_autonomous_claim=PASS status='+str(item.get('status')))
+          PY
+
           TEST_STATE="$TMP/resume.json"
           TEST_BOARD="$TMP/TASK_BOARD.md"
           python3 "$LIVE/scripts/work_completion.py" --state "$TEST_STATE" register             --id resume-probe --project agentmanager --title resume             --owner role://probe-session --lease-seconds 60             --workspace "$DEV" --next-action 'resume probe action' --accept verified >/dev/null
