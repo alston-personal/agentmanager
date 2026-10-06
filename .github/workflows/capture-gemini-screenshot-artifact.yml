@@ -35,8 +35,8 @@ jobs:
           import time
           from agent_core.realm_fabric import RealmFabricStore
           f=RealmFabricStore()
-          tid='capture-gemini-artifact-20261006-1120'
-          code="from PIL import ImageGrab; import io,base64,ctypes,time; u=ctypes.windll.user32; h=1117002; u.ShowWindow(h,9); u.BringWindowToTop(h); u.SetForegroundWindow(h); time.sleep(1); im=ImageGrab.grab(bbox=(0,0,1920,1080),all_screens=True).convert('RGB'); im.thumbnail((960,540)); b=io.BytesIO(); im.save(b,format='JPEG',quality=55,optimize=True); print(base64.b64encode(b.getvalue()).decode('ascii'))"
+          tid='capture-gemini-artifact-20261006-1122'
+          code="from PIL import ImageGrab; import io,base64,ctypes,time; u=ctypes.windll.user32; h=1117002; u.ShowWindow(h,9); u.BringWindowToTop(h); u.SetForegroundWindow(h); time.sleep(1); im=ImageGrab.grab(bbox=(0,0,1920,1080),all_screens=True).convert('RGB'); im.thumbnail((480,270)); b=io.BytesIO(); im.save(b,format='JPEG',quality=25,optimize=True); print(base64.b64encode(b.getvalue()).decode('ascii'))"
           if f.get_receipt(tid) is None:
               f.queue_task('VO10005870',{
                   'schema':'agentos.node-task/v0.1',
@@ -73,3 +73,5 @@ jobs:
           path: gemini-live.jpg
           if-no-files-found: error
           retention-days: 1
+
+# bounded-preview-20261006-1122
