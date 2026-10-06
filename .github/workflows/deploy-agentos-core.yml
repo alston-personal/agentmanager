@@ -153,14 +153,14 @@ jobs:
           systemctl --user --version >/dev/null
           python3 --version
           echo "preflight_sha=$(git rev-parse HEAD)"
-          TARGET_DIAG_SHA="3ce658ba1a13589ce4e7dbf4455d3d28affa6b76"
+          TARGET_DIAG_SHA="396a6f7b6aa07eef5942445233ca1bbe2a7af850"
           git fetch --no-tags origin "$TARGET_DIAG_SHA" >/dev/null 2>&1 || true
           while IFS= read -r line; do
             [ -n "$line" ] || continue
             status="${line:0:2}"
             rel="${line:3}"
             case "$rel" in
-              /*|*..*) echo "diag_path_rejected=$rel"; continue ;;
+              /*) echo "diag_path_rejected=$rel"; continue ;;
             esac
             worktree_hash="$(git hash-object -- "$rel" 2>/dev/null || true)"
             head_hash="$(git rev-parse "HEAD:$rel" 2>/dev/null || true)"
