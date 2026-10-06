@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageEnhance, ImageOps
-from services.invoice_intake.template_ocr import extract_template_invoice, valid_tax_id, seller_region_text
+from services.invoice_intake.template_ocr import extract_template_invoice, valid_tax_id, seller_region_text, tax_id_candidates
 from services.invoice_intake import vision_ocr
 from capabilities.stamp_recognition.runtime import StampStore, detect_stamp_regions, fingerprint_stamp
 from capabilities.ocr_memory import OCRMemoryStore, context_from_extraction
@@ -401,13 +401,50 @@ def deep_tax_id_from_regions(
     *,
     deadline: float,
 ) -> tuple[str | None, list[str]]:
-    """Progressively OCR a seller/stamp region until a valid tax id is found.
+    """Progressively OCR seller regions until a valid tax id is found.
 
-    This is baseline OCR, not stamp recognition. It owns its fixed crop and
-    checks the caller's wall-clock budget between attempts.
+    This is baseline OCR, not stamp recognition. It first uses RapidOCR on
+    enlarged regions for text detection, then falls back to channel-specific
+    Tesseract attempts while respecting the caller's wall-clock budget.
     """
     texts: list[str] = []
+
+    try:
+        from rapidocr import RapidOCR
+        engine = RapidOCR()
+    except Exception:
+        engine = None
+
     for image in images:
+        if time.perf_counter() >= deadline:
+            return None, texts
+
+        if engine is not None:
+            enlarged = image.resize((image.width * 3, image.height * 3))
+            buf = BytesIO()
+            enlarged.save(buf, format="PNG")
+            try:
+                result = engine(buf.getvalue())
+                rapid_texts = []
+                if hasattr(result, "txts") and result.txts is not None:
+                    rapid_texts = [str(x) for x in result.txts]
+                elif hasattr(result, "to_json"):
+                    obj = result.to_json()
+                    if isinstance(obj, str):
+                        obj = json.loads(obj)
+                    obj = obj or {}
+                    rapid_texts = [str(x) for x in (
+                        obj.get("txts") or obj.get("texts") or obj.get("rec_texts") or []
+                    )]
+                rapid_text = "\n".join(rapid_texts)
+                if rapid_text.strip():
+                    texts.append(rapid_text)
+                valid = [v for v in tax_id_candidates(rapid_text) if valid_tax_id(v)]
+                if valid:
+                    return valid[0], texts
+            except Exception:
+                pass
+
         for variant in stamp_variants(image):
             for psm in (6, 11, 12):
                 if time.perf_counter() >= deadline:
