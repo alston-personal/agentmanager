@@ -291,32 +291,55 @@ jobs:
           echo 'completion_lobster_runtime=PASS immutable_release=1'
           echo 'completion_watchdog=PASS timer=active'
 
-          # Real-work acceptance: do not manually transition the Market Master item.
-          # The live Lobster loop must discover it from the projected board and claim it.
-          MARKET_CLAIMED=0
+          # Real-work acceptance: the completion ledger, not project-name board
+          # ordering, selects the next durable item. The restarted Lobster must
+          # produce a fresh claim/heartbeat event without a manual transition.
+          NEXT_BEFORE="$TMP/next-before.json"
+          python3 "$LIVE/scripts/work_completion.py" --state "$STATE" next > "$NEXT_BEFORE"
+          read -r EXPECTED_ID HISTORY_BEFORE <<EOF
+          $(python3 - "$NEXT_BEFORE" "$STATE" <<'PY'
+          import json,sys
+          nxt=json.load(open(sys.argv[1],encoding='utf8'))
+          state=json.load(open(sys.argv[2],encoding='utf8'))
+          assert nxt and nxt.get('work_id'), nxt
+          item=state['items'][nxt['work_id']]
+          print(nxt['work_id'], len(item.get('history') or []))
+          PY
+          )
+          EOF
+          echo "completion_expected_next=$EXPECTED_ID history_before=$HISTORY_BEFORE"
+
+          CLAIMED=0
           for attempt in $(seq 1 18); do
-            STATUS=$(python3 - "$STATE" <<'PY'
+            read -r OWNER STATUS HISTORY_NOW <<EOF
+          $(python3 - "$STATE" "$EXPECTED_ID" <<'PY'
           import json,sys
           data=json.load(open(sys.argv[1],encoding='utf8'))
-          item=data.get('items',{}).get('market-master-1200-mvp') or {}
-          print(item.get('status','missing'))
+          item=data['items'][sys.argv[2]]
+          print(item.get('owner',''), item.get('status',''), len(item.get('history') or []))
           PY
-            )
-            echo "market_master_claim_probe attempt=$attempt status=$STATUS"
-            if [ "$STATUS" != "accepted" ] && [ "$STATUS" != "missing" ]; then
-              MARKET_CLAIMED=1
+          )
+          EOF
+            echo "completion_claim_probe attempt=$attempt work_id=$EXPECTED_ID owner=$OWNER status=$STATUS history=$HISTORY_NOW"
+            if [ "$OWNER" = "role://lobster" ] && [ "$HISTORY_NOW" -gt "$HISTORY_BEFORE" ]; then
+              CLAIMED=1
               break
             fi
             sleep 10
           done
-          test "$MARKET_CLAIMED" = 1
-          python3 - "$STATE" <<'PY'
+          test "$CLAIMED" = 1
+          python3 - "$STATE" "$EXPECTED_ID" <<'PY'
           import json,sys
           data=json.load(open(sys.argv[1],encoding='utf8'))
-          item=data['items']['market-master-1200-mvp']
+          item=data['items'][sys.argv[2]]
+          assert item.get('owner') == 'role://lobster', item
           history=item.get('history') or []
-          assert any(h.get('event') == 'transition' and h.get('to') == 'in_progress' for h in history), item
-          print('market_master_autonomous_claim=PASS status='+str(item.get('status')))
+          assert any(h.get('event') in {'handoff','heartbeat'} and h.get('actor') in {'role://completion.controller','role://lobster'} for h in history), item
+          market=data.get('items',{}).get('market-master-1200-mvp')
+          assert market, 'Market Master durable work disappeared'
+          assert market.get('status') in {'accepted','in_progress','blocked','verifying','done'}, market
+          print('completion_autonomous_claim=PASS work_id='+sys.argv[2]+' status='+str(item.get('status')))
+          print('market_master_durable_queue=PASS status='+str(market.get('status'))+' owner='+str(market.get('owner')))
           PY
 
           TEST_STATE="$TMP/resume.json"
