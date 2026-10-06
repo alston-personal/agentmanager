@@ -169,3 +169,49 @@ class VisionMergeRegressionTests(unittest.TestCase):
         self.assertEqual(result.fields['invoice_number'],'EC55544057')
         self.assertEqual(result.raw['conflicts']['invoice_number']['vision'],'AB12345678')
         self.assertIn('invoice_number', result.raw['review']['confirm_fields'])
+
+
+class VisionRoutingTests(unittest.TestCase):
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_primary_skips_paid_vision_when_local_is_complete_and_high_confidence(self):
+        local = legacy()
+        local.fields.update({
+            'invoice_number':'EC55544057',
+            'invoice_date':'2026-09-25',
+            'vendor_name':'榮昌企業有限公司',
+            'buyer_tax_id':'23040145',
+            'seller_tax_id':'16672215',
+            'amount_before_tax':24500,
+            'tax_amount':1225,
+            'total_amount':25725,
+        })
+        local.confidence = {
+            'invoice_number':0.99,'invoice_date':0.95,'vendor_name':0.95,
+            'buyer_tax_id':0.90,'seller_tax_id':0.95,
+            'amount_before_tax':0.98,'tax_amount':0.98,'total_amount':0.98,
+        }
+        local.raw.update({
+            'review': {'status':'extracted','required_fields':[],'confirm_fields':[],'reasons':[]},
+            'template': {'document_type':'two_part_uniform_invoice'},
+            'line_items': [{'description':'印刷品','quantity':24500,'unit_price':1,'amount':24500}],
+        })
+        local.review_required = False
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice', return_value=local), \
+             patch.object(vision, 'read_invoice') as read:
+            result = extract_invoice(image_bytes())
+        read.assert_not_called()
+        self.assertEqual(result.raw['vision']['status'],'SKIPPED_LOCAL_SUFFICIENT')
+        self.assertEqual(result.raw['vision_route']['decision'],'skip')
+
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_primary_invokes_vision_when_local_needs_review(self):
+        local = legacy()
+        local.review_required = True
+        local.raw['review'] = {'status':'needs_review','required_fields':['invoice_date'],'confirm_fields':[],'reasons':['missing:invoice_date']}
+        result_payload = fixture()
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice', return_value=local), \
+             patch.object(vision, 'read_invoice', return_value={'payload':result_payload,'image_sha256':'x','model':'test'}) as read:
+            result = extract_invoice(image_bytes())
+        read.assert_called_once()
+        self.assertEqual(result.raw['vision_route']['decision'],'invoke')
+        self.assertEqual(result.raw['vision_route']['reason'],'local_review_required')
