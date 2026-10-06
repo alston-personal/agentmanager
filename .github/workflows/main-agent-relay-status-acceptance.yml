@@ -118,6 +118,8 @@ jobs:
               'relay_status_receipts_count=',
               'relay_status_inbox_oldest_seconds=',
               'relay_status_processing_oldest_seconds=',
+              'relay_status_antigravity_source_commit=',
+              'relay_status_action_source_commit=',
               'relay_status_stale_processing=',
               'relay_status=',
           )
@@ -141,14 +143,43 @@ jobs:
               assert relay_state=='active', vals
               assert not stale, vals
           needs_recovery=(status=='FAIL' and stale and relay_state in {'active','activating','failed','inactive'})
-          assert status=='PASS' or needs_recovery, vals
+          expected=str(__import__('os').environ.get('GITHUB_SHA') or '')
+          antigravity_commit=vals.get('relay_status_antigravity_source_commit','')
+          action_commit=vals.get('relay_status_action_source_commit','')
+          needs_runtime_repair=(
+              not re.fullmatch(r'[0-9a-f]{40}', antigravity_commit or '')
+              or not re.fullmatch(r'[0-9a-f]{40}', action_commit or '')
+              or antigravity_commit != expected
+              or action_commit != expected
+          )
+          assert status=='PASS' or needs_recovery or needs_runtime_repair, vals
           with open(sys.argv[3],'a',encoding='utf-8') as out:
               out.write('needs_recovery='+('true' if needs_recovery else 'false')+'\n')
+              out.write('needs_runtime_repair='+('true' if needs_runtime_repair else 'false')+'\n')
           json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
           print('relay_status_preflight=PASS')
           print('relay_status_needs_recovery='+('YES' if needs_recovery else 'NO'))
+          print('relay_status_needs_runtime_repair='+('YES' if needs_runtime_repair else 'NO'))
           for key in sorted(vals):
               print(key+'='+vals[key])
+          PY
+
+      - name: Repair relay runtime provenance to exact generation
+        if: ${{ steps.relay_status.outputs.needs_runtime_repair == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=240 \
+            bash scripts/agentos_dispatch.sh agentos.runtime repair "$GITHUB_SHA" \
+            | tee "$RUNNER_TEMP/relay-runtime-repair.txt"
+          python3 - "$RUNNER_TEMP/relay-runtime-repair.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs, 'missing runtime repair receipt'
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('ok') is True, receipt
+          assert receipt.get('source_commit') == sys.argv[2], receipt
+          print('relay_runtime_provenance_repair=PASS')
           PY
 
       - name: Quarantine stale relay processing without replay
@@ -202,11 +233,14 @@ jobs:
           processing_oldest=int(vals.get('relay_status_processing_oldest_seconds') or '0')
           explicit_stale=vals.get('relay_status_stale_processing')
           stale=(explicit_stale=='YES') if explicit_stale in {'YES','NO'} else (processing>0 and processing_oldest>=600)
+          expected=str(__import__('os').environ.get('GITHUB_SHA') or '')
           healthy=(
               vals.get('relay_status')=='PASS'
               and vals.get('relay_status_antigravity_service')=='active'
               and vals.get('relay_status_action_service')=='active'
               and vals.get('relay_status_stale_processing')=='NO'
+              and vals.get('relay_status_antigravity_source_commit')==expected
+              and vals.get('relay_status_action_source_commit')==expected
               and processing==0
               and not stale
           )
@@ -234,6 +268,7 @@ jobs:
           path: |
             ${{ runner.temp }}/relay-status-before.txt
             ${{ runner.temp }}/relay-status-before.json
+            ${{ runner.temp }}/relay-runtime-repair.txt
             ${{ runner.temp }}/relay-restart.txt
             ${{ runner.temp }}/relay-status.txt
             ${{ runner.temp }}/relay-status.json
