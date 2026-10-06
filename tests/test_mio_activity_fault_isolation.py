@@ -52,3 +52,15 @@ def test_runtime_acceptance_requires_same_cycle_activity_receipt():
     text=(repo/"scripts"/"run_persona_pdca_heartbeat_user.sh").read_text(encoding="utf-8")
     assert 'activity_ref=s.get("last_activity_receipt")' in text
     assert 'assert int(activity["cycle"])==int(s["cycle"])' in text
+
+
+def test_internal_activity_emits_cognitive_ir_projection_without_auto_promoting_identity():
+    repo=Path(__file__).resolve().parents[1]
+    text=(repo/"scripts"/"persona_internal_activity_executor.py").read_text(encoding="utf-8")
+    assert '"schema":"agentos.persona-cognitive-ir-projection/v1"' in text
+    assert '"private_chain_of_thought_stored":False' in text
+    assert '"ordinary_activity_is_not_identity_change":True' in text
+    assert '"growth_requires_evidence_and_governance":True' in text
+    assert '"promotion_allowed":False' in text
+    assert 'state["last_ir_projection_receipt"]' in text
+    assert '"type":"pdca.cognitive_ir."+projection["persona_ir"]["projection_status"].lower()' in text
