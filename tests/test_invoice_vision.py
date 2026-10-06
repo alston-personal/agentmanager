@@ -96,11 +96,15 @@ class VisionTests(unittest.TestCase):
     def test_primary_retains_details_comparison_and_requires_review(self):
         result={'payload':fixture(), 'image_sha256':'test', 'model':'test'}
         with patch('services.invoice_intake.invoice_core.extract_legacy_invoice',return_value=legacy()), \
-             patch.object(vision,'read_invoice',return_value=result):
+             patch.object(vision,'read_invoice',return_value=result), \
+             patch('services.invoice_intake.invoice_core.threading.Thread'):
             with tempfile.TemporaryDirectory() as tmp:
                 store=InvoiceStore(Path(tmp),data_scope='test')
                 initial=store.ingest(image_bytes(),'test.png','image/png')
-                store.process(initial['invoice_id'])
+                fast=store.process(initial['invoice_id'])
+                self.assertNotEqual(fast['status'],'processing')
+                self.assertTrue(fast['background_enrichment_pending'])
+                store._vision_enrich_invoice(initial['invoice_id'])
                 persisted=store.get_invoice(initial['invoice_id'])
                 self.assertEqual(persisted['fields']['vendor_name'],'買方測試有限公司')
                 self.assertEqual(persisted['fields']['buyer_tax_id'],'23040145')
