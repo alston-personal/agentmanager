@@ -124,3 +124,46 @@ class VisionTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
+
+
+class VisionMergeRegressionTests(unittest.TestCase):
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_primary_vision_null_never_erases_legacy_value(self):
+        legacy_result = legacy()
+        payload = fixture()
+        payload['invoice_date'] = None
+        payload['seller_tax_id'] = None
+        payload['amount_before_tax'] = None
+        payload['tax_amount'] = None
+        payload['total_amount'] = None
+        payload['needs_review'] = True
+        payload['uncertain_fields'] = ['invoice_date','seller_tax_id','amount_before_tax','tax_amount','total_amount']
+        legacy_result.fields.update({
+            'invoice_date':'2026-09-25',
+            'seller_tax_id':'16908319',
+            'amount_before_tax':24500,
+            'tax_amount':1225,
+            'total_amount':25725,
+        })
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice', return_value=legacy_result), \
+             patch.object(vision, 'read_invoice', return_value={'payload':payload,'image_sha256':'x','model':'test'}):
+            result = extract_invoice(image_bytes())
+        self.assertEqual(result.fields['invoice_date'],'2026-09-25')
+        self.assertEqual(result.fields['seller_tax_id'],'16908319')
+        self.assertEqual(result.fields['amount_before_tax'],24500)
+        self.assertEqual(result.fields['tax_amount'],1225)
+        self.assertEqual(result.fields['total_amount'],25725)
+
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_primary_vision_conflict_preserves_legacy_and_traces_candidate(self):
+        legacy_result = legacy()
+        legacy_result.fields['invoice_number'] = 'EC55544057'
+        payload = fixture()
+        payload['invoice_number'] = 'AB12345678'
+        payload['needs_review'] = True
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice', return_value=legacy_result), \
+             patch.object(vision, 'read_invoice', return_value={'payload':payload,'image_sha256':'x','model':'test'}):
+            result = extract_invoice(image_bytes())
+        self.assertEqual(result.fields['invoice_number'],'EC55544057')
+        self.assertEqual(result.raw['conflicts']['invoice_number']['vision'],'AB12345678')
+        self.assertIn('invoice_number', result.raw['review']['confirm_fields'])
