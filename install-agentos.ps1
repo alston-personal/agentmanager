@@ -90,8 +90,8 @@ function Install-Supervisor([string]$PythonPath) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
   $watchdogTaskName='AgentOS Thin Client Watchdog'
-  $fallbackTaskName='AgentOS Thin Client User'
-  $fallbackWatchdogTaskName='AgentOS Thin Client Watchdog User'
+  $fallbackRunName='AgentOS Thin Client User'
+  $fallbackWatchdogRunName='AgentOS Thin Client Watchdog User'
 
   $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   if($existing){
@@ -158,23 +158,29 @@ function Install-Supervisor([string]$PythonPath) {
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -Hidden
+  $useUserAutorun=$false
   try {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
   } catch {
     if($_.Exception.Message -notmatch '(?i)access.*denied|存取被拒|unauthorized'){
       throw
     }
-    $taskName=$fallbackTaskName
-    Write-Host ("Protected legacy task ACL detected; using user-owned fallback: " + $taskName) -ForegroundColor Yellow
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
+    $useUserAutorun=$true
+    Write-Host 'Task Scheduler ACL blocks non-admin repair; switching to per-user HKCU autorun.' -ForegroundColor Yellow
+    $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    New-Item -Path $runKey -Force | Out-Null
+    $runCmd='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"'
+    New-ItemProperty -Path $runKey -Name $fallbackRunName -Value $runCmd -PropertyType String -Force | Out-Null
   }
 
-  $registeredAction=(Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).Actions | Select-Object -First 1
-  if([string]$registeredAction.Execute -match '(?i)cmd\.exe$'){
-    throw 'Refusing to start visible cmd.exe Thin Client task after repair'
-  }
-  if([string]$registeredAction.Execute -notmatch '(?i)powershell\.exe$' -or [string]$registeredAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden'){
-    throw 'Refusing to start Thin Client task unless its registered action is hidden PowerShell'
+  if(-not $useUserAutorun){
+    $registeredAction=(Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).Actions | Select-Object -First 1
+    if([string]$registeredAction.Execute -match '(?i)cmd\.exe$'){
+      throw 'Refusing to start visible cmd.exe Thin Client task after repair'
+    }
+    if([string]$registeredAction.Execute -notmatch '(?i)powershell\.exe$' -or [string]$registeredAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden'){
+      throw 'Refusing to start Thin Client task unless its registered action is hidden PowerShell'
+    }
   }
 
   # Independent watchdog: a separate periodic task is required because an
@@ -190,48 +196,69 @@ function Install-Supervisor([string]$PythonPath) {
     -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
     -Hidden
-  try {
+  if(-not $useUserAutorun){
     Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force -ErrorAction Stop | Out-Null
-  } catch {
-    if($_.Exception.Message -notmatch '(?i)access.*denied|存取被拒|unauthorized'){
-      throw
+
+    $registeredWatchdogAction=(Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop).Actions | Select-Object -First 1
+    if([string]$registeredWatchdogAction.Execute -notmatch '(?i)powershell\.exe$' -or [string]$registeredWatchdogAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden'){
+      throw 'Refusing to start watchdog unless its registered action is hidden PowerShell'
     }
-    $watchdogTaskName=$fallbackWatchdogTaskName
-    $watchdogArgs='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdogScript + '" -TaskName "' + $taskName + '" -InstallRoot "' + $InstallRoot + '"'
-    $watchdogAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $watchdogArgs -WorkingDirectory $InstallRoot
-    Write-Host ("Protected legacy watchdog ACL detected; using user-owned fallback: " + $watchdogTaskName) -ForegroundColor Yellow
-    Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force -ErrorAction Stop | Out-Null
-  }
 
-  $registeredWatchdogAction=(Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop).Actions | Select-Object -First 1
-  if([string]$registeredWatchdogAction.Execute -notmatch '(?i)powershell\.exe$' -or [string]$registeredWatchdogAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden'){
-    throw 'Refusing to start watchdog unless its registered action is hidden PowerShell'
-  }
+    Start-ScheduledTask -TaskName $taskName
+    Start-Sleep -Seconds 4
 
-  Start-ScheduledTask -TaskName $taskName
-  Start-Sleep -Seconds 4
+    $task=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+    if($task.State -ne 'Running'){
+      $info=Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+      throw "AgentOS Thin Client did not stay Running. LastTaskResult=$($info.LastTaskResult)"
+    }
+    $taskAction=(Get-ScheduledTask -TaskName $taskName).Actions | Select-Object -First 1
+    if([string]$taskAction.Execute -match '(?i)cmd\.exe$'){
+      throw 'AgentOS Thin Client task still uses visible cmd.exe'
+    }
 
-  $task=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
-  if($task.State -ne 'Running'){
-    $info=Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
-    throw "AgentOS Thin Client did not stay Running. LastTaskResult=$($info.LastTaskResult)"
-  }
-  $taskAction=(Get-ScheduledTask -TaskName $taskName).Actions | Select-Object -First 1
-  if([string]$taskAction.Execute -match '(?i)cmd\.exe$'){
-    throw 'AgentOS Thin Client task still uses visible cmd.exe'
-  }
+    $watchdogTask=Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop
+    $watchdogActionActual=$watchdogTask.Actions | Select-Object -First 1
+    if([string]$watchdogActionActual.Execute -notmatch '(?i)powershell\.exe$'){
+      throw 'AgentOS Thin Client watchdog is not using hidden PowerShell'
+    }
+    if([string]$watchdogActionActual.Arguments -notmatch 'thin_client_watchdog\.ps1'){
+      throw 'AgentOS Thin Client watchdog action is not wired to the canonical script'
+    }
 
-  $watchdogTask=Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop
-  $watchdogActionActual=$watchdogTask.Actions | Select-Object -First 1
-  if([string]$watchdogActionActual.Execute -notmatch '(?i)powershell\.exe$'){
-    throw 'AgentOS Thin Client watchdog is not using hidden PowerShell'
-  }
-  if([string]$watchdogActionActual.Arguments -notmatch 'thin_client_watchdog\.ps1'){
-    throw 'AgentOS Thin Client watchdog action is not wired to the canonical script'
-  }
+    Write-Host 'Background service: Running (headless)' -ForegroundColor Green
+    Write-Host 'Independent watchdog: Installed (60s cadence)' -ForegroundColor Green
+  } else {
+    $userSupervisor=Join-Path $InstallRoot 'agentos-user-watchdog.ps1'
+    $escapedRunner=$runner.Replace("'","''")
+    $escapedRoot=$InstallRoot.Replace("'","''")
+    $supervisorBody=@(
+      '$ErrorActionPreference=''SilentlyContinue'''
+      'while($true){'
+      '  $p=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -match ''agentos_node\.client_cli'' -and $_.CommandLine -match ''\brun\b'' } | Select-Object -First 1'
+      '  if(-not $p){ Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(''-NoProfile'',''-NonInteractive'',''-WindowStyle'',''Hidden'',''-ExecutionPolicy'',''Bypass'',''-File'',''' + $escapedRunner + ''') }'
+      '  Start-Sleep -Seconds 60'
+      '}'
+    ) -join [Environment]::NewLine
+    $supervisorBody | Set-Content -Encoding UTF8 -LiteralPath $userSupervisor
 
-  Write-Host 'Background service: Running (headless)' -ForegroundColor Green
-  Write-Host 'Independent watchdog: Installed (60s cadence)' -ForegroundColor Green
+    $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $watchCmd='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $userSupervisor + '"'
+    New-ItemProperty -Path $runKey -Name $fallbackWatchdogRunName -Value $watchCmd -PropertyType String -Force | Out-Null
+
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',$userSupervisor)
+    Start-Sleep -Seconds 4
+
+    $running = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and $_.CommandLine -match 'agentos_node\.client_cli' -and $_.CommandLine -match '\brun\b' } |
+      Select-Object -First 1
+    if(-not $running){
+      throw 'Per-user hidden Thin Client did not start'
+    }
+
+    Write-Host 'Background service: Running (headless, per-user)' -ForegroundColor Green
+    Write-Host 'Independent watchdog: Running (hidden, per-user 60s cadence)' -ForegroundColor Green
+  }
 }
 
 try {
