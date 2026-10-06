@@ -402,3 +402,7 @@ Windows in-place repair must stop and temporarily disable the independent Thin C
 ### Non-admin Windows repair task ownership
 
 Windows repair is expected to succeed from a normal user PowerShell. If a legacy scheduled task was created under a more privileged ACL and cannot be overwritten by the current user, repair keeps the legacy task stopped/disabled and creates a new current-user-owned hidden task instead. The fallback primary and watchdog remain hidden PowerShell tasks, and the watchdog is rebound to the effective primary task name. Administrator elevation is not a normal prerequisite for repair.
+
+### Windows non-admin runtime fallback
+
+When the current user cannot create or replace Task Scheduler entries at all, one-click repair falls back to a per-user runtime instead of requiring elevation. It installs hidden PowerShell autorun entries under HKCU for the Thin Client and an independent 60-second user watchdog loop. Protected legacy scheduled tasks stay stopped/disabled. The fallback preserves headless operation and restart-on-logon semantics without relying on administrative Task Scheduler ACLs.
