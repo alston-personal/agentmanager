@@ -1,0 +1,143 @@
+name: LayoutLib Production Parity Command Carrier
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  parity:
+    if: >-
+      github.event.issue.number == 1178 &&
+      github.actor == 'alstonhuang' &&
+      github.event.comment.body == '/agentos layoutlib-production-parity'
+    concurrency:
+      group: layoutlib-production-parity-command
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout canonical Core generation
+        uses: actions/checkout@v4
+        with:
+          ref: core/integration
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Submit and verify bounded LayoutLib production parity
+        shell: bash
+        env:
+          AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+        run: |
+          set -euo pipefail
+          refresh_oidc() {
+            local url token
+            url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+            curl -fsS --max-time 15               -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"               "$url" > "$RUNNER_TEMP/oidc-refresh.json"
+            token="$(python3 - "$RUNNER_TEMP/oidc-refresh.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+            echo "::add-mask::$token"
+            export AGENTOS_CONTROLLER_TOKEN="$token"
+          }
+
+          refresh_oidc
+          AGENTOS_DISPATCH_WAIT_SECONDS=180             bash scripts/agentos_dispatch.sh               agentos.executor job.submit "$GITHUB_SHA"               job_type=layoutlib.production.parity.inspect               | tee "$RUNNER_TEMP/layoutlib-parity-submit.txt"
+
+          job_id="$(python3 - "$RUNNER_TEMP/layoutlib-parity-submit.txt" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs
+          receipt=docs[-1].get('receipt') or {}
+          job=receipt.get('executor_job') or {}
+          assert receipt.get('ok') is True, receipt
+          value=str(job.get('job_id') or '')
+          assert value.startswith('action-'), job
+          print(value)
+          PY
+          )"
+
+          terminal=0
+          for i in $(seq 1 60); do
+            if [ "$i" = 1 ] || [ $(( (i - 1) % 20 )) = 0 ]; then
+              refresh_oidc
+            fi
+            out="$RUNNER_TEMP/layoutlib-parity-inspect-$i.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=90               bash scripts/agentos_dispatch.sh                 agentos.executor job.inspect "$GITHUB_SHA"                 job_id="$job_id" > "$out"
+            cat "$out" >> "$RUNNER_TEMP/layoutlib-parity-inspect.txt"
+
+            if python3 - "$out" "$RUNNER_TEMP/layoutlib-parity-receipt.json" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          if not docs:
+              raise SystemExit(1)
+          receipt=docs[-1].get('receipt') or {}
+          if receipt.get('executor_job_state')!='completed':
+              raise SystemExit(1)
+          job=receipt.get('executor_job_receipt')
+          assert isinstance(job,dict), job
+          assert job.get('job_type') == 'layoutlib.production.parity.inspect', job
+          assert job.get('project_id') == 'layoutlib', job
+          assert job.get('executor_available') is True, job
+          assert job.get('routable') is True, job
+          assert job.get('authorized') is True, job
+          assert job.get('successful') is True, job
+          assert job.get('classification') == 'LAYOUTLIB_PRODUCTION_PARITY_EXACT', job
+          assert job.get('layoutlib_release') == 'v0.7.9', job
+          assert job.get('layoutlib_manifest_files') == 7, job
+          assert job.get('layoutlib_matching_files') == 7, job
+          assert job.get('layoutlib_public_http') == 200, job
+          assert job.get('layoutlib_parity') == 'EXACT', job
+          assert job.get('credential_exposed') is False, job
+
+          safe={k:job.get(k) for k in (
+              'schema','job_id','job_type','project_id','executor_class','capability',
+              'executor_available','routable','authorized','successful','credential_exposed',
+              'verdict','classification','observed_head','layoutlib_release',
+              'layoutlib_manifest_files','layoutlib_matching_files','layoutlib_public_http',
+              'layoutlib_parity'
+          ) if k in job}
+          with open(sys.argv[2],'w',encoding='utf-8') as f:
+              json.dump(safe,f,sort_keys=True,indent=2)
+              f.write('\n')
+          print('layoutlib_production_parity=PASS')
+          print('layoutlib_matching_files=7')
+          raise SystemExit(0)
+          PY
+            then
+              terminal=1
+              break
+            fi
+            sleep 3
+          done
+          test "$terminal" = 1
+
+      - name: Upload sanitized parity receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layoutlib-production-parity-command-${{ github.run_id }}
+          path: ${{ runner.temp }}/layoutlib-parity-receipt.json
+          if-no-files-found: warn
+          retention-days: 30
