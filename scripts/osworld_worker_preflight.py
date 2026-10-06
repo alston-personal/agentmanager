@@ -22,7 +22,12 @@ def inspect_worker(provider: str, *, env: dict[str, str] | None = None, root: Pa
 
     machine = platform.machine().lower()
     checks: list[dict[str, Any]] = []
-    checks.append(_check("x86_64_host", machine in {"x86_64", "amd64"}, f"machine={machine}"))
+    checks.append(_check(
+        "x86_64_host",
+        machine in {"x86_64", "amd64"},
+        f"machine={machine}",
+        blocking=(provider == "docker"),
+    ))
 
     if provider == "docker":
         kvm = root / "dev" / "kvm"
