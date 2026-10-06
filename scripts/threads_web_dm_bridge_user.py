@@ -234,6 +234,32 @@ def main() -> int:
                         except Exception:
                             pass
                     if not opened:
+                        icon_selectors=[
+                            'svg[aria-label*="message" i]',
+                            'svg[aria-label*="chat" i]',
+                            'svg[aria-label*="compose" i]',
+                            'svg[aria-label*="new" i]',
+                            'svg[aria-label*="訊息"]',
+                            'svg[aria-label*="聊天"]',
+                            '[title*="message" i]',
+                            '[title*="chat" i]',
+                            '[title*="compose" i]',
+                            '[title*="new" i]',
+                            '[title*="訊息"]',
+                            '[title*="聊天"]',
+                        ]
+                        for sel in icon_selectors:
+                            try:
+                                icon=page.locator(sel)
+                                if icon.count()>0 and icon.first.is_visible():
+                                    parent=icon.first.locator('xpath=ancestor-or-self::button[1] | ancestor-or-self::*[@role="button"][1]')
+                                    if parent.count()>0 and parent.first.is_visible():
+                                        parent.first.click(timeout=5000)
+                                        opened=True
+                                        break
+                            except Exception:
+                                pass
+                    if not opened:
                         for label in ("New message","New Message","Start chat","Compose","新訊息","建立新訊息","開始聊天","新增聊天"):
                             try:
                                 btn=page.get_by_role("button",name=re.compile(re.escape(label),re.I))
