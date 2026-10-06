@@ -6,7 +6,7 @@ on:
       - '.agentos/commands/realm-one-runtime-inspect.json'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   inspect:
@@ -31,32 +31,56 @@ jobs:
               p=subprocess.run(argv,text=True,capture_output=True,check=False,timeout=10)
               return {'argv':argv,'returncode':p.returncode,'stdout':p.stdout[-12000:],'stderr':p.stderr[-4000:]}
 
+          def relay_receipts():
+              root=Path('/home/ubuntu/agent-data/runtime/action-relay/receipts')
+              allowed=(
+                  'schema','capsule_id','action','ok','outcome','status','classification',
+                  'health','rollback','idempotent','failure_stage','source_ref','source_commit',
+                  'previous_commit','resulting_commit'
+              )
+              rows=[]
+              if not root.is_dir():
+                  return rows
+              candidates=sorted(root.glob('action-*.json'), key=lambda p:p.stat().st_mtime, reverse=True)
+              for path in candidates[:80]:
+                  try:
+                      item=json.loads(path.read_text(encoding='utf-8'))
+                  except Exception:
+                      continue
+                  if item.get('action') != 'agentos.runtime.converge':
+                      continue
+                  safe={key:item.get(key) for key in allowed if key in item}
+                  error=item.get('error')
+                  if isinstance(error,str) and error:
+                      safe['error_type']=error.split(':',1)[0][:80]
+                  rows.append(safe)
+                  if len(rows)>=12:
+                      break
+              return rows
+
           result={
-              'schema':'agentos.one-runtime-inspection/v0.3',
+              'schema':'agentos.one-runtime-inspection/v0.4',
               'identity':run(['bash','-lc','id; groups']),
-              'processes':run(['bash','-lc',"ps -eo pid,user,lstart,args | grep -E 'agent_core|realm_cli|realm_server|agentos-one|8780' | grep -v grep || true"]),
+              'processes':run(['bash','-lc',"ps -eo pid,user,lstart,args | grep -E 'agent_core|realm_cli|realm_server|agentos-one|action_relay|action-relay|8780' | grep -v grep || true"]),
               'listeners':run(['bash','-lc',"ss -ltnp 2>/dev/null | grep -E ':8780|:8766|:8767' || true"]),
               'sudo_noninteractive':run(['bash','-lc','sudo -n -l 2>&1 || true']),
               'ubuntu_repo_permissions':run(['bash','-lc',"namei -l /home/ubuntu/agentmanager 2>/dev/null || true; stat -c '%U %G %a %n' /home/ubuntu /home/ubuntu/agentmanager 2>/dev/null || true"]),
+              'ubuntu_repo_head':run(['bash','-lc',"git -C /home/ubuntu/agentmanager rev-parse HEAD 2>/dev/null || true; git -C /home/ubuntu/agentmanager status --porcelain=v1 --untracked-files=no 2>/dev/null | wc -l"]),
               'system_services':run(['bash','-lc',"systemctl --no-pager --plain list-units --type=service 2>/dev/null | grep -E 'agentos|realm' || true"]),
               'user_services':run(['bash','-lc',"systemctl --user --no-pager --plain list-units --type=service 2>/dev/null | grep -E 'agentos|realm' || true"]),
               'health_8780':run(['bash','-lc',"curl -sS --max-time 3 -i http://127.0.0.1:8780/v1/health || true"]),
               'bootstrap_surface':run(['bash','-lc',"curl -sS --max-time 3 -i 'http://127.0.0.1:8780/v1/bootstrap?node_id=vopc5750' || true"]),
               'benchmark_surface':run(['bash','-lc',"curl -sS --max-time 3 -i -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:8780/v1/benchmark || true"]),
+              'runtime_converge_receipts':relay_receipts(),
               'node_map':NodeRegistry().node_map(),
           }
           Path('/tmp/realm-one-runtime-inspection.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           print(json.dumps(result,indent=2,sort_keys=True))
           PY
-      - name: Publish inspection evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .agentos/evidence
-          cp /tmp/realm-one-runtime-inspection.json .agentos/evidence/realm-one-runtime-inspection-current.json
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/realm-one-runtime-inspection-current.json
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): inspect live ONE runtime'
-          git push origin HEAD:main
+      - name: Upload inspection evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: realm-one-runtime-inspection
+          path: /tmp/realm-one-runtime-inspection.json
+          retention-days: 3
+          if-no-files-found: error
