@@ -396,6 +396,152 @@ def stamp_assist_with_budget(
     return result
 
 
+def deep_fallback_enrich(
+    image_bytes: bytes,
+    base: "Extraction",
+    *,
+    budget_seconds: float = 20.0,
+) -> "Extraction":
+    """Best-effort second-stage OCR based on the previously usable #1109 search pattern.
+
+    It only fills fields still missing from the fast pass, never waits on stamp
+    recognition, and stops launching new OCR work once the wall-clock budget is
+    exhausted. This is intended for background enrichment after a fast result is
+    already visible to the user.
+    """
+    started = time.perf_counter()
+    deadline = started + max(1.0, budget_seconds)
+    image = ImageOps.exif_transpose(Image.open(BytesIO(image_bytes))).convert("RGB")
+    fields = dict(base.fields)
+    confidence = dict(base.confidence)
+    raw = json.loads(json.dumps(base.raw, ensure_ascii=False))
+    deep = {
+        "status": "running",
+        "started_from_status": (raw.get("review") or {}).get("status"),
+        "fallback_used": [],
+    }
+    raw["deep_fallback"] = deep
+
+    def within_budget() -> bool:
+        return time.perf_counter() < deadline
+
+    invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
+    date_crop = crop_rel(image, (0.43, 0.11, 0.79, 0.30))
+    amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
+
+    if not fields.get("invoice_number") and within_budget():
+        texts = []
+        for psm in (7, 6, 11):
+            if not within_budget():
+                break
+            texts.append(ocr_image(invoice_crop, psm=psm, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+        value = next((normalize_invoice_number(x) for x in texts if normalize_invoice_number(x)), None)
+        if value:
+            fields["invoice_number"] = value
+            confidence["invoice_number"] = max(confidence.get("invoice_number", 0.0), 0.95)
+        deep["fallback_used"].append("invoice_number")
+
+    if not fields.get("invoice_date") and within_budget():
+        texts = []
+        for psm in (6, 11):
+            if not within_budget():
+                break
+            texts.append(ocr_image(date_crop, psm=psm, whitelist="0123456789/-"))
+        value = next((normalize_roc_date(x) for x in texts if normalize_roc_date(x)), None)
+        if value:
+            fields["invoice_date"] = value
+            confidence["invoice_date"] = max(confidence.get("invoice_date", 0.0), 0.90)
+        deep["fallback_used"].append("invoice_date")
+
+    if any(fields.get(k) is None for k in ("amount_before_tax", "tax_amount", "total_amount")) and within_budget():
+        amount_texts: list[str] = []
+        regions = [
+            amount_crop,
+            crop_rel(image, (0.18, 0.24, 0.95, 0.90)),
+            crop_rel(image, (0.04, 0.42, 0.96, 0.97)),
+            image,
+        ]
+        for region in regions:
+            for psm in (6, 11):
+                if not within_budget():
+                    break
+                amount_texts.append(ocr_image(region, psm=psm, whitelist="0123456789,.-"))
+            if not within_budget():
+                break
+        subtotal, tax, total, amount_conf = choose_amounts(amount_texts)
+        for key, value in {
+            "amount_before_tax": subtotal,
+            "tax_amount": tax,
+            "total_amount": total,
+        }.items():
+            if fields.get(key) is None and value is not None:
+                fields[key] = value
+                confidence[key] = max(confidence.get(key, 0.0), amount_conf)
+        deep["fallback_used"].append("amounts")
+
+    if not fields.get("seller_tax_id") and within_budget():
+        # Deep fallback is deliberately richer than the fast path but still
+        # independent of stamp detection/matching.
+        stamp_crop = crop_rel(image, (0.66, 0.58, 0.96, 0.96))
+        texts = ocr_stamp_text(stamp_crop, digits_only=True, fast=True)
+        tax_ids: list[str] = []
+        for text_value in texts:
+            for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", text_value)):
+                if candidate not in tax_ids:
+                    tax_ids.append(candidate)
+        valid = [x for x in tax_ids if valid_tax_id(x)]
+        chosen = (valid or tax_ids or [None])[0]
+        if chosen:
+            fields["seller_tax_id"] = chosen
+            confidence["seller_tax_id"] = max(
+                confidence.get("seller_tax_id", 0.0),
+                0.88 if chosen in valid else 0.68,
+            )
+        deep["fallback_used"].append("seller_tax_id")
+
+    if not fields.get("vendor_name") and within_budget():
+        rapid_text = ((raw.get("template") or {}).get("raw_text") or "")
+        vendor_texts = [rapid_text]
+        if within_budget():
+            vendor_texts.append(
+                ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng")
+            )
+        if within_budget():
+            vendor_texts.extend(
+                ocr_stamp_text(crop_rel(image, (0.42, 0.42, 0.99, 0.99)), fast=True)
+            )
+        vendor = next((normalize_vendor_name(x) for x in vendor_texts if normalize_vendor_name(x)), None)
+        if vendor:
+            fields["vendor_name"] = vendor
+            confidence["vendor_name"] = max(confidence.get("vendor_name", 0.0), 0.78)
+        deep["fallback_used"].append("vendor_name")
+
+    template = raw.get("template") or {}
+    derived_amounts = bool(
+        template.get("matched")
+        and template.get("document_type") == "three_part_uniform_invoice"
+        and not bool(template.get("visual_amounts"))
+    )
+    review = classify_review(
+        fields,
+        confidence,
+        derived_amounts=derived_amounts,
+        stamp_recognition=raw.get("stamp_recognition") or {},
+    )
+    raw["review"] = review
+    deep["status"] = "completed" if within_budget() else "budget_exhausted"
+    deep["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    deep["result_status"] = review["status"]
+    raw.setdefault("timings_ms", {})["deep_fallback_ms"] = deep["elapsed_ms"]
+    raw["engine"] = str(raw.get("engine") or "rapidocr-template-v1") + "+deep-fallback"
+    return Extraction(
+        fields=fields,
+        confidence=confidence,
+        raw=raw,
+        review_required=review["status"] != "extracted",
+    )
+
+
 @dataclass
 class Extraction:
     fields: dict[str, Any]
@@ -721,6 +867,9 @@ class InvoiceStore:
         self.db_path = root / "invoice-intake.sqlite3"
         max_parallel = max(1, min(4, int(os.environ.get("INVOICE_OCR_PARALLELISM", "2"))))
         self.processing_slots = threading.BoundedSemaphore(max_parallel)
+        self.deep_fallback_slots = threading.BoundedSemaphore(
+            max(1, min(2, int(os.environ.get("INVOICE_DEEP_FALLBACK_PARALLELISM", "1"))))
+        )
         stamp_db = Path(os.environ.get("STAMP_REGISTRY_PATH", str(root / "stamp-recognition.sqlite3")))
         self.stamp_store = StampStore(stamp_db)
         ocr_memory_db = Path(os.environ.get("OCR_MEMORY_PATH", str(root / "ocr-memory.sqlite3")))
