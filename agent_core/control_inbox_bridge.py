@@ -179,6 +179,18 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
                 processes.append(window['process_name'][:128])
         if processes:
             projected['processes'] = sorted(set(processes))[:64]
+    elif action == 'desktop.preview.capture':
+        for key in ('mime_type', 'sha256'):
+            value = receipt.get(key)
+            if isinstance(value, str):
+                projected[key] = value[:160]
+        for key in ('bytes', 'width', 'height'):
+            value = receipt.get(key)
+            if isinstance(value, int):
+                projected[key] = int(value)
+        image_base64 = receipt.get('image_base64')
+        if isinstance(image_base64, str) and len(image_base64) <= 170000:
+            projected['image_base64'] = image_base64
     elif action == 'desktop.window.stage':
         screen = receipt.get('screen')
         if (
