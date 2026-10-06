@@ -198,10 +198,15 @@ jobs:
           cleanup(){ rm -rf "$DATA_REPO"; }
           trap cleanup EXIT
           /usr/bin/gh auth status >/dev/null
-          /usr/bin/gh repo clone alston-personal/my-agent-data "$DATA_REPO" -- --branch main --single-branch >/dev/null
+          /usr/bin/gh auth setup-git >/dev/null
+          git clone --depth=1 --filter=blob:none --sparse --branch main --single-branch \
+            https://github.com/alston-personal/my-agent-data.git "$DATA_REPO" >/dev/null
+          git -C "$DATA_REPO" sparse-checkout set personas/sunlake-milkcat
           PUBLISHER=/home/ubuntu/.local/lib/agentos/publish_mio_public_activity.py
           test -f "$PUBLISHER"
-          python3 "$PUBLISHER"             --persona-dir "$DATA_REPO/personas/sunlake-milkcat"             --output /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json
+          python3 "$PUBLISHER" \
+            --persona-dir "$DATA_REPO/personas/sunlake-milkcat" \
+            --output /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json
           python3 -m json.tool /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json >/dev/null
           echo "mio_public_activity_snapshot=PASS"
           REMOTE
