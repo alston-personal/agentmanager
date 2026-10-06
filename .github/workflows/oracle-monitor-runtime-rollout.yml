@@ -63,7 +63,7 @@ jobs:
           import json
           d=json.load(open('/tmp/monitors.json'))
           ids={x['monitor_id'] for x in d}
-          required={'google-ai-pro-plan-watch','chatgpt-plus-plan-watch','vopc5750-health','agentos-scheduler-health','one-relay-health','threads-auth-health'}
+          required={'google-ai-pro-plan-watch','chatgpt-plus-plan-watch','vopc5750-health','agentos-scheduler-health','one-relay-health','threads-auth-health','one-gateway-health','gui-worker-health'}
           assert required <= ids, required-ids
           print('monitor_registration=PASS')
           print('monitor_count='+str(len(ids)))
