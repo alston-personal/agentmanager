@@ -292,13 +292,13 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             review_required=True,
         )
 
-        def fake_ocr(_crop, *, psm, whitelist=None, lang="eng"):
+        def fake_ocr(_crop, *, psm, whitelist=None, lang="eng", timeout_seconds=None):
             if whitelist == "0123456789":
                 return "16908319"
             return "測試企業有限公司"
 
         with patch("services.invoice_intake.invoice_core.ocr_image", side_effect=fake_ocr), \
-             patch("services.invoice_intake.invoice_core.ocr_stamp_text", return_value=["16908319", "測試企業有限公司"]):
+             patch("services.invoice_intake.invoice_core.ocr_stamp_text", return_value=["16908319", "測試企業有限公司"]) as stamp_ocr:
             result = deep_fallback_enrich(buf.getvalue(), base, budget_seconds=5)
 
         self.assertEqual(result.fields["invoice_number"], "AB12345678")
@@ -306,6 +306,8 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
         self.assertEqual(result.fields["seller_tax_id"], "16908319")
         self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
         self.assertFalse(result.raw["deep_fallback"].get("stamp_dependency", False))
+        self.assertTrue(any(call.kwargs.get("fast") is False for call in stamp_ocr.call_args_list))
+        self.assertTrue(any((call.kwargs.get("timeout_seconds") or 0) >= 10 for call in stamp_ocr.call_args_list))
 
     def test_deep_fallback_error_clears_pending_without_destroying_fast_result(self):
         with tempfile.TemporaryDirectory() as tmp:
