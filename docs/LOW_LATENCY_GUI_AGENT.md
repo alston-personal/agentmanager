@@ -26,6 +26,8 @@ GitHub remains a deployment, governance and audit surface, not the per-click run
 - `desktop.plan.execute` executes a bounded sequence locally on the Node.
 - desktop text input automatically uses Unicode clipboard paste for non-ASCII or long text, avoiding IME dependency.
 - URL navigation remains a semantic desktop action and should not be typed through the keyboard.
+- `desktop.semantic_preview` provides a read-only foreground-window preview without shell execution, filesystem access, clipboard reads, background-window enumeration, or a full UIA tree.
+- Semantic preview returns a bounded bitmap, foreground process/title metadata, a state hash, and explicit denied surfaces so visual checkpoints can be audited.
 
 ## Safety boundary
 
@@ -55,3 +57,17 @@ Long polling removes the dominant fixed delay while preserving the current HTTP/
 8. Recovery: partial progress must be checkpointed so a browser crash or node restart does not repeat irreversible steps.
 9. Anti-automation defenses: some sites may block or challenge automated interaction even when operated through a real GUI.
 10. Human-level judgment: subjective visual QA, subtle UX quality and ambiguous product intent still benefit from a reasoning checkpoint rather than blind local execution.
+
+
+## Semantic preview acceptance boundary
+
+`desktop.semantic_preview` is intentionally narrower than `desktop.windows.inspect` and `desktop.screenshot`.
+
+- It observes only the current foreground window.
+- Optional regions are relative to that foreground window and are clamped to its bounds.
+- Output is downscaled to a hard pixel budget (default and maximum: 640x480 pixels).
+- Capture uses Win32/GDI directly; it does not launch PowerShell or another shell.
+- It does not read arbitrary files, clipboard contents, background windows, credential controls, or a UI Automation tree.
+- `state_hash` changes when the bounded visual state or foreground identity changes and can be used as checkpoint evidence.
+
+For the Gemini -> Threads demo, a PASS must correlate the preview/state transition with a fresh generated artifact and the final publish receipt. A previously downloaded image is not sufficient evidence of a successful run.
