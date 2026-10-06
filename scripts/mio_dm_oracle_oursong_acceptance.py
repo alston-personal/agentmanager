@@ -91,4 +91,10 @@ def main() -> int:
             page.close()
 
 if __name__=="__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception as exc:
+        print("mio_dm_oursong_acceptance=ERROR_"+type(exc).__name__.upper())
+        raise SystemExit(8)
