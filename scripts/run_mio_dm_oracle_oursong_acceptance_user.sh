@@ -10,15 +10,15 @@ REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 
-TMP="$(mktemp --suffix=.cjs)"
+TMP="$(mktemp --suffix=.py)"
 trap 'rm -f "$TMP"' EXIT
-git -C "$REPO" show "$SOURCE_COMMIT:scripts/mio_dm_oracle_oursong_acceptance.cjs" > "$TMP"
+git -C "$REPO" show "$SOURCE_COMMIT:scripts/threads_web_dm_bridge_user.py" > "$TMP"
 
 set +e
-OUT="$(node "$TMP" 2>&1)"
+OUT="$(PYTHONPATH="$REPO" python3 "$TMP" --account mio.milkcat --oursong-acceptance 2>&1)"
 RC=$?
 set -e
-printf '%s\n' "$OUT" | grep -E '^mio_dm_oursong_(acceptance|stage|send|readback)=' || true
+printf '%s\n' "$OUT" | grep -E '^(mio_dm_oursong_(acceptance|stage|send|readback)=|threads_web_dm_transport=)' || true
 if [ "$RC" -ne 0 ]; then
   if printf '%s' "$OUT" | grep -qi 'playwright'; then
     echo "mio_dm_oursong_acceptance=RUNTIME_PLAYWRIGHT_ERROR"

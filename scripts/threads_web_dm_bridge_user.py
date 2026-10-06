@@ -94,6 +94,7 @@ def main() -> int:
     ap.add_argument("--login-only",action="store_true")
     ap.add_argument("--channel",default=os.environ.get("AGENTOS_WEB_DM_BROWSER_CHANNEL") or ("chrome" if sys.platform=="darwin" else None))
     ap.add_argument("--wait-for-login-seconds",type=int,default=0)
+    ap.add_argument("--oursong-acceptance",action="store_true")
     args=ap.parse_args()
 
     ROOT.mkdir(parents=True,exist_ok=True); PROFILE.mkdir(parents=True,exist_ok=True)
@@ -161,6 +162,110 @@ def main() -> int:
             if args.login_only:
                 print("threads_web_dm_bridge=SESSION_READY")
                 print("threads_web_dm_transport="+transport)
+                if owns_context:
+                    context.close()
+                else:
+                    page.close()
+                return 0
+
+            if args.oursong_acceptance:
+                if transport != "gui_worker_cdp":
+                    print("mio_dm_oursong_stage=cdp_attach")
+                    print("mio_dm_oursong_acceptance=CDP_REQUIRED")
+                    if owns_context:
+                        context.close()
+                    else:
+                        page.close()
+                    return 8
+                target="oursong_alstonhuang"
+                message="聽說你那邊最近很會發文？等你的 DM 接好，我們再來看看誰比較會吐槽。"
+                print("mio_dm_oursong_stage=conversation_find")
+                found=False
+                candidates=[
+                    page.get_by_text(target, exact=False),
+                    page.locator(f"text={target}"),
+                ]
+                for loc in candidates:
+                    try:
+                        if loc.count()>0 and loc.first.is_visible():
+                            loc.first.click(timeout=5000)
+                            found=True
+                            break
+                    except Exception:
+                        pass
+                if not found:
+                    print("mio_dm_oursong_acceptance=NO_CONVERSATION")
+                    if owns_context:
+                        context.close()
+                    else:
+                        page.close()
+                    return 5
+                page.wait_for_timeout(1800)
+                body=page.locator("body").inner_text(timeout=5000)
+                if message in body:
+                    print("mio_dm_oursong_acceptance=PASS")
+                    print("mio_dm_oursong_send=ALREADY_PRESENT")
+                    print("mio_dm_oursong_readback=PASS")
+                    if owns_context:
+                        context.close()
+                    else:
+                        page.close()
+                    return 0
+                print("mio_dm_oursong_stage=composer_find")
+                box=None
+                for sel in ('textarea','[contenteditable="true"]'):
+                    loc=page.locator(sel)
+                    try:
+                        for i in range(loc.count()-1,-1,-1):
+                            item=loc.nth(i)
+                            if item.is_visible():
+                                box=item
+                                break
+                    except Exception:
+                        pass
+                    if box is not None:
+                        break
+                if box is None:
+                    print("mio_dm_oursong_acceptance=NO_COMPOSER")
+                    if owns_context:
+                        context.close()
+                    else:
+                        page.close()
+                    return 6
+                print("mio_dm_oursong_stage=send")
+                box.click()
+                try:
+                    if box.evaluate("(e)=>e.tagName==='TEXTAREA'"):
+                        box.fill(message)
+                    else:
+                        box.press_sequentially(message,delay=5)
+                except Exception:
+                    box.press_sequentially(message,delay=5)
+                sent=False
+                for label in ("Send","傳送"):
+                    try:
+                        btn=page.get_by_role("button",name=re.compile("^"+re.escape(label)+"$",re.I))
+                        if btn.count()>0 and btn.last.is_visible():
+                            btn.last.click(timeout=5000)
+                            sent=True
+                            break
+                    except Exception:
+                        pass
+                if not sent:
+                    box.press("Enter")
+                print("mio_dm_oursong_stage=readback")
+                page.wait_for_timeout(2500)
+                verify=page.locator("body").inner_text(timeout=5000)
+                if message not in verify:
+                    print("mio_dm_oursong_acceptance=UNVERIFIED")
+                    if owns_context:
+                        context.close()
+                    else:
+                        page.close()
+                    return 7
+                print("mio_dm_oursong_acceptance=PASS")
+                print("mio_dm_oursong_send=PASS")
+                print("mio_dm_oursong_readback=PASS")
                 if owns_context:
                     context.close()
                 else:
