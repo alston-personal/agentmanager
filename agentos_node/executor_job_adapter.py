@@ -66,6 +66,11 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "codex_health_classification",
     "selected_provider",
     "runtime_source_commit",
+    "layoutlib_release",
+    "layoutlib_manifest_files",
+    "layoutlib_matching_files",
+    "layoutlib_public_http",
+    "layoutlib_parity",
 )
 _PROVIDER_STATE_FIELDS = (
     "executor_available",
