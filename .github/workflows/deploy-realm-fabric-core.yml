@@ -19,6 +19,9 @@ on:
       - 'agent_core/realm_server.py'
       - 'agent_core/runner_window.py'
       - 'agentos_node/bootstrap_control.py'
+      - 'agent_core/control_inbox_bridge.py'
+      - 'scripts/reconcile_control_inbox_runtime_user.sh'
+      - 'scripts/repair_control_inbox_github_auth_user.sh'
       - 'scripts/compact_realm_fabric_receipts.py'
       - 'tests/test_controller_api.py'
       - 'tests/test_controller_service.py'
@@ -182,6 +185,16 @@ jobs:
           else
             echo 'control_inbox_post_realm_restart=SKIP_NOT_ENABLED'
           fi
+
+          # Converge the isolated Control Inbox runtime to the same exact source
+          # generation through its existing bounded reconcile script. This keeps
+          # the public GitHub bridge aligned with Core without making the legacy
+          # self-hosted Oracle rollout automatic.
+          AGENTOS_REPO="$REPO" \
+          AGENT_DATA_ROOT="$DATA" \
+          AGENTOS_SOURCE_COMMIT="$SHA" \
+          /bin/bash "$RELEASE/scripts/reconcile_control_inbox_runtime_user.sh"
+          echo 'control_inbox_isolated_reconcile=PASS'
 
           PYTHONPATH="$RELEASE" AGENT_DATA_ROOT="$DATA" /usr/bin/python3 - <<'PY'
           import json
