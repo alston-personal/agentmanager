@@ -54,8 +54,25 @@ with sync_playwright() as p:
                     pass
         if controls:
             print("google_flow_recover_controls="+json.dumps(controls[:40],ensure_ascii=False,separators=(",",":")))
-        print("google_flow_recover=AUTH_INTERSTITIAL")
-        raise SystemExit(0)
+        # Do not mutate account-security settings. Attempt a clean direct
+        # navigation back to Flow once; if Google redirects back here, require
+        # human completion.
+        try:
+            page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
+            page.wait_for_timeout(5000)
+            redirected_host=(page.url.split("/")[2] if "://" in str(page.url or "") else "")
+            print("google_flow_recover_stage=AUTH_INTERSTITIAL_BYPASS_ATTEMPT")
+            print("google_flow_recover_url="+str(page.url or "")[:500])
+            if "myaccount.google.com" not in redirected_host and "accounts.google.com" not in redirected_host:
+                host=redirected_host
+            else:
+                print("google_flow_recover=AUTH_INTERSTITIAL")
+                raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception:
+            print("google_flow_recover=AUTH_INTERSTITIAL")
+            raise SystemExit(0)
 
     # Never treat public landing/marketing demo reels as generated project output.
     # First, try to enter the authenticated Flow workspace without creating or
