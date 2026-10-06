@@ -31,7 +31,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test OSWorld growth adapter
-        run: python -m unittest tests.test_osworld_growth_benchmark -v
+        run: |
+          python -m unittest tests.test_osworld_growth_benchmark -v
+          python -m unittest tests.test_osworld_worker_preflight -v
       - name: Validate pinned release metadata
         run: |
           python - <<'PY'
