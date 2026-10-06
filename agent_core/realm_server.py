@@ -516,6 +516,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'vision_studio_flow_syntax_offset=',
                     'vision_studio_flow_stage=',
                     'vision_studio_flow_host=',
+                    'vision_studio_flow_ui_controls=',
                     'vision_studio_project_id=',
                     'vision_studio_output=',
                     'vision_studio_receipt=',
