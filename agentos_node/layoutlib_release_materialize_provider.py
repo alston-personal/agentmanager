@@ -75,7 +75,8 @@ def _verify_release(repo: Path) -> tuple[str, int]:
 def run_layoutlib_release_materialize(
     request: Mapping[str, Any],
     *,
-    release_root: str | Path = RELEASE_ROOT,
+    release_root: str | Path | None = None,
+    data_root: str | Path = DATA_ROOT,
 ) -> dict[str, Any]:
     spec = validate_executor_job(request)
     if spec.job_type != JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
@@ -93,7 +94,8 @@ def run_layoutlib_release_materialize(
             routable=False,
             authorized=False,
         )
-    if not DATA_ROOT.is_dir():
+    data = Path(data_root)
+    if not data.is_dir():
         return _failure(
             "LAYOUTLIB_RELEASE_AGENT_DATA_ROOT_UNAVAILABLE",
             executor_available=False,
@@ -101,7 +103,7 @@ def run_layoutlib_release_materialize(
             authorized=False,
         )
 
-    root = Path(release_root)
+    root = Path(release_root) if release_root is not None else data / "releases/layoutlib" / RELEASE
     root.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="agentos-layoutlib-release-") as td:
