@@ -64,3 +64,13 @@ def test_internal_activity_emits_cognitive_ir_projection_without_auto_promoting_
     assert '"promotion_allowed":False' in text
     assert 'state["last_ir_projection_receipt"]' in text
     assert '"type":"pdca.cognitive_ir."+projection["persona_ir"]["projection_status"].lower()' in text
+
+
+def test_public_activity_exposes_autonomy_health_semantics():
+    repo=Path(__file__).resolve().parents[1]
+    text=(repo/"scripts"/"publish_mio_public_activity.py").read_text(encoding="utf-8")
+    for status in ("ACTIVE","ALIVE_IDLE","DEGRADED","STALLED"):
+        assert f'"{status}"' in text
+    assert '"autonomy_health":health' in text
+    assert 'age_minutes > heartbeat*1.75' in text
+    assert 'activity_cycle==cycle and projection_cycle==cycle' in text
