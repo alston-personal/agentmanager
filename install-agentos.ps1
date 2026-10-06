@@ -86,6 +86,51 @@ function Resolve-SourceCommit([string]$Ref) {
   return $sha
 }
 
+function Install-UserRuntime([string]$Runner) {
+  $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+  $watchdog=Join-Path $InstallRoot 'scripts\windows\user_runtime_watchdog.ps1'
+  if(-not (Test-Path -LiteralPath $watchdog)){
+    throw "Per-user watchdog script missing: $watchdog"
+  }
+
+  New-Item -Path $runKey -Force | Out-Null
+  $clientRun='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $Runner + '"'
+  $watchdogRun='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdog + '" -Runner "' + $Runner + '"'
+  New-ItemProperty -Path $runKey -Name 'AgentOS Thin Client User' -Value $clientRun -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $runKey -Name 'AgentOS Thin Client Watchdog User' -Value $watchdogRun -PropertyType String -Force | Out-Null
+
+  Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+    '-NoProfile',
+    '-NonInteractive',
+    '-WindowStyle','Hidden',
+    '-ExecutionPolicy','Bypass',
+    '-File',$watchdog,
+    '-Runner',$Runner
+  )
+  Start-Sleep -Seconds 4
+
+  $running=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.CommandLine -and
+      $_.CommandLine -match 'agentos_node\.client_cli' -and
+      $_.CommandLine -match '\brun\b'
+    } |
+    Select-Object -First 1
+  if(-not $running){ throw 'Per-user hidden Thin Client did not start' }
+
+  $clientValue=[string](Get-ItemPropertyValue -Path $runKey -Name 'AgentOS Thin Client User')
+  $watchdogValue=[string](Get-ItemPropertyValue -Path $runKey -Name 'AgentOS Thin Client Watchdog User')
+  if($clientValue -notmatch '(?i)-WindowStyle\s+Hidden'){
+    throw 'Per-user Thin Client autorun is not hidden'
+  }
+  if($watchdogValue -notmatch '(?i)-WindowStyle\s+Hidden'){
+    throw 'Per-user watchdog autorun is not hidden'
+  }
+
+  Write-Host 'Background service: Running (headless, per-user)' -ForegroundColor Green
+  Write-Host 'Independent watchdog: Running (hidden, per-user 60s cadence)' -ForegroundColor Green
+}
+
 function Install-Supervisor([string]$PythonPath) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
@@ -161,12 +206,9 @@ function Install-Supervisor([string]$PythonPath) {
   try {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
   } catch {
-    if($_.Exception.Message -notmatch '(?i)access.*denied|存取被拒|unauthorized'){
-      throw
-    }
-    $taskName=$fallbackTaskName
-    Write-Host ("Protected legacy task ACL detected; using user-owned fallback: " + $taskName) -ForegroundColor Yellow
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
+    Write-Host ('Task Scheduler registration unavailable; switching to per-user hidden runtime. Error=' + $_.Exception.Message) -ForegroundColor Yellow
+    Install-UserRuntime -Runner $runner
+    return
   }
 
   $registeredAction=(Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).Actions | Select-Object -First 1
@@ -193,7 +235,10 @@ function Install-Supervisor([string]$PythonPath) {
   try {
     Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force -ErrorAction Stop | Out-Null
   } catch {
-    if($_.Exception.Message -notmatch '(?i)access.*denied|存取被拒|unauthorized'){
+    $accessDenied=($_.Exception.HResult -eq -2147024891) -or
+      ($_.FullyQualifiedErrorId -match '(?i)unauthorized|accessdenied') -or
+      ($_.Exception.Message -match '(?i)access.*denied|unauthorized')
+    if(-not $accessDenied){
       throw
     }
     $watchdogTaskName=$fallbackWatchdogTaskName

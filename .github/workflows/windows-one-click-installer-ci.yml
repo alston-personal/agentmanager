@@ -33,7 +33,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/windows/thin_client_watchdog.ps1')
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/windows/thin_client_watchdog.ps1','scripts/windows/user_runtime_watchdog.ps1')
           foreach($file in $files) {
             $tokens = $null
             $errors = $null
@@ -43,7 +43,7 @@ jobs:
               [ref]$errors
             )
             if($errors.Count -gt 0) {
-              $errors | ForEach-Object { Write-Error "${file}: $($_.Message)" }
+              $errors | ForEach-Object { Write-Error ("${file}: line={0} col={1} message={2} text={3}" -f $_.Extent.StartLineNumber,$_.Extent.StartColumnNumber,$_.Message,$_.Extent.Text) }
               throw "PowerShell parse failed: $file"
             }
             Write-Host "powershell_parse=PASS file=$file"
@@ -76,7 +76,11 @@ jobs:
             "Refusing to start watchdog unless its registered action is hidden PowerShell",
             "AgentOS Thin Client User",
             "AgentOS Thin Client Watchdog User",
-            "Protected legacy task ACL detected; using user-owned fallback",
+            "Task Scheduler registration unavailable; switching to per-user hidden runtime.",
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+            "user_runtime_watchdog.ps1",
+            "Background service: Running (headless, per-user)",
+            "Independent watchdog: Running (hidden, per-user 60s cadence)",
             "Protected legacy watchdog ACL detected; using user-owned fallback",
             "AgentOS Thin Client Watchdog",
             "Independent watchdog: Installed (60s cadence)",
@@ -94,6 +98,7 @@ jobs:
             'agentos_node/session_bridge.py',
             'agentos_node/agent_surfaces.py',
             'scripts/windows/thin_client_watchdog.ps1',
+            'scripts/windows/user_runtime_watchdog.ps1',
             'Windows Store App Execution Alias is not accepted'
           )) {
             if(-not $low.Contains($needle)) { throw "missing low-level installer marker: $needle" }
