@@ -66,7 +66,11 @@ for i in 0 1 2 3; do
   out="$(awk -F= '/^google_flow_output=/{print substr($0,index($0,"=")+1)}' "$log" | tail -n1)"
   status="$(awk -F= '/^google_flow_generate=/{print $2}' "$log" | tail -n1)"
   if [[ "$status" != "PASS" || -z "$out" || ! -s "$out" ]]; then
-    cat "$log"
+    flow_class="$(awk -F= '/^google_flow_runtime_error_class=/{print $2}' "$log" | tail -n1)"
+    flow_host="$(awk -F= '/^google_flow_host=/{print $2}' "$log" | tail -n1)"
+    echo "vision_studio_flow_status=${status:-MISSING}"
+    if [[ -n "$flow_class" ]]; then echo "vision_studio_flow_error_class=$flow_class"; fi
+    if [[ -n "$flow_host" ]]; then echo "vision_studio_flow_host=$flow_host"; fi
     echo "vision_studio_produce=SHOT_ARTIFACT_MISSING"
     echo "vision_studio_failed_shot=$shot"
     exit 11
