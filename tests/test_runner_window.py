@@ -296,6 +296,21 @@ def test_google_media_generation_public_intents_are_bounded():
     assert vids.action == bc.ACTION_GOOGLE_VIDS_GENERATE
     assert vids_params == {"source_commit": "5" * 40, "prompt": "test scene"}
 
+def test_vision_studio_produce_public_intent_is_bounded():
+    intent, params = resolve_intent(
+        "media.vision-studio",
+        "produce",
+        source_commit="6" * 40,
+        payload={"project_id": "rain-exit-v001"},
+    )
+    assert intent.action == bc.ACTION_VISION_STUDIO_PRODUCE
+    assert params == {"source_commit": "6" * 40, "project_id": "rain-exit-v001"}
+    assert public_intent_for_action(bc.ACTION_VISION_STUDIO_PRODUCE) == {
+        "capability": "media.vision-studio",
+        "operation": "produce",
+    }
+
+
 def test_browser_gui_install_public_intent():
     intent, params = resolve_intent(
         "browser.gui",
