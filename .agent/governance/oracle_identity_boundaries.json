@@ -1,6 +1,6 @@
 {
   "schema": "agentos.oracle-identity-boundaries/v1",
-  "policy_version": "2026.10.06.1",
+  "policy_version": "2026.10.06.2",
   "shared_group": "agentos",
   "roots": {
     "source_cache": {
@@ -187,5 +187,21 @@
     "string_matching_alone_is_not_migration_authority": true,
     "bulk_chown_home_ubuntu_forbidden": true,
     "live_reaudit_required_before_parent_close": true
+  },
+  "p0_baseline": {
+    "purpose": "Temporary explicit baseline for #1178. Existing heuristic P0 findings remain unresolved; any new unreviewed P0 path is a regression.",
+    "issue": 1178,
+    "paths": [
+      ".github/workflows/oracle-deploy-layoutlib-web.yml",
+      ".github/workflows/oracle-enable-layoutlib-images.yml",
+      ".github/workflows/oracle-integrate-layoutlab-official-site.yml",
+      ".github/workflows/oracle-layoutlib-hardening.yml",
+      ".github/workflows/oracle-register-layoutlib.yml",
+      ".github/workflows/oracle-verify-layoutlib-public.yml",
+      "scripts/create_studio_web_parallel_checkout.sh",
+      "scripts/deploy_layoutlab_official_v2.py",
+      "scripts/studio_web_phase1_mirror.sh"
+    ],
+    "rule": "Baseline membership is not approval or closure. Each path must still receive evidence-backed closure classification."
   }
 }
