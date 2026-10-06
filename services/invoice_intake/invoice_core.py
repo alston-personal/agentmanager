@@ -1601,6 +1601,45 @@ class InvoiceStore:
                     ocr_memory=self.ocr_memory,
                 )
                 enriched.raw["vision_enrichment_pending"] = False
+                vision_info = enriched.raw.get("vision") or {}
+                vision_status = str(vision_info.get("status") or "")
+                provider_failed = vision_status not in {
+                    "SUCCEEDED",
+                    "SKIPPED_LOCAL_SUFFICIENT",
+                } and vision_status not in {"", "CONFIGURED"}
+
+                if provider_failed:
+                    updated = utcnow()
+                    with self.connect() as db:
+                        current = db.execute(
+                            "SELECT status FROM invoices WHERE id=? AND deleted_at IS NULL",
+                            (invoice_id,),
+                        ).fetchone()
+                        if current and current["status"] == original_status:
+                            db.execute(
+                                "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                                (
+                                    str(uuid.uuid4()),
+                                    row["document_id"],
+                                    "vision-enrichment-provider-error",
+                                    json.dumps(enriched.raw, ensure_ascii=False),
+                                    updated,
+                                ),
+                            )
+                    print(
+                        "invoice_vision_enrichment="
+                        f"provider_error status:{vision_status} "
+                        f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
+                    )
+                    if original_status in {"recognition_insufficient", "needs_review"}:
+                        threading.Thread(
+                            target=self._deep_enrich_invoice,
+                            args=(invoice_id,),
+                            name=f"invoice-deep-{invoice_id[:8]}",
+                            daemon=True,
+                        ).start()
+                    return
+
                 review = enriched.raw.get("review") or {}
                 new_status = str(
                     review.get("status")
