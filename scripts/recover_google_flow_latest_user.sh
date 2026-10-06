@@ -177,6 +177,33 @@ with sync_playwright() as p:
         if projects:
             print("google_flow_recover_projects="+json.dumps(projects[:20],ensure_ascii=False,separators=(",",":")))
 
+        project_dom=[]
+        try:
+            edits=page.get_by_role("button",name="編輯專案名稱")
+            if edits.count()==0:
+                edits=page.get_by_role("button",name="Edit project name")
+            if edits.count():
+                first=edits.first
+                project_dom=first.evaluate("""el => {
+                  const out=[];
+                  let n=el;
+                  for(let depth=0; depth<8 && n; depth++,n=n.parentElement){
+                    out.push({
+                      depth,
+                      tag:(n.tagName||'').toLowerCase(),
+                      role:n.getAttribute ? (n.getAttribute('role')||'') : '',
+                      tabindex:n.getAttribute ? (n.getAttribute('tabindex')||'') : '',
+                      cls:((n.className||'')+'').slice(0,160),
+                      text:((n.innerText||'').trim().replace(/\s+/g,' ')).slice(0,220)
+                    });
+                  }
+                  return out;
+                }""")
+        except Exception:
+            pass
+        if project_dom:
+            print("google_flow_recover_project_dom="+json.dumps(project_dom,ensure_ascii=False,separators=(",",":")))
+
         # Rain Exit s01 was triggered around 2026-10-06 13:42 local time.
         # Prefer that exact recent project card; opening an existing project is
         # read-only and does not trigger generation.
@@ -209,7 +236,7 @@ with sync_playwright() as p:
             except Exception:
                 pass
             low=body.lower()
-            prompt_markers=("taipei","metro","umbrella","rain","台北","捷運","雨傘","雨夜")
+            prompt_markers=("taipei","metro","umbrella","台北","捷運","雨傘","雨夜出口")
             prompt_hit=any(x in low for x in prompt_markers)
             print("google_flow_recover_project_prompt_match="+("YES" if prompt_hit else "NO"))
 
