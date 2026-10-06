@@ -47,12 +47,19 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
     def test_relay_status_projects_exact_runtime_generations(self):
         bootstrap = _text(BOOTSTRAP)
         realm = _text(REALM_SERVER)
+        workflow = _text(ROOT / ".github" / "workflows" / "main-agent-relay-status-acceptance.yml")
         self.assertIn('relay_status_antigravity_source_commit=', bootstrap)
         self.assertIn('relay_status_action_source_commit=', bootstrap)
         self.assertIn('AGENTOS_RUNTIME_SOURCE_COMMIT', bootstrap)
         self.assertIn('AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT', bootstrap)
         self.assertIn("'relay_status_antigravity_source_commit=',", realm)
         self.assertIn("'relay_status_action_source_commit=',", realm)
+        self.assertIn("'relay_status_antigravity_source_commit=',", workflow)
+        self.assertIn("'relay_status_action_source_commit=',", workflow)
+        self.assertIn("bash scripts/agentos_dispatch.sh agentos.runtime repair", workflow)
+        self.assertIn("relay_runtime_provenance_repair=PASS", workflow)
+        self.assertIn("vals.get('relay_status_antigravity_source_commit')==expected", workflow)
+        self.assertIn("vals.get('relay_status_action_source_commit')==expected", workflow)
 
 
     def test_bootstrap_scheduler_keeps_stable_direct_worker_lifecycle(self):
