@@ -265,7 +265,14 @@ def choose_amounts(texts: list[str]) -> tuple[int | None, int | None, int | None
     return best
 
 
-def ocr_image(image: Image.Image, *, psm: int, whitelist: str | None = None, lang: str = "eng") -> str:
+def ocr_image(
+    image: Image.Image,
+    *,
+    psm: int,
+    whitelist: str | None = None,
+    lang: str = "eng",
+    timeout_seconds: float | None = None,
+) -> str:
     prepared = ImageOps.autocontrast(ImageOps.grayscale(image))
     prepared = prepared.resize((prepared.width * 2, prepared.height * 2))
     prepared = ImageEnhance.Contrast(prepared).enhance(1.35)
@@ -274,7 +281,9 @@ def ocr_image(image: Image.Image, *, psm: int, whitelist: str | None = None, lan
         cmd += ["-c", f"tessedit_char_whitelist={whitelist}"]
     payload = BytesIO()
     prepared.save(payload, format="PNG")
-    timeout_seconds = max(1.0, min(10.0, float(os.environ.get("INVOICE_TESSERACT_TIMEOUT_SECONDS", "4"))))
+    if timeout_seconds is None:
+        timeout_seconds = float(os.environ.get("INVOICE_TESSERACT_TIMEOUT_SECONDS", "4"))
+    timeout_seconds = max(1.0, min(20.0, float(timeout_seconds)))
     try:
         proc = subprocess.run(
             cmd,
@@ -316,7 +325,13 @@ def stamp_variants(image: Image.Image) -> list[Image.Image]:
     return variants
 
 
-def ocr_stamp_text(image: Image.Image, *, digits_only: bool = False, fast: bool = False) -> list[str]:
+def ocr_stamp_text(
+    image: Image.Image,
+    *,
+    digits_only: bool = False,
+    fast: bool = False,
+    timeout_seconds: float | None = None,
+) -> list[str]:
     texts: list[str] = []
     whitelist = "0123456789" if digits_only else None
     lang = "eng" if digits_only else "chi_tra+eng"
@@ -326,7 +341,13 @@ def ocr_stamp_text(image: Image.Image, *, digits_only: bool = False, fast: bool 
     psms = (6, 11) if fast else (6, 11, 12)
     for variant in variants:
         for psm in psms:
-            text = ocr_image(variant, psm=psm, whitelist=whitelist, lang=lang)
+            text = ocr_image(
+                variant,
+                psm=psm,
+                whitelist=whitelist,
+                lang=lang,
+                timeout_seconds=timeout_seconds,
+            )
             if text.strip() and text not in texts:
                 texts.append(text)
     return texts
@@ -400,6 +421,7 @@ def deep_tax_id_from_regions(
     images: list[Image.Image],
     *,
     deadline: float,
+    timeout_seconds: float = 10.0,
 ) -> tuple[str | None, list[str]]:
     """Progressively OCR seller regions until a valid tax id is found.
 
@@ -449,7 +471,13 @@ def deep_tax_id_from_regions(
             for psm in (6, 11, 12):
                 if time.perf_counter() >= deadline:
                     return None, texts
-                text = ocr_image(variant, psm=psm, whitelist="0123456789", lang="eng")
+                text = ocr_image(
+                    variant,
+                    psm=psm,
+                    whitelist="0123456789",
+                    lang="eng",
+                    timeout_seconds=timeout_seconds,
+                )
                 if text.strip():
                     texts.append(text)
                 candidates: list[str] = []
@@ -466,7 +494,7 @@ def deep_fallback_enrich(
     image_bytes: bytes,
     base: "Extraction",
     *,
-    budget_seconds: float = 20.0,
+    budget_seconds: float = 60.0,
 ) -> "Extraction":
     """Best-effort second-stage OCR based on the previously usable #1109 search pattern.
 
@@ -488,6 +516,11 @@ def deep_fallback_enrich(
     }
     raw["deep_fallback"] = deep
 
+    deep_timeout = max(
+        1.0,
+        min(20.0, float(os.environ.get("INVOICE_DEEP_TESSERACT_TIMEOUT_SECONDS", "10"))),
+    )
+
     def within_budget() -> bool:
         return time.perf_counter() < deadline
 
@@ -500,7 +533,12 @@ def deep_fallback_enrich(
         for psm in (7, 6, 11):
             if not within_budget():
                 break
-            texts.append(ocr_image(invoice_crop, psm=psm, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+            texts.append(ocr_image(
+                invoice_crop,
+                psm=psm,
+                whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+                timeout_seconds=deep_timeout,
+            ))
         value = next((normalize_invoice_number(x) for x in texts if normalize_invoice_number(x)), None)
         if value:
             fields["invoice_number"] = value
@@ -512,7 +550,12 @@ def deep_fallback_enrich(
         for psm in (6, 11):
             if not within_budget():
                 break
-            texts.append(ocr_image(date_crop, psm=psm, whitelist="0123456789/-"))
+            texts.append(ocr_image(
+                date_crop,
+                psm=psm,
+                whitelist="0123456789/-",
+                timeout_seconds=deep_timeout,
+            ))
         value = next((normalize_roc_date(x) for x in texts if normalize_roc_date(x)), None)
         if value:
             fields["invoice_date"] = value
@@ -531,7 +574,12 @@ def deep_fallback_enrich(
             for psm in (6, 11):
                 if not within_budget():
                     break
-                amount_texts.append(ocr_image(region, psm=psm, whitelist="0123456789,.-"))
+                amount_texts.append(ocr_image(
+                    region,
+                    psm=psm,
+                    whitelist="0123456789,.-",
+                    timeout_seconds=deep_timeout,
+                ))
             if not within_budget():
                 break
         subtotal, tax, total, amount_conf = choose_amounts(amount_texts)
@@ -552,7 +600,11 @@ def deep_fallback_enrich(
             crop_rel(image, (0.45, 0.30, 1.00, 1.00)),
             crop_rel(image, (0.60, 0.38, 0.98, 0.96)),
         ]
-        chosen, texts = deep_tax_id_from_regions(seller_regions, deadline=deadline)
+        chosen, texts = deep_tax_id_from_regions(
+            seller_regions,
+            deadline=deadline,
+            timeout_seconds=deep_timeout,
+        )
         if chosen:
             fields["seller_tax_id"] = chosen
             confidence["seller_tax_id"] = max(
@@ -567,11 +619,20 @@ def deep_fallback_enrich(
         vendor_texts = [rapid_text]
         if within_budget():
             vendor_texts.append(
-                ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng")
+                ocr_image(
+                    crop_rel(image, (0.02, 0.00, 0.98, 0.34)),
+                    psm=6,
+                    lang="chi_tra+eng",
+                    timeout_seconds=deep_timeout,
+                )
             )
         if within_budget():
             vendor_texts.extend(
-                ocr_stamp_text(crop_rel(image, (0.42, 0.42, 0.99, 0.99)), fast=True)
+                ocr_stamp_text(
+                    crop_rel(image, (0.42, 0.42, 0.99, 0.99)),
+                    fast=False,
+                    timeout_seconds=deep_timeout,
+                )
             )
         vendor = next((normalize_vendor_name(x) for x in vendor_texts if normalize_vendor_name(x)), None)
         if vendor:
@@ -1315,7 +1376,7 @@ class InvoiceStore:
 
                 budget = max(
                     5.0,
-                    min(60.0, float(os.environ.get("INVOICE_DEEP_FALLBACK_BUDGET_SECONDS", "20"))),
+                    min(120.0, float(os.environ.get("INVOICE_DEEP_FALLBACK_BUDGET_SECONDS", "60"))),
                 )
                 enriched = deep_fallback_enrich(
                     image_path.read_bytes(),
