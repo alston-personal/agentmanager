@@ -106,6 +106,7 @@ jobs:
             tests.test_invoice_real_user_regression \
             tests.test_invoice_vision \
             tests.test_invoice_model_benchmark \
+            tests.test_invoice_ocr_failure_diff \
             tests.test_stamp_recognition_capability \
             tests.test_stamp_recognition_runtime \
             tests.test_ocr_memory
