@@ -1,4 +1,5 @@
 name: Oracle Release LINE Sticker Tool
+# source pin updated for raw ISNet alpha release
 
 on:
   workflow_dispatch:
