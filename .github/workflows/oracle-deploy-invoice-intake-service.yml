@@ -9,6 +9,8 @@ on:
       - 'capabilities/financial_intake/**'
       - 'capabilities/ocr_memory/**'
       - 'scripts/deploy_invoice_intake_nginx.py'
+      - 'tests/test_invoice_*.py'
+      - 'tests/test_invoice_*.py'
       - 'tests/test_stamp_recognition_*.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
   push:
