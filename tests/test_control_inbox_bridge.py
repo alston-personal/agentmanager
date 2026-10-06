@@ -319,6 +319,63 @@ def test_receipt_projection_drops_username_paths_and_window_titles():
     assert 'C:/Users/private' not in rendered
 
 
+def test_typed_desktop_receipt_projection_is_bounded_and_private():
+    staged = _project_receipt({
+        'schema': 'agentos.node-receipt/v0.1',
+        'node_id': 'node-a',
+        'task_id': 'task-stage',
+        'action': 'desktop.windows.tile',
+        'ok': True,
+        'screen': [1920, 1080],
+        'reserve_top_px': 8,
+        'windows': [{
+            'title_contains': 'Google Gemini',
+            'zone': 'full',
+            'matched': True,
+            'title': 'Private Gemini conversation title',
+            'hwnd': 123456,
+            'moved': True,
+            'rect': [4, 12, 1912, 1064],
+        }],
+    }, 'desktop.window.stage')
+    assert staged['screen'] == [1920, 1080]
+    assert staged['windows'] == [{
+        'zone': 'full', 'matched': True, 'moved': True,
+        'rect': [4, 12, 1912, 1064],
+    }]
+    rendered = json.dumps(staged)
+    assert 'Private Gemini conversation title' not in rendered
+    assert 'Google Gemini' not in rendered
+    assert '123456' not in rendered
+
+    clicked = _project_receipt({
+        'schema': 'agentos.node-receipt/v0.1', 'ok': True,
+        'operation': 'click', 'button': 'left', 'x': 900, 'y': 700,
+        'session': {'username': 'private-user'},
+    }, 'desktop.pointer.click')
+    assert clicked['operation'] == 'click'
+    assert clicked['button'] == 'left'
+    assert clicked['x'] == 900 and clicked['y'] == 700
+    assert 'private-user' not in json.dumps(clicked)
+
+    typed = _project_receipt({
+        'schema': 'agentos.node-receipt/v0.1', 'ok': True,
+        'operation': 'type', 'characters': 42, 'text': 'private prompt',
+    }, 'desktop.text.insert')
+    assert typed['operation'] == 'type'
+    assert typed['characters'] == 42
+    assert 'private prompt' not in json.dumps(typed)
+
+
+def test_typed_desktop_actions_can_be_explicitly_allowlisted(tmp_path: Path):
+    config = _config(tmp_path, actions={
+        'desktop.window.stage', 'desktop.pointer.click', 'desktop.text.insert',
+    })
+    assert config.allowed_actions == frozenset({
+        'desktop.window.stage', 'desktop.pointer.click', 'desktop.text.insert',
+    })
+
+
 def test_executor_job_receipt_projection_preserves_governance_evidence_only():
     projected = _project_receipt({
         'schema': 'agentos.executor-job-receipt/v1',
