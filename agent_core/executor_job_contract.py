@@ -116,6 +116,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://codex-cli",
         read_only=True,
     ),
+    "layoutlib.production.parity.inspect": JobTypeSpec(
+        job_type="layoutlib.production.parity.inspect",
+        capability="layoutlib.production.parity.inspect",
+        authority="bounded-read-only",
+        executor_class="layoutlib-parity-inspector",
+        project_id="layoutlib",
+        workload_ref="release://layoutlib/v0.7.9",
+        read_only=True,
+    ),
     "engineering.subagent.smoke": JobTypeSpec(
         job_type="engineering.subagent.smoke",
         capability="agentos.engineering.probe",
@@ -381,6 +390,11 @@ def project_executor_job_receipt(
             "codex_health_classification",
             "selected_provider",
             "runtime_source_commit",
+            "layoutlib_release",
+            "layoutlib_manifest_files",
+            "layoutlib_matching_files",
+            "layoutlib_public_http",
+            "layoutlib_parity",
         ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:
