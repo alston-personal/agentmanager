@@ -1,4 +1,5 @@
 name: Deploy Distributed AgentOS Core
+# trigger: exact Oracle Core known-Git recovery after YAML fix
 
 on:
   push:
