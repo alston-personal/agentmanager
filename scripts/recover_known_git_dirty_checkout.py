@@ -11,7 +11,7 @@ EXPECTED_HEAD = "43d3edbbb4ab8b0e883c04e5297c8aaa724cbd4c"
 EXPECTED = {
     "agent_core/controller_api.py": ("1892f5b359fdb33716637f71b06af64c59caca4d", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
     "agent_core/controller_service.py": ("88a27f37f4cf43dfa5500bcef6ec9e2de50c389e", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "agent_core/realm_server.py": ("bcb132a582ebdf96a946384d8957d99862a77cea", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
+    "agent_core/realm_server.py": ("58543d49e5e13e7ed14bf215b7f1ea67503505a5", "e11ee57d4776a4b0fd79a6a32f19d0268da9645e"),
     "agentos_node/bootstrap_control.py": ("3dc50809d685a1def799e53ef209c53272045545", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
     "agentos_node/bootstrap_scheduler.py": ("fac71d4ac3f39515d85f56c32327ffc6eac2cf97", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
     "agentos_node/gemini_web_bridge.py": ("c7737d79c11af93e52fa179a3f7b1800c0387f9f", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
