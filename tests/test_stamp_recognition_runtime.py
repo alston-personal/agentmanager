@@ -123,6 +123,50 @@ class StampRuntimeTests(unittest.TestCase):
             {name: [r.box for r in regions] for name, regions in detected.items()},
         )
 
+    def test_detected_stamp_roi_is_used_for_fallback_ocr(self):
+        image = synthetic_invoice()
+        region = detect_stamp_regions(image)[0]
+        template = {
+            "matched": True,
+            "document_type": "three_part_uniform_invoice",
+            "raw_text": "",
+            "fields": {
+                "invoice_number": "AB12345678",
+                "invoice_date": "2026-10-05",
+                "amount_before_tax": 1000,
+                "tax_amount": 50,
+                "total_amount": 1050,
+            },
+            "confidence": {
+                "invoice_number": 0.99,
+                "invoice_date": 0.99,
+                "amount_before_tax": 0.99,
+                "tax_amount": 0.99,
+                "total_amount": 0.99,
+            },
+            "visual_amounts": True,
+            "total_amount": 1050,
+        }
+        seen_sizes = []
+
+        def fake_stamp_ocr(crop, *, digits_only=False, fast=False):
+            seen_sizes.append((crop.size, digits_only, fast))
+            if digits_only:
+                return ["16908319"]
+            return ["測試企業有限公司"]
+
+        with patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
+             patch("services.invoice_intake.invoice_core.detect_stamp_regions", return_value=[region]), \
+             patch("services.invoice_intake.invoice_core.ocr_stamp_text", side_effect=fake_stamp_ocr):
+            result = extract_legacy_invoice(image)
+
+        self.assertTrue(seen_sizes)
+        expected_size = (region.box[2] - region.box[0], region.box[3] - region.box[1])
+        self.assertEqual(seen_sizes[0][0], expected_size)
+        self.assertTrue(all(fast for _, _, fast in seen_sizes))
+        self.assertEqual(result.fields["seller_tax_id"], "16908319")
+        self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
+
     def test_unknown_stamp_never_auto_resolves_from_text(self):
         a = synthetic_invoice()
         other = Image.new("RGB", (700, 1000), "white")
