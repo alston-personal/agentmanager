@@ -45,22 +45,29 @@ async function connectTarget(wsurl) {
       }
     }catch{}
   });
-  function cmd(method,params={}){
+  function cmd(method,params={},sessionId=null){
     return new Promise((resolve,reject)=>{
       const id=++seq;
       const timer=setTimeout(()=>{ pending.delete(id); reject(new Error('CDP_TIMEOUT:'+method)); },20000);
       pending.set(id,{resolve:(v)=>{clearTimeout(timer);resolve(v);}});
-      ws.send(JSON.stringify({id,method,params}));
+      const msg={id,method,params}; if(sessionId) msg.sessionId=sessionId; ws.send(JSON.stringify(msg));
     });
   }
   return {ws,cmd};
 }
 
-async function newMessagesTarget(){
-  const url = BASE + '/json/new?' + encodeURIComponent('https://www.threads.com/messages');
-  const t = await httpJson('PUT', url);
-  if(!t.webSocketDebuggerUrl) throw new Error('MISSING_WS_URL');
-  return t;
+async function browserSession(){
+  const version=await httpJson('GET',BASE+'/json/version');
+  if(!version.webSocketDebuggerUrl) throw new Error('MISSING_BROWSER_WS_URL');
+  const browser=await connectTarget(String(version.webSocketDebuggerUrl));
+  const created=await browser.cmd('Target.createTarget',{url:'https://www.threads.com/messages'});
+  const targetId=String((((created||{}).result||{}).targetId)||'');
+  if(!targetId) throw new Error('MISSING_TARGET_ID');
+  const attached=await browser.cmd('Target.attachToTarget',{targetId,flatten:true});
+  const sessionId=String((((attached||{}).result||{}).sessionId)||'');
+  if(!sessionId) throw new Error('MISSING_SESSION_ID');
+  const cmd=(method,params={})=>browser.cmd(method,params,sessionId);
+  return {browser,cmd};
 }
 
 function axValue(node,key){
@@ -85,11 +92,9 @@ async function clickBackend(cmd,backendNodeId){
 }
 
 async function main(){
-  STAGE='target_new';
-  const target=await newMessagesTarget();
+  STAGE='browser_attach';
+  const session=await browserSession();
   await sleep(10000);
-  STAGE='ws_connect';
-  const session=await connectTarget(String(target.webSocketDebuggerUrl));
   try{
     STAGE='login_check';
     const ft=await session.cmd('Page.getFrameTree',{});
@@ -153,7 +158,7 @@ async function main(){
     console.log('mio_dm_oursong_readback=PASS');
     return 0;
   }finally{
-    try{session.ws.close();}catch{}
+    try{session.browser.ws.close();}catch{}
   }
 }
 
