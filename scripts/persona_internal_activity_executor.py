@@ -83,6 +83,53 @@ def observe(root,receipt):
 def rest(kind):
     return {"activity":kind,"result":"recovery","external_action":False}
 
+def cognitive_projection(root,state,receipt,activity,day,now):
+    """Project one bounded internal activity into cognitive IR without mutating Persona IR.
+
+    This records whether the cycle produced material that could become future growth
+    evidence. A normal thought/activity is never promoted into identity automatically.
+    """
+    ir=load(root/"ir/current.json")
+    intent=str(activity.get("intent") or "")
+    result=str(activity.get("result") or "")
+    if intent in ("reflect","content_ideation","wardrobe_plan","review_social_feedback"):
+        status="CANDIDATE"
+        reason="bounded_internal_activity_may_inform_future_growth"
+    else:
+        status="NO_CHANGE"
+        reason="activity_does_not_justify_persona_ir_revision"
+
+    summary={
+      "intent":intent,
+      "result":result,
+      "focus":(receipt.get("act") or {}).get("next_focus"),
+      "external_action":bool(activity.get("external_action",False)),
+    }
+    projection={
+      "schema":"agentos.persona-cognitive-ir-projection/v1",
+      "persona_id":state.get("persona_id"),
+      "cycle":int(activity["cycle"]),
+      "created_at":now,
+      "source_activity_receipt":state.get("last_activity_receipt"),
+      "persona_ir":{
+        "current_ir_id":ir.get("ir_id"),
+        "current_revision":ir.get("revision"),
+        "projection_status":status,
+        "revision_required":False,
+        "promotion_allowed":False,
+        "reason":reason,
+      },
+      "cognitive_summary":summary,
+      "governance":{
+        "private_chain_of_thought_stored":False,
+        "ordinary_activity_is_not_identity_change":True,
+        "growth_requires_evidence_and_governance":True,
+      }
+    }
+    out=root/"pdca/ir_projections"/day/f"cycle-{activity['cycle']}.json"
+    write_json(out,projection)
+    return out,projection
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
@@ -113,13 +160,36 @@ def main():
     out=root/"pdca/activities"/day/f"cycle-{cycle}.json"
     write_json(out,activity)
     state["last_activity_receipt"]=str(out.relative_to(root))
+
+    projection_out,projection=cognitive_projection(root,state,receipt,activity,day,now)
+    state["last_ir_projection_receipt"]=str(projection_out.relative_to(root))
+    activity["cognitive_ir"]={
+      "projection_ref":str(projection_out.relative_to(root)),
+      "projection_status":projection["persona_ir"]["projection_status"],
+      "persona_ir_id":projection["persona_ir"]["current_ir_id"],
+      "persona_ir_revision":projection["persona_ir"]["current_revision"],
+    }
+    write_json(out,activity)
     write_json(root/"pdca/state.json",state)
+
     with open(root/"events/events.jsonl","a",encoding="utf-8") as f:
         f.write(json.dumps({
           "id":f"pdca-activity-c{cycle}-{intent}",
           "type":"pdca.activity.delegated" if intent=="observe" else "pdca.activity.completed","timestamp":now,
           "source":"persona_internal_activity_executor","cycle":cycle,"intent":intent,
           "receipt_ref":str(out.relative_to(root)),"result":activity.get("result")
+        },ensure_ascii=False,separators=(",",":"))+"\n")
+        f.write(json.dumps({
+          "id":f"pdca-cognitive-ir-c{cycle}",
+          "type":"pdca.cognitive_ir."+projection["persona_ir"]["projection_status"].lower(),
+          "timestamp":now,
+          "source":"persona_internal_activity_executor",
+          "cycle":cycle,
+          "intent":intent,
+          "projection_ref":str(projection_out.relative_to(root)),
+          "persona_ir_id":projection["persona_ir"]["current_ir_id"],
+          "persona_ir_revision":projection["persona_ir"]["current_revision"],
+          "revision_required":False
         },ensure_ascii=False,separators=(",",":"))+"\n")
     print(json.dumps(activity,ensure_ascii=False))
     return 0
