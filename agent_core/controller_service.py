@@ -50,6 +50,7 @@ class ControllerService:
         'desktop.window.stage': 'desktop.windows.tile',
         'desktop.pointer.click': 'desktop.mouse',
         'desktop.text.insert': 'desktop.keyboard',
+        'desktop.preview.capture': 'desktop.preview.capture',
     }
 
     @classmethod
@@ -98,6 +99,23 @@ class ControllerService:
             if not text or len(text) > 1000:
                 raise ValueError('desktop.text.insert text must contain 1..1000 characters')
             return {**base, 'action': 'desktop.keyboard', 'operation': 'paste', 'text': text}
+        if action == 'desktop.preview.capture':
+            max_width = int(request.get('max_width') if request.get('max_width') is not None else 480)
+            max_height = int(request.get('max_height') if request.get('max_height') is not None else 270)
+            quality = int(request.get('quality') if request.get('quality') is not None else 30)
+            if not 160 <= max_width <= 480:
+                raise ValueError('desktop.preview.capture max_width must be 160..480')
+            if not 90 <= max_height <= 270:
+                raise ValueError('desktop.preview.capture max_height must be 90..270')
+            if not 20 <= quality <= 50:
+                raise ValueError('desktop.preview.capture quality must be 20..50')
+            return {
+                **base,
+                'action': 'desktop.preview.capture',
+                'max_width': max_width,
+                'max_height': max_height,
+                'quality': quality,
+            }
         raise ValueError(f'unsupported typed desktop action: {action}')
 
     def _node_for_dispatch(self, node_id: str) -> dict[str, Any]:
