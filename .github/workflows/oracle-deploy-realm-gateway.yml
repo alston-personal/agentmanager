@@ -7,6 +7,8 @@ on:
     paths:
       - 'dashboard/app/api/agentos/**'
       - 'scripts/deploy_realm_gateway_user.sh'
+      - 'scripts/deploy_realm_gateway_blue_green_user.sh'
+      - 'scripts/deploy_dashboard_blue_green_user.sh'
       - 'agent_core/realm_server.py'
       - 'agent_core/controller_api.py'
       - 'agent_core/controller_service.py'
@@ -119,14 +121,14 @@ jobs:
           assert s.get('worker_id') == 'oracle-maintenance', s
           assert 'oracle-core-runtime' in set(s.get('locks') or []), s
           text='\n'.join((step.get('stdout','')+'\n'+step.get('stderr','')) for step in r.get('steps',[]))
-          assert f'route_source={source_commit}:dashboard/app/api/agentos/[...path]/route.ts' in text, text[-12000:]
-          assert 'dashboard_build=PASS' in text, text[-12000:]
-          assert 'dashboard_cutover_downtime_budget=PASS' in text, text[-12000:]
+          assert 'realm_gateway_dashboard_bg=PASS' in text, text[-12000:]
+          assert 'dashboard_bg_cutover=PASS' in text, text[-12000:]
+          assert 'realm_gateway_blue_green=PASS' in text, text[-12000:]
           assert 'realm_gateway_bootstrap_local=PASS' in text, text[-12000:]
           assert 'realm_gateway_bootstrap_public=PASS' in text, text[-12000:]
           assert f'realm_gateway_source_commit={source_commit}' in text, text[-12000:]
           assert 'realm_gateway_public=PASS' in text, text[-12000:]
-          assert 'nginx_mutation=NONE' in text, text[-12000:]
+          assert 'nginx_mutation=BLUE_GREEN_HELPER' in text, text[-12000:]
           print('realm_gateway_deploy=PASS')
           print('realm_gateway_pinned_source=PASS')
           print('realm_gateway_scheduler_worker='+s['worker_id'])
