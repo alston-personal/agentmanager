@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: oracle-dashboard-production-deploy
+  group: oracle-realm-gateway-production-deploy
   cancel-in-progress: false
 
 jobs:
