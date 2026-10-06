@@ -35,7 +35,10 @@ jobs:
       - name: Generate identity boundary inventory
         run: |
           mkdir -p artifacts
-          python3 scripts/audit_oracle_identity_boundaries.py             --json-out artifacts/oracle-identity-boundaries.json             --markdown-out artifacts/oracle-identity-boundaries.md
+          python3 scripts/audit_oracle_identity_boundaries.py \
+            --json-out artifacts/oracle-identity-boundaries.json \
+            --markdown-out artifacts/oracle-identity-boundaries.md \
+            --fail-on-new-p0
           cat artifacts/oracle-identity-boundaries.md
       - name: Contract tests
         run: python3 -m unittest tests.test_oracle_identity_boundaries
