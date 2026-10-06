@@ -332,6 +332,70 @@ def ocr_stamp_text(image: Image.Image, *, digits_only: bool = False, fast: bool 
     return texts
 
 
+def stamp_assist_with_budget(
+    image_bytes: bytes,
+    stamp_store: StampStore | None,
+    *,
+    budget_ms: int = 250,
+) -> dict[str, Any]:
+    """Best-effort stamp lookup that can never block the invoice critical path.
+
+    The worker may continue briefly after timeout, but its result is discarded.
+    Main OCR/fallback never depends on this function succeeding.
+    """
+    if stamp_store is None:
+        return {"status": "UNAVAILABLE", "latency_ms": 0.0}
+
+    result: dict[str, Any] = {}
+    done = threading.Event()
+    started = time.perf_counter()
+
+    def worker() -> None:
+        try:
+            regions = detect_stamp_regions(image_bytes)
+            if not regions:
+                result.update({"status": "NO_STAMP_CANDIDATE", "regions": []})
+                return
+            region = regions[0]
+            fp = fingerprint_stamp(image_bytes, region)
+            match = stamp_store.match(fp)
+            payload = {
+                "status": "NO_MATCH",
+                "regions": [{
+                    "box": list(region.box),
+                    "confidence": region.confidence,
+                    "color_hint": region.color_hint,
+                }],
+                "decision": match.decision,
+                "score": match.score,
+                "stamp_id": match.stamp_id,
+                "entity_id": match.entity_id,
+                "algorithm": fp.algorithm,
+                "version": fp.version,
+            }
+            if match.decision == "same_stamp" and match.stamp_id:
+                payload["status"] = "MATCHED_CONFIRMED"
+                payload["remembered_attributes"] = stamp_store.resolve_verified_attributes(match.stamp_id)
+            result.update(payload)
+        except Exception as exc:
+            result.update({"status": "ERROR", "error_type": type(exc).__name__})
+        finally:
+            done.set()
+
+    threading.Thread(
+        target=worker,
+        name="invoice-stamp-assist",
+        daemon=True,
+    ).start()
+    done.wait(max(0.0, budget_ms / 1000.0))
+    latency_ms = round((time.perf_counter() - started) * 1000, 1)
+    if not done.is_set():
+        return {"status": "TIMEOUT", "latency_ms": latency_ms, "budget_ms": budget_ms}
+    result["latency_ms"] = latency_ms
+    result["budget_ms"] = budget_ms
+    return result
+
+
 @dataclass
 class Extraction:
     fields: dict[str, Any]
@@ -385,65 +449,37 @@ def extract_legacy_invoice(
                 fields[key] = value
                 confidence[key] = float((rapid.get("confidence") or {}).get(key) or 0.0)
 
-    # Baseline-first safety: new stamp assistance must never be required for
-    # production recognition. Default mode keeps the pre-assist OCR path intact.
-    # Use INVOICE_STAMP_ASSIST_MODE=active only after acceptance proves no regression.
+    # Stamp recognition is optional enrichment only. It has a tiny wall-clock
+    # budget and can never influence whether baseline OCR/fallback runs.
     stamp_mode = str(os.environ.get("INVOICE_STAMP_ASSIST_MODE", "legacy")).strip().lower()
     if stamp_mode not in {"legacy", "shadow", "active"}:
         stamp_mode = "legacy"
-    stamp_started = time.perf_counter()
-    stamp_regions = []
-    raw["stamp_recognition"] = {
-        "mode": stamp_mode,
-        "status": "DISABLED_BASELINE" if stamp_mode == "legacy" else "NO_STAMP_CANDIDATE",
-        "regions": [],
-    }
-    if stamp_mode in {"shadow", "active"}:
-        stamp_regions = detect_stamp_regions(image_bytes)
-        raw["stamp_recognition"].update({
-            "status": "NO_STAMP_CANDIDATE" if not stamp_regions else "CANDIDATE",
-            "regions": [
-                {"box": list(region.box), "confidence": region.confidence, "color_hint": region.color_hint}
-                for region in stamp_regions
-            ],
-        })
-        if stamp_store is not None and stamp_regions:
-            stamp_fp = fingerprint_stamp(image_bytes, stamp_regions[0])
-            stamp_match = stamp_store.match(stamp_fp)
-            raw["stamp_recognition"].update({
-                "decision": stamp_match.decision,
-                "score": stamp_match.score,
-                "stamp_id": stamp_match.stamp_id,
-                "entity_id": stamp_match.entity_id,
-                "algorithm": stamp_fp.algorithm,
-                "version": stamp_fp.version,
-            })
-            if stamp_mode == "active" and stamp_match.decision == "same_stamp" and stamp_match.stamp_id:
-                remembered = stamp_store.resolve_verified_attributes(stamp_match.stamp_id)
-                if not fields["vendor_name"] and remembered.get("vendor_name"):
-                    fields["vendor_name"] = remembered["vendor_name"]
-                    confidence["vendor_name"] = 0.99
-                if not fields["seller_tax_id"] and remembered.get("seller_tax_id"):
-                    fields["seller_tax_id"] = remembered["seller_tax_id"]
-                    confidence["seller_tax_id"] = 0.99
-                raw["stamp_recognition"]["status"] = "MATCHED_CONFIRMED"
-                raw["stamp_recognition"]["remembered_attributes"] = sorted(
-                    key for key in ("vendor_name", "seller_tax_id") if remembered.get(key)
-                )
-    raw["stamp_recognition"]["latency_ms"] = round((time.perf_counter() - stamp_started) * 1000, 1)
+    if stamp_mode == "legacy":
+        stamp_result = {"mode": stamp_mode, "status": "DISABLED_BASELINE", "latency_ms": 0.0}
+    else:
+        budget_ms = max(25, min(1000, int(os.environ.get("INVOICE_STAMP_ASSIST_BUDGET_MS", "250"))))
+        stamp_result = stamp_assist_with_budget(image_bytes, stamp_store, budget_ms=budget_ms)
+        stamp_result["mode"] = stamp_mode
+    raw["stamp_recognition"] = stamp_result
 
-    timings_ms["stamp_detect_match_ms"] = raw["stamp_recognition"]["latency_ms"]
+    if stamp_mode == "active" and stamp_result.get("status") == "MATCHED_CONFIRMED":
+        remembered = stamp_result.get("remembered_attributes") or {}
+        if not fields["vendor_name"] and remembered.get("vendor_name"):
+            fields["vendor_name"] = remembered["vendor_name"]
+            confidence["vendor_name"] = 0.99
+        if not fields["seller_tax_id"] and remembered.get("seller_tax_id"):
+            fields["seller_tax_id"] = remembered["seller_tax_id"]
+            confidence["seller_tax_id"] = 0.99
+
+    timings_ms["stamp_detect_match_ms"] = float(stamp_result.get("latency_ms") or 0.0)
 
     # Legacy crops remain as a recovery path only.
     fallback_started = time.perf_counter()
     invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
     date_crop = crop_rel(image, (0.43, 0.11, 0.79, 0.30))
     amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
-    stamp_crop = (
-        crop_abs(image, stamp_regions[0].box)
-        if stamp_mode == "active" and stamp_regions
-        else crop_rel(image, (0.60, 0.38, 0.98, 0.96))
-    )
+    # Baseline seller fallback owns its own crop and never depends on stamp assist.
+    stamp_crop = crop_rel(image, (0.60, 0.38, 0.98, 0.96))
 
     if not fields["invoice_number"]:
         invoice_texts = [
