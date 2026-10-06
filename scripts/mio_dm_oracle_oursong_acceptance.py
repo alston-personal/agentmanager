@@ -57,18 +57,22 @@ class _WS:
         try: self.sock.close()
         except Exception: pass
 
-def _eval(ws,expr,cid):
-    ws.send_text(json.dumps({"id":cid,"method":"Runtime.evaluate","params":{"expression":expr,"returnByValue":True,"awaitPromise":True}},separators=(",",":")))
+def _call(ws,method,params,cid):
+    ws.send_text(json.dumps({"id":cid,"method":method,"params":params},separators=(",",":")))
     while True:
         m=json.loads(ws.recv_text())
         if m.get("id")!=cid:
             continue
         if "error" in m:
-            raise RuntimeError("Runtime.evaluate failed")
-        result=(m.get("result") or {}).get("result") or {}
-        if result.get("exceptionDetails"):
-            raise RuntimeError("Runtime.evaluate exception")
-        return result.get("value")
+            raise RuntimeError(method+" failed")
+        return m.get("result") or {}
+
+def _eval(ws,expr,cid):
+    result=_call(ws,"Runtime.evaluate",{"expression":expr,"returnByValue":True,"awaitPromise":True},cid)
+    value=result.get("result") or {}
+    if value.get("exceptionDetails"):
+        raise RuntimeError("Runtime.evaluate exception")
+    return value.get("value")
 
 def _threads_tab():
     tabs=_json_get("http://127.0.0.1:9222/json/list")
@@ -86,8 +90,12 @@ def main() -> int:
     ws=_WS(str(tab["webSocketDebuggerUrl"]))
     try:
         STAGE="messages_goto"
-        _eval(ws,'location.href="https://www.threads.com/messages"',1)
-        time.sleep(5)
+        current=str(tab.get("url") or "")
+        if "/messages" not in current:
+            _call(ws,"Page.navigate",{"url":"https://www.threads.com/messages"},1)
+            time.sleep(5)
+        else:
+            time.sleep(1)
         STAGE="login_check"
         state=_eval(ws,'(()=>({url:location.href,body:(document.body?.innerText||"").slice(0,1200)}))()',2) or {}
         url=str((state or {}).get("url") or "").lower()
