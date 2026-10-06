@@ -204,6 +204,36 @@ class VisionRoutingTests(unittest.TestCase):
         self.assertEqual(result.raw['vision_route']['decision'],'skip')
 
     @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_three_part_missing_buyer_tax_id_invokes_vision(self):
+        local = legacy()
+        local.fields.update({
+            'invoice_number':'EC55544057',
+            'invoice_date':'2026-09-25',
+            'vendor_name':'榮昌企業有限公司',
+            'buyer_tax_id':None,
+            'seller_tax_id':'16672215',
+            'amount_before_tax':24500,
+            'tax_amount':1225,
+            'total_amount':25725,
+        })
+        local.confidence = {
+            'invoice_number':0.99,'invoice_date':0.95,'vendor_name':0.95,
+            'seller_tax_id':0.95,'amount_before_tax':0.98,'tax_amount':0.98,'total_amount':0.98,
+        }
+        local.raw.update({
+            'review': {'status':'extracted','required_fields':[],'confirm_fields':[],'reasons':[]},
+            'template': {'document_type':'three_part_uniform_invoice'},
+            'line_items': [{'description':'印刷品','quantity':24500,'unit_price':1,'amount':24500}],
+        })
+        local.review_required = False
+        payload = fixture()
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice', return_value=local), \
+             patch.object(vision, 'read_invoice', return_value={'payload':payload,'image_sha256':'x','model':'test'}) as read:
+            result = extract_invoice(image_bytes())
+        read.assert_called_once()
+        self.assertEqual(result.raw['vision_route']['reason'],'missing:buyer_tax_id')
+
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
     def test_primary_invokes_vision_when_local_needs_review(self):
         local = legacy()
         local.review_required = True
