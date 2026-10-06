@@ -206,13 +206,7 @@ function Install-Supervisor([string]$PythonPath) {
   try {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
   } catch {
-    $accessDenied=($_.Exception.HResult -eq -2147024891) -or
-      ($_.FullyQualifiedErrorId -match '(?i)unauthorized|accessdenied') -or
-      ($_.Exception.Message -match '(?i)access.*denied|unauthorized')
-    if(-not $accessDenied){
-      throw
-    }
-    Write-Host 'Task Scheduler ACL blocks non-admin repair; switching to per-user hidden runtime.' -ForegroundColor Yellow
+    Write-Host ('Task Scheduler registration unavailable; switching to per-user hidden runtime. Error=' + $_.Exception.Message) -ForegroundColor Yellow
     Install-UserRuntime -Runner $runner
     return
   }
