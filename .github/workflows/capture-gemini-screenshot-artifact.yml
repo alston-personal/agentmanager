@@ -1,0 +1,75 @@
+name: Capture Gemini Screenshot Artifact
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/capture-gemini-screenshot-artifact.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Capture screenshot bytes
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s > preview.b64 <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tid='capture-gemini-artifact-20261006-1120'
+          code="from PIL import ImageGrab; import io,base64,ctypes,time; u=ctypes.windll.user32; h=1117002; u.ShowWindow(h,9); u.BringWindowToTop(h); u.SetForegroundWindow(h); time.sleep(1); im=ImageGrab.grab(bbox=(0,0,1920,1080),all_screens=True).convert('RGB'); im.thumbnail((960,540)); b=io.BytesIO(); im.save(b,format='JPEG',quality=55,optimize=True); print(base64.b64encode(b.getvalue()).decode('ascii'))"
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{
+                  'schema':'agentos.node-task/v0.1',
+                  'task_id':tid,
+                  'action':'shell.exec',
+                  'executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe',
+                  'argv':['-c',code],
+                  'cwd':r'C:\Users\alston.huang\AgentOS',
+                  'timeout_seconds':15,
+                  'cognition_ids_used':['demo://gemini-threads/20261006'],
+              })
+          for _ in range(35):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  if r.get('ok') is not True or int(r.get('returncode') or 0) != 0:
+                      raise SystemExit('capture_failed:'+str(r))
+                  print((r.get('stdout') or '').strip())
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit('capture_receipt_missing')
+          PY
+          REMOTE
+          python3 - <<'PY'
+          import base64, pathlib
+          raw=pathlib.Path('preview.b64').read_text().strip()
+          pathlib.Path('gemini-live.jpg').write_bytes(base64.b64decode(raw))
+          print('screenshot_bytes='+str(pathlib.Path('gemini-live.jpg').stat().st_size))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gemini-live-preview
+          path: gemini-live.jpg
+          if-no-files-found: error
+          retention-days: 1
