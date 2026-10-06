@@ -100,10 +100,6 @@ async function main(){
   const session=await browserSession();
   await sleep(10000);
   try{
-    STAGE='session_enable';
-    await session.cmd('Page.enable',{});
-    await session.cmd('Runtime.enable',{});
-    await session.cmd('Accessibility.enable',{});
     STAGE='login_check';
     const ft=await session.cmd('Page.getFrameTree',{});
     const frame=((((ft||{}).result||{}).frameTree||{}).frame)||{};
