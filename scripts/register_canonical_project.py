@@ -40,6 +40,22 @@ def ensure_status(project_id: str, display_name: str, summary: str, current_focu
     return status
 
 
+def ensure_dashboard(project_id: str, display_name: str) -> Path:
+    dashboard = config.AGENT_DATA_ROOT / "DASHBOARD.md"
+    dashboard.parent.mkdir(parents=True, exist_ok=True)
+    marker = f"./projects/{project_id}/STATUS.md"
+    if dashboard.exists():
+        content = dashboard.read_text(encoding="utf-8")
+    else:
+        content = "# AI Command Center Dashboard\n\n## Active Projects\n\n"
+    if marker not in content:
+        if not content.endswith("\n"):
+            content += "\n"
+        content += f"- **{display_name}** — [STATUS]({marker})\n"
+        dashboard.write_text(content, encoding="utf-8")
+    return dashboard
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Register a canonical AgentOS project.")
     parser.add_argument("project_id")
@@ -62,6 +78,7 @@ def main() -> int:
         args.current_focus,
         args.next_action,
     )
+    dashboard = ensure_dashboard(args.project_id, args.display_name)
     result = register_canonical_project(
         CanonicalProjectRegistration(
             project_id=args.project_id,
@@ -80,6 +97,7 @@ def main() -> int:
         ),
         replace=args.replace,
     )
+    result["dashboard"] = str(dashboard)
     print(result)
     return 0
 
