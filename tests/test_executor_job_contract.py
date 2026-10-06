@@ -231,3 +231,43 @@ def test_executor_receipt_projects_bounded_codex_health_fields():
     assert receipt["codex_health_classification"] == "AUTH_REQUIRED"
     assert "stdout" not in receipt
     assert "stderr" not in receipt
+
+
+def test_layoutlib_parity_job_is_fixed_read_only_contract():
+    request = canonical_executor_job_request("layoutlib.production.parity.inspect")
+    spec = validate_executor_job(request)
+    assert spec.project_id == "layoutlib"
+    assert spec.capability == "layoutlib.production.parity.inspect"
+    assert spec.executor_class == "layoutlib-parity-inspector"
+    assert spec.workload_ref == "release://layoutlib/v0.7.9"
+    assert spec.authority == "bounded-read-only"
+    assert spec.read_only is True
+
+
+def test_layoutlib_parity_receipt_projects_only_bounded_scalars():
+    request = canonical_executor_job_request("layoutlib.production.parity.inspect")
+    receipt = project_executor_job_receipt(
+        job_id="job-layoutlib-1234",
+        request=request,
+        executor_available=True,
+        routable=True,
+        authorized=True,
+        successful=True,
+        result={
+            "verdict": "PASS",
+            "classification": "LAYOUTLIB_PRODUCTION_PARITY_EXACT",
+            "layoutlib_release": "v0.7.9",
+            "layoutlib_manifest_files": 7,
+            "layoutlib_matching_files": 7,
+            "layoutlib_public_http": 200,
+            "layoutlib_parity": "EXACT",
+            "observed_head": "a" * 40,
+            "stdout": "must-not-cross",
+        },
+    )
+    assert receipt["layoutlib_release"] == "v0.7.9"
+    assert receipt["layoutlib_manifest_files"] == 7
+    assert receipt["layoutlib_matching_files"] == 7
+    assert receipt["layoutlib_public_http"] == 200
+    assert receipt["layoutlib_parity"] == "EXACT"
+    assert "stdout" not in receipt
