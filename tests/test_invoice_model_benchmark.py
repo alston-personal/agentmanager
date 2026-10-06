@@ -3,6 +3,8 @@ from scripts import invoice_model_benchmark as bench
 
 
 class InvoiceModelBenchmarkTests(unittest.TestCase):
+    """Contract tests for cross-provider scoring and handwritten-money visibility."""
+
     def test_money_score_is_reported_separately(self):
         expected = {
             "invoice_number": "EC55544057",
