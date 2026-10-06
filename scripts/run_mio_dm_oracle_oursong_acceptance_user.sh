@@ -10,12 +10,12 @@ REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 
-TMP="$(mktemp)"
+TMP="$(mktemp --suffix=.mjs)"
 trap 'rm -f "$TMP"' EXIT
-git -C "$REPO" show "$SOURCE_COMMIT:scripts/mio_dm_oracle_oursong_acceptance.py" > "$TMP"
+git -C "$REPO" show "$SOURCE_COMMIT:scripts/mio_dm_oracle_oursong_acceptance.mjs" > "$TMP"
 
 set +e
-OUT="$(PYTHONPATH="$REPO" python3 "$TMP" 2>&1)"
+OUT="$(node "$TMP" 2>&1)"
 RC=$?
 set -e
 printf '%s\n' "$OUT" | grep -E '^mio_dm_oursong_(acceptance|stage|send|readback)=' || true
