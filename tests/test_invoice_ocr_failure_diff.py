@@ -1,7 +1,13 @@
+import io
 import unittest
+from PIL import Image
 
 from scripts.invoice_ocr_failure_diff import classify_field
-from services.invoice_intake.template_ocr import choose_layout_amounts
+from services.invoice_intake.template_ocr import (
+    anchor_row_reocr,
+    choose_layout_amounts,
+    choose_reocr_amounts,
+)
 
 
 class InvoiceOCRFailureDiffTests(unittest.TestCase):
@@ -50,6 +56,42 @@ class InvoiceOCRFailureDiffTests(unittest.TestCase):
         ]
         values,_=choose_layout_amounts(evidence)
         self.assertIsNone(values["total_amount"])
+
+
+    def test_anchor_row_reocr_recovers_amount_rows_from_preprocessed_crops(self):
+        class Result:
+            def __init__(self,text):
+                self.txts=[text]
+                self.scores=[0.96]
+                self.boxes=[[[1,1],[20,1],[20,10],[1,10]]]
+
+        values=iter(["1546","1546","77","77","1623","1623"])
+        def engine(_image):
+            return Result(next(values))
+
+        page=Image.new("RGB",(500,300),"white")
+        buf=io.BytesIO()
+        page.save(buf,format="PNG")
+        evidence=[
+            {"text":"銷售額合計","confidence":0.99,"box":[[20,40],[100,40],[100,60],[20,60]]},
+            {"text":"營業稅","confidence":0.99,"box":[[20,100],[100,100],[100,120],[20,120]]},
+            {"text":"總計","confidence":0.99,"box":[[20,160],[100,160],[100,180],[20,180]]},
+        ]
+        candidates=anchor_row_reocr(engine,buf.getvalue(),evidence)
+        chosen,meta=choose_reocr_amounts(candidates)
+        self.assertEqual(chosen["amount_before_tax"],1546)
+        self.assertEqual(chosen["tax_amount"],77)
+        self.assertEqual(chosen["total_amount"],1623)
+        self.assertEqual(meta["validation"],"subtotal_plus_tax_equals_total")
+
+    def test_reocr_does_not_derive_missing_value_from_two_fields(self):
+        candidates={
+            "amount_before_tax":[{"value":1546,"votes":2,"best_confidence":0.97}],
+            "tax_amount":[{"value":77,"votes":2,"best_confidence":0.96}],
+            "total_amount":[],
+        }
+        chosen,_=choose_reocr_amounts(candidates)
+        self.assertIsNone(chosen["total_amount"])
 
 if __name__=="__main__":
     unittest.main()
