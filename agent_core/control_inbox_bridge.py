@@ -430,10 +430,14 @@ class OneControllerClient:
             raise ValueError('args must be an object')
         body = {
             'node_id': node_id,
-            'task_id': _task_id(str(command['command_id'])),
             'action': command['action'],
             **args,
         }
+        # Runtime-converge reconnect by request identity is a read-only lookup.
+        # Do not synthesize a bridge task_id or the controller would select the
+        # task-id inspect mode and reject the exact request identity fields.
+        if command['action'] != RUNTIME_CONVERGE_INSPECT_ACTION or 'request_id' not in args:
+            body['task_id'] = _task_id(str(command['command_id']))
         status, payload = self._request('POST', '/v1/controller/dispatch', body)
         if not 200 <= status < 300:
             raise OneControllerError(f'one_dispatch_http_{status}')
