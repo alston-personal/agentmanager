@@ -1,6 +1,7 @@
 import unittest
 
 from scripts.invoice_ocr_failure_diff import classify_field
+from services.invoice_intake.template_ocr import choose_layout_amounts
 
 
 class InvoiceOCRFailureDiffTests(unittest.TestCase):
@@ -24,6 +25,31 @@ class InvoiceOCRFailureDiffTests(unittest.TestCase):
         result=classify_field("seller_tax_id","16672215",evidence,{"seller_tax_id":"16672215"})
         self.assertEqual(result["category"],"parsed_correct")
 
+
+    def test_layout_amounts_use_anchor_geometry_and_arithmetic(self):
+        evidence=[
+            {"text":"銷售額合計","confidence":0.99,"box":[[10,10],[60,10],[60,30],[10,30]]},
+            {"text":"1546","confidence":0.94,"box":[[90,10],[130,10],[130,30],[90,30]]},
+            {"text":"營業稅","confidence":0.99,"box":[[10,40],[60,40],[60,60],[10,60]]},
+            {"text":"77","confidence":0.91,"box":[[90,40],[110,40],[110,60],[90,60]]},
+            {"text":"總計","confidence":0.99,"box":[[10,70],[60,70],[60,90],[10,90]]},
+            {"text":"1623","confidence":0.93,"box":[[90,70],[130,70],[130,90],[90,90]]},
+        ]
+        values,meta=choose_layout_amounts(evidence)
+        self.assertEqual(values["amount_before_tax"],1546)
+        self.assertEqual(values["tax_amount"],77)
+        self.assertEqual(values["total_amount"],1623)
+        self.assertEqual(meta["validation"],"subtotal_plus_tax_equals_total")
+
+    def test_layout_amounts_never_derives_missing_total(self):
+        evidence=[
+            {"text":"銷售額合計","confidence":0.99,"box":[[10,10],[60,10],[60,30],[10,30]]},
+            {"text":"1546","confidence":0.94,"box":[[90,10],[130,10],[130,30],[90,30]]},
+            {"text":"營業稅","confidence":0.99,"box":[[10,40],[60,40],[60,60],[10,60]]},
+            {"text":"77","confidence":0.91,"box":[[90,40],[110,40],[110,60],[90,60]]},
+        ]
+        values,_=choose_layout_amounts(evidence)
+        self.assertIsNone(values["total_amount"])
 
 if __name__=="__main__":
     unittest.main()
