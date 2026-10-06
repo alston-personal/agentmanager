@@ -1,18 +1,21 @@
 name: Oracle Control Inbox Exact Generation Rollout
 
-# Deployment-only rollout for the bounded GitHub Control Inbox bridge. This
-# publishes the exact Core generation and invokes one fixed bootstrap action.
-# It never reads private Canonical IR and is not a continuation control-plane
-# fallback; live continuation acceptance still enters through the Control Inbox.
+# Legacy bootstrap carrier retained only to bridge an older live bootstrap
+# generation to the isolated Control Inbox runtime. The temporary bootstrap
+# hook is restored before exit and never becomes runtime authority.
 on:
   workflow_dispatch:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-control-inbox-exact-generation-rollout.yml'
 
 permissions:
   contents: read
 
 concurrency:
   group: oracle-control-inbox-exact-generation-rollout
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   reconcile:
@@ -21,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preflight immutable integration generation
+      - name: Preflight exact integration generation
         shell: bash
         run: |
           set -euo pipefail
@@ -31,27 +34,34 @@ jobs:
           git cat-file -e "$GITHUB_SHA^{commit}"
           echo "control_inbox_rollout_source_commit=$GITHUB_SHA"
 
-      - name: Publish bootstrap hook and reconcile exact Control Inbox generation
+      - name: Bootstrap isolated Control Inbox reconcile
         shell: bash
         run: |
           set -euo pipefail
           LIVE=/home/ubuntu/agentmanager
+          HOOK="$LIVE/agentos_node/bootstrap_control.py"
           ROOT=/tmp/agentos-bootstrap-control
           REQUESTS="$ROOT/requests"
           RECEIPTS="$ROOT/receipts"
-          REQUEST_ID="control-inbox-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST_ID="control-inbox-safe-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           REQUEST="$REQUESTS/$REQUEST_ID.request.json"
           RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+          BACKUP="$(mktemp /tmp/agentos-bootstrap-control-backup-XXXXXX.py)"
+
+          test -f "$HOOK"
+          test -w "$HOOK"
+          cp -p "$HOOK" "$BACKUP"
+          BEFORE_SHA="$(sha256sum "$HOOK" | awk '{print $1}')"
+
+          restore_hook() {
+            cat "$BACKUP" > "$HOOK" || true
+            rm -f "$BACKUP"
+          }
+          trap restore_hook EXIT
 
           python3 -m py_compile agentos_node/bootstrap_control.py
-          test -w "$LIVE/agentos_node" || test -w "$LIVE/agentos_node/bootstrap_control.py"
-          if [ -e "$LIVE/agentos_node/bootstrap_control.py" ]; then
-            cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          else
-            cp agentos_node/bootstrap_control.py "$LIVE/agentos_node/bootstrap_control.py"
-          fi
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+          cat agentos_node/bootstrap_control.py > "$HOOK"
+          python3 -m py_compile "$HOOK"
 
           for i in $(seq 1 120); do
             [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
@@ -63,77 +73,6 @@ jobs:
           test "$(stat -c '%a' "$REQUESTS")" = 1777
 
           python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
-          import json, os, sys
-          from datetime import datetime, timezone
-          from pathlib import Path
-          path = Path(sys.argv[1]); request_id = sys.argv[2]; sha = sys.argv[3]
-          payload = {
-              "schema": "agentos.bootstrap-request/v1",
-              "request_id": request_id,
-              "action": "agentos.control_inbox.reconcile",
-              "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-              "params": {"source_commit": sha},
-              "authority": {"source": "github-actions", "target_user": "ubuntu", "arbitrary_shell": False},
-          }
-          tmp = path.with_suffix(path.suffix + ".tmp")
-          tmp.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-          os.chmod(tmp, 0o644); tmp.replace(path); os.chmod(path, 0o644)
-          PY
-
-          for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT" || { echo 'control_inbox_bootstrap_receipt=TIMEOUT'; exit 3; }
-
-          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
-          import json, sys
-          receipt = json.load(open(sys.argv[1], encoding="utf-8")); expected = sys.argv[2]
-          assert receipt.get("schema") == "agentos.bootstrap-receipt/v1", receipt
-          assert receipt.get("action") == "agentos.control_inbox.reconcile", receipt
-          assert receipt.get("executor_user") == "ubuntu", receipt
-          assert receipt.get("executor_uid") == 1001, receipt
-          assert receipt.get("source_commit") == expected, receipt
-          assert receipt.get("ok") is True, receipt
-          text = "\n".join(str(s.get("stdout", "")) + "\n" + str(s.get("stderr", "")) for s in receipt.get("steps", []))
-          assert "control_inbox_install=PASS" in text, text[-12000:]
-          assert "control_inbox_exact_generation=PASS" in text, text[-12000:]
-          assert "control_inbox_continuation_identity=ENABLED" in text, text[-12000:]
-          assert f"agentos_source_commit={expected}" in text, text[-12000:]
-          assert "control_inbox_service=active" in text, text[-12000:]
-          print("control_inbox_exact_generation_rollout=PASS")
-          print("control_inbox_continuation_identity=ENABLED")
-          PY
-
-
-  mio-tryon-deploy:
-    needs: reconcile
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Publish bootstrap hook and deploy Mio try-on worker
-        shell: bash
-        run: |
-          set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
-          REQUEST_ID="mio-tryon-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
-          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
-
-          python3 -m py_compile agentos_node/bootstrap_control.py
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
-          for i in $(seq 1 120); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS"
-          test -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
           import json,os,sys
           from datetime import datetime,timezone
           from pathlib import Path
@@ -141,41 +80,47 @@ jobs:
           payload={
             "schema":"agentos.bootstrap-request/v1",
             "request_id":request_id,
-            "action":"agentos.mio_tryon.deploy",
+            "action":"agentos.control_inbox.reconcile",
             "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
             "params":{"source_commit":sha},
             "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
           }
           tmp=path.with_suffix(path.suffix+".tmp")
           tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
+          os.chmod(tmp,0o644)
+          tmp.replace(path)
+          os.chmod(path,0o644)
           PY
 
-          for i in $(seq 1 480); do
+          for i in $(seq 1 240); do
             [ -f "$RECEIPT" ] && break
             sleep 1
           done
-          test -f "$RECEIPT" || { echo 'mio_tryon_bootstrap_receipt=TIMEOUT'; exit 3; }
+          test -f "$RECEIPT" || { echo 'control_inbox_bootstrap_receipt=TIMEOUT'; exit 3; }
 
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
           r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
           assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
-          assert r.get('action')=='agentos.mio_tryon.deploy',r
+          assert r.get('action')=='agentos.control_inbox.reconcile',r
           assert r.get('executor_user')=='ubuntu',r
           assert r.get('executor_uid')==1001,r
           assert r.get('source_commit')==expected,r
           text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
           assert r.get('ok') is True,text[-16000:]
           for marker in (
-            'mio_any_item_hf_token_configured=yes',
-            'mio_tryon_worker_service=active',
-            'mio_any_item_shoe_e2e=PASS',
-            'mio_tryon_deploy=PASS',
+            'control_inbox_safe_reconcile=PASS',
+            'control_inbox_realm_restart=NO',
+            'control_inbox_github_auth_repair=PASS',
+            'control_inbox_service=active',
+            'control_inbox_source_commit='+expected,
           ):
             assert marker in text, marker+' missing\n'+text[-16000:]
-          print('mio_tryon_bootstrap_deploy=PASS')
-          for line in text.splitlines():
-            if line.startswith('mio_any_item_') or line.startswith('mio_tryon_'):
-              print(line)
+          print('control_inbox_safe_rollout=PASS')
+          print('control_inbox_realm_restart=NO')
           PY
+
+          restore_hook
+          trap - EXIT
+          test "$(sha256sum "$HOOK" | awk '{print $1}')" = "$BEFORE_SHA"
+          echo 'bootstrap_hook_restored=PASS'
