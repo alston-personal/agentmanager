@@ -1,6 +1,6 @@
 {
   "schema": "agentos.runtime-ownership/v1",
-  "policy_version": "2026.10.02.1",
+  "policy_version": "2026.10.06.1",
   "shared_source_checkout": {
     "path": "/home/ubuntu/agentmanager",
     "role": "source-cache-only",
@@ -12,6 +12,11 @@
       "reset --hard",
       "clean",
       "copy-over-live-runtime"
+    ],
+    "allowed_reference_contexts": [
+      "source-cache-inspection",
+      "explicit-interactive-user-session",
+      "migration-audit-only"
     ]
   },
   "services": {
@@ -32,8 +37,16 @@
       "release_root": "/home/ubuntu/agent-data/releases/core",
       "live_pointer": "/home/ubuntu/agent-data/runtime/core/current",
       "lock": "production/agentos-core",
-      "migration_state": "source_ready_live_migration_pending",
-      "authority_contract": "docs/CORE_DEPLOYMENT_AUTHORITY.md"
+      "migration_state": "active",
+      "authority_contract": "docs/CORE_DEPLOYMENT_AUTHORITY.md",
+      "live_receipt": "github-actions:37394284772",
+      "accepted_release": "1387daab2309bcbc4e9098a5744cef5eff59a669",
+      "runtime_audit": {
+        "immutable_count": 10,
+        "mutable_count": 0,
+        "other_count": 0,
+        "result": "PASS"
+      }
     },
     "fengshui": {
       "owner": "role://release-controller.fengshui",
