@@ -12,13 +12,19 @@ if TYPE_CHECKING:
 INV_RE = re.compile(r"([A-Z]{2})\s*[- ]?\s*(\d{8})")
 
 
-def _texts(result) -> tuple[str, float]:
-    txts, scores = [], []
+def _ocr_evidence(result) -> tuple[list[dict[str, Any]], str, float]:
+    """Preserve token text, confidence and geometry instead of flattening OCR immediately."""
+    txts: list[str] = []
+    scores: list[float] = []
+    boxes: list[Any] = []
     if hasattr(result, "txts") and result.txts is not None:
         txts = [str(x) for x in result.txts]
-        raw = getattr(result, "scores", None)
-        if raw is not None:
-            scores = [float(x) for x in raw]
+        raw_scores = getattr(result, "scores", None)
+        if raw_scores is not None:
+            scores = [float(x) for x in raw_scores]
+        raw_boxes = getattr(result, "boxes", None)
+        if raw_boxes is not None:
+            boxes = list(raw_boxes)
     elif hasattr(result, "to_json"):
         obj = result.to_json()
         if isinstance(obj, str):
@@ -27,13 +33,36 @@ def _texts(result) -> tuple[str, float]:
         obj = obj or {}
         txts = [str(x) for x in (obj.get("txts") or obj.get("texts") or obj.get("rec_texts") or [])]
         scores = [float(x) for x in (obj.get("scores") or obj.get("rec_scores") or [])]
+        boxes = list(obj.get("boxes") or obj.get("dt_polys") or [])
+
+    evidence: list[dict[str, Any]] = []
+    for idx, text in enumerate(txts):
+        score = scores[idx] if idx < len(scores) else None
+        box = boxes[idx] if idx < len(boxes) else None
+        if hasattr(box, "tolist"):
+            box = box.tolist()
+        evidence.append({
+            "index": idx,
+            "text": text,
+            "confidence": score,
+            "box": box,
+        })
     text = "\n".join(txts)
     confidence = sum(scores) / len(scores) if scores else (0.5 if text.strip() else 0.0)
-    return text, round(confidence, 4)
+    return evidence, text, round(confidence, 4)
+
+
+def _texts(result) -> tuple[str, float]:
+    _, text, confidence = _ocr_evidence(result)
+    return text, confidence
 
 
 def ocr_page(engine: RapidOCR, image_bytes: bytes) -> tuple[str, float]:
     return _texts(engine(image_bytes))
+
+
+def ocr_page_evidence(engine: RapidOCR, image_bytes: bytes) -> tuple[list[dict[str, Any]], str, float]:
+    return _ocr_evidence(engine(image_bytes))
 
 
 def normalize_invoice_number(text: str) -> str | None:
