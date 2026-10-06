@@ -354,7 +354,11 @@ def reclaim_stale(
             if item.get("status") not in ACTIVE or not lease_expired(item):
                 continue
             previous = str(item.get("owner") or "")
-            if previous in EXECUTION_OWNERS:
+            # The controller is the durable queue owner and may renew its own
+            # lease while work is waiting. An expired executor lease, including
+            # role://lobster, must be reclaimed so crashed execution cannot
+            # remain permanently "owned".
+            if previous == new_owner:
                 item["lease_expires_at"] = lease_deadline(lease_seconds)
                 item["updated_at"] = now()
                 continue
