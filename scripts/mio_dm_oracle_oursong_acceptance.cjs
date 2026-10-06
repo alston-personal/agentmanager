@@ -67,39 +67,10 @@ async function browserSession(){
   const targetId=String((((created||{}).result||{}).targetId)||'');
   if(!targetId) throw new Error('MISSING_TARGET_ID');
   await browser.cmd('Target.activateTarget',{targetId});
-  const attached=await browser.cmd('Target.attachToTarget',{targetId,flatten:false});
+  const attached=await browser.cmd('Target.attachToTarget',{targetId,flatten:true});
   const sessionId=String((((attached||{}).result||{}).sessionId)||'');
   if(!sessionId) throw new Error('MISSING_SESSION_ID');
-  let innerSeq=0;
-  const innerPending=new Map();
-  browser.onEvent(msg=>{
-    if(msg.method!=='Target.receivedMessageFromTarget') return;
-    const p=msg.params||{};
-    if(String(p.sessionId||'')!==sessionId) return;
-    let inner;
-    try{ inner=JSON.parse(String(p.message||'')); }catch{ return; }
-    if(inner.id && innerPending.has(inner.id)){
-      const row=innerPending.get(inner.id);
-      innerPending.delete(inner.id);
-      row.resolve(inner);
-    }
-  });
-  const cmd=(method,params={})=>new Promise((resolve,reject)=>{
-    const id=++innerSeq;
-    const timer=setTimeout(()=>{
-      innerPending.delete(id);
-      reject(new Error('CDP_TIMEOUT:'+method));
-    },20000);
-    innerPending.set(id,{resolve:(v)=>{clearTimeout(timer);resolve(v);}});
-    browser.cmd('Target.sendMessageToTarget',{
-      sessionId,
-      message:JSON.stringify({id,method,params}),
-    }).catch(err=>{
-      clearTimeout(timer);
-      innerPending.delete(id);
-      reject(err);
-    });
-  });
+  const cmd=(method,params={})=>browser.cmd(method,params,sessionId);
   return {browser,cmd};
 }
 
