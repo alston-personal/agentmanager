@@ -85,7 +85,7 @@ jobs:
           assert scheduler.get('worker_id')=='oracle-gui', scheduler
           safe=[
               str(line) for line in (receipt.get('evidence') or [])
-              if str(line).startswith(('mio_dm_oursong_acceptance=','mio_dm_oursong_send=','mio_dm_oursong_readback='))
+              if str(line).startswith(('mio_dm_oursong_acceptance=','mio_dm_oursong_stage=','mio_dm_oursong_send=','mio_dm_oursong_readback='))
           ]
           print('agentos_scheduler_worker=oracle-gui:gui')
           for line in safe: print(line)
