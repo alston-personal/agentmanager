@@ -294,6 +294,25 @@ PY
   echo "dashboard_release_supervisor_identity_end"
 }
 
+
+fast_restart_dashboard() {
+  systemctl --user restart agentos-dashboard.service
+  for i in $(seq 1 30); do
+    if systemctl --user is-active --quiet agentos-dashboard.service &&        curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+
+  systemctl --user is-active --quiet agentos-dashboard.service || {
+    systemctl --user --no-pager --full status agentos-dashboard.service >&2 || true
+    journalctl --user -u agentos-dashboard.service -n 80 --no-pager >&2 || true
+    return 4
+  }
+  curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null
+  echo "dashboard_fast_restart=PASS"
+}
+
 TMP=$(mktemp -d)
 STAGE="$TMP/dashboard-stage"
 BACKUP_ROUTE="$TMP/route.backup"
@@ -398,9 +417,16 @@ if ! grep -R -q '"method".*"path"\|"path".*"method"' "$STAGE/.next/server" 2>/de
 fi
 echo "realm_gateway_compiled_generation=PASS"
 
-# Cutover only after the staged generation is complete. Keep the unavailable
-# window bounded to the directory swap + process restart, never the build.
+# Finish slow housekeeping while the existing Dashboard is still serving.
+# The public port must not be held offline while PM2/legacy checks run.
+install_dashboard_service
+"$RETIRE_PM2_EXACT"
+echo "dashboard_precutover_housekeeping=PASS"
+
+# Cutover only after the staged generation and housekeeping are complete.
+# The unavailable window is limited to stop -> atomic artifact swap -> restart.
 CUTOVER_STARTED=1
+CUTOVER_STARTED_MS="$(date +%s%3N)"
 systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
 if [ -d "$DASH/.next" ]; then
   mv "$DASH/.next" "$BACKUP_NEXT"
@@ -412,7 +438,12 @@ cp "$STAGE_ROUTE" "$ROUTE"
 chmod 0664 "$ROUTE" || true
 echo "dashboard_generation_cutover=PASS"
 
-restart_dashboard
+fast_restart_dashboard
+CUTOVER_READY_MS="$(date +%s%3N)"
+CUTOVER_DOWNTIME_MS="$((CUTOVER_READY_MS - CUTOVER_STARTED_MS))"
+echo "dashboard_cutover_downtime_ms=$CUTOVER_DOWNTIME_MS"
+test "$CUTOVER_DOWNTIME_MS" -le 15000
+echo "dashboard_cutover_downtime_budget=PASS"
 CUTOVER_STARTED=0
 
 # Cut over the pinned ONE controller/runtime generation only after all staged
