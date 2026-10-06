@@ -116,6 +116,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://codex-cli",
         read_only=True,
     ),
+    "layoutlib.release.materialize": JobTypeSpec(
+        job_type="layoutlib.release.materialize",
+        capability="layoutlib.release.materialize",
+        authority="bounded-product-release-materialize",
+        executor_class="layoutlib-release-materializer",
+        project_id="layoutlib",
+        workload_ref="release://layoutlib/v0.7.9",
+        read_only=False,
+    ),
     "layoutlib.production.parity.inspect": JobTypeSpec(
         job_type="layoutlib.production.parity.inspect",
         capability="layoutlib.production.parity.inspect",

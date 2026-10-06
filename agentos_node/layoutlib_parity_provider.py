@@ -19,9 +19,32 @@ from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS, ExecutorJobProv
 JOB_TYPE = "layoutlib.production.parity.inspect"
 EXECUTOR_CLASS = "layoutlib-parity-inspector"
 PROVIDER_ID = "layoutlib-production-parity-v1"
-DEFAULT_REPO_ROOT = Path("/home/agentos-node/projects/layoutlib")
 RELEASE = "v0.7.9"
+MATERIALIZED_ROOT = Path("/home/ubuntu/agent-data/releases/layoutlib") / RELEASE
+CURRENT_FILE = MATERIALIZED_ROOT / "current.json"
 PUBLIC_BASE = "https://studio.milkcat.org/layout-lab/"
+
+
+def _resolve_materialized_root() -> Path:
+    if not CURRENT_FILE.is_file() or CURRENT_FILE.is_symlink():
+        return MATERIALIZED_ROOT / "__missing__"
+    try:
+        data = json.loads(CURRENT_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return MATERIALIZED_ROOT / "__invalid__"
+    commit = str(data.get("commit") or "")
+    snapshot = str(data.get("snapshot") or "")
+    if (
+        data.get("schema") != "layoutlib.release-materialization/v1"
+        or data.get("release") != RELEASE
+        or len(commit) != 40
+        or any(ch not in "0123456789abcdef" for ch in commit)
+    ):
+        return MATERIALIZED_ROOT / "__invalid__"
+    expected = MATERIALIZED_ROOT / commit
+    if snapshot != str(expected):
+        return MATERIALIZED_ROOT / "__invalid__"
+    return expected
 
 
 def _failure(classification: str, **extra: Any) -> dict[str, Any]:
@@ -50,14 +73,14 @@ def _fetch(url: str, *, timeout: float = 20.0) -> tuple[int, bytes]:
 def inspect_layoutlib_production_parity(
     request: Mapping[str, Any],
     *,
-    repo_root: str | Path = DEFAULT_REPO_ROOT,
+    repo_root: str | Path | None = None,
     public_base: str = PUBLIC_BASE,
 ) -> dict[str, Any]:
     spec = validate_executor_job(request)
     if spec.job_type != JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
         return _failure("LAYOUTLIB_PARITY_CONTRACT_MISMATCH")
 
-    root = Path(repo_root)
+    root = Path(repo_root) if repo_root is not None else _resolve_materialized_root()
     manifest_path = root / "release" / RELEASE / "manifest.json"
     if not manifest_path.is_file():
         return _failure("LAYOUTLIB_RELEASE_MANIFEST_MISSING", layoutlib_release=RELEASE)
