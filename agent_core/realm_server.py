@@ -486,6 +486,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'google_flow_artifact_root=',
                     'google_flow_runtime_preflight=',
                     'google_flow_executor_user=',
+                    'google_flow_runtime_error_class=',
+                    'google_flow_runtime_error_sha256=',
                 )
             elif action == bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE:
                 safe_prefixes = (
