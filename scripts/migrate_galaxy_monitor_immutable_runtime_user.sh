@@ -47,15 +47,18 @@ fi
 
 python3 - "$MONITOR_UNIT" "$MIO_RELAY_UNIT" "$RELEASE" <<'PY'
 from pathlib import Path
-import os, sys, tempfile
+import os, re, sys, tempfile
 release=sys.argv[3]
+legacy='/home/ubuntu/agentmanager'
+release_pattern=re.compile(r'/home/ubuntu/\.local/share/agentos/galaxy-experiment-monitor/releases/[0-9a-f]{40}')
 for raw in sys.argv[1:3]:
     path=Path(raw)
     text=path.read_text(encoding='utf-8')
-    old='/home/ubuntu/agentmanager'
-    if old not in text and release not in text:
+    known = legacy in text or release in text or bool(release_pattern.search(text))
+    if not known:
         raise SystemExit(f'unit runtime root not recognized: {path.name}')
-    text=text.replace(old, release)
+    text=text.replace(legacy, release)
+    text=release_pattern.sub(release, text)
     fd,tmp=tempfile.mkstemp(prefix=path.name+'.',dir=str(path.parent),text=True)
     try:
         with os.fdopen(fd,'w',encoding='utf-8') as h:

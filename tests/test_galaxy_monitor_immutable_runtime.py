@@ -46,6 +46,13 @@ class GalaxyMonitorImmutableRuntimeTests(unittest.TestCase):
         self.assertIn("galaxy_monitor_runtime_migration_receipt=PASS", workflow)
         self.assertNotIn("runs-on: [self-hosted, Linux, ARM64, oracle]", workflow)
 
+    def test_migration_helper_rolls_forward_only_canonical_release_roots(self):
+        migration = (ROOT / "scripts" / "migrate_galaxy_monitor_immutable_runtime_user.sh").read_text(encoding="utf-8")
+        self.assertIn("release_pattern=re.compile", migration)
+        self.assertIn("galaxy-experiment-monitor/releases/[0-9a-f]{40}", migration)
+        self.assertIn("release_pattern.sub(release, text)", migration)
+        self.assertIn("unit runtime root not recognized", migration)
+
     def test_migration_helper_does_not_trigger_social_cycle(self):
         migration = (ROOT / "scripts" / "migrate_galaxy_monitor_immutable_runtime_user.sh").read_text(encoding="utf-8")
         self.assertIn("galaxy_monitor_runtime_social_cycle_triggered=NO", migration)
