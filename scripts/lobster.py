@@ -401,15 +401,35 @@ def completion_begin(task_text: str) -> Optional[str]:
         if not item:
             raise KeyError("work_item_not_found")
         if item["status"] == "accepted":
-            WorkCompletion.transition(
+            item = WorkCompletion.transition(
                 COMPLETION_STATE, work_id=work_id, target="in_progress",
                 actor="role://lobster", next_action=item["next_action"],
             )
         elif item["status"] == "blocked":
-            WorkCompletion.transition(
+            item = WorkCompletion.transition(
                 COMPLETION_STATE, work_id=work_id, target="in_progress",
                 actor="role://lobster", next_action=item["next_action"],
             )
+
+        owner = str(item.get("owner") or "")
+        if owner != "role://lobster":
+            item = WorkCompletion.handoff(
+                COMPLETION_STATE,
+                work_id=work_id,
+                actor="role://completion.controller",
+                new_owner="role://lobster",
+                next_action=str(item["next_action"]),
+            )
+        else:
+            item = WorkCompletion.heartbeat(
+                COMPLETION_STATE,
+                work_id=work_id,
+                actor="role://lobster",
+            )
+        logger.info(
+            f"🧭 [COMPLETION] claimed {work_id} owner={item.get('owner')} "
+            f"generation={item.get('owner_generation')}"
+        )
         return work_id
     except Exception as exc:
         logger.error(f"completion begin failed for {work_id}: {exc}")
