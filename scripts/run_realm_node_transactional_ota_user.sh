@@ -58,6 +58,9 @@ import os
 from agent_core.runtime_ota_acceptance import accept_candidate
 r=accept_candidate(os.environ["NODE_ID"],os.environ["CANDIDATE"],timeout_seconds=120)
 print("node_ota_controller_acceptance="+("PASS" if r.get("ok") else "FAIL"))
+print("node_ota_acceptance_stage="+str(r.get("stage") or "unknown"))
+print("node_ota_acceptance_reason="+str(r.get("reason") or "none"))
+print("node_ota_acceptance_receipt_ok="+str(r.get("receipt_ok") if "receipt_ok" in r else "none"))
 if not r.get("ok"):
     raise SystemExit(10)
 PY
