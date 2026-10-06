@@ -8,7 +8,7 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 4
     env:
       DEPLOY_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -18,18 +18,26 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Verify orphan persona temp clone
+      - name: Inspect targeted disk consumers
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          TARGET=/tmp/persona-social-data-iEskOn
-          echo '=== TARGET ==='
-          test -d "$TARGET" && du -sh "$TARGET" || true
-          echo '=== PROCESS REFERENCES ==='
-          ps -eo pid,ppid,etime,args | grep -F "$TARGET" | grep -v grep || true
-          echo '=== OPEN FILES ==='
-          if command -v lsof >/dev/null; then lsof +D "$TARGET" 2>/dev/null | head -n 50 || true; fi
           echo '=== DF ==='
           df -h /
+          echo '=== TARGETED HOME SIZES ==='
+          for p in             "$HOME/agent-data" "$HOME/agentmanager" "$HOME/zeus-writer"             "$HOME/.cache" "$HOME/.local" "$HOME/.npm" "$HOME/.config"             "$HOME/actions-runner" "$HOME/_work"; do
+            [ -e "$p" ] || continue
+            du -sh "$p" 2>/dev/null || true
+          done
+          echo '=== VAR TARGETS ==='
+          for p in /var/log /var/cache /var/lib/docker /var/lib/containerd /var/lib/snapd; do
+            [ -e "$p" ] || continue
+            du -sh "$p" 2>/dev/null || true
+          done
+          echo '=== LARGE TMP ==='
+          find /tmp -xdev -maxdepth 1 -mindepth 1 -type d -printf '%p\n' 2>/dev/null | while read -r p; do du -sh "$p" 2>/dev/null || true; done | sort -h | tail -n 30
+          echo '=== JOURNAL ==='
+          journalctl --disk-usage 2>&1 || true
+          journalctl --user --disk-usage 2>&1 || true
           REMOTE
