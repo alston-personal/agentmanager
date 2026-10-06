@@ -66,6 +66,23 @@ jobs:
           git config --global --get user.name 2>/dev/null || true
           git config --global --get user.email 2>/dev/null || true
 
+          echo '=== HEARTBEAT EXECUTABLE CONTENT ==='
+          file "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
+          sed -n '1,180p' "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
+
+          echo '=== MONITOR SCHEDULER UNIT ==='
+          systemctl --user cat agentos-monitor-scheduler.service agentos-monitor-scheduler.timer 2>&1 || true
+
+          echo '=== MONITOR SCHEDULER SOURCES ==='
+          for p in "$HOME/.local/bin/agentos-monitor-scheduler" "$HOME/.local/lib/agentos/monitor_scheduler.py"; do
+            [ -e "$p" ] || continue
+            echo "--- $p"
+            sed -n '1,260p' "$p" 2>&1 || true
+          done
+
+          echo '=== WHO REFERENCES HEARTBEAT EXECUTABLE ==='
+          grep -RInsE 'agentos-persona-pdca-heartbeat|advance active persona heartbeats' "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/.config/systemd/user" 2>/dev/null | head -n 700 || true
+
           echo '=== KNOWN PDCA UNITS ==='
           systemctl --user --no-pager --full status             agentos-persona-pdca-heartbeat.timer             agentos-persona-pdca-heartbeat.service             agentos-persona-social-actions.timer             agentos-persona-social-actions.service 2>&1 || true
 
