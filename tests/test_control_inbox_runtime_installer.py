@@ -42,7 +42,8 @@ def test_bootstrap_reconcile_is_fixed_exact_generation_action():
     assert 'ACTION_RECONCILE_CONTROL_INBOX,' in text
     assert 'ACTION_RECONCILE_CONTROL_INBOX,' in text.split('exact_actions = {', 1)[1]
     section = text.split('if action == ACTION_RECONCILE_CONTROL_INBOX:', 1)[1].split('if action == ACTION_DEPLOY_REALM_GATEWAY:', 1)[0]
-    assert '"scripts/install_control_inbox_bridge_user.sh"' in section
+    assert '"scripts/reconcile_control_inbox_runtime_user.sh"' in section
+    assert '"scripts/install_control_inbox_bridge_user.sh"' not in section
     assert 'env_extra={"AGENTOS_REF": "core/integration"}' in section
     assert 'source_commit=source_commit' in section
     assert 'arbitrary_shell' in text
