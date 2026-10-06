@@ -5,6 +5,7 @@ import grp
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import subprocess
