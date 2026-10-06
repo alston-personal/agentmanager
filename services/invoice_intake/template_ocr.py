@@ -228,6 +228,15 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
     if len(ids) == 1:
         fields["seller_tax_id"] = ids[0]
         confidence["seller_tax_id"] = 0.92
+    elif doc_type == "three_part_uniform_invoice":
+        # If seller anchors were OCR'd poorly, accept a whole-page tax id only
+        # when it is the sole valid candidate. Multiple ids remain ambiguous
+        # because one may belong to the buyer.
+        page_ids = [v for v in tax_id_candidates(text) if valid_tax_id(v)]
+        page_ids = list(dict.fromkeys(page_ids))
+        if len(page_ids) == 1:
+            fields["seller_tax_id"] = page_ids[0]
+            confidence["seller_tax_id"] = 0.86
 
     visual_amounts = False
     if doc_type == "three_part_uniform_invoice":
