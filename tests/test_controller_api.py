@@ -134,7 +134,7 @@ def test_typed_desktop_actions_map_to_bounded_node_capabilities(tmp_path: Path) 
     assert task['text'] == 'hello Gemini'
 
 
-@pytest.mark.parametrize('request', [
+@pytest.mark.parametrize('case', [
     {'action': 'desktop.window.stage', 'title_contains': 'x', 'zone': 'diagonal'},
     {'action': 'desktop.window.stage', 'title_contains': '', 'zone': 'full'},
     {'action': 'desktop.pointer.click', 'x': -1, 'y': 5},
@@ -142,11 +142,11 @@ def test_typed_desktop_actions_map_to_bounded_node_capabilities(tmp_path: Path) 
     {'action': 'desktop.text.insert', 'text': ''},
     {'action': 'desktop.text.insert', 'text': 'x' * 1001},
 ])
-def test_typed_desktop_actions_reject_out_of_contract_payloads(tmp_path: Path, request: dict) -> None:
+def test_typed_desktop_actions_reject_out_of_contract_payloads(tmp_path: Path, case: dict) -> None:
     fabric, _ = _online_fabric(tmp_path)
     controller = ControllerService(fabric)
     with pytest.raises(ValueError):
-        controller.dispatch('node-a', request)
+        controller.dispatch('node-a', case)
 
 
 def test_runtime_convergence_constructs_fixed_shell_and_preserves_watchdog(tmp_path: Path) -> None:
