@@ -34,19 +34,68 @@ with sync_playwright() as p:
         page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
         page.wait_for_timeout(5000)
     print("google_flow_recover_stage=FLOW_LOADED",flush=True)
+    print("google_flow_recover_url="+str(page.url or "")[:500])
+
+    # Never treat public landing/marketing demo reels as generated project output.
+    # First, try to enter the authenticated Flow workspace without creating or
+    # generating anything.
+    try:
+        controls=(page.get_by_role("button",name="Create with Google Flow")
+                  .or_(page.get_by_role("button",name="Try in Google Flow")))
+        if controls.count():
+            controls.first.click(timeout=3000)
+            page.wait_for_timeout(5000)
+            print("google_flow_recover_stage=WORKSPACE_ENTRY")
+            print("google_flow_recover_url="+str(page.url or "")[:500])
+    except Exception:
+        pass
+
+    # Collect visible videos with bounded surrounding text so recovery can
+    # distinguish a real project result from Flow's generic demo media.
+    candidates_meta=[]
     vids=page.locator("video")
-    video=None
     for i in range(min(vids.count(),20)):
         item=vids.nth(i)
         try:
-            if item.is_visible(timeout=300):
-                video=item
-                break
+            if not item.is_visible(timeout=300):
+                continue
+            context=""
+            try:
+                context=str(item.evaluate("""el => {
+                  let n=el;
+                  for(let i=0;i<5 && n;i++,n=n.parentElement){
+                    const t=(n.innerText||'').trim();
+                    if(t) return t.slice(0,500);
+                  }
+                  return '';
+                }""") or "")
+            except Exception:
+                pass
+            candidates_meta.append({"index":i,"context":context[:500]})
         except Exception:
             pass
-    if video is None:
-        print("google_flow_recover=NO_VISIBLE_VIDEO")
+
+    if candidates_meta:
+        print("google_flow_recover_video_candidates="+json.dumps(candidates_meta,ensure_ascii=False,separators=(",",":")))
+
+    # Require project/workspace evidence. Generic Flow landing reels are invalid.
+    page_text=""
+    try:
+        page_text=(page.locator("body").inner_text(timeout=2000) or "").lower()
+    except Exception:
+        pass
+    project_markers=("rain exit","rain-exit","taipei","metro","umbrella","雨夜","捷運")
+    matching=[]
+    for meta in candidates_meta:
+        low=meta["context"].lower()
+        if any(m in low for m in project_markers):
+            matching.append(meta["index"])
+
+    if not matching:
+        print("google_flow_recover=NO_MATCHING_PROJECT_VIDEO")
         raise SystemExit(0)
+
+    video=vids.nth(matching[0])
     print("google_flow_recover_stage=VIDEO_VISIBLE",flush=True)
     src=str(video.get_attribute("src") or "")
     try:
