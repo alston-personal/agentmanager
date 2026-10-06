@@ -78,7 +78,7 @@ jobs:
             "AgentOS Thin Client Watchdog User",
             "Task Scheduler ACL blocks non-admin repair; switching to per-user hidden runtime.",
             "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-            "agentos-user-watchdog.ps1",
+            "user_runtime_watchdog.ps1",
             "Background service: Running (headless, per-user)",
             "Independent watchdog: Running (hidden, per-user 60s cadence)",
             "Protected legacy watchdog ACL detected; using user-owned fallback",
