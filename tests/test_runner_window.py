@@ -408,6 +408,21 @@ def test_github_actions_dispatch_is_bounded_public_intent():
         )
 
 
+
+def test_threads_dm_read_public_projection_keeps_identity_without_message_content():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    for marker in (
+        "threads_web_dm_identity=",
+        "threads_web_dm_account=",
+        "threads_web_dm_read=",
+    ):
+        assert marker in text
+    block = text.split("bootstrap_control.ACTION_READ_OURSONG_THREADS_WEB_DM", 1)[1]
+    block = block.split("elif action == bootstrap_control.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR", 1)[0]
+    assert "message_id=" not in block
+    assert "conversation_id=" not in block
+    assert "actor_username=" not in block
+
 def test_oursong_dm_read_is_bounded_and_separate_from_mio():
     intent, params = resolve_intent(
         "persona.social.dm",
