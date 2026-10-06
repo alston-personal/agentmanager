@@ -396,8 +396,8 @@ def stamp_assist_with_budget(
     return result
 
 
-def deep_tax_id_from_region(
-    image: Image.Image,
+def deep_tax_id_from_regions(
+    images: list[Image.Image],
     *,
     deadline: float,
 ) -> tuple[str | None, list[str]]:
@@ -407,20 +407,21 @@ def deep_tax_id_from_region(
     checks the caller's wall-clock budget between attempts.
     """
     texts: list[str] = []
-    for variant in stamp_variants(image):
-        for psm in (6, 11, 12):
-            if time.perf_counter() >= deadline:
-                return None, texts
-            text = ocr_image(variant, psm=psm, whitelist="0123456789", lang="eng")
-            if text.strip():
-                texts.append(text)
-            candidates: list[str] = []
-            for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", text)):
-                if candidate not in candidates:
-                    candidates.append(candidate)
-            valid = [value for value in candidates if valid_tax_id(value)]
-            if valid:
-                return valid[0], texts
+    for image in images:
+        for variant in stamp_variants(image):
+            for psm in (6, 11, 12):
+                if time.perf_counter() >= deadline:
+                    return None, texts
+                text = ocr_image(variant, psm=psm, whitelist="0123456789", lang="eng")
+                if text.strip():
+                    texts.append(text)
+                candidates: list[str] = []
+                for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", text)):
+                    if candidate not in candidates:
+                        candidates.append(candidate)
+                valid = [value for value in candidates if valid_tax_id(value)]
+                if valid:
+                    return valid[0], texts
     return None, texts
 
 
@@ -510,8 +511,11 @@ def deep_fallback_enrich(
     if not fields.get("seller_tax_id") and within_budget():
         # Deep fallback owns this fixed seller/stamp crop. It progressively
         # expands OCR effort and stops immediately once a valid tax id appears.
-        stamp_crop = crop_rel(image, (0.66, 0.58, 0.96, 0.96))
-        chosen, texts = deep_tax_id_from_region(stamp_crop, deadline=deadline)
+        seller_regions = [
+            crop_rel(image, (0.45, 0.30, 1.00, 1.00)),
+            crop_rel(image, (0.60, 0.38, 0.98, 0.96)),
+        ]
+        chosen, texts = deep_tax_id_from_regions(seller_regions, deadline=deadline)
         if chosen:
             fields["seller_tax_id"] = chosen
             confidence["seller_tax_id"] = max(
