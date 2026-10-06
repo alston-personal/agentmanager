@@ -71,6 +71,9 @@ jobs:
             '-WindowStyle Hidden',
             'agentos-thin-client-hidden.ps1',
             "AgentOS Thin Client task still uses visible cmd.exe",
+            "Refusing to start visible cmd.exe Thin Client task after repair",
+            "Refusing to start Thin Client task unless its registered action is hidden PowerShell",
+            "Refusing to start watchdog unless its registered action is hidden PowerShell",
             "AgentOS Thin Client Watchdog",
             "Independent watchdog: Installed (60s cadence)",
             "thin_client_watchdog.ps1",
@@ -83,6 +86,7 @@ jobs:
           }
 
           foreach($needle in @(
+            'agentos_node/semantic_preview.py',
             'agentos_node/session_bridge.py',
             'agentos_node/agent_surfaces.py',
             'scripts/windows/thin_client_watchdog.ps1',
