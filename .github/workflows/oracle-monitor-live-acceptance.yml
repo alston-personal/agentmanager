@@ -44,23 +44,46 @@ jobs:
           mids={r['monitor_id'] for r in db.execute('select monitor_id from monitors')}
           required={'google-ai-pro-plan-watch','chatgpt-plus-plan-watch','vopc5750-health','agentos-scheduler-health','one-relay-health','threads-auth-health'}
           assert required <= mids, required-mids
-          receipts=list(db.execute('select receipt_json from receipts order by created_at desc limit 100'))
-          assert receipts, 'no monitor receipts'
-          decoded=[json.loads(r['receipt_json']) for r in receipts]
-          assert all(not (r.get('executor_failure') and r.get('condition_triggered')) for r in decoded)
-          one_caps={'node.realm.inspect','agentos.scheduler.status','agentos.relay.status','threads.dm.login.probe'}
-          one_receipts=[r for r in decoded if (r.get('provenance') or {}).get('capability') in one_caps]
-          assert one_receipts, 'no ONE-backed monitor receipts'
-          assert any(r.get('ok') is True for r in one_receipts), one_receipts
-          print('monitor_receipt_count='+str(len(receipts)))
-          print('one_backed_receipt_success=PASS')
-          print('executor_failure_condition_isolation=PASS')
           print('monitor_durable_registration=PASS')
           PY
           ENV=$HOME/.config/agentos/controller.env
           test -s "$ENV"
           set -a; . "$ENV"; set +a
           test -n "${AGENTOS_CONTROLLER_TOKEN:-}"
+          RUN=/tmp/monitor-one-run.json
+          CODE=$(curl -sS -o "$RUN" -w '%{http_code}' --max-time 90 \
+            -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"schema":"agentos.monitor-command/v1","method":"monitor.run","params":{"monitor_id":"vopc5750-health"}}' \
+            http://127.0.0.1:8780/v1/monitor || true)
+          test "$CODE" = 200
+          python3 - "$RUN" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d.get('ok') is True,d
+          assert d.get('method')=='monitor.run',d
+          r=d.get('result') or {}
+          assert r.get('schema')=='agentos.monitor-receipt/v1',r
+          assert r.get('ok') is True,r
+          assert r.get('condition_triggered') in (True,False),r
+          p=r.get('provenance') or {}
+          assert p.get('capability')=='node.realm',p
+          assert p.get('operation')=='inspect',p
+          assert p.get('one_request_id'),p
+          print('one_backed_monitor_run=PASS')
+          print('monitor_run_receipt='+str(r.get('receipt_id')))
+          PY
+          python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          db=sqlite3.connect(sys.argv[1]); db.row_factory=sqlite3.Row
+          decoded=[json.loads(r['receipt_json']) for r in db.execute('select receipt_json from receipts order by created_at desc limit 100')]
+          assert decoded, 'no monitor receipts'
+          assert all(not (r.get('executor_failure') and r.get('condition_triggered')) for r in decoded)
+          assert any(r.get('ok') is True and (r.get('provenance') or {}).get('capability')=='node.realm' for r in decoded),decoded
+          print('monitor_receipt_count='+str(len(decoded)))
+          print('one_backed_receipt_success=PASS')
+          print('executor_failure_condition_isolation=PASS')
+          PY
           BODY=/tmp/monitor-one-list.json
           CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 10             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"             -H 'Content-Type: application/json'             -d '{"schema":"agentos.monitor-command/v1","method":"monitor.list","params":{}}'             http://127.0.0.1:8780/v1/monitor || true)
           test "$CODE" = 200
