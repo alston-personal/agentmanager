@@ -24,7 +24,8 @@ def test_dedupe_and_resolve(tmp_path):
     assert len(s.notifications())==1
     good=DispatchResult(True,{"stdout_lines":["realm_node_status=online"]},{"one_request_id":"r2"})
     s.record("vopc",observed=good.value,dispatch=good,triggered=False,summary=None,severity="high",dedupe_key=None,cooldown_seconds=1800)
-    n=s.notifications()[0]; assert n["resolved_at"] is not None
+    assert s.notifications()==[]
+    n=s.notifications(unread_only=False)[0]; assert n["resolved_at"] is not None
 
 def test_official_baseline_does_not_notify_first_run(tmp_path):
     sp={"schema":"agentos.monitor/v1","monitor":{"id":"plan"},"goal":{"description":"plan"},
