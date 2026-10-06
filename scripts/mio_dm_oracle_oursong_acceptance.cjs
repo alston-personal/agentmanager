@@ -30,6 +30,7 @@ async function connectTarget(wsurl) {
   });
   let seq=0;
   const pending=new Map();
+  const listeners=new Set();
   ws.addEventListener('message', async ev=>{
     let raw=ev.data;
     try{
@@ -42,6 +43,8 @@ async function connectTarget(wsurl) {
       const msg=JSON.parse(raw);
       if(msg.id && pending.has(msg.id)){
         const p=pending.get(msg.id); pending.delete(msg.id); p.resolve(msg);
+      }else{
+        for(const fn of listeners){ try{ fn(msg); }catch{} }
       }
     }catch{}
   });
@@ -53,7 +56,7 @@ async function connectTarget(wsurl) {
       const msg={id,method,params}; if(sessionId) msg.sessionId=sessionId; ws.send(JSON.stringify(msg));
     });
   }
-  return {ws,cmd};
+  return {ws,cmd,onEvent:(fn)=>listeners.add(fn)};
 }
 
 async function browserSession(){
@@ -64,10 +67,39 @@ async function browserSession(){
   const targetId=String((((created||{}).result||{}).targetId)||'');
   if(!targetId) throw new Error('MISSING_TARGET_ID');
   await browser.cmd('Target.activateTarget',{targetId});
-  const attached=await browser.cmd('Target.attachToTarget',{targetId,flatten:true});
+  const attached=await browser.cmd('Target.attachToTarget',{targetId,flatten:false});
   const sessionId=String((((attached||{}).result||{}).sessionId)||'');
   if(!sessionId) throw new Error('MISSING_SESSION_ID');
-  const cmd=(method,params={})=>browser.cmd(method,params,sessionId);
+  let innerSeq=0;
+  const innerPending=new Map();
+  browser.onEvent(msg=>{
+    if(msg.method!=='Target.receivedMessageFromTarget') return;
+    const p=msg.params||{};
+    if(String(p.sessionId||'')!==sessionId) return;
+    let inner;
+    try{ inner=JSON.parse(String(p.message||'')); }catch{ return; }
+    if(inner.id && innerPending.has(inner.id)){
+      const row=innerPending.get(inner.id);
+      innerPending.delete(inner.id);
+      row.resolve(inner);
+    }
+  });
+  const cmd=(method,params={})=>new Promise((resolve,reject)=>{
+    const id=++innerSeq;
+    const timer=setTimeout(()=>{
+      innerPending.delete(id);
+      reject(new Error('CDP_TIMEOUT:'+method));
+    },20000);
+    innerPending.set(id,{resolve:(v)=>{clearTimeout(timer);resolve(v);}});
+    browser.cmd('Target.sendMessageToTarget',{
+      sessionId,
+      message:JSON.stringify({id,method,params}),
+    }).catch(err=>{
+      clearTimeout(timer);
+      innerPending.delete(id);
+      reject(err);
+    });
+  });
   return {browser,cmd};
 }
 
