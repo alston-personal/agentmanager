@@ -1082,6 +1082,7 @@ def extract_invoice(
     return Extraction(merged_fields, merged_confidence, {
         'engine': 'legacy+gemini-whole-image-v1', 'image_sha256': result['image_sha256'],
         'vision': result, 'comparison': comparison, 'conflicts': conflicts,
+        'vision_route': legacy.raw.get('vision_route') or {},
         'legacy': {'fields': legacy.fields, 'confidence': legacy.confidence,
                    'raw': {k: v for k, v in legacy.raw.items() if k not in {'vision', 'comparison'}}},
         'field_sources': field_sources,
