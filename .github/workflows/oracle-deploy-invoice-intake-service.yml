@@ -287,6 +287,18 @@ jobs:
           journalctl --user -u invoice-intake.service --since '-15 minutes' --no-pager \
             | grep 'invoice_stale_recovery=' \
             | tail -n 5 || true
+          export PYTHONPATH=/home/ubuntu/invoice-intake-service/app
+          /home/ubuntu/invoice-intake-service/.venv/bin/python - <<'PY'
+          from pathlib import Path
+          from services.invoice_intake.invoice_core import InvoiceStore
+          store = InvoiceStore(Path('/home/ubuntu/agent-data/invoice-intake'), data_scope='production')
+          with store.connect() as db:
+              processing = db.execute(
+                  "SELECT COUNT(*) FROM invoices WHERE status='processing' AND deleted_at IS NULL"
+              ).fetchone()[0]
+          stale = len(store.stale_processing_ids(limit=500))
+          print(f'invoice_processing_health=processing:{processing} stale:{stale}')
+          PY
           echo 'invoice_intake_service=PASS'
           REMOTE
 
