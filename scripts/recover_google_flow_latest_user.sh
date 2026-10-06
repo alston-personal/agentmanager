@@ -155,13 +155,16 @@ with sync_playwright() as p:
             for i in range(min(edits.count(),20)):
                 item=edits.nth(i)
                 meta=item.evaluate("""el => {
-                  let n=el;
-                  for(let depth=0; depth<8 && n; depth++,n=n.parentElement){
-                    const text=(n.innerText||'').trim().replace(/\s+/g,' ').slice(0,220);
+                  let n=el.parentElement;
+                  for(let depth=1; depth<10 && n; depth++,n=n.parentElement){
+                    const text=(n.innerText||'').trim().replace(/\s+/g,' ').slice(0,260);
                     const directHref=n.getAttribute && n.getAttribute('href');
                     const a=(n.matches && n.matches('a[href]')) ? n : (n.querySelector ? n.querySelector('a[href]') : null);
                     const href=directHref || (a ? a.getAttribute('href') : '') || '';
-                    if((href || text) && text && !text.includes('新增專案') && !text.includes('New project')){
+                    const norm=text.toLowerCase();
+                    if((href || text.length>4) &&
+                       norm!=='edit' && norm!=='delete' &&
+                       !text.includes('新增專案') && !text.includes('New project')){
                       return {depth,text,href};
                     }
                   }
