@@ -2,6 +2,10 @@ name: Vision Studio - Rain Exit
 
 on:
   workflow_dispatch:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/vision-studio-rain-exit.json'
 
 permissions:
   contents: read
@@ -15,6 +19,23 @@ jobs:
       AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate approved production command
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          p=json.load(open('.agentos/commands/vision-studio-rain-exit.json',encoding='utf-8'))
+          assert p == {
+            "schema":"agentos.vision-studio-production-command/v1",
+            "project_id":"rain-exit-v001",
+            "approved":True,
+            "nonce":"rain-exit-approved-20261006"
+          }
+          print("vision_studio_production_command=APPROVED")
+          PY
 
       - name: Mint GitHub OIDC Runner Window credential
         shell: bash
