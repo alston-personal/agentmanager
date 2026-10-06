@@ -396,6 +396,34 @@ def stamp_assist_with_budget(
     return result
 
 
+def deep_tax_id_from_region(
+    image: Image.Image,
+    *,
+    deadline: float,
+) -> tuple[str | None, list[str]]:
+    """Progressively OCR a seller/stamp region until a valid tax id is found.
+
+    This is baseline OCR, not stamp recognition. It owns its fixed crop and
+    checks the caller's wall-clock budget between attempts.
+    """
+    texts: list[str] = []
+    for variant in stamp_variants(image):
+        for psm in (6, 11, 12):
+            if time.perf_counter() >= deadline:
+                return None, texts
+            text = ocr_image(variant, psm=psm, whitelist="0123456789", lang="eng")
+            if text.strip():
+                texts.append(text)
+            candidates: list[str] = []
+            for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", text)):
+                if candidate not in candidates:
+                    candidates.append(candidate)
+            valid = [value for value in candidates if valid_tax_id(value)]
+            if valid:
+                return valid[0], texts
+    return None, texts
+
+
 def deep_fallback_enrich(
     image_bytes: bytes,
     base: "Extraction",
@@ -480,24 +508,18 @@ def deep_fallback_enrich(
         deep["fallback_used"].append("amounts")
 
     if not fields.get("seller_tax_id") and within_budget():
-        # Deep fallback is deliberately richer than the fast path but still
-        # independent of stamp detection/matching.
+        # Deep fallback owns this fixed seller/stamp crop. It progressively
+        # expands OCR effort and stops immediately once a valid tax id appears.
         stamp_crop = crop_rel(image, (0.66, 0.58, 0.96, 0.96))
-        texts = ocr_stamp_text(stamp_crop, digits_only=True, fast=True)
-        tax_ids: list[str] = []
-        for text_value in texts:
-            for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", text_value)):
-                if candidate not in tax_ids:
-                    tax_ids.append(candidate)
-        valid = [x for x in tax_ids if valid_tax_id(x)]
-        chosen = (valid or tax_ids or [None])[0]
+        chosen, texts = deep_tax_id_from_region(stamp_crop, deadline=deadline)
         if chosen:
             fields["seller_tax_id"] = chosen
             confidence["seller_tax_id"] = max(
                 confidence.get("seller_tax_id", 0.0),
-                0.88 if chosen in valid else 0.68,
+                0.88,
             )
-        deep["fallback_used"].append("seller_tax_id")
+        deep["seller_tax_id_texts"] = texts
+        deep["fallback_used"].append("seller_tax_id_progressive")
 
     if not fields.get("vendor_name") and within_budget():
         rapid_text = ((raw.get("template") or {}).get("raw_text") or "")
