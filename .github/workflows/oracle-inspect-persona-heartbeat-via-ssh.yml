@@ -83,6 +83,19 @@ jobs:
           echo '=== WHO REFERENCES HEARTBEAT EXECUTABLE ==='
           grep -RInsE 'agentos-persona-pdca-heartbeat|advance active persona heartbeats' "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/.config/systemd/user" 2>/dev/null | head -n 700 || true
 
+          echo '=== HEARTBEAT FILE METADATA ==='
+          stat "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
+          sha256sum "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
+
+          echo '=== SEARCH ORACLE SOURCE TREES FOR LEGACY HEARTBEAT ==='
+          grep -RInsE 'AGENTOS_PERSONA_DATA_ROOT|agentos.persona-pdca-heartbeat-receipt/v1|NO_ACTIVE_PERSONAS|advance active persona heartbeats' \
+            "$HOME/agentmanager" "$HOME/.local/share/agentos" 2>/dev/null | head -n 1000 || true
+
+          echo '=== RECENT FILES THAT COULD INSTALL HEARTBEAT ==='
+          find "$HOME/agentmanager" "$HOME/.local/share/agentos" -type f \
+            \( -iname '*persona*heartbeat*' -o -iname '*pdca*install*' -o -iname '*persona*install*' \) \
+            -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort -r | head -n 300 || true
+
           echo '=== KNOWN PDCA UNITS ==='
           systemctl --user --no-pager --full status             agentos-persona-pdca-heartbeat.timer             agentos-persona-pdca-heartbeat.service             agentos-persona-social-actions.timer             agentos-persona-social-actions.service 2>&1 || true
 
