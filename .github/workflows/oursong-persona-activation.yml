@@ -168,3 +168,43 @@ jobs:
             sleep 3
           done
           test "$ok" = 1
+
+      - name: Read-only Oursong Threads DM identity acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oursong-dm-read.txt"
+          AGENTOS_DISPATCH_WAIT_SECONDS=120 \
+            bash scripts/agentos_dispatch.sh \
+              persona.social.dm oursong.read "$GITHUB_SHA" \
+              | tee "$OUT"
+          grep -q 'runner_window_dispatch=PASS' "$OUT"
+          python3 - "$OUT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          path,expected=sys.argv[1:3]
+          completed=None
+          for raw in open(path,encoding='utf-8'):
+              raw=raw.strip()
+              if not raw.startswith('{'):
+                  continue
+              try:
+                  row=json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              if row.get('state')=='completed' and isinstance(row.get('receipt'),dict):
+                  completed=row
+          assert completed is not None, 'completed dispatch receipt missing'
+          receipt=completed['receipt']
+          assert receipt.get('ok') is True, receipt
+          assert receipt.get('source_commit')==expected, receipt
+          evidence=receipt.get('evidence') or []
+          pairs={}
+          for line in evidence:
+              if '=' in line:
+                  k,v=line.split('=',1); pairs[k]=v
+          assert pairs.get('threads_web_dm_identity')=='PASS', pairs
+          assert pairs.get('threads_web_dm_account')=='oursong_alstonhuang', pairs
+          assert pairs.get('threads_web_dm_read')=='PASS', pairs
+          print('oursong_dm_identity_acceptance=PASS')
+          print('oursong_dm_account='+pairs['threads_web_dm_account'])
+          PY
