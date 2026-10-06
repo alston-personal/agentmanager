@@ -19,6 +19,7 @@ from PIL import Image, ImageEnhance, ImageOps
 from services.invoice_intake.template_ocr import extract_template_invoice, valid_tax_id, seller_region_text
 from services.invoice_intake import vision_ocr
 from capabilities.stamp_recognition.runtime import StampStore, detect_stamp_regions, fingerprint_stamp
+from capabilities.ocr_memory import OCRMemoryStore, context_from_extraction
 
 ESSENTIAL_FIELDS = ("invoice_number", "invoice_date", "amount_before_tax", "total_amount")
 
@@ -297,7 +298,12 @@ class Extraction:
     review_required: bool
 
 
-def extract_legacy_invoice(image_bytes: bytes, *, stamp_store: StampStore | None = None) -> Extraction:
+def extract_legacy_invoice(
+    image_bytes: bytes,
+    *,
+    stamp_store: StampStore | None = None,
+    ocr_memory: OCRMemoryStore | None = None,
+) -> Extraction:
     """Template-first production extraction with legacy Tesseract fallback.
 
     Known Taiwan invoice/receipt layouts use RapidOCR + semantic validation first.
@@ -453,6 +459,35 @@ def extract_legacy_invoice(image_bytes: bytes, *, stamp_store: StampStore | None
         raw["vendor_texts"] = vendor_texts
         raw["fallback_used"].append("vendor_name_stamp_aware")
 
+    # Human-confirmed correction memory runs after ordinary OCR/stamp extraction
+    # and before review classification. Strong context may correct an exact repeated
+    # OCR error; weaker context is exposed only as a suggestion.
+    raw["ocr_memory"] = {"applied": [], "suggestions": []}
+    if ocr_memory is not None:
+        memory_context = context_from_extraction(raw, fields)
+        for key, observed in list(fields.items()):
+            if observed in (None, ""):
+                continue
+            decision = ocr_memory.resolve(
+                field_name=key,
+                observed_value=observed,
+                context=memory_context,
+            )
+            evidence = {
+                "field": key,
+                "observed": observed,
+                "corrected": decision.corrected_value,
+                "score": decision.score,
+                "confirmed_count": decision.confirmed_count,
+                "reason": decision.reason,
+            }
+            if decision.decision == "auto_correct" and decision.corrected_value not in (None, ""):
+                fields[key] = decision.corrected_value
+                confidence[key] = max(confidence.get(key, 0.0), 0.97)
+                raw["ocr_memory"]["applied"].append(evidence)
+            elif decision.decision == "suggest":
+                raw["ocr_memory"]["suggestions"].append(evidence)
+
     # A mathematically derived 5% split is useful for assistance but is not enough
     # by itself for unattended posting; keep that case in review.
     derived_amounts = bool(
@@ -467,16 +502,19 @@ def extract_legacy_invoice(image_bytes: bytes, *, stamp_store: StampStore | None
         derived_amounts = not bool(rapid.get("visual_amounts"))
 
     stamp_matched = (raw.get("stamp_recognition") or {}).get("status") == "MATCHED_CONFIRMED"
+    memory_applied = {x["field"] for x in (raw.get("ocr_memory") or {}).get("applied", [])}
     raw["field_sources"] = {
-        "invoice_number": "template_or_printed",
-        "invoice_date": "template_or_handwritten",
-        "vendor_name": ("stamp_registry" if stamp_matched and fields["vendor_name"] else
+        "invoice_number": ("ocr_memory" if "invoice_number" in memory_applied else "template_or_printed"),
+        "invoice_date": ("ocr_memory" if "invoice_date" in memory_applied else "template_or_handwritten"),
+        "vendor_name": ("ocr_memory" if "vendor_name" in memory_applied else
+                        "stamp_registry" if stamp_matched and fields["vendor_name"] else
                         "stamp_or_printed" if fields["vendor_name"] else None),
-        "seller_tax_id": ("stamp_registry" if stamp_matched and fields["seller_tax_id"] else
+        "seller_tax_id": ("ocr_memory" if "seller_tax_id" in memory_applied else
+                          "stamp_registry" if stamp_matched and fields["seller_tax_id"] else
                           "stamp_or_printed" if fields["seller_tax_id"] else None),
-        "amount_before_tax": "printed_or_handwritten_amount",
-        "tax_amount": "printed_or_handwritten_amount",
-        "total_amount": "printed_or_handwritten_amount",
+        "amount_before_tax": ("ocr_memory" if "amount_before_tax" in memory_applied else "printed_or_handwritten_amount"),
+        "tax_amount": ("ocr_memory" if "tax_amount" in memory_applied else "printed_or_handwritten_amount"),
+        "total_amount": ("ocr_memory" if "total_amount" in memory_applied else "printed_or_handwritten_amount"),
     }
 
     review = classify_review(
@@ -485,6 +523,17 @@ def extract_legacy_invoice(image_bytes: bytes, *, stamp_store: StampStore | None
         derived_amounts=derived_amounts,
         stamp_recognition=raw.get("stamp_recognition") or {},
     )
+    for suggestion in (raw.get("ocr_memory") or {}).get("suggestions", []):
+        field = suggestion.get("field")
+        if field and field not in review["required_fields"] and field not in review["confirm_fields"]:
+            review["confirm_fields"].append(field)
+            review["reasons"].append(f"confirm:ocr_memory:{field}")
+    if review["required_fields"]:
+        review["status"] = "needs_review"
+    elif review["confirm_fields"]:
+        review["status"] = "quick_confirm"
+    else:
+        review["status"] = "extracted"
     raw["review"] = review
     return Extraction(
         fields=fields,
@@ -494,7 +543,12 @@ def extract_legacy_invoice(image_bytes: bytes, *, stamp_store: StampStore | None
     )
 
 
-def extract_invoice(image_bytes: bytes, *, stamp_store: StampStore | None = None) -> Extraction:
+def extract_invoice(
+    image_bytes: bytes,
+    *,
+    stamp_store: StampStore | None = None,
+    ocr_memory: OCRMemoryStore | None = None,
+) -> Extraction:
     """Compare whole-image vision with the existing reader on identical bytes.
 
     off: local OCR; shadow: local fields + comparison; primary: vision fields.
@@ -503,7 +557,7 @@ def extract_invoice(image_bytes: bytes, *, stamp_store: StampStore | None = None
     config = vision_ocr.configuration()
     legacy_error = None
     try:
-        legacy = extract_legacy_invoice(image_bytes, stamp_store=stamp_store)
+        legacy = extract_legacy_invoice(image_bytes, stamp_store=stamp_store, ocr_memory=ocr_memory)
     except Exception as exc:
         if config['mode'] != 'primary' or config['status'] != 'CONFIGURED':
             raise
@@ -552,6 +606,8 @@ class InvoiceStore:
         self.processing_lock = threading.Lock()
         stamp_db = Path(os.environ.get("STAMP_REGISTRY_PATH", str(root / "stamp-recognition.sqlite3")))
         self.stamp_store = StampStore(stamp_db)
+        ocr_memory_db = Path(os.environ.get("OCR_MEMORY_PATH", str(root / "ocr-memory.sqlite3")))
+        self.ocr_memory = OCRMemoryStore(ocr_memory_db)
         self.originals.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -798,7 +854,11 @@ class InvoiceStore:
 
             try:
                 image_bytes = image_path.read_bytes()
-                extraction = extract_invoice(image_bytes, stamp_store=self.stamp_store)
+                extraction = extract_invoice(
+                    image_bytes,
+                    stamp_store=self.stamp_store,
+                    ocr_memory=self.ocr_memory,
+                )
                 extraction_id = str(uuid.uuid4())
                 updated = utcnow()
                 review = extraction.raw.get("review") or {}
@@ -1065,6 +1125,11 @@ class InvoiceStore:
             if not row:
                 raise KeyError(invoice_id)
             before = dict(row)
+            extraction_row = db.execute(
+                "SELECT payload_json FROM extractions WHERE document_id=? ORDER BY rowid DESC LIMIT 1",
+                (row["document_id"],),
+            ).fetchone()
+            extraction_raw = json.loads(extraction_row["payload_json"]) if extraction_row else {}
             current = {k: before.get(k) for k in allowed}
             current.update(cleaned)
             if current.get("amount_before_tax") is not None and current.get("tax_amount") is not None and current.get("total_amount") is not None:
@@ -1088,6 +1153,25 @@ class InvoiceStore:
             merged = dict(after)
             merged["sha256"] = doc["sha256"]
             merged["original_filename"] = doc["original_filename"]
+
+        # Learn only explicit human corrections. A blank OCR observation is not
+        # promoted into an automatic rule because there is no repeatable error token.
+        try:
+            memory_context = context_from_extraction(extraction_raw, current)
+            for key in allowed:
+                observed = before.get(key)
+                corrected = current.get(key)
+                if observed not in (None, "") and corrected != observed:
+                    self.ocr_memory.remember(
+                        field_name=key,
+                        observed_value=observed,
+                        corrected_value=corrected,
+                        context=memory_context,
+                        actor=actor,
+                    )
+        except (ValueError, TypeError, sqlite3.Error):
+            # Review remains authoritative even if optional learning fails.
+            pass
 
         # Human review confirms business attributes. For an unknown visual stamp,
         # enroll the cropped fingerprint as a new physical stamp. A near/uncertain

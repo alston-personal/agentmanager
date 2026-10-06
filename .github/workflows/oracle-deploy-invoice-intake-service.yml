@@ -7,6 +7,7 @@ on:
     paths:
       - 'services/invoice_intake/**'
       - 'capabilities/financial_intake/**'
+      - 'capabilities/ocr_memory/**'
       - 'scripts/deploy_invoice_intake_nginx.py'
       - 'tests/test_stamp_recognition_*.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'services/invoice_intake/**'
       - 'capabilities/financial_intake/**'
+      - 'capabilities/ocr_memory/**'
       - 'scripts/deploy_invoice_intake_nginx.py'
       - 'tests/test_stamp_recognition_*.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
@@ -42,7 +44,8 @@ jobs:
             capabilities/financial_intake/adapter.py \
             capabilities/financial_intake/winton.py \
             capabilities/stamp_recognition/model.py \
-            capabilities/stamp_recognition/runtime.py
+            capabilities/stamp_recognition/runtime.py \
+            capabilities/ocr_memory/runtime.py
           PYTHONPATH=. /tmp/invoice-intake-validate/bin/python - <<'PY'
           import json
           from pathlib import Path
@@ -94,7 +97,8 @@ jobs:
             tests.test_invoice_real_user_regression \
             tests.test_invoice_vision \
             tests.test_stamp_recognition_capability \
-            tests.test_stamp_recognition_runtime
+            tests.test_stamp_recognition_runtime \
+            tests.test_ocr_memory
           echo 'invoice_intake_db_boundary=PASS'
           echo 'invoice_real_user_regression=PASS'
           echo 'invoice_intake_python_syntax=PASS'
@@ -127,7 +131,8 @@ jobs:
             services/invoice_intake \
             capabilities/__init__.py \
             capabilities/financial_intake \
-            capabilities/stamp_recognition | \
+            capabilities/stamp_recognition \
+            capabilities/ocr_memory | \
             ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               'set -euo pipefail; BASE=/home/ubuntu/invoice-intake-service; rm -rf "$BASE/app-new"; mkdir -p "$BASE/app-new"; tar -C "$BASE/app-new" -xzf -'
 

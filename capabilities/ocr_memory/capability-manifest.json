@@ -1,0 +1,23 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "document.ocr-memory",
+  "display_name": "Human-Corrected OCR Memory",
+  "semantic_owner": "document-intelligence",
+  "version": "0.1.0",
+  "lifecycle": "candidate",
+  "contract": {
+    "inputs": ["ocr.observation", "human.correction", "document.context"],
+    "outputs": ["ocr.correction-memory", "ocr.candidate-suggestion"],
+    "side_effects": ["correction-memory.persist"]
+  },
+  "learning": {
+    "raw_image_learning_default": false,
+    "promotion": "context-scoped-confirmed-corrections-only"
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}
