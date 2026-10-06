@@ -8,6 +8,7 @@ on:
       - 'dashboard/app/api/agentos/**'
       - 'scripts/deploy_realm_gateway_user.sh'
       - 'agent_core/realm_server.py'
+      - 'agent_core/controller_api.py'
       - 'agent_core/runner_window.py'
       - 'agentos_node/bootstrap_control.py'
       - '.github/workflows/oracle-deploy-realm-gateway.yml'
