@@ -1,13 +1,10 @@
 name: Oracle Inspect Persona Heartbeat Via SSH
-
 on:
   push:
     paths:
       - '.github/workflows/oracle-inspect-persona-heartbeat-via-ssh.yml'
-
 permissions:
   contents: read
-
 jobs:
   inspect:
     runs-on: ubuntu-latest
@@ -18,26 +15,20 @@ jobs:
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
+      - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect current persona heartbeat
+      - name: Correlate heartbeat starts with SSH activity
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          echo '=== EXECSTART ==='
-          systemctl --user show agentos-persona-pdca-heartbeat.service -p ExecStart --value || true
-          echo '=== V2 FILE ==='
-          file "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
-          head -n 3 "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
-          echo '=== SERVICE STATUS ==='
-          systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service 2>&1 || true
-          echo '=== PROCESSES ==='
-          ps -eo pid,ppid,lstart,args | grep -E '[a]gentos-persona-pdca-heartbeat|[p]ersona-agent-data|[g]h repo clone|[g]it .*my-agent-data' || true
-          echo '=== LOCK ==='
-          command -v lsof >/dev/null && lsof /tmp/agentos-persona-pdca-heartbeat.lock 2>&1 || true
-          echo '=== TIMER ==='
+          echo '=== HEARTBEAT JOURNAL ==='
+          journalctl --user -u agentos-persona-pdca-heartbeat.service --since '2026-10-06 16:40:00' --until '2026-10-06 17:00:00' --no-pager -o short-iso 2>&1 || true
+          echo '=== USER SYSTEMD JOURNAL FILTER ==='
+          journalctl --user --since '2026-10-06 16:40:00' --until '2026-10-06 17:00:00' --no-pager -o short-iso 2>&1 | grep -E 'persona-pdca-heartbeat|persona-social-actions|daemon-reload|Reloading|Started|Starting' || true
+          echo '=== SSH JOURNAL ==='
+          journalctl -u ssh --since '2026-10-06 16:40:00' --until '2026-10-06 17:00:00' --no-pager -o short-iso 2>&1 | grep -E 'Accepted publickey|session opened|session closed' || true
+          echo '=== TIMER NOW ==='
           systemctl --user list-timers --all --no-pager | grep agentos-persona-pdca-heartbeat || true
           REMOTE
