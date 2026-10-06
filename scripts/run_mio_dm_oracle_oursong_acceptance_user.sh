@@ -10,7 +10,7 @@ REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 
-TMP="$(mktemp --suffix=.mjs)"
+TMP="$(mktemp --suffix=.cjs)"
 trap 'rm -f "$TMP"' EXIT
 git -C "$REPO" show "$SOURCE_COMMIT:scripts/mio_dm_oracle_oursong_acceptance.cjs" > "$TMP"
 
