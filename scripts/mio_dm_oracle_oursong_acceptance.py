@@ -16,7 +16,7 @@ class _WS:
         u=urlsplit(url)
         if u.scheme!="ws":
             raise RuntimeError("only ws:// supported")
-        self.sock=socket.create_connection((u.hostname,u.port or 80),timeout=8)
+        self.sock=socket.create_connection((u.hostname,u.port or 80),timeout=30)
         key=base64.b64encode(os.urandom(16)).decode()
         path=u.path+(("?"+u.query) if u.query else "")
         req=(f"GET {path} HTTP/1.1\r\nHost: {u.hostname}:{u.port or 80}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n")
@@ -94,7 +94,7 @@ def main() -> int:
         if "/messages" not in current:
             _call(ws,"Page.navigate",{"url":"https://www.threads.com/messages"},1)
             ws.close()
-            time.sleep(5)
+            time.sleep(10)
             STAGE="cdp_reconnect"
             tab=_threads_tab()
             ws=_WS(str(tab["webSocketDebuggerUrl"]))
