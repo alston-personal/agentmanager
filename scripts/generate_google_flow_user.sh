@@ -295,9 +295,32 @@ for line in reversed(lines[-40:]):
 print(value)
 PYERR
 )"
+  syntax_line=""
+  syntax_offset=""
+  if [[ "$exc_type" == "SyntaxError" ]]; then
+    syntax_line="$(python3 - "$ERR_LOG" <<'PYSL'
+import re,sys
+text=open(sys.argv[1],encoding='utf-8',errors='replace').read()
+m=re.search(r'File "<stdin>", line ([0-9]+)',text)
+print(m.group(1) if m else "")
+PYSL
+)"
+    syntax_offset="$(python3 - "$ERR_LOG" <<'PYSO'
+import re,sys
+lines=open(sys.argv[1],encoding='utf-8',errors='replace').read().splitlines()
+value=''
+for i,line in enumerate(lines):
+    if line.strip() == '^' and i > 0:
+        value=str(max(1,len(lines[i-1])-len(lines[i-1].lstrip())+1))
+print(value)
+PYSO
+)"
+  fi
   echo "google_flow_generate=RUNTIME_ERROR"
   echo "google_flow_runtime_error_class=$class"
   echo "google_flow_runtime_exception_type=$exc_type"
+  if [[ -n "$syntax_line" ]]; then echo "google_flow_runtime_syntax_line=$syntax_line"; fi
+  if [[ -n "$syntax_offset" ]]; then echo "google_flow_runtime_syntax_offset=$syntax_offset"; fi
   echo "google_flow_runtime_error_sha256=$diag"
   exit 0
 fi
