@@ -414,3 +414,7 @@ Windows Thin Client upgrades no longer overwrite the active runtime in place. Th
 ### Windows shared-state preservation
 
 Versioned runtime repair treats `state\policy.json` as persistent configuration. If it already exists, the installer preserves it byte-for-byte and never rewrites it during runtime upgrades; the default policy is created only on first install when the file is absent. This prevents an active or protected legacy Thin Client from blocking a versioned upgrade by holding the shared policy file open.
+
+### Windows managed-endpoint supervisor policy
+
+Per-user persistence via HKCU Run plus hidden PowerShell watchdog is not an acceptable fallback on managed endpoints because endpoint security products can classify that pattern as malicious behavior. The canonical installer therefore fails closed with `WINDOWS_SUPERVISOR_APPROVAL_REQUIRED` when Task Scheduler registration is denied. Recovery must use an administrator/IT-approved supervisor installation path; AgentOS must not attempt to bypass endpoint security or recreate persistence through alternate user autorun mechanisms.
