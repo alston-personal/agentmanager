@@ -211,7 +211,7 @@ jobs:
               persona.social.dm oursong.read "$GITHUB_SHA" \
               | tee "$OUT"
           grep -q 'runner_window_dispatch=PASS' "$OUT"
-          python3 - "$OUT" "$GITHUB_SHA" <<'PY'
+          CLASSIFICATION="$(python3 - "$OUT" "$GITHUB_SHA" <<'PY'
           import json,sys
           path,expected=sys.argv[1:3]
           completed=None
@@ -229,14 +229,54 @@ jobs:
           receipt=completed['receipt']
           assert receipt.get('ok') is True, receipt
           assert receipt.get('source_commit')==expected, receipt
-          evidence=receipt.get('evidence') or []
           pairs={}
-          for line in evidence:
+          for line in receipt.get('evidence') or []:
               if '=' in line:
                   k,v=line.split('=',1); pairs[k]=v
-          assert pairs.get('threads_web_dm_identity')=='PASS', pairs
-          assert pairs.get('threads_web_dm_account')=='oursong_alstonhuang', pairs
-          assert pairs.get('threads_web_dm_read')=='PASS', pairs
-          print('oursong_dm_identity_acceptance=PASS')
-          print('oursong_dm_account='+pairs['threads_web_dm_account'])
+          if pairs.get('threads_web_dm_identity')=='PASS' and pairs.get('threads_web_dm_account')=='oursong_alstonhuang' and pairs.get('threads_web_dm_read')=='PASS':
+              print('PASS')
+          elif pairs.get('threads_web_dm_read')=='LOGIN_REQUIRED' or pairs.get('threads_web_dm_bridge')=='LOGIN_REQUIRED':
+              print('LOGIN_REQUIRED')
+          else:
+              raise AssertionError(pairs)
           PY
+          )"
+          if [ "$CLASSIFICATION" = "PASS" ]; then
+            echo 'oursong_dm_identity_acceptance=PASS'
+            echo 'oursong_dm_account=oursong_alstonhuang'
+            exit 0
+          fi
+
+          test "$CLASSIFICATION" = "LOGIN_REQUIRED"
+          LOGIN_OUT="$RUNNER_TEMP/oursong-dm-login-start.txt"
+          AGENTOS_DISPATCH_WAIT_SECONDS=90 \
+            bash scripts/agentos_dispatch.sh \
+              threads.dm login.start "$GITHUB_SHA" \
+              | tee "$LOGIN_OUT"
+          grep -q 'runner_window_dispatch=PASS' "$LOGIN_OUT"
+          python3 - "$LOGIN_OUT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          path,expected=sys.argv[1:3]
+          docs=[]
+          for raw in open(path,encoding='utf-8'):
+              raw=raw.strip()
+              if raw.startswith('{'):
+                  try: docs.append(json.loads(raw))
+                  except json.JSONDecodeError: pass
+          completed=next((x for x in reversed(docs) if x.get('state')=='completed' and isinstance(x.get('receipt'),dict)),None)
+          assert completed is not None, 'login-start receipt missing'
+          receipt=completed['receipt']
+          assert receipt.get('ok') is True,receipt
+          assert receipt.get('source_commit')==expected,receipt
+          pairs={}
+          for line in receipt.get('evidence') or []:
+              if '=' in line:
+                  k,v=line.split('=',1);pairs[k]=v
+          assert pairs.get('threads_web_dm_login_start')=='PASS',pairs
+          assert pairs.get('threads_web_dm_login_mode')=='oracle_gui_worker',pairs
+          assert pairs.get('threads_web_dm_login_browser_persistent')=='true',pairs
+          print('oursong_dm_login_handoff=PASS')
+          print('oursong_dm_login_remote_view='+str(pairs.get('threads_web_dm_login_remote_view') or 'unknown'))
+          PY
+          echo 'oursong_dm_identity_acceptance=LOGIN_REQUIRED'
+          exit 2
