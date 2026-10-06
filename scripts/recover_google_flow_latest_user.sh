@@ -130,6 +130,22 @@ with sync_playwright() as p:
             matching.append(meta["index"])
 
     if not matching:
+        controls=[]
+        for sel in ("button","a","[role=button]"):
+            loc=page.locator(sel)
+            for i in range(min(loc.count(),60)):
+                item=loc.nth(i)
+                try:
+                    if not item.is_visible(timeout=100):
+                        continue
+                    label=(item.get_attribute("aria-label") or item.inner_text(timeout=300) or "").strip()
+                    href=(item.get_attribute("href") or "").strip()
+                    if label or href:
+                        controls.append((sel+":"+label+("|href="+href if href else ""))[:180])
+                except Exception:
+                    pass
+        if controls:
+            print("google_flow_recover_controls="+json.dumps(controls[:60],ensure_ascii=False,separators=(",",":")))
         print("google_flow_recover=NO_MATCHING_PROJECT_VIDEO")
         raise SystemExit(0)
 
