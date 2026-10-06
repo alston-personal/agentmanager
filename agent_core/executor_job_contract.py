@@ -197,6 +197,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="issue://894",
         read_only=False,
     ),
+    "completion.market-master-1200.register": JobTypeSpec(
+        job_type="completion.market-master-1200.register",
+        capability="agentos.completion.work.register",
+        authority="bounded-work-intake",
+        executor_class="completion-controller",
+        project_id="market-master-evolution",
+        workload_ref="issue://1200",
+        read_only=False,
+    ),
 }
 
 
@@ -404,6 +413,10 @@ def project_executor_job_receipt(
             "layoutlib_matching_files",
             "layoutlib_public_http",
             "layoutlib_parity",
+            "work_id",
+            "completion_status",
+            "completion_owner",
+            "completion_owner_generation",
         ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:

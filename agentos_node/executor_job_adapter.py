@@ -71,6 +71,10 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "layoutlib_matching_files",
     "layoutlib_public_http",
     "layoutlib_parity",
+    "work_id",
+    "completion_status",
+    "completion_owner",
+    "completion_owner_generation",
 )
 _PROVIDER_STATE_FIELDS = (
     "executor_available",
