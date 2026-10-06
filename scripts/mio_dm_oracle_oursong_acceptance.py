@@ -8,14 +8,18 @@ MESSAGE="聽說你那邊最近很會發文？等你的 DM 接好，我們再來�
 CDP="http://127.0.0.1:9222"
 
 def main() -> int:
+    stage="start"
     with sync_playwright() as p:
+        stage="cdp_attach"
         browser=p.chromium.connect_over_cdp(CDP,timeout=7000)
         if not browser.contexts:
             print("mio_dm_oursong_acceptance=NO_CONTEXT")
             return 3
         ctx=browser.contexts[0]
+        stage="new_page"
         page=ctx.new_page()
         try:
+            stage="messages_goto"
             page.goto("https://www.threads.com/messages",wait_until="domcontentloaded",timeout=30000)
             page.wait_for_timeout(2500)
             low=page.url.lower()
@@ -23,6 +27,7 @@ def main() -> int:
                 print("mio_dm_oursong_acceptance=LOGIN_REQUIRED")
                 return 4
 
+            stage="conversation_find"
             found=False
             for loc in [
                 page.get_by_text(TARGET, exact=False),
@@ -40,6 +45,7 @@ def main() -> int:
                 print("mio_dm_oursong_acceptance=NO_CONVERSATION")
                 return 5
 
+            stage="conversation_open"
             page.wait_for_timeout(1800)
             body=page.locator("body").inner_text(timeout=3000)
             if MESSAGE in body:
@@ -48,6 +54,7 @@ def main() -> int:
                 print("mio_dm_oursong_readback=PASS")
                 return 0
 
+            stage="composer_find"
             box=None
             selectors=['textarea','[contenteditable="true"]']
             for sel in selectors:
@@ -62,9 +69,11 @@ def main() -> int:
                 print("mio_dm_oursong_acceptance=NO_COMPOSER")
                 return 6
 
+            stage="composer_fill"
             box.click()
             box.fill(MESSAGE) if box.evaluate("(e)=>e.tagName==='TEXTAREA'") else box.press_sequentially(MESSAGE,delay=5)
 
+            stage="send"
             sent=False
             for label in ["Send","傳送"]:
                 try:
@@ -78,6 +87,7 @@ def main() -> int:
             if not sent:
                 box.press("Enter")
 
+            stage="readback"
             page.wait_for_timeout(2500)
             verify=page.locator("body").inner_text(timeout=3000)
             if MESSAGE not in verify:
@@ -96,5 +106,9 @@ if __name__=="__main__":
     except SystemExit:
         raise
     except Exception as exc:
+        try:
+            print("mio_dm_oursong_stage="+str(locals().get("stage") or "unknown"))
+        except Exception:
+            print("mio_dm_oursong_stage=unknown")
         print("mio_dm_oursong_acceptance=ERROR_"+type(exc).__name__.upper())
         raise SystemExit(8)
