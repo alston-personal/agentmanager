@@ -86,9 +86,9 @@ function Resolve-SourceCommit([string]$Ref) {
   return $sha
 }
 
-function Install-UserRuntime([string]$Runner) {
+function Install-UserRuntime([string]$Runner, [string]$RuntimeRoot) {
   $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-  $watchdog=Join-Path $InstallRoot 'scripts\windows\user_runtime_watchdog.ps1'
+  $watchdog=Join-Path $RuntimeRoot 'scripts\windows\user_runtime_watchdog.ps1'
   if(-not (Test-Path -LiteralPath $watchdog)){
     throw "Per-user watchdog script missing: $watchdog"
   }
@@ -131,7 +131,7 @@ function Install-UserRuntime([string]$Runner) {
   Write-Host 'Independent watchdog: Running (hidden, per-user 60s cadence)' -ForegroundColor Green
 }
 
-function Install-Supervisor([string]$PythonPath) {
+function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
   $watchdogTaskName='AgentOS Thin Client Watchdog'
@@ -168,14 +168,14 @@ function Install-Supervisor([string]$PythonPath) {
   }
 
   $state=Join-Path $InstallRoot 'state'
-  $runner=Join-Path $InstallRoot 'agentos-thin-client-hidden.ps1'
+  $runner=Join-Path $RuntimeRoot 'agentos-thin-client-hidden.ps1'
   $log=Join-Path $InstallRoot 'thin-client.log'
-  $watchdogScript=Join-Path $InstallRoot 'scripts\windows\thin_client_watchdog.ps1'
+  $watchdogScript=Join-Path $RuntimeRoot 'scripts\windows\thin_client_watchdog.ps1'
   if(-not (Test-Path -LiteralPath $watchdogScript)){
     throw "AgentOS Thin Client watchdog script missing: $watchdogScript"
   }
 
-  $escapedInstall=$InstallRoot.Replace("'","''")
+  $escapedInstall=$RuntimeRoot.Replace("'","''")
   $escapedState=$state.Replace("'","''")
   $escapedPython=$PythonPath.Replace("'","''")
   $escapedLog=$log.Replace("'","''")
@@ -193,7 +193,7 @@ function Install-Supervisor([string]$PythonPath) {
   $action=New-ScheduledTaskAction `
     -Execute 'powershell.exe' `
     -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"') `
-    -WorkingDirectory $InstallRoot
+    -WorkingDirectory $RuntimeRoot
   $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
   $settings=New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -207,7 +207,7 @@ function Install-Supervisor([string]$PythonPath) {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
   } catch {
     Write-Host ('Task Scheduler registration unavailable; switching to per-user hidden runtime. Error=' + $_.Exception.Message) -ForegroundColor Yellow
-    Install-UserRuntime -Runner $runner
+    Install-UserRuntime -Runner $runner -RuntimeRoot $RuntimeRoot
     return
   }
 
@@ -353,14 +353,17 @@ try {
   }
 
   Write-Step 'Installing AgentOS Thin Client'
+  $runtimeRoot=Join-Path $InstallRoot ("versions\" + $sourceCommit)
+  $state=Join-Path $InstallRoot 'state'
+  New-Item -ItemType Directory -Force -Path $runtimeRoot,$state | Out-Null
+
   $bootstrap=Join-Path $env:TEMP ("agentos-thin-client-" + $sourceCommit.Substring(0,12) + ".ps1")
   $raw="https://raw.githubusercontent.com/$Repo/$sourceCommit/scripts/install_thin_client_windows.ps1"
   Invoke-WebRequest -UseBasicParsing -Headers @{ 'Cache-Control'='no-cache' } -Uri $raw -OutFile $bootstrap
-  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bootstrap -InstallRoot $InstallRoot -WorkspaceRoot $WorkspaceRoot -SourceRef $sourceCommit -PythonExe $python.Path
+  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bootstrap -InstallRoot $runtimeRoot -WorkspaceRoot $WorkspaceRoot -StateRoot $state -SourceRef $sourceCommit -PythonExe $python.Path
   if($LASTEXITCODE -ne 0){ throw "Thin Client file install failed with exit code $LASTEXITCODE" }
 
-  $launcher=Join-Path $InstallRoot 'agentos-client.cmd'
-  $state=Join-Path $InstallRoot 'state'
+  $launcher=Join-Path $runtimeRoot 'agentos-client.cmd'
   $identity=Join-Path $state 'client.json'
   if(-not (Test-Path -LiteralPath $launcher)){ throw "Launcher missing after install: $launcher" }
 
@@ -378,7 +381,7 @@ try {
     Write-Host 'Enrollment preserved; no new token or approval code will be created.' -ForegroundColor Green
   }
 
-  Install-Supervisor $python.Path
+  Install-Supervisor $python.Path $runtimeRoot
 
   Write-Step 'Verifying end-to-end readiness'
   & $launcher verify

@@ -81,6 +81,9 @@ jobs:
             "user_runtime_watchdog.ps1",
             "Background service: Running (headless, per-user)",
             "Independent watchdog: Running (hidden, per-user 60s cadence)",
+            'versions\',
+            '-StateRoot $state',
+            'Install-Supervisor $python.Path $runtimeRoot',
             "Protected legacy watchdog ACL detected; using user-owned fallback",
             "AgentOS Thin Client Watchdog",
             "Independent watchdog: Installed (60s cadence)",
@@ -99,6 +102,8 @@ jobs:
             'agentos_node/agent_surfaces.py',
             'scripts/windows/thin_client_watchdog.ps1',
             'scripts/windows/user_runtime_watchdog.ps1',
+            'StateRoot',
+            'Shared state:',
             'Windows Store App Execution Alias is not accepted'
           )) {
             if(-not $low.Contains($needle)) { throw "missing low-level installer marker: $needle" }
