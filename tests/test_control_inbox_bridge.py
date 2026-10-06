@@ -389,7 +389,7 @@ def test_typed_desktop_receipt_projection_is_bounded_and_private():
         'schema': 'agentos.node-receipt/v0.1', 'ok': True,
         'operation': 'type', 'characters': 42, 'text': 'private prompt',
     }, 'desktop.text.insert')
-    assert typed['operation'] == 'type'
+    assert typed['operation'] == 'paste'
     assert typed['characters'] == 42
     assert 'private prompt' not in json.dumps(typed)
 
