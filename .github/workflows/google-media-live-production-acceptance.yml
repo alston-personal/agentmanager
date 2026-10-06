@@ -19,10 +19,11 @@ permissions:
 
 concurrency:
   group: google-media-live-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   produce:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
