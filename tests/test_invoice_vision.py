@@ -16,7 +16,7 @@ from services.invoice_intake.template_ocr import seller_region_text, extract_tem
 def fixture():
     p = dict.fromkeys(vision.TEXT_FIELDS + vision.MONEY_FIELDS)
     p.update(invoice_number='AB12345678', invoice_date='2026-09-21', seller_name='測試商行',
-             seller_tax_id='16908319', buyer_name='買方測試有限公司', amount_before_tax=1000,
+             seller_tax_id='16908319', buyer_name='買方測試有限公司', buyer_tax_id='23040145', amount_before_tax=1000,
              tax_amount=50, total_amount=1050, needs_review=False, uncertain_fields=[],
              line_items=[{'description': '加工', 'quantity': 1000, 'unit_price': 1, 'amount': 1000}],
              stamp_text='測試商行 16908319', seller_address='測試地址')
@@ -53,10 +53,16 @@ class VisionTests(unittest.TestCase):
                     dict(fixture(), needs_review='false')):
             with self.assertRaises(ValueError): vision.validate_payload(bad)
 
-    def test_uncertain_and_invalid_values_never_become_fields(self):
+    def test_uncertain_values_are_preserved_but_invalid_values_are_rejected(self):
         p=fixture();p.update(invoice_date='2026-02-30', seller_tax_id='123', uncertain_fields=['seller_name'])
         f, issues=vision.validated_fields(p)
-        self.assertIsNone(f['invoice_date']);self.assertIsNone(f['seller_tax_id']);self.assertIsNone(f['vendor_name'])
+        self.assertIsNone(f['invoice_date']);self.assertIsNone(f['seller_tax_id'])
+        self.assertEqual(f['vendor_name'], '測試商行')
+        self.assertIn('vendor_name', issues)
+        p=fixture();p['uncertain_fields']=['invoice_date','amount_before_tax','tax_amount','total_amount']
+        f,issues=vision.validated_fields(p)
+        self.assertEqual(f['invoice_date'],'2026-09-21')
+        self.assertEqual((f['amount_before_tax'],f['tax_amount'],f['total_amount']),(1000,50,1050))
         p=fixture();p['tax_amount']=51
         f,issues=vision.validated_fields(p)
         self.assertIn('amount_sum_mismatch',issues)
@@ -73,9 +79,12 @@ class VisionTests(unittest.TestCase):
                 store.process(initial['invoice_id'])
                 persisted=store.get_invoice(initial['invoice_id'])
                 self.assertEqual(persisted['fields']['vendor_name'],'測試商行')
+                self.assertEqual(persisted['fields']['buyer_tax_id'],'23040145')
                 self.assertEqual(persisted['status'],'needs_review')
                 raw=persisted['recognition']
                 self.assertEqual(raw['vision']['payload']['line_items'][0]['quantity'],1000)
+                self.assertEqual(raw['vision']['field_trace']['buyer_tax_id']['value'],'23040145')
+                self.assertEqual(raw['vision']['field_trace']['buyer_tax_id']['status'],'extracted')
                 self.assertFalse(raw['comparison']['vendor_name']['equal'])
                 self.assertEqual(Path(store.get_original(initial['invoice_id'])['path']).read_bytes(),image_bytes())
 

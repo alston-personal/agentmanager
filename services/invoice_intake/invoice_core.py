@@ -698,6 +698,7 @@ def extract_legacy_invoice(
         "invoice_number": None,
         "invoice_date": None,
         "vendor_name": None,
+        "buyer_tax_id": None,
         "seller_tax_id": None,
         "amount_before_tax": None,
         "tax_amount": None,
@@ -960,11 +961,39 @@ def extract_invoice(
             api_key=os.environ.get('GEMINI_API_KEY', ''), model=config['model'])
         legacy.raw.setdefault("timings_ms", {})["vision_ms"] = round((time.perf_counter() - vision_started) * 1000, 1)
         fields, issues = vision_ocr.validated_fields(result['payload'])
+        uncertain = set(result['payload'].get('uncertain_fields') or [])
+        field_trace = {}
+        for key in vision_ocr.CORE_FIELDS:
+            alias = 'seller_name' if key == 'vendor_name' else key
+            candidate = result['payload'].get(alias)
+            value = fields.get(key)
+            is_uncertain = key in uncertain or alias in uncertain
+            if candidate is None:
+                trace_status, reason = 'missing', 'not_read_from_image'
+            elif value is None:
+                trace_status, reason = 'invalid', 'validation_rejected'
+            elif is_uncertain:
+                trace_status, reason = 'needs_review', 'model_marked_uncertain'
+            else:
+                trace_status, reason = 'extracted', None
+            field_trace[key] = {
+                'raw_text': candidate,
+                'value': value,
+                'status': trace_status,
+                'source': 'image_main',
+                'reason': reason,
+                'evidence_region': None,
+            }
     except Exception as exc:
         legacy.raw['vision']['status'] = str(exc) if isinstance(exc, vision_ocr.VisionError) else 'INVALID_RESPONSE'
         legacy.review_required = True
         return legacy
-    result.update({'status': 'SUCCEEDED', 'mode': config['mode'], 'validation_issues': issues})
+    result.update({
+        'status': 'SUCCEEDED',
+        'mode': config['mode'],
+        'validation_issues': issues,
+        'field_trace': field_trace,
+    })
     comparison = {key: {'legacy': legacy.fields.get(key), 'vision': fields.get(key),
                         'equal': legacy.fields.get(key) == fields.get(key)} for key in vision_ocr.CORE_FIELDS}
     legacy.raw['vision'] = result
@@ -1045,6 +1074,7 @@ class InvoiceStore:
               invoice_number TEXT,
               invoice_date TEXT,
               vendor_name TEXT,
+              buyer_tax_id TEXT,
               seller_tax_id TEXT,
               amount_before_tax INTEGER,
               tax_amount INTEGER,
@@ -1080,6 +1110,8 @@ class InvoiceStore:
             CREATE INDEX IF NOT EXISTS idx_invoice_line_items_invoice ON invoice_line_items(invoice_id,line_no);
             """)
             invoice_columns = {row["name"] for row in db.execute("PRAGMA table_info(invoices)")}
+            if "buyer_tax_id" not in invoice_columns:
+                db.execute("ALTER TABLE invoices ADD COLUMN buyer_tax_id TEXT")
             if "deleted_at" not in invoice_columns:
                 db.execute("ALTER TABLE invoices ADD COLUMN deleted_at TEXT")
             document_columns = {row["name"] for row in db.execute("PRAGMA table_info(documents)")}
@@ -1213,6 +1245,7 @@ class InvoiceStore:
                 "invoice_number": None,
                 "invoice_date": None,
                 "vendor_name": None,
+                "buyer_tax_id": None,
                 "seller_tax_id": None,
                 "amount_before_tax": None,
                 "tax_amount": None,
@@ -1290,12 +1323,12 @@ class InvoiceStore:
                         )
                     db.execute("""
                       UPDATE invoices SET
-                        invoice_number=?, invoice_date=?, vendor_name=?, seller_tax_id=?,
+                        invoice_number=?, invoice_date=?, vendor_name=?, buyer_tax_id=?, seller_tax_id=?,
                         amount_before_tax=?, tax_amount=?, total_amount=?, status=?,
                         confidence_json=?, updated_at=?
                       WHERE id=?
                     """, (
-                        f["invoice_number"], f["invoice_date"], f["vendor_name"], f["seller_tax_id"],
+                        f["invoice_number"], f["invoice_date"], f["vendor_name"], f.get("buyer_tax_id"), f["seller_tax_id"],
                         f["amount_before_tax"], f["tax_amount"], f["total_amount"], status,
                         json.dumps(extraction.confidence, ensure_ascii=False), updated, invoice_id,
                     ))
@@ -1362,6 +1395,7 @@ class InvoiceStore:
                             "invoice_number": row["invoice_number"],
                             "invoice_date": row["invoice_date"],
                             "vendor_name": row["vendor_name"],
+                            "buyer_tax_id": row["buyer_tax_id"] if "buyer_tax_id" in row.keys() else None,
                             "seller_tax_id": row["seller_tax_id"],
                             "amount_before_tax": row["amount_before_tax"],
                             "tax_amount": row["tax_amount"],
@@ -1408,13 +1442,13 @@ class InvoiceStore:
                     )
                     db.execute(
                         """UPDATE invoices SET
-                             invoice_number=?, invoice_date=?, vendor_name=?, seller_tax_id=?,
+                             invoice_number=?, invoice_date=?, vendor_name=?, buyer_tax_id=?, seller_tax_id=?,
                              amount_before_tax=?, tax_amount=?, total_amount=?, status=?,
                              confidence_json=?, updated_at=?
                            WHERE id=?""",
                         (
                             fields["invoice_number"], fields["invoice_date"],
-                            fields["vendor_name"], fields["seller_tax_id"],
+                            fields["vendor_name"], fields.get("buyer_tax_id"), fields["seller_tax_id"],
                             fields["amount_before_tax"], fields["tax_amount"],
                             fields["total_amount"], new_status,
                             json.dumps(enriched.confidence, ensure_ascii=False),
@@ -1576,6 +1610,7 @@ class InvoiceStore:
                 "invoice_number": row["invoice_number"] if "invoice_number" in row.keys() else None,
                 "invoice_date": row["invoice_date"] if "invoice_date" in row.keys() else None,
                 "vendor_name": row["vendor_name"] if "vendor_name" in row.keys() else None,
+                "buyer_tax_id": row["buyer_tax_id"] if "buyer_tax_id" in row.keys() else None,
                 "seller_tax_id": row["seller_tax_id"] if "seller_tax_id" in row.keys() else None,
                 "amount_before_tax": row["amount_before_tax"] if "amount_before_tax" in row.keys() else None,
                 "tax_amount": row["tax_amount"] if "tax_amount" in row.keys() else None,
@@ -1705,7 +1740,7 @@ class InvoiceStore:
         return {"ok": True, "deleted": deleted, "count": len(deleted)}
 
     def review(self, invoice_id: str, actor: str, fields: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"invoice_number", "invoice_date", "vendor_name", "seller_tax_id", "amount_before_tax", "tax_amount", "total_amount"}
+        allowed = {"invoice_number", "invoice_date", "vendor_name", "buyer_tax_id", "seller_tax_id", "amount_before_tax", "tax_amount", "total_amount"}
         cleaned = {k: fields.get(k) for k in allowed if k in fields}
         with self.connect() as db:
             row = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
