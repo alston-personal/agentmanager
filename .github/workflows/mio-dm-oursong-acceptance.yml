@@ -80,6 +80,9 @@ jobs:
                   completed=row
           assert completed is not None, f'completed receipt missing; dispatch_rc={dispatch_rc}'
           receipt=completed['receipt']
+          print('mio_dm_oursong_request_id='+str(completed.get('request_id') or ''))
+          print('mio_dm_oursong_source_commit='+str(receipt.get('source_commit') or ''))
+          print('mio_dm_oursong_script_sha256='+str(receipt.get('script_sha256') or ''))
           assert receipt.get('source_commit')==expected, receipt
           scheduler=receipt.get('scheduler') or {}
           assert scheduler.get('worker_role')=='gui', scheduler
