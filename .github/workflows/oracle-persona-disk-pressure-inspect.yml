@@ -8,7 +8,7 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 2
     env:
       DEPLOY_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -18,20 +18,17 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect disk pressure
+      - name: Inspect persona temp disk pressure
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           echo '=== DF ==='
           df -h /
-          df -h /tmp
-          echo '=== TMP PERSONA DIRS ==='
-          find /tmp -maxdepth 1 -type d \( -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort
-          echo '=== TMP SIZE ==='
-          du -sh /tmp/* 2>/dev/null | sort -h | tail -n 40
-          echo '=== HOME TOP ==='
-          du -sh "$HOME"/* "$HOME"/.[!.]* 2>/dev/null | sort -h | tail -n 40
-          echo '=== JOURNAL ==='
-          journalctl --user --disk-usage 2>&1 || true
+          echo '=== TMP PERSONA COUNT ==='
+          find /tmp -maxdepth 1 -type d \( -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) 2>/dev/null | wc -l
+          echo '=== TMP PERSONA LIST ==='
+          find /tmp -maxdepth 1 -type d \( -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort | tail -n 200
+          echo '=== TMP PERSONA TOTAL ==='
+          find /tmp -maxdepth 1 -type d \( -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) -print0 2>/dev/null | xargs -0 -r du -sch 2>/dev/null | tail -n 1 || true
           REMOTE
