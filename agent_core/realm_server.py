@@ -478,6 +478,21 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'realm_executor_claude_code_classification=',
                     'realm_executor_claude_code_stable_routable=',
                 )
+            elif action in {
+                bootstrap_control.ACTION_READ_THREADS_WEB_DM,
+                bootstrap_control.ACTION_READ_OURSONG_THREADS_WEB_DM,
+            }:
+                safe_prefixes = (
+                    'threads_web_dm_identity=',
+                    'threads_web_dm_account=',
+                    'threads_web_dm_read=',
+                    'threads_web_dm_bridge=',
+                    'threads_web_dm_transport=',
+                    'threads_web_dm_new_events=',
+                    'threads_web_dm_inbound_events=',
+                    'threads_web_dm_autonomous=',
+                    'threads_web_dm_python_rc=',
+                )
             elif action == bootstrap_control.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR:
                 safe_prefixes = (
                     'mio_threads_session_supervisor_install=',
