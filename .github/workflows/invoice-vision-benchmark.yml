@@ -9,6 +9,7 @@ on:
     paths:
       - 'benchmarks/invoice_handwriting/**'
       - 'scripts/invoice_vision_benchmark.py'
+      - 'scripts/gemini_interactions_probe.py'
       - '.github/workflows/invoice-vision-benchmark.yml'
 
 permissions:
