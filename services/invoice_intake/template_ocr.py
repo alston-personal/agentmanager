@@ -97,7 +97,7 @@ def layout_amount_candidates(evidence: list[dict[str, Any]]) -> dict[str, list[d
     numeric evidence with subtotal/tax/total labels using the OCR boxes.
     """
     label_groups = {
-        "amount_before_tax": ("銷售額合計", "銷售額", "合計"),
+        "amount_before_tax": ("銷售額合計", "銷售額"),
         "tax_amount": ("營業稅", "稅額"),
         "total_amount": ("總計",),
     }
@@ -220,7 +220,7 @@ def anchor_row_reocr(
     infer values from arithmetic and does not inspect unrelated page regions.
     """
     labels = {
-        "amount_before_tax": ("銷售額合計", "銷售額", "合計"),
+        "amount_before_tax": ("銷售額合計", "銷售額"),
         "tax_amount": ("營業稅", "稅額"),
         "total_amount": ("總計",),
     }
@@ -640,17 +640,11 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
             if "total_amount" not in amount_sources:
                 confidence["total_amount"] = conf
     else:
+        # Keep the established two-part/receipt path unchanged. Spatial and
+        # row-reOCR rescue are intentionally scoped to three-part handwritten
+        # amount blocks until separately benchmarked for these layouts.
         nums = amount_candidates(text)
         total = total_from_lines(text)
-        if total is None and layout_values.get("total_amount") is not None:
-            total = layout_values["total_amount"]
-            amount_sources["total_amount"] = "layout_anchor"
-        if total is None:
-            retry_candidates = anchor_row_reocr(engine, image_bytes, evidence)
-            retry_values, retry_evidence = choose_reocr_amounts(retry_candidates)
-            if retry_values.get("total_amount") is not None:
-                total = retry_values["total_amount"]
-                amount_sources["total_amount"] = "anchor_row_reocr"
         if total is None and nums:
             freq: dict[int, int] = {}
             for v in nums:
