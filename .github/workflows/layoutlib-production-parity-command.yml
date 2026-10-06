@@ -3,6 +3,10 @@ name: LayoutLib Production Parity Command Carrier
 on:
   issue_comment:
     types: [created]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/layoutlib-production-parity-command.yml'
 
 permissions:
   contents: read
@@ -12,9 +16,11 @@ permissions:
 jobs:
   parity:
     if: >-
-      github.event.issue.number == 1178 &&
-      github.actor == 'alstonhuang' &&
-      github.event.comment.body == '/agentos layoutlib-production-parity'
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.number == 1178 &&
+       github.actor == 'alstonhuang' &&
+       github.event.comment.body == '/agentos layoutlib-production-parity') ||
+      github.event_name == 'push'
     concurrency:
       group: layoutlib-production-parity-command
       cancel-in-progress: false
