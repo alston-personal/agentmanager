@@ -88,6 +88,17 @@ with sync_playwright() as p:
     except Exception:
         pass
 
+    # Dismiss non-destructive onboarding / promo overlays that can intercept
+    # project-card clicks. Never mutate account/project data here.
+    for label in ("OK, got it","Got it","知道了","關閉橫幅","Close banner"):
+        try:
+            loc=page.get_by_role("button",name=label,exact=True)
+            if loc.count() and loc.first.is_visible(timeout=300):
+                loc.first.click(timeout=1500)
+                page.wait_for_timeout(300)
+        except Exception:
+            pass
+
     # Collect visible videos with bounded surrounding text so recovery can
     # distinguish a real project result from Flow's generic demo media.
     candidates_meta=[]
@@ -216,18 +227,36 @@ with sync_playwright() as p:
         if target_label:
             print("google_flow_recover_stage=OPEN_MATCHED_PROJECT")
             print("google_flow_recover_project_label="+target_label)
+            opened=False
             try:
-                page.get_by_text(target_label,exact=True).first.click(timeout=4000)
+                cards=page.locator("flow-project-card")
+                for i in range(min(cards.count(),20)):
+                    card=cards.nth(i)
+                    txt=(card.inner_text(timeout=800) or "").strip()
+                    if target_label not in txt:
+                        continue
+                    box=card.bounding_box()
+                    if box:
+                        # Click the visual card body, away from edit/delete controls.
+                        page.mouse.click(box["x"]+max(20,box["width"]*0.25),
+                                         box["y"]+max(20,box["height"]*0.30))
+                    else:
+                        card.click(timeout=4000,position={"x":20,"y":20})
+                    opened=True
+                    break
             except Exception:
+                opened=False
+            if not opened:
                 try:
-                    edits=page.get_by_role("button",name="編輯專案名稱")
-                    if edits.count()==0:
-                        edits=page.get_by_role("button",name="Edit project name")
-                    edits.first.evaluate("(el) => el.parentElement && el.parentElement.click()")
+                    card=page.locator(".project-card").filter(has_text=target_label).first
+                    card.click(timeout=4000,position={"x":20,"y":20})
+                    opened=True
                 except Exception:
-                    print("google_flow_recover=PROJECT_OPEN_FAILED")
-                    raise SystemExit(0)
-            page.wait_for_timeout(6000)
+                    pass
+            if not opened:
+                print("google_flow_recover=PROJECT_OPEN_FAILED")
+                raise SystemExit(0)
+            page.wait_for_timeout(8000)
             print("google_flow_recover_url="+str(page.url or "")[:500])
 
             body=""
