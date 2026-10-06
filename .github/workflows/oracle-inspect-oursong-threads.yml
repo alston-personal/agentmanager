@@ -3,11 +3,6 @@ name: Oracle Inspect Oursong Threads
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-inspect-oursong-threads.yml'
 permissions:
   contents: read
 
