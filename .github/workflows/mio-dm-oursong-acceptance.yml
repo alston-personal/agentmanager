@@ -10,7 +10,7 @@ on:
       - 'agentos_node/bootstrap_scheduler.py'
       - 'agent_core/runner_window.py'
       - 'scripts/run_mio_dm_oracle_oursong_acceptance_user.sh'
-      - 'scripts/mio_dm_oracle_oursong_acceptance.mjs'
+      - 'scripts/mio_dm_oracle_oursong_acceptance.cjs'
 
 permissions:
   contents: read
@@ -34,9 +34,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile agentos_node/bootstrap_control.py agentos_node/bootstrap_scheduler.py agent_core/runner_window.py
-          node --check scripts/mio_dm_oracle_oursong_acceptance.mjs
+          node --check scripts/mio_dm_oracle_oursong_acceptance.cjs
           bash -n scripts/run_mio_dm_oracle_oursong_acceptance_user.sh
-          grep -Fq "TARGET = 'oursong_alstonhuang'" scripts/mio_dm_oracle_oursong_acceptance.mjs
+          grep -Fq "TARGET = 'oursong_alstonhuang'" scripts/mio_dm_oracle_oursong_acceptance.cjs
 
       - name: Mint Runner Window credential
         shell: bash
