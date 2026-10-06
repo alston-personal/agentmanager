@@ -201,6 +201,16 @@ Generation receipts expose only bounded status markers plus durable artifact met
 
 The live acceptance workflow uses the same prompt for Flow and Vids so output quality, latency and provider behavior can be compared on equivalent input. Generated files are kept under `/home/ubuntu/agent-data/artifacts/google-flow/` and `/home/ubuntu/agent-data/artifacts/google-vids/` when download succeeds.
 
+## Vision Studio MVP orchestration
+
+Vision Studio now has a bounded public production intent:
+
+- `media.vision-studio produce project_id=<id>`
+
+The initial source-owned production `rain-exit-v001` composes the existing Google Flow GUI generator rather than inventing a parallel video transport. The Oracle-side producer runs fixed shot prompts, collects only successful downloaded clip paths, normalizes/trims the accepted clips into a 10-second 9:16/24fps MP4 with ffmpeg, adds a low-level synthetic rain ambience bed for the MVP, and emits a bounded production receipt with per-shot generator evidence and final artifact metadata.
+
+The public caller cannot pass shell, executable, provider credentials, filesystem paths, arbitrary ffmpeg arguments, or arbitrary story text through this intent; it supplies only a validated project ID. New productions must be source-defined and reviewed before they become routable. This is an MVP orchestration slice, not proof of general autonomous filmmaking quality or multi-provider routing.
+
 ## Runner Window GUI worker repair
 
 Oracle GUI Worker installation/repair is exposed as the bounded public intent `browser.gui install`. Automatic repair carriers must use the hosted reusable AgentOS dispatch path rather than adding a push-triggered direct-Oracle workflow. The existing direct Oracle installer remains manual-only as a break-glass/legacy surface.
