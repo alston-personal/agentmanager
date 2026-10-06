@@ -27,6 +27,8 @@ if ! mkdir -p "$OUT_ROOT"; then
 fi
 chmod 700 "$OUT_ROOT"
 echo "google_flow_runtime_preflight=PASS"
+PYVER="$("$PY" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")' 2>/dev/null || true)"
+echo "google_flow_python_version=$PYVER"
 
 ERR_LOG="$(mktemp /tmp/agentos-google-flow-error-XXXXXX.log)"
 cleanup_err() { rm -f "$ERR_LOG"; }
@@ -38,7 +40,10 @@ import hashlib,json,os,re,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
 from urllib.parse import urlparse
+print("google_flow_stage=PYTHON_STARTED")
+print("google_flow_stage=IMPORT_PLAYWRIGHT")
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+print("google_flow_stage=PLAYWRIGHT_IMPORTED")
 
 cdp_url,out_root,prompt=sys.argv[1],Path(sys.argv[2]),sys.argv[3]
 if not (1 <= len(prompt) <= 1600):
@@ -305,6 +310,21 @@ m=re.search(r'File "<stdin>", line ([0-9]+)',text)
 print(m.group(1) if m else "")
 PYSL
 )"
+    syntax_source="$(python3 - "$ERR_LOG" <<'PYSS'
+import re,sys
+text=open(sys.argv[1],encoding='utf-8',errors='replace').read()
+m=re.search(r'File "([^"]+)", line [0-9]+',text)
+src=m.group(1) if m else ""
+if src == "<stdin>":
+    print("STDIN")
+elif "site-packages" in src or "dist-packages" in src:
+    print("DEPENDENCY")
+elif src:
+    print("OTHER")
+else:
+    print("UNKNOWN")
+PYSS
+)"
     syntax_offset="$(python3 - "$ERR_LOG" <<'PYSO'
 import re,sys
 lines=open(sys.argv[1],encoding='utf-8',errors='replace').read().splitlines()
@@ -320,6 +340,7 @@ PYSO
   echo "google_flow_runtime_error_class=$class"
   echo "google_flow_runtime_exception_type=$exc_type"
   if [[ -n "$syntax_line" ]]; then echo "google_flow_runtime_syntax_line=$syntax_line"; fi
+  if [[ -n "$syntax_source" ]]; then echo "google_flow_runtime_syntax_source=$syntax_source"; fi
   if [[ -n "$syntax_offset" ]]; then echo "google_flow_runtime_syntax_offset=$syntax_offset"; fi
   echo "google_flow_runtime_error_sha256=$diag"
   exit 0
