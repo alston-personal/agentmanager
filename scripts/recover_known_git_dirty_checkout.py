@@ -8,19 +8,21 @@ import sys
 from datetime import datetime, timezone
 
 EXPECTED_HEAD = "43d3edbbb4ab8b0e883c04e5297c8aaa724cbd4c"
-EXPECTED = {
-    "agent_core/controller_api.py": ("1892f5b359fdb33716637f71b06af64c59caca4d", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "agent_core/controller_service.py": ("88a27f37f4cf43dfa5500bcef6ec9e2de50c389e", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "agent_core/realm_server.py": ("58543d49e5e13e7ed14bf215b7f1ea67503505a5", "e11ee57d4776a4b0fd79a6a32f19d0268da9645e"),
-    "agentos_node/bootstrap_control.py": ("3dc50809d685a1def799e53ef209c53272045545", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "agentos_node/bootstrap_scheduler.py": ("fac71d4ac3f39515d85f56c32327ffc6eac2cf97", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "agentos_node/gemini_web_bridge.py": ("c7737d79c11af93e52fa179a3f7b1800c0387f9f", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "agentos_node/web_agent_surface.py": ("1f138724bf80c689c15d675e1c22fbce595200cd", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "dashboard/app/api/agentos/[...path]/route.ts": ("70a6c2eed1baf14550f26b99adfe15325f9281c4", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "scripts/mio_persona_social_loop_user.py": ("b64b3ee5a8b8d380a9b5b0202d1e5d3a28e30a7b", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "scripts/threads_web_dm_bridge_user.py": ("32e9390ec8edb65089b2e53053adfff02f12fd9d", "396a6f7b6aa07eef5942445233ca1bbe2a7af850"),
-    "scripts/update_scheduler_board.py": ("53b9eef5a72a2e66b39e4f2046947946adf06dd8", "2636f4c0583c7110a9a15d17e0c287bc08607655"),
+SOURCE_REF = "core/integration"
+EXPECTED_PATHS = {
+    "agent_core/controller_api.py",
+    "agent_core/controller_service.py",
+    "agent_core/realm_server.py",
+    "agentos_node/bootstrap_control.py",
+    "agentos_node/bootstrap_scheduler.py",
+    "agentos_node/gemini_web_bridge.py",
+    "agentos_node/web_agent_surface.py",
+    "dashboard/app/api/agentos/[...path]/route.ts",
+    "scripts/mio_persona_social_loop_user.py",
+    "scripts/threads_web_dm_bridge_user.py",
+    "scripts/update_scheduler_board.py",
 }
+
 
 
 def git(repo: Path, *args: str) -> str:
@@ -63,7 +65,7 @@ def main() -> int:
         entries.append((text[:2], text[3:]))
 
     actual_paths = {rel for _, rel in entries}
-    if actual_paths != set(EXPECTED):
+    if actual_paths != EXPECTED_PATHS:
         raise SystemExit(
             "dirty path set changed; refusing recovery: "
             + json.dumps(sorted(actual_paths), ensure_ascii=False)
@@ -71,23 +73,68 @@ def main() -> int:
     if any(status != " M" for status, _ in entries):
         raise SystemExit("dirty status is not ordinary unstaged modification; refusing recovery")
 
+    fetch = subprocess.run(
+        ["git", "fetch", "--no-tags", "origin", SOURCE_REF],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if fetch.returncode != 0:
+        raise SystemExit("unable to refresh bounded source ref")
+    target_tip = git(root, "rev-parse", "FETCH_HEAD")
+    ancestry = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", EXPECTED_HEAD, target_tip],
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if ancestry.returncode != 0:
+        raise SystemExit("core/integration no longer descends from the observed Oracle HEAD")
+
     evidence = []
-    for rel, (expected_blob, provenance_commit) in EXPECTED.items():
+    for rel in sorted(EXPECTED_PATHS):
         path = root / rel
         if path.is_symlink() or not path.is_file():
             raise SystemExit(f"dirty path is not a regular file: {rel}")
         worktree_blob = git(root, "hash-object", "--", rel)
-        if worktree_blob != expected_blob:
-            raise SystemExit(f"dirty blob changed; refusing recovery: {rel}")
-        provenance_blob = git(root, "rev-parse", f"{provenance_commit}:{rel}")
-        if provenance_blob != worktree_blob:
-            raise SystemExit(f"Git provenance mismatch; refusing recovery: {rel}")
+        provenance_commit = ""
+        proc = subprocess.run(
+            ["git", "log", "--format=%H", target_tip, "--", rel],
+            cwd=root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise SystemExit(f"unable to inspect Git provenance: {rel}")
+        for commit in proc.stdout.splitlines():
+            if not commit:
+                continue
+            blob_proc = subprocess.run(
+                ["git", "rev-parse", f"{commit}:{rel}"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if blob_proc.returncode == 0 and blob_proc.stdout.strip() == worktree_blob:
+                provenance_commit = commit
+                break
+        if not provenance_commit:
+            raise SystemExit(f"dirty blob has no core/integration Git provenance: {rel}")
         evidence.append(
             {
                 "path": rel,
                 "status": " M",
                 "worktree_blob": worktree_blob,
                 "provenance_commit": provenance_commit,
+                "source_ref": SOURCE_REF,
+                "source_tip": target_tip,
                 "head_blob": git(root, "rev-parse", f"HEAD:{rel}"),
                 "content_exposed": False,
             }
@@ -116,7 +163,7 @@ def main() -> int:
     os.replace(tmp, receipt)
 
     subprocess.run(
-        ["git", "checkout", "HEAD", "--", *EXPECTED.keys()],
+        ["git", "checkout", "HEAD", "--", *sorted(EXPECTED_PATHS)],
         cwd=root,
         check=True,
     )
@@ -130,7 +177,9 @@ def main() -> int:
     os.replace(tmp, receipt)
     print("oracle_core_known_git_dirty_recovery=PASS")
     print("oracle_core_recovered_head=" + head)
-    print("oracle_core_recovered_path_count=" + str(len(EXPECTED)))
+    print("oracle_core_recovered_path_count=" + str(len(EXPECTED_PATHS)))
+    print("oracle_core_provenance_source_ref=" + SOURCE_REF)
+    print("oracle_core_provenance_source_tip=" + target_tip)
     return 0
 
 
