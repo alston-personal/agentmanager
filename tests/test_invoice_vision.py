@@ -53,6 +53,30 @@ class VisionTests(unittest.TestCase):
                     dict(fixture(), needs_review='false')):
             with self.assertRaises(ValueError): vision.validate_payload(bad)
 
+    def test_partial_payload_keeps_readable_fields(self):
+        partial={
+            'invoice_number':'EC55544057',
+            'invoice_date':'2026-09-25',
+            'amount_before_tax':24500,
+            'tax_amount':1225,
+            'total_amount':25725,
+            'line_items':[{'description':'印刷品','quantity':24500,'unit_price':1,'amount':24500}],
+            'needs_review':True,
+            'uncertain_fields':['seller_name'],
+        }
+        vision.validate_payload(partial)
+        response=MagicMock()
+        response.__enter__.return_value.read.return_value=json.dumps({'output_text':json.dumps(partial)}).encode()
+        with patch.object(vision.urllib.request, 'urlopen', return_value=response):
+            result=vision.read_invoice(image_bytes(), api_key='test-secret', model='configured-model')
+        payload=result['payload']
+        self.assertEqual(payload['invoice_number'],'EC55544057')
+        self.assertEqual(payload['total_amount'],25725)
+        self.assertIsNone(payload['seller_name'])
+        self.assertIsNone(payload['seller_tax_id'])
+        self.assertEqual(payload['line_items'][0]['description'],'印刷品')
+
+
     def test_uncertain_values_are_preserved_but_invalid_values_are_rejected(self):
         p=fixture();p.update(invoice_date='2026-02-30', seller_tax_id='123', uncertain_fields=['seller_name'])
         f, issues=vision.validated_fields(p)
