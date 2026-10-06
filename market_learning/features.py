@@ -78,6 +78,21 @@ def bar_feature_frame(snapshot: ReplaySnapshot) -> FeatureFrame:
         values["market_regime"] = _clamp(regime_return / 0.15)
         available.add("market_regime")
 
+    # Foreign flow: recent foreign institutional net shares relative to traded
+    # volume. This remains replay-safe because only signal values already merged
+    # into visible EOD rows can participate.
+    flow_pairs = [
+        (float(row["foreign_net"]), float(row["trade_volume"]))
+        for row in rows[-5:]
+        if row.get("foreign_net") is not None and row.get("trade_volume") not in (None, 0)
+    ]
+    if flow_pairs:
+        net = sum(pair[0] for pair in flow_pairs)
+        volume = sum(abs(pair[1]) for pair in flow_pairs)
+        if volume > 0:
+            values["foreign_flow"] = _clamp((net / volume) / 0.20)
+            available.add("foreign_flow")
+
     missing = tuple(sorted(set(KNOWN_FEATURES) - available))
     return FeatureFrame(
         values=values,
