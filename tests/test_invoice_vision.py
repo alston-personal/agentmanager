@@ -78,7 +78,7 @@ class VisionTests(unittest.TestCase):
                 initial=store.ingest(image_bytes(),'test.png','image/png')
                 store.process(initial['invoice_id'])
                 persisted=store.get_invoice(initial['invoice_id'])
-                self.assertEqual(persisted['fields']['vendor_name'],'測試商行')
+                self.assertEqual(persisted['fields']['vendor_name'],'買方測試有限公司')
                 self.assertEqual(persisted['fields']['buyer_tax_id'],'23040145')
                 self.assertEqual(persisted['status'],'needs_review')
                 raw=persisted['recognition']
@@ -86,6 +86,8 @@ class VisionTests(unittest.TestCase):
                 self.assertEqual(raw['vision']['field_trace']['buyer_tax_id']['value'],'23040145')
                 self.assertEqual(raw['vision']['field_trace']['buyer_tax_id']['status'],'extracted')
                 self.assertFalse(raw['comparison']['vendor_name']['equal'])
+                self.assertEqual(raw['conflicts']['vendor_name']['vision'],'測試商行')
+                self.assertEqual(raw['conflicts']['vendor_name']['resolution'],'preserve_legacy_pending_review')
                 self.assertEqual(Path(store.get_original(initial['invoice_id'])['path']).read_bytes(),image_bytes())
 
     @patch.dict(os.environ, {'INVOICE_VISION_MODE':'shadow','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
