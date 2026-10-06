@@ -1,0 +1,10 @@
+{
+  "schema":"agentos.monitor/v1",
+  "monitor":{"id":"one-relay-health","owner":"system"},
+  "goal":{"description":"Monitor ONE gateway/action relay health including 502-class failures"},
+  "schedule":{"type":"interval","every":"5m","timezone":"Asia/Taipei","run_immediately":true},
+  "execution":{"capability":"agentos.relay.status"},
+  "payload":{},
+  "condition":{"notify_if_not_healthy":true},
+  "notification_policy":{"severity":"high","cooldown":"30m","dedupe":true}
+}

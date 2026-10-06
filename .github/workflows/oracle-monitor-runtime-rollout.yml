@@ -1,0 +1,74 @@
+name: Oracle Monitor Runtime Rollout
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/monitor_runtime.py'
+      - 'scripts/install_monitor_runtime_user.sh'
+      - 'monitor_specs/**'
+      - 'tests/test_monitor_runtime.py'
+      - '.github/workflows/oracle-monitor-runtime-rollout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Monitor Runtime
+        run: PYTHONPATH=. python3 -m pytest -q tests/test_monitor_runtime.py
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install exact Monitor Runtime generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; REPO=/home/ubuntu/agentmanager; TMP=/tmp/install_monitor_runtime_user.sh
+          git -C "$REPO" fetch --no-tags origin "$SHA" >/dev/null
+          git -C "$REPO" show "$SHA:scripts/install_monitor_runtime_user.sh" > "$TMP"
+          chmod 700 "$TMP"
+          "$TMP" "$SHA"
+          rm -f "$TMP"
+          REMOTE
+      - name: Acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; ROOT="$HOME/.local/share/agentos/monitor-runtime/releases/$SHA"
+          export PYTHONPATH="$ROOT" AGENT_DATA_ROOT=/home/ubuntu/agent-data AGENTOS_SOURCE_COMMIT="$SHA"
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          systemctl --user is-active --quiet agentos-monitor-scheduler.timer
+          systemctl --user show agentos-monitor-scheduler.timer -p NextElapseUSecRealtime --no-pager
+          python3 -m agentos_node.monitor_runtime list > /tmp/monitors.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/monitors.json'))
+          ids={x['monitor_id'] for x in d}
+          required={'google-ai-pro-plan-watch','chatgpt-plus-plan-watch','vopc5750-health','agentos-scheduler-health','one-relay-health','threads-auth-health'}
+          assert required <= ids, required-ids
+          print('monitor_registration=PASS')
+          print('monitor_count='+str(len(ids)))
+          PY
+          test -s /home/ubuntu/agent-data/runtime/monitor-runtime/monitor.sqlite3
+          echo "monitor_durable_state=PASS"
+          systemctl --user start agentos-monitor-scheduler.service || true
+          python3 -m agentos_node.monitor_runtime notifications > /tmp/monitor-notifications.json
+          echo "monitor_timer=PASS"
+          REMOTE
