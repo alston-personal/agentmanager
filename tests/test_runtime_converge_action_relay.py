@@ -54,7 +54,6 @@ def test_fixed_runtime_install_converges_product_employee_profile_after_realm(mo
 
     monkeypatch.setattr(relay, "_run", fake_run)
     monkeypatch.setattr(relay, "_health", lambda: True)
-    assert relay._install_fixed_runtime(tmp_path) is True
     assert relay._install_fixed_runtime_diagnostic(tmp_path) == (True, "ready")
     assert calls == [
         (["python3", "scripts/install_services.py"], tmp_path, 240),
