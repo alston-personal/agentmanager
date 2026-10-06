@@ -164,6 +164,15 @@ def send_telegram_alert(message: str):
         pass
 
 
+def run_with_completion_guard(proj_dir: Path, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
+    """Never allow an exception after durable claim to strand work in_progress."""
+    try:
+        return run_with_inspector(proj_dir, task_text, dry_run)
+    except Exception as exc:
+        logger.exception("claimed task execution crashed")
+        return False, f"BLOCKED: executor_exception:{type(exc).__name__}"
+
+
 def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
     """
     執行任務並用 Inspector 驗證。最多重試 3 次。
@@ -884,7 +893,7 @@ def process_project(proj_name: str, dry_run: bool = False) -> bool:
     
     # 執行任務
     work_id = completion_begin(task["text"])
-    success, output = run_with_inspector(completion_workspace(work_id, proj_name), task["text"], dry_run)
+    success, output = run_with_completion_guard(completion_workspace(work_id, proj_name), task["text"], dry_run)
     completion_finish(work_id, success, output)
     
     if success:
@@ -960,7 +969,7 @@ def main():
                 
                 # 執行任務。Completion Controller 項目先進入 durable in_progress。
                 work_id = completion_begin(task["text"])
-                success, output = run_with_inspector(completion_workspace(work_id, proj_name), task["text"], args.dry_run)
+                success, output = run_with_completion_guard(completion_workspace(work_id, proj_name), task["text"], args.dry_run)
                 completion_finish(work_id, success, output)
                 
                 # 在 TASK_BOARD 更新狀態
