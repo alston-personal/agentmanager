@@ -1,7 +1,6 @@
 name: Oracle Inspect Persona Heartbeat Via SSH
 
 on:
-  workflow_dispatch:
   push:
     paths:
       - '.github/workflows/oracle-inspect-persona-heartbeat-via-ssh.yml'
@@ -12,98 +11,33 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     env:
       DEPLOY_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-
-      - name: Inspect heartbeat producers
+      - name: Inspect current persona heartbeat
         shell: bash
         run: |
           set -euo pipefail
-          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          set -euo pipefail
-          echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo '=== IDENTITY ==='
-          id
-          echo "HOME=$HOME"
-
-          echo '=== USER TIMERS ==='
-          systemctl --user list-timers --all --no-pager 2>&1 || true
-
-          echo '=== USER UNIT FILES ==='
-          systemctl --user list-unit-files --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
-
-          echo '=== SYSTEM TIMERS/UNITS ==='
-          systemctl list-timers --all --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
-          systemctl list-unit-files --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
-
-          echo '=== USER CRONTAB ==='
-          crontab -l 2>&1 || true
-
-          echo '=== USER UNIT CONTENTS ==='
-          for f in "$HOME"/.config/systemd/user/*persona* "$HOME"/.config/systemd/user/*heartbeat*; do
-            [ -e "$f" ] || continue
-            echo "--- $f"
-            sed -n '1,220p' "$f" 2>&1 || true
-          done
-
-          echo '=== LOCAL AGENTOS MATCHES ==='
-          grep -RInsE 'advance active persona heartbeats|agentos-persona-heartbeat@users.noreply.github.com|sunlake-milkcat|oursong_alstonhuang'             "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/.config/systemd/user" 2>/dev/null | head -n 500 || true
-
-          echo '=== RUNNING MATCHES ==='
-          ps -eo user,pid,ppid,lstart,args | grep -Ei '[p]ersona|[h]eartbeat|sunlake-milkcat|oursong_alstonhuang' || true
-
-          echo '=== GIT IDENTITY ==='
-          git config --global --get user.name 2>/dev/null || true
-          git config --global --get user.email 2>/dev/null || true
-
-          echo '=== HEARTBEAT EXECUTABLE CONTENT ==='
-          file "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
-          sed -n '1,180p' "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
-
-          echo '=== MONITOR SCHEDULER UNIT ==='
-          systemctl --user cat agentos-monitor-scheduler.service agentos-monitor-scheduler.timer 2>&1 || true
-
-          echo '=== MONITOR SCHEDULER SOURCES ==='
-          for p in "$HOME/.local/bin/agentos-monitor-scheduler" "$HOME/.local/lib/agentos/monitor_scheduler.py"; do
-            [ -e "$p" ] || continue
-            echo "--- $p"
-            sed -n '1,260p' "$p" 2>&1 || true
-          done
-
-          echo '=== WHO REFERENCES HEARTBEAT EXECUTABLE ==='
-          grep -RInsE 'agentos-persona-pdca-heartbeat|advance active persona heartbeats' "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/.config/systemd/user" 2>/dev/null | head -n 700 || true
-
-          echo '=== CANONICAL V2 SERVICE OWNERSHIP ==='
-          systemctl --user show -p ExecStart --value agentos-persona-pdca-heartbeat.service 2>&1 || true
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          echo '=== EXECSTART ==='
+          systemctl --user show agentos-persona-pdca-heartbeat.service -p ExecStart --value || true
+          echo '=== V2 FILE ==='
           file "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
-          sha256sum "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
-          head -n 8 "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
-
-          echo '=== HEARTBEAT FILE METADATA ==='
-          stat "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
-          sha256sum "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
-
-          echo '=== SEARCH ORACLE SOURCE TREES FOR LEGACY HEARTBEAT ==='
-          grep -RInsE 'AGENTOS_PERSONA_DATA_ROOT|agentos.persona-pdca-heartbeat-receipt/v1|NO_ACTIVE_PERSONAS|advance active persona heartbeats' \
-            "$HOME/agentmanager" "$HOME/.local/share/agentos" 2>/dev/null | head -n 1000 || true
-
-          echo '=== RECENT FILES THAT COULD INSTALL HEARTBEAT ==='
-          find "$HOME/agentmanager" "$HOME/.local/share/agentos" -type f \
-            \( -iname '*persona*heartbeat*' -o -iname '*pdca*install*' -o -iname '*persona*install*' \) \
-            -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort -r | head -n 300 || true
-
-          echo '=== KNOWN PDCA UNITS ==='
-          systemctl --user --no-pager --full status             agentos-persona-pdca-heartbeat.timer             agentos-persona-pdca-heartbeat.service             agentos-persona-social-actions.timer             agentos-persona-social-actions.service 2>&1 || true
-
-          echo 'mutation=NONE'
+          head -n 3 "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
+          echo '=== SERVICE STATUS ==='
+          systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service 2>&1 || true
+          echo '=== PROCESSES ==='
+          ps -eo pid,ppid,lstart,args | grep -E '[a]gentos-persona-pdca-heartbeat|[p]ersona-agent-data|[g]h repo clone|[g]it .*my-agent-data' || true
+          echo '=== LOCK ==='
+          command -v lsof >/dev/null && lsof /tmp/agentos-persona-pdca-heartbeat.lock 2>&1 || true
+          echo '=== TIMER ==='
+          systemctl --user list-timers --all --no-pager | grep agentos-persona-pdca-heartbeat || true
           REMOTE
