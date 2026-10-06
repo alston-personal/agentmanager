@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from io import BytesIO
 from pathlib import Path
 
@@ -182,6 +183,30 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             item = store.get_invoice(created["invoice_id"])
             self.assertEqual(item["status"], "processing")
             self.assertTrue(item["processing_stale"])
+
+    def test_stale_processing_ids_and_recovery_use_original_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            created = store.ingest(
+                jpeg_bytes(),
+                "stale-recover.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-stale-recover",
+            )
+            invoice_id = created["invoice_id"]
+            with store.connect() as db:
+                db.execute(
+                    "UPDATE invoices SET updated_at='2020-01-01T00:00:00Z' WHERE id=?",
+                    (invoice_id,),
+                )
+            self.assertIn(invoice_id, store.stale_processing_ids())
+            with patch.object(store, "process", return_value={"status": "extracted"}) as process:
+                result = store.recover_stale_processing()
+            process.assert_called_once_with(invoice_id)
+            self.assertEqual(result["attempted"], 1)
+            self.assertEqual(result["recovered"], [invoice_id])
+            self.assertEqual(result["failed"], [])
 
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
         with tempfile.TemporaryDirectory() as tmp:
