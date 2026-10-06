@@ -174,6 +174,11 @@ systemctl --user enable --now \
   agentos-gui-vnc.service \
   agentos-gui-novnc.service >/dev/null
 
+# A repair must recycle an already-active Chromium process. "enable --now"
+# starts inactive units but does not restart an active browser, so a wedged
+# CDP websocket can survive an otherwise successful repair indefinitely.
+systemctl --user restart agentos-gui-browser.service
+
 for unit in agentos-gui-display agentos-gui-window-manager agentos-gui-browser agentos-gui-vnc agentos-gui-novnc; do
   systemctl --user is-active --quiet "$unit.service" || {
     systemctl --user --no-pager --full status "$unit.service" >&2 || true
