@@ -55,7 +55,11 @@ systemctl --user daemon-reload
 STAGE=timer_enable
 systemctl --user enable --now mio-threads-session-supervisor.timer >/dev/null
 STAGE=initial_probe
-systemctl --user start mio-threads-session-supervisor.service
+if systemctl --user start mio-threads-session-supervisor.service; then
+  echo "mio_threads_session_supervisor_initial_probe=PASS"
+else
+  echo "mio_threads_session_supervisor_initial_probe=FAILED"
+fi
 STAGE=timer_verify
 systemctl --user is-active --quiet mio-threads-session-supervisor.timer
 STAGE=done
