@@ -260,6 +260,36 @@ def test_restart_after_claim_reports_unknown_and_never_redispatches(tmp_path: Pa
     assert github.results[0]['error'] == 'bridge_interrupted_after_claim'
 
 
+def test_runtime_reconnect_dispatch_omits_synthetic_bridge_task_id():
+    command = _command(command_id='reconnect-request-id', action='node.runtime.converge.inspect')
+    command['node_id'] = 'oracle-core-node'
+    command['args'] = {
+        'request_id': 'original-runtime-request',
+        'repository': 'alston-personal/agentmanager',
+        'source_ref': 'core/integration',
+        'source_commit': 'a' * 40,
+    }
+    client = StubOneControllerClient(200, {
+        'ok': True,
+        'schema': 'agentos.runtime-converge-reconnect/v1',
+        'action': 'node.runtime.converge',
+        'request_id': 'original-runtime-request',
+        'task_id': 'action-existing',
+        'status': 'completed',
+    })
+    calls = []
+    def capture(method, path, payload=None):
+        calls.append((method, path, payload))
+        return client.status, client.payload
+    client._request = capture
+    result = client.dispatch('oracle-core-node', command)
+    assert result['task_id'] == 'action-existing'
+    assert calls[0][1] == '/v1/controller/dispatch'
+    sent = calls[0][2]
+    assert 'task_id' not in sent
+    assert sent['request_id'] == 'original-runtime-request'
+
+
 def test_http_200_ok_dispatch_is_accepted_not_misclassified():
     client = StubOneControllerClient(200, {
         'ok': True, 'task_id': 'ctl_200', 'state': 'queued',
