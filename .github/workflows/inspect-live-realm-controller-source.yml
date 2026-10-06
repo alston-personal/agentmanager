@@ -1,0 +1,43 @@
+name: Inspect Live Realm Controller Source
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/inspect-live-realm-controller-source.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect service working directory and text mapping
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          WD=$(systemctl --user show agentos-realm-fabric.service -p WorkingDirectory --value)
+          echo "WORKING_DIRECTORY=$WD"
+          test -n "$WD"
+          FILE="$WD/agent_core/controller_api.py"
+          test -f "$FILE"
+          python3 - "$FILE" <<'PY'
+          import pathlib,sys,re
+          p=pathlib.Path(sys.argv[1]); t=p.read_text(encoding='utf-8')
+          print('FILE='+str(p))
+          print('HAS_TYPED_ACTION='+str('desktop.text.insert' in t))
+          m=re.search(r"if action == 'desktop\.text\.insert':[\s\S]{0,700}",t)
+          print('TEXT_BLOCK='+((m.group(0) if m else 'NOT_FOUND').replace('\n',' | ')))
+          PY
+          REMOTE
