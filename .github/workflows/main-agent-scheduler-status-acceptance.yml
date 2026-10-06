@@ -65,8 +65,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          AGENTOS_DISPATCH_WAIT_SECONDS=120             bash scripts/agentos_dispatch.sh agentos.scheduler status "$GITHUB_SHA"             | tee "$RUNNER_TEMP/scheduler-status.txt"
-          python3 - "$RUNNER_TEMP/scheduler-status.txt" "$RUNNER_TEMP/scheduler-status.json" <<'PY'
+          accepted=0
+          for attempt in $(seq 1 30); do
+            OUT="$RUNNER_TEMP/scheduler-status-${attempt}.txt"
+            AGENTOS_DISPATCH_WAIT_SECONDS=60 \
+              bash scripts/agentos_dispatch.sh agentos.scheduler status "$GITHUB_SHA" \
+              | tee "$OUT"
+            if python3 - "$OUT" "$RUNNER_TEMP/scheduler-status.json" <<'PY'
           import json,re,sys
           docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
           assert docs
@@ -88,13 +93,22 @@ jobs:
               k,v=line.split('=',1); vals[k]=v
           assert vals.get('scheduler_status')=='PASS', vals
           for key in ('scheduler_status_pending_count','scheduler_status_pending_oldest_seconds','scheduler_status_stalled_count','scheduler_status_receipts_count','scheduler_status_rejected_count','scheduler_status_worker_count'):
-              assert re.fullmatch(r'\\d+', vals.get(key,'')), (key,vals)
+              assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)
           assert vals.get('scheduler_status_worker_oracle-gui_role')=='gui', vals
           assert vals.get('scheduler_status_worker_oracle-gui_state') in {'idle','running'}, vals
           json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
           print('scheduler_status_acceptance=PASS')
           for key in sorted(vals): print(key+'='+vals[key])
           PY
+            then
+              cp "$OUT" "$RUNNER_TEMP/scheduler-status.txt"
+              accepted=1
+              break
+            fi
+            echo "scheduler_status_worker_projection_wait=attempt_${attempt}"
+            sleep 3
+          done
+          test "$accepted" = 1
 
       - name: Upload sanitized scheduler evidence
         if: always()
