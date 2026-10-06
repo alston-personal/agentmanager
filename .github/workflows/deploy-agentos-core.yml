@@ -152,6 +152,24 @@ jobs:
           systemctl --user --version >/dev/null
           python3 --version
           echo "preflight_sha=$(git rev-parse HEAD)"
+          probe_path="scripts/threads_web_dm_bridge_user.py"
+          probe_worktree="$(git hash-object -- "$probe_path" 2>/dev/null || true)"
+          probe_target="$(git rev-parse "a58277913366b39fdfba97c0f8839ec1ef59766a:$probe_path" 2>/dev/null || true)"
+          echo "threads_dm_diag worktree=$probe_worktree target=$probe_target"
+          probe_match=""
+          while IFS= read -r commit; do
+            [ -n "$commit" ] || continue
+            blob="$(git rev-parse "$commit:$probe_path" 2>/dev/null || true)"
+            if [ -n "$blob" ] && [ "$blob" = "$probe_worktree" ]; then
+              probe_match="$commit"
+              break
+            fi
+          done < <(git log --all --format=%H -- "$probe_path" 2>/dev/null || true)
+          if [ -n "$probe_match" ]; then
+            echo "threads_dm_provenance class=KNOWN_GIT_VERSION commit=$probe_match blob=$probe_worktree"
+          else
+            echo "threads_dm_provenance class=NO_GIT_MATCH blob=$probe_worktree"
+          fi
           REMOTE
 
       - name: Checkout recovery carrier
