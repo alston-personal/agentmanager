@@ -65,6 +65,143 @@ def ocr_page_evidence(engine: RapidOCR, image_bytes: bytes) -> tuple[list[dict[s
     return _ocr_evidence(engine(image_bytes))
 
 
+
+def _box_bounds(box: Any) -> tuple[float, float, float, float] | None:
+    if not box:
+        return None
+    try:
+        xs = [float(p[0]) for p in box]
+        ys = [float(p[1]) for p in box]
+    except Exception:
+        return None
+    if not xs or not ys:
+        return None
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _norm_label(text: str) -> str:
+    return (
+        re.sub(r"\s+", "", text or "")
+        .replace("销", "銷")
+        .replace("售额", "售額")
+        .replace("营业税", "營業稅")
+        .replace("总计", "總計")
+        .replace("合计", "合計")
+    )
+
+
+def layout_amount_candidates(evidence: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Rank numeric OCR tokens by geometric relation to amount labels.
+
+    This never derives or invents an amount. It only associates already-recognized
+    numeric evidence with subtotal/tax/total labels using the OCR boxes.
+    """
+    label_groups = {
+        "amount_before_tax": ("銷售額合計", "銷售額", "合計"),
+        "tax_amount": ("營業稅", "稅額"),
+        "total_amount": ("總計",),
+    }
+    anchors: dict[str, list[tuple[dict[str, Any], tuple[float, float, float, float]]]] = {
+        key: [] for key in label_groups
+    }
+    numeric: list[tuple[dict[str, Any], tuple[float, float, float, float], int]] = []
+
+    for token in evidence:
+        bounds = _box_bounds(token.get("box"))
+        if not bounds:
+            continue
+        label = _norm_label(str(token.get("text") or ""))
+        for field, names in label_groups.items():
+            if any(name in label for name in names):
+                anchors[field].append((token, bounds))
+        value = _amount_token(str(token.get("text") or ""))
+        if value is not None and 0 <= value <= 50_000_000:
+            numeric.append((token, bounds, value))
+
+    out: dict[str, list[dict[str, Any]]] = {key: [] for key in label_groups}
+    for field, field_anchors in anchors.items():
+        ranked: list[dict[str, Any]] = []
+        for anchor_token, (ax1, ay1, ax2, ay2) in field_anchors:
+            ah = max(1.0, ay2 - ay1)
+            acy = (ay1 + ay2) / 2.0
+            for token, (x1, y1, x2, y2), value in numeric:
+                if token is anchor_token:
+                    continue
+                cy = (y1 + y2) / 2.0
+                vertical = abs(cy - acy) / ah
+                horizontal_gap = x1 - ax2
+                # Typical invoice summary has the number to the right of the
+                # label on the same row. Allow a small overlap because OCR boxes
+                # can be noisy, but reject distant rows.
+                if vertical > 1.6 or horizontal_gap < -ah:
+                    continue
+                score = max(0.0, 1.0 - min(vertical / 1.6, 1.0))
+                if horizontal_gap >= 0:
+                    score += 0.4
+                conf = token.get("confidence")
+                if isinstance(conf, (int, float)):
+                    score += max(0.0, min(float(conf), 1.0)) * 0.3
+                ranked.append({
+                    "value": value,
+                    "score": round(score, 4),
+                    "text": token.get("text"),
+                    "confidence": conf,
+                    "box": token.get("box"),
+                    "anchor": anchor_token.get("text"),
+                })
+        ranked.sort(key=lambda item: item["score"], reverse=True)
+        dedup: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for item in ranked:
+            if item["value"] in seen:
+                continue
+            seen.add(item["value"])
+            dedup.append(item)
+        out[field] = dedup[:5]
+    return out
+
+
+def choose_layout_amounts(evidence: list[dict[str, Any]]) -> tuple[dict[str, int | None], dict[str, Any]]:
+    """Choose only geometrically-supported OCR amounts; arithmetic validates, never invents."""
+    candidates = layout_amount_candidates(evidence)
+    chosen: dict[str, int | None] = {
+        "amount_before_tax": None,
+        "tax_amount": None,
+        "total_amount": None,
+    }
+    evidence_used: dict[str, Any] = {}
+
+    # Prefer a complete triple that is independently present in OCR and
+    # arithmetically consistent. This is selection, not derivation.
+    for subtotal in candidates["amount_before_tax"][:4]:
+        for tax in candidates["tax_amount"][:4]:
+            for total in candidates["total_amount"][:4]:
+                if subtotal["value"] + tax["value"] != total["value"]:
+                    continue
+                chosen.update({
+                    "amount_before_tax": subtotal["value"],
+                    "tax_amount": tax["value"],
+                    "total_amount": total["value"],
+                })
+                evidence_used = {
+                    "amount_before_tax": subtotal,
+                    "tax_amount": tax,
+                    "total_amount": total,
+                    "validation": "subtotal_plus_tax_equals_total",
+                }
+                return chosen, evidence_used
+
+    # A high-scoring total next to an explicit total label is safe to retain
+    # independently even when the other two values were not recognized.
+    if candidates["total_amount"]:
+        top = candidates["total_amount"][0]
+        if top["score"] >= 0.9:
+            chosen["total_amount"] = top["value"]
+            evidence_used["total_amount"] = top
+
+    return chosen, evidence_used
+
+
 def normalize_invoice_number(text: str) -> str | None:
     s = (text or "").upper().replace("O", "0")
     m = INV_RE.search(s)
