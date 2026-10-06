@@ -536,7 +536,7 @@ def _relay_status() -> dict[str, Any]:
     antigravity = active("agentos-antigravity-relay.service")
     action_relay = active("agentos-action-relay.service")
 
-    def source_commit(unit: str, key: str) -> str:
+    def unit_source_commit(unit: str, key: str) -> str:
         proc = subprocess.run(
             ["systemctl", "--user", "show", unit, "-p", "Environment", "--value"],
             capture_output=True,
@@ -548,11 +548,23 @@ def _relay_status() -> dict[str, Any]:
         match = re.search(r"(?:^|\\s)" + re.escape(key) + r"=([0-9a-f]{40})(?:\\s|$)", env_text)
         return match.group(1) if match else ""
 
-    antigravity_source_commit = source_commit(
+    def marker_source_commit(path: Path) -> str:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return ""
+        value = str(payload.get("source_commit") or "").strip()
+        return value if COMMIT_RE.fullmatch(value) else ""
+
+    antigravity_source_commit = marker_source_commit(
+        Path.home() / ".local/share/agentos/runtime-vnext/runtime-provenance.json"
+    ) or unit_source_commit(
         "agentos-antigravity-relay.service",
         "AGENTOS_RUNTIME_SOURCE_COMMIT",
     )
-    action_source_commit = source_commit(
+    action_source_commit = marker_source_commit(
+        Path.home() / "agent-data/runtime/action-relay/capabilities.json"
+    ) or unit_source_commit(
         "agentos-action-relay.service",
         "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT",
     )
