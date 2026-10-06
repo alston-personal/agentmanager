@@ -24,6 +24,7 @@ CONTROLLER_ACTION_CAPABILITY = {
     'desktop.window.stage': 'desktop.windows.tile',
     'desktop.pointer.click': 'desktop.mouse',
     'desktop.text.insert': 'desktop.keyboard',
+    'desktop.key.press': 'desktop.keyboard',
     'node.runtime.converge': 'shell.exec',
     'node.ssh.inspect': 'node.ssh.inspect',
     'node.ssh.recover': 'node.ssh.recover',
@@ -546,6 +547,7 @@ print('agentos_source_commit='+source_commit)
                 'desktop.window.stage': 'desktop.windows.tile',
                 'desktop.pointer.click': 'desktop.mouse',
                 'desktop.text.insert': 'desktop.keyboard',
+                'desktop.key.press': 'desktop.keyboard',
             }
             compatible = (
                 existing_action == action
@@ -568,7 +570,7 @@ print('agentos_source_commit='+source_commit)
                 cwd=self._maintenance_cwd(node),
                 platform_name=str(node.get('platform') or ''),
             )
-        elif action in {'desktop.window.stage', 'desktop.pointer.click', 'desktop.text.insert'}:
+        elif action in {'desktop.window.stage', 'desktop.pointer.click', 'desktop.text.insert', 'desktop.key.press'}:
             task = self._typed_desktop_task(task_id, action, request)
         else:
             task = {
