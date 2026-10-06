@@ -390,3 +390,7 @@ The ONE runtime inspection now also emits only task_id/action/queued_at metadata
 ### Windows visible-console recovery guard
 
 Windows repair must never start an already-registered Thin Client task before validating/replacing its action. A legacy task may still point at a visible cmd.exe launcher even when current source defines a hidden PowerShell supervisor. The one-click repair therefore stops legacy tasks first, reinstalls the runtime, atomically re-registers both Thin Client and watchdog actions with `-WindowStyle Hidden`, verifies those registered actions are hidden PowerShell, and only then starts them. The low-level installer also includes `agentos_node/semantic_preview.py` so a repaired node cannot advertise code paths whose runtime module was omitted.
+
+### Windows stale Thin Client file-lock recovery
+
+Stopping the Scheduled Task alone is insufficient on Windows because a previously spawned Python Thin Client child can outlive the task wrapper and retain locks on installed modules. Repair therefore enumerates and terminates all recognized Thin Client process shapes (module invocation, launcher cmd, and installed thin_client/client_cli paths) before replacing files, then rechecks until no matching process remains or fails closed. This prevents in-place upgrade from partially overwriting a locked runtime.
