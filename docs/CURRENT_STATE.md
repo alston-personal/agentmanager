@@ -418,3 +418,7 @@ Versioned runtime repair treats `state\policy.json` as persistent configuration.
 ### Windows managed-endpoint supervisor policy
 
 Per-user persistence via HKCU Run plus hidden PowerShell watchdog is not an acceptable fallback on managed endpoints because endpoint security products can classify that pattern as malicious behavior. The canonical installer therefore fails closed with `WINDOWS_SUPERVISOR_APPROVAL_REQUIRED` when Task Scheduler registration is denied. Recovery must use an administrator/IT-approved supervisor installation path; AgentOS must not attempt to bypass endpoint security or recreate persistence through alternate user autorun mechanisms.
+
+### Windows runtime dependency closure
+
+The Windows Thin Client installer must ship every transitive `agentos_node.*` module imported by the installed CLI/runtime. `thin_client_transport.py` imports `agentos_node.onboarding`, so `onboarding.py` is part of the required runtime payload. CI now guards this dependency to prevent readiness failures caused by incomplete file manifests.

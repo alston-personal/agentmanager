@@ -95,6 +95,7 @@ jobs:
 
           foreach($needle in @(
             'agentos_node/semantic_preview.py',
+            'agentos_node/onboarding.py',
             'agentos_node/session_bridge.py',
             'agentos_node/agent_surfaces.py',
             'scripts/windows/thin_client_watchdog.ps1',
