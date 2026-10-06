@@ -60,18 +60,12 @@ async function connectTarget(wsurl) {
 }
 
 async function browserSession(){
-  const version=await httpJson('GET',BASE+'/json/version');
-  if(!version.webSocketDebuggerUrl) throw new Error('MISSING_BROWSER_WS_URL');
-  const browser=await connectTarget(String(version.webSocketDebuggerUrl));
-  const created=await browser.cmd('Target.createTarget',{url:'https://www.threads.com/messages'});
-  const targetId=String((((created||{}).result||{}).targetId)||'');
-  if(!targetId) throw new Error('MISSING_TARGET_ID');
-  await browser.cmd('Target.activateTarget',{targetId});
-  const attached=await browser.cmd('Target.attachToTarget',{targetId,flatten:true});
-  const sessionId=String((((attached||{}).result||{}).sessionId)||'');
-  if(!sessionId) throw new Error('MISSING_SESSION_ID');
-  const cmd=(method,params={})=>browser.cmd(method,params,sessionId);
-  return {browser,cmd};
+  const created=await httpJson('PUT',BASE+'/json/new?'+encodeURIComponent('https://www.threads.com/messages'));
+  const wsurl=String(created.webSocketDebuggerUrl||'');
+  if(!wsurl) throw new Error('MISSING_TARGET_WS_URL');
+  const page=await connectTarget(wsurl);
+  const cmd=(method,params={})=>page.cmd(method,params);
+  return {browser:page,cmd};
 }
 
 function axValue(node,key){
