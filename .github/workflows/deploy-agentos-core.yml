@@ -125,6 +125,12 @@ jobs:
             exit 2
           fi
 
+      - name: Validate bounded recovery carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/recover_known_git_dirty_checkout.py
+
       - name: Start SSH agent
         id: ssh_agent
         uses: webfactory/ssh-agent@v0.9.0
