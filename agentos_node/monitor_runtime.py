@@ -49,6 +49,16 @@ def stable_digest(value: Any) -> str:
 def data_root() -> Path:
     return Path(os.environ.get("AGENT_DATA_ROOT") or "/home/ubuntu/agent-data")
 
+def runtime_source_commit() -> str:
+    value=str(os.environ.get("AGENTOS_SOURCE_COMMIT") or "").strip()
+    if not value:
+        marker=data_root() / "runtime" / "monitor-runtime" / "source_commit"
+        if marker.is_file():
+            value=marker.read_text(encoding="utf-8").strip()
+    if len(value)!=40 or any(ch not in "0123456789abcdef" for ch in value):
+        raise RuntimeError("monitor runtime source commit unavailable")
+    return value
+
 @dataclass
 class DispatchResult:
     ok: bool

@@ -30,7 +30,7 @@ from agent_core.runtime_converge_capability import installed_core_capabilities
 from agent_core.runner_window import catalog as runner_window_catalog, public_intent_for_action, resolve_intent
 from agentos_node import bootstrap_control as bootstrap_control
 from agentos_node.bootstrap_scheduler import policy_for as bootstrap_policy_for
-from agentos_node.monitor_runtime import MonitorStore, data_root as monitor_data_root, run_monitor
+from agentos_node.monitor_runtime import MonitorStore, data_root as monitor_data_root, run_monitor, runtime_source_commit as monitor_runtime_source_commit
 
 
 _GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com'
@@ -760,9 +760,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             result = {'deleted': monitor_id}
         elif method == 'monitor.run':
             monitor_id = str(params.get('monitor_id') or '')
-            source_commit = str(os.environ.get('AGENTOS_SOURCE_COMMIT') or '').strip()
-            if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
-                raise RuntimeError('monitor runtime source commit unavailable')
+            source_commit = monitor_runtime_source_commit()
             result = run_monitor(store, monitor_id, source_commit)
         elif method == 'monitor.triggered':
             result = store.notifications(unread_only=bool(params.get('unread_only', True)))
