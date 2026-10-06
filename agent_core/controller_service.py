@@ -97,7 +97,7 @@ class ControllerService:
             text = str(request.get('text') or '')
             if not text or len(text) > 1000:
                 raise ValueError('desktop.text.insert text must contain 1..1000 characters')
-            return {**base, 'action': 'desktop.keyboard', 'operation': 'type', 'text': text}
+            return {**base, 'action': 'desktop.keyboard', 'operation': 'paste', 'text': text}
         raise ValueError(f'unsupported typed desktop action: {action}')
 
     def _node_for_dispatch(self, node_id: str) -> dict[str, Any]:
