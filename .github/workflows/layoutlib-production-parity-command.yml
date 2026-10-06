@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 jobs:
   parity:
@@ -141,3 +142,41 @@ jobs:
           path: ${{ runner.temp }}/layoutlib-parity-receipt.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Post sanitized parity result to control issue
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          comment="$RUNNER_TEMP/layoutlib-parity-comment.md"
+          if [ -s "$RUNNER_TEMP/layoutlib-parity-receipt.json" ]; then
+            python3 - "$RUNNER_TEMP/layoutlib-parity-receipt.json" "$comment" <<'PY'
+import json,sys
+receipt=json.load(open(sys.argv[1],encoding='utf-8'))
+allowed=(
+  'job_id','job_type','project_id','executor_class','capability',
+  'executor_available','routable','authorized','successful','credential_exposed',
+  'verdict','classification','observed_head','layoutlib_release',
+  'layoutlib_manifest_files','layoutlib_matching_files','layoutlib_public_http',
+  'layoutlib_parity'
+)
+safe={k:receipt.get(k) for k in allowed if k in receipt}
+with open(sys.argv[2],'w',encoding='utf-8') as f:
+    f.write('## LayoutLib production parity receipt\n\n')
+    f.write('Run: `' + str(__import__('os').environ.get('GITHUB_RUN_ID','')) + '`\n\n')
+    f.write('```json\n')
+    f.write(json.dumps(safe,sort_keys=True,indent=2))
+    f.write('\n```\n')
+PY
+          else
+            {
+              echo '## LayoutLib production parity receipt'
+              echo
+              echo "Run: `$GITHUB_RUN_ID`"
+              echo
+              echo 'No sanitized terminal receipt was produced; treat this run as failed/unknown and inspect the bounded workflow run.'
+            } > "$comment"
+          fi
+          gh issue comment 1178 --repo "$GITHUB_REPOSITORY" --body-file "$comment"
