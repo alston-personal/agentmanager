@@ -1,0 +1,10 @@
+{
+  "schema":"agentos.monitor/v1",
+  "monitor":{"id":"chatgpt-plus-plan-watch","owner":"user"},
+  "goal":{"description":"ChatGPT Plus pricing, usage limits, included features and terms"},
+  "schedule":{"type":"interval","every":"7d","timezone":"Asia/Taipei","run_immediately":true},
+  "execution":{"capability":"web.official.snapshot"},
+  "payload":{"source":"chatgpt-plus"},
+  "condition":{"notify_only_if_material_change":true},
+  "notification_policy":{"severity":"medium","cooldown":"7d","dedupe":true}
+}
