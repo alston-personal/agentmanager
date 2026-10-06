@@ -1,0 +1,59 @@
+name: Inspect Thin Client Runtime Logs
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/inspect-thin-client-runtime-logs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect recent AgentOS logs
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore(); tid='inspect-thin-client-runtime-logs-20261006-1034'
+          ps=r'''$root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          Get-ChildItem -Recurse $root -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'log|stdout|stderr' -and $_.LastWriteTime -gt (Get-Date).AddHours(-2) } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 20 FullName,Length,LastWriteTime | ConvertTo-Json -Compress
+          Write-Output '===TAILS==='
+          Get-ChildItem -Recurse $root -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'log|stdout|stderr' -and $_.LastWriteTime -gt (Get-Date).AddHours(-2) } |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 8 | ForEach-Object {
+              Write-Output ('FILE='+$_.FullName)
+              Get-Content -LiteralPath $_.FullName -Tail 120 -ErrorAction SilentlyContinue
+            }'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':['demo://runtime-log/20261006']})
+          for _ in range(35):
+              r=f.get_receipt(tid)
+              if r:
+                  print(r.get('stdout') or '')
+                  raise SystemExit(0)
+              time.sleep(1)
+          raise SystemExit('runtime_logs_receipt_missing')
+          PY
+          REMOTE
