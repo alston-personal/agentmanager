@@ -96,14 +96,14 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
     def test_p0_baseline_is_explicit_and_not_approval(self):
         policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
         baseline = policy["p0_baseline"]
-        self.assertEqual(len(baseline["paths"]), 9)
+        self.assertEqual(len(baseline["paths"]), 5)
         self.assertIn("not approval", baseline["rule"].lower())
 
     def test_inventory_reports_new_unreviewed_p0_against_baseline(self):
         payload = audit.build_inventory()
         self.assertIn("new_unreviewed_p0", payload["summary"])
         self.assertEqual(payload["summary"]["new_unreviewed_p0"], [])
-        self.assertEqual(len(payload["summary"]["p0_paths"]), 9)
+        self.assertEqual(len(payload["summary"]["p0_paths"]), 5)
 
 
 if __name__ == "__main__":
