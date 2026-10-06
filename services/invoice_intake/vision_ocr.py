@@ -118,8 +118,27 @@ def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
             raise VisionError('RESPONSE_TOO_LARGE')
         envelope = json.loads(raw)
     except urllib.error.HTTPError as exc:
-        code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code, 'PROVIDER_ERROR')
-        raise VisionError(code) from None
+        code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code)
+        if code is None:
+            try:
+                raw_error = exc.read(64 * 1024)
+                payload = json.loads(raw_error)
+                candidates = payload if isinstance(payload, list) else [payload]
+                reasons = {
+                    str(detail.get('reason'))
+                    for item in candidates if isinstance(item, dict)
+                    for error in [item.get('error')]
+                    if isinstance(error, dict)
+                    for detail in (error.get('details') or [])
+                    if isinstance(detail, dict)
+                }
+                if 'API_KEY_INVALID' in reasons:
+                    code = 'API_KEY_INVALID'
+                elif exc.code == 400:
+                    code = 'INVALID_REQUEST'
+            except Exception:
+                code = None
+        raise VisionError(code or 'PROVIDER_ERROR') from None
     except (urllib.error.URLError, TimeoutError):
         raise VisionError('TRANSPORT_ERROR') from None
     except (ValueError, TypeError):
@@ -178,8 +197,27 @@ def _read_amount_image(
             raise VisionError('RESPONSE_TOO_LARGE')
         envelope = json.loads(raw)
     except urllib.error.HTTPError as exc:
-        code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code, 'PROVIDER_ERROR')
-        raise VisionError(code) from None
+        code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code)
+        if code is None:
+            try:
+                raw_error = exc.read(64 * 1024)
+                payload = json.loads(raw_error)
+                candidates = payload if isinstance(payload, list) else [payload]
+                reasons = {
+                    str(detail.get('reason'))
+                    for item in candidates if isinstance(item, dict)
+                    for error in [item.get('error')]
+                    if isinstance(error, dict)
+                    for detail in (error.get('details') or [])
+                    if isinstance(detail, dict)
+                }
+                if 'API_KEY_INVALID' in reasons:
+                    code = 'API_KEY_INVALID'
+                elif exc.code == 400:
+                    code = 'INVALID_REQUEST'
+            except Exception:
+                code = None
+        raise VisionError(code or 'PROVIDER_ERROR') from None
     except (urllib.error.URLError, TimeoutError):
         raise VisionError('TRANSPORT_ERROR') from None
     except (ValueError, TypeError):
@@ -262,8 +300,27 @@ def _read_amount_crop(
             raise VisionError('RESPONSE_TOO_LARGE')
         envelope = json.loads(raw)
     except urllib.error.HTTPError as exc:
-        code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code, 'PROVIDER_ERROR')
-        raise VisionError(code) from None
+        code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code)
+        if code is None:
+            try:
+                raw_error = exc.read(64 * 1024)
+                payload = json.loads(raw_error)
+                candidates = payload if isinstance(payload, list) else [payload]
+                reasons = {
+                    str(detail.get('reason'))
+                    for item in candidates if isinstance(item, dict)
+                    for error in [item.get('error')]
+                    if isinstance(error, dict)
+                    for detail in (error.get('details') or [])
+                    if isinstance(detail, dict)
+                }
+                if 'API_KEY_INVALID' in reasons:
+                    code = 'API_KEY_INVALID'
+                elif exc.code == 400:
+                    code = 'INVALID_REQUEST'
+            except Exception:
+                code = None
+        raise VisionError(code or 'PROVIDER_ERROR') from None
     except (urllib.error.URLError, TimeoutError):
         raise VisionError('TRANSPORT_ERROR') from None
     except (ValueError, TypeError):
