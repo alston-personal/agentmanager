@@ -86,51 +86,6 @@ function Resolve-SourceCommit([string]$Ref) {
   return $sha
 }
 
-function Install-UserRuntime([string]$Runner, [string]$RuntimeRoot) {
-  $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-  $watchdog=Join-Path $RuntimeRoot 'scripts\windows\user_runtime_watchdog.ps1'
-  if(-not (Test-Path -LiteralPath $watchdog)){
-    throw "Per-user watchdog script missing: $watchdog"
-  }
-
-  New-Item -Path $runKey -Force | Out-Null
-  $clientRun='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $Runner + '"'
-  $watchdogRun='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdog + '" -Runner "' + $Runner + '"'
-  New-ItemProperty -Path $runKey -Name 'AgentOS Thin Client User' -Value $clientRun -PropertyType String -Force | Out-Null
-  New-ItemProperty -Path $runKey -Name 'AgentOS Thin Client Watchdog User' -Value $watchdogRun -PropertyType String -Force | Out-Null
-
-  Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
-    '-NoProfile',
-    '-NonInteractive',
-    '-WindowStyle','Hidden',
-    '-ExecutionPolicy','Bypass',
-    '-File',$watchdog,
-    '-Runner',$Runner
-  )
-  Start-Sleep -Seconds 4
-
-  $running=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object {
-      $_.CommandLine -and
-      $_.CommandLine -match 'agentos_node\.client_cli' -and
-      $_.CommandLine -match '\brun\b'
-    } |
-    Select-Object -First 1
-  if(-not $running){ throw 'Per-user hidden Thin Client did not start' }
-
-  $clientValue=[string](Get-ItemPropertyValue -Path $runKey -Name 'AgentOS Thin Client User')
-  $watchdogValue=[string](Get-ItemPropertyValue -Path $runKey -Name 'AgentOS Thin Client Watchdog User')
-  if($clientValue -notmatch '(?i)-WindowStyle\s+Hidden'){
-    throw 'Per-user Thin Client autorun is not hidden'
-  }
-  if($watchdogValue -notmatch '(?i)-WindowStyle\s+Hidden'){
-    throw 'Per-user watchdog autorun is not hidden'
-  }
-
-  Write-Host 'Background service: Running (headless, per-user)' -ForegroundColor Green
-  Write-Host 'Independent watchdog: Running (hidden, per-user 60s cadence)' -ForegroundColor Green
-}
-
 function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
@@ -206,9 +161,10 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   try {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
   } catch {
-    Write-Host ('Task Scheduler registration unavailable; switching to per-user hidden runtime. Error=' + $_.Exception.Message) -ForegroundColor Yellow
-    Install-UserRuntime -Runner $runner -RuntimeRoot $RuntimeRoot
-    return
+    throw ('WINDOWS_SUPERVISOR_APPROVAL_REQUIRED: Task Scheduler registration failed. ' +
+      'This endpoint requires an administrator/IT-approved supervisor install; ' +
+      'per-user autorun fallback is intentionally disabled to avoid endpoint-security violations. ' +
+      'Error=' + $_.Exception.Message)
   }
 
   $registeredAction=(Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).Actions | Select-Object -First 1
