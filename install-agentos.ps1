@@ -93,6 +93,8 @@ function Install-Supervisor([string]$PythonPath) {
 
   $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   if($existing){
+    # Never revive a legacy visible task during recovery. Stop first; the
+    # canonical hidden action is re-registered below before any start occurs.
     Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   }
 
@@ -151,6 +153,14 @@ function Install-Supervisor([string]$PythonPath) {
     -Hidden
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force | Out-Null
 
+  $registeredAction=(Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).Actions | Select-Object -First 1
+  if([string]$registeredAction.Execute -match '(?i)cmd\.exe$'){
+    throw 'Refusing to start visible cmd.exe Thin Client task after repair'
+  }
+  if([string]$registeredAction.Execute -notmatch '(?i)powershell\.exe$' -or [string]$registeredAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden'){
+    throw 'Refusing to start Thin Client task unless its registered action is hidden PowerShell'
+  }
+
   # Independent watchdog: a separate periodic task is required because an
   # intentional Stop-ScheduledTask is not a process failure and therefore does
   # not reliably activate RestartCount on the primary task.
@@ -165,6 +175,11 @@ function Install-Supervisor([string]$PythonPath) {
     -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
     -Hidden
   Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force | Out-Null
+
+  $registeredWatchdogAction=(Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop).Actions | Select-Object -First 1
+  if([string]$registeredWatchdogAction.Execute -notmatch '(?i)powershell\.exe$' -or [string]$registeredWatchdogAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden'){
+    throw 'Refusing to start watchdog unless its registered action is hidden PowerShell'
+  }
 
   Start-ScheduledTask -TaskName $taskName
   Start-Sleep -Seconds 4
