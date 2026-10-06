@@ -1,0 +1,60 @@
+name: Focus Gemini And Preview
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/focus-gemini-and-preview.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Focus Gemini and capture preview
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tile_id='focus-gemini-full-20261006-1043'
+          if f.get_receipt(tile_id) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tile_id,'action':'desktop.windows.tile','windows':[{'title_contains':'Google Gemini','zone':'full'}],'reserve_top_px':10,'margin_px':4,'cognition_ids_used':['demo://gemini-threads/20261006']})
+          for _ in range(30):
+              r=f.get_receipt(tile_id)
+              if r:
+                  print('TILE='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  break
+              time.sleep(1)
+          else: raise SystemExit('tile_receipt_missing')
+          time.sleep(2)
+          cap_id='capture-gemini-focused-preview-20261006-1043'
+          code="from PIL import ImageGrab; import io,base64; im=ImageGrab.grab(all_screens=True).convert('RGB'); im.thumbnail((720,405)); b=io.BytesIO(); im.save(b,format='JPEG',quality=35,optimize=True); print('PREVIEW_JPEG_BASE64='+base64.b64encode(b.getvalue()).decode('ascii'))"
+          if f.get_receipt(cap_id) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':cap_id,'action':'shell.exec','executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe','argv':['-c',code],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':['demo://screen-preview/20261006']})
+          for _ in range(30):
+              r=f.get_receipt(cap_id)
+              if r:
+                  print('STDOUT='+str(r.get('stdout') or ''))
+                  raise SystemExit(0)
+              time.sleep(1)
+          raise SystemExit('capture_receipt_missing')
+          PY
+          REMOTE
