@@ -13,12 +13,15 @@ SCHEMA={
   "additionalProperties":False,
 }
 
-def call(name, body):
+def call(name, body, revision=None):
+    headers={"Content-Type":"application/json","x-goog-api-key":KEY}
+    if revision:
+        headers["Api-Revision"]=revision
     req=urllib.request.Request(
         ENDPOINT,
         data=json.dumps(body).encode(),
         method="POST",
-        headers={"Content-Type":"application/json","x-goog-api-key":KEY},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req,timeout=60) as r:
@@ -53,6 +56,7 @@ def main():
     encoded=base64.b64encode(image).decode("ascii")
     cases=[
       ("text_plain",{"model":MODEL,"input":"Return the integer 50."}),
+      ("text_plain_revision",{"model":MODEL,"input":"Return the integer 50."}),
       ("image_plain",{"model":MODEL,"input":[
           {"type":"text","text":"Read the total amount only."},
           {"type":"image","data":encoded,"mime_type":"image/jpeg"},
@@ -66,7 +70,8 @@ def main():
     ]
     ok=True
     for name,body in cases:
-        ok=call(name,body) and ok
+        revision="2026-05-20" if name=="text_plain_revision" else None
+        ok=call(name,body,revision=revision) and ok
     return 0 if ok else 1
 
 if __name__=="__main__":
