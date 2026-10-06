@@ -32,7 +32,7 @@ jobs:
             "schema":"agentos.vision-studio-production-command/v1",
             "project_id":"rain-exit-v001",
             "approved":True,
-            "nonce":"rain-exit-approved-20261006-r5"
+            "nonce":"rain-exit-approved-20261006-r6"
           }
           print("vision_studio_production_command=APPROVED")
           PY
