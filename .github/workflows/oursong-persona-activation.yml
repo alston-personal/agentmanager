@@ -17,6 +17,7 @@ on:
       - core/integration
     paths:
       - 'scripts/persona_pdca_heartbeat_user.py'
+      - 'scripts/probe_oursong_persona_user.sh'
       - '.github/workflows/persona-pdca-runtime-origin-probe.yml'
       - '.github/workflows/oursong-persona-activation.yml'
   workflow_dispatch:
@@ -34,8 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile persona heartbeat source
-        run: python3 -m py_compile scripts/persona_pdca_heartbeat_user.py
+      - name: Compile persona runtime sources
+        run: |
+          python3 -m py_compile scripts/persona_pdca_heartbeat_user.py
+          bash -n scripts/probe_oursong_persona_user.sh
       - name: Reject literal escaped-newline contamination
         run: |
           python3 - <<'PY'
