@@ -19,6 +19,7 @@ CONTROLLER_ACTION_CAPABILITY = {
     'desktop.session.inspect': 'desktop.session.inspect',
     'desktop.windows.inspect': 'desktop.windows.inspect',
     'desktop.screenshot': 'desktop.screenshot',
+    'desktop.preview.capture': 'desktop.preview.capture',
     'desktop.open_url': 'desktop.open_url',
     'desktop.window.stage': 'desktop.windows.tile',
     'desktop.pointer.click': 'desktop.mouse',
@@ -576,7 +577,7 @@ print('agentos_source_commit='+source_commit)
                 'action': action,
                 'cognition_ids_used': list(request.get('cognition_ids_used') or []),
             }
-            for key in ('provider', 'session_id', 'request_id', 'payload', 'url', 'quality'):
+            for key in ('provider', 'session_id', 'request_id', 'payload', 'url', 'quality', 'max_width', 'max_height'):
                 if key in request:
                     task[key] = request[key]
 
