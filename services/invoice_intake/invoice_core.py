@@ -1363,16 +1363,58 @@ class InvoiceStore:
 
             try:
                 image_bytes = image_path.read_bytes()
-                extraction = extract_invoice(
-                    image_bytes,
-                    stamp_store=self.stamp_store,
-                    ocr_memory=self.ocr_memory,
+                config = vision_ocr.configuration()
+                try:
+                    extraction = extract_legacy_invoice(
+                        image_bytes,
+                        stamp_store=self.stamp_store,
+                        ocr_memory=self.ocr_memory,
+                    )
+                except Exception as exc:
+                    if config['mode'] != 'primary' or config['status'] != 'CONFIGURED':
+                        raise
+                    extraction = Extraction(
+                        dict.fromkeys(vision_ocr.CORE_FIELDS),
+                        {},
+                        {
+                            'engine': 'legacy-error',
+                            'error_type': type(exc).__name__,
+                            'review': {
+                                'status': 'recognition_insufficient',
+                                'required_fields': list(vision_ocr.CORE_FIELDS),
+                                'confirm_fields': [],
+                                'reasons': [f'legacy_error:{type(exc).__name__}'],
+                            },
+                        },
+                        True,
+                    )
+
+                extraction.raw['image_sha256'] = hashlib.sha256(image_bytes).hexdigest()
+                route_reason = vision_route_reason(extraction)
+                vision_pending = bool(
+                    config['mode'] == 'primary'
+                    and config['status'] == 'CONFIGURED'
+                    and route_reason
                 )
+                extraction.raw['vision_route'] = {
+                    'decision': 'invoke' if vision_pending else 'skip',
+                    'reason': route_reason or 'local_sufficient',
+                }
+                extraction.raw['vision'] = {
+                    **dict(config),
+                    'status': 'PENDING_BACKGROUND' if vision_pending else (
+                        'SKIPPED_LOCAL_SUFFICIENT'
+                        if config['status'] == 'CONFIGURED'
+                        else config['status']
+                    ),
+                    'mode': config['mode'],
+                }
                 extraction_id = str(uuid.uuid4())
                 updated = utcnow()
                 review = extraction.raw.get("review") or {}
                 status = str(review.get("status") or ("needs_review" if extraction.review_required else "extracted"))
-                deep_pending = status in {"recognition_insufficient", "needs_review"}
+                deep_pending = status in {"recognition_insufficient", "needs_review"} and not vision_pending
+                extraction.raw["vision_enrichment_pending"] = vision_pending
                 extraction.raw["deep_fallback_pending"] = deep_pending
                 f = extraction.fields
 
@@ -1428,10 +1470,18 @@ class InvoiceStore:
                     payload["engine"] = extraction.raw["engine"]
                     # Fast OCR is already terminal for the user-visible recognition flow.
                     # Background enrichment must never keep the UI in "recognizing".
-                    payload["background_enrichment_pending"] = deep_pending
+                    payload["background_enrichment_pending"] = bool(vision_pending or deep_pending)
+                    payload["vision_enrichment_pending"] = vision_pending
                     payload["deep_fallback_pending"] = False
 
-                if deep_pending:
+                if vision_pending:
+                    threading.Thread(
+                        target=self._vision_enrich_invoice,
+                        args=(invoice_id,),
+                        name=f"invoice-vision-{invoice_id[:8]}",
+                        daemon=True,
+                    ).start()
+                elif deep_pending:
                     threading.Thread(
                         target=self._deep_enrich_invoice,
                         args=(invoice_id,),
@@ -1476,6 +1526,141 @@ class InvoiceStore:
                 finally:
                     print(f"invoice_process=error type:{error_type}")
                 raise
+
+    def _vision_enrich_invoice(self, invoice_id: str) -> None:
+        """Run paid whole-image Vision only after the fast local result is visible."""
+        with self.deep_fallback_slots:
+            row = None
+            original_status = None
+            started = time.perf_counter()
+            try:
+                with self.connect() as db:
+                    row = db.execute(
+                        """SELECT i.*, d.stored_path, d.sha256, d.original_filename
+                           FROM invoices i JOIN documents d ON d.id=i.document_id
+                           WHERE i.id=? AND i.deleted_at IS NULL""",
+                        (invoice_id,),
+                    ).fetchone()
+                    if not row or row["status"] == "processing":
+                        return
+                    original_status = str(row["status"])
+                    image_path = Path(row["stored_path"])
+
+                enriched = extract_invoice(
+                    image_path.read_bytes(),
+                    stamp_store=self.stamp_store,
+                    ocr_memory=self.ocr_memory,
+                )
+                enriched.raw["vision_enrichment_pending"] = False
+                review = enriched.raw.get("review") or {}
+                new_status = str(
+                    review.get("status")
+                    or ("needs_review" if enriched.review_required else "extracted")
+                )
+                updated = utcnow()
+                fields = enriched.fields
+                vision_payload = ((enriched.raw.get("vision") or {}).get("payload") or {})
+                line_items = vision_payload.get("line_items") or enriched.raw.get("line_items") or []
+
+                with self.connect() as db:
+                    current = db.execute(
+                        "SELECT status FROM invoices WHERE id=? AND deleted_at IS NULL",
+                        (invoice_id,),
+                    ).fetchone()
+                    if not current or current["status"] != original_status:
+                        return
+                    db.execute(
+                        "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                        (
+                            str(uuid.uuid4()),
+                            row["document_id"],
+                            enriched.raw["engine"],
+                            json.dumps(enriched.raw, ensure_ascii=False),
+                            updated,
+                        ),
+                    )
+                    if line_items:
+                        db.execute("DELETE FROM invoice_line_items WHERE invoice_id=?", (invoice_id,))
+                        for idx, item in enumerate(line_items, start=1):
+                            db.execute(
+                                """INSERT INTO invoice_line_items(
+                                     id,invoice_id,line_no,description,quantity,unit_price,amount,
+                                     source,confidence_json,created_at,updated_at
+                                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                                (
+                                    str(uuid.uuid4()), invoice_id, idx,
+                                    item.get("description"),
+                                    None if item.get("quantity") is None else str(item.get("quantity")),
+                                    item.get("unit_price"),
+                                    item.get("amount"),
+                                    "whole_image_vision" if vision_payload else "ocr",
+                                    "{}",
+                                    updated, updated,
+                                ),
+                            )
+                    db.execute(
+                        """UPDATE invoices SET
+                             invoice_number=?, invoice_date=?, vendor_name=?, buyer_tax_id=?, seller_tax_id=?,
+                             amount_before_tax=?, tax_amount=?, total_amount=?, status=?,
+                             confidence_json=?, updated_at=?
+                           WHERE id=?""",
+                        (
+                            fields["invoice_number"], fields["invoice_date"],
+                            fields["vendor_name"], fields.get("buyer_tax_id"), fields["seller_tax_id"],
+                            fields["amount_before_tax"], fields["tax_amount"],
+                            fields["total_amount"], new_status,
+                            json.dumps(enriched.confidence, ensure_ascii=False),
+                            updated, invoice_id,
+                        ),
+                    )
+                print(
+                    "invoice_vision_enrichment="
+                    f"completed status:{new_status} "
+                    f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
+                )
+                if new_status in {"recognition_insufficient", "needs_review"}:
+                    threading.Thread(
+                        target=self._deep_enrich_invoice,
+                        args=(invoice_id,),
+                        name=f"invoice-deep-{invoice_id[:8]}",
+                        daemon=True,
+                    ).start()
+            except Exception as exc:
+                if row is not None and original_status is not None:
+                    failed_raw = {
+                        "engine": "vision-enrichment-error",
+                        "status": original_status,
+                        "vision_enrichment_pending": False,
+                        "vision": {
+                            "status": str(exc) if isinstance(exc, vision_ocr.VisionError) else "INVALID_RESPONSE",
+                            "error_type": type(exc).__name__,
+                        },
+                    }
+                    try:
+                        with self.connect() as db:
+                            current = db.execute(
+                                "SELECT status FROM invoices WHERE id=? AND deleted_at IS NULL",
+                                (invoice_id,),
+                            ).fetchone()
+                            if current and current["status"] == original_status:
+                                db.execute(
+                                    "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                                    (
+                                        str(uuid.uuid4()),
+                                        row["document_id"],
+                                        "vision-enrichment-error",
+                                        json.dumps(failed_raw, ensure_ascii=False),
+                                        utcnow(),
+                                    ),
+                                )
+                    except Exception:
+                        pass
+                print(
+                    "invoice_vision_enrichment="
+                    f"error type:{type(exc).__name__} "
+                    f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
+                )
+                return
 
     def _deep_enrich_invoice(self, invoice_id: str) -> None:
         """Improve an already-visible fast result without blocking the user.
@@ -1648,16 +1833,41 @@ class InvoiceStore:
             "failed": failed,
         }
 
-    def reprocess(self, invoice_id: str) -> dict[str, Any]:
-        """Re-run OCR for an existing immutable original without creating a new record."""
+    def prepare_reprocess(self, invoice_id: str) -> dict[str, Any]:
+        """Queue a reprocess without blocking the request on OCR/Vision."""
         with self.connect() as db:
-            row = db.execute("SELECT id FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            row = db.execute(
+                """SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope,
+                          (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
+                           ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine,
+                          (SELECT e.payload_json FROM extractions e WHERE e.document_id=i.document_id
+                           ORDER BY e.rowid DESC LIMIT 1) AS extraction_payload
+                   FROM invoices i JOIN documents d ON d.id=i.document_id
+                   WHERE i.id=? AND i.deleted_at IS NULL""",
+                (invoice_id,),
+            ).fetchone()
             if not row:
                 raise KeyError(invoice_id)
+            now = utcnow()
             db.execute(
                 "UPDATE invoices SET status='processing', updated_at=? WHERE id=?",
-                (utcnow(), invoice_id),
+                (now, invoice_id),
             )
+            refreshed = db.execute(
+                """SELECT i.*, d.sha256, d.original_filename, d.batch_id, d.source_type, d.data_scope,
+                          (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
+                           ORDER BY e.rowid DESC LIMIT 1) AS extraction_engine,
+                          (SELECT e.payload_json FROM extractions e WHERE e.document_id=i.document_id
+                           ORDER BY e.rowid DESC LIMIT 1) AS extraction_payload
+                   FROM invoices i JOIN documents d ON d.id=i.document_id
+                   WHERE i.id=?""",
+                (invoice_id,),
+            ).fetchone()
+            return self._row_payload(refreshed)
+
+    def reprocess(self, invoice_id: str) -> dict[str, Any]:
+        """Synchronous compatibility helper for tests/admin code."""
+        self.prepare_reprocess(invoice_id)
         return self.process(invoice_id)
 
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
@@ -1752,8 +1962,16 @@ class InvoiceStore:
             # Compatibility field: user-visible recognition is terminal once fast OCR
             # has left status=processing. Deep OCR is optional background enrichment.
             "deep_fallback_pending": False,
+            "vision_enrichment_pending": (
+                bool(json.loads(row["extraction_payload"]).get("vision_enrichment_pending"))
+                if "extraction_payload" in row.keys() and row["extraction_payload"]
+                else False
+            ),
             "background_enrichment_pending": (
-                bool(json.loads(row["extraction_payload"]).get("deep_fallback_pending"))
+                bool(
+                    json.loads(row["extraction_payload"]).get("vision_enrichment_pending")
+                    or json.loads(row["extraction_payload"]).get("deep_fallback_pending")
+                )
                 if "extraction_payload" in row.keys() and row["extraction_payload"]
                 else False
             ),

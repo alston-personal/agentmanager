@@ -137,11 +137,12 @@ async def ingest(
 
 
 @app.post("/v1/invoices/{invoice_id}/reprocess")
-def reprocess_invoice(invoice_id: str, request: Request):
-    """Re-run OCR against the existing immutable original."""
+def reprocess_invoice(invoice_id: str, request: Request, background_tasks: BackgroundTasks):
+    """Queue OCR against the immutable original and return immediately."""
     require_user(request)
     try:
-        result = store.reprocess(invoice_id)
+        result = store.prepare_reprocess(invoice_id)
+        background_tasks.add_task(store.process, invoice_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="invoice_not_found")
     except Exception as exc:
