@@ -332,10 +332,14 @@ def extract_legacy_invoice(
     Tesseract only fills fields that remain unresolved; it never overwrites a
     higher-confidence template result.
     """
+    total_started = time.perf_counter()
+    timings_ms: dict[str, float] = {}
     image = Image.open(BytesIO(image_bytes))
     image = ImageOps.exif_transpose(image).convert("RGB")
 
+    rapid_started = time.perf_counter()
     rapid = extract_template_invoice(image_bytes)
+    timings_ms["template_ocr_ms"] = round((time.perf_counter() - rapid_started) * 1000, 1)
     fields = {
         "invoice_number": None,
         "invoice_date": None,
@@ -397,7 +401,10 @@ def extract_legacy_invoice(
             )
     raw["stamp_recognition"]["latency_ms"] = round((time.perf_counter() - stamp_started) * 1000, 1)
 
+    timings_ms["stamp_detect_match_ms"] = raw["stamp_recognition"]["latency_ms"]
+
     # Legacy crops remain as a recovery path only.
+    fallback_started = time.perf_counter()
     invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
     date_crop = crop_rel(image, (0.43, 0.11, 0.79, 0.30))
     amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
@@ -481,10 +488,13 @@ def extract_legacy_invoice(
         raw["vendor_texts"] = vendor_texts
         raw["fallback_used"].append("vendor_name_stamp_aware")
 
+    timings_ms["fallback_ocr_ms"] = round((time.perf_counter() - fallback_started) * 1000, 1)
+
     # Human-confirmed correction memory runs after ordinary OCR/stamp extraction
     # and before review classification. Strong context may correct an exact repeated
     # OCR error; weaker context is exposed only as a suggestion.
     raw["ocr_memory"] = {"applied": [], "suggestions": []}
+    memory_started = time.perf_counter()
     if ocr_memory is not None:
         memory_context = context_from_extraction(raw, fields)
         for key, observed in list(fields.items()):
@@ -509,6 +519,8 @@ def extract_legacy_invoice(
                 raw["ocr_memory"]["applied"].append(evidence)
             elif decision.decision == "suggest":
                 raw["ocr_memory"]["suggestions"].append(evidence)
+
+    timings_ms["ocr_memory_ms"] = round((time.perf_counter() - memory_started) * 1000, 1)
 
     # A mathematically derived 5% split is useful for assistance but is not enough
     # by itself for unattended posting; keep that case in review.
@@ -557,6 +569,8 @@ def extract_legacy_invoice(
     else:
         review["status"] = "extracted"
     raw["review"] = review
+    timings_ms["total_local_ms"] = round((time.perf_counter() - total_started) * 1000, 1)
+    raw["timings_ms"] = timings_ms
     return Extraction(
         fields=fields,
         confidence=confidence,
@@ -593,8 +607,10 @@ def extract_invoice(
             legacy.review_required = True
         return legacy
     try:
+        vision_started = time.perf_counter()
         result = vision_ocr.read_invoice(image_bytes,
             api_key=os.environ.get('GEMINI_API_KEY', ''), model=config['model'])
+        legacy.raw.setdefault("timings_ms", {})["vision_ms"] = round((time.perf_counter() - vision_started) * 1000, 1)
         fields, issues = vision_ocr.validated_fields(result['payload'])
     except Exception as exc:
         legacy.raw['vision']['status'] = str(exc) if isinstance(exc, vision_ocr.VisionError) else 'INVALID_RESPONSE'
