@@ -318,6 +318,13 @@ class ObservationContract(unittest.TestCase):
         self.assertTrue((saved/'incidents/test.json').exists())
         self.assertEqual(json.loads(next((saved/'growth_metrics').glob('*.json')).read_text())['status'],'ERROR')
 
+    def test_social_runner_suppresses_repeated_unchanged_metrics_receipts(self):
+        text=(REPO/'scripts/run_persona_social_actions_user.sh').read_text()
+        self.assertIn('persona_growth_metrics_persist=SUPPRESSED_REPEAT', text)
+        self.assertIn('status in {"UNAVAILABLE","NO_CHANGE"}', text)
+        self.assertIn('prev_status == status', text)
+        self.assertIn('current.unlink(missing_ok=True)', text)
+
     def test_public_projection_exposes_counts_without_reply_text_or_secrets(self):
         self.replies = [self.reply()]
         self.execute()
