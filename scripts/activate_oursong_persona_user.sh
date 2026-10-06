@@ -53,6 +53,12 @@ if ! systemctl --user start agentos-persona-pdca-heartbeat.service; then
   echo "oursong_activate_stage=heartbeat_failed"
   systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true
   journalctl --user -u agentos-persona-pdca-heartbeat.service -n 20 --no-pager || true
+  HB_CLASS="$(journalctl --user -u agentos-persona-pdca-heartbeat.service -n 50 --no-pager -o cat 2>/dev/null | grep -Eo 'persona_pdca_heartbeat=[A-Z_]+' | tail -n 1 || true)"
+  if [[ -n "$HB_CLASS" ]]; then
+    echo "$HB_CLASS"
+  else
+    echo "persona_pdca_heartbeat=UNKNOWN_FAILURE"
+  fi
   exit 11
 fi
 echo "oursong_activate_stage=heartbeat_pass"
