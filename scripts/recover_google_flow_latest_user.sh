@@ -177,8 +177,81 @@ with sync_playwright() as p:
         if projects:
             print("google_flow_recover_projects="+json.dumps(projects[:20],ensure_ascii=False,separators=(",",":")))
 
-        print("google_flow_recover=NO_MATCHING_PROJECT_VIDEO")
-        raise SystemExit(0)
+        # Rain Exit s01 was triggered around 2026-10-06 13:42 local time.
+        # Prefer that exact recent project card; opening an existing project is
+        # read-only and does not trigger generation.
+        target_label=None
+        for meta in projects:
+            txt=str(meta.get("text") or "")
+            if txt.startswith("10月 06 - 13:42") or txt.startswith("Oct 06 - 13:42"):
+                target_label=txt.replace(" edit","").replace(" Edit","").strip()
+                break
+        if target_label:
+            print("google_flow_recover_stage=OPEN_MATCHED_PROJECT")
+            print("google_flow_recover_project_label="+target_label)
+            try:
+                page.get_by_text(target_label,exact=True).first.click(timeout=4000)
+            except Exception:
+                try:
+                    edits=page.get_by_role("button",name="編輯專案名稱")
+                    if edits.count()==0:
+                        edits=page.get_by_role("button",name="Edit project name")
+                    edits.first.evaluate("(el) => el.parentElement && el.parentElement.click()")
+                except Exception:
+                    print("google_flow_recover=PROJECT_OPEN_FAILED")
+                    raise SystemExit(0)
+            page.wait_for_timeout(6000)
+            print("google_flow_recover_url="+str(page.url or "")[:500])
+
+            body=""
+            try:
+                body=(page.locator("body").inner_text(timeout=3000) or "")
+            except Exception:
+                pass
+            low=body.lower()
+            prompt_markers=("taipei","metro","umbrella","rain","台北","捷運","雨傘","雨夜")
+            prompt_hit=any(x in low for x in prompt_markers)
+            print("google_flow_recover_project_prompt_match="+("YES" if prompt_hit else "NO"))
+
+            vids=page.locator("video")
+            project_candidates=[]
+            for i in range(min(vids.count(),20)):
+                item=vids.nth(i)
+                try:
+                    if not item.is_visible(timeout=300):
+                        continue
+                    context=""
+                    try:
+                        context=str(item.evaluate("""el => {
+                          let n=el;
+                          for(let i=0;i<6 && n;i++,n=n.parentElement){
+                            const t=(n.innerText||'').trim();
+                            if(t) return t.slice(0,700);
+                          }
+                          return '';
+                        }""") or "")
+                    except Exception:
+                        pass
+                    project_candidates.append({"index":i,"context":context[:700]})
+                except Exception:
+                    pass
+            if project_candidates:
+                print("google_flow_recover_video_candidates="+json.dumps(project_candidates,ensure_ascii=False,separators=(",",":")))
+            chosen=None
+            for meta in project_candidates:
+                ctx_low=str(meta.get("context") or "").lower()
+                if prompt_hit or any(x in ctx_low for x in prompt_markers):
+                    chosen=meta["index"]
+                    break
+            if chosen is not None:
+                video=vids.nth(chosen)
+                print("google_flow_recover_stage=VIDEO_VISIBLE",flush=True)
+            else:
+                print("google_flow_recover=PROJECT_OPENED_NO_MATCHING_VIDEO")
+                raise SystemExit(0)
+        else:
+            print("google_flow_recover=NO_MATCHING_PROJECT_VIDEO")
+            raise SystemExit(0)
 
     video=vids.nth(matching[0])
     print("google_flow_recover_stage=VIDEO_VISIBLE",flush=True)
