@@ -1,0 +1,101 @@
+name: Invoice Production Live Trace
+
+on:
+  push:
+    branches:
+      - ops/invoice-prod-live-trace
+    paths:
+      - '.github/workflows/invoice-production-live-trace.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Reprocess target and print sanitized trace
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          set -a
+          . /home/ubuntu/invoice-intake-service/vision.env
+          set +a
+          export PYTHONPATH=/home/ubuntu/invoice-intake-service/app
+          /home/ubuntu/invoice-intake-service/.venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          from services.invoice_intake.invoice_core import InvoiceStore
+
+          invoice_id = "2e653d78-6273-44e6-968a-59269907319e"
+          store = InvoiceStore(Path("/home/ubuntu/agent-data/invoice-intake"), data_scope="production")
+          try:
+              before = store.get_invoice(invoice_id)
+          except KeyError:
+              print("invoice_live_trace=TARGET_NOT_FOUND")
+              raise SystemExit(2)
+
+          result = store.reprocess(invoice_id)
+          after = store.get_invoice(invoice_id)
+          rec = after.get("recognition") or {}
+          vision = rec.get("vision") or {}
+          field_trace = vision.get("field_trace") or {}
+
+          expected = {
+              "invoice_number": "EC55544057",
+              "invoice_date": "2026-09-25",
+              "buyer_tax_id": "23040145",
+              "seller_tax_id": "16672215",
+              "amount_before_tax": 24500,
+              "tax_amount": 1225,
+              "total_amount": 25725,
+          }
+          checks = {
+              key: after.get("fields", {}).get(key) == value
+              for key, value in expected.items()
+          }
+          items = after.get("line_items") or []
+          item_match = any(
+              str(x.get("description") or "").strip() == "印刷品"
+              and str(x.get("quantity")) in {"24500", "24500.0"}
+              and int(x.get("unit_price") or -1) == 1
+              and int(x.get("amount") or -1) == 24500
+              for x in items
+          )
+
+          safe_trace = {
+              "before_status": before.get("status"),
+              "after_status": after.get("status"),
+              "vision_status": vision.get("status"),
+              "vision_mode": vision.get("mode"),
+              "vision_model": vision.get("model"),
+              "validation_issues": vision.get("validation_issues") or [],
+              "field_trace": {
+                  key: {
+                      "status": value.get("status"),
+                      "source": value.get("source"),
+                      "reason": value.get("reason"),
+                  }
+                  for key, value in field_trace.items()
+              },
+              "conflict_fields": sorted((rec.get("conflicts") or {}).keys()),
+              "field_expected_match": checks,
+              "line_item_expected_match": item_match,
+              "line_item_count": len(items),
+              "background_enrichment_pending": after.get("background_enrichment_pending"),
+          }
+          print("invoice_live_trace=" + json.dumps(safe_trace, ensure_ascii=False, sort_keys=True))
+          PY
+          REMOTE
