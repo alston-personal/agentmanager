@@ -16,7 +16,16 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageEnhance, ImageOps
-from services.invoice_intake.template_ocr import extract_template_invoice, valid_tax_id, seller_region_text, tax_id_candidates
+from services.invoice_intake.template_ocr import (
+    anchor_row_reocr,
+    choose_dual_model_amounts,
+    choose_reocr_amounts,
+    extract_template_invoice,
+    ocr_page_evidence,
+    valid_tax_id,
+    seller_region_text,
+    tax_id_candidates,
+)
 from services.invoice_intake import vision_ocr
 from capabilities.stamp_recognition.runtime import StampStore, detect_stamp_regions, fingerprint_stamp
 from capabilities.ocr_memory import OCRMemoryStore, context_from_extraction
@@ -561,6 +570,57 @@ def deep_fallback_enrich(
             fields["invoice_date"] = value
             confidence["invoice_date"] = max(confidence.get("invoice_date", 0.0), 0.90)
         deep["fallback_used"].append("invoice_date")
+
+    if any(fields.get(k) is None for k in ("amount_before_tax", "tax_amount", "total_amount")) and within_budget():
+        template = raw.get("template") or {}
+        if template.get("document_type") == "three_part_uniform_invoice":
+            medium_engine = None
+            try:
+                from rapidocr import ModelType, RapidOCR
+                medium_engine = RapidOCR(params={
+                    "Det.model_type": ModelType.MEDIUM,
+                    "Rec.model_type": ModelType.MEDIUM,
+                })
+                _, medium_text, medium_conf = ocr_page_evidence(medium_engine, image_bytes)
+                primary_text = str(template.get("raw_text") or "")
+                subtotal, tax, total, observed = choose_dual_model_amounts(
+                    primary_text, medium_text
+                )
+                deep["rapidocr_medium_page_confidence"] = medium_conf
+                deep["rapidocr_amount_ensemble_observed"] = bool(observed)
+                if observed:
+                    for key, value in {
+                        "amount_before_tax": subtotal,
+                        "tax_amount": tax,
+                        "total_amount": total,
+                    }.items():
+                        if fields.get(key) is None and value is not None:
+                            fields[key] = value
+                            confidence[key] = max(confidence.get(key, 0.0), 0.94)
+                    deep["fallback_used"].append("rapidocr_small_medium_amounts")
+            except Exception as exc:
+                deep["rapidocr_medium_error"] = type(exc).__name__
+
+            if any(fields.get(k) is None for k in ("amount_before_tax", "tax_amount", "total_amount")) and within_budget():
+                anchors = list(template.get("amount_anchor_evidence") or [])
+                if anchors:
+                    try:
+                        if medium_engine is None:
+                            from rapidocr import RapidOCR
+                            medium_engine = RapidOCR()
+                        retry_candidates = anchor_row_reocr(
+                            medium_engine, image_bytes, anchors
+                        )
+                        retry_values, retry_meta = choose_reocr_amounts(retry_candidates)
+                        deep["anchor_row_reocr"] = retry_meta
+                        for key, value in retry_values.items():
+                            if fields.get(key) is None and value is not None:
+                                fields[key] = value
+                                confidence[key] = max(confidence.get(key, 0.0), 0.91)
+                        if retry_meta:
+                            deep["fallback_used"].append("anchor_row_reocr")
+                    except Exception as exc:
+                        deep["anchor_row_reocr_error"] = type(exc).__name__
 
     if any(fields.get(k) is None for k in ("amount_before_tax", "tax_amount", "total_amount")) and within_budget():
         amount_texts: list[str] = []
