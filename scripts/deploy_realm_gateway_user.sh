@@ -301,6 +301,13 @@ BACKUP_NEXT="$TMP/next.backup"
 HAD_ROUTE=0
 HAD_NEXT=0
 CUTOVER_STARTED=0
+CORE_STAGE="$TMP/core-runtime"
+CORE_BACKUP="$TMP/core-runtime-backup"
+CORE_RUNTIME_RELS=(
+  "agent_core/controller_service.py"
+  "agent_core/controller_api.py"
+  "agent_core/realm_server.py"
+)
 
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -309,6 +316,17 @@ if [ -f "$ROUTE" ]; then
   cp "$ROUTE" "$BACKUP_ROUTE"
   HAD_ROUTE=1
 fi
+
+# Stage the ONE Python runtime from the same immutable generation as the
+# dashboard route. Never claim an exact-generation gateway deploy while the
+# controller process is still importing stale files from the mutable checkout.
+mkdir -p "$CORE_STAGE"
+for rel in "${CORE_RUNTIME_RELS[@]}"; do
+  mkdir -p "$CORE_STAGE/$(dirname "$rel")"
+  git -C "$REPO" show "$SOURCE_COMMIT:$rel" > "$CORE_STAGE/$rel"
+done
+python3 -m py_compile   "$CORE_STAGE/agent_core/controller_service.py"   "$CORE_STAGE/agent_core/controller_api.py"   "$CORE_STAGE/agent_core/realm_server.py"
+echo "realm_core_runtime_staged=PASS"
 
 # Build away from the canonical runtime. The live Next server must continue
 # serving port 3000 while the new generation compiles.
@@ -396,6 +414,42 @@ echo "dashboard_generation_cutover=PASS"
 
 restart_dashboard
 CUTOVER_STARTED=0
+
+# Cut over the pinned ONE controller/runtime generation only after all staged
+# files compile. Keep backups until the restarted Realm proves healthy.
+mkdir -p "$CORE_BACKUP"
+for rel in "${CORE_RUNTIME_RELS[@]}"; do
+  mkdir -p "$CORE_BACKUP/$(dirname "$rel")"
+  cp "$REPO/$rel" "$CORE_BACKUP/$rel"
+  cp "$CORE_STAGE/$rel" "$REPO/$rel"
+done
+echo "realm_core_runtime_cutover=PASS"
+
+if ! systemctl --user restart agentos-realm-fabric.service; then
+  for rel in "${CORE_RUNTIME_RELS[@]}"; do cp "$CORE_BACKUP/$rel" "$REPO/$rel"; done
+  systemctl --user restart agentos-realm-fabric.service || true
+  echo "ERROR: Realm Fabric restart failed after core runtime cutover" >&2
+  exit 8
+fi
+
+realm_core_ready=0
+for i in $(seq 1 20); do
+  if curl -fsS --max-time 2 "$LOCAL" >/tmp/agentos-realm-core-health.json 2>/dev/null; then
+    if grep -q 'agentos.one-health/v0.1' /tmp/agentos-realm-core-health.json && grep -q 'realm-alston' /tmp/agentos-realm-core-health.json; then
+      realm_core_ready=1
+      break
+    fi
+  fi
+  sleep 1
+done
+if [ "$realm_core_ready" -ne 1 ]; then
+  for rel in "${CORE_RUNTIME_RELS[@]}"; do cp "$CORE_BACKUP/$rel" "$REPO/$rel"; done
+  systemctl --user restart agentos-realm-fabric.service || true
+  echo "ERROR: Realm Fabric health failed after core runtime cutover; runtime rolled back" >&2
+  exit 9
+fi
+echo "realm_core_runtime_restart=PASS"
+echo "realm_core_runtime_source_commit=$SOURCE_COMMIT"
 
 for i in $(seq 1 30); do
   if curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null; then break; fi
