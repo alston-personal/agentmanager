@@ -76,6 +76,23 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertEqual(row["classification"], "ubuntu-required-candidate")
 
+    def test_closure_taxonomy_is_explicit(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(
+            set(policy["closure_classifications"]),
+            {"ubuntu-required", "dedicated-service-identity", "bounded-group-boundary", "static-false-positive"},
+        )
+        self.assertTrue(policy["closure_requirements"]["every_finding_requires_closure_classification"])
+
+    def test_core_live_acceptance_uses_latest_accepted_audit(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        accepted = policy["live_acceptance"]["oracle_core_bundle"]
+        self.assertEqual(accepted["runtime_audit_run"], 37394284772)
+        self.assertEqual(accepted["immutable_count"], 10)
+        self.assertEqual(accepted["mutable_count"], 0)
+        self.assertEqual(accepted["other_count"], 0)
+        self.assertEqual(accepted["result"], "PASS")
+
 
 if __name__ == "__main__":
     unittest.main()

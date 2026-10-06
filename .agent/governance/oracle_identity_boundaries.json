@@ -1,6 +1,6 @@
 {
   "schema": "agentos.oracle-identity-boundaries/v1",
-  "policy_version": "2026.10.05.2",
+  "policy_version": "2026.10.06.1",
   "shared_group": "agentos",
   "roots": {
     "source_cache": {
@@ -67,9 +67,12 @@
       "status": "live_immutable_complete",
       "live_acceptance": {
         "core_bundle_convergence_run": 37271897923,
-        "core_runtime_audit_run": 37271204862,
-        "core_runtime_audit_attempt": "latest",
-        "mutable_count": 0
+        "core_runtime_audit_run": 37394284772,
+        "core_runtime_audit_attempt": "accepted-2026-10-06",
+        "mutable_count": 0,
+        "immutable_count": 10,
+        "other_count": 0,
+        "result": "PASS"
       }
     },
     ".agent/scripts/agentos-employee-wake-node.service": {
@@ -79,9 +82,12 @@
       "status": "live_immutable_complete",
       "live_acceptance": {
         "core_bundle_convergence_run": 37271897923,
-        "core_runtime_audit_run": 37271204862,
-        "core_runtime_audit_attempt": "latest",
-        "mutable_count": 0
+        "core_runtime_audit_run": 37394284772,
+        "core_runtime_audit_attempt": "accepted-2026-10-06",
+        "mutable_count": 0,
+        "immutable_count": 10,
+        "other_count": 0,
+        "result": "PASS"
       }
     },
     ".agent/scripts/agentos-employee-worker-host.service": {
@@ -91,9 +97,12 @@
       "status": "live_immutable_complete",
       "live_acceptance": {
         "core_bundle_convergence_run": 37271897923,
-        "core_runtime_audit_run": 37271204862,
-        "core_runtime_audit_attempt": "latest",
-        "mutable_count": 0
+        "core_runtime_audit_run": 37394284772,
+        "core_runtime_audit_attempt": "accepted-2026-10-06",
+        "mutable_count": 0,
+        "immutable_count": 10,
+        "other_count": 0,
+        "result": "PASS"
       }
     }
   },
@@ -113,9 +122,11 @@
       "accepted_release": "1387daab2309bcbc4e9098a5744cef5eff59a669",
       "convergence_run": 37271897923,
       "product_employee_unit_convergence_run": 37272281279,
-      "runtime_audit_run": 37271204862,
+      "runtime_audit_run": 37394284772,
       "immutable_count": 10,
-      "mutable_count": 0
+      "mutable_count": 0,
+      "other_count": 0,
+      "result": "PASS"
     }
   },
   "audit_overrides": {
@@ -164,5 +175,17 @@
       "classification": "hosted-recovery-review",
       "reason": "hosted SSH recovery crosses several authorities but does not execute as the self-hosted agentos-node runner; split remains recommended"
     }
+  },
+  "closure_classifications": {
+    "ubuntu-required": "intentionally bound to an interactive ubuntu login/session/profile",
+    "dedicated-service-identity": "long-lived daemon/runtime must use a dedicated service identity",
+    "bounded-group-boundary": "cross-owner shared mutable state uses the explicit narrow agentos group contract",
+    "static-false-positive": "source/template/reference is not live runtime authority"
+  },
+  "closure_requirements": {
+    "every_finding_requires_closure_classification": true,
+    "string_matching_alone_is_not_migration_authority": true,
+    "bulk_chown_home_ubuntu_forbidden": true,
+    "live_reaudit_required_before_parent_close": true
   }
 }
