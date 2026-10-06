@@ -50,9 +50,23 @@ def run(output: Path) -> dict[str, Any]:
 $ErrorActionPreference='Stop'
 $uri='https://raw.githubusercontent.com/alston-personal/agentmanager/090c61ca562a275cb38803145526e6a5e411bbfb/install-agentos.ps1'
 $target=Join-Path $env:TEMP 'agentos-rollout-semantic-preview.ps1'
+$runner=Join-Path $env:TEMP 'agentos-rollout-semantic-preview-runner.ps1'
 Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri $uri -OutFile $target
-& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $target -SourceRef '090c61ca562a275cb38803145526e6a5e411bbfb'
+@"
+$ErrorActionPreference='Stop'
+& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '$target' -SourceRef '090c61ca562a275cb38803145526e6a5e411bbfb' *> '$env:TEMP\agentos-semantic-preview-update.log'
 exit $LASTEXITCODE
+"@ | Set-Content -Encoding UTF8 -LiteralPath $runner
+
+$taskName='AgentOS Deferred Semantic Preview Update'
+$existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if($existing){ Unregister-ScheduledTask -TaskName $taskName -Confirm:$false }
+$action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"')
+$trigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(12)
+$settings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+Write-Output 'AGENTOS_DEFERRED_UPDATE_SCHEDULED'
+exit 0
 """
     deploy = dispatch(
         controller,
@@ -74,15 +88,22 @@ exit $LASTEXITCODE
         "error": deploy_receipt.get("error"),
         "stdout_tail": str(deploy_receipt.get("stdout") or "")[-4000:],
         "stderr_tail": str(deploy_receipt.get("stderr") or "")[-2000:],
+        "deferred_update_scheduled": "AGENTOS_DEFERRED_UPDATE_SCHEDULED" in str(deploy_receipt.get("stdout") or ""),
     }
-    if not deploy_receipt or not deploy_receipt.get("ok") or deploy_receipt.get("returncode") != 0:
+    if (
+        not deploy_receipt
+        or not deploy_receipt.get("ok")
+        or deploy_receipt.get("returncode") != 0
+        or "AGENTOS_DEFERRED_UPDATE_SCHEDULED" not in str(deploy_receipt.get("stdout") or "")
+    ):
         evidence["overall"] = "FAIL_ROLLOUT"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return evidence
 
-    # Give the restarted Thin Client time to heartbeat with its new manifest.
-    time.sleep(12)
+    # The current Thin Client must return this scheduling receipt before the deferred updater stops it.
+    # Allow time for the one-shot updater, supervisor restart, and a fresh heartbeat.
+    time.sleep(45)
 
     preview = dispatch(
         controller,
