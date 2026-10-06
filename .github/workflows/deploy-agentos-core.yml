@@ -161,6 +161,8 @@ jobs:
           github.actor == 'alstonhuang' &&
           github.event.pull_request.title == 'trigger: recover Oracle Core known Git dirty checkout'
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
 
       - name: One-shot recover proven Git-backed dirty checkout
         if: >-
