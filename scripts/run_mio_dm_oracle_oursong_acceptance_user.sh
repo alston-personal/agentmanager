@@ -18,7 +18,7 @@ set +e
 OUT="$(PYTHONPATH="$REPO" python3 "$TMP" 2>&1)"
 RC=$?
 set -e
-printf '%s\n' "$OUT" | grep -E '^mio_dm_oursong_(acceptance|send|readback)=' || true
+printf '%s\n' "$OUT" | grep -E '^mio_dm_oursong_(acceptance|stage|send|readback)=' || true
 if [ "$RC" -ne 0 ]; then
   if printf '%s' "$OUT" | grep -qi 'playwright'; then
     echo "mio_dm_oursong_acceptance=RUNTIME_PLAYWRIGHT_ERROR"
