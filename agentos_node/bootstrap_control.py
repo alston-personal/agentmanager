@@ -73,6 +73,7 @@ ACTION_PROBE_OURSONG_PERSONA = "agentos.oursong_persona.status"
 ACTION_PROBE_PERSONA_PDCA_RUNTIME = "agentos.persona_pdca_runtime.probe"
 ACTION_EXECUTOR_JOB_SUBMIT = "agentos.executor_job.submit"
 ACTION_EXECUTOR_JOB_INSPECT = "agentos.executor_job.inspect"
+ACTION_GITHUB_ACTIONS_DISPATCH = "agentos.github_actions.workflow_dispatch"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_RUNNER_WINDOW_PROBE,
@@ -130,6 +131,7 @@ ALLOWED_ACTIONS = {
     ACTION_PROBE_PERSONA_PDCA_RUNTIME,
     ACTION_EXECUTOR_JOB_SUBMIT,
     ACTION_EXECUTOR_JOB_INSPECT,
+    ACTION_GITHUB_ACTIONS_DISPATCH,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 RELAY_STALE_PROCESSING_SECONDS = 600
@@ -201,6 +203,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","job_type"}
     elif action == ACTION_EXECUTOR_JOB_INSPECT:
         allowed_params={"source_commit","job_id"}
+    elif action == ACTION_GITHUB_ACTIONS_DISPATCH:
+        allowed_params={"source_commit","workflow","ref","inputs"}
     else:
         allowed_params={"source_commit"}
     unknown = set(params) - allowed_params
@@ -243,6 +247,35 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         project_id=str(params.get("project_id") or "")
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", project_id):
             raise ValueError("invalid Vision Studio project_id")
+    if action == ACTION_GITHUB_ACTIONS_DISPATCH:
+        params = params or {}
+        from agentos_node.action_relay import ActionRelayClient
+        client = ActionRelayClient("/home/ubuntu/agent-data/runtime/action-relay")
+        capsule = client.submit("github.actions.workflow.dispatch", {
+            "repository": "alston-personal/agentmanager",
+            "workflow": str(params.get("workflow") or ""),
+            "ref": str(params.get("ref") or ""),
+            "inputs": params.get("inputs") or {},
+            "expected_head_sha": str(source_commit or ""),
+        })
+        capsule_id = str(capsule.get("capsule_id") or "")
+        deadline = time.monotonic() + 60.0
+        receipt = None
+        while time.monotonic() < deadline:
+            receipt = client.receipt(capsule_id)
+            if receipt is not None:
+                break
+            time.sleep(0.5)
+        ok = bool(receipt and receipt.get("ok") is True)
+        return {
+            "ok": ok,
+            "source_commit": source_commit,
+            "github_actions_dispatch": {
+                "capsule_id": capsule_id,
+                "state": "completed" if receipt is not None else "timeout",
+                "receipt": receipt,
+            },
+        }
     if action == ACTION_EXECUTOR_JOB_SUBMIT:
         job_type=str(params.get("job_type") or "")
         from agent_core.executor_job_contract import canonical_executor_job_request
@@ -251,6 +284,14 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         job_id=str(params.get("job_id") or "")
         from agent_core.executor_job_contract import validate_executor_job_id
         validate_executor_job_id(job_id)
+    if action == ACTION_GITHUB_ACTIONS_DISPATCH:
+        workflow=str(params.get("workflow") or "")
+        ref=str(params.get("ref") or "")
+        inputs=params.get("inputs") or {}
+        if (workflow, ref) != ("oursong-persona-activation.yml", "core/integration"):
+            raise ValueError("GitHub Actions dispatch target is not allowlisted")
+        if not isinstance(inputs, dict) or inputs:
+            raise ValueError("Oursong activation dispatch accepts no inputs")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
@@ -297,6 +338,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_ACTIVATE_OURSONG_PERSONA,
         ACTION_PROBE_OURSONG_PERSONA,
         ACTION_PROBE_PERSONA_PDCA_RUNTIME,
+        ACTION_GITHUB_ACTIONS_DISPATCH,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")

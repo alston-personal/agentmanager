@@ -39,6 +39,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_RELAY_RESTART: ActionPolicy("control", 7, "high", ("agentos.relay.restart",), ("oracle-antigravity-relay",)),
     bc.ACTION_EXECUTOR_JOB_SUBMIT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
     bc.ACTION_EXECUTOR_JOB_INSPECT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
+    bc.ACTION_GITHUB_ACTIONS_DISPATCH: ActionPolicy("control", 18, "high", ("github.actions.dispatch",), ("github-actions-dispatch",)),
     bc.ACTION_NODE_TRANSACTIONAL_OTA: ActionPolicy("maintenance", 16, "high", ("node.runtime.ota",), ("node-runtime-ota",)),
     bc.ACTION_REALM_NODE_INSPECT: ActionPolicy("control", 9, "high", ("node.realm.inspect",), ()),
     bc.ACTION_REALM_DESKTOP_PROBE: ActionPolicy("control", 10, "high", ("node.desktop.probe",), ()),

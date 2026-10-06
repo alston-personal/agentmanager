@@ -53,5 +53,43 @@ class ActionRelayTests(unittest.TestCase):
         self.assertIn("digest mismatch", receipt["error"])
 
 
+    @patch("agentos_node.action_relay._run")
+    def test_github_actions_dispatch_is_allowlisted_and_uses_gh_without_shell(self, run):
+        from agentos_node.action_relay import _github_actions_dispatch
+        run.side_effect = [
+            {"returncode": 0, "stdout": "", "stderr": ""},
+            {"returncode": 0, "stdout": "", "stderr": ""},
+            {"returncode": 0, "stdout": '[{"databaseId":123,"headSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued","conclusion":"","url":"https://github.com/alston-personal/agentmanager/actions/runs/123","createdAt":"2026-10-06T00:00:00Z"}]', "stderr": ""},
+        ]
+        result = _github_actions_dispatch({
+            "repository": "alston-personal/agentmanager",
+            "workflow": "oursong-persona-activation.yml",
+            "ref": "core/integration",
+            "inputs": {},
+            "expected_head_sha": "a" * 40,
+        })
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["run_id"], 123)
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            [
+                "/usr/bin/gh", "workflow", "run", "oursong-persona-activation.yml",
+                "--repo", "alston-personal/agentmanager",
+                "--ref", "core/integration",
+            ],
+        )
+
+    def test_github_actions_dispatch_rejects_unregistered_target(self):
+        from agentos_node.action_relay import _github_actions_dispatch
+        with self.assertRaises(ValueError):
+            _github_actions_dispatch({
+                "repository": "alston-personal/agentmanager",
+                "workflow": "other.yml",
+                "ref": "core/integration",
+                "inputs": {},
+                "expected_head_sha": "a" * 40,
+            })
+
+
 if __name__ == "__main__":
     unittest.main()

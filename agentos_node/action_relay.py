@@ -5,6 +5,7 @@ import grp
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -293,6 +294,101 @@ def _seed_verify_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
     finally:
         _run(["rm", "-rf", str(verify_root)], cwd=Path.home(), timeout=30)
 
+
+def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch one explicitly allowlisted GitHub Actions workflow.
+
+    GitHub credentials remain owned by the ubuntu relay identity. Callers may
+    select only a registered workflow/ref pair and JSON object inputs; arbitrary
+    repositories, workflow paths, refs, CLI flags, and shell text are rejected.
+    """
+    allowed = {
+        ("alston-personal/agentmanager", "oursong-persona-activation.yml", "core/integration"),
+    }
+    repository = str(params.get("repository") or "")
+    workflow = str(params.get("workflow") or "")
+    ref = str(params.get("ref") or "")
+    inputs = params.get("inputs") or {}
+    expected_head_sha = str(params.get("expected_head_sha") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_head_sha):
+        raise ValueError("expected_head_sha must be an exact lowercase 40-hex commit SHA")
+    if (repository, workflow, ref) not in allowed:
+        raise ValueError("GitHub Actions dispatch target is not allowlisted")
+    if not isinstance(inputs, dict):
+        raise ValueError("GitHub Actions dispatch inputs must be an object")
+    if inputs:
+        raise ValueError("this workflow does not accept dispatch inputs")
+
+    auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
+    if auth["returncode"] != 0:
+        return {
+            "ok": False,
+            "repository": repository,
+            "workflow": workflow,
+            "ref": ref,
+            "auth": auth,
+            "error": "ubuntu GitHub identity is not authenticated",
+        }
+
+    dispatch = _run([
+        "/usr/bin/gh", "workflow", "run", workflow,
+        "--repo", repository,
+        "--ref", ref,
+    ], cwd=Path.home(), timeout=30)
+    if dispatch["returncode"] != 0:
+        return {
+            "ok": False,
+            "repository": repository,
+            "workflow": workflow,
+            "ref": ref,
+            "dispatched": False,
+            "dispatch": dispatch,
+        }
+
+    deadline = time.monotonic() + 30.0
+    observed = None
+    probes: list[dict[str, Any]] = []
+    while time.monotonic() < deadline:
+        probe = _run([
+            "/usr/bin/gh", "run", "list",
+            "--repo", repository,
+            "--workflow", workflow,
+            "--branch", ref,
+            "--commit", expected_head_sha,
+            "--event", "workflow_dispatch",
+            "--limit", "5",
+            "--json", "databaseId,headSha,status,conclusion,url,createdAt",
+        ], cwd=Path.home(), timeout=20)
+        probes.append(probe)
+        if probe["returncode"] == 0:
+            try:
+                rows = json.loads(probe.get("stdout") or "[]")
+            except json.JSONDecodeError:
+                rows = []
+            observed = next(
+                (row for row in rows if str(row.get("headSha") or "") == expected_head_sha),
+                None,
+            )
+            if observed is not None:
+                break
+        time.sleep(1.0)
+
+    return {
+        "ok": observed is not None,
+        "repository": repository,
+        "workflow": workflow,
+        "ref": ref,
+        "expected_head_sha": expected_head_sha,
+        "dispatched": True,
+        "run_id": observed.get("databaseId") if observed else None,
+        "run_status": observed.get("status") if observed else None,
+        "run_conclusion": observed.get("conclusion") if observed else None,
+        "run_url": observed.get("url") if observed else None,
+        "dispatch": dispatch,
+        "observe_attempts": len(probes),
+        "error": None if observed is not None else "dispatched workflow run was not observed before deadline",
+    }
+
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
     return _restart_user_service("layoutlab-api.service")
@@ -319,6 +415,7 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "layoutlab.static.deploy": _layoutlab_static_deploy,
     "github.repo.ensure_studio_web": _ensure_studio_web_remote,
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
+    "github.actions.workflow.dispatch": _github_actions_dispatch,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
     "agentos.project.publish_continuation": _publish_project_continuation,
