@@ -197,12 +197,94 @@ def main() -> int:
                     except Exception:
                         pass
                 if not found:
-                    print("mio_dm_oursong_acceptance=NO_CONVERSATION")
-                    if owns_context:
-                        context.close()
-                    else:
-                        page.close()
-                    return 5
+                    print("mio_dm_oursong_stage=conversation_create")
+                    opened=False
+                    for label in ("New message","New Message","新訊息","建立新訊息"):
+                        try:
+                            btn=page.get_by_role("button",name=re.compile(re.escape(label),re.I))
+                            if btn.count()>0 and btn.first.is_visible():
+                                btn.first.click(timeout=5000)
+                                opened=True
+                                break
+                        except Exception:
+                            pass
+                    if not opened:
+                        for label in ("New message","New Message","新訊息","建立新訊息"):
+                            try:
+                                loc=page.get_by_text(label,exact=False)
+                                if loc.count()>0 and loc.first.is_visible():
+                                    loc.first.click(timeout=5000)
+                                    opened=True
+                                    break
+                            except Exception:
+                                pass
+                    if not opened:
+                        print("mio_dm_oursong_acceptance=NO_NEW_MESSAGE_CONTROL")
+                        if owns_context:
+                            context.close()
+                        else:
+                            page.close()
+                        return 5
+
+                    page.wait_for_timeout(1000)
+                    search=None
+                    for sel in ('input[type="text"]','input[type="search"]','input'):
+                        loc=page.locator(sel)
+                        try:
+                            for i in range(loc.count()):
+                                item=loc.nth(i)
+                                if item.is_visible():
+                                    search=item
+                                    break
+                        except Exception:
+                            pass
+                        if search is not None:
+                            break
+                    if search is None:
+                        print("mio_dm_oursong_acceptance=NO_RECIPIENT_SEARCH")
+                        if owns_context:
+                            context.close()
+                        else:
+                            page.close()
+                        return 5
+
+                    search.click()
+                    search.fill(target)
+                    page.wait_for_timeout(1500)
+
+                    selected=False
+                    for loc in [
+                        page.get_by_text(target, exact=False),
+                        page.locator(f"text={target}"),
+                    ]:
+                        try:
+                            if loc.count()>0 and loc.first.is_visible():
+                                loc.first.click(timeout=5000)
+                                selected=True
+                                break
+                        except Exception:
+                            pass
+                    if not selected:
+                        print("mio_dm_oursong_acceptance=RECIPIENT_NOT_FOUND")
+                        if owns_context:
+                            context.close()
+                        else:
+                            page.close()
+                        return 5
+
+                    page.wait_for_timeout(800)
+                    advanced=False
+                    for label in ("Chat","Next","Done","開始聊天","下一步","完成"):
+                        try:
+                            btn=page.get_by_role("button",name=re.compile("^"+re.escape(label)+"$",re.I))
+                            if btn.count()>0 and btn.last.is_visible():
+                                btn.last.click(timeout=5000)
+                                advanced=True
+                                break
+                        except Exception:
+                            pass
+                    page.wait_for_timeout(1500)
+
                 page.wait_for_timeout(1800)
                 body=page.locator("body").inner_text(timeout=5000)
                 if message in body:
