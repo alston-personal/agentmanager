@@ -1,6 +1,6 @@
 {
   "schema": "agentos.oracle-identity-boundaries/v1",
-  "policy_version": "2026.10.06.4",
+  "policy_version": "2026.10.06.5",
   "shared_group": "agentos",
   "roots": {
     "source_cache": {
@@ -214,6 +214,11 @@
       "risk": "P2",
       "classification": "retired-carrier",
       "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
+    },
+    "scripts/deploy_layoutlab_official_v2.py": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "legacy Layout Lab deploy helper is a non-operational fail-safe stub; canonical publication is materialize -> promote -> parity through bounded executor jobs"
     }
   },
   "closure_classifications": {
@@ -231,9 +236,7 @@
   "p0_baseline": {
     "purpose": "Temporary explicit baseline for #1178. Existing heuristic P0 findings remain unresolved; any new unreviewed P0 path is a regression.",
     "issue": 1178,
-    "paths": [
-      "scripts/deploy_layoutlab_official_v2.py"
-    ],
-    "rule": "Only the remaining explicit legacy Layout Lab deployment helper is unresolved P0. Retired workflow stubs are not approval for any future mutating replacement."
+    "paths": [],
+    "rule": "No reviewed Oracle identity P0 paths remain. Any future P0 finding is new unreviewed regression and must fail governance."
   }
 }
