@@ -342,6 +342,46 @@ jobs:
           print('market_master_durable_queue=PASS status='+str(market.get('status'))+' owner='+str(market.get('owner')))
           PY
 
+          # Bounded live handoff observation. Expose only status/owner/history
+          # counts for the two acceptance work items; never task text or logs.
+          for attempt in $(seq 1 13); do
+            python3 - "$STATE" "$attempt" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf8'))
+          attempt=sys.argv[2]
+          for wid,label in (
+              ('agentos-core-470-runtime-completion','core470'),
+              ('market-master-1200-mvp','market1200'),
+          ):
+              item=data.get('items',{}).get(wid) or {}
+              print(
+                  'completion_live_state'
+                  +' attempt='+attempt
+                  +' item='+label
+                  +' status='+str(item.get('status','missing'))
+                  +' owner='+str(item.get('owner','missing'))
+                  +' generation='+str(item.get('owner_generation','missing'))
+                  +' history_len='+str(len(item.get('history') or []))
+              )
+          PY
+            read -r CORE_STATUS MARKET_STATUS <<EOF
+          $(python3 - "$STATE" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf8'))
+          print(
+              (data.get('items',{}).get('agentos-core-470-runtime-completion') or {}).get('status','missing'),
+              (data.get('items',{}).get('market-master-1200-mvp') or {}).get('status','missing'),
+          )
+          PY
+          )
+          EOF
+            if [ "$CORE_STATUS" != "in_progress" ] || [ "$MARKET_STATUS" != "accepted" ]; then
+              echo "completion_terminal_handoff_observed=YES core470=$CORE_STATUS market1200=$MARKET_STATUS"
+              break
+            fi
+            if [ "$attempt" -lt 13 ]; then sleep 30; fi
+          done
+
           TEST_STATE="$TMP/resume.json"
           TEST_BOARD="$TMP/TASK_BOARD.md"
           python3 "$LIVE/scripts/work_completion.py" --state "$TEST_STATE" register             --id resume-probe --project agentmanager --title resume             --owner role://probe-session --lease-seconds 60             --workspace "$DEV" --next-action 'resume probe action' --accept verified >/dev/null
