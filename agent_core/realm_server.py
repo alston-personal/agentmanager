@@ -488,6 +488,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'google_flow_executor_user=',
                     'google_flow_runtime_error_class=',
                     'google_flow_runtime_error_sha256=',
+                    'google_flow_runtime_exception_type=',
+                    'google_flow_stage=',
                 )
             elif action == bootstrap_control.ACTION_VISION_STUDIO_PRODUCE:
                 safe_prefixes = (
@@ -495,6 +497,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'vision_studio_failed_shot=',
                     'vision_studio_flow_status=',
                     'vision_studio_flow_error_class=',
+                    'vision_studio_flow_exception_type=',
+                    'vision_studio_flow_stage=',
                     'vision_studio_flow_host=',
                     'vision_studio_project_id=',
                     'vision_studio_output=',
