@@ -1,0 +1,46 @@
+name: OSWorld Growth Benchmark Adapter
+
+on:
+  pull_request:
+    paths:
+      - 'agent_core/osworld_growth_benchmark.py'
+      - 'scripts/osworld_growth_benchmark.py'
+      - 'benchmarks/osworld/**'
+      - 'tests/test_osworld_growth_benchmark.py'
+      - '.github/workflows/osworld-growth-benchmark-adapter.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'agent_core/osworld_growth_benchmark.py'
+      - 'scripts/osworld_growth_benchmark.py'
+      - 'benchmarks/osworld/**'
+      - 'tests/test_osworld_growth_benchmark.py'
+      - '.github/workflows/osworld-growth-benchmark-adapter.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test OSWorld growth adapter
+        run: python -m unittest tests.test_osworld_growth_benchmark -v
+      - name: Validate pinned release metadata
+        run: |
+          python - <<'PY'
+          import json
+          p=json.load(open('benchmarks/osworld/osworld-v2.1.json'))
+          assert p['schema']=='agentos.external-benchmark-release/v1'
+          assert p['release']=='osworld-v2.1'
+          assert p['official_manifest']['task_count']==108
+          assert p['official_manifest']['task_hash_manifest_sha256'].startswith('sha256:')
+          assert '@sha256:' in p['provider_images']['docker']['runtime_image']
+          print('osworld_release_pin=PASS')
+          PY
