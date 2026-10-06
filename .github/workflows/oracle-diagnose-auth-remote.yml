@@ -49,4 +49,15 @@ jobs:
           echo '=== recent auth errors ==='
           (sudo -n tail -n 500 /var/log/nginx/error.log 2>/dev/null || tail -n 500 /var/log/nginx/error.log 2>/dev/null || true) \
             | grep -Ei 'auth|oauth|callback|jwt|google|cookie' | tail -n 100 || true
+
+          echo '=== studio nginx topology ==='
+          sed -n '1,260p' /etc/nginx/sites-enabled/studio.milkcat.org 2>&1 || true
+          echo '=== nginx main includes ==='
+          grep -nE 'include|user ' /etc/nginx/nginx.conf 2>&1 || true
+          echo '=== proxy/listener ports ==='
+          ss -ltnp 2>&1 | grep -E ':(80|443|3000|3001|3099)\\b' || true
+          echo '=== sudo boundary ==='
+          sudo -n -l 2>&1 || true
+          echo '=== nginx file ownership ==='
+          stat -c '%U:%G %a %n' /etc/nginx/sites-enabled/studio.milkcat.org /etc/nginx/sites-available/studio.milkcat.org 2>&1 || true
           REMOTE
