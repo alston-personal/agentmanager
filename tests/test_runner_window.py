@@ -355,3 +355,11 @@ def test_realm_node_runtime_provenance_is_bounded_to_identity_fields():
     assert "realm_node_runtime_status=" in block
     assert "realm_node_runtime_source_commit=" in block
     assert "provenance_path" not in block
+
+
+def test_vision_studio_scheduler_policy():
+    from agentos_node.bootstrap_scheduler import policy_for
+    policy = policy_for(bc.ACTION_VISION_STUDIO_PRODUCE)
+    assert policy.role == "gui"
+    assert "media.vision-studio.produce" in policy.capabilities
+    assert "oracle-gui-profile" in policy.locks
