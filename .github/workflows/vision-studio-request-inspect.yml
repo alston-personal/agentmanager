@@ -27,7 +27,7 @@ jobs:
           p=json.load(open('.agentos/commands/vision-studio-request-inspect.json',encoding='utf-8'))
           assert p.get('schema')=='agentos.vision-studio-request-inspect/v1'
           rid=str(p.get('request_id') or '')
-          assert re.fullmatch(r'agentos\.vision_studio\.produce-[0-9]+-[0-9a-f]{8}',rid),rid
+          assert (re.fullmatch(r'agentos\.vision_studio\.produce-[0-9]+-[0-9a-f]{8}',rid) or re.fullmatch(r'agentos\.google_flow\.rain_exit_s01\.resume-[0-9]+-[0-9a-f]{8}',rid)),rid
           print('vision_studio_request_inspect=APPROVED')
           PY
       - name: Mint OIDC credential
@@ -61,7 +61,8 @@ jobs:
           r=d.get('receipt') or {}
           print('vision_studio_request_ok='+str(r.get('ok')).lower())
           for line in r.get('evidence') or []:
-              if str(line).startswith('vision_studio_'):
-                  print(line)
+              s=str(line)
+              if s.startswith('vision_studio_') or s.startswith('google_flow_rain_exit_'):
+                  print(s)
           print('vision_studio_request_failure_class='+str(r.get('failure_class') or ''))
           PY
