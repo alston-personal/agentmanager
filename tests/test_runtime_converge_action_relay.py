@@ -568,6 +568,15 @@ class Fabric:
 class RuntimeDispatcher:
     def __init__(self):
         self.seen = None
+        self.inspected = None
+        self.inspect_result = {
+            "schema": "agentos.runtime-converge-receipt/v1",
+            "ok": True,
+            "action": "node.runtime.converge",
+            "task_id": "action-123",
+            "status": "completed",
+            "classification": "CURRENT_GENERATION_RECONCILED",
+        }
 
     def submit(self, *, request):
         self.seen = request
@@ -577,6 +586,10 @@ class RuntimeDispatcher:
             "task_id": "action-123",
             "state": "queued",
         }
+
+    def inspect(self, task_id):
+        self.inspected = task_id
+        return self.inspect_result
 
 
 def test_controller_routes_typed_converge_to_fixed_relay_not_node_queue():
@@ -602,6 +615,52 @@ def test_controller_routes_typed_converge_to_fixed_relay_not_node_queue():
         "source_ref",
         "source_commit",
     }
+
+
+def test_controller_inspects_existing_runtime_converge_receipt_without_resubmit():
+    dispatcher = RuntimeDispatcher()
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=dispatcher)
+    result = controller.dispatch(
+        {
+            "node_id": "oracle-core-node",
+            "action": "node.runtime.converge.inspect",
+            "task_id": "action-123",
+        }
+    )
+    assert dispatcher.seen is None
+    assert dispatcher.inspected == "action-123"
+    assert result["status"] == "completed"
+    assert result["classification"] == "CURRENT_GENERATION_RECONCILED"
+
+
+def test_controller_runtime_converge_inspect_reports_pending_when_receipt_absent():
+    dispatcher = RuntimeDispatcher()
+    dispatcher.inspect_result = None
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=dispatcher)
+    result = controller.dispatch(
+        {
+            "node_id": "oracle-core-node",
+            "action": "node.runtime.converge.inspect",
+            "task_id": "action-abc123",
+        }
+    )
+    assert dispatcher.seen is None
+    assert dispatcher.inspected == "action-abc123"
+    assert result["status"] == "pending"
+    assert result["ok"] is True
+
+
+def test_controller_runtime_converge_inspect_rejects_extra_execution_fields():
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=RuntimeDispatcher())
+    with pytest.raises(ValueError):
+        controller.dispatch(
+            {
+                "node_id": "oracle-core-node",
+                "action": "node.runtime.converge.inspect",
+                "task_id": "action-123",
+                "shell": "rm -rf /",
+            }
+        )
 
 
 @pytest.mark.parametrize("field", ["shell", "argv", "command", "module", "token", "environment"])
