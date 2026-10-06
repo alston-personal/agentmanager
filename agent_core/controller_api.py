@@ -521,7 +521,7 @@ print('agentos_source_commit='+source_commit)
             text = str(request.get('text') or '')
             if not text or len(text) > 1000:
                 raise ValueError('desktop.text.insert text must contain 1..1000 characters')
-            return {**base, 'action': 'desktop.keyboard', 'operation': 'type', 'text': text}
+            return {**base, 'action': 'desktop.keyboard', 'operation': 'paste', 'text': text}
         raise ValueError(f'unsupported typed desktop action: {action}')
 
     def dispatch(self, node_id: str, request: dict[str, Any]) -> dict[str, Any]:
