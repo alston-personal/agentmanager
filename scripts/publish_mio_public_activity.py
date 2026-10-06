@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse, json, os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 LABELS={
@@ -52,6 +52,74 @@ def public_item(r,a):
         item["summary"]="看看最近有沒有新的變化。" + (f" 這一輪注意到 {unseen} 個新事件。" if unseen else "")
     return item
 
+def parse_ts(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z","+00:00"))
+    except Exception:
+        return None
+
+def activity_health(root,state,now):
+    cfg=load(root/"pdca/config.json")
+    heartbeat=float(cfg.get("heartbeat_minutes") or 60)
+    last_tick=parse_ts(state.get("last_tick_at"))
+    age_minutes=None
+    if last_tick is not None:
+        if last_tick.tzinfo is None:
+            last_tick=last_tick.replace(tzinfo=timezone.utc)
+        age_minutes=max(0.0,(now.astimezone(timezone.utc)-last_tick.astimezone(timezone.utc)).total_seconds()/60.0)
+
+    cycle=int(state.get("cycle") or 0)
+    activity_ref=state.get("last_activity_receipt")
+    projection_ref=state.get("last_ir_projection_receipt")
+    activity_cycle=None
+    projection_cycle=None
+
+    if activity_ref:
+        p=root/activity_ref
+        if p.exists():
+            try: activity_cycle=int(load(p).get("cycle") or 0)
+            except Exception: pass
+    if projection_ref:
+        p=root/projection_ref
+        if p.exists():
+            try: projection_cycle=int(load(p).get("cycle") or 0)
+            except Exception: pass
+
+    cognitive_fresh=(activity_cycle==cycle and projection_cycle==cycle)
+    stalled=(age_minutes is None or age_minutes > heartbeat*1.75)
+    if stalled:
+        status="STALLED"
+        reason="heartbeat_overdue"
+    elif not cognitive_fresh:
+        status="DEGRADED"
+        reason="cognitive_projection_stale"
+    else:
+        last_obs=state.get("last_social_observation") or {}
+        obs_cycle=int(last_obs.get("cycle") or 0) if isinstance(last_obs,dict) else 0
+        read_status=str(last_obs.get("read_status") or "") if isinstance(last_obs,dict) else ""
+        if read_status and read_status not in ("PASS","NO_CHANGE"):
+            status="DEGRADED"
+            reason="social_capability_degraded"
+        elif obs_cycle==cycle:
+            status="ACTIVE"
+            reason="cognitive_and_social_cycle_fresh"
+        else:
+            status="ALIVE_IDLE"
+            reason="cognitive_cycle_fresh_no_current_external_activity"
+
+    return {
+      "status":status,
+      "reason":reason,
+      "cycle":cycle,
+      "heartbeat_age_minutes":round(age_minutes,2) if age_minutes is not None else None,
+      "heartbeat_budget_minutes":heartbeat,
+      "activity_cycle":activity_cycle,
+      "projection_cycle":projection_cycle,
+      "cognitive_fresh":cognitive_fresh,
+    }
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
@@ -78,6 +146,7 @@ def main():
       "focus_label":"自主運作中"
     }
     now=datetime.now().astimezone()
+    health=activity_health(root,state,now)
     payload={
       "schema":"milkcat.persona-public-activity/v1",
       "character_id":"sunlake-milkcat-ai-001",
@@ -85,6 +154,7 @@ def main():
       "updated_label":f"更新於 {now.strftime('%m/%d %H:%M')}",
       "persona_revision":ir.get("revision"),
       "activity_count":len(auto),
+      "autonomy_health":health,
       "social_observation":{k:observation.get(k) for k in
           ("observed_at","read_status","result","posts_scanned","replies_observed","fresh_replies")},
       "current":current,
