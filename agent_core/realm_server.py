@@ -475,6 +475,12 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'realm_executor_claude_code_classification=',
                     'realm_executor_claude_code_stable_routable=',
                 )
+            elif action == bootstrap_control.ACTION_ACCEPT_MIO_DM_OURSONG:
+                safe_prefixes = (
+                    'mio_dm_oursong_acceptance=',
+                    'mio_dm_oursong_send=',
+                    'mio_dm_oursong_readback=',
+                )
             elif action == bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE:
                 safe_prefixes = (
                     'google_flow_generate=',
