@@ -274,7 +274,18 @@ def ocr_image(image: Image.Image, *, psm: int, whitelist: str | None = None, lan
         cmd += ["-c", f"tessedit_char_whitelist={whitelist}"]
     payload = BytesIO()
     prepared.save(payload, format="PNG")
-    proc = subprocess.run(cmd, input=payload.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False)
+    timeout_seconds = max(1.0, min(10.0, float(os.environ.get("INVOICE_TESSERACT_TIMEOUT_SECONDS", "4"))))
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=payload.getvalue(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return ""
     return proc.stdout.decode("utf-8", errors="replace") if proc.returncode == 0 else ""
 
 
@@ -482,31 +493,35 @@ def extract_legacy_invoice(
         raw["fallback_used"].append("amounts")
 
     if not fields["seller_tax_id"]:
-        stamp_texts = ocr_stamp_text(stamp_crop, digits_only=True, fast=bool(stamp_mode == "active" and stamp_regions))
+        # Bounded fallback: one focused Tesseract pass only. Never fan out into
+        # many variants/PSMs on the synchronous recognition path.
+        stamp_text = ocr_image(stamp_crop, psm=6, whitelist="0123456789", lang="eng")
         tax_ids: list[str] = []
-        for stamp_text in stamp_texts:
-            for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text)):
-                if candidate not in tax_ids:
-                    tax_ids.append(candidate)
+        for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text)):
+            if candidate not in tax_ids:
+                tax_ids.append(candidate)
         valid = [x for x in tax_ids if valid_tax_id(x)]
         chosen = valid[0] if len(valid) == 1 else None
         if chosen:
             fields["seller_tax_id"] = chosen
-            confidence["seller_tax_id"] = 0.88 if chosen in valid else 0.68
-        raw["stamp_texts"] = stamp_texts
-        raw["fallback_used"].append("seller_tax_id_stamp")
+            confidence["seller_tax_id"] = 0.86
+        raw["stamp_texts"] = [stamp_text] if stamp_text else []
+        raw["fallback_used"].append("seller_tax_id_bounded")
 
     if not fields["vendor_name"]:
-        vendor_texts = [seller_region_text(rapid.get("raw_text") or "")]
-        if rapid.get("document_type") != "three_part_uniform_invoice":
-            vendor_texts.append(ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng"))
-        vendor_texts.extend(ocr_stamp_text(stamp_crop, fast=bool(stamp_mode == "active" and stamp_regions)))
+        seller_text = seller_region_text(rapid.get("raw_text") or "")
+        vendor_texts = [seller_text] if seller_text else []
         vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
+        if not vendor:
+            vendor_stamp_text = ocr_image(stamp_crop, psm=6, lang="chi_tra+eng")
+            if vendor_stamp_text:
+                vendor_texts.append(vendor_stamp_text)
+                vendor = normalize_vendor_name(vendor_stamp_text)
         if vendor:
             fields["vendor_name"] = vendor
             confidence["vendor_name"] = 0.78
         raw["vendor_texts"] = vendor_texts
-        raw["fallback_used"].append("vendor_name_stamp_aware")
+        raw["fallback_used"].append("vendor_name_bounded")
 
     timings_ms["fallback_ocr_ms"] = round((time.perf_counter() - fallback_started) * 1000, 1)
 

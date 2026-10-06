@@ -157,7 +157,7 @@ class StampRuntimeTests(unittest.TestCase):
             {name: [r.box for r in regions] for name, regions in detected.items()},
         )
 
-    def test_detected_stamp_roi_is_used_for_fallback_ocr(self):
+    def test_detected_stamp_roi_uses_bounded_fallback(self):
         image = synthetic_invoice()
         region = detect_stamp_regions(image)[0]
         template = {
@@ -181,24 +181,61 @@ class StampRuntimeTests(unittest.TestCase):
             "visual_amounts": True,
             "total_amount": 1050,
         }
-        seen_sizes = []
+        seen = []
 
-        def fake_stamp_ocr(crop, *, digits_only=False, fast=False):
-            seen_sizes.append((crop.size, digits_only, fast))
-            if digits_only:
-                return ["16908319"]
-            return ["測試企業有限公司"]
+        def fake_ocr(crop, *, psm, whitelist=None, lang="eng"):
+            seen.append((crop.size, psm, whitelist, lang))
+            if whitelist == "0123456789":
+                return "16908319"
+            return "測試企業有限公司"
 
         with patch.dict("os.environ", {"INVOICE_STAMP_ASSIST_MODE": "active"}), \
              patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
              patch("services.invoice_intake.invoice_core.detect_stamp_regions", return_value=[region]), \
-             patch("services.invoice_intake.invoice_core.ocr_stamp_text", side_effect=fake_stamp_ocr):
+             patch("services.invoice_intake.invoice_core.ocr_image", side_effect=fake_ocr):
             result = extract_legacy_invoice(image)
 
-        self.assertTrue(seen_sizes)
         expected_size = (region.box[2] - region.box[0], region.box[3] - region.box[1])
-        self.assertEqual(seen_sizes[0][0], expected_size)
-        self.assertTrue(all(fast for _, _, fast in seen_sizes))
+        self.assertEqual(len(seen), 2)
+        self.assertTrue(all(size == expected_size for size, *_ in seen))
+        self.assertEqual(result.fields["seller_tax_id"], "16908319")
+        self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
+
+    def test_missing_seller_and_vendor_trigger_at_most_two_tesseract_calls(self):
+        image = synthetic_invoice()
+        template = {
+            "matched": True,
+            "document_type": "three_part_uniform_invoice",
+            "raw_text": "",
+            "fields": {
+                "invoice_number": "AB12345678",
+                "invoice_date": "2026-10-05",
+                "amount_before_tax": 1000,
+                "tax_amount": 50,
+                "total_amount": 1050,
+            },
+            "confidence": {
+                "invoice_number": 0.99,
+                "invoice_date": 0.99,
+                "amount_before_tax": 0.99,
+                "tax_amount": 0.99,
+                "total_amount": 0.99,
+            },
+            "visual_amounts": True,
+            "total_amount": 1050,
+        }
+        calls = []
+
+        def fake_ocr(crop, *, psm, whitelist=None, lang="eng"):
+            calls.append((psm, whitelist, lang))
+            return "16908319" if whitelist == "0123456789" else "測試企業有限公司"
+
+        with patch.dict("os.environ", {"INVOICE_STAMP_ASSIST_MODE": "legacy"}), \
+             patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
+             patch("services.invoice_intake.invoice_core.ocr_image", side_effect=fake_ocr):
+            result = extract_legacy_invoice(image)
+
+        self.assertLessEqual(len(calls), 2)
         self.assertEqual(result.fields["seller_tax_id"], "16908319")
         self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
 
