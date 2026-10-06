@@ -4,6 +4,6 @@
   "node_id": "vopc5750",
   "source_ref": "090c61ca562a275cb38803145526e6a5e411bbfb",
   "requested_by": "chatgpt",
-  "reason": "Roll out merged read-only desktop.semantic_preview and perform live ONE acceptance.",
-  "nonce": "semantic-preview-rollout-20261006-1536"
+  "reason": "Retry rollout with deferred self-update so the current Thin Client can return its scheduling receipt before restart.",
+  "nonce": "semantic-preview-rollout-20261006-1545-deferred"
 }
