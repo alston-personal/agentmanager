@@ -11,6 +11,7 @@ on:
       - 'scripts/bootstrap_oursong_persona_user.py'
       - 'scripts/install_persona_social_timer_user.sh'
       - 'scripts/probe_oursong_persona_user.sh'
+      - 'scripts/run_threads_web_dm_read_user.sh'
       - '.github/workflows/oursong-persona-activation.yml'
   pull_request:
     branches:
@@ -39,6 +40,7 @@ jobs:
         run: |
           python3 -m py_compile scripts/persona_pdca_heartbeat_user.py
           bash -n scripts/probe_oursong_persona_user.sh
+          bash -n scripts/run_threads_web_dm_read_user.sh
       - name: Reject literal escaped-newline contamination
         run: |
           python3 - <<'PY'
