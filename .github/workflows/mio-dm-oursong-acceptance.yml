@@ -95,8 +95,8 @@ jobs:
               print('mio_dm_oursong_failure_class='+str(receipt.get('failure_class') or ''))
               err=str(receipt.get('error') or '')[:240].replace('\n',' ')
               print('mio_dm_oursong_failure_error='+err)
-              for step in receipt.get('steps') or []:
-                  print('mio_dm_oursong_failure_step='+str(step.get('step') or 'unknown')+':rc='+str(step.get('returncode') if step.get('returncode') is not None else 'na')+':error='+str(step.get('error') or ''))
+              for step in receipt.get('failed_steps') or []:
+                  print('mio_dm_oursong_failure_step='+str(step.get('step') or 'unknown')+':rc='+str(step.get('returncode') if step.get('returncode') is not None else 'na'))
               raise SystemExit(4)
           assert 'mio_dm_oursong_acceptance=PASS' in safe, safe
           assert 'mio_dm_oursong_readback=PASS' in safe, safe
