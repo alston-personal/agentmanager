@@ -186,6 +186,13 @@ class MonitorStore:
         CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read,resolved_at);
         CREATE INDEX IF NOT EXISTS idx_attention_state ON attention_items(state,severity,last_observed_at);
         """)
+        for row in self.db.execute("SELECT * FROM notifications WHERE resolved_at IS NULL"):
+            key=row["dedupe_key"] or stable_digest({"monitor_id":row["monitor_id"],"summary":row["summary"]})
+            aid="attention-"+hashlib.sha256(("backfill:"+row["notification_id"]).encode()).hexdigest()[:20]
+            self.db.execute("""INSERT OR IGNORE INTO attention_items(attention_id,monitor_id,severity,summary,state,opened_at,last_observed_at,
+              resolved_at,dedupe_key,occurrence_count,notification_id,provenance_json)
+              VALUES(?,?,?,?, 'OPEN', ?,?,NULL,?,1,?,?)""",
+              (aid,row["monitor_id"],row["severity"],row["summary"],row["observed_at"],row["observed_at"],key,row["notification_id"],row["provenance_json"]))
         self.db.commit()
 
     def register(self,spec: dict[str,Any], *, replace: bool=False) -> dict[str,Any]:
