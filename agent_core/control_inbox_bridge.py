@@ -46,7 +46,9 @@ EXECUTOR_JOB_RECEIPT_FIELDS = (
     'executor_available', 'routable', 'authorized', 'successful',
     'credential_exposed', 'classification', 'experiment_id', 'verdict',
     'baseline_score', 'hydrated_score', 'uplift', 'hydration_receipt_ok',
-    'install_receipt_ok',
+    'install_receipt_ok', 'observed_head', 'layoutlib_release',
+    'layoutlib_manifest_files', 'layoutlib_matching_files',
+    'layoutlib_public_http', 'layoutlib_parity',
 )
 
 
