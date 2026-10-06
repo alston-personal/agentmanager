@@ -398,3 +398,7 @@ Stopping the Scheduled Task alone is insufficient on Windows because a previousl
 ### Windows repair watchdog race guard
 
 Windows in-place repair must stop and temporarily disable the independent Thin Client watchdog before stopping/killing the Thin Client. Otherwise the watchdog can observe the intentional repair stop as a liveness failure, immediately restart the client, and re-lock installed source files during overwrite. The canonical order is: stop/disable watchdog, stop/disable primary task, terminate surviving Thin Client processes, replace files, re-register validated hidden actions, then start the repaired runtime.
+
+### Non-admin Windows repair task ownership
+
+Windows repair is expected to succeed from a normal user PowerShell. If a legacy scheduled task was created under a more privileged ACL and cannot be overwritten by the current user, repair keeps the legacy task stopped/disabled and creates a new current-user-owned hidden task instead. The fallback primary and watchdog remain hidden PowerShell tasks, and the watchdog is rebound to the effective primary task name. Administrator elevation is not a normal prerequisite for repair.
