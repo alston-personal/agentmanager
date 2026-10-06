@@ -406,3 +406,7 @@ Windows repair is expected to succeed from a normal user PowerShell. If a legacy
 ### Windows non-admin HKCU runtime fallback
 
 If Task Scheduler registration is denied for a normal user, one-click repair does not require elevation and does not retry with another task name. It switches to a per-user runtime: hidden PowerShell autorun entries under HKCU start the Thin Client and a persistent 60-second watchdog loop. Protected legacy scheduled tasks remain stopped/disabled. The fallback verifies both autorun commands contain `-WindowStyle Hidden` before reporting success.
+
+### Windows immutable versioned runtime cutover
+
+Windows Thin Client upgrades no longer overwrite the active runtime in place. The canonical installer writes each source commit into `%LOCALAPPDATA%\AgentOS\versions\<commit>` and keeps enrollment, policy, and runtime state in the shared `%LOCALAPPDATA%\AgentOS\state` directory. Supervisor and per-user fallback launch the immutable version root. This removes file-lock races from an old Thin Client or watchdog that is still exiting or cannot be fully governed by the current user's Task Scheduler ACL. New-version installation must therefore succeed without modifying locked files belonging to the previous version.
