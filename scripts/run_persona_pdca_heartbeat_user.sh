@@ -48,6 +48,40 @@ python3 -m json.tool "$RECEIPT" >/dev/null
 # Core lane: internal PDCA + Observer only. Social cognition/execution runs on
 # the separate short-cycle social lane and cannot delay this heartbeat.
 python3 "$INTERNAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
+
+# P0 integrity gate (#1347): a heartbeat is not healthy merely because cycle and
+# last_tick_at advanced. Every cycle must materialize an internal activity receipt
+# for the same cycle, including REST/SLEEP/SKIP-style no-external-action outcomes.
+# Fail before persistence so a zombie heartbeat can never be committed as RUNNING.
+python3 - "$DATA_REPO/$PERSONA_PATH" "$RECEIPT" <<'PY'
+import json,sys
+from pathlib import Path
+
+p=Path(sys.argv[1]); receipt=Path(sys.argv[2])
+state=json.load(open(p/"pdca/state.json",encoding="utf-8"))
+tick=json.load(open(receipt,encoding="utf-8"))
+cycle=int(state["cycle"])
+assert int(tick["cycle"])==cycle,(tick,state)
+
+activity_ref=state.get("last_activity_receipt")
+assert activity_ref, {"error":"missing_last_activity_receipt","cycle":cycle}
+activity_path=p/activity_ref
+assert activity_path.is_file(), {
+    "error":"activity_receipt_missing",
+    "cycle":cycle,
+    "activity_ref":activity_ref,
+}
+activity=json.load(open(activity_path,encoding="utf-8"))
+assert int(activity.get("cycle",-1))==cycle, {
+    "error":"stale_activity_receipt",
+    "cycle":cycle,
+    "activity_cycle":activity.get("cycle"),
+    "activity_ref":activity_ref,
+}
+assert activity.get("schema")=="agentos.persona-activity-receipt/v1", activity
+print(f"persona_pdca_cognitive_integrity=PASS cycle={cycle} activity={activity.get('activity')}")
+PY
+
 python3 "$PUBLIC_ACTIVITY_PUBLISHER" --persona-dir "$DATA_REPO/$PERSONA_PATH" --output "$PUBLIC_ACTIVITY_OUTPUT"
 
 cd "$DATA_REPO"
@@ -70,5 +104,9 @@ assert s["status"]=="RUNNING",s
 assert int(s["cycle"])>=1,s
 assert last["cycle"]==s["cycle"],(last,s)
 assert last["truth_boundary"]["external_receipt_required"] is True
-print(f"persona_pdca_runtime=PASS cycle={s['cycle']} intent={last['plan']['selected_intent']}")
+activity_ref=s.get("last_activity_receipt")
+assert activity_ref
+activity=json.load(open(p/activity_ref,encoding="utf-8"))
+assert int(activity["cycle"])==int(s["cycle"]),(activity,s)
+print(f"persona_pdca_runtime=PASS cycle={s['cycle']} intent={last['plan']['selected_intent']} activity={activity.get('activity')}")
 PY
