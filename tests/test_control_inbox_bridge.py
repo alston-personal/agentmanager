@@ -396,6 +396,12 @@ def test_executor_job_receipt_projection_preserves_governance_evidence_only():
         'hydrated_score': 0.95,
         'uplift': 0.70,
         'hydration_receipt_ok': True,
+        'observed_head': 'a' * 40,
+        'layoutlib_release': 'v0.7.9',
+        'layoutlib_manifest_files': 7,
+        'layoutlib_matching_files': 7,
+        'layoutlib_public_http': 200,
+        'layoutlib_parity': 'EXACT',
         'stdout': 'private model output',
         'stderr': '/home/ubuntu/private/log',
         'prompt': 'private prompt',
@@ -411,6 +417,12 @@ def test_executor_job_receipt_projection_preserves_governance_evidence_only():
     assert projected['credential_exposed'] is False
     assert projected['verdict'] == 'PASS'
     assert projected['hydration_receipt_ok'] is True
+    assert projected['observed_head'] == 'a' * 40
+    assert projected['layoutlib_release'] == 'v0.7.9'
+    assert projected['layoutlib_manifest_files'] == 7
+    assert projected['layoutlib_matching_files'] == 7
+    assert projected['layoutlib_public_http'] == 200
+    assert projected['layoutlib_parity'] == 'EXACT'
     rendered = json.dumps(projected)
     for forbidden in ('private model output', '/home/ubuntu/private', 'private prompt', 'private-session', 'private-provider', 'do-not-publish'):
         assert forbidden not in rendered
