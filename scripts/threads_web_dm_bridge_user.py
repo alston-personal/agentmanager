@@ -9,6 +9,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events
 
@@ -136,16 +137,26 @@ def main() -> int:
             page.goto(INBOX_URL,wait_until="domcontentloaded",timeout=30000)
             page.wait_for_timeout(1500)
             url=page.url
-            if "login" in url or "accountscenter" in url:
+            parsed=urlparse(url)
+            path=(parsed.path or "").lower()
+            host=(parsed.hostname or "").lower()
+            login_required=(path == "/login" or path.startswith("/login/") or "accountscenter" in host)
+            if login_required:
                 if args.headed and args.wait_for_login_seconds > 0:
                     remaining=max(0,args.wait_for_login_seconds)
                     while remaining > 0:
                         page.wait_for_timeout(1000)
                         remaining-=1
                         url=page.url
-                        if "login" not in url and "accountscenter" not in url:
+                        parsed=urlparse(url)
+                        path=(parsed.path or "").lower()
+                        host=(parsed.hostname or "").lower()
+                        if not (path == "/login" or path.startswith("/login/") or "accountscenter" in host):
                             break
-                    if "login" in url or "accountscenter" in url:
+                    parsed=urlparse(url)
+                    path=(parsed.path or "").lower()
+                    host=(parsed.hostname or "").lower()
+                    if path == "/login" or path.startswith("/login/") or "accountscenter" in host:
                         print("threads_web_dm_bridge=LOGIN_REQUIRED")
                         if owns_context:
                             context.close()
