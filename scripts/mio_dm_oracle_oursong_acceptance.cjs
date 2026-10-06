@@ -30,11 +30,20 @@ async function connectTarget(wsurl) {
   });
   let seq=0;
   const pending=new Map();
-  ws.addEventListener('message', ev=>{
-    let msg; try { msg=JSON.parse(String(ev.data)); } catch { return; }
-    if(msg.id && pending.has(msg.id)){
-      const p=pending.get(msg.id); pending.delete(msg.id); p.resolve(msg);
-    }
+  ws.addEventListener('message', async ev=>{
+    let raw=ev.data;
+    try{
+      if(typeof raw!=='string'){
+        if(raw instanceof ArrayBuffer) raw=Buffer.from(raw).toString('utf8');
+        else if(ArrayBuffer.isView(raw)) raw=Buffer.from(raw.buffer,raw.byteOffset,raw.byteLength).toString('utf8');
+        else if(raw && typeof raw.text==='function') raw=await raw.text();
+        else raw=String(raw);
+      }
+      const msg=JSON.parse(raw);
+      if(msg.id && pending.has(msg.id)){
+        const p=pending.get(msg.id); pending.delete(msg.id); p.resolve(msg);
+      }
+    }catch{}
   });
   function cmd(method,params={}){
     return new Promise((resolve,reject)=>{
