@@ -1246,7 +1246,10 @@ class InvoiceStore:
                     """, (json.dumps(extraction.raw, ensure_ascii=False), invoice_id)).fetchone()
                     payload = self._row_payload(done)
                     payload["engine"] = extraction.raw["engine"]
-                    payload["deep_fallback_pending"] = deep_pending
+                    # Fast OCR is already terminal for the user-visible recognition flow.
+                    # Background enrichment must never keep the UI in "recognizing".
+                    payload["background_enrichment_pending"] = deep_pending
+                    payload["deep_fallback_pending"] = False
 
                 if deep_pending:
                     threading.Thread(
@@ -1534,7 +1537,10 @@ class InvoiceStore:
                 if "extraction_payload" in row.keys() and row["extraction_payload"]
                 else {}
             ),
-            "deep_fallback_pending": (
+            # Compatibility field: user-visible recognition is terminal once fast OCR
+            # has left status=processing. Deep OCR is optional background enrichment.
+            "deep_fallback_pending": False,
+            "background_enrichment_pending": (
                 bool(json.loads(row["extraction_payload"]).get("deep_fallback_pending"))
                 if "extraction_payload" in row.keys() and row["extraction_payload"]
                 else False
