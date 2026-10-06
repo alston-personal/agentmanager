@@ -152,6 +152,24 @@ jobs:
           systemctl --user --version >/dev/null
           python3 --version
           echo "preflight_sha=$(git rev-parse HEAD)"
+          probe_path="agent_core/realm_server.py"
+          probe_worktree="$(git hash-object -- "$probe_path" 2>/dev/null || true)"
+          probe_target="$(git rev-parse "1d450d01f96313685f5afd4042d3aa71aa332dcf:$probe_path" 2>/dev/null || true)"
+          echo "realm_server_diag worktree=$probe_worktree target=$probe_target"
+          probe_match=""
+          while IFS= read -r commit; do
+            [ -n "$commit" ] || continue
+            blob="$(git rev-parse "$commit:$probe_path" 2>/dev/null || true)"
+            if [ -n "$blob" ] && [ "$blob" = "$probe_worktree" ]; then
+              probe_match="$commit"
+              break
+            fi
+          done < <(git log --all --format=%H -- "$probe_path" 2>/dev/null || true)
+          if [ -n "$probe_match" ]; then
+            echo "realm_server_provenance class=KNOWN_GIT_VERSION commit=$probe_match blob=$probe_worktree"
+          else
+            echo "realm_server_provenance class=NO_GIT_MATCH blob=$probe_worktree"
+          fi
           REMOTE
 
       - name: Checkout recovery carrier
