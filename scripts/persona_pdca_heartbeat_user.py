@@ -89,7 +89,7 @@ def main():
             s["current_focus"]="heartbeat"
             # A heartbeat is a wake-up/decision opportunity, not proof of an external action.
             # Preserve pending actions; downstream governed runtimes decide/execute them.
-            (d/"pdca/state.json").write_text(json.dumps(s,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+            (d/"pdca/state.json").write_text(json.dumps(s,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
             changed.append((d.name,str(s.get("persona_id") or ""),cycle))
         for d,_,_ in personas: run(["git","add",str((d/"pdca/state.json").relative_to(work))],cwd=work)
         run(["git","-c","user.name=AgentOS Persona Heartbeat","-c","user.email=agentos-persona-heartbeat@users.noreply.github.com","commit","-m","chore(persona): advance active persona heartbeats"],cwd=work)
