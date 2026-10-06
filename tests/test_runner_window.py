@@ -423,6 +423,18 @@ def test_threads_dm_read_public_projection_keeps_identity_without_message_conten
     assert "conversation_id=" not in block
     assert "actor_username=" not in block
 
+
+def test_threads_dm_login_start_public_projection_is_bounded():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    for marker in (
+        "threads_web_dm_login_start=",
+        "threads_web_dm_login_mode=",
+        "threads_web_dm_login_browser_persistent=",
+        "threads_web_dm_login_remote_view=",
+        "threads_web_dm_login_transport=",
+    ):
+        assert marker in text
+
 def test_oursong_dm_read_is_bounded_and_separate_from_mio():
     intent, params = resolve_intent(
         "persona.social.dm",
