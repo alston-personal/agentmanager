@@ -18,17 +18,18 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect persona temp disk pressure
+      - name: Verify orphan persona temp clone
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          TARGET=/tmp/persona-social-data-iEskOn
+          echo '=== TARGET ==='
+          test -d "$TARGET" && du -sh "$TARGET" || true
+          echo '=== PROCESS REFERENCES ==='
+          ps -eo pid,ppid,etime,args | grep -F "$TARGET" | grep -v grep || true
+          echo '=== OPEN FILES ==='
+          if command -v lsof >/dev/null; then lsof +D "$TARGET" 2>/dev/null | head -n 50 || true; fi
           echo '=== DF ==='
           df -h /
-          echo '=== TMP PERSONA COUNT ==='
-          find /tmp -maxdepth 1 -type d \( -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) 2>/dev/null | wc -l
-          echo '=== TMP PERSONA LIST ==='
-          find /tmp -maxdepth 1 -type d \( -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort | tail -n 200
-          echo '=== TMP PERSONA TOTAL ==='
-          find /tmp -maxdepth 1 -type d \( -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) -print0 2>/dev/null | xargs -0 -r du -sch 2>/dev/null | tail -n 1 || true
           REMOTE
