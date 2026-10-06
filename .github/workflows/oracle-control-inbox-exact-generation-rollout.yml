@@ -3,6 +3,7 @@ name: Oracle Control Inbox Exact Generation Rollout
 # Legacy bootstrap carrier retained only to bridge an older live bootstrap
 # generation to the isolated Control Inbox runtime. The temporary bootstrap
 # hook is restored before exit and never becomes runtime authority.
+# Safe refresh marker: 2026-10-06T05:18Z after live consumption stall.
 on:
   workflow_dispatch:
   push:
