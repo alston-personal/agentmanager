@@ -27,9 +27,6 @@ jobs:
         查看這張完整辨識結果
         已掃描發票
         快速確認
-        辨識失敗原因
-        欄位辨識流向
-        多模態路由
         review-guidance
       credit_account: ''
       credit_cost: 0
