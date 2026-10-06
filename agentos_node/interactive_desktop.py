@@ -276,15 +276,35 @@ def keyboard(task: dict[str, Any]) -> dict[str, Any]:
     if not info['interactive']:
         raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
     op = str(task.get('operation') or '')
-    if op != 'type':
-        raise ValueError('desktop.keyboard v0.1 only supports operation=type')
     text = str(task.get('text') or '')
     if not text or len(text) > 1000:
         raise ValueError('text must contain 1..1000 characters')
-    escaped = text.replace("'", "''")
-    script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + escaped.replace('{','{{}').replace('}','{}}') + "')"
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], text=True, capture_output=True, timeout=10, check=False, creationflags=flags)
+
+    if op == 'type':
+        escaped = text.replace("'", "''")
+        script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + escaped.replace('{','{{}').replace('}','{}}') + "')"
+    elif op == 'paste':
+        # Use the Windows clipboard for reliable Unicode/browser input, then
+        # emit only the fixed Ctrl+V gesture. The text is never returned in
+        # the receipt.
+        import base64
+        encoded = base64.b64encode(text.encode('utf-8')).decode('ascii')
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$b=[Convert]::FromBase64String('" + encoded + "'); "
+            "$t=[Text.Encoding]::UTF8.GetString($b); "
+            "[System.Windows.Forms.Clipboard]::SetText($t); "
+            "Start-Sleep -Milliseconds 80; "
+            "[System.Windows.Forms.SendKeys]::SendWait('^v')"
+        )
+    else:
+        raise ValueError('desktop.keyboard v0.1 only supports operation=type|paste')
+
+    cp = subprocess.run(
+        ['powershell.exe', '-NoProfile', '-NonInteractive', '-STA', '-Command', script],
+        text=True, capture_output=True, timeout=10, check=False, creationflags=flags,
+    )
     if cp.returncode != 0:
         raise RuntimeError(f'keyboard input failed rc={cp.returncode}: {cp.stderr[-2000:]}')
     return {'operation': op, 'characters': len(text), 'session': info}
