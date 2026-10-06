@@ -31,6 +31,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("browser.gui", "install", bc.ACTION_INSTALL_GUI_WORKER),
     RunnerWindowIntent("browser.gui", "smoke", bc.ACTION_SMOKE_GUI_WORKER),
     RunnerWindowIntent("social.runtime", "deploy", bc.ACTION_DEPLOY_SOCIAL_RUNTIME),
+    RunnerWindowIntent("social.monitor", "runtime.migrate", bc.ACTION_MIGRATE_GALAXY_EXPERIMENT_MONITOR),
     RunnerWindowIntent("content.social", "reconcile", bc.ACTION_RECONCILE_CONTENT_SOCIAL, frozenset({"account_ref"})),
     RunnerWindowIntent("social.publish", "mio.approved", bc.ACTION_PUBLISH_MIO_APPROVED, frozenset({"post_key"})),
     RunnerWindowIntent("threads.dm", "probe", bc.ACTION_PROBE_THREADS_WEB_DM),
