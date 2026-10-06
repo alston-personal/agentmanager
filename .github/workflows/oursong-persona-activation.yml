@@ -206,7 +206,7 @@ jobs:
         run: |
           set -euo pipefail
           OUT="$RUNNER_TEMP/oursong-dm-read.txt"
-          AGENTOS_DISPATCH_WAIT_SECONDS=120 \
+          AGENTOS_DISPATCH_WAIT_SECONDS=240 \
             bash scripts/agentos_dispatch.sh \
               persona.social.dm oursong.read "$GITHUB_SHA" \
               | tee "$OUT"
