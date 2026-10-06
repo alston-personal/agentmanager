@@ -109,14 +109,20 @@ if (-not (Test-Path -LiteralPath $watchdogScript)) {
   throw "Thin Client watchdog missing: $watchdogScript (ref=$Ref)"
 }
 
-$policy = @{
-  schema = 'agentos.client-policy/v0.1'
-  allowed_executables = @('git','python','python.exe','python3','powershell','powershell.exe','pwsh','cmd','cmd.exe')
-  readable_roots = @((Resolve-Path $WorkspaceRoot).Path)
-  writable_roots = @((Resolve-Path $WorkspaceRoot).Path)
-  max_timeout_seconds = 120
-} | ConvertTo-Json -Depth 5
-$policy | Set-Content -Encoding UTF8 (Join-Path $State 'policy.json')
+$policyPath = Join-Path $State 'policy.json'
+if (-not (Test-Path -LiteralPath $policyPath)) {
+  $policy = @{
+    schema = 'agentos.client-policy/v0.1'
+    allowed_executables = @('git','python','python.exe','python3','powershell','powershell.exe','pwsh','cmd','cmd.exe')
+    readable_roots = @((Resolve-Path $WorkspaceRoot).Path)
+    writable_roots = @((Resolve-Path $WorkspaceRoot).Path)
+    max_timeout_seconds = 120
+  } | ConvertTo-Json -Depth 5
+  $policy | Set-Content -Encoding UTF8 -LiteralPath $policyPath
+  Write-Host "Policy: created $policyPath"
+} else {
+  Write-Host "Policy: preserved existing $policyPath"
+}
 
 $launcher = @"
 @echo off

@@ -410,3 +410,7 @@ If Task Scheduler registration is denied for a normal user, one-click repair doe
 ### Windows immutable versioned runtime cutover
 
 Windows Thin Client upgrades no longer overwrite the active runtime in place. The canonical installer writes each source commit into `%LOCALAPPDATA%\AgentOS\versions\<commit>` and keeps enrollment, policy, and runtime state in the shared `%LOCALAPPDATA%\AgentOS\state` directory. Supervisor and per-user fallback launch the immutable version root. This removes file-lock races from an old Thin Client or watchdog that is still exiting or cannot be fully governed by the current user's Task Scheduler ACL. New-version installation must therefore succeed without modifying locked files belonging to the previous version.
+
+### Windows shared-state preservation
+
+Versioned runtime repair treats `state\policy.json` as persistent configuration. If it already exists, the installer preserves it byte-for-byte and never rewrites it during runtime upgrades; the default policy is created only on first install when the file is absent. This prevents an active or protected legacy Thin Client from blocking a versioned upgrade by holding the shared policy file open.
