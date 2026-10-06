@@ -1,8 +1,11 @@
 import unittest
+from pathlib import Path
 
 from services.invoice_intake.invoice_core import (
     choose_amounts,
     classify_review,
+    deep_fallback_enrich,
+    extract_legacy_invoice,
     extract_line_items_from_text,
     normalize_vendor_name,
 )
@@ -107,6 +110,44 @@ class InvoiceRealUserRegressionTests(unittest.TestCase):
         self.assertEqual(review["status"], "extracted")
         self.assertEqual(review["required_fields"], [])
         self.assertEqual(review["confirm_fields"], [])
+
+    def test_two_stage_real_fixture_quality_is_monotonic(self):
+        fixture_root = Path("benchmarks/invoice_handwriting/fixtures")
+        names = [
+            "tw-2part-my04200253.jpg",
+            "tw-3part-rp54268249.jpg",
+            "tw-triplicate-wikimedia.jpg",
+        ]
+        meaningful = (
+            "invoice_number", "invoice_date", "vendor_name", "seller_tax_id",
+            "amount_before_tax", "total_amount",
+        )
+        improvements = 0
+        for name in names:
+            data = (fixture_root / name).read_bytes()
+            fast = extract_legacy_invoice(data)
+            deep = deep_fallback_enrich(data, fast, budget_seconds=8)
+            fast_count = sum(fast.fields.get(key) not in (None, "") for key in meaningful)
+            deep_count = sum(deep.fields.get(key) not in (None, "") for key in meaningful)
+            self.assertGreaterEqual(
+                deep_count,
+                fast_count,
+                f"{name}: deep fallback lost recognized fields: {fast.fields} -> {deep.fields}",
+            )
+            for key in meaningful:
+                if fast.fields.get(key) not in (None, ""):
+                    self.assertEqual(
+                        deep.fields.get(key),
+                        fast.fields.get(key),
+                        f"{name}: deep fallback overwrote {key}",
+                    )
+            if deep_count > fast_count:
+                improvements += 1
+        self.assertGreaterEqual(
+            improvements,
+            1,
+            "deep fallback did not improve any real public invoice fixture",
+        )
 
     def test_amounts_recovered_from_scattered_numeric_ocr(self):
         texts = [
