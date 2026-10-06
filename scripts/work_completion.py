@@ -30,6 +30,11 @@ ALLOWED = {
 PRIORITY = {"in_progress": 0, "accepted": 1, "verifying": 2, "blocked": 3}
 EXECUTION_OWNERS = {"role://completion.controller", "role://lobster"}
 DEFAULT_LEASE_SECONDS = 1800
+INTAKE_SCHEMA = "agentos.work-intake/v1"
+INTAKE_FIELDS = {
+    "schema", "work_id", "project_id", "title", "next_action",
+    "acceptance", "source", "workspace", "lease_seconds",
+}
 
 
 def now() -> str:
@@ -183,6 +188,44 @@ def register(
         state["items"][work_id] = item
         save(path, state)
         return item
+
+
+def register_intake_envelope(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Register bounded accepted work from a typed intake envelope.
+
+    This is deliberately data-only: callers cannot choose an executable,
+    command, arbitrary actor, or execution owner. Accepted work enters the
+    durable completion queue owned by Completion Controller.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("work_intake_must_be_object")
+    unknown = sorted(set(payload) - INTAKE_FIELDS)
+    if unknown:
+        raise ValueError("work_intake_unknown_fields:" + ",".join(unknown))
+    if payload.get("schema") != INTAKE_SCHEMA:
+        raise ValueError("work_intake_schema_invalid")
+
+    acceptance = payload.get("acceptance")
+    if not isinstance(acceptance, list):
+        raise ValueError("work_intake_acceptance_must_be_list")
+
+    workspace = str(payload.get("workspace") or "").strip()
+    if workspace and not Path(workspace).is_absolute():
+        raise ValueError("work_intake_workspace_must_be_absolute")
+
+    lease_seconds = int(payload.get("lease_seconds") or DEFAULT_LEASE_SECONDS)
+    return register(
+        path,
+        work_id=str(payload.get("work_id") or "").strip(),
+        project_id=str(payload.get("project_id") or "").strip(),
+        title=str(payload.get("title") or "").strip(),
+        owner="role://completion.controller",
+        next_action=str(payload.get("next_action") or "").strip(),
+        acceptance=[str(x) for x in acceptance],
+        source=str(payload.get("source") or "").strip(),
+        workspace=workspace,
+        lease_seconds=lease_seconds,
+    )
 
 
 def transition(
@@ -454,6 +497,9 @@ def cli() -> int:
     p.add_argument("--workspace", default="")
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
+    p = sub.add_parser("register-intake")
+    p.add_argument("--input", type=Path, required=True)
+
     p = sub.add_parser("transition")
     p.add_argument("--id", required=True)
     p.add_argument("--to", required=True, choices=sorted(ACTIVE | TERMINAL))
@@ -496,6 +542,9 @@ def cli() -> int:
             owner=args.owner, next_action=args.next_action, acceptance=args.accept,
             source=args.source, workspace=args.workspace, lease_seconds=args.lease_seconds,
         )
+    elif args.command == "register-intake":
+        payload = json.loads(args.input.read_text(encoding="utf-8"))
+        result = register_intake_envelope(args.state, payload)
     elif args.command == "transition":
         result = transition(
             args.state, work_id=args.id, target=args.to, actor=args.actor,
