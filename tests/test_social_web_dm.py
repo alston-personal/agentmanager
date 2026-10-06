@@ -1,6 +1,6 @@
 import unittest
 
-from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events
+from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events\nfrom agentos_node.social.persona_dm import account_from_profile_hrefs
 
 
 class DirectMessageEventTests(unittest.TestCase):
@@ -15,6 +15,21 @@ class DirectMessageEventTests(unittest.TestCase):
         self.assertEqual(payload["schema"],"agentos.social-conversation-event/v1")
         self.assertEqual(payload["platform"],"instagram")
         self.assertEqual(payload["source"],"web_bridge")
+
+
+class PersonaIdentityTests(unittest.TestCase):
+    def test_profile_href_resolves_allowlisted_persona(self):
+        self.assertEqual(account_from_profile_hrefs(["/@mio.milkcat"]), "mio.milkcat")
+        self.assertEqual(
+            account_from_profile_hrefs(["https://www.threads.com/@oursong_alstonhuang"]),
+            "oursong_alstonhuang",
+        )
+
+    def test_unknown_or_ambiguous_profile_href_fails_closed(self):
+        self.assertIsNone(account_from_profile_hrefs(["/@someone_else"]))
+        self.assertIsNone(
+            account_from_profile_hrefs(["/@mio.milkcat", "/@oursong_alstonhuang"])
+        )
 
 
 if __name__=="__main__":
