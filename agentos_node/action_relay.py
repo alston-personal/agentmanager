@@ -308,6 +308,9 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
     workflow = str(params.get("workflow") or "")
     ref = str(params.get("ref") or "")
     inputs = params.get("inputs") or {}
+    expected_head_sha = str(params.get("expected_head_sha") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_head_sha):
+        raise ValueError("expected_head_sha must be an exact lowercase 40-hex commit SHA")
     if (repository, workflow, ref) not in allowed:
         raise ValueError("GitHub Actions dispatch target is not allowlisted")
     if not isinstance(inputs, dict):
@@ -331,14 +334,58 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
         "--repo", repository,
         "--ref", ref,
     ], cwd=Path.home(), timeout=30)
-    ok = dispatch["returncode"] == 0
+    if dispatch["returncode"] != 0:
+        return {
+            "ok": False,
+            "repository": repository,
+            "workflow": workflow,
+            "ref": ref,
+            "dispatched": False,
+            "dispatch": dispatch,
+        }
+
+    deadline = time.monotonic() + 30.0
+    observed = None
+    probes: list[dict[str, Any]] = []
+    while time.monotonic() < deadline:
+        probe = _run([
+            "/usr/bin/gh", "run", "list",
+            "--repo", repository,
+            "--workflow", workflow,
+            "--branch", ref,
+            "--commit", expected_head_sha,
+            "--event", "workflow_dispatch",
+            "--limit", "5",
+            "--json", "databaseId,headSha,status,conclusion,url,createdAt",
+        ], cwd=Path.home(), timeout=20)
+        probes.append(probe)
+        if probe["returncode"] == 0:
+            try:
+                rows = json.loads(probe.get("stdout") or "[]")
+            except json.JSONDecodeError:
+                rows = []
+            observed = next(
+                (row for row in rows if str(row.get("headSha") or "") == expected_head_sha),
+                None,
+            )
+            if observed is not None:
+                break
+        time.sleep(1.0)
+
     return {
-        "ok": ok,
+        "ok": observed is not None,
         "repository": repository,
         "workflow": workflow,
         "ref": ref,
-        "dispatched": ok,
+        "expected_head_sha": expected_head_sha,
+        "dispatched": True,
+        "run_id": observed.get("databaseId") if observed else None,
+        "run_status": observed.get("status") if observed else None,
+        "run_conclusion": observed.get("conclusion") if observed else None,
+        "run_url": observed.get("url") if observed else None,
         "dispatch": dispatch,
+        "observe_attempts": len(probes),
+        "error": None if observed is not None else "dispatched workflow run was not observed before deadline",
     }
 
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
