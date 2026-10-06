@@ -4,13 +4,16 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import time
 import urllib.request
+import urllib.error
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from html.parser import HTMLParser
 from typing import Any
 
 SCHEMA = "agentos.monitor/v1"
@@ -21,6 +24,60 @@ OFFICIAL_SOURCES = {
     "google-ai-pro": "https://one.google.com/about/google-ai-plans/",
     "chatgpt-plus": "https://openai.com/chatgpt/pricing/",
 }
+
+MATERIAL_KEYWORDS = {
+    "google-ai-pro": (
+        "price", "month", "storage", "ai credit", "gemini", "veo", "flow",
+        "whisk", "notebooklm", "limit", "quota", "2 tb", "2tb", "$",
+    ),
+    "chatgpt-plus": (
+        "plus", "price", "month", "message", "usage", "limit", "voice",
+        "video", "project", "task", "codex", "sora", "gpt", "$20", "$",
+    ),
+}
+GATEWAY_HEALTH_URL = "https://studio.milkcat.org/dashboard/api/agentos/v1/health"
+
+class _VisibleTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hidden = 0
+        self.chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in {"script", "style", "noscript", "svg"}:
+            self.hidden += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"script", "style", "noscript", "svg"} and self.hidden:
+            self.hidden -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self.hidden:
+            return
+        value = " ".join(data.split())
+        if value:
+            self.chunks.append(value)
+
+def material_projection(source: str, html: str) -> dict[str, Any]:
+    parser = _VisibleTextParser()
+    parser.feed(html)
+    keywords = MATERIAL_KEYWORDS[source]
+    selected: list[str] = []
+    seen: set[str] = set()
+    for chunk in parser.chunks:
+        normalized = re.sub(r"\s+", " ", chunk).strip()
+        lower = normalized.lower()
+        if len(normalized) < 2 or not any(key in lower for key in keywords):
+            continue
+        if normalized not in seen:
+            seen.add(normalized)
+            selected.append(normalized[:500])
+    canonical = "\n".join(sorted(selected))
+    return {
+        "material_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "material_evidence": selected[:40],
+        "material_evidence_count": len(selected),
+    }
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -199,7 +256,7 @@ class MonitorStore:
 
     def notifications(self,unread_only:bool=True) -> list[dict[str,Any]]:
         sql="SELECT * FROM notifications"
-        if unread_only: sql+=" WHERE read=0"
+        if unread_only: sql+=" WHERE read=0 AND resolved_at IS NULL"
         sql+=" ORDER BY observed_at DESC"
         out=[]
         for row in self.db.execute(sql):
@@ -216,7 +273,7 @@ def validate_spec(spec:dict[str,Any]) -> None:
     parse_duration(sched.get("every"),60)
     exe=spec.get("execution") or {}
     cap=str(exe.get("capability") or "")
-    if cap not in {"node.realm.inspect","agentos.scheduler.status","agentos.relay.status","threads.dm.login.probe","web.official.snapshot"}:
+    if cap not in {"node.realm.inspect","agentos.scheduler.status","agentos.relay.status","threads.dm.login.probe","browser.gui.smoke","agentos.gateway.health","web.official.snapshot"}:
         raise ValueError("monitor capability is not registered")
     if cap=="web.official.snapshot":
         src=str((spec.get("payload") or {}).get("source") or "")
@@ -232,12 +289,32 @@ def official_snapshot(source:str) -> DispatchResult:
         if not final.startswith("https://"): raise RuntimeError("non-https redirect rejected")
         text=raw.decode("utf-8","replace")
         compact=" ".join(text.split())
-        obs={"source":source,"url":final,"content_sha256":hashlib.sha256(compact.encode()).hexdigest(),"content_bytes":len(raw)}
+        material=material_projection(source,text)
+        obs={"source":source,"url":final,"content_sha256":hashlib.sha256(compact.encode()).hexdigest(),"content_bytes":len(raw),**material}
         return DispatchResult(True,obs,{"capability":"web.official.snapshot","source":source,"authority":"monitor-runtime-allowlist"})
     except Exception as exc:
         return DispatchResult(False,{},{"capability":"web.official.snapshot","source":source},exc.__class__.__name__)
 
-def one_dispatch(capability:str, operation:str, payload:dict[str,Any], source_commit:str) -> DispatchResult:
+def gateway_health() -> DispatchResult:
+    req=urllib.request.Request(GATEWAY_HEALTH_URL,headers={"User-Agent":"AgentOS-Monitor/1.0","Accept":"application/json"})
+    try:
+        with urllib.request.urlopen(req,timeout=10) as r:
+            status=int(getattr(r,"status",200))
+            body=r.read(65536)
+        try:
+            payload=json.loads(body.decode("utf-8","replace"))
+        except Exception:
+            payload={}
+        obs={"http_status":status,"schema":payload.get("schema"),"realm_id":payload.get("realm_id")}
+        return DispatchResult(True,obs,{"capability":"agentos.gateway.health","authority":"fixed-public-health-endpoint"})
+    except urllib.error.HTTPError as exc:
+        body=exc.read(65536)
+        obs={"http_status":int(exc.code),"schema":None,"realm_id":None}
+        return DispatchResult(True,obs,{"capability":"agentos.gateway.health","authority":"fixed-public-health-endpoint"})
+    except Exception as exc:
+        return DispatchResult(False,{},{"capability":"agentos.gateway.health","authority":"fixed-public-health-endpoint"},exc.__class__.__name__)
+
+def one_dispatch(capability:str, operation:str, payload:dict[str,Any], source_commit:str, *, completed_failure_is_observation:bool=False) -> DispatchResult:
     base=os.environ.get("AGENTOS_RUNNER_WINDOW_BASE","http://127.0.0.1:8780")
     token=os.environ.get("AGENTOS_CONTROLLER_TOKEN","")
     if not token:
@@ -254,15 +331,29 @@ def one_dispatch(capability:str, operation:str, payload:dict[str,Any], source_co
             if status.get("state")=="completed":
                 receipt=status.get("receipt") or {}
                 ok=receipt.get("ok") is True
-                return DispatchResult(ok,receipt,{"capability":capability,"operation":operation,"one_request_id":request_id},None if ok else str(receipt.get("failure_class") or "EXECUTOR_FAILED"))
+                provenance={"capability":capability,"operation":operation,"one_request_id":request_id}
+                if completed_failure_is_observation:
+                    provenance["probe_ok"]=ok
+                    return DispatchResult(True,receipt,provenance)
+                return DispatchResult(ok,receipt,provenance,None if ok else str(receipt.get("failure_class") or "EXECUTOR_FAILED"))
             time.sleep(1)
         return DispatchResult(False,{},{"capability":capability,"operation":operation,"one_request_id":request_id},"TIMEOUT")
     except Exception as exc:
         return DispatchResult(False,{},{"capability":capability,"operation":operation},exc.__class__.__name__)
 
 def parse_marker(receipt:dict[str,Any], prefix:str) -> str|None:
-    for line in receipt.get("stdout_lines") or []:
-        if isinstance(line,str) and line.startswith(prefix):
+    candidates:list[str]=[]
+    candidates.extend(str(x) for x in (receipt.get("stdout_lines") or []) if isinstance(x,str))
+    for step in receipt.get("steps") or []:
+        if not isinstance(step,dict):
+            continue
+        for key in ("stdout","stderr"):
+            value=step.get(key)
+            if isinstance(value,str):
+                candidates.extend(value.splitlines())
+    for line in candidates:
+        line=line.strip()
+        if line.startswith(prefix):
             return line.split("=",1)[1]
     return None
 
@@ -270,20 +361,32 @@ def execute(spec:dict[str,Any],source_commit:str) -> DispatchResult:
     cap=spec["execution"]["capability"]; payload=spec.get("payload") or {}
     if cap=="web.official.snapshot":
         return official_snapshot(str(payload["source"]))
+    if cap=="agentos.gateway.health":
+        return gateway_health()
     mapping={
       "node.realm.inspect":("node.realm","inspect"),
       "agentos.scheduler.status":("agentos.scheduler","status"),
       "agentos.relay.status":("agentos.relay","status"),
       "threads.dm.login.probe":("threads.dm","login.probe"),
+      "browser.gui.smoke":("browser.gui","smoke"),
     }
     public,op=mapping[cap]
-    return one_dispatch(public,op,payload,source_commit)
+    return one_dispatch(public,op,payload,source_commit,completed_failure_is_observation=(cap=="browser.gui.smoke"))
 
 def evaluate(spec:dict[str,Any], row:dict[str,Any], dispatch:DispatchResult) -> tuple[bool,str|None,str,str|None]:
+    cap=spec["execution"]["capability"]; severity=str((spec.get("notification_policy") or {}).get("severity","medium"))
     if not dispatch.ok:
         return False,None,"info",None
-    cap=spec["execution"]["capability"]; cond=spec.get("condition") or {}; severity=str((spec.get("notification_policy") or {}).get("severity","medium"))
+    cond=spec.get("condition") or {}
     old=row.get("baseline") or {}; new=dispatch.value
+    if cap=="agentos.gateway.health":
+        status=int(new.get("http_status") or 0)
+        healthy=status==200 and new.get("schema")=="agentos.one-health/v0.1"
+        return (not healthy),(f"ONE gateway unhealthy: HTTP {status}" if not healthy else None),severity,(f"gateway:http:{status}" if not healthy else None)
+    if cap=="browser.gui.smoke":
+        marker=parse_marker(new,"oracle_gui_browser_smoke=")
+        healthy=(dispatch.provenance.get("probe_ok") is True and marker=="PASS")
+        return (not healthy),("Oracle GUI Worker unhealthy" if not healthy else None),severity,("gui-worker:unhealthy" if not healthy else None)
     if cap=="node.realm.inspect":
         state=parse_marker(new,"realm_node_status=") or "unknown"
         prev=parse_marker(old,"realm_node_status=") if isinstance(old,dict) else None
@@ -303,11 +406,13 @@ def evaluate(spec:dict[str,Any], row:dict[str,Any], dispatch:DispatchResult) -> 
         triggered=status=="AUTH_REQUIRED"
         return triggered,("Threads session requires login" if triggered else None),severity,"threads:AUTH_REQUIRED" if triggered else None
     if cap=="web.official.snapshot":
-        initialized=bool(row.get("last_checked"))
-        changed=stable_digest(new)!=stable_digest(row.get("baseline") or {})
+        old_material=old.get("material_sha256")
+        new_material=new.get("material_sha256")
+        initialized=bool(row.get("last_checked")) and bool(old_material)
+        changed=bool(new_material) and new_material!=old_material
         triggered=initialized and changed
         label=str((spec.get("goal") or {}).get("description") or spec["monitor"]["id"])
-        return triggered,(f"Official source changed: {label}" if triggered else None),severity,(f"official:{new.get('source')}:{new.get('content_sha256')}" if triggered else None)
+        return triggered,(f"Material subscription fields changed: {label}" if triggered else None),severity,(f"official:{new.get('source')}:{new_material}" if triggered else None)
     return False,None,severity,None
 
 def run_monitor(store:MonitorStore,mid:str,source_commit:str) -> dict[str,Any]:

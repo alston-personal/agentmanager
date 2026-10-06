@@ -1,0 +1,10 @@
+{
+  "schema":"agentos.monitor/v1",
+  "monitor":{"id":"one-gateway-health","owner":"system"},
+  "goal":{"description":"Monitor public ONE gateway health and HTTP 502-class failures"},
+  "schedule":{"type":"interval","every":"5m","timezone":"Asia/Taipei","run_immediately":true},
+  "execution":{"capability":"agentos.gateway.health"},
+  "payload":{},
+  "condition":{"http_health":true},
+  "notification_policy":{"severity":"high","cooldown":"30m","dedupe":true}
+}
