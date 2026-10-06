@@ -286,9 +286,6 @@ class ThinClientTransport:
                 receipt = json.loads(path.read_text(encoding='utf-8-sig'))
                 if not isinstance(receipt, dict):
                     raise ValueError('receipt spool payload must be an object')
-                self.submit_receipt(receipt)
-                path.unlink()
-                flushed += 1
             except Exception as exc:
                 quarantine.mkdir(parents=True, exist_ok=True)
                 target = quarantine / path.name
@@ -297,10 +294,26 @@ class ThinClientTransport:
                 except OSError:
                     target = path
                 print(
-                    f'[agentos-client] quarantined malformed/unflushable receipt '
+                    f'[agentos-client] quarantined malformed receipt '
                     f'path={target} error={type(exc).__name__}: {exc}',
                     flush=True,
                 )
+                continue
+
+            try:
+                self.submit_receipt(receipt)
+            except Exception as exc:
+                # Transport/auth/gateway failures may be transient. Keep the
+                # durable receipt in place so a later polling cycle can retry.
+                print(
+                    f'[agentos-client] receipt flush deferred '
+                    f'path={path} error={type(exc).__name__}: {exc}',
+                    flush=True,
+                )
+                continue
+
+            path.unlink()
+            flushed += 1
         return flushed
 
     def run_once(self) -> list[dict[str, Any]]:
