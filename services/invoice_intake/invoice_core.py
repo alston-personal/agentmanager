@@ -1003,13 +1003,50 @@ def extract_invoice(
         legacy.review_required |= bool(issues or result['payload']['needs_review'] or
                                        any(not v['equal'] for v in comparison.values()))
         return legacy
-    return Extraction(fields, {}, {
-        'engine': 'gemini-whole-image-v1', 'image_sha256': result['image_sha256'],
-        'vision': result, 'comparison': comparison,
+    # Primary Vision is an enrichment layer, never a destructive whole-record replacement.
+    # Preserve every usable legacy value when Vision is missing/invalid. When both disagree,
+    # prefer the existing value and surface the Vision candidate for review instead of silently
+    # overwriting either side.
+    merged_fields = dict(legacy.fields)
+    merged_confidence = dict(legacy.confidence)
+    field_sources = {
+        k: ('legacy' if v not in (None, '') else None)
+        for k, v in merged_fields.items()
+    }
+    conflicts = {}
+    for key in vision_ocr.CORE_FIELDS:
+        vision_value = fields.get(key)
+        legacy_value = merged_fields.get(key)
+        if vision_value in (None, ''):
+            continue
+        if legacy_value in (None, ''):
+            merged_fields[key] = vision_value
+            field_sources[key] = 'whole_image_vision'
+            continue
+        if legacy_value == vision_value:
+            field_sources[key] = 'legacy+whole_image_vision'
+            continue
+        conflicts[key] = {
+            'legacy': legacy_value,
+            'vision': vision_value,
+            'resolution': 'preserve_legacy_pending_review',
+        }
+    return Extraction(merged_fields, merged_confidence, {
+        'engine': 'legacy+gemini-whole-image-v1', 'image_sha256': result['image_sha256'],
+        'vision': result, 'comparison': comparison, 'conflicts': conflicts,
         'legacy': {'fields': legacy.fields, 'confidence': legacy.confidence,
                    'raw': {k: v for k, v in legacy.raw.items() if k not in {'vision', 'comparison'}}},
-        'field_sources': {k: 'whole_image_vision' if v is not None else None for k, v in fields.items()},
-    }, True)
+        'field_sources': field_sources,
+        'review': {
+            'status': 'needs_review' if (issues or conflicts or result['payload']['needs_review']) else 'extracted',
+            'required_fields': [],
+            'confirm_fields': sorted(set(issues) | set(conflicts)),
+            'reasons': (
+                [f'vision_issue:{x}' for x in sorted(set(issues))]
+                + [f'vision_conflict:{x}' for x in sorted(conflicts)]
+            ),
+        },
+    }, bool(issues or conflicts or result['payload']['needs_review']))
 
 
 class InvoiceStore:
