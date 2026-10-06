@@ -54,3 +54,4 @@ jobs:
           raise SystemExit('synthetic_spool_receipt_missing')
           PY
           REMOTE
+# rerun-20261006-1010
