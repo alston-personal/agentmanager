@@ -23,6 +23,8 @@ test -f "$STAGE/scripts/threads_web_dm_bridge_user.py"
 echo "threads_web_dm_stage=PASS"
 
 set +e
+(
+cd "$STAGE"
 AGENTOS_DM_STAGE="$STAGE" PYTHONPATH="$STAGE" python3 - <<'PY'
 import os
 from pathlib import Path
@@ -47,7 +49,8 @@ except ModuleNotFoundError:
     print("threads_web_dm_import_playwright=MISSING")
     raise SystemExit(13)
 PY
-OUT="$(PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
+)
+OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
 import os, re, runpy, sys
 path=sys.argv[1]
 sys.argv=[path,"--persona",os.environ.get("AGENTOS_DM_PERSONA","mio")]
@@ -84,7 +87,7 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
     exit 0
   fi
   set +e
-  AUTO_OUT="$(PYTHONPATH="$STAGE" python3 "$STAGE/scripts/mio_threads_dm_autonomous_user.py" 2>&1)"
+  AUTO_OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 "$STAGE/scripts/mio_threads_dm_autonomous_user.py" 2>&1)"
   AUTO_RC=$?
   set -e
   printf '%s\n' "$AUTO_OUT" | grep -E '^mio_dm_(autonomous|send)' || true
