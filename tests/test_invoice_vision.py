@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import tempfile
+import urllib.error
 import unittest
 from io import BytesIO
 from pathlib import Path
@@ -118,6 +119,33 @@ class VisionTests(unittest.TestCase):
                 self.assertEqual(raw['conflicts']['vendor_name']['resolution'],'preserve_legacy_pending_review')
                 self.assertEqual(Path(store.get_original(initial['invoice_id'])['path']).read_bytes(),image_bytes())
 
+
+    @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
+    def test_background_provider_failure_does_not_claim_completion_or_overwrite_fast_result(self):
+        local = legacy()
+        local.raw['review'] = {
+            'status':'needs_review',
+            'required_fields':['total_amount'],
+            'confirm_fields':[],
+            'reasons':['missing:total_amount'],
+        }
+        local.review_required = True
+
+        with patch('services.invoice_intake.invoice_core.extract_legacy_invoice', return_value=local), \
+             patch.object(vision, 'read_invoice', side_effect=vision.VisionError('API_KEY_INVALID')), \
+             patch('services.invoice_intake.invoice_core.threading.Thread'):
+            with tempfile.TemporaryDirectory() as tmp:
+                store = InvoiceStore(Path(tmp), data_scope='test')
+                initial = store.ingest(image_bytes(), 'provider-fail.png', 'image/png')
+                store.process(initial['invoice_id'])
+                before = store.get_invoice(initial['invoice_id'])
+                store._vision_enrich_invoice(initial['invoice_id'])
+                after = store.get_invoice(initial['invoice_id'])
+
+        self.assertEqual(before['fields'], after['fields'])
+        self.assertEqual(after['status'], 'needs_review')
+        self.assertEqual(after['recognition']['vision']['status'], 'API_KEY_INVALID')
+
     @patch.dict(os.environ, {'INVOICE_VISION_MODE':'shadow','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
     def test_shadow_disagreement_retains_legacy_and_requires_review(self):
         with patch('services.invoice_intake.invoice_core.extract_legacy_invoice',return_value=legacy()), \
@@ -125,6 +153,24 @@ class VisionTests(unittest.TestCase):
             result=extract_invoice(image_bytes())
         self.assertEqual(result.fields['vendor_name'],'買方測試有限公司')
         self.assertTrue(result.review_required)
+
+    def test_http_400_api_key_invalid_is_classified(self):
+        body=json.dumps([{
+            'error':{
+                'code':400,
+                'message':'API key not valid. Please pass a valid API key.',
+                'status':'INVALID_ARGUMENT',
+                'details':[{'reason':'API_KEY_INVALID'}],
+            }
+        }]).encode()
+        err=urllib.error.HTTPError(
+            'https://generativelanguage.googleapis.com/v1beta/interactions',
+            400,'Bad Request',{},BytesIO(body)
+        )
+        with patch.object(vision.urllib.request,'urlopen',side_effect=err):
+            with self.assertRaises(vision.VisionError) as ctx:
+                vision.read_invoice(image_bytes(),api_key='bad',model='test')
+        self.assertEqual(str(ctx.exception),'API_KEY_INVALID')
 
     @patch.dict(os.environ, {'INVOICE_VISION_MODE':'primary','GEMINI_INVOICE_MODEL':'test','GEMINI_API_KEY':'test'})
     def test_provider_failure_falls_back_without_claiming_vision_success(self):
