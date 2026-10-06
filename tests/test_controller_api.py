@@ -130,7 +130,7 @@ def test_typed_desktop_actions_map_to_bounded_node_capabilities(tmp_path: Path) 
     assert task['task_id'] == typed['task_id']
     assert task['action'] == 'desktop.keyboard'
     assert task['controller_action'] == 'desktop.text.insert'
-    assert task['operation'] == 'type'
+    assert task['operation'] == 'paste'
     assert task['text'] == 'hello Gemini'
 
 
