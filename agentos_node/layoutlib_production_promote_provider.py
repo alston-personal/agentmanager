@@ -46,7 +46,10 @@ def _failure(classification: str, **extra: Any) -> dict[str, Any]:
     }
 
 
-def _resolve_materialized_root(current_file: Path = CURRENT_FILE) -> tuple[Path, str] | None:
+def _resolve_materialized_root(
+    current_file: Path = CURRENT_FILE,
+    materialized_root: Path = MATERIALIZED_ROOT,
+) -> tuple[Path, str] | None:
     if not current_file.is_file() or current_file.is_symlink():
         return None
     try:
@@ -62,7 +65,7 @@ def _resolve_materialized_root(current_file: Path = CURRENT_FILE) -> tuple[Path,
         or any(ch not in "0123456789abcdef" for ch in commit)
     ):
         return None
-    expected = MATERIALIZED_ROOT / commit
+    expected = materialized_root / commit
     if snapshot != str(expected):
         return None
     return expected, commit
@@ -97,6 +100,7 @@ def run_layoutlib_production_promote(
     target: str | Path = PRODUCTION_TARGET,
     backup_root: str | Path = BACKUP_ROOT,
     current_file: str | Path = CURRENT_FILE,
+    materialized_root: str | Path = MATERIALIZED_ROOT,
 ) -> dict[str, Any]:
     spec = validate_executor_job(request)
     if spec.job_type != JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
@@ -107,7 +111,7 @@ def run_layoutlib_production_promote(
             authorized=False,
         )
 
-    resolved = _resolve_materialized_root(Path(current_file))
+    resolved = _resolve_materialized_root(Path(current_file), Path(materialized_root))
     if resolved is None:
         return _failure("LAYOUTLIB_PRODUCTION_PROMOTE_RELEASE_UNAVAILABLE", layoutlib_release=RELEASE)
     source_root, source_commit = resolved
