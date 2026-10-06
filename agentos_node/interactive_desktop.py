@@ -145,6 +145,42 @@ def screenshot(workspace: Path, *, quality: int = 55) -> dict[str, Any]:
 
 
 
+
+def preview_capture(workspace: Path, *, max_width: int = 480, max_height: int = 270, quality: int = 30) -> dict[str, Any]:
+    _require_windows()
+    info = session_info()
+    if not info['interactive']:
+        raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
+    max_width = max(160, min(640, int(max_width)))
+    max_height = max(90, min(360, int(max_height)))
+    quality = max(20, min(45, int(quality)))
+    try:
+        from PIL import Image
+    except Exception as exc:
+        raise RuntimeError('desktop preview requires Pillow') from exc
+
+    shot = screenshot(workspace, quality=quality)
+    raw = base64.b64decode(str(shot.get('image_base64') or ''), validate=True)
+    import io
+    source = Image.open(io.BytesIO(raw)).convert('RGB')
+    source.thumbnail((max_width, max_height))
+    buf = io.BytesIO()
+    source.save(buf, format='JPEG', quality=quality, optimize=True)
+    preview = buf.getvalue()
+    if len(preview) > 120_000:
+        raise RuntimeError(f'preview exceeds evidence limit: {len(preview)} bytes')
+    return {
+        'mime_type': 'image/jpeg',
+        'bytes': len(preview),
+        'sha256': hashlib.sha256(preview).hexdigest(),
+        'width': int(source.width),
+        'height': int(source.height),
+        'image_base64': base64.b64encode(preview).decode('ascii'),
+        'session': info,
+    }
+
+
+
 def tile_windows(task: dict[str, Any]) -> dict[str, Any]:
     _require_windows()
     info = session_info()
