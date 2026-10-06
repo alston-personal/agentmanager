@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -21,6 +22,31 @@ DASHBOARD_SESSION = os.environ.get("DASHBOARD_SESSION_URL", "http://127.0.0.1:30
 DATA_SCOPE = os.environ.get("INVOICE_DATA_SCOPE", "production")
 store = InvoiceStore(DATA_ROOT, data_scope=DATA_SCOPE)
 app = FastAPI(title="Milkcat Invoice Intake", version=VERSION)
+
+
+def _recover_stale_processing_on_startup() -> None:
+    try:
+        result = store.recover_stale_processing(limit=50)
+        print(
+            "invoice_stale_recovery="
+            f"attempted:{result['attempted']} "
+            f"recovered:{len(result['recovered'])} "
+            f"failed:{len(result['failed'])}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"invoice_stale_recovery=ERROR type={type(exc).__name__}", flush=True)
+
+
+@app.on_event("startup")
+def start_stale_processing_recovery() -> None:
+    # OCR is intentionally resumed on a daemon thread so service readiness is not
+    # blocked by old documents after deploy/restart.
+    threading.Thread(
+        target=_recover_stale_processing_on_startup,
+        name="invoice-stale-processing-recovery",
+        daemon=True,
+    ).start()
 
 
 def session_from_cookie(cookie: str | None) -> dict:

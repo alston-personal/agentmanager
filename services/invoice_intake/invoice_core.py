@@ -937,6 +937,39 @@ class InvoiceStore:
                     )
                 raise
 
+    def stale_processing_ids(self, *, limit: int = 50) -> list[str]:
+        """Return old processing rows that no longer have a trustworthy in-process worker."""
+        limit = max(1, min(500, limit))
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT id,status,updated_at FROM invoices
+                   WHERE status='processing' AND deleted_at IS NULL
+                   ORDER BY updated_at ASC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [
+            str(row["id"])
+            for row in rows
+            if processing_is_stale(row["status"], row["updated_at"])
+        ]
+
+    def recover_stale_processing(self, *, limit: int = 50) -> dict[str, Any]:
+        """Resume stale OCR work from immutable originals after a service restart."""
+        ids = self.stale_processing_ids(limit=limit)
+        recovered: list[str] = []
+        failed: list[str] = []
+        for invoice_id in ids:
+            try:
+                self.process(invoice_id)
+                recovered.append(invoice_id)
+            except Exception:
+                failed.append(invoice_id)
+        return {
+            "attempted": len(ids),
+            "recovered": recovered,
+            "failed": failed,
+        }
+
     def reprocess(self, invoice_id: str) -> dict[str, Any]:
         """Re-run OCR for an existing immutable original without creating a new record."""
         with self.connect() as db:
