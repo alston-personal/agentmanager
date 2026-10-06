@@ -104,6 +104,8 @@ jobs:
             'scripts/windows/user_runtime_watchdog.ps1',
             'StateRoot',
             'Shared state:',
+            'Policy: preserved existing',
+            'if (-not (Test-Path -LiteralPath $policyPath))',
             'Windows Store App Execution Alias is not accepted'
           )) {
             if(-not $low.Contains($needle)) { throw "missing low-level installer marker: $needle" }
