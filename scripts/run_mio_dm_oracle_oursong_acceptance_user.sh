@@ -12,7 +12,7 @@ printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 
 TMP="$(mktemp --suffix=.mjs)"
 trap 'rm -f "$TMP"' EXIT
-git -C "$REPO" show "$SOURCE_COMMIT:scripts/mio_dm_oracle_oursong_acceptance.mjs" > "$TMP"
+git -C "$REPO" show "$SOURCE_COMMIT:scripts/mio_dm_oracle_oursong_acceptance.cjs" > "$TMP"
 
 set +e
 OUT="$(node "$TMP" 2>&1)"
