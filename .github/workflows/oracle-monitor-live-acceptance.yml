@@ -42,7 +42,7 @@ jobs:
           import json,sqlite3,sys
           db=sqlite3.connect(sys.argv[1]); db.row_factory=sqlite3.Row
           mids={r['monitor_id'] for r in db.execute('select monitor_id from monitors')}
-          required={'google-ai-pro-plan-watch','chatgpt-plus-plan-watch','vopc5750-health','agentos-scheduler-health','one-relay-health','threads-auth-health'}
+          required={'google-ai-pro-plan-watch','chatgpt-plus-plan-watch','vopc5750-health','agentos-scheduler-health','one-relay-health','threads-auth-health','one-gateway-health','gui-worker-health'}
           assert required <= mids, required-mids
           print('monitor_durable_registration=PASS')
           PY
