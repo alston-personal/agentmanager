@@ -1,6 +1,10 @@
 name: Oracle GUI Worker Browser Smoke
 on:
   workflow_dispatch:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-gui-worker-browser-smoke.json'
 permissions:
   contents: read
 jobs:
