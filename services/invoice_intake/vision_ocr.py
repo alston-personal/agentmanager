@@ -17,7 +17,7 @@ from io import BytesIO
 
 from PIL import Image
 
-CORE_FIELDS = ('invoice_number', 'invoice_date', 'vendor_name', 'seller_tax_id',
+CORE_FIELDS = ('invoice_number', 'invoice_date', 'vendor_name', 'buyer_tax_id', 'seller_tax_id',
                'amount_before_tax', 'tax_amount', 'total_amount')
 TEXT_FIELDS = ('document_type', 'invoice_number', 'invoice_date', 'buyer_name',
                'buyer_tax_id', 'buyer_address', 'seller_name', 'seller_tax_id',
@@ -150,19 +150,24 @@ def validated_fields(payload: dict) -> tuple[dict, list[str]]:
     issues = list(payload['uncertain_fields'])
     for key, value in list(fields.items()):
         alias = 'seller_name' if key == 'vendor_name' else key
-        invalid = key in issues or alias in issues
+        # Uncertainty is review metadata, not a reason to erase a readable value.
+        # Only structurally invalid values are rejected from normalized fields.
+        uncertain = key in issues or alias in issues
+        invalid = False
         if value is not None:
             if key == 'invoice_number':
-                invalid |= not bool(re.fullmatch(r'[A-Z]{2}\d{8}', value))
+                invalid = not bool(re.fullmatch(r'[A-Z]{2}\d{8}', value))
             elif key == 'invoice_date':
                 try:
-                    invalid |= date.fromisoformat(value).isoformat() != value
+                    invalid = date.fromisoformat(value).isoformat() != value
                 except ValueError:
                     invalid = True
-            elif key == 'seller_tax_id':
-                invalid |= not valid_tax_id(value)
+            elif key in {'buyer_tax_id', 'seller_tax_id'}:
+                invalid = not valid_tax_id(value)
         if invalid:
             fields[key] = None
+            issues.append(key)
+        elif uncertain:
             issues.append(key)
     if all(fields[k] is not None for k in MONEY_FIELDS):
         if fields['amount_before_tax'] + fields['tax_amount'] != fields['total_amount']:
