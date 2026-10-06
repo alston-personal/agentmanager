@@ -69,8 +69,8 @@ jobs:
           assert r.get('source_commit')==expected,r
           assert r.get('ok') is True,r
           sch=r.get('scheduler') or {}
-          assert sch.get('worker_role')=='control',sch
-          assert sch.get('worker_id')=='oracle-control',sch
+          assert sch.get('worker_role')=='maintenance',sch
+          assert sch.get('worker_id')=='oracle-maintenance',sch
           evidence=set(r.get('evidence') or [])
           for marker in (
               'social_runtime_deploy=PASS',
