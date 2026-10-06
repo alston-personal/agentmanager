@@ -500,6 +500,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'google_flow_recover_stage=',
                     'google_flow_recover_url=',
                     'google_flow_recover_video_candidates=',
+                    'google_flow_recover_controls=',
                     'google_flow_recover_output=',
                     'google_flow_recover_bytes=',
                     'google_flow_recover_sha256=',
