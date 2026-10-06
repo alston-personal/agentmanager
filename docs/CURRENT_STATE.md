@@ -394,3 +394,7 @@ Windows repair must never start an already-registered Thin Client task before va
 ### Windows stale Thin Client file-lock recovery
 
 Stopping the Scheduled Task alone is insufficient on Windows because a previously spawned Python Thin Client child can outlive the task wrapper and retain locks on installed modules. Repair therefore enumerates and terminates all recognized Thin Client process shapes (module invocation, launcher cmd, and installed thin_client/client_cli paths) before replacing files, then rechecks until no matching process remains or fails closed. This prevents in-place upgrade from partially overwriting a locked runtime.
+
+### Windows repair watchdog race guard
+
+Windows in-place repair must stop and temporarily disable the independent Thin Client watchdog before stopping/killing the Thin Client. Otherwise the watchdog can observe the intentional repair stop as a liveness failure, immediately restart the client, and re-lock installed source files during overwrite. The canonical order is: stop/disable watchdog, stop/disable primary task, terminate surviving Thin Client processes, replace files, re-register validated hidden actions, then start the repaired runtime.
