@@ -1,4 +1,5 @@
 name: Main Runner Window Guard
+# keep this workflow validation-only; runtime jobs belong elsewhere
 
 on:
   push:
