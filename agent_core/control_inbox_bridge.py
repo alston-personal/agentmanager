@@ -232,8 +232,8 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
             if isinstance(value, int):
                 projected[key] = int(value)
     elif action == 'desktop.text.insert':
-        if str(receipt.get('operation') or '') == 'type':
-            projected['operation'] = 'type'
+        if str(receipt.get('operation') or '') in {'type', 'paste'}:
+            projected['operation'] = str(receipt.get('operation'))
         if isinstance(receipt.get('characters'), int):
             projected['characters'] = int(receipt['characters'])
     elif action == 'agentos.executor.job':
