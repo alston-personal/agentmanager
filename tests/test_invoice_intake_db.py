@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from services.invoice_intake.invoice_core import InvoiceStore
+from services.invoice_intake.invoice_core import InvoiceStore, processing_is_stale
 
 
 def jpeg_bytes() -> bytes:
@@ -13,6 +13,13 @@ def jpeg_bytes() -> bytes:
     buf = BytesIO()
     image.save(buf, format="JPEG")
     return buf.getvalue()
+
+
+class InvoiceProcessingStateTests(unittest.TestCase):
+    def test_processing_stale_only_after_threshold(self):
+        self.assertFalse(processing_is_stale("extracted", "2020-01-01T00:00:00Z"))
+        self.assertFalse(processing_is_stale("processing", None))
+        self.assertTrue(processing_is_stale("processing", "2020-01-01T00:00:00Z"))
 
 
 class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
@@ -156,6 +163,25 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             recent = store.recent(10)
             found = next(item for item in recent if item["invoice_id"] == invoice_id)
             self.assertEqual(found["review"]["confirm_fields"], ["vendor_name"])
+
+    def test_processing_payload_exposes_stale_recovery_signal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            created = store.ingest(
+                jpeg_bytes(),
+                "processing.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-processing",
+            )
+            with store.connect() as db:
+                db.execute(
+                    "UPDATE invoices SET updated_at='2020-01-01T00:00:00Z' WHERE id=?",
+                    (created["invoice_id"],),
+                )
+            item = store.get_invoice(created["invoice_id"])
+            self.assertEqual(item["status"], "processing")
+            self.assertTrue(item["processing_stale"])
 
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
         with tempfile.TemporaryDirectory() as tmp:
