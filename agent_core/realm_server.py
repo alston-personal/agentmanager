@@ -476,6 +476,15 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'realm_executor_claude_code_classification=',
                     'realm_executor_claude_code_stable_routable=',
                 )
+            elif action == bootstrap_control.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR:
+                safe_prefixes = (
+                    'mio_threads_session_supervisor_install=',
+                    'mio_threads_session_supervisor_install_stage=',
+                    'mio_threads_session_supervisor_interval=',
+                    'mio_threads_session_supervisor_persistent=',
+                    'mio_threads_session_supervisor_state=',
+                    'mio_threads_session_supervisor_transition=',
+                )
             elif action == bootstrap_control.ACTION_ACCEPT_MIO_DM_OURSONG:
                 safe_prefixes = (
                     'mio_dm_oursong_acceptance=',

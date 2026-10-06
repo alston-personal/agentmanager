@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+STAGE=init
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "mio_threads_session_supervisor_install_stage=$STAGE"; echo "mio_threads_session_supervisor_install=ERROR"; fi' EXIT
 
 if [ "$(id -un)" != "ubuntu" ]; then
   echo "mio_threads_session_supervisor_install=WRONG_USER" >&2
@@ -14,6 +16,7 @@ ROOT="$HOME/.local/share/agentos/mio-threads-session-supervisor"
 RELEASE="$ROOT/releases/$SOURCE_COMMIT"
 UNIT_DIR="$HOME/.config/systemd/user"
 
+STAGE=materialize
 rm -rf "$RELEASE"
 mkdir -p "$RELEASE/scripts" "$UNIT_DIR"
 git -C "$REPO" show "$SOURCE_COMMIT:scripts/probe_threads_web_dm_login_user.sh" > "$RELEASE/scripts/probe_threads_web_dm_login_user.sh"
@@ -47,10 +50,16 @@ Unit=mio-threads-session-supervisor.service
 WantedBy=timers.target
 EOF
 
+STAGE=daemon_reload
 systemctl --user daemon-reload
+STAGE=timer_enable
 systemctl --user enable --now mio-threads-session-supervisor.timer >/dev/null
+STAGE=initial_probe
 systemctl --user start mio-threads-session-supervisor.service
+STAGE=timer_verify
 systemctl --user is-active --quiet mio-threads-session-supervisor.timer
+STAGE=done
+echo "mio_threads_session_supervisor_install_stage=done"
 echo "mio_threads_session_supervisor_install=PASS"
 echo "mio_threads_session_supervisor_interval=2h"
 echo "mio_threads_session_supervisor_persistent=true"
