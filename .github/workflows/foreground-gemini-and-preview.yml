@@ -1,0 +1,60 @@
+name: Foreground Gemini And Preview
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/foreground-gemini-and-preview.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Foreground Gemini and capture
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          focus_id='foreground-gemini-20261006-1055'
+          focus_code="import ctypes,time; u=ctypes.windll.user32; h=1117002; u.ShowWindow(h,9); u.BringWindowToTop(h); u.SetForegroundWindow(h); time.sleep(1); print('FG='+str(u.GetForegroundWindow()))"
+          if f.get_receipt(focus_id) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':focus_id,'action':'shell.exec','executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe','argv':['-c',focus_code],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':10,'cognition_ids_used':['demo://gemini-threads/20261006']})
+          for _ in range(25):
+              r=f.get_receipt(focus_id)
+              if r:
+                  print(str(r.get('stdout') or '').strip())
+                  break
+              time.sleep(1)
+          else: raise SystemExit('focus_receipt_missing')
+          cap='foreground-gemini-preview-20261006-1055'
+          code="from PIL import ImageGrab; import pathlib,base64; p=pathlib.Path(r'C:\\Users\\alston.huang\\AgentOS\\gemini-preview-fg.jpg'); im=ImageGrab.grab(all_screens=True).convert('RGB'); im.thumbnail((480,270)); im.save(p,format='JPEG',quality=25,optimize=True); s=base64.b64encode(p.read_bytes()).decode('ascii'); print('LEN='+str(len(s))); print('PART0='+s[:6000]); print('PART1='+s[6000:12000])"
+          if f.get_receipt(cap) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':cap,'action':'shell.exec','executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe','argv':['-c',code],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':['demo://screen-preview/20261006']})
+          for _ in range(30):
+              r=f.get_receipt(cap)
+              if r:
+                  print(str(r.get('stdout') or '').strip())
+                  raise SystemExit(0)
+              time.sleep(1)
+          raise SystemExit('capture_receipt_missing')
+          PY
+          REMOTE
