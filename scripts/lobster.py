@@ -248,7 +248,7 @@ def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
     # ── AgentOS 角色路由 ──
     role_name, system_prompt, sop = get_agent_persona(task_text)
     target_dir = get_target_output_path(proj_dir.name, proj_dir)
-    logger.info(f"⚡ [Role Route] 任務路由至角色: {role}, 目標路徑: {target_dir}")
+    logger.info(f"⚡ [Role Route] 任務路由至角色: {role_name}, 目標路徑: {target_dir}")
 
     # ── 本地確定性任務攔截路由 (Local interceptors registry) ──
     port_match = re.search(r"檢查連接埠\s+(\d+)", task_text)
@@ -265,7 +265,7 @@ def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
         # 注入角色 Persona, SOP 以及路徑約束
         full_prompt = (
             f"{system_prompt}\n\n"
-            f"你是 AgentOS Lobster Engine 調度之 {role}。\n"
+            f"你是 AgentOS Lobster Engine 調度之 {role_name}。\n"
             f"PRIMARY_OUTPUT_DIRECTORY: {target_dir}\n\n"
             f"## 執行 SOP:\n{sop}\n\n"
             f"## 任務內容：\n**{task_text}**\n\n"

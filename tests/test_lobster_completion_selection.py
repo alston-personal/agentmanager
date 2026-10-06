@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 import tempfile
 import types
@@ -83,6 +84,11 @@ class LobsterCompletionSelectionTests(unittest.TestCase):
             self.assertEqual(item["status"], "in_progress")
             self.assertEqual(item["owner"], "role://lobster")
             self.assertTrue(any(h.get("event") == "handoff" for h in item["history"]))
+
+    def test_task_wrapper_uses_resolved_role_name(self) -> None:
+        source = inspect.getsource(lobster.run_claude_task_wrapper)
+        self.assertIn("{role_name}", source)
+        self.assertNotIn("{role}", source)
 
     def test_non_execution_owner_is_not_claimed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
