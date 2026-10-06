@@ -153,6 +153,27 @@ jobs:
           systemctl --user --version >/dev/null
           python3 --version
           echo "preflight_sha=$(git rev-parse HEAD)"
+          TARGET_DIAG_SHA="3ce658ba1a13589ce4e7dbf4455d3d28affa6b76"
+          git fetch --no-tags origin "$TARGET_DIAG_SHA" >/dev/null 2>&1 || true
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            status="${line:0:2}"
+            rel="${line:3}"
+            case "$rel" in
+              /*|*..*) echo "diag_path_rejected=$rel"; continue ;;
+            esac
+            worktree_hash="$(git hash-object -- "$rel" 2>/dev/null || true)"
+            head_hash="$(git rev-parse "HEAD:$rel" 2>/dev/null || true)"
+            target_hash="$(git rev-parse "$TARGET_DIAG_SHA:$rel" 2>/dev/null || true)"
+            class="UNKNOWN"
+            if [ -n "$worktree_hash" ] && [ "$worktree_hash" = "$target_hash" ]; then
+              class="TARGET_EQUIVALENT"
+            elif [ -n "$worktree_hash" ] && [ "$worktree_hash" = "$head_hash" ]; then
+              class="HEAD_EQUIVALENT"
+            fi
+            printf 'dirty_diag status=%q path=%q class=%s worktree=%s head=%s target=%s\n' \
+              "$status" "$rel" "$class" "$worktree_hash" "$head_hash" "$target_hash"
+          done < <(git status --short --untracked-files=no)
           REMOTE
 
       - name: Pull request preflight summary
