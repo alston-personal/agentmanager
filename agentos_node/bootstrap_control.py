@@ -27,6 +27,7 @@ ACTION_REALM_NODE_INSPECT = "agentos.realm_node.inspect"
 ACTION_REALM_DESKTOP_PROBE = "agentos.realm_desktop.probe"
 ACTION_REALM_EXECUTOR_RECONCILE = "agentos.realm_executor.reconcile"
 ACTION_GOOGLE_FLOW_GENERATE = "agentos.google_flow.generate"
+ACTION_GOOGLE_FLOW_RECOVER = "agentos.google_flow.recover"
 ACTION_GOOGLE_VIDS_GENERATE = "agentos.google_vids.generate"
 ACTION_VISION_STUDIO_PRODUCE = "agentos.vision_studio.produce"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
@@ -85,6 +86,7 @@ ALLOWED_ACTIONS = {
     ACTION_REALM_DESKTOP_PROBE,
     ACTION_REALM_EXECUTOR_RECONCILE,
     ACTION_GOOGLE_FLOW_GENERATE,
+    ACTION_GOOGLE_FLOW_RECOVER,
     ACTION_GOOGLE_VIDS_GENERATE,
     ACTION_VISION_STUDIO_PRODUCE,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -197,6 +199,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","node_id"}
     elif action in {ACTION_GOOGLE_FLOW_GENERATE, ACTION_GOOGLE_VIDS_GENERATE}:
         allowed_params={"source_commit","prompt"}
+    elif action == ACTION_GOOGLE_FLOW_RECOVER:
+        allowed_params={"source_commit"}
     elif action == ACTION_VISION_STUDIO_PRODUCE:
         allowed_params={"source_commit","project_id"}
     elif action == ACTION_EXECUTOR_JOB_SUBMIT:
@@ -861,6 +865,12 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             timeout=960,
             source_commit=source_commit,
             env_extra={"AGENTOS_GOOGLE_MEDIA_PROMPT": str(params.get("prompt") or "")},
+        )
+    if action == ACTION_GOOGLE_FLOW_RECOVER:
+        return _run_canonical_script(
+            "scripts/recover_google_flow_latest_user.sh",
+            timeout=180,
+            source_commit=source_commit,
         )
     if action == ACTION_GOOGLE_VIDS_GENERATE:
         params = params or {}
