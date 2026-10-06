@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CURRENT_STAGE="entry"
+trap 'rc=$?; echo "oursong_activate_stage=${CURRENT_STAGE}_failed"; echo "oursong_activate=FAIL"; exit "$rc"' ERR
+
+CURRENT_STAGE="identity_check"
+echo "oursong_activate_stage=${CURRENT_STAGE}_start"
 if [[ "$(id -u)" -ne 1001 ]]; then
   echo "oursong_activate=WRONG_USER"
   exit 2
@@ -12,22 +17,38 @@ PROFILE_ROOT="${HOME}/.config/agentos/personas"
 PROFILE="${PROFILE_ROOT}/oursong_alstonhuang.env"
 RELEASE_ROOT="${HOME}/.local/share/agentos/persona-social/releases"
 
+CURRENT_STAGE="source_commit_validate"
+echo "oursong_activate_stage=${CURRENT_STAGE}_start"
 printf '%s' "${SOURCE_COMMIT}" | grep -Eq '^[0-9a-f]{40}$' || {
   echo "oursong_activate=SOURCE_COMMIT_REQUIRED"
   exit 3
 }
+CURRENT_STAGE="source_commit_present"
+echo "oursong_activate_stage=${CURRENT_STAGE}_start"
 git -C "${REPO}" cat-file -e "${SOURCE_COMMIT}^{commit}"
 
+CURRENT_STAGE="release_root_prepare"
+echo "oursong_activate_stage=${CURRENT_STAGE}_start"
 mkdir -p "${RELEASE_ROOT}"
 RELEASE="${RELEASE_ROOT}/${SOURCE_COMMIT}"
 if [[ ! -d "${RELEASE}" ]]; then
+  CURRENT_STAGE="release_stage_prepare"
+  echo "oursong_activate_stage=${CURRENT_STAGE}_start"
   STAGE="${RELEASE_ROOT}/.stage-${SOURCE_COMMIT}-$$"
   rm -rf "${STAGE}"
   mkdir -p "${STAGE}"
   trap 'rm -rf "${STAGE:-}"' EXIT
+  CURRENT_STAGE="release_archive"
+  echo "oursong_activate_stage=${CURRENT_STAGE}_start"
   git -C "${REPO}" archive "${SOURCE_COMMIT}" | tar -x -C "${STAGE}"
+  CURRENT_STAGE="release_compile"
+  echo "oursong_activate_stage=${CURRENT_STAGE}_start"
   python3 -m py_compile     "${STAGE}/scripts/bootstrap_oursong_persona_user.py"     "${STAGE}/scripts/mio_persona_social_loop_user.py"     "${STAGE}/scripts/sync_persona_pdca_social_outcome_user.py"     "${STAGE}/scripts/persona_pdca_heartbeat_user.py"     "${STAGE}/agentos_node/persona_life.py"
+  CURRENT_STAGE="release_shellcheck"
+  echo "oursong_activate_stage=${CURRENT_STAGE}_start"
   bash -n "${STAGE}/scripts/install_persona_social_timer_user.sh"
+  CURRENT_STAGE="release_publish"
+  echo "oursong_activate_stage=${CURRENT_STAGE}_start"
   mv "${STAGE}" "${RELEASE}"
   trap - EXIT
 fi
@@ -38,6 +59,7 @@ test -f "${RELEASE}/scripts/sync_persona_pdca_social_outcome_user.py"
 test -f "${RELEASE}/scripts/install_persona_social_timer_user.sh"
 test -f "${RELEASE}/scripts/persona_pdca_heartbeat_user.py"
 
+CURRENT_STAGE="bootstrap"
 echo "oursong_activate_stage=bootstrap_start"
 python3 "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"
 echo "oursong_activate_stage=bootstrap_pass"
