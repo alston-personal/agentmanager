@@ -32,7 +32,12 @@ install -m 0755 "$SOURCE_REPLY_INTENT_GENERATOR" "$LIB/persona_reply_intent_gene
 install -m 0755 "$SOURCE_PUBLIC_ACTIVITY_PUBLISHER" "$LIB/publish_mio_public_activity.py"
 install -m 0755 "$SOURCE_POST_INTENT_GENERATOR" "$LIB/persona_post_intent_generator.py"
 install -m 0755 "$SOURCE_GROWTH_METRICS" "$LIB/persona_growth_metrics_collector.py"
-install -m 0755 "$SOURCE_RUNNER" "$BIN/agentos-persona-pdca-heartbeat"
+CANONICAL_HEARTBEAT="$BIN/agentos-persona-pdca-heartbeat-v2"
+install -m 0755 "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT"
+cmp -s "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT" || {
+  echo "persona_pdca_runtime_install=CONTENT_MISMATCH"
+  exit 4
+}
 install -m 0755 "$SOURCE_SOCIAL_RUNNER" "$BIN/agentos-persona-social-actions"
 
 SERVICE="$UNIT_DIR/agentos-persona-pdca-heartbeat.service"
@@ -56,7 +61,7 @@ Environment=AGENTOS_PERSONA_REPLY_INTENT_GENERATOR=$LIB/persona_reply_intent_gen
 Environment=AGENTOS_MIO_PUBLIC_ACTIVITY_PUBLISHER=$LIB/publish_mio_public_activity.py
 Environment=AGENTOS_MIO_PUBLIC_ACTIVITY_OUTPUT=/home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json
 Environment=AGENTOS_PERSONA_POST_INTENT_GENERATOR=$LIB/persona_post_intent_generator.py
-ExecStart=$BIN/agentos-persona-pdca-heartbeat
+ExecStart=$CANONICAL_HEARTBEAT
 NoNewPrivileges=true
 EOF
 
@@ -120,6 +125,8 @@ systemctl --user is-failed --quiet agentos-persona-pdca-heartbeat.service && {
 }
 echo "persona_pdca_install_live_cycle=PASS"
 
+systemctl --user show -p ExecStart --value agentos-persona-pdca-heartbeat.service | grep -F "$CANONICAL_HEARTBEAT" >/dev/null
+echo "persona_pdca_runtime_owner=$CANONICAL_HEARTBEAT"
 echo "persona_pdca_timer_install=PASS"
 echo "persona_pdca_timer_interval=60m"
 echo "persona_pdca_timer_first_due=55m"
