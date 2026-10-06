@@ -1,8 +1,11 @@
 import unittest
+from pathlib import Path
 
 from services.invoice_intake.invoice_core import (
     choose_amounts,
     classify_review,
+    deep_fallback_enrich,
+    extract_legacy_invoice,
     extract_line_items_from_text,
     normalize_vendor_name,
 )
@@ -107,6 +110,63 @@ class InvoiceRealUserRegressionTests(unittest.TestCase):
         self.assertEqual(review["status"], "extracted")
         self.assertEqual(review["required_fields"], [])
         self.assertEqual(review["confirm_fields"], [])
+
+    def test_two_stage_real_fixture_quality_is_monotonic(self):
+        import json
+
+        manifest = json.loads(
+            Path("benchmarks/invoice_handwriting/public_cases.json").read_text()
+        )
+        fast_correct = 0
+        deep_correct = 0
+        checked = 0
+        per_case = []
+
+        for case in manifest["cases"]:
+            data = Path(case["fixture_path"]).read_bytes()
+            fast = extract_legacy_invoice(data)
+            deep = deep_fallback_enrich(data, fast, budget_seconds=8)
+
+            for key, expected in case["expected"].items():
+                if key not in {
+                    "invoice_number", "invoice_date", "seller_tax_id",
+                    "amount_before_tax", "tax_amount", "total_amount",
+                }:
+                    continue
+                checked += 1
+                expected_norm = str(expected).replace(" ", "").upper()
+                fast_value = fast.fields.get(key)
+                deep_value = deep.fields.get(key)
+                fast_ok = str(fast_value).replace(" ", "").upper() == expected_norm
+                deep_ok = str(deep_value).replace(" ", "").upper() == expected_norm
+                fast_correct += int(fast_ok)
+                deep_correct += int(deep_ok)
+                per_case.append(
+                    (case["id"], key, fast_value, deep_value, expected, fast_ok, deep_ok)
+                )
+
+                if fast_ok:
+                    self.assertEqual(
+                        deep_value,
+                        fast_value,
+                        f"{case['id']}: deep fallback overwrote correct {key}",
+                    )
+
+        print(
+            "two_stage_quality "
+            f"fast={fast_correct}/{checked} deep={deep_correct}/{checked} "
+            f"details={per_case}"
+        )
+        self.assertGreaterEqual(
+            deep_correct,
+            fast_correct,
+            f"deep fallback reduced known-answer accuracy: {per_case}",
+        )
+        self.assertGreater(
+            deep_correct,
+            fast_correct,
+            f"deep fallback did not recover any previously missed known field: {per_case}",
+        )
 
     def test_amounts_recovered_from_scattered_numeric_ocr(self):
         texts = [
