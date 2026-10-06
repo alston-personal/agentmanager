@@ -26,6 +26,7 @@ from agentos_node.codex_cli_install_provider import register_codex_cli_install_p
 from agentos_node.engineering_subagent_provider import register_engineering_subagent_providers
 from agentos_node.layoutlib_parity_provider import register_layoutlib_parity_provider
 from agentos_node.layoutlib_release_materialize_provider import register_layoutlib_release_materialize_provider
+from agentos_node.market_master_completion_provider import register_market_master_completion_provider
 
 
 ACTION = "agentos.executor.job"
@@ -39,6 +40,7 @@ CODEX_CLI_PROVIDER_REGISTERED = register_codex_cli_install_provider()
 ENGINEERING_SUBAGENT_PROVIDERS_REGISTERED = register_engineering_subagent_providers()
 LAYOUTLIB_RELEASE_MATERIALIZE_PROVIDER_REGISTERED = register_layoutlib_release_materialize_provider()
 LAYOUTLIB_PARITY_PROVIDER_REGISTERED = register_layoutlib_parity_provider()
+MARKET_MASTER_COMPLETION_PROVIDER_REGISTERED = register_market_master_completion_provider()
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
