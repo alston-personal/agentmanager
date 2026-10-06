@@ -1,10 +1,22 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+# Keep this unit test focused on completion selection/ownership; Lobster's
+# optional runtime integrations are not under test here.
+if "yaml" not in sys.modules:
+    yaml_stub = types.ModuleType("yaml")
+    yaml_stub.safe_load = lambda *_args, **_kwargs: {}
+    sys.modules["yaml"] = yaml_stub
+if "requests" not in sys.modules:
+    requests_stub = types.ModuleType("requests")
+    sys.modules["requests"] = requests_stub
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("lobster_under_test", ROOT / "scripts" / "lobster.py")
