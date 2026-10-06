@@ -1,0 +1,48 @@
+name: Vision Studio Rain Exit Export S01
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/vision-studio-rain-exit-export-s01.json'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded export command
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re
+          p=json.load(open('.agentos/commands/vision-studio-rain-exit-export-s01.json',encoding='utf-8'))
+          assert p.get('schema')=='agentos.vision-studio-rain-exit-export/v1'
+          assert p.get('project_id')=='rain-exit-v001'
+          assert p.get('shot_id')=='s01'
+          assert p.get('sha256')=='5f07d63c1b97e60f1ef49826d021505ebcff66d2d1a2e5ece165ac56cac0b47a'
+          assert re.fullmatch(r'export-rain-exit-s01-20261006-r[0-9]+',str(p.get('nonce') or ''))
+          print('vision_studio_rain_exit_export=APPROVED')
+          PY
+      - name: Stage exact recovered S01
+        shell: bash
+        run: |
+          set -euo pipefail
+          src='/home/ubuntu/agent-data/artifacts/google-flow-recovery/20261006T075441Z/google-flow-recovered.mp4'
+          test -f "$src"
+          got="$(sha256sum "$src" | awk '{print $1}')"
+          test "$got" = '5f07d63c1b97e60f1ef49826d021505ebcff66d2d1a2e5ece165ac56cac0b47a'
+          cp "$src" "$RUNNER_TEMP/rain-exit-s01.mp4"
+          ls -lh "$RUNNER_TEMP/rain-exit-s01.mp4"
+      - name: Upload exact S01 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rain-exit-s01-${{ github.run_id }}
+          path: ${{ runner.temp }}/rain-exit-s01.mp4
+          if-no-files-found: error
+          retention-days: 7
