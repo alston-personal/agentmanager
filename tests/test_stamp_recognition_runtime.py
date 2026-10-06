@@ -1,4 +1,5 @@
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from io import BytesIO
@@ -157,7 +158,7 @@ class StampRuntimeTests(unittest.TestCase):
             {name: [r.box for r in regions] for name, regions in detected.items()},
         )
 
-    def test_detected_stamp_roi_uses_bounded_fallback(self):
+    def test_main_fallback_crop_is_independent_from_detected_stamp_roi(self):
         image = synthetic_invoice()
         region = detect_stamp_regions(image)[0]
         template = {
@@ -195,11 +196,59 @@ class StampRuntimeTests(unittest.TestCase):
              patch("services.invoice_intake.invoice_core.ocr_image", side_effect=fake_ocr):
             result = extract_legacy_invoice(image)
 
-        expected_size = (region.box[2] - region.box[0], region.box[3] - region.box[1])
+        expected_size = (int(700 * (0.98 - 0.60)), int(1000 * (0.96 - 0.38)))
         self.assertEqual(len(seen), 2)
         self.assertTrue(all(size == expected_size for size, *_ in seen))
         self.assertEqual(result.fields["seller_tax_id"], "16908319")
         self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
+
+    def test_stamp_assist_timeout_does_not_block_baseline_extraction(self):
+        image = synthetic_invoice()
+        template = {
+            "matched": True,
+            "document_type": "three_part_uniform_invoice",
+            "raw_text": "",
+            "fields": {
+                "invoice_number": "AB12345678",
+                "invoice_date": "2026-10-05",
+                "vendor_name": "基準企業有限公司",
+                "seller_tax_id": "16908319",
+                "amount_before_tax": 1000,
+                "tax_amount": 50,
+                "total_amount": 1050,
+            },
+            "confidence": {key: 0.99 for key in (
+                "invoice_number", "invoice_date", "vendor_name", "seller_tax_id",
+                "amount_before_tax", "tax_amount", "total_amount"
+            )},
+            "visual_amounts": True,
+            "total_amount": 1050,
+        }
+
+        def slow_detector(_):
+            time.sleep(0.25)
+            return detect_stamp_regions(image)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StampStore(Path(tmp) / "stamp.sqlite3")
+            started = time.perf_counter()
+            with patch.dict("os.environ", {
+                "INVOICE_STAMP_ASSIST_MODE": "active",
+                "INVOICE_STAMP_ASSIST_BUDGET_MS": "40",
+            }), patch(
+                "services.invoice_intake.invoice_core.extract_template_invoice",
+                return_value=template,
+            ), patch(
+                "services.invoice_intake.invoice_core.detect_stamp_regions",
+                side_effect=slow_detector,
+            ):
+                result = extract_legacy_invoice(image, stamp_store=store)
+            elapsed = time.perf_counter() - started
+
+        self.assertEqual(result.raw["stamp_recognition"]["status"], "TIMEOUT")
+        self.assertLess(elapsed, 0.20)
+        self.assertEqual(result.fields["vendor_name"], "基準企業有限公司")
+        self.assertEqual(result.fields["seller_tax_id"], "16908319")
 
     def test_missing_seller_and_vendor_trigger_at_most_two_tesseract_calls(self):
         image = synthetic_invoice()
