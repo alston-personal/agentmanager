@@ -1,165 +1,17 @@
-name: Oracle Build and Verify LayoutLib
+name: Oracle Build and Verify LayoutLib (retired)
 
 on:
   workflow_dispatch:
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-test-register:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 15
+  retired:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Build, test, document, register, and verify on Oracle
-        shell: bash
+      - name: Retirement notice
         run: |
-          set -euo pipefail
-          mkdir -p .agentos/evidence
-          OUT="$PWD/.agentos/evidence/layoutlib-validation.txt"
-          WEB_PID=''
-          cleanup() {
-            if [ -n "$WEB_PID" ]; then kill "$WEB_PID" 2>/dev/null || true; fi
-          }
-          trap cleanup EXIT
-          {
-            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "hostname=$(hostname)"
-            echo "identity=$(id)"
-            echo "python=$(python3 --version 2>&1)"
-
-            ROOT=/home/ubuntu/agentmanager
-            DATA=/home/ubuntu/agent-data
-            PHYSICAL=/home/agentos-node/projects
-            CODE="$PHYSICAL/layoutlib"
-            BOOT="$PWD/scripts/bootstrap_layoutlib.py"
-            WEB_BOOT="$PWD/scripts/bootstrap_layoutlib_web.py"
-            REG="$PWD/scripts/register_project.py"
-            INIT="$PWD/scripts/init_project_yaml.py"
-
-            test -w "$DATA" || { echo 'agent-data not writable'; exit 2; }
-            test -w "$ROOT" || { echo 'agentmanager not writable'; exit 2; }
-            mkdir -p "$PHYSICAL"
-            test -w "$PHYSICAL" || { echo 'physical project root not writable'; exit 2; }
-            echo "oracle_write_gate=PASS"
-            echo "physical_projects_root=$PHYSICAL"
-
-            python3 - "$REG" "$ROOT" "$DATA" "$PHYSICAL" <<'PY'
-          import importlib.util, os, sys
-          from pathlib import Path
-          script, root, data, physical = sys.argv[1:]
-          os.environ['AGENTMANAGER_ROOT']=root
-          os.environ['AGENT_DATA_ROOT']=data
-          spec=importlib.util.spec_from_file_location('layoutlib_register_project',script)
-          mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
-          mod.PHYSICAL_PROJECTS_ROOT=Path(physical)
-          print(mod.register_project('layoutlib','LayoutLib','🌐 Web Demo Validation','🏠','Floor-plan raster -> versioned Spatial IR -> browser demo/API -> 3D preview.'))
-          PY
-
-            env AGENT_DATA_ROOT="$DATA" python3 "$INIT" --project layoutlib || true
-            python3 "$BOOT" --target "$CODE"
-            python3 "$WEB_BOOT" --target "$CODE"
-
-            echo '=== UNIT + INTEGRATION TESTS ==='
-            env PYTHONPATH="$CODE/src" python3 -m unittest discover -s "$CODE/tests" -v
-
-            echo '=== END-TO-END DEMO ==='
-            env PYTHONPATH="$CODE/src" python3 "$CODE/examples/generate_demo.py"
-            IR="$CODE/examples/demo_room.ir.json"
-            OBJ="$CODE/examples/demo_room.obj"
-            test -s "$IR"; test -s "$OBJ"
-            WALLS=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["walls"]))' "$IR")
-            VERTICES=$(grep -c '^v ' "$OBJ")
-            FACES=$(grep -c '^f ' "$OBJ")
-            test "$WALLS" = 4
-            test "$VERTICES" = 32
-            test "$FACES" = 24
-
-            echo '=== CLI SMOKE ==='
-            env PYTHONPATH="$CODE/src" python3 -m layoutlib.cli parse "$CODE/tests/fixtures/demo_room.pgm" --out /tmp/layoutlib-smoke.ir.json --meters-per-pixel 0.02 --min-wall-length-px 30
-            env PYTHONPATH="$CODE/src" python3 -m layoutlib.cli obj /tmp/layoutlib-smoke.ir.json --out /tmp/layoutlib-smoke.obj
-            test -s /tmp/layoutlib-smoke.ir.json; test -s /tmp/layoutlib-smoke.obj
-
-            echo '=== WEB DEMO/API SMOKE ==='
-            env PYTHONPATH="$CODE/src" LAYOUTLIB_WEB_QUIET=1 python3 "$CODE/web_demo/server.py" --host 127.0.0.1 --port 18765 >/tmp/layoutlib-web.log 2>&1 &
-            WEB_PID=$!
-            python3 - <<'PY'
-          import json, time, urllib.request
-          url='http://127.0.0.1:18765/api/health'
-          last=None
-          for _ in range(40):
-              try:
-                  with urllib.request.urlopen(url, timeout=.5) as r:
-                      data=json.load(r)
-                  assert data['ok'] is True and data['service']=='layoutlib-web'
-                  print('web_health=PASS')
-                  break
-              except Exception as exc:
-                  last=exc; time.sleep(.1)
-          else:
-              raise SystemExit(f'web health failed: {last}')
-          PY
-            python3 - "$CODE/tests/fixtures/demo_room.pgm" <<'PY'
-          import base64, json, sys, urllib.request
-          p=sys.argv[1]
-          payload=json.dumps({
-              'filename':'demo_room.pgm',
-              'content_base64':base64.b64encode(open(p,'rb').read()).decode(),
-              'meters_per_pixel':0.02,
-              'min_wall_length_px':30,
-          }).encode()
-          req=urllib.request.Request('http://127.0.0.1:18765/api/parse', data=payload, headers={'Content-Type':'application/json'}, method='POST')
-          with urllib.request.urlopen(req, timeout=5) as r:
-              data=json.load(r)
-          assert data['ok'] is True, data
-          assert data['wall_count']==4, data
-          assert data['ir']['version']=='0.1', data
-          print('web_parse=PASS walls=4 spatial_ir=0.1')
-          PY
-            test -s "$CODE/web_demo/static/index.html"
-            test -s "$CODE/docs/WEB_DEMO.md"
-            kill "$WEB_PID" 2>/dev/null || true
-            wait "$WEB_PID" 2>/dev/null || true
-            WEB_PID=''
-
-            YAML="$DATA/projects/layoutlib/project.yaml"
-            STATUS="$DATA/projects/layoutlib/STATUS.md"
-            test -f "$YAML"; test -f "$STATUS"
-            python3 - "$YAML" "$CODE" <<'PY'
-          import sys, yaml
-          from datetime import datetime, timezone
-          from pathlib import Path
-          p=Path(sys.argv[1]); code=sys.argv[2]; d=yaml.safe_load(p.read_text(encoding='utf-8')) or {}; now=datetime.now(timezone.utc).isoformat()
-          d.update({'display_name':'LayoutLib','phase':'active','status':'✅ Core + Web Demo Validated','actual_code_path':code,'repo_url':None,'repo_visibility':None,'repository_state':'local-only','repository_state_reason':'Core and embeddable web demo validated on Oracle; separate GitHub repository/public website route not yet provisioned.','summary':'Validated v0.1: high-contrast orthogonal raster -> Spatial IR JSON -> OBJ plus embeddable browser/API demo.','current_focus':'Public website route plus real-world benchmark and semantic/opening detection.','next_action':'Reverse-proxy the validated web service into the official website, then benchmark labeled real floor plans.','updated_at':now})
-          d['health']={'freshness':'fresh','sync_state':'oracle_web_demo_validated','last_verified_at':now}
-          p.write_text(yaml.safe_dump(d,allow_unicode=True,sort_keys=False),encoding='utf-8')
-          PY
-
-            echo '=== ACCEPTANCE ==='
-            echo "layoutlib_validation=PASS"
-            echo "unit_tests=5_passed"
-            echo "demo_walls=$WALLS"
-            echo "obj_vertices=$VERTICES"
-            echo "obj_faces=$FACES"
-            echo "web_health=PASS"
-            echo "web_parse=PASS"
-            echo "web_ui=$CODE/web_demo/static/index.html"
-            echo "web_docs=$CODE/docs/WEB_DEMO.md"
-            echo "library=$CODE/src/layoutlib"
-            echo "readme=$CODE/README.md"
-            echo "docs=$CODE/docs"
-            echo "metadata=$YAML"
-          } 2>&1 | tee "$OUT"
-
-      - name: Upload validation evidence to branch
-        if: ${{ github.event_name != 'pull_request' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/layoutlib-validation.txt
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(layoutlib): Oracle core + web demo validation'
-          git push
+          echo 'RETIRED: legacy LayoutLib registration/build carrier.'
+          echo 'Project registration and product build/test responsibilities are now separated.'
+          echo 'This workflow performs no shared runtime or product mutation.'
