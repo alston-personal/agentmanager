@@ -52,9 +52,9 @@ jobs:
           assert r.get("source_commit")==sys.argv[2],r
           assert r.get("ok") is True,r
           scheduler=r.get("scheduler") or {}
-          assert scheduler.get("worker_role")=="control",scheduler
-          assert scheduler.get("worker_id")=="oracle-control",scheduler
-          print("mio_observer_scheduler=oracle-control")
+          assert scheduler.get("worker_role")=="maintenance",scheduler
+          assert scheduler.get("worker_id")=="oracle-maintenance",scheduler
+          print("mio_observer_scheduler=oracle-maintenance")
           print("mio_observer_bootstrap=PASS")
           PY
 
