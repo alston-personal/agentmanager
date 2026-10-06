@@ -5,6 +5,7 @@ from PIL import Image
 from scripts.invoice_ocr_failure_diff import classify_field
 from services.invoice_intake.template_ocr import (
     anchor_row_reocr,
+    choose_dual_model_amounts,
     choose_layout_amounts,
     choose_reocr_amounts,
 )
@@ -57,6 +58,20 @@ class InvoiceOCRFailureDiffTests(unittest.TestCase):
         values,_=choose_layout_amounts(evidence)
         self.assertIsNone(values["total_amount"])
 
+
+    def test_dual_model_ensemble_recovers_complementary_real_benchmark_errors(self):
+        # Public RP sample: small kept total but misread subtotal/tax;
+        # medium read subtotal/tax but dropped the leading 1 from total.
+        small_text="1506\n22\n1623"
+        medium_text="1546\n77\n623"
+        subtotal,tax,total,observed=choose_dual_model_amounts(small_text,medium_text)
+        self.assertTrue(observed)
+        self.assertEqual((subtotal,tax,total),(1546,77,1623))
+
+    def test_dual_model_ensemble_never_synthesizes_unseen_total(self):
+        subtotal,tax,total,observed=choose_dual_model_amounts("1546\n77","")
+        self.assertFalse(observed)
+        self.assertIsNone(total)
 
     def test_anchor_row_reocr_recovers_amount_rows_from_preprocessed_crops(self):
         class Result:
