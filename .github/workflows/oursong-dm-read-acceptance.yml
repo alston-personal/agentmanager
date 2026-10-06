@@ -1,0 +1,142 @@
+name: Oursong DM Read Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/social/web_dm.py'
+      - 'agentos_node/social/persona_dm.py'
+      - 'scripts/threads_web_dm_bridge_user.py'
+      - 'scripts/run_threads_web_dm_read_user.sh'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agent_core/runner_window.py'
+      - '.github/workflows/oursong-dm-read-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: oursong-dm-read-acceptance
+  cancel-in-progress: true
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static contract
+        run: |
+          set -euo pipefail
+          bash -n scripts/run_threads_web_dm_read_user.sh
+          python3 -m py_compile             scripts/threads_web_dm_bridge_user.py             agentos_node/social/web_dm.py             agentos_node/social/persona_dm.py
+
+      - name: Mint Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          echo "oursong_dm_oidc=PASS"
+
+      - name: Wait for Oursong DM intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for _ in $(seq 1 60); do
+            code="$(curl -sS -o "$RUNNER_TEMP/window.json" -w '%{http_code}' --max-time 8               -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"               "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+            if [ "$code" = 200 ] && python3 - "$RUNNER_TEMP/window.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          intents=d.get('intents') or []
+          assert any(
+              x.get('capability')=='persona.social.dm'
+              and x.get('operation')=='oursong.read'
+              for x in intents
+          ), intents
+          PY
+            then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          echo "oursong_dm_intent=READY"
+
+      - name: Read-only Oursong DM acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oursong-dm-read.txt"
+          set +e
+          AGENTOS_DISPATCH_WAIT_SECONDS=120             bash scripts/agentos_dispatch.sh               persona.social.dm oursong.read "$GITHUB_SHA"               | tee "$OUT"
+          dispatch_rc=${PIPESTATUS[0]}
+          set -e
+          python3 - "$OUT" "$GITHUB_SHA" "$dispatch_rc" <<'PY'
+          import json,sys
+          path,expected,dispatch_rc=sys.argv[1:4]
+          completed=None
+          for raw in open(path,encoding='utf-8'):
+              raw=raw.strip()
+              if not raw.startswith('{'):
+                  continue
+              try:
+                  row=json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              if row.get('state')=='completed' and isinstance(row.get('receipt'),dict):
+                  completed=row
+          assert completed is not None, 'completed dispatch receipt missing'
+          receipt=completed['receipt']
+          assert receipt.get('source_commit')==expected, receipt
+          scheduler=receipt.get('scheduler') or {}
+          assert scheduler.get('worker_id')=='oracle-gui', scheduler
+          assert scheduler.get('worker_role')=='gui', scheduler
+          evidence=receipt.get('evidence') or []
+          pairs={}
+          for line in evidence:
+              if '=' in str(line):
+                  k,v=str(line).split('=',1)
+                  pairs[k]=v
+          state=pairs.get('threads_web_dm_read')
+          identity=pairs.get('threads_web_dm_identity')
+          account=pairs.get('threads_web_dm_account')
+          observed=pairs.get('threads_web_dm_observed_account')
+          err=pairs.get('threads_web_dm_error_type')
+          print('oursong_dm_dispatch_rc='+dispatch_rc)
+          print('oursong_dm_read_state='+(state or 'UNKNOWN'))
+          print('oursong_dm_identity='+(identity or 'UNKNOWN'))
+          print('oursong_dm_account='+(account or observed or 'UNKNOWN'))
+          if err:
+              print('oursong_dm_error_type='+err)
+          if state=='LOGIN_REQUIRED':
+              print('oursong_dm_acceptance=LOGIN_REQUIRED')
+              raise SystemExit(20)
+          if identity=='FAIL':
+              print('oursong_dm_acceptance=IDENTITY_MISMATCH_OR_UNKNOWN')
+              raise SystemExit(21)
+          assert receipt.get('ok') is True, receipt
+          assert state=='PASS', pairs
+          assert identity=='PASS', pairs
+          assert account=='oursong_alstonhuang', pairs
+          print('oursong_dm_acceptance=PASS')
+          PY
