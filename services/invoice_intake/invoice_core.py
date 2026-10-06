@@ -1962,8 +1962,16 @@ class InvoiceStore:
             # Compatibility field: user-visible recognition is terminal once fast OCR
             # has left status=processing. Deep OCR is optional background enrichment.
             "deep_fallback_pending": False,
+            "vision_enrichment_pending": (
+                bool(json.loads(row["extraction_payload"]).get("vision_enrichment_pending"))
+                if "extraction_payload" in row.keys() and row["extraction_payload"]
+                else False
+            ),
             "background_enrichment_pending": (
-                bool(json.loads(row["extraction_payload"]).get("deep_fallback_pending"))
+                bool(
+                    json.loads(row["extraction_payload"]).get("vision_enrichment_pending")
+                    or json.loads(row["extraction_payload"]).get("deep_fallback_pending")
+                )
                 if "extraction_payload" in row.keys() and row["extraction_payload"]
                 else False
             ),
