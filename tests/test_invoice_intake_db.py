@@ -1,4 +1,5 @@
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from io import BytesIO
@@ -6,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from services.invoice_intake.invoice_core import InvoiceStore, processing_is_stale
+from services.invoice_intake.invoice_core import Extraction, InvoiceStore, deep_fallback_enrich, processing_is_stale
 
 
 def jpeg_bytes() -> bytes:
@@ -207,6 +208,103 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             self.assertEqual(result["attempted"], 1)
             self.assertEqual(result["recovered"], [invoice_id])
             self.assertEqual(result["failed"], [])
+
+    def test_fast_result_returns_before_background_deep_fallback_finishes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            created = store.ingest(
+                jpeg_bytes(),
+                "two-stage.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-two-stage",
+            )
+            fast = Extraction(
+                fields={
+                    "invoice_number": None,
+                    "invoice_date": None,
+                    "vendor_name": None,
+                    "seller_tax_id": None,
+                    "amount_before_tax": None,
+                    "tax_amount": None,
+                    "total_amount": 1050,
+                },
+                confidence={"total_amount": 0.92},
+                raw={
+                    "engine": "fast-test",
+                    "review": {
+                        "status": "recognition_insufficient",
+                        "required_fields": ["invoice_number"],
+                        "confirm_fields": [],
+                        "reasons": ["recognition:insufficient_fields"],
+                    },
+                    "line_items": [],
+                },
+                review_required=True,
+            )
+
+            def slow_deep(_invoice_id):
+                time.sleep(0.4)
+
+            started = time.perf_counter()
+            with patch("services.invoice_intake.invoice_core.extract_invoice", return_value=fast), \
+                 patch.object(store, "_deep_enrich_invoice", side_effect=slow_deep):
+                result = store.process(created["invoice_id"])
+            elapsed = time.perf_counter() - started
+
+            self.assertLess(elapsed, 0.25)
+            self.assertEqual(result["status"], "recognition_insufficient")
+            self.assertTrue(result["deep_fallback_pending"])
+
+    def test_deep_fallback_only_fills_missing_fields(self):
+        image = Image.new("RGB", (700, 1000), "white")
+        buf = BytesIO()
+        image.save(buf, format="JPEG")
+        base = Extraction(
+            fields={
+                "invoice_number": "AB12345678",
+                "invoice_date": "2026-10-05",
+                "vendor_name": None,
+                "seller_tax_id": None,
+                "amount_before_tax": 1000,
+                "tax_amount": 50,
+                "total_amount": 1050,
+            },
+            confidence={
+                "invoice_number": 0.99,
+                "invoice_date": 0.99,
+                "amount_before_tax": 0.99,
+                "tax_amount": 0.99,
+                "total_amount": 0.99,
+            },
+            raw={
+                "engine": "fast-test",
+                "template": {
+                    "matched": True,
+                    "document_type": "three_part_uniform_invoice",
+                    "raw_text": "",
+                    "visual_amounts": True,
+                },
+                "stamp_recognition": {"status": "TIMEOUT"},
+                "review": {"status": "needs_review"},
+            },
+            review_required=True,
+        )
+
+        def fake_ocr(_crop, *, psm, whitelist=None, lang="eng"):
+            if whitelist == "0123456789":
+                return "16908319"
+            return "測試企業有限公司"
+
+        with patch("services.invoice_intake.invoice_core.ocr_image", side_effect=fake_ocr), \
+             patch("services.invoice_intake.invoice_core.ocr_stamp_text", return_value=["16908319", "測試企業有限公司"]):
+            result = deep_fallback_enrich(buf.getvalue(), base, budget_seconds=5)
+
+        self.assertEqual(result.fields["invoice_number"], "AB12345678")
+        self.assertEqual(result.fields["total_amount"], 1050)
+        self.assertEqual(result.fields["seller_tax_id"], "16908319")
+        self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
+        self.assertFalse(result.raw["deep_fallback"].get("stamp_dependency", False))
 
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
         with tempfile.TemporaryDirectory() as tmp:
