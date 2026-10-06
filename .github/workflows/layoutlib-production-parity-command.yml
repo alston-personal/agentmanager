@@ -20,7 +20,7 @@ jobs:
        github.event.issue.number == 1178 &&
        github.actor == 'alstonhuang' &&
        github.event.comment.body == '/agentos layoutlib-production-parity') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      github.event_name == 'push'
     concurrency:
       group: layoutlib-production-parity-command
       cancel-in-progress: false
