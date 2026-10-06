@@ -14,6 +14,7 @@ const ALLOWED: Record<string, Set<string>> = {
     "/v1/receipts",
     "/v1/resolve",
     "/v1/dispatch",
+    "/v1/monitor",
     "/v1/controller/scheduler/submit",
   ]),
 };
