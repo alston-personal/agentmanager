@@ -38,7 +38,7 @@ SCHEMA = {
         'needs_review': {'type': 'boolean'},
         'uncertain_fields': {'type': 'array', 'items': {'type': 'string'}},
     },
-    'required': list(TEXT_FIELDS + MONEY_FIELDS) + ['line_items', 'needs_review', 'uncertain_fields'],
+    'required': ['line_items', 'needs_review', 'uncertain_fields'],
     'additionalProperties': False,
 }
 PROMPT = """Read this complete Taiwanese invoice image, including handwriting and stamps.
@@ -110,6 +110,13 @@ def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
     try:
         payload = json.loads(text)
         validate_payload(payload)
+        payload = {
+            **{k: payload.get(k) for k in TEXT_FIELDS},
+            **{k: payload.get(k) for k in MONEY_FIELDS},
+            'line_items': payload.get('line_items') or [],
+            'needs_review': payload.get('needs_review'),
+            'uncertain_fields': payload.get('uncertain_fields') or [],
+        }
     except (ValueError, TypeError):
         raise VisionError('INVALID_RESPONSE') from None
     return {'payload': payload, 'model': model, 'image_sha256': hashlib.sha256(image_bytes).hexdigest(),
@@ -117,14 +124,20 @@ def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
 
 
 def validate_payload(payload: dict) -> None:
-    if not isinstance(payload, dict) or set(payload) != set(SCHEMA['required']):
+    allowed = set(SCHEMA['properties'])
+    required = set(SCHEMA['required'])
+    if (
+        not isinstance(payload, dict)
+        or not required.issubset(payload)
+        or not set(payload).issubset(allowed)
+    ):
         raise ValueError('invalid_fields')
     for key in TEXT_FIELDS:
-        value = payload[key]
+        value = payload.get(key)
         if value is not None and (not isinstance(value, str) or len(value) > 8000):
             raise ValueError('invalid_text')
     for key in MONEY_FIELDS:
-        value = payload[key]
+        value = payload.get(key)
         if value is not None and (type(value) is not int or not 0 <= value <= 1_000_000_000):
             raise ValueError('invalid_amount')
     if type(payload['needs_review']) is not bool:
