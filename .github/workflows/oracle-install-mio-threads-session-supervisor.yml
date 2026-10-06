@@ -91,7 +91,8 @@ jobs:
           scheduler=receipt.get('scheduler') or {}
           assert scheduler.get('worker_role')=='maintenance', scheduler
           text='\n'.join(str(s.get('stdout') or '') for s in receipt.get('steps') or [])
-          safe=[line for line in text.splitlines() if line.startswith('mio_threads_session_supervisor_')]
+          evidence='\n'.join(str(x) for x in receipt.get('evidence') or [])
+          safe=[line for line in (text+'\n'+evidence).splitlines() if line.startswith('mio_threads_session_supervisor_')]
           for line in safe: print(line)
           assert 'mio_threads_session_supervisor_install=PASS' in safe, safe
           PY
