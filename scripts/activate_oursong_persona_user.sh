@@ -64,43 +64,11 @@ echo "oursong_activate_stage=bootstrap_start"
 python3 "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"
 echo "oursong_activate_stage=bootstrap_pass"
 
-# Cut over the legacy runtime-only producer to the repo-owned generic producer.
-# Keep the existing systemd unit/timer contract so rollback is a single symlink/file restore.
-echo "oursong_activate_stage=heartbeat_install_start"
-install -m 0755 "${RELEASE}/scripts/persona_pdca_heartbeat_user.py" "${HOME}/.local/bin/agentos-persona-pdca-heartbeat"
-echo "oursong_activate_stage=heartbeat_install_pass"
-systemctl --user daemon-reload
-echo "oursong_activate_stage=heartbeat_start"
-if ! systemctl --user start agentos-persona-pdca-heartbeat.service; then
-  echo "oursong_activate_stage=heartbeat_failed"
-  systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true
-  journalctl --user -u agentos-persona-pdca-heartbeat.service -n 20 --no-pager || true
-  HB_CLASS="$(journalctl --user -u agentos-persona-pdca-heartbeat.service -n 50 --no-pager -o cat 2>/dev/null | grep -Eo 'persona_pdca_heartbeat=[A-Z_]+' | tail -n 1 || true)"
-  if [[ -n "$HB_CLASS" ]]; then
-    echo "$HB_CLASS"
-  else
-    echo "persona_pdca_heartbeat=UNKNOWN_FAILURE"
-  fi
-  exit 11
-fi
-echo "oursong_activate_stage=heartbeat_pass"
-HB_RECEIPT="${HOME}/.local/share/agentos/runtime/persona-pdca/heartbeat-receipt.json"
-python3 - "${HB_RECEIPT}" <<'PY'
-import json,sys
-from pathlib import Path
-p=Path(sys.argv[1])
-payload=json.loads(p.read_text(encoding="utf-8"))
-assert payload.get("schema")=="agentos.persona-pdca-heartbeat-receipt/v1", payload
-assert payload.get("status")=="PASS", payload
-matches=[x for x in payload.get("personas") or [] if x.get("slug")=="oursong_alstonhuang"]
-assert len(matches)==1, payload
-row=matches[0]
-assert int(row.get("cycle") or 0)>=1, row
-assert payload.get("observed_at"), payload
-print("oursong_heartbeat_cutover=PASS")
-print("oursong_heartbeat_cycle="+str(row["cycle"]))
-print("oursong_heartbeat_last_tick_at="+str(payload["observed_at"]))
-PY
+# Oursong activation owns only Oursong social runtime.
+# Persona heartbeat lifecycle is independently owned by the canonical Mio/PDCA runtime.
+# Do not install, replace, or start agentos-persona-pdca-heartbeat from this activator.
+echo "oursong_activate_stage=heartbeat_decoupled"
+echo "oursong_heartbeat_ownership=external"
 
 mkdir -p "${PROFILE_ROOT}"
 chmod 700 "${PROFILE_ROOT}"
