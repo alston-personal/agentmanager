@@ -293,6 +293,42 @@ with sync_playwright() as p:
                     pass
             if project_candidates:
                 print("google_flow_recover_video_candidates="+json.dumps(project_candidates,ensure_ascii=False,separators=(",",":")))
+
+            # Bounded project-state evidence for generated-result recovery.
+            try:
+                project_text=" ".join((body or "").split())[:900]
+                if project_text:
+                    print("google_flow_recover_project_text="+project_text)
+            except Exception:
+                pass
+            try:
+                counts={
+                    "video": page.locator("video").count(),
+                    "img": page.locator("img").count(),
+                    "button": page.locator("button").count(),
+                }
+                print("google_flow_recover_project_media_counts="+json.dumps(counts,separators=(",",":")))
+            except Exception:
+                pass
+            project_controls=[]
+            try:
+                for sel in ("button","[role=button]"):
+                    loc=page.locator(sel)
+                    for i in range(min(loc.count(),50)):
+                        item=loc.nth(i)
+                        try:
+                            if not item.is_visible(timeout=100):
+                                continue
+                            label=(item.get_attribute("aria-label") or item.inner_text(timeout=250) or "").strip()
+                            if label:
+                                project_controls.append((sel+":"+label)[:140])
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            if project_controls:
+                print("google_flow_recover_project_controls="+json.dumps(project_controls[:50],ensure_ascii=False,separators=(",",":")))
+
             chosen=None
             for meta in project_candidates:
                 ctx_low=str(meta.get("context") or "").lower()
