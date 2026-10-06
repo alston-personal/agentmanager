@@ -1,0 +1,37 @@
+name: Check Persona Heartbeat V2 Live
+on:
+  push:
+    paths:
+      - '.github/workflows/check-persona-heartbeat-v2-live.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Check
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "exec_start=$(systemctl --user show -p ExecStart --value agentos-persona-pdca-heartbeat.service)"
+          test -x "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2"
+          head -n 2 "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2"
+          python3 - <<'PY'
+import json, pathlib
+p=pathlib.Path.home()/ "agent-data/personas/sunlake-milkcat/pdca/state.json"
+json.loads(p.read_text(encoding="utf-8"))
+print("mio_state_json=PASS")
+PY
+          echo "check=PASS"
+          REMOTE
