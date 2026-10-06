@@ -26,6 +26,7 @@ EXPECTED_HOME = Path("/home/ubuntu")
 DATA_ROOT = EXPECTED_HOME / "agent-data"
 RELEASE = "v0.7.9"
 SOURCE_REPOSITORY = "alston-personal/layoutlib"
+SOURCE_COMMIT = "7b9c1487d19d5d7ab5f4b817a01aed2b1919b591"
 RELEASE_ROOT = DATA_ROOT / "releases/layoutlib" / RELEASE
 CURRENT_FILE = RELEASE_ROOT / "current.json"
 
@@ -107,7 +108,7 @@ def run_layoutlib_release_materialize(
         checkout = Path(td) / "layoutlib"
         try:
             proc = subprocess.run(
-                ["/usr/bin/gh", "repo", "clone", SOURCE_REPOSITORY, str(checkout), "--", "--depth=1"],
+                ["/usr/bin/gh", "repo", "clone", SOURCE_REPOSITORY, str(checkout), "--", "--filter=blob:none", "--no-checkout"],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -132,6 +133,28 @@ def run_layoutlib_release_materialize(
             return _failure("LAYOUTLIB_RELEASE_CLONE_FAILED")
 
         try:
+            fetch = subprocess.run(
+                ["/usr/bin/git", "-C", str(checkout), "fetch", "origin", SOURCE_COMMIT, "--depth=1"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if fetch.returncode != 0:
+                return _failure("LAYOUTLIB_RELEASE_SOURCE_COMMIT_UNAVAILABLE")
+            checkout_proc = subprocess.run(
+                ["/usr/bin/git", "-C", str(checkout), "checkout", "--detach", SOURCE_COMMIT],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if checkout_proc.returncode != 0:
+                return _failure("LAYOUTLIB_RELEASE_SOURCE_CHECKOUT_FAILED")
             head = subprocess.run(
                 ["/usr/bin/git", "-C", str(checkout), "rev-parse", "HEAD"],
                 stdin=subprocess.DEVNULL,
@@ -143,8 +166,8 @@ def run_layoutlib_release_materialize(
             ).stdout.strip()
         except Exception:
             return _failure("LAYOUTLIB_RELEASE_HEAD_UNAVAILABLE")
-        if len(head) != 40 or any(ch not in "0123456789abcdef" for ch in head):
-            return _failure("LAYOUTLIB_RELEASE_HEAD_INVALID")
+        if head != SOURCE_COMMIT:
+            return _failure("LAYOUTLIB_RELEASE_HEAD_MISMATCH")
 
         try:
             _, count = _verify_release(checkout)
@@ -171,7 +194,8 @@ def run_layoutlib_release_materialize(
             if staging.exists():
                 shutil.rmtree(staging)
             staging.mkdir(mode=0o755)
-            shutil.copytree(checkout / "release", staging / "release", symlinks=False)
+            (staging / "release").mkdir()
+            shutil.copytree(checkout / "release" / RELEASE, staging / "release" / RELEASE, symlinks=False)
             _verify_release(staging)
             os.replace(staging, destination)
 
