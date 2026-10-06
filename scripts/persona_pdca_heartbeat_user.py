@@ -7,6 +7,7 @@ from pathlib import Path
 DATA_REPO=Path(os.environ.get("AGENTOS_PERSONA_DATA_ROOT","/home/ubuntu/agent-data"))
 DATA_HTTPS="https://github.com/alston-personal/my-agent-data.git"
 GIT_CREDENTIAL="credential.helper=!gh auth git-credential"
+RECEIPT=Path(os.environ.get("AGENTOS_PERSONA_HEARTBEAT_RECEIPT") or (Path.home()/".local"/"share"/"agentos"/"runtime"/"persona-pdca"/"heartbeat-receipt.json"))
 
 def run(args,cwd=None,check=True):
     env=os.environ.copy(); env.pop("GH_TOKEN",None); env.pop("GITHUB_TOKEN",None)
@@ -19,6 +20,21 @@ def now():
 
 def load(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+def write_receipt(status, stamp, changed):
+    RECEIPT.parent.mkdir(parents=True,exist_ok=True)
+    payload={
+        "schema":"agentos.persona-pdca-heartbeat-receipt/v1",
+        "status":status,
+        "observed_at":stamp,
+        "personas":[{"slug":slug,"persona_id":pid,"cycle":cycle} for slug,pid,cycle in changed],
+    }
+    fd,tmp=tempfile.mkstemp(prefix=RECEIPT.name+".",dir=RECEIPT.parent)
+    with os.fdopen(fd,"w",encoding="utf-8") as fh:
+        json.dump(payload,fh,ensure_ascii=False,sort_keys=True,indent=2)
+        fh.write("\n")
+    os.chmod(tmp,0o600)
+    os.replace(tmp,RECEIPT)
 
 def active_personas(root):
     base=root/"personas"
@@ -63,6 +79,8 @@ def main():
         run(["git","worktree","add","--detach",str(work),"origin/main"])
         personas=active_personas(work)
         if not personas:
+            stamp=now()
+            write_receipt("NO_ACTIVE_PERSONAS",stamp,[])
             print("persona_pdca_heartbeat=NO_ACTIVE_PERSONAS"); return 0
         stamp=now(); changed=[]
         for d,c,s in personas:
@@ -81,8 +99,10 @@ def main():
         refreshed=run(["git","-c",GIT_CREDENTIAL,"fetch",DATA_HTTPS,"+refs/heads/main:refs/remotes/origin/main"],check=False)
         if refreshed.returncode:
             print("persona_pdca_heartbeat=POST_PUSH_REFRESH_FAILED",file=sys.stderr); return 6
+        write_receipt("PASS",stamp,changed)
         print("persona_pdca_heartbeat=PASS")
         print("persona_pdca_heartbeat_at="+stamp)
+        print("persona_pdca_heartbeat_receipt="+str(RECEIPT))
         for slug,pid,cycle in changed:
             print(f"persona_pdca_tick={slug}:{pid}:{cycle}")
         return 0
