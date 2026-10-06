@@ -452,10 +452,7 @@ def deep_tax_id_from_regions(
                 text = ocr_image(variant, psm=psm, whitelist="0123456789", lang="eng")
                 if text.strip():
                     texts.append(text)
-                candidates: list[str] = []
-                for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", text)):
-                    if candidate not in candidates:
-                        candidates.append(candidate)
+                candidates = tax_id_candidates(text)
                 valid = [value for value in candidates if valid_tax_id(value)]
                 if valid:
                     return valid[0], texts
