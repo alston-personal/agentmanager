@@ -115,15 +115,15 @@ systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-enabled --quiet agentos-persona-social-actions.timer
 systemctl --user is-active --quiet agentos-persona-social-actions.timer
 
-# Installation acceptance: run one live cycle now. The recurring cadence remains hourly.
-# Optional social/reasoning failures are isolated inside the heartbeat runner and
-# therefore cannot turn this acceptance into a DM/social dependency.
-systemctl --user start agentos-persona-pdca-heartbeat.service
+# Installation acceptance is structural only.
+# Do not start the heartbeat here: deployments must not advance autonomous cycles
+# or reset the natural systemd timer cadence.
 systemctl --user is-failed --quiet agentos-persona-pdca-heartbeat.service && {
   systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true
   exit 5
 }
-echo "persona_pdca_install_live_cycle=PASS"
+echo "persona_pdca_install_live_cycle=SKIPPED"
+echo "persona_pdca_install_reason=installer_must_not_advance_autonomous_cycle"
 
 systemctl --user show -p ExecStart --value agentos-persona-pdca-heartbeat.service | grep -F "$CANONICAL_HEARTBEAT" >/dev/null
 echo "persona_pdca_runtime_owner=$CANONICAL_HEARTBEAT"
