@@ -299,6 +299,10 @@ jobs:
           stale = len(store.stale_processing_ids(limit=500))
           print(f'invoice_processing_health=processing:{processing} stale:{stale}')
           PY
+          echo '--- recent invoice runtime error types ---'
+          journalctl --user -u invoice-intake.service --since '-30 minutes' --no-pager \
+            | grep -E 'invoice_process=error|invoice_vision_enrichment=error|invoice_deep_fallback=error' \
+            | tail -n 20 || true
           echo 'invoice_intake_service=PASS'
           REMOTE
 
