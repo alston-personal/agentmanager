@@ -112,41 +112,60 @@ class InvoiceRealUserRegressionTests(unittest.TestCase):
         self.assertEqual(review["confirm_fields"], [])
 
     def test_two_stage_real_fixture_quality_is_monotonic(self):
-        fixture_root = Path("benchmarks/invoice_handwriting/fixtures")
-        names = [
-            "tw-2part-my04200253.jpg",
-            "tw-3part-rp54268249.jpg",
-            "tw-triplicate-wikimedia.jpg",
-        ]
-        meaningful = (
-            "invoice_number", "invoice_date", "vendor_name", "seller_tax_id",
-            "amount_before_tax", "total_amount",
+        import json
+
+        manifest = json.loads(
+            Path("benchmarks/invoice_handwriting/public_cases.json").read_text()
         )
-        improvements = 0
-        for name in names:
-            data = (fixture_root / name).read_bytes()
+        fast_correct = 0
+        deep_correct = 0
+        checked = 0
+        per_case = []
+
+        for case in manifest["cases"]:
+            data = Path(case["fixture_path"]).read_bytes()
             fast = extract_legacy_invoice(data)
             deep = deep_fallback_enrich(data, fast, budget_seconds=8)
-            fast_count = sum(fast.fields.get(key) not in (None, "") for key in meaningful)
-            deep_count = sum(deep.fields.get(key) not in (None, "") for key in meaningful)
-            self.assertGreaterEqual(
-                deep_count,
-                fast_count,
-                f"{name}: deep fallback lost recognized fields: {fast.fields} -> {deep.fields}",
-            )
-            for key in meaningful:
-                if fast.fields.get(key) not in (None, ""):
+
+            for key, expected in case["expected"].items():
+                if key not in {
+                    "invoice_number", "invoice_date", "seller_tax_id",
+                    "amount_before_tax", "tax_amount", "total_amount",
+                }:
+                    continue
+                checked += 1
+                expected_norm = str(expected).replace(" ", "").upper()
+                fast_value = fast.fields.get(key)
+                deep_value = deep.fields.get(key)
+                fast_ok = str(fast_value).replace(" ", "").upper() == expected_norm
+                deep_ok = str(deep_value).replace(" ", "").upper() == expected_norm
+                fast_correct += int(fast_ok)
+                deep_correct += int(deep_ok)
+                per_case.append(
+                    (case["id"], key, fast_value, deep_value, expected, fast_ok, deep_ok)
+                )
+
+                if fast_ok:
                     self.assertEqual(
-                        deep.fields.get(key),
-                        fast.fields.get(key),
-                        f"{name}: deep fallback overwrote {key}",
+                        deep_value,
+                        fast_value,
+                        f"{case['id']}: deep fallback overwrote correct {key}",
                     )
-            if deep_count > fast_count:
-                improvements += 1
+
+        print(
+            "two_stage_quality "
+            f"fast={fast_correct}/{checked} deep={deep_correct}/{checked} "
+            f"details={per_case}"
+        )
         self.assertGreaterEqual(
-            improvements,
-            1,
-            "deep fallback did not improve any real public invoice fixture",
+            deep_correct,
+            fast_correct,
+            f"deep fallback reduced known-answer accuracy: {per_case}",
+        )
+        self.assertGreater(
+            deep_correct,
+            fast_correct,
+            f"deep fallback did not recover any previously missed known field: {per_case}",
         )
 
     def test_amounts_recovered_from_scattered_numeric_ocr(self):
