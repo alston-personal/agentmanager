@@ -11,6 +11,7 @@ on:
       - 'dashboard/lib/wardrobe-*.mjs'
       - 'dashboard/lib/auth/**'
       - 'scripts/deploy_mio_wardrobe_dashboard_user.sh'
+      - 'scripts/deploy_dashboard_blue_green_user.sh'
       - '.github/workflows/oracle-deploy-mio-wardrobe-dashboard.yml'
   workflow_dispatch:
 
@@ -35,11 +36,12 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Deploy exact Dashboard generation
+      - name: Deploy exact Dashboard generation through blue-green
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$GITHUB_SHA' && git show '$GITHUB_SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh' > /tmp/deploy-mio-wardrobe-dashboard.sh && chmod 700 /tmp/deploy-mio-wardrobe-dashboard.sh && /tmp/deploy-mio-wardrobe-dashboard.sh '$GITHUB_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$GITHUB_SHA' && git show '$GITHUB_SHA:scripts/deploy_dashboard_blue_green_user.sh' > /tmp/deploy-dashboard-blue-green.sh && chmod 700 /tmp/deploy-dashboard-blue-green.sh && /tmp/deploy-dashboard-blue-green.sh '$GITHUB_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
 
       - name: Verify OAuth handoff release contract
         shell: bash
@@ -47,12 +49,15 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          ACTIVE_SLOT="$(cat /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-slot)"
+          case "$ACTIVE_SLOT" in blue|green) ;; *) echo "invalid active slot: $ACTIVE_SLOT" >&2; exit 2 ;; esac
+          LIVE="$(readlink -f "/home/ubuntu/agent-data/runtime/dashboard/$ACTIVE_SLOT")"
           CALLBACK="$LIVE/app/api/auth/callback/[provider]/route.ts"
           test -f "$CALLBACK"
           grep -F "completePwaHandoff(handoffId, token)" "$CALLBACK"
           grep -F "authHandoff=completed" "$CALLBACK"
           echo "mio_oauth_direct_handoff_release=PASS"
+          echo "mio_dashboard_blue_green_active_slot=$ACTIVE_SLOT"
           REMOTE
 
       - name: Exercise ordinary-user authenticated live try-on
@@ -61,7 +66,9 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          ACTIVE_SLOT="$(cat /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-slot)"
+          case "$ACTIVE_SLOT" in blue|green) ;; *) echo "invalid active slot: $ACTIVE_SLOT" >&2; exit 2 ;; esac
+          LIVE="$(readlink -f "/home/ubuntu/agent-data/runtime/dashboard/$ACTIVE_SLOT")"
           CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
           test -d "$LIVE" && test -f "$CONFIG"
           test -d "$LIVE/node_modules/jsonwebtoken"
