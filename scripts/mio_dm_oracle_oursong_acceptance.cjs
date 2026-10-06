@@ -63,6 +63,7 @@ async function browserSession(){
   const created=await browser.cmd('Target.createTarget',{url:'https://www.threads.com/messages'});
   const targetId=String((((created||{}).result||{}).targetId)||'');
   if(!targetId) throw new Error('MISSING_TARGET_ID');
+  await browser.cmd('Target.activateTarget',{targetId});
   const attached=await browser.cmd('Target.attachToTarget',{targetId,flatten:true});
   const sessionId=String((((attached||{}).result||{}).sessionId)||'');
   if(!sessionId) throw new Error('MISSING_SESSION_ID');
@@ -96,6 +97,10 @@ async function main(){
   const session=await browserSession();
   await sleep(10000);
   try{
+    STAGE='session_enable';
+    await session.cmd('Page.enable',{});
+    await session.cmd('Runtime.enable',{});
+    await session.cmd('Accessibility.enable',{});
     STAGE='login_check';
     const ft=await session.cmd('Page.getFrameTree',{});
     const frame=((((ft||{}).result||{}).frameTree||{}).frame)||{};
