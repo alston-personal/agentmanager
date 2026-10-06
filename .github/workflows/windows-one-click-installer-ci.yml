@@ -33,7 +33,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/windows/thin_client_watchdog.ps1')
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/windows/thin_client_watchdog.ps1','scripts/windows/user_runtime_watchdog.ps1')
           foreach($file in $files) {
             $tokens = $null
             $errors = $null
@@ -98,6 +98,7 @@ jobs:
             'agentos_node/session_bridge.py',
             'agentos_node/agent_surfaces.py',
             'scripts/windows/thin_client_watchdog.ps1',
+            'scripts/windows/user_runtime_watchdog.ps1',
             'Windows Store App Execution Alias is not accepted'
           )) {
             if(-not $low.Contains($needle)) { throw "missing low-level installer marker: $needle" }
