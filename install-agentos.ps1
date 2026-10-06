@@ -206,7 +206,10 @@ function Install-Supervisor([string]$PythonPath) {
   try {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
   } catch {
-    if($_.Exception.Message -notmatch '(?i)access.*denied|存取被拒|unauthorized'){
+    $accessDenied=($_.Exception.HResult -eq -2147024891) -or
+      ($_.FullyQualifiedErrorId -match '(?i)unauthorized|accessdenied') -or
+      ($_.Exception.Message -match '(?i)access.*denied|unauthorized')
+    if(-not $accessDenied){
       throw
     }
     Write-Host 'Task Scheduler ACL blocks non-admin repair; switching to per-user hidden runtime.' -ForegroundColor Yellow
@@ -238,7 +241,10 @@ function Install-Supervisor([string]$PythonPath) {
   try {
     Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force -ErrorAction Stop | Out-Null
   } catch {
-    if($_.Exception.Message -notmatch '(?i)access.*denied|存取被拒|unauthorized'){
+    $accessDenied=($_.Exception.HResult -eq -2147024891) -or
+      ($_.FullyQualifiedErrorId -match '(?i)unauthorized|accessdenied') -or
+      ($_.Exception.Message -match '(?i)access.*denied|unauthorized')
+    if(-not $accessDenied){
       throw
     }
     $watchdogTaskName=$fallbackWatchdogTaskName
