@@ -1,0 +1,10 @@
+{
+  "schema":"agentos.monitor/v1",
+  "monitor":{"id":"agentos-scheduler-health","owner":"system"},
+  "goal":{"description":"Monitor AgentOS Runner Pool scheduler congestion and health"},
+  "schedule":{"type":"interval","every":"5m","timezone":"Asia/Taipei","run_immediately":true},
+  "execution":{"capability":"agentos.scheduler.status"},
+  "payload":{},
+  "condition":{"notify_if_not_healthy":true},
+  "notification_policy":{"severity":"high","cooldown":"30m","dedupe":true}
+}
