@@ -77,6 +77,30 @@ METRICS_RECEIPT="$ROOT/pdca/growth_metrics/$STAMP.json"
 mkdir -p "$(dirname "$METRICS_RECEIPT")"
 if python3 "$GROWTH_METRICS" --persona-dir "$ROOT" --username mio.milkcat --receipt-out "$METRICS_RECEIPT"; then
   python3 -m json.tool "$METRICS_RECEIPT" >/dev/null
+  # Avoid durable noise from repeated unchanged metric polls. Keep the first
+  # receipt for a status transition, but suppress repeated UNAVAILABLE/NO_CHANGE.
+  python3 - "$ROOT/pdca/growth_metrics" "$METRICS_RECEIPT" <<'PY'
+import json,sys
+from pathlib import Path
+root=Path(sys.argv[1]); current=Path(sys.argv[2])
+cur=json.loads(current.read_text(encoding="utf-8"))
+status=str(cur.get("status") or "")
+changed=int(cur.get("changed") or 0)
+previous=[]
+for p in sorted(root.glob("*.json")):
+    if p == current:
+        continue
+    try:
+        previous.append(json.loads(p.read_text(encoding="utf-8")))
+    except Exception:
+        pass
+prev_status=str(previous[-1].get("status") or "") if previous else ""
+if changed == 0 and status in {"UNAVAILABLE","NO_CHANGE"} and prev_status == status:
+    current.unlink(missing_ok=True)
+    print("persona_growth_metrics_persist=SUPPRESSED_REPEAT")
+else:
+    print("persona_growth_metrics_persist=KEPT")
+PY
 else
   # A metrics outage must not discard the observation or incident in this clone.
   python3 - "$METRICS_RECEIPT" <<'PY'
