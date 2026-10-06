@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events
-from agentos_node.social.persona_dm import binding_for
+from agentos_node.social.persona_dm import binding_for, account_from_profile_hrefs
 
 ROOT=Path(os.environ.get("AGENTOS_THREADS_WEB_DM_ROOT") or (Path.home()/".local"/"share"/"agentos"/"social"/"threads-web-dm"))
 PROFILE=ROOT/"browser-profile"
@@ -179,6 +179,28 @@ def main() -> int:
                     else:
                         page.close()
                     return 4
+            profile_hrefs = page.locator('a[href][aria-label*="profile" i], a[href][title*="profile" i], a[href][aria-label*="個人檔案"], a[href][title*="個人檔案"]')
+            hrefs=[]
+            try:
+                for i in range(min(profile_hrefs.count(),20)):
+                    href=profile_hrefs.nth(i).get_attribute("href") or ""
+                    if href:
+                        hrefs.append(href)
+            except Exception:
+                hrefs=[]
+            observed_account=account_from_profile_hrefs(hrefs)
+            if observed_account != account:
+                print("threads_web_dm_identity=FAIL")
+                print("threads_web_dm_expected_account="+account)
+                print("threads_web_dm_observed_account="+(observed_account or "UNKNOWN"))
+                if owns_context:
+                    context.close()
+                else:
+                    page.close()
+                return 9
+            print("threads_web_dm_identity=PASS")
+            print("threads_web_dm_account="+account)
+
             if args.login_only:
                 print("threads_web_dm_bridge=SESSION_READY")
                 print("threads_web_dm_transport="+transport)
