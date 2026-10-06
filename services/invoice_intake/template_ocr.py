@@ -552,6 +552,7 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
     visual_amounts = False
     layout_values, layout_evidence = choose_layout_amounts(evidence)
     amount_sources: dict[str, str] = {}
+    retry_evidence: dict[str, Any] = {}
     if doc_type == "three_part_uniform_invoice":
         subtotal, tax, total, visual_amounts = choose_three_part_amounts(text)
         fields["amount_before_tax"] = subtotal
@@ -585,7 +586,6 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
             if "total_amount" not in amount_sources:
                 confidence["total_amount"] = conf
     else:
-        retry_evidence = {}
         nums = amount_candidates(text)
         total = total_from_lines(text)
         if total is None and layout_values.get("total_amount") is not None:
