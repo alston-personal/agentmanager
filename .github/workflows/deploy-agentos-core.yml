@@ -1,4 +1,5 @@
 name: Deploy Distributed AgentOS Core
+# diagnostic trigger: post recovery/converge state
 
 on:
   push:
