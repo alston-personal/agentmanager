@@ -1,0 +1,63 @@
+name: Probe Gemini Input Focus
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/probe-gemini-input-focus.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe input focus without sending
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tasks=[
+            ('gemini-focus-click-20261006-1106','desktop.mouse',{'operation':'click','x':960,'y':610,'button':'left'}),
+            ('gemini-focus-type-20261006-1106','desktop.keyboard',{'operation':'type','text':'AGENTOS_FOCUS_PROBE'}),
+            ('gemini-focus-copy-20261006-1106','desktop.keyboard',{'operation':'type','text':'^a^c'}),
+          ]
+          for tid,action,payload in tasks:
+              if f.get_receipt(tid) is None:
+                  task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':action,'cognition_ids_used':['demo://gemini-focus/20261006']}; task.update(payload); f.queue_task('VO10005870',task)
+              for _ in range(25):
+                  r=f.get_receipt(tid)
+                  if r: break
+                  time.sleep(1)
+              if not r or r.get('ok') is not True: raise SystemExit('step_failed:'+tid+':'+str(r))
+              time.sleep(0.5)
+          read_id='gemini-focus-clipboard-20261006-1106'
+          ps=r'''Add-Type -AssemblyName System.Windows.Forms; $t=[System.Windows.Forms.Clipboard]::GetText(); Write-Output ('CLIP='+$t); [System.Windows.Forms.SendKeys]::SendWait('^a{BACKSPACE}')'''
+          if f.get_receipt(read_id) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':read_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':10,'cognition_ids_used':['demo://gemini-focus/20261006']})
+          for _ in range(25):
+              r=f.get_receipt(read_id)
+              if r:
+                  print(r.get('stdout') or '')
+                  raise SystemExit(0)
+              time.sleep(1)
+          raise SystemExit('clipboard_receipt_missing')
+          PY
+          REMOTE
