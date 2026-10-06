@@ -146,6 +146,79 @@ def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
 
 
 
+def _read_amount_image(
+    image_bytes: bytes,
+    *,
+    api_key: str,
+    model: str,
+) -> dict:
+    """Read only monetary fields while preserving the full-document visual context."""
+    body = {
+        'model': model,
+        'input': [
+            {'type': 'text', 'text': AMOUNT_PROMPT},
+            {'type': 'image', 'data': base64.b64encode(image_bytes).decode('ascii', errors='strict'), 'mime_type': 'image/jpeg'},
+        ],
+        'response_format': {'type': 'text', 'mime_type': 'application/json', 'schema': AMOUNT_SCHEMA},
+    }
+    req = urllib.request.Request(
+        'https://generativelanguage.googleapis.com/v1beta/interactions',
+        data=json.dumps(body).encode(),
+        method='POST',
+        headers={
+            'Content-Type': 'application/json',
+            'x-goog-api-key': api_key,
+            'Api-Revision': '2026-05-20',
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            raw = response.read(256 * 1024 + 1)
+        if len(raw) > 256 * 1024:
+            raise VisionError('RESPONSE_TOO_LARGE')
+        envelope = json.loads(raw)
+    except urllib.error.HTTPError as exc:
+        code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code, 'PROVIDER_ERROR')
+        raise VisionError(code) from None
+    except (urllib.error.URLError, TimeoutError):
+        raise VisionError('TRANSPORT_ERROR') from None
+    except (ValueError, TypeError):
+        raise VisionError('INVALID_RESPONSE') from None
+
+    text = envelope.get('output_text')
+    if not text:
+        text = ''.join(
+            content.get('text', '')
+            for step in envelope.get('steps', [])
+            if step.get('type') == 'model_output'
+            for content in step.get('content', [])
+            if content.get('type') == 'text'
+        )
+    try:
+        payload = json.loads(text)
+        if not isinstance(payload, dict) or set(payload) != set(AMOUNT_SCHEMA['required']):
+            raise ValueError('invalid_amount_fields')
+        for key in MONEY_FIELDS:
+            value = payload.get(key)
+            if value is not None and (type(value) is not int or not 0 <= value <= 1_000_000_000):
+                raise ValueError('invalid_amount')
+        if type(payload.get('needs_review')) is not bool:
+            raise ValueError('invalid_review_flag')
+        uncertain = payload.get('uncertain_fields')
+        if not isinstance(uncertain, list) or not all(isinstance(x, str) for x in uncertain):
+            raise ValueError('invalid_uncertainty')
+    except (ValueError, TypeError):
+        raise VisionError('INVALID_RESPONSE') from None
+
+    return {
+        'payload': payload,
+        'model': model,
+        'crop': [0.0, 0.0, 1.0, 1.0],
+        'input_bytes': len(image_bytes),
+        'prompt_version': 'invoice-amount-full-image-v1',
+    }
+
+
 def _read_amount_crop(
     image: Image.Image,
     crop_box: tuple[float, float, float, float],
@@ -258,6 +331,22 @@ def read_amounts(image_bytes: bytes, *, api_key: str, model: str) -> dict:
             ]
             attempts = []
             errors = []
+
+            # Astra-like first retry: keep the complete visual context but ask
+            # only for monetary fields. Cropping is fallback, not the first move.
+            try:
+                full = _read_amount_image(image_bytes, api_key=api_key, model=model)
+                attempts.append(full)
+                payload = full['payload']
+                if (
+                    all(payload.get(key) is not None for key in MONEY_FIELDS)
+                    and payload['amount_before_tax'] + payload['tax_amount'] == payload['total_amount']
+                    and not payload.get('needs_review')
+                ):
+                    crop_boxes = []
+            except VisionError as exc:
+                errors.append(str(exc))
+
             for crop_box in crop_boxes:
                 try:
                     result = _read_amount_crop(

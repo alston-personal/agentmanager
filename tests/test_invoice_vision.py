@@ -184,6 +184,31 @@ class VisionTests(unittest.TestCase):
         self.assertEqual(result.raw['vision']['field_trace']['total_amount']['source'],'image_amount_crop')
         self.assertEqual(result.raw['vision']['field_trace']['total_amount']['evidence_region'],[0.35,0.28,0.99,0.97])
 
+    def test_read_amounts_uses_full_image_amount_only_before_crops(self):
+        full={
+            'payload':{
+                'amount_before_tax':24500,
+                'tax_amount':1225,
+                'total_amount':25725,
+                'needs_review':False,
+                'uncertain_fields':[],
+            },
+            'model':'test',
+            'crop':[0.0,0.0,1.0,1.0],
+            'input_bytes':123,
+            'prompt_version':'invoice-amount-full-image-v1',
+        }
+        with patch.object(vision,'_read_amount_image',return_value=full) as full_read, \
+             patch.object(vision,'_read_amount_crop') as crop_read:
+            result=vision.read_amounts(image_bytes(),api_key='test-secret',model='configured-model')
+        full_read.assert_called_once()
+        crop_read.assert_not_called()
+        self.assertEqual(result['payload']['amount_before_tax'],24500)
+        self.assertEqual(result['payload']['tax_amount'],1225)
+        self.assertEqual(result['payload']['total_amount'],25725)
+        self.assertEqual(result['attempt_count'],1)
+        self.assertEqual(result['attempt_crops'],[[0.0,0.0,1.0,1.0]])
+
     def test_read_amounts_tries_multiple_crops_and_keeps_best_result(self):
         weak={
             'payload':{
