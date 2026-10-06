@@ -79,14 +79,18 @@ jobs:
             'scheduler_status_stalled_count=',
             'scheduler_status_receipts_count=',
             'scheduler_status_rejected_count=',
+            'scheduler_status_worker_count=',
+            'scheduler_status_worker_',
             'scheduler_status=',
           )
           for line in receipt.get('evidence') or []:
               assert line.startswith(allowed), line
               k,v=line.split('=',1); vals[k]=v
           assert vals.get('scheduler_status')=='PASS', vals
-          for key in ('scheduler_status_pending_count','scheduler_status_pending_oldest_seconds','scheduler_status_stalled_count','scheduler_status_receipts_count','scheduler_status_rejected_count'):
-              assert re.fullmatch(r'\d+', vals.get(key,'')), (key,vals)
+          for key in ('scheduler_status_pending_count','scheduler_status_pending_oldest_seconds','scheduler_status_stalled_count','scheduler_status_receipts_count','scheduler_status_rejected_count','scheduler_status_worker_count'):
+              assert re.fullmatch(r'\\d+', vals.get(key,'')), (key,vals)
+          assert vals.get('scheduler_status_worker_oracle-gui_role')=='gui', vals
+          assert vals.get('scheduler_status_worker_oracle-gui_state') in {'idle','running'}, vals
           json.dump(vals,open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,indent=2)
           print('scheduler_status_acceptance=PASS')
           for key in sorted(vals): print(key+'='+vals[key])

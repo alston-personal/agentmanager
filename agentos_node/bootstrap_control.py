@@ -556,14 +556,30 @@ def _scheduler_status_probe() -> dict[str, Any]:
     ages = [max(0, int(now - p.stat().st_mtime)) for p in pending]
     oldest = max(ages) if ages else 0
     stalled = sum(1 for age in ages if age > MAX_REQUEST_AGE_SECONDS)
+    status_path = Path(os.environ.get("AGENT_DATA_ROOT") or "/home/ubuntu/agent-data") / "runtime" / "bootstrap-scheduler" / "status.json"
+    workers = {}
+    try:
+        payload = json.loads(status_path.read_text(encoding="utf-8"))
+        if isinstance(payload.get("workers"), dict):
+            workers = payload["workers"]
+    except Exception:
+        workers = {}
     markers = [
         f"scheduler_status_pending_count={len(pending)}",
         f"scheduler_status_pending_oldest_seconds={oldest}",
         f"scheduler_status_stalled_count={stalled}",
         f"scheduler_status_receipts_count={sum(1 for p in receipts.glob('*.json') if p.is_file())}",
         f"scheduler_status_rejected_count={sum(1 for p in rejected.glob('*.json') if p.is_file())}",
-        "scheduler_status=PASS",
+        f"scheduler_status_worker_count={len(workers)}",
     ]
+    for worker_id, row in sorted(workers.items()):
+        if not isinstance(row, dict):
+            continue
+        safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(worker_id))[:64]
+        markers.append(f"scheduler_status_worker_{safe_id}_role={str(row.get('role') or '')[:32]}")
+        markers.append(f"scheduler_status_worker_{safe_id}_state={str(row.get('state') or '')[:32]}")
+        markers.append(f"scheduler_status_worker_{safe_id}_heartbeat={str(row.get('heartbeat') or '')[:64]}")
+    markers.append("scheduler_status=PASS")
     return {
         "ok": True,
         "source_commit": None,

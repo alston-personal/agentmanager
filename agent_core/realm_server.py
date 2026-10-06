@@ -429,6 +429,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'scheduler_status_stalled_count=',
                     'scheduler_status_receipts_count=',
                     'scheduler_status_rejected_count=',
+                    'scheduler_status_worker_count=',
+                    'scheduler_status_worker_',
                     'scheduler_status=',
                 )
             elif action == bootstrap_control.ACTION_RELAY_STATUS:
