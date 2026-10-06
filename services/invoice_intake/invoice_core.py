@@ -961,11 +961,39 @@ def extract_invoice(
             api_key=os.environ.get('GEMINI_API_KEY', ''), model=config['model'])
         legacy.raw.setdefault("timings_ms", {})["vision_ms"] = round((time.perf_counter() - vision_started) * 1000, 1)
         fields, issues = vision_ocr.validated_fields(result['payload'])
+        uncertain = set(result['payload'].get('uncertain_fields') or [])
+        field_trace = {}
+        for key in vision_ocr.CORE_FIELDS:
+            alias = 'seller_name' if key == 'vendor_name' else key
+            candidate = result['payload'].get(alias)
+            value = fields.get(key)
+            is_uncertain = key in uncertain or alias in uncertain
+            if candidate is None:
+                trace_status, reason = 'missing', 'not_read_from_image'
+            elif value is None:
+                trace_status, reason = 'invalid', 'validation_rejected'
+            elif is_uncertain:
+                trace_status, reason = 'needs_review', 'model_marked_uncertain'
+            else:
+                trace_status, reason = 'extracted', None
+            field_trace[key] = {
+                'raw_text': candidate,
+                'value': value,
+                'status': trace_status,
+                'source': 'image_main',
+                'reason': reason,
+                'evidence_region': None,
+            }
     except Exception as exc:
         legacy.raw['vision']['status'] = str(exc) if isinstance(exc, vision_ocr.VisionError) else 'INVALID_RESPONSE'
         legacy.review_required = True
         return legacy
-    result.update({'status': 'SUCCEEDED', 'mode': config['mode'], 'validation_issues': issues})
+    result.update({
+        'status': 'SUCCEEDED',
+        'mode': config['mode'],
+        'validation_issues': issues,
+        'field_trace': field_trace,
+    })
     comparison = {key: {'legacy': legacy.fields.get(key), 'vision': fields.get(key),
                         'equal': legacy.fields.get(key) == fields.get(key)} for key in vision_ocr.CORE_FIELDS}
     legacy.raw['vision'] = result
