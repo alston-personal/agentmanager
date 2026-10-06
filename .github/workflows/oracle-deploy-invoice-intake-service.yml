@@ -7,9 +7,9 @@ on:
     paths:
       - 'services/invoice_intake/**'
       - 'capabilities/financial_intake/**'
+      - 'capabilities/stamp_recognition/**'
       - 'capabilities/ocr_memory/**'
       - 'scripts/deploy_invoice_intake_nginx.py'
-      - 'tests/test_invoice_*.py'
       - 'tests/test_invoice_*.py'
       - 'tests/test_stamp_recognition_*.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
@@ -18,8 +18,10 @@ on:
     paths:
       - 'services/invoice_intake/**'
       - 'capabilities/financial_intake/**'
+      - 'capabilities/stamp_recognition/**'
       - 'capabilities/ocr_memory/**'
       - 'scripts/deploy_invoice_intake_nginx.py'
+      - 'tests/test_invoice_*.py'
       - 'tests/test_stamp_recognition_*.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
 
@@ -276,6 +278,23 @@ jobs:
             | tail -n 5 || true
           echo 'invoice_intake_service=PASS'
           REMOTE
+
+      - name: Verify deployed source parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in \
+            services/invoice_intake/invoice_core.py \
+            services/invoice_intake/app.py \
+            capabilities/stamp_recognition/runtime.py
+          do
+            expected="$(sha256sum "$path" | awk '{print $1}')"
+            actual="$(ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "sha256sum /home/ubuntu/invoice-intake-service/app/$path | awk '{print \\$1}'")"
+            echo "invoice_deploy_parity path=$path expected=$expected actual=$actual"
+            test "$expected" = "$actual"
+          done
+          echo 'invoice_deploy_source_parity=PASS'
 
       - name: Deploy nginx API boundary
         shell: bash
