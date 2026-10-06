@@ -19,6 +19,8 @@ from datetime import datetime,timezone
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
+PROJECT_URL="https://flow.google.com/project/7c7d201a-ee6f-40e1-aa4c-2309c9543237"
+EXPECTED_MARKERS=("taipei","metro","umbrella","mio")
 out_root=Path(sys.argv[1])
 stamp=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 run_dir=out_root/stamp
@@ -28,10 +30,13 @@ print("google_flow_recover_stage=CONNECT_CDP",flush=True)
 with sync_playwright() as p:
     browser=p.chromium.connect_over_cdp("http://127.0.0.1:9222",timeout=10000)
     ctx=browser.contexts[0]
-    page=next((x for x in ctx.pages if "flow.google.com" in str(x.url or "")),None)
+    page=next((x for x in ctx.pages if PROJECT_URL in str(x.url or "")),None)
+    if page is None:
+        page=next((x for x in ctx.pages if "flow.google.com" in str(x.url or "")),None)
     if page is None:
         page=ctx.new_page()
-        page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
+    if PROJECT_URL not in str(page.url or ""):
+        page.goto(PROJECT_URL,wait_until="domcontentloaded",timeout=60000)
         page.wait_for_timeout(5000)
     print("google_flow_recover_stage=FLOW_LOADED",flush=True)
     print("google_flow_recover_url="+str(page.url or "")[:500])
@@ -58,7 +63,7 @@ with sync_playwright() as p:
         # navigation back to Flow once; if Google redirects back here, require
         # human completion.
         try:
-            page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
+            page.goto(PROJECT_URL,wait_until="domcontentloaded",timeout=60000)
             page.wait_for_timeout(5000)
             redirected_host=(page.url.split("/")[2] if "://" in str(page.url or "") else "")
             print("google_flow_recover_stage=AUTH_INTERSTITIAL_BYPASS_ATTEMPT")
@@ -120,6 +125,64 @@ with sync_playwright() as p:
         except Exception:
             pass
 
+    # Rain Exit recovery is now pinned to the exact known project and is
+    # strictly read-only. Wait for the already-approved generation to surface.
+    project_verified=False
+    if PROJECT_URL in str(page.url or ""):
+        try:
+            body=(page.locator("body").inner_text(timeout=4000) or "")
+        except Exception:
+            body=""
+        low=body.lower()
+        project_verified=all(m in low for m in EXPECTED_MARKERS)
+        print("google_flow_recover_project_prompt_match="+("YES" if project_verified else "NO"))
+        if not project_verified:
+            print("google_flow_recover=PROJECT_MISMATCH")
+            raise SystemExit(0)
+
+        deadline=time.monotonic()+900
+        while time.monotonic()<deadline:
+            vids_now=page.locator("video")
+            found=False
+            for i in range(min(vids_now.count(),20)):
+                item=vids_now.nth(i)
+                try:
+                    if not item.is_visible(timeout=300):
+                        continue
+                    context=""
+                    try:
+                        context=str(item.evaluate("""el => {
+                          let n=el;
+                          for(let i=0;i<6 && n;i++,n=n.parentElement){
+                            const t=(n.innerText||'').trim();
+                            if(t) return t.slice(0,700);
+                          }
+                          return '';
+                        }""") or "")
+                    except Exception:
+                        pass
+                    cl=context.lower()
+                    if any(x in cl for x in ("gemini omni flash","creative partner at every step","google flow agent")):
+                        continue
+                    found=True
+                    break
+                except Exception:
+                    pass
+            if found:
+                print("google_flow_recover_stage=PROJECT_VIDEO_READY",flush=True)
+                break
+            try:
+                body=(page.locator("body").inner_text(timeout=2500) or "").lower()
+            except Exception:
+                body=""
+            if any(x in body for x in ("generation failed","couldn't generate","failed to generate","產生失敗","生成失敗","無法生成")):
+                print("google_flow_recover=GENERATION_FAILED")
+                raise SystemExit(0)
+            page.wait_for_timeout(5000)
+        else:
+            print("google_flow_recover=GENERATION_PENDING_TIMEOUT")
+            raise SystemExit(0)
+
     # Collect visible videos with bounded surrounding text so recovery can
     # distinguish a real project result from Flow's generic demo media.
     candidates_meta=[]
@@ -158,7 +221,9 @@ with sync_playwright() as p:
     matching=[]
     for meta in candidates_meta:
         low=meta["context"].lower()
-        if any(m in low for m in project_markers):
+        if any(x in low for x in ("gemini omni flash","creative partner at every step","google flow agent")):
+            continue
+        if project_verified or any(m in low for m in project_markers):
             matching.append(meta["index"])
 
     if not matching:
