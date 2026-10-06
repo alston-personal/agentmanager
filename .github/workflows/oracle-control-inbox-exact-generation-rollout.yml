@@ -10,6 +10,9 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-control-inbox-exact-generation-rollout.yml'
+      - 'agent_core/control_inbox_bridge.py'
+      - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'config/control-inbox.env.example'
 
 permissions:
   contents: read
