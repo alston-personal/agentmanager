@@ -1390,12 +1390,42 @@ class InvoiceStore:
                         daemon=True,
                     ).start()
                 return payload
-            except Exception:
-                with self.connect() as db:
-                    db.execute(
-                        "UPDATE invoices SET status='error', updated_at=? WHERE id=?",
-                        (utcnow(), invoice_id),
-                    )
+            except Exception as exc:
+                failed_at = utcnow()
+                error_type = type(exc).__name__
+                error_payload = {
+                    "engine": "invoice-processing-error",
+                    "status": "error",
+                    "error": {
+                        "stage": "process",
+                        "type": error_type,
+                        "reason": str(exc)[:240] if str(exc) else None,
+                    },
+                    "deep_fallback_pending": False,
+                }
+                try:
+                    with self.connect() as db:
+                        current = db.execute(
+                            "SELECT document_id FROM invoices WHERE id=?",
+                            (invoice_id,),
+                        ).fetchone()
+                        if current:
+                            db.execute(
+                                "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                                (
+                                    str(uuid.uuid4()),
+                                    current["document_id"],
+                                    "invoice-processing-error",
+                                    json.dumps(error_payload, ensure_ascii=False),
+                                    failed_at,
+                                ),
+                            )
+                        db.execute(
+                            "UPDATE invoices SET status='error', updated_at=? WHERE id=?",
+                            (failed_at, invoice_id),
+                        )
+                finally:
+                    print(f"invoice_process=error type:{error_type}")
                 raise
 
     def _deep_enrich_invoice(self, invoice_id: str) -> None:
