@@ -90,6 +90,12 @@ class LobsterCompletionSelectionTests(unittest.TestCase):
         self.assertIn("{role_name}", source)
         self.assertNotIn("{role}", source)
 
+    def test_claimed_task_exception_becomes_durable_blocker(self) -> None:
+        with patch.object(lobster, "run_with_inspector", side_effect=RuntimeError("boom")):
+            success, output = lobster.run_with_completion_guard(Path("/tmp"), "task")
+        self.assertFalse(success)
+        self.assertEqual(output, "BLOCKED: executor_exception:RuntimeError")
+
     def test_non_execution_owner_is_not_claimed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = self.state_path(td)
