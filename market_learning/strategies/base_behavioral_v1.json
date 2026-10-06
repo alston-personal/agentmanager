@@ -1,0 +1,21 @@
+{
+  "schema": "agentos.market-strategy/v1",
+  "strategy_id": "market-base-v1",
+  "features": {
+    "price_action": 1.0,
+    "volume": 1.0,
+    "foreign_flow": 1.0,
+    "margin": 1.0,
+    "ownership_distribution": 1.0,
+    "market_regime": 1.0
+  },
+  "prediction": {
+    "horizons": ["1d", "3d", "5d"],
+    "min_confidence": 0.55,
+    "allow_abstain": true
+  },
+  "patterns": {
+    "preferred": [],
+    "required": []
+  }
+}
