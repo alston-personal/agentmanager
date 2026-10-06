@@ -123,6 +123,8 @@ jobs:
           text='\n'.join((step.get('stdout','')+'\n'+step.get('stderr','')) for step in r.get('steps',[]))
           assert 'realm_gateway_dashboard_bg=PASS' in text, text[-12000:]
           assert 'dashboard_bg_cutover=PASS' in text, text[-12000:]
+          assert 'dashboard_bg_old_slot_stopped=PASS' in text, text[-12000:]
+          assert 'dashboard_bg_post_retire_public_verify=PASS' in text, text[-12000:]
           assert 'realm_gateway_blue_green=PASS' in text, text[-12000:]
           assert 'realm_gateway_bootstrap_public=PASS' in text, text[-12000:]
           assert 'realm_gateway_dispatch_public=PASS' in text, text[-12000:]
