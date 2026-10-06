@@ -18,16 +18,19 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect stale Oursong activation workflow
+      - name: Inspect current deployment state
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          echo '=== STALE OURSONG WORKFLOW ==='
-          sed -n '1,260p' "$HOME/agentmanager/.github/workflows/oursong-persona-activation.yml" 2>&1 || true
-          echo '=== STALE REPO HEAD/STATUS ==='
-          git -C "$HOME/agentmanager" rev-parse HEAD 2>&1 || true
-          git -C "$HOME/agentmanager" status --short --branch 2>&1 || true
-          echo '=== RECENT ACTIVATOR MTIME ==='
-          stat "$HOME/agentmanager/scripts/activate_oursong_persona_user.sh" 2>&1 || true
+          echo '=== HEARTBEAT STATUS ==='
+          systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service 2>&1 || true
+          echo '=== SOCIAL STATUS ==='
+          systemctl --user --no-pager --full status agentos-persona-social-actions.service 2>&1 || true
+          echo '=== FILE TIMES ==='
+          stat -c '%y %n' "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" "$HOME/.local/bin/agentos-persona-social-actions" 2>&1 || true
+          echo '=== PROCESSES ==='
+          ps -eo pid,ppid,etime,args | grep -E '[a]gentos-persona-pdca-heartbeat|[a]gentos-persona-social-actions|[p]ersona-agent-data' || true
+          echo '=== TIMER ==='
+          systemctl --user list-timers --all --no-pager | grep -E 'agentos-persona-(pdca-heartbeat|social-actions)' || true
           REMOTE
