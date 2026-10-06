@@ -7,6 +7,7 @@ on:
     paths:
       - 'agentos_node/social/web_dm.py'
       - 'scripts/threads_web_dm_bridge_user.py'
+      - 'scripts/run_mio_dm_oracle_oursong_acceptance_user.sh'
       - 'tests/test_social_web_dm.py'
       - '.github/workflows/social-web-dm-guard.yml'
 
@@ -23,5 +24,9 @@ jobs:
           python-version: '3.12'
       - name: Compile
         run: python -m py_compile agentos_node/social/web_dm.py scripts/threads_web_dm_bridge_user.py
+      - name: Verify Oursong acceptance CLI contract
+        run: |
+          bash -n scripts/run_mio_dm_oracle_oursong_acceptance_user.sh
+          grep -Fq 'python3 "$TMP" --persona mio --oursong-acceptance' scripts/run_mio_dm_oracle_oursong_acceptance_user.sh
       - name: Test DM event contract
         run: python -m unittest -v tests.test_social_web_dm

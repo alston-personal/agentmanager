@@ -15,7 +15,7 @@ trap 'rm -f "$TMP"' EXIT
 git -C "$REPO" show "$SOURCE_COMMIT:scripts/threads_web_dm_bridge_user.py" > "$TMP"
 
 set +e
-OUT="$(PYTHONPATH="$REPO" python3 "$TMP" --account mio.milkcat --oursong-acceptance 2>&1)"
+OUT="$(PYTHONPATH="$REPO" python3 "$TMP" --persona mio --oursong-acceptance 2>&1)"
 RC=$?
 set -e
 printf '%s\n' "$OUT" | grep -E '^(mio_dm_oursong_(acceptance|stage|send|readback)=|threads_web_dm_transport=)' || true
