@@ -38,5 +38,18 @@ class GalaxyMonitorImmutableRuntimeTests(unittest.TestCase):
             self.assertTrue(any(item in line for item in allowed) or 'test -d "$REPO/.git"' in line, line)
 
 
+
+    def test_migration_workflow_uses_runner_window_not_direct_oracle(self):
+        workflow = (ROOT / ".github" / "workflows" / "oracle-install-galaxy-threads-experiment-monitor.yml").read_text(encoding="utf-8")
+        self.assertIn("runs-on: ubuntu-latest", workflow)
+        self.assertIn("bash scripts/agentos_dispatch.sh social.monitor runtime.migrate", workflow)
+        self.assertIn("galaxy_monitor_runtime_migration_receipt=PASS", workflow)
+        self.assertNotIn("runs-on: [self-hosted, Linux, ARM64, oracle]", workflow)
+
+    def test_migration_helper_does_not_trigger_social_cycle(self):
+        migration = (ROOT / "scripts" / "migrate_galaxy_monitor_immutable_runtime_user.sh").read_text(encoding="utf-8")
+        self.assertIn("galaxy_monitor_runtime_social_cycle_triggered=NO", migration)
+        self.assertIn("galaxy_monitor_runtime_mutable_checkout_write=NONE", migration)
+
 if __name__ == "__main__":
     unittest.main()
