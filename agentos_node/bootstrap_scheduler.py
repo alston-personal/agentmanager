@@ -45,6 +45,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_REALM_EXECUTOR_RECONCILE: ActionPolicy("control", 10, "high", ("node.executor.reconcile",), ()),
     bc.ACTION_GOOGLE_FLOW_GENERATE: ActionPolicy("gui", 16, "high", ("media.google-flow.generate", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile", "google-media-flow")),
     bc.ACTION_GOOGLE_VIDS_GENERATE: ActionPolicy("gui", 16, "high", ("media.google-vids.generate", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile", "google-media-vids")),
+    bc.ACTION_VISION_STUDIO_PRODUCE: ActionPolicy("gui", 17, "high", ("media.vision-studio.produce", "media.google-flow.generate", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile", "vision-studio-rain-exit")),
     bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("maintenance", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
     bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
