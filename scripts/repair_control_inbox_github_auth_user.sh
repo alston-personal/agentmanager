@@ -12,7 +12,7 @@ ENV_FILE="${AGENTOS_CONTROL_ENV:-/home/ubuntu/.config/agentos/control-inbox.env}
 CONTROLLER_ENV="${AGENTOS_CONTROLLER_ENV:-/home/ubuntu/.config/agentos/controller.env}"
 DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
 UNIT="agentos-control-inbox.service"
-ALLOWED_ACTIONS="agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover"
+ALLOWED_ACTIONS="agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect,agentos.executor.job,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover"
 
 valid_single_line_token() {
   local token="$1"
