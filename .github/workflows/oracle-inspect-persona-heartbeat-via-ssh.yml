@@ -18,19 +18,17 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect current deployment state
+      - name: Inspect no-start installer acceptance
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          echo '=== HEARTBEAT STATUS ==='
-          systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service 2>&1 || true
-          echo '=== SOCIAL STATUS ==='
-          systemctl --user --no-pager --full status agentos-persona-social-actions.service 2>&1 || true
-          echo '=== FILE TIMES ==='
-          stat -c '%y %n' "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" "$HOME/.local/bin/agentos-persona-social-actions" 2>&1 || true
-          echo '=== PROCESSES ==='
-          ps -eo pid,ppid,etime,args | grep -E '[a]gentos-persona-pdca-heartbeat|[a]gentos-persona-social-actions|[p]ersona-agent-data' || true
-          echo '=== TIMER ==='
-          systemctl --user list-timers --all --no-pager | grep -E 'agentos-persona-(pdca-heartbeat|social-actions)' || true
+          echo '=== HEARTBEAT TIMER ==='
+          systemctl --user list-timers --all --no-pager | grep agentos-persona-pdca-heartbeat || true
+          echo '=== HEARTBEAT SERVICE ==='
+          systemctl --user show agentos-persona-pdca-heartbeat.service -p ActiveState -p SubState -p ExecMainStartTimestamp --no-pager
+          echo '=== INSTALLER MARKERS ==='
+          grep -n 'install_live_cycle=SKIPPED\|installer_must_not_advance_autonomous_cycle\|systemctl --user start agentos-persona-pdca-heartbeat.service' "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" "$HOME/agentmanager/scripts/install_persona_pdca_timer_user.sh" 2>/dev/null || true
+          echo '=== CURRENT PROCESSES ==='
+          ps -eo pid,ppid,etime,args | grep -E '[a]gentos-persona-pdca-heartbeat-v2|systemctl --user start agentos-persona-pdca-heartbeat.service' || true
           REMOTE
