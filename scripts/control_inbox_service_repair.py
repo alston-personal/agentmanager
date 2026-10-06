@@ -20,6 +20,11 @@ GITHUB_READ = "https://api.github.com/repos/alston-personal/agentmanager/issues/
 ONE_READ = "http://127.0.0.1:8780/v1/controller/nodes"
 # Incident #845's observed count is the maintenance budget, not unlimited cleanup.
 MAX_IGNORED_LINES = 7
+REQUIRED_TYPED_ACTIONS = frozenset({
+    "desktop.window.stage",
+    "desktop.pointer.click",
+    "desktop.text.insert",
+})
 
 
 class RepairFailure(Exception):
@@ -120,6 +125,28 @@ def normalize_env_shape(text: str) -> tuple[str, bool]:
 
 def valid_token(value: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9_.-]+", value))
+
+
+def replace_env_assignment(text: str, key: str, value: str) -> str:
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
+        raise RepairFailure("environment_update_invalid_key")
+    if not re.fullmatch(r"[A-Za-z0-9._,-]+", value):
+        raise RepairFailure("environment_update_invalid_value")
+    env = parse_env(text)
+    if key not in env:
+        raise RepairFailure("environment_update_key_missing")
+    lines = []
+    replaced = False
+    for line in text.splitlines(keepends=True):
+        current = line.partition("=")[0]
+        if current == key:
+            ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+            line = key + "=" + value + ending
+            replaced = True
+        lines.append(line)
+    if not replaced:
+        raise RepairFailure("environment_update_key_missing")
+    return "".join(lines)
 
 
 def replace_credentials(text: str, updates: dict[str, str]) -> str:
@@ -227,6 +254,21 @@ def repair() -> dict[str, object]:
     if not env.get("AGENTOS_CONTROL_ALLOWED_ACTIONS") or not env.get("AGENTOS_CONTROL_STATE"):
         raise RepairFailure("configuration_incomplete")
 
+    existing_actions = {
+        item.strip()
+        for item in env["AGENTOS_CONTROL_ALLOWED_ACTIONS"].split(",")
+        if item.strip()
+    }
+    merged_actions = existing_actions | set(REQUIRED_TYPED_ACTIONS)
+    action_allowlist_extended = merged_actions != existing_actions
+    if action_allowlist_extended:
+        normalized = replace_env_assignment(
+            normalized,
+            "AGENTOS_CONTROL_ALLOWED_ACTIONS",
+            ",".join(sorted(merged_actions)),
+        )
+        env = parse_env(normalized)
+
     updates: dict[str, str] = {}
     github_before = http_status(GITHUB_READ, env.get("AGENTOS_GITHUB_TOKEN", ""))
     if github_before in (401, 403):
@@ -271,7 +313,8 @@ def repair() -> dict[str, object]:
             "credentials_changed": bool(updates), "configuration_shape_repaired": shape_changed, "bridge_active": True,
             "configuration_ignored_lines_removed": len(original.splitlines()) - len(normalized.splitlines()),
             "github_read_ok": True, "controller_auth_ok": True,
-            "action_allowlist_preserved": True, "durable_state_preserved": True,
+            "action_allowlist_preserved": True, "action_allowlist_extended": action_allowlist_extended,
+            "durable_state_preserved": True,
             "credential_exposed": False, "end_to_end_verified": False}
 
 
