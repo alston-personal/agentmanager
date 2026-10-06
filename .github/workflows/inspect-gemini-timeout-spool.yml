@@ -1,0 +1,59 @@
+name: Inspect Gemini Timeout Receipt Spool
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/inspect-gemini-timeout-spool.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect exact timeout receipt
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore(); tid='inspect-gemini-timeout-spool-20261006-1028'
+          ps=r'''$root=Join-Path $env:LOCALAPPDATA 'AgentOS\state\pending-receipts'
+          $hits=@()
+          if(Test-Path $root){
+            Get-ChildItem -Recurse $root -Filter '*.json' | ForEach-Object {
+              $txt=Get-Content -Raw -LiteralPath $_.FullName
+              if($txt -match 'gemini-send-button-probe-20261006-1026'){
+                $hits += [pscustomobject]@{path=$_.FullName;content=$txt}
+              }
+            }
+          }
+          $hits|ConvertTo-Json -Depth 4 -Compress'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':['demo://gemini-threads/20261006']})
+          for _ in range(30):
+              r=f.get_receipt(tid)
+              if r:
+                  print('LOCAL='+str(r.get('stdout') or ''))
+                  print('ONE='+json.dumps(f.get_receipt('gemini-send-button-probe-20261006-1026'),ensure_ascii=False,separators=(',',':')))
+                  raise SystemExit(0)
+              time.sleep(1)
+          raise SystemExit('inspect_timeout_spool_receipt_missing')
+          PY
+          REMOTE
