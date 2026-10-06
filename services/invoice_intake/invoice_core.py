@@ -336,7 +336,7 @@ def stamp_assist_with_budget(
     image_bytes: bytes,
     stamp_store: StampStore | None,
     *,
-    budget_ms: int = 250,
+    budget_ms: int = 100,
 ) -> dict[str, Any]:
     """Best-effort stamp lookup that can never block the invoice critical path.
 
@@ -457,7 +457,7 @@ def extract_legacy_invoice(
     if stamp_mode == "legacy":
         stamp_result = {"mode": stamp_mode, "status": "DISABLED_BASELINE", "latency_ms": 0.0}
     else:
-        budget_ms = max(25, min(1000, int(os.environ.get("INVOICE_STAMP_ASSIST_BUDGET_MS", "250"))))
+        budget_ms = max(10, min(500, int(os.environ.get("INVOICE_STAMP_ASSIST_BUDGET_MS", "100"))))
         stamp_result = stamp_assist_with_budget(image_bytes, stamp_store, budget_ms=budget_ms)
         stamp_result["mode"] = stamp_mode
     raw["stamp_recognition"] = stamp_result
