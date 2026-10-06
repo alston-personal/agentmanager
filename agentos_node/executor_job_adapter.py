@@ -71,6 +71,8 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "layoutlib_matching_files",
     "layoutlib_public_http",
     "layoutlib_parity",
+    "layoutlib_promoted_files",
+    "layoutlib_rollback_retained",
     "work_id",
     "completion_status",
     "completion_owner",
