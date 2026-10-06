@@ -40,6 +40,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("social.publish", "mio.approved", bc.ACTION_PUBLISH_MIO_APPROVED, frozenset({"post_key"})),
     RunnerWindowIntent("threads.dm", "probe", bc.ACTION_PROBE_THREADS_WEB_DM),
     RunnerWindowIntent("threads.dm", "read", bc.ACTION_READ_THREADS_WEB_DM),
+    RunnerWindowIntent("persona.social.dm", "oursong.read", bc.ACTION_READ_OURSONG_THREADS_WEB_DM),
     RunnerWindowIntent("threads.dm", "login.probe", bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN),
     RunnerWindowIntent("threads.dm", "login.start", bc.ACTION_START_THREADS_WEB_DM_LOGIN),
     RunnerWindowIntent("threads.session", "supervisor.install", bc.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR),

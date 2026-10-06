@@ -50,6 +50,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_VISION_STUDIO_PRODUCE: ActionPolicy("gui", 17, "high", ("media.vision-studio.produce", "media.google-flow.generate", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile", "vision-studio-rain-exit")),
     bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("maintenance", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
     bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
+    bc.ACTION_READ_OURSONG_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read", "persona.social.dm.read"), ("oracle-gui-profile", "threads-oursong-gui")),
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui"), queue_ttl_seconds=90),
     bc.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR: ActionPolicy("maintenance", 25, "normal", ("monitor.install",), ("oracle-core-runtime",)),

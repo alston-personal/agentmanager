@@ -49,6 +49,7 @@ ACTION_PAUSE_MIO_AUTOREPLY = "agentos.social_threads_mio.pause_autoreply"
 ACTION_DEPLOY_MIO_TELEGRAM = "agentos.mio_telegram.deploy"
 ACTION_PROBE_THREADS_WEB_DM = "agentos.social_threads_web_dm.probe"
 ACTION_READ_THREADS_WEB_DM = "agentos.social_threads_web_dm.read"
+ACTION_READ_OURSONG_THREADS_WEB_DM = "agentos.social_threads_web_dm.oursong_read"
 ACTION_PROBE_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_probe"
 ACTION_START_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_start"
 ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR = "agentos.social_threads_web_dm.session_supervisor.install"
@@ -108,6 +109,7 @@ ALLOWED_ACTIONS = {
     ACTION_DEPLOY_MIO_TELEGRAM,
     ACTION_PROBE_THREADS_WEB_DM,
     ACTION_READ_THREADS_WEB_DM,
+    ACTION_READ_OURSONG_THREADS_WEB_DM,
     ACTION_PROBE_THREADS_WEB_DM_LOGIN,
     ACTION_START_THREADS_WEB_DM_LOGIN,
     ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR,
@@ -953,7 +955,9 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_PROBE_THREADS_WEB_DM:
         return _run_canonical_script("scripts/probe_threads_web_dm_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_READ_THREADS_WEB_DM:
-        return _run_canonical_script("scripts/run_threads_web_dm_read_user.sh", timeout=180, source_commit=source_commit)
+        return _run_canonical_script("scripts/run_threads_web_dm_read_user.sh", timeout=180, source_commit=source_commit, env_extra={"AGENTOS_DM_PERSONA":"mio"})
+    if action == ACTION_READ_OURSONG_THREADS_WEB_DM:
+        return _run_canonical_script("scripts/run_threads_web_dm_read_user.sh", timeout=180, source_commit=source_commit, env_extra={"AGENTOS_DM_PERSONA":"oursong"})
     if action == ACTION_PROBE_THREADS_WEB_DM_LOGIN:
         return _run_canonical_script("scripts/probe_threads_web_dm_login_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_START_THREADS_WEB_DM_LOGIN:

@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events
+from agentos_node.social.persona_dm import binding_for
 
 ROOT=Path(os.environ.get("AGENTOS_THREADS_WEB_DM_ROOT") or (Path.home()/".local"/"share"/"agentos"/"social"/"threads-web-dm"))
 PROFILE=ROOT/"browser-profile"
@@ -55,7 +56,7 @@ def parse_row(text:str) -> tuple[str|None,str|None,str]:
             direction="inbound"
     return username,preview,direction
 
-def extract_text(page) -> list[DirectMessageEvent]:
+def extract_text(page, account: str) -> list[DirectMessageEvent]:
     rows=page.locator('[role="main"] [role="link"], [role="main"] a').all()
     events=[]
     seen_conversations=set()
@@ -77,7 +78,7 @@ def extract_text(page) -> list[DirectMessageEvent]:
         mid=stable_id(conversation_id,username,preview,direction)
         events.append(DirectMessageEvent(
             platform="threads",
-            account_id="mio.milkcat",
+            account_id=account,
             conversation_id=conversation_id,
             message_id=mid,
             actor_id=None,
@@ -90,13 +91,18 @@ def extract_text(page) -> list[DirectMessageEvent]:
 
 def main() -> int:
     ap=argparse.ArgumentParser()
-    ap.add_argument("--account",default="mio.milkcat")
+    ap.add_argument("--persona",choices=("mio","oursong"),default="mio")
     ap.add_argument("--headed",action="store_true")
     ap.add_argument("--login-only",action="store_true")
     ap.add_argument("--channel",default=os.environ.get("AGENTOS_WEB_DM_BROWSER_CHANNEL") or ("chrome" if sys.platform=="darwin" else None))
     ap.add_argument("--wait-for-login-seconds",type=int,default=0)
     ap.add_argument("--oursong-acceptance",action="store_true")
     args=ap.parse_args()
+    binding=binding_for(args.persona)
+    account=binding.account
+    global ROOT, PROFILE, STATE, EVENTS
+    ROOT=Path(os.environ.get("AGENTOS_THREADS_WEB_DM_ROOT") or (Path.home()/".local"/"share"/"agentos"/"social"/"threads-web-dm"/binding.runtime_key))
+    PROFILE=ROOT/"browser-profile"; STATE=ROOT/"state.json"; EVENTS=ROOT/"events.jsonl"
 
     ROOT.mkdir(parents=True,exist_ok=True); PROFILE.mkdir(parents=True,exist_ok=True)
     os.chmod(ROOT,0o700); os.chmod(PROFILE,0o700)
@@ -437,7 +443,7 @@ def main() -> int:
                     page.close()
                 return 0
 
-            events=extract_text(page)
+            events=extract_text(page, account)
             fresh=dedupe_new_events(events,seen)
             if fresh:
                 with EVENTS.open("a",encoding="utf-8") as fh:
@@ -449,7 +455,7 @@ def main() -> int:
             seen.update(e.message_id for e in fresh)
             state={
                 "schema":"agentos.threads-web-dm-state/v1",
-                "account":args.account,
+                "account":account,
                 "seen_message_ids":sorted(seen)[-5000:],
                 "last_scan_new_count":len(fresh),
             }

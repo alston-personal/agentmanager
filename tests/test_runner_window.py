@@ -406,3 +406,20 @@ def test_github_actions_dispatch_is_bounded_public_intent():
             source_commit="9" * 40,
             payload={"repository": "attacker/repo"},
         )
+
+
+def test_oursong_dm_read_is_bounded_and_separate_from_mio():
+    intent, params = resolve_intent(
+        "persona.social.dm",
+        "oursong.read",
+        source_commit="a" * 40,
+        payload={},
+    )
+    assert intent.action == bc.ACTION_READ_OURSONG_THREADS_WEB_DM
+    assert params == {"source_commit": "a" * 40}
+    from agentos_node.bootstrap_scheduler import policy_for
+    oursong = policy_for(bc.ACTION_READ_OURSONG_THREADS_WEB_DM)
+    mio = policy_for(bc.ACTION_READ_THREADS_WEB_DM)
+    assert "threads-oursong-gui" in oursong.locks
+    assert "threads-mio-gui" in mio.locks
+    assert oursong.locks != mio.locks
