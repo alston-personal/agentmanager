@@ -1010,6 +1010,47 @@ def extract_invoice(
         legacy.raw.setdefault("timings_ms", {})["vision_ms"] = round((time.perf_counter() - vision_started) * 1000, 1)
         fields, issues = vision_ocr.validated_fields(result['payload'])
         uncertain = set(result['payload'].get('uncertain_fields') or [])
+        amount_retry = None
+        amount_retry_sources = {}
+        missing_money = [key for key in vision_ocr.MONEY_FIELDS if fields.get(key) is None]
+        if missing_money:
+            retry_started = time.perf_counter()
+            try:
+                amount_retry = vision_ocr.read_amounts(
+                    image_bytes,
+                    api_key=os.environ.get('GEMINI_API_KEY', ''),
+                    model=config['model'],
+                )
+                retry_payload = amount_retry['payload']
+                retry_uncertain = set(retry_payload.get('uncertain_fields') or [])
+                for key in missing_money:
+                    value = retry_payload.get(key)
+                    if value is not None:
+                        fields[key] = value
+                        result['payload'][key] = value
+                        amount_retry_sources[key] = 'image_amount_crop'
+                        if key in retry_uncertain:
+                            uncertain.add(key)
+                        else:
+                            uncertain.discard(key)
+                legacy.raw.setdefault("timings_ms", {})["vision_amount_retry_ms"] = round(
+                    (time.perf_counter() - retry_started) * 1000, 1
+                )
+            except Exception as retry_exc:
+                amount_retry = {
+                    'status': (
+                        str(retry_exc)
+                        if isinstance(retry_exc, vision_ocr.VisionError)
+                        else 'INVALID_RESPONSE'
+                    )
+                }
+
+        # Re-run arithmetic review after targeted retry filled any missing money fields.
+        if all(fields.get(key) is not None for key in vision_ocr.MONEY_FIELDS):
+            issues = [x for x in issues if x != 'amount_sum_mismatch']
+            if fields['amount_before_tax'] + fields['tax_amount'] != fields['total_amount']:
+                issues.append('amount_sum_mismatch')
+
         field_trace = {}
         for key in vision_ocr.CORE_FIELDS:
             alias = 'seller_name' if key == 'vendor_name' else key
@@ -1028,9 +1069,13 @@ def extract_invoice(
                 'raw_text': candidate,
                 'value': value,
                 'status': trace_status,
-                'source': 'image_main',
+                'source': amount_retry_sources.get(key, 'image_main'),
                 'reason': reason,
-                'evidence_region': None,
+                'evidence_region': (
+                    amount_retry.get('crop')
+                    if amount_retry_sources.get(key) == 'image_amount_crop' and isinstance(amount_retry, dict)
+                    else None
+                ),
             }
     except Exception as exc:
         legacy.raw['vision']['status'] = str(exc) if isinstance(exc, vision_ocr.VisionError) else 'INVALID_RESPONSE'
@@ -1039,8 +1084,9 @@ def extract_invoice(
     result.update({
         'status': 'SUCCEEDED',
         'mode': config['mode'],
-        'validation_issues': issues,
+        'validation_issues': sorted(set(issues)),
         'field_trace': field_trace,
+        'amount_retry': amount_retry,
     })
     comparison = {key: {'legacy': legacy.fields.get(key), 'vision': fields.get(key),
                         'equal': legacy.fields.get(key) == fields.get(key)} for key in vision_ocr.CORE_FIELDS}
