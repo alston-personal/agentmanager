@@ -10,6 +10,7 @@ on:
       - 'scripts/lobster.py'
       - 'tests/test_runtime_ownership.py'
       - 'tests/test_work_completion.py'
+      - 'tests/test_lobster_completion_selection.py'
       - '.github/workflows/runtime-completion-governance.yml'
       - '.github/workflows/**'
   push:
@@ -43,7 +44,7 @@ jobs:
       - name: Compile completion and executor integration
         run: python3 -m py_compile scripts/work_completion.py scripts/lobster.py scripts/check_runtime_ownership.py
       - name: Run durable completion regressions
-        run: python3 -m unittest -v tests.test_work_completion tests.test_runtime_ownership
+        run: python3 -m unittest -v tests.test_work_completion tests.test_runtime_ownership tests.test_lobster_completion_selection
       - name: Enforce no new shared-runtime mutation
         if: github.event_name == 'pull_request'
         run: python3 scripts/check_runtime_ownership.py origin/main HEAD
