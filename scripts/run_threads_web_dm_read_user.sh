@@ -23,17 +23,29 @@ test -f "$STAGE/scripts/threads_web_dm_bridge_user.py"
 echo "threads_web_dm_stage=PASS"
 
 set +e
-PYTHONPATH="$STAGE" python3 - <<'PY'
+AGENTOS_DM_STAGE="$STAGE" PYTHONPATH="$STAGE" python3 - <<'PY'
+import os
+from pathlib import Path
+stage=Path(os.environ["AGENTOS_DM_STAGE"]).resolve()
 try:
-    import agentos_node.social.web_dm
+    import agentos_node.social.web_dm as web_dm
+    import agentos_node.social.persona_dm as persona_dm
     print("threads_web_dm_import_web_dm=PASS")
+    origins=[Path(web_dm.__file__).resolve(),Path(persona_dm.__file__).resolve()]
+    if all(stage in p.parents for p in origins):
+        print("threads_web_dm_import_origin=PASS")
+    else:
+        print("threads_web_dm_import_origin=FAIL")
+        raise SystemExit(12)
 except ModuleNotFoundError:
     print("threads_web_dm_import_web_dm=MISSING")
+    raise SystemExit(12)
 try:
     import playwright
     print("threads_web_dm_import_playwright=PASS")
 except ModuleNotFoundError:
     print("threads_web_dm_import_playwright=MISSING")
+    raise SystemExit(13)
 PY
 OUT="$(PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
 import os, re, runpy, sys
