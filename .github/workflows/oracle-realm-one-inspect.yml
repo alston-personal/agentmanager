@@ -26,6 +26,7 @@ jobs:
           import json, subprocess
           from pathlib import Path
           from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
 
           def run(argv):
               p=subprocess.run(argv,text=True,capture_output=True,check=False,timeout=10)
@@ -58,6 +59,17 @@ jobs:
                       break
               return rows
 
+          fabric=RealmFabricStore().load()
+          pending=[]
+          for task in list((fabric.get('tasks') or {}).get('vopc5750') or []):
+              if not isinstance(task,dict):
+                  continue
+              pending.append({
+                  'task_id':task.get('task_id'),
+                  'action':task.get('action'),
+                  'queued_at':task.get('queued_at'),
+              })
+
           result={
               'schema':'agentos.one-runtime-inspection/v0.4',
               'identity':run(['bash','-lc','id; groups']),
@@ -73,6 +85,7 @@ jobs:
               'benchmark_surface':run(['bash','-lc',"curl -sS --max-time 3 -i -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:8780/v1/benchmark || true"]),
               'runtime_converge_receipts':relay_receipts(),
               'node_map':NodeRegistry().node_map(),
+              'vopc5750_pending_tasks':pending,
           }
           Path('/tmp/realm-one-runtime-inspection.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           print(json.dumps(result,indent=2,sort_keys=True))
