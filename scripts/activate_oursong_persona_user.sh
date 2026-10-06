@@ -62,8 +62,23 @@ if ! systemctl --user start agentos-persona-pdca-heartbeat.service; then
   exit 11
 fi
 echo "oursong_activate_stage=heartbeat_pass"
-HB_STATE="$(git -C "${HOME}/agent-data" show origin/main:personas/oursong_alstonhuang/pdca/state.json 2>/dev/null || true)"
-python3 -c 'import json,sys; s=json.load(sys.stdin); assert int(s.get("cycle") or 0)>=1; assert s.get("last_tick_at"); print("oursong_heartbeat_cutover=PASS"); print("oursong_heartbeat_cycle="+str(s["cycle"])); print("oursong_heartbeat_last_tick_at="+str(s["last_tick_at"]))' <<<"${HB_STATE}"
+HB_RECEIPT="${HOME}/.local/share/agentos/runtime/persona-pdca/heartbeat-receipt.json"
+python3 - "${HB_RECEIPT}" <<'PY'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1])
+payload=json.loads(p.read_text(encoding="utf-8"))
+assert payload.get("schema")=="agentos.persona-pdca-heartbeat-receipt/v1", payload
+assert payload.get("status")=="PASS", payload
+matches=[x for x in payload.get("personas") or [] if x.get("slug")=="oursong_alstonhuang"]
+assert len(matches)==1, payload
+row=matches[0]
+assert int(row.get("cycle") or 0)>=1, row
+assert payload.get("observed_at"), payload
+print("oursong_heartbeat_cutover=PASS")
+print("oursong_heartbeat_cycle="+str(row["cycle"]))
+print("oursong_heartbeat_last_tick_at="+str(payload["observed_at"]))
+PY
 
 mkdir -p "${PROFILE_ROOT}"
 chmod 700 "${PROFILE_ROOT}"
