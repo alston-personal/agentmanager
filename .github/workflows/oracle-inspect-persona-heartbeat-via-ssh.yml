@@ -1,0 +1,73 @@
+name: Oracle Inspect Persona Heartbeat Via SSH
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-persona-heartbeat-via-ssh.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect heartbeat producers
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo '=== IDENTITY ==='
+          id
+          echo "HOME=$HOME"
+
+          echo '=== USER TIMERS ==='
+          systemctl --user list-timers --all --no-pager 2>&1 || true
+
+          echo '=== USER UNIT FILES ==='
+          systemctl --user list-unit-files --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
+
+          echo '=== SYSTEM TIMERS/UNITS ==='
+          systemctl list-timers --all --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
+          systemctl list-unit-files --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
+
+          echo '=== USER CRONTAB ==='
+          crontab -l 2>&1 || true
+
+          echo '=== USER UNIT CONTENTS ==='
+          for f in "$HOME"/.config/systemd/user/*persona* "$HOME"/.config/systemd/user/*heartbeat*; do
+            [ -e "$f" ] || continue
+            echo "--- $f"
+            sed -n '1,220p' "$f" 2>&1 || true
+          done
+
+          echo '=== LOCAL AGENTOS MATCHES ==='
+          grep -RInsE 'advance active persona heartbeats|agentos-persona-heartbeat@users.noreply.github.com|sunlake-milkcat|oursong_alstonhuang'             "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/.config/systemd/user" 2>/dev/null | head -n 500 || true
+
+          echo '=== RUNNING MATCHES ==='
+          ps -eo user,pid,ppid,lstart,args | grep -Ei '[p]ersona|[h]eartbeat|sunlake-milkcat|oursong_alstonhuang' || true
+
+          echo '=== GIT IDENTITY ==='
+          git config --global --get user.name 2>/dev/null || true
+          git config --global --get user.email 2>/dev/null || true
+
+          echo '=== KNOWN PDCA UNITS ==='
+          systemctl --user --no-pager --full status             agentos-persona-pdca-heartbeat.timer             agentos-persona-pdca-heartbeat.service             agentos-persona-social-actions.timer             agentos-persona-social-actions.service 2>&1 || true
+
+          echo 'mutation=NONE'
+          REMOTE
