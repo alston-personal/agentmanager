@@ -78,7 +78,7 @@ def classify_review(
 
     meaningful_fields = (
         "invoice_number", "invoice_date", "vendor_name", "seller_tax_id",
-        "amount_before_tax", "total_amount",
+        "amount_before_tax", "tax_amount", "total_amount",
     )
     meaningful_count = sum(fields.get(key) not in (None, "") for key in meaningful_fields)
 
@@ -951,11 +951,11 @@ def vision_route_reason(legacy: "Extraction") -> str | None:
         return "low_confidence:" + ",".join(low_conf)
 
     template = legacy.raw.get("template") or {}
-    if (
-        template.get("document_type") == "three_part_uniform_invoice"
-        and not (legacy.raw.get("line_items") or [])
-    ):
-        return "missing_line_items"
+    if template.get("document_type") == "three_part_uniform_invoice":
+        if legacy.fields.get("buyer_tax_id") in (None, ""):
+            return "missing:buyer_tax_id"
+        if not (legacy.raw.get("line_items") or []):
+            return "missing_line_items"
 
     return None
 
