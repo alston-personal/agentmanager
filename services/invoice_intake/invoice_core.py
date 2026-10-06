@@ -1012,7 +1012,10 @@ def extract_invoice(
         uncertain = set(result['payload'].get('uncertain_fields') or [])
         amount_retry = None
         amount_retry_sources = {}
-        missing_money = [key for key in vision_ocr.MONEY_FIELDS if fields.get(key) is None]
+        missing_money = [
+            key for key in vision_ocr.MONEY_FIELDS
+            if fields.get(key) is None and legacy.fields.get(key) in (None, '')
+        ]
         if missing_money:
             retry_started = time.perf_counter()
             try:
