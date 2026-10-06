@@ -157,6 +157,7 @@ def reprocess_invoice(invoice_id: str, request: Request, background_tasks: Backg
     except KeyError:
         raise HTTPException(status_code=404, detail="invoice_not_found")
     except Exception as exc:
+        print(f"invoice_reprocess_request=error type:{type(exc).__name__}", flush=True)
         raise HTTPException(status_code=422, detail=f"invoice_reprocess_failed:{type(exc).__name__}") from exc
     return {"ok": True, "invoice": result}
 
