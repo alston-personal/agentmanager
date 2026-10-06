@@ -379,3 +379,30 @@ def test_vision_studio_scheduler_policy():
     assert policy.role == "gui"
     assert "media.vision-studio.produce" in policy.capabilities
     assert "oracle-gui-profile" in policy.locks
+
+
+def test_github_actions_dispatch_is_bounded_public_intent():
+    intent, params = resolve_intent(
+        "github.actions",
+        "workflow.dispatch",
+        source_commit="9" * 40,
+        payload={
+            "workflow": "oursong-persona-activation.yml",
+            "ref": "core/integration",
+            "inputs": {},
+        },
+    )
+    assert intent.action == bc.ACTION_GITHUB_ACTIONS_DISPATCH
+    assert params == {
+        "source_commit": "9" * 40,
+        "workflow": "oursong-persona-activation.yml",
+        "ref": "core/integration",
+        "inputs": {},
+    }
+    with pytest.raises(ValueError):
+        resolve_intent(
+            "github.actions",
+            "workflow.dispatch",
+            source_commit="9" * 40,
+            payload={"repository": "attacker/repo"},
+        )
