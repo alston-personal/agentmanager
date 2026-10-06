@@ -296,9 +296,36 @@ jobs:
               processing = db.execute(
                   "SELECT COUNT(*) FROM invoices WHERE status='processing' AND deleted_at IS NULL"
               ).fetchone()[0]
+              errors = db.execute(
+                  "SELECT COUNT(*) FROM invoices WHERE status='error' AND deleted_at IS NULL"
+              ).fetchone()[0]
+              latest = db.execute(
+                  """SELECT e.payload_json
+                     FROM invoices i
+                     JOIN extractions e ON e.document_id=i.document_id
+                     WHERE i.status='error' AND i.deleted_at IS NULL
+                     ORDER BY e.rowid DESC LIMIT 1"""
+              ).fetchone()
           stale = len(store.stale_processing_ids(limit=500))
-          print(f'invoice_processing_health=processing:{processing} stale:{stale}')
+          print(f'invoice_processing_health=processing:{processing} stale:{stale} errors:{errors}')
+          if latest:
+              import json
+              payload = json.loads(latest[0])
+              error = payload.get('error') or {}
+              vision = payload.get('vision') or {}
+              print(
+                  'invoice_latest_error='
+                  f"engine:{payload.get('engine')} "
+                  f"stage:{error.get('stage')} "
+                  f"type:{error.get('type')} "
+                  f"vision_status:{vision.get('status')} "
+                  f"vision_error_type:{vision.get('error_type')}"
+              )
           PY
+          echo '--- recent invoice runtime errors ---'
+          journalctl --user -u invoice-intake.service --since '-30 minutes' --no-pager \
+            | grep -E 'invoice_process=error|invoice_vision_enrichment=error|invoice_deep_fallback=error' \
+            | tail -n 20 || true
           echo 'invoice_intake_service=PASS'
           REMOTE
 
