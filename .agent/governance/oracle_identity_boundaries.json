@@ -1,6 +1,6 @@
 {
   "schema": "agentos.oracle-identity-boundaries/v1",
-  "policy_version": "2026.10.06.3",
+  "policy_version": "2026.10.06.4",
   "shared_group": "agentos",
   "roots": {
     "source_cache": {
@@ -194,6 +194,26 @@
       "risk": "P1",
       "classification": "migration-staging-boundary",
       "reason": "one-time product extraction staging writes the dedicated studio-web target; shared agent-data appears only in dependency-scan text"
+    },
+    ".github/workflows/oracle-deploy-layoutlib-web.yml": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
+    },
+    ".github/workflows/oracle-integrate-layoutlab-official-site.yml": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
+    },
+    ".github/workflows/oracle-layoutlib-hardening.yml": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
+    },
+    ".github/workflows/oracle-register-layoutlib.yml": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
     }
   },
   "closure_classifications": {
@@ -212,12 +232,8 @@
     "purpose": "Temporary explicit baseline for #1178. Existing heuristic P0 findings remain unresolved; any new unreviewed P0 path is a regression.",
     "issue": 1178,
     "paths": [
-      ".github/workflows/oracle-deploy-layoutlib-web.yml",
-      ".github/workflows/oracle-integrate-layoutlab-official-site.yml",
-      ".github/workflows/oracle-layoutlib-hardening.yml",
-      ".github/workflows/oracle-register-layoutlib.yml",
       "scripts/deploy_layoutlab_official_v2.py"
     ],
-    "rule": "Baseline membership is not approval or closure. Only unresolved heuristic P0 findings remain."
+    "rule": "Only the remaining explicit legacy Layout Lab deployment helper is unresolved P0. Retired workflow stubs are not approval for any future mutating replacement."
   }
 }
