@@ -293,6 +293,54 @@ def _seed_verify_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
     finally:
         _run(["rm", "-rf", str(verify_root)], cwd=Path.home(), timeout=30)
 
+
+def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch one explicitly allowlisted GitHub Actions workflow.
+
+    GitHub credentials remain owned by the ubuntu relay identity. Callers may
+    select only a registered workflow/ref pair and JSON object inputs; arbitrary
+    repositories, workflow paths, refs, CLI flags, and shell text are rejected.
+    """
+    allowed = {
+        ("alston-personal/agentmanager", "oursong-persona-activation.yml", "core/integration"),
+    }
+    repository = str(params.get("repository") or "")
+    workflow = str(params.get("workflow") or "")
+    ref = str(params.get("ref") or "")
+    inputs = params.get("inputs") or {}
+    if (repository, workflow, ref) not in allowed:
+        raise ValueError("GitHub Actions dispatch target is not allowlisted")
+    if not isinstance(inputs, dict):
+        raise ValueError("GitHub Actions dispatch inputs must be an object")
+    if inputs:
+        raise ValueError("this workflow does not accept dispatch inputs")
+
+    auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
+    if auth["returncode"] != 0:
+        return {
+            "ok": False,
+            "repository": repository,
+            "workflow": workflow,
+            "ref": ref,
+            "auth": auth,
+            "error": "ubuntu GitHub identity is not authenticated",
+        }
+
+    dispatch = _run([
+        "/usr/bin/gh", "workflow", "run", workflow,
+        "--repo", repository,
+        "--ref", ref,
+    ], cwd=Path.home(), timeout=30)
+    ok = dispatch["returncode"] == 0
+    return {
+        "ok": ok,
+        "repository": repository,
+        "workflow": workflow,
+        "ref": ref,
+        "dispatched": ok,
+        "dispatch": dispatch,
+    }
+
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
     return _restart_user_service("layoutlab-api.service")
@@ -319,6 +367,7 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "layoutlab.static.deploy": _layoutlab_static_deploy,
     "github.repo.ensure_studio_web": _ensure_studio_web_remote,
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
+    "github.actions.workflow.dispatch": _github_actions_dispatch,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
     "agentos.project.publish_continuation": _publish_project_continuation,
