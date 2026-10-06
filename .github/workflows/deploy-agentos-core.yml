@@ -1,5 +1,6 @@
 name: Deploy Distributed AgentOS Core
 # diagnostic trigger: post recovery/converge state
+# refresh: layoutlib promoter converge verification
 
 on:
   push:
