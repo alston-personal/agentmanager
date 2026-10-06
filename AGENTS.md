@@ -28,6 +28,8 @@ AgentOS currently contains, among other components:
 
 The model-independent **Cognitive IR / zero-cost arbitrary model switching** layer is still research unless and until a repeatable benchmark proves it.
 
+AgentOS Growth Proof is a first-class acceptance criterion for cognitive/runtime changes. A growth claim requires later independent reuse plus measurable uplift against a controlled baseline; persistence or memory alone is insufficient. The OCR counterfactual benchmark in `agent_core/ocr_growth_proof.py` is the first executable G3 proof harness and emits `agentos.growth-proof-receipt/v1` evidence.
+
 ## Critical constraints
 
 - Preserve Logic/Data separation: mutable user/project state must not be accidentally committed into the logic repository.
@@ -112,6 +114,7 @@ Acceptance for a public-discoverable route requires both the `agentos.web-static
 python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
 python3 -m unittest tests.test_protected_branch_authority -v
+python3 -m unittest tests.test_ocr_growth_proof -v
 python3 -m unittest tests.test_production_parity_receipt -v
 python3 scripts/documentation_reality_guard.py
 ```
