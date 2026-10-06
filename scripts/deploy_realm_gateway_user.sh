@@ -549,6 +549,20 @@ echo "public_dispatch_http=$PD_CODE prefix=$(head -c 240 "$PD_BODY" 2>/dev/null 
 ! grep -q 'Realm gateway route not allowlisted' "$PD_BODY"
 echo "realm_gateway_dispatch_public=PASS"
 
+REALM_PROVENANCE="$DATA_ROOT/runtime/realm-fabric/provenance.json"
+mkdir -p "$(dirname "$REALM_PROVENANCE")"
+python3 - "$REALM_PROVENANCE" "$SOURCE_COMMIT" <<'PY'
+import json,os,sys,tempfile
+from datetime import datetime,timezone
+from pathlib import Path
+p=Path(sys.argv[1]); sha=sys.argv[2]
+payload={"schema":"agentos.realm-runtime-provenance/v1","source_commit":sha,"accepted_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z")}
+fd,tmp=tempfile.mkstemp(prefix=p.name+".",dir=p.parent)
+with os.fdopen(fd,"w",encoding="utf-8") as f:
+    json.dump(payload,f,sort_keys=True,indent=2); f.write("\\n")
+os.chmod(tmp,0o664); os.replace(tmp,p)
+PY
+echo "realm_runtime_provenance=$REALM_PROVENANCE"
 echo "realm_gateway_source_commit=$SOURCE_COMMIT"
 echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
 echo "nginx_mutation=NONE"

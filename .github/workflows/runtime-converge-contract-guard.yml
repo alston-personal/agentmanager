@@ -17,12 +17,15 @@ on:
       - 'scripts/bootstrap_runtime_converger_oracle.sh'
       - 'scripts/reconcile_action_relay_runtime.py'
       - 'scripts/maintenance.py'
+      - 'scripts/accept_runtime_generation_user.py'
+      - 'scripts/deploy_realm_gateway_user.sh'
       - '.github/workflows/deploy-agentos-core.yml'
       - 'tests/test_runtime_converge_contract.py'
       - 'tests/test_runtime_converge_action_relay.py'
       - 'tests/test_runtime_converge_capability.py'
       - 'tests/test_runtime_converge_bootstrap_contract.py'
       - 'tests/test_action_relay_generation_reconcile.py'
+      - 'tests/test_runtime_generation_acceptance.py'
       - '.github/workflows/runtime-converge-contract-guard.yml'
   workflow_dispatch:
 
@@ -49,3 +52,4 @@ jobs:
           tests/test_runtime_converge_capability.py
           tests/test_runtime_converge_bootstrap_contract.py
           tests/test_action_relay_generation_reconcile.py
+          tests/test_runtime_generation_acceptance.py
