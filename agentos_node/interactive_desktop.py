@@ -164,11 +164,18 @@ def preview_capture(workspace: Path, *, max_width: int = 480, max_height: int = 
     import io
     source = Image.open(io.BytesIO(raw)).convert('RGB')
     source.thumbnail((max_width, max_height))
-    buf = io.BytesIO()
-    source.save(buf, format='JPEG', quality=quality, optimize=True)
-    preview = buf.getvalue()
-    if len(preview) > 120_000:
-        raise RuntimeError(f'preview exceeds evidence limit: {len(preview)} bytes')
+    current_quality = quality
+    preview = b''
+    while True:
+        buf = io.BytesIO()
+        source.save(buf, format='JPEG', quality=current_quality, optimize=True)
+        preview = buf.getvalue()
+        if len(preview) <= 40_000:
+            break
+        if source.width <= 160 or source.height <= 90:
+            raise RuntimeError(f'preview exceeds transport limit: {len(preview)} bytes')
+        source.thumbnail((max(160, source.width * 4 // 5), max(90, source.height * 4 // 5)))
+        current_quality = max(20, current_quality - 5)
     return {
         'mime_type': 'image/jpeg',
         'bytes': len(preview),
