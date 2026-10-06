@@ -1,0 +1,66 @@
+name: Vision Studio Flow Recover
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/vision-studio-flow-recover.json'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery command
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          p=json.load(open('.agentos/commands/vision-studio-flow-recover.json',encoding='utf-8'))
+          assert p == {
+            "schema":"agentos.vision-studio-flow-recover/v1",
+            "project_id":"rain-exit-v001",
+            "shot_id":"s01",
+            "nonce":"recover-rain-exit-s01-20261006-r1"
+          }
+          print("vision_studio_flow_recover_command=APPROVED")
+          PY
+      - name: Mint OIDC credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+      - name: Recover latest Flow result
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=240 \
+            bash scripts/agentos_dispatch.sh media.google-flow recover "$GITHUB_SHA" \
+            | tee "$RUNNER_TEMP/flow-recover.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/flow-recover.txt"
+      - name: Upload recovery receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-studio-flow-recover-${{ github.run_id }}
+          path: ${{ runner.temp }}/flow-recover.txt
+          if-no-files-found: warn
+          retention-days: 7
