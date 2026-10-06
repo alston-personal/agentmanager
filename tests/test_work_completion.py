@@ -167,6 +167,53 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertEqual(resumed["owner_generation"], 2)
             self.assertIn("[WI:wi-stale]", mod.board_projection(path))
 
+    def test_stale_lobster_owner_is_reclaimed_to_controller(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            item = mod.register(
+                path,
+                work_id="wi-lobster-stale",
+                project_id="agentmanager",
+                title="must recover executor crash",
+                owner="role://completion.controller",
+                next_action="finish implementation",
+                acceptance=["verified"],
+                lease_seconds=60,
+            )
+            mod.transition(
+                path,
+                work_id="wi-lobster-stale",
+                target="in_progress",
+                actor="role://lobster",
+                next_action=item["next_action"],
+                lease_seconds=60,
+            )
+            mod.handoff(
+                path,
+                work_id="wi-lobster-stale",
+                actor="role://completion.controller",
+                new_owner="role://lobster",
+                next_action=item["next_action"],
+                lease_seconds=60,
+            )
+            state = mod.load(path)
+            state["items"]["wi-lobster-stale"]["lease_expires_at"] = "2000-01-01T00:00:00+00:00"
+            mod.save(path, state)
+
+            reclaimed = mod.reclaim_stale(path, lease_seconds=600)
+            self.assertEqual(reclaimed, ["wi-lobster-stale"])
+            resumed = mod.load(path)["items"]["wi-lobster-stale"]
+            self.assertEqual(resumed["owner"], "role://completion.controller")
+            self.assertEqual(resumed["status"], "in_progress")
+            self.assertTrue(
+                any(
+                    h.get("event") == "stale_reclaim"
+                    and h.get("from_owner") == "role://lobster"
+                    and h.get("to_owner") == "role://completion.controller"
+                    for h in resumed["history"]
+                )
+            )
+
     def test_live_external_owner_is_not_projected_to_lobster(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)
