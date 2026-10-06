@@ -85,3 +85,11 @@ class OursongBootstrapAcceptanceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OursongActivationIsolationTests(unittest.TestCase):
+    def test_activation_does_not_install_or_start_shared_persona_heartbeat(self):
+        text=(Path(__file__).resolve().parents[1] / "scripts" / "activate_oursong_persona_user.sh").read_text()
+        self.assertNotIn('install -m 0755 "${RELEASE}/scripts/persona_pdca_heartbeat_user.py"', text)
+        self.assertNotIn('systemctl --user start agentos-persona-pdca-heartbeat.service', text)
+        self.assertIn('oursong_heartbeat_ownership=external', text)
