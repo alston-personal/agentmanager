@@ -22,7 +22,8 @@ WorkingDirectory=$RELEASE
 Environment=PYTHONPATH=$RELEASE
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
 Environment=AGENTOS_SOURCE_COMMIT=$SOURCE_COMMIT
-EnvironmentFile=-$DATA_ROOT/runtime/realm/realm.env
+EnvironmentFile=-$HOME/.config/agentos/controller.env
+Environment=AGENTOS_RUNNER_WINDOW_BASE=http://127.0.0.1:8780
 ExecStart=/usr/bin/python3 -m agentos_node.monitor_runtime tick
 TimeoutStartSec=90
 CPUAccounting=true
