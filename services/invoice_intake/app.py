@@ -24,26 +24,37 @@ store = InvoiceStore(DATA_ROOT, data_scope=DATA_SCOPE)
 app = FastAPI(title="Milkcat Invoice Intake", version=VERSION)
 
 
-def _recover_stale_processing_on_startup() -> None:
+def _recover_stale_processing_once() -> None:
     try:
         result = store.recover_stale_processing(limit=50)
-        print(
-            "invoice_stale_recovery="
-            f"attempted:{result['attempted']} "
-            f"recovered:{len(result['recovered'])} "
-            f"failed:{len(result['failed'])}",
-            flush=True,
-        )
+        if result["attempted"]:
+            print(
+                "invoice_stale_recovery="
+                f"attempted:{result['attempted']} "
+                f"recovered:{len(result['recovered'])} "
+                f"failed:{len(result['failed'])}",
+                flush=True,
+            )
     except Exception as exc:
         print(f"invoice_stale_recovery=ERROR type={type(exc).__name__}", flush=True)
 
 
+def _stale_processing_recovery_loop() -> None:
+    # A one-shot startup scan can miss records whose updated_at was refreshed
+    # immediately before a deploy. Re-scan periodically so no orphaned
+    # processing row can remain stuck forever.
+    interval = max(10, min(300, int(os.environ.get("INVOICE_STALE_SWEEP_SECONDS", "30"))))
+    while True:
+        _recover_stale_processing_once()
+        threading.Event().wait(interval)
+
+
 @app.on_event("startup")
 def start_stale_processing_recovery() -> None:
-    # OCR is intentionally resumed on a daemon thread so service readiness is not
-    # blocked by old documents after deploy/restart.
+    # OCR recovery runs on a daemon thread so readiness is never blocked by old
+    # documents. The loop also catches records that become stale after startup.
     threading.Thread(
-        target=_recover_stale_processing_on_startup,
+        target=_stale_processing_recovery_loop,
         name="invoice-stale-processing-recovery",
         daemon=True,
     ).start()
