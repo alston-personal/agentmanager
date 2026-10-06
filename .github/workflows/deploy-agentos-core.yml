@@ -125,6 +125,9 @@ jobs:
             exit 2
           fi
 
+      - name: Checkout workflow source for validation
+        uses: actions/checkout@v4
+
       - name: Validate bounded recovery carrier
         shell: bash
         run: |
