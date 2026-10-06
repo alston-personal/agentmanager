@@ -99,6 +99,27 @@ with sync_playwright() as p:
         except Exception:
             pass
 
+    # If recovery resumes directly inside a Flow project, surface bounded
+    # project state before looking for media. This helps distinguish generation
+    # failure / pending state / alternate result DOM from "no video".
+    if "/project/" in str(page.url or ""):
+        try:
+            project_body=page.locator("body").inner_text(timeout=3000) or ""
+            project_text=" ".join(project_body.split())[:900]
+            if project_text:
+                print("google_flow_recover_project_text="+project_text)
+        except Exception:
+            pass
+        try:
+            counts={
+                "video":page.locator("video").count(),
+                "img":page.locator("img").count(),
+                "button":page.locator("button").count(),
+            }
+            print("google_flow_recover_project_media_counts="+json.dumps(counts,separators=(",",":")))
+        except Exception:
+            pass
+
     # Collect visible videos with bounded surrounding text so recovery can
     # distinguish a real project result from Flow's generic demo media.
     candidates_meta=[]
