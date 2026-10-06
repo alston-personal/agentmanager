@@ -147,3 +147,4 @@
 .github/workflows/reusable-studio-static-route-release.yml
 .github/workflows/validate-resource-registry.yml
 .github/workflows/vopc5750-multi-agent-acceptance.yml
+.github/workflows/vopc5750-semantic-preview-rollout.yml
