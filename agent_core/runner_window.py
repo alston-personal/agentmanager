@@ -30,6 +30,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("node.executor", "reconcile", bc.ACTION_REALM_EXECUTOR_RECONCILE, frozenset({"node_id"})),
     RunnerWindowIntent("media.google-flow", "generate", bc.ACTION_GOOGLE_FLOW_GENERATE, frozenset({"prompt"})),
     RunnerWindowIntent("media.google-flow", "recover", bc.ACTION_GOOGLE_FLOW_RECOVER),
+    RunnerWindowIntent("media.google-flow", "rain-exit-s01.resume-approved", bc.ACTION_GOOGLE_FLOW_RAIN_EXIT_RESUME),
     RunnerWindowIntent("media.google-vids", "generate", bc.ACTION_GOOGLE_VIDS_GENERATE, frozenset({"prompt"})),
     RunnerWindowIntent("media.vision-studio", "produce", bc.ACTION_VISION_STUDIO_PRODUCE, frozenset({"project_id"})),
     RunnerWindowIntent("browser.gui", "install", bc.ACTION_INSTALL_GUI_WORKER),
