@@ -119,10 +119,10 @@ function Install-UserRuntime([string]$Runner) {
   if(-not $running){ throw 'Per-user hidden Thin Client did not start' }
 
   $values=Get-ItemProperty -Path $runKey
-  if([string]$values.'AgentOS Thin Client User' -notmatch '(?i)-WindowStyle\s+Hidden'){
+  if(([string]($values.'AgentOS Thin Client User')) -notmatch '(?i)-WindowStyle\s+Hidden'){
     throw 'Per-user Thin Client autorun is not hidden'
   }
-  if([string]$values.'AgentOS Thin Client Watchdog User' -notmatch '(?i)-WindowStyle\s+Hidden'){
+  if(([string]($values.'AgentOS Thin Client Watchdog User')) -notmatch '(?i)-WindowStyle\s+Hidden'){
     throw 'Per-user watchdog autorun is not hidden'
   }
 
