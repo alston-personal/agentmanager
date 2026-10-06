@@ -228,7 +228,7 @@ def official_snapshot(source:str) -> DispatchResult:
         return DispatchResult(False,{},{"capability":"web.official.snapshot","source":source},exc.__class__.__name__)
 
 def one_dispatch(capability:str, operation:str, payload:dict[str,Any], source_commit:str) -> DispatchResult:
-    base=os.environ.get("AGENTOS_RUNNER_WINDOW_BASE","http://127.0.0.1:8765")
+    base=os.environ.get("AGENTOS_RUNNER_WINDOW_BASE","http://127.0.0.1:8780")
     token=os.environ.get("AGENTOS_CONTROLLER_TOKEN","")
     if not token:
         return DispatchResult(False,{},{"capability":capability,"operation":operation},"AUTH_REQUIRED")
