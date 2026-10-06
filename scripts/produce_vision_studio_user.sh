@@ -68,11 +68,15 @@ for i in 0 1 2 3; do
   if [[ "$status" != "PASS" || -z "$out" || ! -s "$out" ]]; then
     flow_class="$(awk -F= '/^google_flow_runtime_error_class=/{print $2}' "$log" | tail -n1)"
     flow_exc="$(awk -F= '/^google_flow_runtime_exception_type=/{print $2}' "$log" | tail -n1)"
+    flow_line="$(awk -F= '/^google_flow_runtime_syntax_line=/{print $2}' "$log" | tail -n1)"
+    flow_offset="$(awk -F= '/^google_flow_runtime_syntax_offset=/{print $2}' "$log" | tail -n1)"
     flow_stage="$(awk -F= '/^google_flow_stage=/{print $2}' "$log" | tail -n1)"
     flow_host="$(awk -F= '/^google_flow_host=/{print $2}' "$log" | tail -n1)"
     echo "vision_studio_flow_status=${status:-MISSING}"
     if [[ -n "$flow_class" ]]; then echo "vision_studio_flow_error_class=$flow_class"; fi
     if [[ -n "$flow_exc" ]]; then echo "vision_studio_flow_exception_type=$flow_exc"; fi
+    if [[ -n "$flow_line" ]]; then echo "vision_studio_flow_syntax_line=$flow_line"; fi
+    if [[ -n "$flow_offset" ]]; then echo "vision_studio_flow_syntax_offset=$flow_offset"; fi
     if [[ -n "$flow_stage" ]]; then echo "vision_studio_flow_stage=$flow_stage"; fi
     if [[ -n "$flow_host" ]]; then echo "vision_studio_flow_host=$flow_host"; fi
     echo "vision_studio_produce=SHOT_ARTIFACT_MISSING"
