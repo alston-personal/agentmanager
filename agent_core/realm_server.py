@@ -493,6 +493,14 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'threads_web_dm_autonomous=',
                     'threads_web_dm_python_rc=',
                 )
+            elif action == bootstrap_control.ACTION_START_THREADS_WEB_DM_LOGIN:
+                safe_prefixes = (
+                    'threads_web_dm_login_start=',
+                    'threads_web_dm_login_mode=',
+                    'threads_web_dm_login_browser_persistent=',
+                    'threads_web_dm_login_remote_view=',
+                    'threads_web_dm_login_transport=',
+                )
             elif action == bootstrap_control.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR:
                 safe_prefixes = (
                     'mio_threads_session_supervisor_install=',
