@@ -374,40 +374,51 @@ def extract_legacy_invoice(
                 fields[key] = value
                 confidence[key] = float((rapid.get("confidence") or {}).get(key) or 0.0)
 
-    # Match a cropped/normalized stamp before expensive stamp OCR. A text/entity
-    # agreement is never sufficient to claim the same physical stamp.
+    # Baseline-first safety: new stamp assistance must never be required for
+    # production recognition. Default mode keeps the pre-assist OCR path intact.
+    # Use INVOICE_STAMP_ASSIST_MODE=active only after acceptance proves no regression.
+    stamp_mode = str(os.environ.get("INVOICE_STAMP_ASSIST_MODE", "legacy")).strip().lower()
+    if stamp_mode not in {"legacy", "shadow", "active"}:
+        stamp_mode = "legacy"
     stamp_started = time.perf_counter()
-    stamp_regions = detect_stamp_regions(image_bytes)
+    stamp_regions = []
     raw["stamp_recognition"] = {
-        "status": "NO_STAMP_CANDIDATE" if not stamp_regions else "CANDIDATE",
-        "regions": [
-            {"box": list(region.box), "confidence": region.confidence, "color_hint": region.color_hint}
-            for region in stamp_regions
-        ],
+        "mode": stamp_mode,
+        "status": "DISABLED_BASELINE" if stamp_mode == "legacy" else "NO_STAMP_CANDIDATE",
+        "regions": [],
     }
-    if stamp_store is not None and stamp_regions:
-        stamp_fp = fingerprint_stamp(image_bytes, stamp_regions[0])
-        stamp_match = stamp_store.match(stamp_fp)
+    if stamp_mode in {"shadow", "active"}:
+        stamp_regions = detect_stamp_regions(image_bytes)
         raw["stamp_recognition"].update({
-            "decision": stamp_match.decision,
-            "score": stamp_match.score,
-            "stamp_id": stamp_match.stamp_id,
-            "entity_id": stamp_match.entity_id,
-            "algorithm": stamp_fp.algorithm,
-            "version": stamp_fp.version,
+            "status": "NO_STAMP_CANDIDATE" if not stamp_regions else "CANDIDATE",
+            "regions": [
+                {"box": list(region.box), "confidence": region.confidence, "color_hint": region.color_hint}
+                for region in stamp_regions
+            ],
         })
-        if stamp_match.decision == "same_stamp" and stamp_match.stamp_id:
-            remembered = stamp_store.resolve_verified_attributes(stamp_match.stamp_id)
-            if not fields["vendor_name"] and remembered.get("vendor_name"):
-                fields["vendor_name"] = remembered["vendor_name"]
-                confidence["vendor_name"] = 0.99
-            if not fields["seller_tax_id"] and remembered.get("seller_tax_id"):
-                fields["seller_tax_id"] = remembered["seller_tax_id"]
-                confidence["seller_tax_id"] = 0.99
-            raw["stamp_recognition"]["status"] = "MATCHED_CONFIRMED"
-            raw["stamp_recognition"]["remembered_attributes"] = sorted(
-                key for key in ("vendor_name", "seller_tax_id") if remembered.get(key)
-            )
+        if stamp_store is not None and stamp_regions:
+            stamp_fp = fingerprint_stamp(image_bytes, stamp_regions[0])
+            stamp_match = stamp_store.match(stamp_fp)
+            raw["stamp_recognition"].update({
+                "decision": stamp_match.decision,
+                "score": stamp_match.score,
+                "stamp_id": stamp_match.stamp_id,
+                "entity_id": stamp_match.entity_id,
+                "algorithm": stamp_fp.algorithm,
+                "version": stamp_fp.version,
+            })
+            if stamp_mode == "active" and stamp_match.decision == "same_stamp" and stamp_match.stamp_id:
+                remembered = stamp_store.resolve_verified_attributes(stamp_match.stamp_id)
+                if not fields["vendor_name"] and remembered.get("vendor_name"):
+                    fields["vendor_name"] = remembered["vendor_name"]
+                    confidence["vendor_name"] = 0.99
+                if not fields["seller_tax_id"] and remembered.get("seller_tax_id"):
+                    fields["seller_tax_id"] = remembered["seller_tax_id"]
+                    confidence["seller_tax_id"] = 0.99
+                raw["stamp_recognition"]["status"] = "MATCHED_CONFIRMED"
+                raw["stamp_recognition"]["remembered_attributes"] = sorted(
+                    key for key in ("vendor_name", "seller_tax_id") if remembered.get(key)
+                )
     raw["stamp_recognition"]["latency_ms"] = round((time.perf_counter() - stamp_started) * 1000, 1)
 
     timings_ms["stamp_detect_match_ms"] = raw["stamp_recognition"]["latency_ms"]
@@ -419,7 +430,7 @@ def extract_legacy_invoice(
     amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
     stamp_crop = (
         crop_abs(image, stamp_regions[0].box)
-        if stamp_regions
+        if stamp_mode == "active" and stamp_regions
         else crop_rel(image, (0.60, 0.38, 0.98, 0.96))
     )
 
@@ -471,7 +482,7 @@ def extract_legacy_invoice(
         raw["fallback_used"].append("amounts")
 
     if not fields["seller_tax_id"]:
-        stamp_texts = ocr_stamp_text(stamp_crop, digits_only=True, fast=bool(stamp_regions))
+        stamp_texts = ocr_stamp_text(stamp_crop, digits_only=True, fast=bool(stamp_mode == "active" and stamp_regions))
         tax_ids: list[str] = []
         for stamp_text in stamp_texts:
             for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text)):
@@ -489,7 +500,7 @@ def extract_legacy_invoice(
         vendor_texts = [seller_region_text(rapid.get("raw_text") or "")]
         if rapid.get("document_type") != "three_part_uniform_invoice":
             vendor_texts.append(ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng"))
-        vendor_texts.extend(ocr_stamp_text(stamp_crop, fast=bool(stamp_regions)))
+        vendor_texts.extend(ocr_stamp_text(stamp_crop, fast=bool(stamp_mode == "active" and stamp_regions)))
         vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
         if vendor:
             fields["vendor_name"] = vendor
@@ -502,9 +513,12 @@ def extract_legacy_invoice(
     # Human-confirmed correction memory runs after ordinary OCR/stamp extraction
     # and before review classification. Strong context may correct an exact repeated
     # OCR error; weaker context is exposed only as a suggestion.
-    raw["ocr_memory"] = {"applied": [], "suggestions": []}
+    memory_mode = str(os.environ.get("INVOICE_OCR_MEMORY_MODE", "suggest")).strip().lower()
+    if memory_mode not in {"off", "suggest", "active"}:
+        memory_mode = "suggest"
+    raw["ocr_memory"] = {"mode": memory_mode, "applied": [], "suggestions": []}
     memory_started = time.perf_counter()
-    if ocr_memory is not None:
+    if ocr_memory is not None and memory_mode != "off":
         memory_context = context_from_extraction(raw, fields)
         for key, observed in list(fields.items()):
             if observed in (None, ""):
@@ -522,11 +536,15 @@ def extract_legacy_invoice(
                 "confirmed_count": decision.confirmed_count,
                 "reason": decision.reason,
             }
-            if decision.decision == "auto_correct" and decision.corrected_value not in (None, ""):
+            if (
+                memory_mode == "active"
+                and decision.decision == "auto_correct"
+                and decision.corrected_value not in (None, "")
+            ):
                 fields[key] = decision.corrected_value
                 confidence[key] = max(confidence.get(key, 0.0), 0.97)
                 raw["ocr_memory"]["applied"].append(evidence)
-            elif decision.decision == "suggest":
+            elif decision.decision in {"auto_correct", "suggest"}:
                 raw["ocr_memory"]["suggestions"].append(evidence)
 
     timings_ms["ocr_memory_ms"] = round((time.perf_counter() - memory_started) * 1000, 1)
