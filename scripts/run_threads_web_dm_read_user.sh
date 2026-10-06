@@ -18,30 +18,34 @@ fi
 STAGE="$(mktemp -d /tmp/agentos-threads-dm-read.XXXXXX)"
 trap 'rm -rf "$STAGE"' EXIT
 echo "threads_web_dm_stage=START"
-git -C "$REPO" archive "$SOURCE_COMMIT" -- \
-  agentos_node/social/web_dm.py \
-  agentos_node/social/persona_dm.py \
-  scripts/threads_web_dm_bridge_user.py \
-  scripts/mio_threads_dm_autonomous_user.py \
-  scripts/mio_persona_dm_decision_user.py \
-  scripts/mio_persona_social_loop_user.py \
-  scripts/send_mio_threads_dm_from_decision.py \
-  | tar -x -C "$STAGE"
+git -C "$REPO" archive "$SOURCE_COMMIT" | tar -x -C "$STAGE"
 test -f "$STAGE/scripts/threads_web_dm_bridge_user.py"
 echo "threads_web_dm_stage=PASS"
 
 set +e
-PYTHONPATH="$STAGE" python3 - <<'PY'
+AGENTOS_DM_STAGE="$STAGE" PYTHONPATH="$STAGE" python3 - <<'PY'
+import os
+from pathlib import Path
+stage=Path(os.environ["AGENTOS_DM_STAGE"]).resolve()
 try:
-    import agentos_node.social.web_dm
+    import agentos_node.social.web_dm as web_dm
+    import agentos_node.social.persona_dm as persona_dm
     print("threads_web_dm_import_web_dm=PASS")
+    origins=[Path(web_dm.__file__).resolve(),Path(persona_dm.__file__).resolve()]
+    if all(stage in p.parents for p in origins):
+        print("threads_web_dm_import_origin=PASS")
+    else:
+        print("threads_web_dm_import_origin=FAIL")
+        raise SystemExit(12)
 except ModuleNotFoundError:
     print("threads_web_dm_import_web_dm=MISSING")
+    raise SystemExit(12)
 try:
     import playwright
     print("threads_web_dm_import_playwright=PASS")
 except ModuleNotFoundError:
     print("threads_web_dm_import_playwright=MISSING")
+    raise SystemExit(13)
 PY
 OUT="$(PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
 import os, re, runpy, sys
