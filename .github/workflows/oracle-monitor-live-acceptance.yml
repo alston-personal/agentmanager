@@ -1,0 +1,79 @@
+name: Monitor Runtime Live Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-monitor-live-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify durable scheduler, receipts, attention and ONE contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          DB=/home/ubuntu/agent-data/runtime/monitor-runtime/monitor.sqlite3
+          systemctl --user is-active --quiet agentos-monitor-scheduler.timer
+          test -s "$DB"
+          python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          db=sqlite3.connect(sys.argv[1]); db.row_factory=sqlite3.Row
+          mids={r['monitor_id'] for r in db.execute('select monitor_id from monitors')}
+          required={'google-ai-pro-plan-watch','chatgpt-plus-plan-watch','vopc5750-health','agentos-scheduler-health','one-relay-health','threads-auth-health'}
+          assert required <= mids, required-mids
+          receipts=list(db.execute('select receipt_json from receipts order by created_at desc limit 100'))
+          assert receipts, 'no monitor receipts'
+          decoded=[json.loads(r['receipt_json']) for r in receipts]
+          assert all(not (r.get('executor_failure') and r.get('condition_triggered')) for r in decoded)
+          print('monitor_receipt_count='+str(len(receipts)))
+          print('executor_failure_condition_isolation=PASS')
+          print('monitor_durable_registration=PASS')
+          PY
+          ENV=/home/ubuntu/agent-data/runtime/realm/realm.env
+          test -s "$ENV"
+          set -a; . "$ENV"; set +a
+          test -n "${AGENTOS_CONTROLLER_TOKEN:-}"
+          BODY=/tmp/monitor-one-list.json
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 10             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"             -H 'Content-Type: application/json'             -d '{"schema":"agentos.monitor-command/v1","method":"monitor.list","params":{}}'             http://127.0.0.1:8780/v1/monitor || true)
+          test "$CODE" = 200
+          python3 - "$BODY" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d.get('ok') is True,d
+          assert d.get('method')=='monitor.list',d
+          ids={x['monitor_id'] for x in d.get('result') or []}
+          assert 'vopc5750-health' in ids,ids
+          print('one_monitor_contract=PASS')
+          PY
+          TR=/tmp/monitor-triggered.json
+          CODE=$(curl -sS -o "$TR" -w '%{http_code}' --max-time 10             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"             -H 'Content-Type: application/json'             -d '{"schema":"agentos.monitor-command/v1","method":"monitor.triggered","params":{"unread_only":true}}'             http://127.0.0.1:8780/v1/monitor || true)
+          test "$CODE" = 200
+          python3 - "$TR" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); assert d.get('ok') is True,d
+          rows=d.get('result') or []
+          assert all(x.get('schema')=='agentos.notification/v1' for x in rows)
+          print('atlas_attention_queue_read=PASS')
+          print('unread_notification_count='+str(len(rows)))
+          PY
+          echo 'monitor_live_acceptance=PASS'
+          REMOTE
