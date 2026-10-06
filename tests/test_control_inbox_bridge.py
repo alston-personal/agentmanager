@@ -455,6 +455,58 @@ def test_executor_job_receipt_projection_preserves_governance_evidence_only():
         assert forbidden not in rendered
 
 
+def test_completion_executor_receipt_projects_only_bounded_owner_evidence():
+    projected = _project_receipt({
+        'schema': 'agentos.executor-job-receipt/v1',
+        'job_id': 'action-completion-1234',
+        'job_type': 'completion.market-master-1200.register',
+        'project_id': 'market-master-evolution',
+        'executor_class': 'completion-controller',
+        'capability': 'agentos.completion.work.register',
+        'executor_available': True,
+        'routable': True,
+        'authorized': True,
+        'successful': True,
+        'credential_exposed': False,
+        'classification': 'COMPLETION_WORK_REGISTERED',
+        'verdict': 'PASS',
+        'work_id': 'market-master-1200-mvp',
+        'completion_status': 'accepted',
+        'completion_owner': 'role://completion.controller',
+        'completion_owner_generation': 1,
+        'stdout': 'private',
+        'path': '/home/ubuntu/private',
+    }, 'agentos.executor.job')
+    assert projected['work_id'] == 'market-master-1200-mvp'
+    assert projected['completion_status'] == 'accepted'
+    assert projected['completion_owner'] == 'role://completion.controller'
+    assert projected['completion_owner_generation'] == 1
+    rendered = json.dumps(projected)
+    assert 'private' not in rendered
+    assert '/home/ubuntu' not in rendered
+
+
+def test_runtime_converge_receipt_projects_failure_stage():
+    projected = _project_receipt({
+        'schema': 'agentos.runtime-converge-receipt/v1',
+        'node_id': 'oracle-core-node',
+        'task_id': 'action-stage-1234',
+        'action': 'node.runtime.converge',
+        'ok': False,
+        'repository': 'alston-personal/agentmanager',
+        'source_ref': 'core/integration',
+        'source_commit': 'a' * 40,
+        'health': 'failed',
+        'rollback': 'completed',
+        'classification': 'TARGET_HEALTH_FAILED_ROLLED_BACK',
+        'failure_stage': 'product_employee_activation',
+        'credential_exposed': False,
+        'stderr': 'private',
+    }, 'node.runtime.converge')
+    assert projected['failure_stage'] == 'product_employee_activation'
+    assert 'private' not in json.dumps(projected)
+
+
 def test_generic_execution_action_cannot_be_allowlisted(tmp_path: Path):
     with pytest.raises(ValueError, match='cannot be allowlisted'):
         _config(tmp_path, actions={'shell.exec'})
