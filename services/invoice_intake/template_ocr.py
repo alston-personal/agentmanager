@@ -492,6 +492,20 @@ def choose_three_part_amounts(text: str) -> tuple[int | None, int | None, int | 
     return None, None, total, False
 
 
+
+def choose_dual_model_amounts(
+    primary_text: str,
+    secondary_text: str,
+) -> tuple[int | None, int | None, int | None, bool]:
+    """Select an amount triple from evidence observed by either local OCR model.
+
+    Arithmetic only validates a triple whose three values are all present in
+    OCR output; it never synthesizes a missing amount.
+    """
+    combined = "\n".join(x for x in (primary_text, secondary_text) if x)
+    return choose_three_part_amounts(combined)
+
+
 def seller_region_text(text: str) -> str:
     """Only text after an explicit seller/stamp anchor; never the buyer header."""
     lines = (text or '').splitlines()
@@ -505,7 +519,7 @@ def seller_region_text(text: str) -> str:
 
 
 def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
-    from rapidocr import RapidOCR
+    from rapidocr import ModelType, RapidOCR
     engine = RapidOCR()
     evidence, text, page_conf = ocr_page_evidence(engine, image_bytes)
     doc_type, template_conf = classify(text)
@@ -553,11 +567,51 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
     layout_values, layout_evidence = choose_layout_amounts(evidence)
     amount_sources: dict[str, str] = {}
     retry_evidence: dict[str, Any] = {}
+    medium_ocr_used = False
+    medium_page_confidence = None
     if doc_type == "three_part_uniform_invoice":
         subtotal, tax, total, visual_amounts = choose_three_part_amounts(text)
         fields["amount_before_tax"] = subtotal
         fields["tax_amount"] = tax
         fields["total_amount"] = total
+
+        # The public handwriting benchmark shows complementary small/medium
+        # errors: one model can see subtotal/tax while the other sees total.
+        # Run the medium model only when the primary model lacks a complete
+        # independently-observed triple, then validate candidates jointly.
+        if not visual_amounts:
+            try:
+                medium_engine = RapidOCR(params={
+                    "Det.model_type": ModelType.MEDIUM,
+                    "Rec.model_type": ModelType.MEDIUM,
+                })
+                _, medium_text, medium_page_confidence = ocr_page_evidence(
+                    medium_engine, image_bytes
+                )
+                medium_ocr_used = True
+                ens_subtotal, ens_tax, ens_total, ens_visual = choose_dual_model_amounts(
+                    text, medium_text
+                )
+                if (
+                    ens_visual
+                    and ens_subtotal is not None
+                    and ens_tax is not None
+                    and ens_total is not None
+                ):
+                    fields["amount_before_tax"] = ens_subtotal
+                    fields["tax_amount"] = ens_tax
+                    fields["total_amount"] = ens_total
+                    visual_amounts = True
+                    amount_sources.update({
+                        "amount_before_tax": "rapidocr_small_medium_ensemble",
+                        "tax_amount": "rapidocr_small_medium_ensemble",
+                        "total_amount": "rapidocr_small_medium_ensemble",
+                    })
+                    confidence["amount_before_tax"] = 0.94
+                    confidence["tax_amount"] = 0.94
+                    confidence["total_amount"] = 0.94
+            except Exception:
+                medium_ocr_used = False
 
         # Spatial evidence is a conservative fill-only layer. It recovers values
         # that the flattened-text parser missed but never overwrites an existing
@@ -623,4 +677,6 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
         "amount_sources": amount_sources,
         "layout_amount_evidence": layout_evidence,
         "reocr_amount_evidence": retry_evidence,
+        "medium_ocr_used": medium_ocr_used,
+        "medium_page_confidence": medium_page_confidence,
     }
