@@ -146,6 +146,34 @@ with sync_playwright() as p:
                     pass
         if controls:
             print("google_flow_recover_controls="+json.dumps(controls[:60],ensure_ascii=False,separators=(",",":")))
+
+        projects=[]
+        try:
+            edits=page.get_by_role("button",name="編輯專案名稱")
+            if edits.count()==0:
+                edits=page.get_by_role("button",name="Edit project name")
+            for i in range(min(edits.count(),20)):
+                item=edits.nth(i)
+                meta=item.evaluate("""el => {
+                  let n=el;
+                  for(let depth=0; depth<8 && n; depth++,n=n.parentElement){
+                    const text=(n.innerText||'').trim().replace(/\s+/g,' ').slice(0,220);
+                    const directHref=n.getAttribute && n.getAttribute('href');
+                    const a=(n.matches && n.matches('a[href]')) ? n : (n.querySelector ? n.querySelector('a[href]') : null);
+                    const href=directHref || (a ? a.getAttribute('href') : '') || '';
+                    if((href || text) && text && !text.includes('新增專案') && !text.includes('New project')){
+                      return {depth,text,href};
+                    }
+                  }
+                  return {depth:-1,text:'',href:''};
+                }""")
+                if isinstance(meta,dict):
+                    projects.append(meta)
+        except Exception:
+            pass
+        if projects:
+            print("google_flow_recover_projects="+json.dumps(projects[:20],ensure_ascii=False,separators=(",",":")))
+
         print("google_flow_recover=NO_MATCHING_PROJECT_VIDEO")
         raise SystemExit(0)
 
