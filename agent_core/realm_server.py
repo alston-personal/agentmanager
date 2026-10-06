@@ -30,6 +30,7 @@ from agent_core.runtime_converge_capability import installed_core_capabilities
 from agent_core.runner_window import catalog as runner_window_catalog, public_intent_for_action, resolve_intent
 from agentos_node import bootstrap_control as bootstrap_control
 from agentos_node.bootstrap_scheduler import policy_for as bootstrap_policy_for
+from agentos_node.monitor_runtime import MonitorStore, data_root as monitor_data_root, run_monitor
 
 
 _GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com'
@@ -728,6 +729,52 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             return {'ok': True, 'state': 'rejected', 'request_id': request_id}
         raise KeyError(request_id)
 
+    def _monitor_command(self, body: dict[str, Any]) -> dict[str, Any]:
+        if body.get('schema') != 'agentos.monitor-command/v1':
+            raise ValueError('invalid monitor command schema')
+        method = str(body.get('method') or '').strip()
+        params = body.get('params') or {}
+        if not isinstance(params, dict):
+            raise ValueError('monitor params must be an object')
+        store = MonitorStore(monitor_data_root() / 'runtime' / 'monitor-runtime' / 'monitor.sqlite3')
+        if method in {'monitor.register', 'monitor.update'}:
+            spec = params.get('spec')
+            if not isinstance(spec, dict):
+                raise ValueError('monitor spec is required')
+            result = store.register(spec, replace=(method == 'monitor.update'))
+        elif method == 'monitor.pause':
+            monitor_id = str(params.get('monitor_id') or '')
+            store.set_status(monitor_id, 'paused')
+            result = store.inspect(monitor_id)
+        elif method == 'monitor.resume':
+            monitor_id = str(params.get('monitor_id') or '')
+            store.set_status(monitor_id, 'active')
+            result = store.inspect(monitor_id)
+        elif method == 'monitor.inspect':
+            result = store.inspect(str(params.get('monitor_id') or ''))
+        elif method == 'monitor.list':
+            result = store.list()
+        elif method == 'monitor.delete':
+            monitor_id = str(params.get('monitor_id') or '')
+            store.delete(monitor_id)
+            result = {'deleted': monitor_id}
+        elif method == 'monitor.run':
+            monitor_id = str(params.get('monitor_id') or '')
+            source_commit = str(os.environ.get('AGENTOS_SOURCE_COMMIT') or '').strip()
+            if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
+                raise RuntimeError('monitor runtime source commit unavailable')
+            result = run_monitor(store, monitor_id, source_commit)
+        elif method == 'monitor.triggered':
+            result = store.notifications(unread_only=bool(params.get('unread_only', True)))
+        else:
+            raise ValueError('unsupported monitor method')
+        return {
+            'ok': True,
+            'schema': 'agentos.monitor-result/v1',
+            'method': method,
+            'result': result,
+        }
+
     def _send(self, status: int, payload: dict[str, Any] | list[Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode('utf-8')
         self.send_response(status)
@@ -946,6 +993,10 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     raise ValueError('project query is required')
                 result = resolve_continuation(project_query, node_context=node_context)
                 self._send(200, {'ok': True, **result})
+                return
+            if parsed.path == '/v1/monitor':
+                self._authorize_controller()
+                self._send(200, self._monitor_command(self._json_body()))
                 return
             if parsed.path == '/v1/dispatch':
                 scheduler_claims = self._authorize_scheduler()
