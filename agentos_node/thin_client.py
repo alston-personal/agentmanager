@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from agentos_node import interactive_desktop
+from agentos_node.semantic_preview import semantic_preview
 from agentos_node.desktop_plan import execute_plan
 from agentos_node.agent_surfaces import discover_surfaces
 from agentos_node.session_bridge import FileSessionBridge
@@ -104,6 +105,7 @@ class ThinClient:
             caps.extend([
                 'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
                 'desktop.open_url', 'desktop.mouse', 'desktop.keyboard', 'desktop.plan.execute',
+                'desktop.semantic_preview',
             ])
         return {
             'schema': 'agentos.node-manifest/v0.1',
@@ -200,6 +202,8 @@ class ThinClient:
             elif action == 'desktop.screenshot':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
                 result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
+            elif action == 'desktop.semantic_preview':
+                result = semantic_preview(task)
             elif action == 'desktop.mouse':
                 result = interactive_desktop.mouse(task)
             elif action == 'desktop.keyboard':
