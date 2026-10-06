@@ -30,6 +30,7 @@
       "receipt.extract",
       "document.deduplicate",
       "document.stamp-recognition",
+      "document.ocr-memory",
       "accounting.validate",
       "accounting.adapter"
     ]
