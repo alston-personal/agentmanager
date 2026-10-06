@@ -26,7 +26,12 @@ class ControllerFixture(unittest.TestCase):
             'hostname': 'VOPC5750',
             'platform': 'Windows',
             'platform_release': '11',
-            'capabilities': ['agent.surface.inspect'],
+            'capabilities': [
+                'agent.surface.inspect',
+                'desktop.windows.tile',
+                'desktop.mouse',
+                'desktop.keyboard',
+            ],
             'tool_presence': {},
             'surface_inventory': {'surfaces': []},
         }
@@ -65,6 +70,64 @@ class TestControllerService(ControllerFixture):
         self.assertEqual(tasks[0]['schema'], 'agentos.node-task/v0.1')
         self.assertEqual(tasks[0]['action'], 'agent.surface.inspect')
         self.assertEqual(tasks[0]['task_id'], result['task_id'])
+
+    def test_typed_desktop_actions_route_to_bounded_node_tasks(self):
+        controller = ControllerService(self.fabric)
+
+        staged = controller.dispatch({
+            'node_id': 'vopc5750',
+            'action': 'desktop.window.stage',
+            'title_contains': 'Google Gemini',
+            'zone': 'full',
+            'reserve_top_px': 10,
+            'margin_px': 4,
+            'ignored': 'must-not-pass',
+        })
+        task = self.fabric.pull_tasks('vopc5750', self.node_token)[0]
+        self.assertEqual(staged['action'], 'desktop.window.stage')
+        self.assertEqual(task['action'], 'desktop.windows.tile')
+        self.assertEqual(task['controller_action'], 'desktop.window.stage')
+        self.assertEqual(task['windows'], [{'title_contains': 'Google Gemini', 'zone': 'full'}])
+        self.assertNotIn('ignored', task)
+
+        clicked = controller.dispatch({
+            'node_id': 'vopc5750',
+            'action': 'desktop.pointer.click',
+            'x': 900,
+            'y': 700,
+            'button': 'left',
+        })
+        task = self.fabric.pull_tasks('vopc5750', self.node_token)[0]
+        self.assertEqual(clicked['action'], 'desktop.pointer.click')
+        self.assertEqual(task['action'], 'desktop.mouse')
+        self.assertEqual(task['operation'], 'click')
+        self.assertEqual((task['x'], task['y'], task['button']), (900, 700, 'left'))
+
+        typed = controller.dispatch({
+            'node_id': 'vopc5750',
+            'action': 'desktop.text.insert',
+            'text': 'hello Gemini',
+        })
+        task = self.fabric.pull_tasks('vopc5750', self.node_token)[0]
+        self.assertEqual(typed['action'], 'desktop.text.insert')
+        self.assertEqual(task['action'], 'desktop.keyboard')
+        self.assertEqual(task['operation'], 'type')
+        self.assertEqual(task['text'], 'hello Gemini')
+
+    def test_typed_desktop_actions_validate_contract(self):
+        controller = ControllerService(self.fabric)
+        bad = [
+            {'node_id': 'vopc5750', 'action': 'desktop.window.stage', 'title_contains': '', 'zone': 'full'},
+            {'node_id': 'vopc5750', 'action': 'desktop.window.stage', 'title_contains': 'x', 'zone': 'diagonal'},
+            {'node_id': 'vopc5750', 'action': 'desktop.pointer.click', 'x': -1, 'y': 1},
+            {'node_id': 'vopc5750', 'action': 'desktop.pointer.click', 'x': 1, 'y': 1, 'button': 'middle'},
+            {'node_id': 'vopc5750', 'action': 'desktop.text.insert', 'text': ''},
+            {'node_id': 'vopc5750', 'action': 'desktop.text.insert', 'text': 'x' * 1001},
+        ]
+        for req in bad:
+            with self.subTest(req=req):
+                with self.assertRaises(ValueError):
+                    controller.dispatch(req)
 
     def test_unadvertised_capability_is_rejected_before_queue(self):
         with self.assertRaisesRegex(ValueError, 'does not advertise capability'):
