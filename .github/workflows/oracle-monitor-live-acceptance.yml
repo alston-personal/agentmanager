@@ -5,6 +5,10 @@ on:
     branches: [core/integration]
     paths:
       - '.github/workflows/oracle-monitor-live-acceptance.yml'
+      - 'agentos_node/monitor_runtime.py'
+      - 'scripts/install_monitor_runtime_user.sh'
+      - 'agent_core/realm_server.py'
+      - 'dashboard/app/api/agentos/**'
   workflow_dispatch:
 
 permissions:
@@ -44,11 +48,16 @@ jobs:
           assert receipts, 'no monitor receipts'
           decoded=[json.loads(r['receipt_json']) for r in receipts]
           assert all(not (r.get('executor_failure') and r.get('condition_triggered')) for r in decoded)
+          one_caps={'node.realm.inspect','agentos.scheduler.status','agentos.relay.status','threads.dm.login.probe'}
+          one_receipts=[r for r in decoded if (r.get('provenance') or {}).get('capability') in one_caps]
+          assert one_receipts, 'no ONE-backed monitor receipts'
+          assert any(r.get('ok') is True for r in one_receipts), one_receipts
           print('monitor_receipt_count='+str(len(receipts)))
+          print('one_backed_receipt_success=PASS')
           print('executor_failure_condition_isolation=PASS')
           print('monitor_durable_registration=PASS')
           PY
-          ENV=/home/ubuntu/agent-data/runtime/realm/realm.env
+          ENV=$HOME/.config/agentos/controller.env
           test -s "$ENV"
           set -a; . "$ENV"; set +a
           test -n "${AGENTOS_CONTROLLER_TOKEN:-}"
