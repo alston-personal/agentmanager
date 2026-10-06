@@ -15,15 +15,23 @@ if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
   exit 2
 fi
 
-for rel in   agentos_node/social/web_dm.py   agentos_node/social/persona_dm.py   scripts/threads_web_dm_bridge_user.py   scripts/mio_threads_dm_autonomous_user.py   scripts/mio_persona_dm_decision_user.py   scripts/mio_persona_social_loop_user.py   scripts/send_mio_threads_dm_from_decision.py; do
-  tmp="$(mktemp)"
-  git -C "$REPO" show "$SOURCE_COMMIT:$rel" > "$tmp"
-  install -D -m 0644 "$tmp" "$REPO/$rel"
-  rm -f "$tmp"
-done
+STAGE="$(mktemp -d /tmp/agentos-threads-dm-read.XXXXXX)"
+trap 'rm -rf "$STAGE"' EXIT
+echo "threads_web_dm_stage=START"
+git -C "$REPO" archive "$SOURCE_COMMIT" -- \
+  agentos_node/social/web_dm.py \
+  agentos_node/social/persona_dm.py \
+  scripts/threads_web_dm_bridge_user.py \
+  scripts/mio_threads_dm_autonomous_user.py \
+  scripts/mio_persona_dm_decision_user.py \
+  scripts/mio_persona_social_loop_user.py \
+  scripts/send_mio_threads_dm_from_decision.py \
+  | tar -x -C "$STAGE"
+test -f "$STAGE/scripts/threads_web_dm_bridge_user.py"
+echo "threads_web_dm_stage=PASS"
 
 set +e
-PYTHONPATH="$REPO" python3 - <<'PY'
+PYTHONPATH="$STAGE" python3 - <<'PY'
 try:
     import agentos_node.social.web_dm
     print("threads_web_dm_import_web_dm=PASS")
@@ -35,7 +43,7 @@ try:
 except ModuleNotFoundError:
     print("threads_web_dm_import_playwright=MISSING")
 PY
-OUT="$(PYTHONPATH="$REPO" python3 - "$REPO/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
+OUT="$(PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
 import os, re, runpy, sys
 path=sys.argv[1]
 sys.argv=[path,"--persona",os.environ.get("AGENTOS_DM_PERSONA","mio")]
@@ -63,7 +71,7 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
     exit 0
   fi
   set +e
-  AUTO_OUT="$(PYTHONPATH="$REPO" python3 "$REPO/scripts/mio_threads_dm_autonomous_user.py" 2>&1)"
+  AUTO_OUT="$(PYTHONPATH="$STAGE" python3 "$STAGE/scripts/mio_threads_dm_autonomous_user.py" 2>&1)"
   AUTO_RC=$?
   set -e
   printf '%s\n' "$AUTO_OUT" | grep -E '^mio_dm_(autonomous|send)' || true
