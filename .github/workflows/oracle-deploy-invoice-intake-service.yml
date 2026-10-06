@@ -320,6 +320,7 @@ jobs:
           assert x['data_scope'] == 'production', x
           assert x['batch_tracking'] is True, x
           assert x['source_tracking'] is True, x
+          print('invoice_intake_vision=' + json.dumps(x.get('vision') or {}, ensure_ascii=False, sort_keys=True))
           print('invoice_intake_public_status=PASS')
           PY
 
