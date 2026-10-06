@@ -57,6 +57,7 @@ SAFE_RESULT_FIELDS = (
     "idempotent",
     "credential_exposed",
     "observed_at",
+    "failure_stage",
 )
 
 
@@ -106,18 +107,28 @@ def _health() -> bool:
         return False
 
 
-def _install_fixed_runtime(repo: Path) -> bool:
-    """Install only source-owned, fixed Core surfaces; never caller-selected code."""
+def _install_fixed_runtime_diagnostic(repo: Path) -> tuple[bool, str]:
+    """Install fixed Core surfaces and return only a bounded failure stage.
+
+    Raw stdout/stderr never cross the runtime-converge receipt boundary.
+    """
     steps = (
-        (["python3", "scripts/install_services.py"], 240),
-        (["bash", "scripts/install_realm_fabric_user.sh"], 120),
-        (["bash", "scripts/activate_product_employees_oracle.sh"], 240),
+        ("install_services", ["python3", "scripts/install_services.py"], 240),
+        ("realm_fabric_install", ["bash", "scripts/install_realm_fabric_user.sh"], 120),
+        ("product_employee_activation", ["bash", "scripts/activate_product_employees_oracle.sh"], 240),
     )
-    for argv, timeout in steps:
+    for stage, argv, timeout in steps:
         result = _run(argv, cwd=repo, timeout=timeout)
         if result.returncode != 0:
-            return False
-    return _health()
+            return False, stage
+    if not _health():
+        return False, "health_gate"
+    return True, "ready"
+
+
+def _install_fixed_runtime(repo: Path) -> bool:
+    """Compatibility boolean facade for callers/tests that need only success."""
+    return _install_fixed_runtime_diagnostic(repo)[0]
 
 
 def _checkout_exact(repo: Path, commit: str) -> bool:
@@ -319,8 +330,9 @@ def _safe_failure(
     previous: str | None = None,
     rollback: str = "not_attempted",
     resulting: str | None = None,
+    failure_stage: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    result = {
         "request_id": request["request_id"],
         "node_id": request["node_id"],
         "repository": request["repository"],
@@ -336,6 +348,9 @@ def _safe_failure(
         "credential_exposed": False,
         "observed_at": _utc_now(),
     }
+    if failure_stage:
+        result["failure_stage"] = failure_stage
+    return result
 
 
 def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -> dict[str, Any]:
@@ -354,8 +369,8 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
         return _safe_failure(canonical, str(exc))
 
     if idempotent:
-        reconciled = _install_fixed_runtime(repo)
-        return {
+        reconciled, failure_stage = _install_fixed_runtime_diagnostic(repo)
+        result = {
             "request_id": canonical["request_id"],
             "node_id": canonical["node_id"],
             "repository": canonical["repository"],
@@ -375,11 +390,15 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
             "credential_exposed": False,
             "observed_at": _utc_now(),
         }
+        if not reconciled:
+            result["failure_stage"] = failure_stage
+        return result
 
     if not _checkout_exact(repo, canonical["source_commit"]):
         return _safe_failure(canonical, "target_checkout_failed", previous=previous)
 
-    if _install_fixed_runtime(repo):
+    target_ok, target_failure_stage = _install_fixed_runtime_diagnostic(repo)
+    if target_ok:
         return {
             "request_id": canonical["request_id"],
             "node_id": canonical["node_id"],
@@ -402,14 +421,17 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
         }
 
     rollback_checkout = bool(previous) and _checkout_exact(repo, previous)
-    rollback_health = rollback_checkout and _install_fixed_runtime(repo)
-    if rollback_health:
+    rollback_ok = False
+    if rollback_checkout:
+        rollback_ok, _rollback_failure_stage = _install_fixed_runtime_diagnostic(repo)
+    if rollback_ok:
         return _safe_failure(
             canonical,
             "TARGET_HEALTH_FAILED_ROLLED_BACK",
             previous=previous,
             rollback="completed",
             resulting=previous,
+            failure_stage=target_failure_stage,
         )
     return _safe_failure(
         canonical,
@@ -417,6 +439,7 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
         previous=previous,
         rollback="unknown",
         resulting=None,
+        failure_stage=target_failure_stage,
     )
 
 

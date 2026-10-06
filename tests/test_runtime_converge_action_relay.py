@@ -54,7 +54,7 @@ def test_fixed_runtime_install_converges_product_employee_profile_after_realm(mo
 
     monkeypatch.setattr(relay, "_run", fake_run)
     monkeypatch.setattr(relay, "_health", lambda: True)
-    assert relay._install_fixed_runtime(tmp_path) is True
+    assert relay._install_fixed_runtime_diagnostic(tmp_path) == (True, "ready")
     assert calls == [
         (["python3", "scripts/install_services.py"], tmp_path, 240),
         (["bash", "scripts/install_realm_fabric_user.sh"], tmp_path, 120),
@@ -65,7 +65,7 @@ def test_fixed_runtime_install_converges_product_employee_profile_after_realm(mo
 def test_current_generation_still_reconciles_fixed_runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True, False))
     installs = []
-    monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: installs.append(repo) or True)
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: (installs.append(repo) or True, "ready"))
     result = relay.converge_runtime(request(), repo=tmp_path)
     assert installs == [tmp_path]
     assert result["classification"] == "CURRENT_GENERATION_RECONCILED"
@@ -77,13 +77,14 @@ def test_current_generation_still_reconciles_fixed_runtime(monkeypatch, tmp_path
 
 def test_current_generation_reconcile_failure_is_not_reported_healthy(monkeypatch, tmp_path):
     monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True, False))
-    monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: False)
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: (False, "health_gate"))
     result = relay.converge_runtime(request(), repo=tmp_path)
     assert result["classification"] == "CURRENT_GENERATION_RECONCILE_FAILED"
     assert result["status"] == "failed"
     assert result["health"] == "failed"
     assert result["idempotent"] is True
     assert result["rollback"] == "not_needed"
+    assert result["failure_stage"] == "health_gate"
 
 
 
@@ -313,7 +314,7 @@ def test_target_equivalent_dirty_converges_with_explicit_classification(monkeypa
     monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, True))
     checkouts = []
     monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: checkouts.append(sha) or True)
-    monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: True)
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: (True, "ready"))
     result = relay.converge_runtime(request(), repo=tmp_path)
     assert checkouts == [SHA]
     assert result["classification"] == "CONVERGED_FROM_TARGET_EQUIVALENT_DIRTY"
@@ -346,20 +347,21 @@ def test_health_failure_rolls_back_exact_previous_generation(monkeypatch, tmp_pa
     monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, False))
     checkouts = []
     monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: checkouts.append(sha) or True)
-    outcomes = iter([False, True])
-    monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: next(outcomes))
+    outcomes = iter([(False, "product_employee_activation"), (True, "ready")])
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: next(outcomes))
     result = relay.converge_runtime(request(), repo=tmp_path)
     assert checkouts == [SHA, PREVIOUS]
     assert result["classification"] == "TARGET_HEALTH_FAILED_ROLLED_BACK"
     assert result["rollback"] == "completed"
     assert result["resulting_commit"] == PREVIOUS
+    assert result["failure_stage"] == "product_employee_activation"
 
 
 def test_rollback_ambiguity_is_unknown_and_not_success(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
     monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, False))
     monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: True)
-    monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: False)
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: (False, "health_gate"))
     result = relay.converge_runtime(request(), repo=tmp_path)
     assert result["classification"] == "ROLLBACK_OUTCOME_UNKNOWN"
     assert result["rollback"] == "unknown"

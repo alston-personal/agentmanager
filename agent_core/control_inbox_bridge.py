@@ -44,7 +44,7 @@ RUNNER_MAINTENANCE_RECEIPT_FIELDS = (
 RUNTIME_CONVERGE_RECEIPT_FIELDS = (
     'repository', 'source_ref', 'source_commit', 'previous_commit',
     'resulting_commit', 'health', 'rollback', 'classification', 'idempotent',
-    'credential_exposed',
+    'credential_exposed', 'failure_stage',
 )
 EXECUTOR_JOB_RECEIPT_FIELDS = (
     'job_id', 'job_type', 'project_id', 'executor_class', 'capability',
@@ -54,6 +54,8 @@ EXECUTOR_JOB_RECEIPT_FIELDS = (
     'install_receipt_ok', 'observed_head', 'layoutlib_release',
     'layoutlib_manifest_files', 'layoutlib_matching_files',
     'layoutlib_public_http', 'layoutlib_parity',
+    'work_id', 'completion_status', 'completion_owner',
+    'completion_owner_generation',
 )
 
 
