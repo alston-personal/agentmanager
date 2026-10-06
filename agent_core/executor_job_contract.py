@@ -125,6 +125,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="release://layoutlib/v0.7.9",
         read_only=False,
     ),
+    "layoutlib.production.promote": JobTypeSpec(
+        job_type="layoutlib.production.promote",
+        capability="layoutlib.production.promote",
+        authority="bounded-product-production-promote",
+        executor_class="layoutlib-production-promoter",
+        project_id="layoutlib",
+        workload_ref="release://layoutlib/v0.7.9",
+        read_only=False,
+    ),
     "layoutlib.production.parity.inspect": JobTypeSpec(
         job_type="layoutlib.production.parity.inspect",
         capability="layoutlib.production.parity.inspect",
