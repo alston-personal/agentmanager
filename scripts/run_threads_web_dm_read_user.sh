@@ -18,15 +18,7 @@ fi
 STAGE="$(mktemp -d /tmp/agentos-threads-dm-read.XXXXXX)"
 trap 'rm -rf "$STAGE"' EXIT
 echo "threads_web_dm_stage=START"
-git -C "$REPO" archive "$SOURCE_COMMIT" -- \
-  agentos_node/social/web_dm.py \
-  agentos_node/social/persona_dm.py \
-  scripts/threads_web_dm_bridge_user.py \
-  scripts/mio_threads_dm_autonomous_user.py \
-  scripts/mio_persona_dm_decision_user.py \
-  scripts/mio_persona_social_loop_user.py \
-  scripts/send_mio_threads_dm_from_decision.py \
-  | tar -x -C "$STAGE"
+git -C "$REPO" archive "$SOURCE_COMMIT" | tar -x -C "$STAGE"
 test -f "$STAGE/scripts/threads_web_dm_bridge_user.py"
 echo "threads_web_dm_stage=PASS"
 
