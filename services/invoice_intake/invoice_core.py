@@ -1265,8 +1265,16 @@ class InvoiceStore:
                 raise
 
     def _deep_enrich_invoice(self, invoice_id: str) -> None:
-        """Improve an already-visible fast result without blocking the user."""
+        """Improve an already-visible fast result without blocking the user.
+
+        Deep fallback is optional, but its state is not: once started it must
+        always end in a terminal receipt so the UI cannot poll forever.
+        """
         with self.deep_fallback_slots:
+            row = None
+            base_raw: dict[str, Any] | None = None
+            original_status: str | None = None
+            started = time.perf_counter()
             try:
                 with self.connect() as db:
                     row = db.execute(
@@ -1349,8 +1357,48 @@ class InvoiceStore:
                             updated, invoice_id,
                         ),
                     )
-            except Exception:
-                # Fast result remains authoritative; deep fallback is optional.
+                print(
+                    "invoice_deep_fallback="
+                    f"completed status:{new_status} "
+                    f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
+                )
+            except Exception as exc:
+                # Keep the fast result, but explicitly terminate background state.
+                if row is not None and base_raw is not None and original_status is not None:
+                    failed_raw = json.loads(json.dumps(base_raw, ensure_ascii=False))
+                    failed_raw["deep_fallback_pending"] = False
+                    failed_raw["deep_fallback"] = {
+                        "status": "error",
+                        "error_type": type(exc).__name__,
+                        "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+                    }
+                    failed_raw.setdefault("timings_ms", {})["deep_fallback_ms"] = (
+                        failed_raw["deep_fallback"]["elapsed_ms"]
+                    )
+                    try:
+                        with self.connect() as db:
+                            current = db.execute(
+                                "SELECT status FROM invoices WHERE id=? AND deleted_at IS NULL",
+                                (invoice_id,),
+                            ).fetchone()
+                            if current and current["status"] == original_status:
+                                db.execute(
+                                    "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                                    (
+                                        str(uuid.uuid4()),
+                                        row["document_id"],
+                                        str(failed_raw.get("engine") or "deep-fallback-error"),
+                                        json.dumps(failed_raw, ensure_ascii=False),
+                                        utcnow(),
+                                    ),
+                                )
+                    except Exception:
+                        pass
+                print(
+                    "invoice_deep_fallback="
+                    f"error type:{type(exc).__name__} "
+                    f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
+                )
                 return
 
     def stale_processing_ids(self, *, limit: int = 50) -> list[str]:
