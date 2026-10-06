@@ -210,17 +210,41 @@ def main() -> int:
                 if not found:
                     print("mio_dm_oursong_stage=conversation_create")
                     opened=False
-                    for label in ("New message","New Message","新訊息","建立新訊息"):
+                    safe_controls=[
+                        'a[href*="/messages/new"]',
+                        'a[href*="/messages/compose"]',
+                        'button[aria-label*="message" i]',
+                        '[role="button"][aria-label*="message" i]',
+                        'button[aria-label*="chat" i]',
+                        '[role="button"][aria-label*="chat" i]',
+                        'button[aria-label*="compose" i]',
+                        '[role="button"][aria-label*="compose" i]',
+                        'button[aria-label*="訊息"]',
+                        '[role="button"][aria-label*="訊息"]',
+                        'button[aria-label*="聊天"]',
+                        '[role="button"][aria-label*="聊天"]',
+                    ]
+                    for sel in safe_controls:
                         try:
-                            btn=page.get_by_role("button",name=re.compile(re.escape(label),re.I))
-                            if btn.count()>0 and btn.first.is_visible():
-                                btn.first.click(timeout=5000)
+                            loc=page.locator(sel)
+                            if loc.count()>0 and loc.first.is_visible():
+                                loc.first.click(timeout=5000)
                                 opened=True
                                 break
                         except Exception:
                             pass
                     if not opened:
-                        for label in ("New message","New Message","新訊息","建立新訊息"):
+                        for label in ("New message","New Message","Start chat","Compose","新訊息","建立新訊息","開始聊天","新增聊天"):
+                            try:
+                                btn=page.get_by_role("button",name=re.compile(re.escape(label),re.I))
+                                if btn.count()>0 and btn.first.is_visible():
+                                    btn.first.click(timeout=5000)
+                                    opened=True
+                                    break
+                            except Exception:
+                                pass
+                    if not opened:
+                        for label in ("New message","New Message","Start chat","Compose","新訊息","建立新訊息","開始聊天","新增聊天"):
                             try:
                                 loc=page.get_by_text(label,exact=False)
                                 if loc.count()>0 and loc.first.is_visible():
