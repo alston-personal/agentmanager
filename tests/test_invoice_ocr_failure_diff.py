@@ -1,8 +1,10 @@
 import io
 import unittest
+from unittest.mock import patch
 from PIL import Image
 
 from scripts.invoice_ocr_failure_diff import classify_field
+from services.invoice_intake.invoice_core import Extraction, deep_fallback_enrich
 from services.invoice_intake.template_ocr import (
     anchor_row_reocr,
     choose_dual_model_amounts,
@@ -107,6 +109,62 @@ class InvoiceOCRFailureDiffTests(unittest.TestCase):
         }
         chosen,_=choose_reocr_amounts(candidates)
         self.assertIsNone(chosen["total_amount"])
+
+
+    def test_deep_fallback_uses_small_medium_complementary_amounts(self):
+        page=Image.new("RGB",(400,300),"white")
+        buf=io.BytesIO()
+        page.save(buf,format="PNG")
+        base=Extraction(
+            fields={
+                "invoice_number":"RP54268249",
+                "invoice_date":"2019-08-22",
+                "vendor_name":"高靖文具有限公司",
+                "buyer_tax_id":None,
+                "seller_tax_id":"89450979",
+                "amount_before_tax":None,
+                "tax_amount":None,
+                "total_amount":None,
+            },
+            confidence={
+                "invoice_number":0.99,
+                "invoice_date":0.95,
+                "vendor_name":0.90,
+                "buyer_tax_id":0.0,
+                "seller_tax_id":0.92,
+                "amount_before_tax":0.0,
+                "tax_amount":0.0,
+                "total_amount":0.0,
+            },
+            raw={
+                "engine":"rapidocr-template-v1",
+                "template":{
+                    "matched":True,
+                    "document_type":"three_part_uniform_invoice",
+                    "raw_text":"1506\n22\n1623",
+                    "visual_amounts":False,
+                    "amount_anchor_evidence":[],
+                },
+                "review":{"status":"needs_review"},
+                "stamp_recognition":{},
+            },
+            review_required=True,
+        )
+        with patch("rapidocr.RapidOCR") as rapid_cls, \
+             patch(
+                 "services.invoice_intake.invoice_core.ocr_page_evidence",
+                 return_value=([],"1546\n77\n623",0.91),
+             ):
+            rapid_cls.return_value=object()
+            enriched=deep_fallback_enrich(buf.getvalue(),base,budget_seconds=5)
+
+        self.assertEqual(enriched.fields["amount_before_tax"],1546)
+        self.assertEqual(enriched.fields["tax_amount"],77)
+        self.assertEqual(enriched.fields["total_amount"],1623)
+        self.assertIn(
+            "rapidocr_small_medium_amounts",
+            enriched.raw["deep_fallback"]["fallback_used"],
+        )
 
 if __name__=="__main__":
     unittest.main()
