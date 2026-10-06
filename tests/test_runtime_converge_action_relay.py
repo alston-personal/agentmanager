@@ -591,6 +591,18 @@ class RuntimeDispatcher:
         self.inspected = task_id
         return self.inspect_result
 
+    def inspect_request(self, *, request):
+        self.seen = request
+        return {
+            "schema": "agentos.runtime-converge-reconnect/v1",
+            "ok": True,
+            "action": "node.runtime.converge",
+            "request_id": request["request_id"],
+            "task_id": "action-existing",
+            "status": "processing",
+            "reconnected": True,
+        }
+
 
 def test_controller_routes_typed_converge_to_fixed_relay_not_node_queue():
     dispatcher = RuntimeDispatcher()
@@ -648,6 +660,38 @@ def test_controller_runtime_converge_inspect_reports_pending_when_receipt_absent
     assert dispatcher.inspected == "action-abc123"
     assert result["status"] == "pending"
     assert result["ok"] is True
+
+
+def test_dispatcher_reconnects_existing_request_without_submit(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    inbox = dispatcher.root / "inbox" / f'{first["task_id"]}.json'
+    processing = dispatcher.root / "processing" / inbox.name
+    inbox.replace(processing)
+    reconnected = dispatcher.inspect_request(request=request())
+    assert reconnected["task_id"] == first["task_id"]
+    assert reconnected["status"] == "processing"
+    assert reconnected["reconnected"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 0
+
+
+def test_controller_reconnects_runtime_converge_by_original_request_identity():
+    dispatcher = RuntimeDispatcher()
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=dispatcher)
+    result = controller.dispatch(
+        {
+            "node_id": "oracle-core-node",
+            "action": "node.runtime.converge.inspect",
+            "request_id": "chatgpt-original-request",
+            "repository": ALLOWED_REPOSITORY,
+            "source_ref": "core/integration",
+            "source_commit": SHA,
+        }
+    )
+    assert dispatcher.seen["request_id"] == "chatgpt-original-request"
+    assert result["task_id"] == "action-existing"
+    assert result["status"] == "processing"
+    assert result["reconnected"] is True
 
 
 def test_controller_runtime_converge_inspect_rejects_extra_execution_fields():

@@ -173,23 +173,42 @@ class ControllerService:
                                   payload: dict[str, Any], passthrough: dict[str, Any]) -> dict[str, Any]:
         if payload:
             raise ValueError('runtime converge inspect does not accept generic payload')
-        if passthrough:
-            raise ValueError(f'unexpected runtime-converge inspect fields: {sorted(passthrough)}')
         if node_id != self.RUNTIME_CONVERGE_NODE:
             raise ValueError(f'runtime converge inspect is not routable to target node: {node_id}')
+
         task_id = str(task_id or '').strip()
-        if not task_id.startswith('action-') or len(task_id) > 96:
-            raise ValueError('invalid runtime converge task_id')
-        result = self._runtime_dispatcher().inspect(task_id)
-        if result is None:
-            return {
-                'schema': 'agentos.runtime-converge-receipt/v1',
-                'ok': True,
-                'action': self.RUNTIME_CONVERGE_ACTION,
-                'task_id': task_id,
-                'status': 'pending',
-            }
-        return dict(result)
+        if task_id:
+            if passthrough:
+                raise ValueError(f'unexpected runtime-converge inspect fields: {sorted(passthrough)}')
+            if not task_id.startswith('action-') or len(task_id) > 96:
+                raise ValueError('invalid runtime converge task_id')
+            result = self._runtime_dispatcher().inspect(task_id)
+            if result is None:
+                return {
+                    'schema': 'agentos.runtime-converge-receipt/v1',
+                    'ok': True,
+                    'action': self.RUNTIME_CONVERGE_ACTION,
+                    'task_id': task_id,
+                    'status': 'pending',
+                }
+            return dict(result)
+
+        allowed = {'request_id', 'repository', 'source_ref', 'source_commit'}
+        if set(passthrough) != allowed:
+            raise ValueError(
+                'runtime converge inspect requires task_id or '
+                'request_id, repository, source_ref, and source_commit'
+            )
+        canonical = {
+            'schema': RUNTIME_CONVERGE_SCHEMA,
+            'request_id': str(passthrough['request_id'] or ''),
+            'node_id': node_id,
+            'repository': passthrough['repository'],
+            'source_ref': passthrough['source_ref'],
+            'source_commit': passthrough['source_commit'],
+        }
+        validate_runtime_converge_request(canonical)
+        return dict(self._runtime_dispatcher().inspect_request(request=canonical))
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(request, dict):

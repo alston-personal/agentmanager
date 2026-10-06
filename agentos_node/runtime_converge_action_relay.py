@@ -607,6 +607,36 @@ class ActionRelayRuntimeConvergeDispatcher:
             "deduplicated": existing is not None,
         }
 
+    def inspect_request(self, *, request: Mapping[str, Any]) -> dict[str, Any]:
+        canonical = validate_runtime_converge_request(request).as_payload()
+        with _request_submit_lock(self.root):
+            existing = _existing_runtime_converge(self.root, canonical)
+        if existing is None:
+            return {
+                "schema": "agentos.runtime-converge-reconnect/v1",
+                "ok": True,
+                "action": "node.runtime.converge",
+                "request_id": canonical["request_id"],
+                "status": "not_found",
+            }
+        task_id, state = existing
+        receipt = self.inspect(task_id)
+        if receipt is not None:
+            return {
+                **receipt,
+                "request_id": canonical["request_id"],
+                "reconnected": True,
+            }
+        return {
+            "schema": "agentos.runtime-converge-reconnect/v1",
+            "ok": state not in {"unknown"},
+            "action": "node.runtime.converge",
+            "request_id": canonical["request_id"],
+            "task_id": task_id,
+            "status": state,
+            "reconnected": True,
+        }
+
     def inspect(self, task_id: str) -> dict[str, Any] | None:
         receipt = self.client.receipt(str(task_id))
         if receipt is None:
