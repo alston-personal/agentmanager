@@ -1,0 +1,68 @@
+name: Requeue Quarantined Synthetic Receipt
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/requeue-quarantined-synthetic-receipt.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Move receipt back to spool and verify ONE archive
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore(); tid='requeue-quarantined-synthetic-20261006-1019'
+          ps=r'''$root=Join-Path $env:LOCALAPPDATA 'AgentOS\state\pending-receipts'
+          $q=Join-Path $root 'quarantine'
+          $moved=$false
+          if(Test-Path $q){
+            Get-ChildItem $q -Filter '*.json' | ForEach-Object {
+              $txt=Get-Content -Raw -LiteralPath $_.FullName
+              if($txt -match 'synthetic-timeout-receipt-20261002-1659'){
+                Move-Item -Force -LiteralPath $_.FullName -Destination (Join-Path $root $_.Name)
+                $moved=$true
+              }
+            }
+          }
+          [pscustomobject]@{moved=$moved;root=$root}|ConvertTo-Json -Compress'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':['demo://receipt-spool/20261006']})
+          for _ in range(30):
+              r=f.get_receipt(tid)
+              if r:
+                  print('MOVE='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  break
+              time.sleep(1)
+          else: raise SystemExit('move_receipt_missing')
+          for i in range(40):
+              r=f.get_receipt('synthetic-timeout-receipt-20261002-1659')
+              if r:
+                  print('SYNTHETIC='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('error')=='synthetic spool transport proof', r
+                  raise SystemExit(0)
+              time.sleep(1)
+          raise SystemExit('requeued_synthetic_not_archived')
+          PY
+          REMOTE
