@@ -13,7 +13,9 @@ def test_runtime_generation_acceptance_requires_all_three(monkeypatch,tmp_path):
     monkeypatch.setattr(m,"action_commit",lambda:sha)
     monkeypatch.setattr(m,"realm_commit",lambda:sha)
     monkeypatch.setattr(sys,"argv",["accept","--expected",sha])
-    m.main()
+    import pytest
+    with pytest.raises(SystemExit) as e: m.main()
+    assert e.value.code==0
 
 def test_runtime_generation_acceptance_fails_on_split_generation(monkeypatch):
     import importlib.util, pytest
