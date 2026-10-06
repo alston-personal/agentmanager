@@ -124,6 +124,21 @@ def test_scheduler_status_projection_is_fixed_marker_only():
         assert marker in text
 
 
+
+def test_control_inbox_reconcile_is_bounded_public_intent():
+    intent, params = resolve_intent(
+        "agentos.control-inbox",
+        "reconcile",
+        source_commit="8" * 40,
+        payload={},
+    )
+    assert intent.action == bc.ACTION_RECONCILE_CONTROL_INBOX
+    assert params == {"source_commit": "8" * 40}
+    assert public_intent_for_action(bc.ACTION_RECONCILE_CONTROL_INBOX) == {
+        "capability": "agentos.control-inbox",
+        "operation": "reconcile",
+    }
+
 def test_runner_window_rejects_unknown_intent():
     with pytest.raises(ValueError):
         resolve_intent("future.unknown", "run", source_commit="a" * 40, payload={})
@@ -150,6 +165,7 @@ def test_runner_window_catalog_contains_stable_public_intents():
     items = {(x["capability"], x["operation"]) for x in catalog()}
     assert ("agentos.dispatch", "probe") in items
     assert ("agentos.runtime", "repair") in items
+    assert ("agentos.control-inbox", "reconcile") in items
     assert ("browser.gui", "smoke") in items
     assert ("social.runtime", "deploy") in items
     assert ("social.publish", "mio.approved") in items
