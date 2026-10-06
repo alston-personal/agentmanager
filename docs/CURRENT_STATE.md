@@ -380,3 +380,7 @@ labels and additional samples before promoting accuracy claims.
 Inspection evidence is uploaded as a short-retention GitHub Actions artifact. The workflow does not commit or push evidence directly to protected `main`.
 
 On 2026-10-06 this trigger is being used to diagnose the shared Core runtime-convergence failure blocking #200/#470 completion-ownership acceptance for Market Master #1200. A successful inspection is evidence only; it is not a deployment or completion claim.
+
+### 2026-10-06 vopc5750 rollout diagnostic
+
+After the first semantic-preview rollout attempted an inline Thin Client self-update, the expected rollout receipt was not returned. A second attempt using deferred self-update also failed before the deferred task could be scheduled, indicating that vopc5750 was no longer consuming ONE tasks. The recovery sequence therefore treats node liveness as the blocker: refresh the existing ONE runtime inspection, verify NodeRegistry heartbeat freshness and bootstrap/health surfaces, restore the Windows Thin Client transport if stale, and only then resume semantic-preview live acceptance. No semantic-preview PASS is claimed until a new node receipt is observed.
