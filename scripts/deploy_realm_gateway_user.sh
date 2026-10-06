@@ -8,6 +8,16 @@ fi
 
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
+
+# Blue/green foundation is now canonical for public Dashboard continuity.
+# Preserve the scheduler action contract but delegate implementation.
+if [ -f /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-port ]; then
+  BG_SCRIPT_REL="scripts/deploy_realm_gateway_blue_green_user.sh"
+  BG_SCRIPT="/tmp/agentos-realm-gateway-bg-$SOURCE_COMMIT.sh"
+  git -C "${AGENTOS_REPO:-/home/ubuntu/agentmanager}" show "$SOURCE_COMMIT:$BG_SCRIPT_REL" > "$BG_SCRIPT"
+  chmod 700 "$BG_SCRIPT"
+  exec "$BG_SCRIPT"
+fi
 DASH="$REPO/dashboard"
 PORT_MANAGER_REL="scripts/core_services/port_manager.py"
 PORT_MANAGER_EXACT="/tmp/agentos-port-manager-$SOURCE_COMMIT.py"
