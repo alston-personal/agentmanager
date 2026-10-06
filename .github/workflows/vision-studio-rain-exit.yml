@@ -1,0 +1,81 @@
+name: Vision Studio - Rain Exit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Wait for Vision Studio intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for _ in $(seq 1 90); do
+            code="$(curl -sS -o "$RUNNER_TEMP/catalog.json" -w '%{http_code}' --max-time 8 \
+              -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+              "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+            if [ "$code" = 200 ] && python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          intents={(x.get('capability'),x.get('operation')) for x in (d.get('intents') or [])}
+          assert ('media.vision-studio','produce') in intents
+          PY
+            then
+              ok=1
+              break
+            fi
+            sleep 4
+          done
+          test "$ok" = 1
+          echo "vision_studio_intent_live=PASS"
+
+      - name: Produce Rain Exit
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"project_id":"rain-exit-v001"}'
+          AGENTOS_DISPATCH_WAIT_SECONDS=4300 \
+            bash scripts/agentos_dispatch.sh \
+              media.vision-studio produce "$GITHUB_SHA" \
+              --payload-json "$payload" \
+            | tee "$RUNNER_TEMP/vision-studio-rain-exit.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/vision-studio-rain-exit.txt"
+          grep -q 'vision_studio_produce=PASS' "$RUNNER_TEMP/vision-studio-rain-exit.txt"
+
+      - name: Upload production receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-studio-rain-exit-${{ github.run_id }}
+          path: ${{ runner.temp }}/vision-studio-rain-exit.txt
+          if-no-files-found: warn
+          retention-days: 14
