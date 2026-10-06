@@ -57,7 +57,7 @@ for i in 0 1 2 3; do
   shot="${SHOT[$i]}"
   log="$RUN_ROOT/$shot.flow.log"
   echo "vision_studio_shot_start=$shot"
-  if ! AGENTOS_GOOGLE_MEDIA_PROMPT="${PROMPT[$i]}" "$FLOW" >"$log" 2>&1; then
+  if ! AGENTOS_GOOGLE_MEDIA_PROMPT="${PROMPT[$i]}" bash "$FLOW" >"$log" 2>&1; then
     cat "$log"
     echo "vision_studio_produce=SHOT_GENERATION_FAILED"
     echo "vision_studio_failed_shot=$shot"
