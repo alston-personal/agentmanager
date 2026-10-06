@@ -547,3 +547,35 @@ def test_identity_read_errors_do_not_leak_or_fall_back(status):
     client = StubOneControllerClient(status, {'debug': 'PRIVATE'})
     with pytest.raises(OneControllerError, match=f'^one_continuation_http_{status}$'):
         client.inspect_continuation()
+
+
+def test_runtime_converge_receipt_projection_preserves_bounded_diagnostics_only():
+    projected = _project_receipt({
+        'schema': 'agentos.runtime-converge-receipt/v1',
+        'node_id': 'oracle-core-node',
+        'task_id': 'action-12345678',
+        'action': 'node.runtime.converge',
+        'ok': False,
+        'repository': 'alston-personal/agentmanager',
+        'source_ref': 'core/integration',
+        'source_commit': 'a' * 40,
+        'previous_commit': 'b' * 40,
+        'resulting_commit': 'b' * 40,
+        'health': 'failed',
+        'rollback': 'completed',
+        'classification': 'TARGET_HEALTH_FAILED_ROLLED_BACK',
+        'idempotent': False,
+        'credential_exposed': False,
+        'stdout': 'private output',
+        'stderr': '/home/ubuntu/private',
+    }, 'node.runtime.converge')
+    assert projected['classification'] == 'TARGET_HEALTH_FAILED_ROLLED_BACK'
+    assert projected['health'] == 'failed'
+    assert projected['rollback'] == 'completed'
+    assert projected['source_commit'] == 'a' * 40
+    assert projected['previous_commit'] == 'b' * 40
+    assert projected['resulting_commit'] == 'b' * 40
+    assert projected['idempotent'] is False
+    rendered = json.dumps(projected)
+    assert 'private output' not in rendered
+    assert '/home/ubuntu/private' not in rendered

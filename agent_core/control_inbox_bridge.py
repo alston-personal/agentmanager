@@ -41,6 +41,11 @@ RUNNER_MAINTENANCE_RECEIPT_FIELDS = (
     'runner_failed_count', 'restart_attempted_count', 'restart_failed_count',
     'runner_healthy', 'recovered',
 )
+RUNTIME_CONVERGE_RECEIPT_FIELDS = (
+    'repository', 'source_ref', 'source_commit', 'previous_commit',
+    'resulting_commit', 'health', 'rollback', 'classification', 'idempotent',
+    'credential_exposed',
+)
 EXECUTOR_JOB_RECEIPT_FIELDS = (
     'job_id', 'job_type', 'project_id', 'executor_class', 'capability',
     'executor_available', 'routable', 'authorized', 'successful',
@@ -152,6 +157,12 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
                     projected[key] = safe
     if action in {'node.runner.inspect', 'node.runner.recover'}:
         for key in RUNNER_MAINTENANCE_RECEIPT_FIELDS:
+            if key in receipt:
+                safe = _safe_scalar(receipt.get(key))
+                if safe is not None or receipt.get(key) is None:
+                    projected[key] = safe
+    if action == 'node.runtime.converge':
+        for key in RUNTIME_CONVERGE_RECEIPT_FIELDS:
             if key in receipt:
                 safe = _safe_scalar(receipt.get(key))
                 if safe is not None or receipt.get(key) is None:
