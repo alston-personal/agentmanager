@@ -83,6 +83,12 @@ jobs:
           echo '=== WHO REFERENCES HEARTBEAT EXECUTABLE ==='
           grep -RInsE 'agentos-persona-pdca-heartbeat|advance active persona heartbeats' "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/.config/systemd/user" 2>/dev/null | head -n 700 || true
 
+          echo '=== CANONICAL V2 SERVICE OWNERSHIP ==='
+          systemctl --user show -p ExecStart --value agentos-persona-pdca-heartbeat.service 2>&1 || true
+          file "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
+          sha256sum "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
+          head -n 8 "$HOME/.local/bin/agentos-persona-pdca-heartbeat-v2" 2>&1 || true
+
           echo '=== HEARTBEAT FILE METADATA ==='
           stat "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
           sha256sum "$HOME/.local/bin/agentos-persona-pdca-heartbeat" 2>&1 || true
