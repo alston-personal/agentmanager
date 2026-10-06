@@ -102,16 +102,16 @@ def test_typed_desktop_actions_map_to_bounded_node_capabilities(tmp_path: Path) 
     })
     assert staged['action'] == 'desktop.window.stage'
     task = fabric.pull_tasks('node-a', node_token)[0]
-    assert task == {
-        'schema': 'agentos.node-task/v0.1',
-        'task_id': staged['task_id'],
-        'controller_action': 'desktop.window.stage',
-        'cognition_ids_used': [],
-        'action': 'desktop.windows.tile',
-        'windows': [{'title_contains': 'Google Gemini', 'zone': 'full'}],
-        'reserve_top_px': 8,
-        'margin_px': 4,
-    }
+    assert task['schema'] == 'agentos.node-task/v0.1'
+    assert task['task_id'] == staged['task_id']
+    assert task['controller_action'] == 'desktop.window.stage'
+    assert task['cognition_ids_used'] == []
+    assert task['action'] == 'desktop.windows.tile'
+    assert task['windows'] == [{'title_contains': 'Google Gemini', 'zone': 'full'}]
+    assert task['reserve_top_px'] == 8
+    assert task['margin_px'] == 4
+    assert 'unexpected' not in task
+    assert task.get('queued_at')
 
     clicked = controller.dispatch('node-a', {
         'action': 'desktop.pointer.click', 'x': 123, 'y': 456, 'button': 'left',
