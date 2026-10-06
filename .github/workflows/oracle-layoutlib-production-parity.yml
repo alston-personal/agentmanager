@@ -1,0 +1,109 @@
+name: Oracle LayoutLib Production Parity Acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-layoutlib-production-parity
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Submit bounded LayoutLib parity job through ONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay
+          REQUEST="$RUNNER_TEMP/layoutlib-parity-request.json"
+          SUBMISSION="$RUNNER_TEMP/layoutlib-parity-submission.json"
+          EVIDENCE="$RUNNER_TEMP/layoutlib-parity-receipt.json"
+
+          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health >/dev/null
+
+          python3 - "$REQUEST" <<'PY'
+          import json, sys
+          from pathlib import Path
+          from agent_core.executor_job_contract import canonical_executor_job_request
+          payload = {
+              "schema": "agentos.controller-dispatch/v0.1",
+              "node_id": "oracle-core-node",
+              "action": "agentos.executor.job",
+              "payload": canonical_executor_job_request("layoutlib.production.parity.inspect"),
+          }
+          Path(sys.argv[1]).write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+          curl -fsS --max-time 10             -H 'Content-Type: application/json'             --data-binary "@$REQUEST"             http://127.0.0.1:8780/v1/controller/dispatch > "$SUBMISSION"
+
+          python3 - "$ACTION_ROOT" "$SUBMISSION" "$EVIDENCE" <<'PY'
+          import json, sys, time
+          from pathlib import Path
+          from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
+
+          root = Path(sys.argv[1])
+          submission = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          evidence = Path(sys.argv[3])
+
+          assert submission.get("schema") == "agentos.executor-job-submission/v1", submission
+          assert submission.get("ok") is True, submission
+          assert submission.get("node_id") == "oracle-core-node", submission
+          assert submission.get("job_type") == "layoutlib.production.parity.inspect", submission
+          assert submission.get("project_id") == "layoutlib", submission
+          assert submission.get("credential_exposed") is False, submission
+
+          job_id = str(submission.get("job_id") or "")
+          assert job_id.startswith("action-"), submission
+          receipt_path = root / "receipts" / f"{job_id}.json"
+          for _ in range(180):
+              if receipt_path.is_file():
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit("LayoutLib parity receipt timeout")
+
+          receipt = ActionRelayExecutorJobDispatcher(root).inspect(job_id)
+          assert isinstance(receipt, dict), receipt
+          assert receipt.get("job_type") == "layoutlib.production.parity.inspect", receipt
+          assert receipt.get("project_id") == "layoutlib", receipt
+          assert receipt.get("executor_available") is True, receipt
+          assert receipt.get("routable") is True, receipt
+          assert receipt.get("authorized") is True, receipt
+          assert receipt.get("successful") is True, receipt
+          assert receipt.get("classification") == "LAYOUTLIB_PRODUCTION_PARITY_EXACT", receipt
+          assert receipt.get("layoutlib_release") == "v0.7.9", receipt
+          assert receipt.get("layoutlib_manifest_files") == 7, receipt
+          assert receipt.get("layoutlib_matching_files") == 7, receipt
+          assert receipt.get("layoutlib_public_http") == 200, receipt
+          assert receipt.get("layoutlib_parity") == "EXACT", receipt
+          assert receipt.get("credential_exposed") is False, receipt
+
+          safe = {key: receipt.get(key) for key in (
+              "schema", "job_id", "job_type", "project_id", "executor_class", "capability",
+              "executor_available", "routable", "authorized", "successful",
+              "credential_exposed", "verdict", "classification", "observed_head",
+              "layoutlib_release", "layoutlib_manifest_files", "layoutlib_matching_files",
+              "layoutlib_public_http", "layoutlib_parity",
+          ) if key in receipt}
+          safe["one_controller_entered"] = True
+          evidence.write_text(json.dumps(safe, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          print("layoutlib_production_parity=PASS")
+          print("layoutlib_release=v0.7.9")
+          print("layoutlib_matching_files=7")
+          PY
+
+      - name: Upload sanitized parity receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layoutlib-production-parity-${{ github.run_id }}
+          path: ${{ runner.temp }}/layoutlib-parity-receipt.json
+          if-no-files-found: warn
+          retention-days: 30
