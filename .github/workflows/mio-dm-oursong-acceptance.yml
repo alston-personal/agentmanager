@@ -10,6 +10,7 @@ on:
       - 'agentos_node/bootstrap_scheduler.py'
       - 'agent_core/runner_window.py'
       - 'scripts/run_mio_dm_oracle_oursong_acceptance_user.sh'
+      - 'scripts/threads_web_dm_bridge_user.py'
       - 'scripts/mio_dm_oracle_oursong_acceptance.cjs'
 
 permissions:
