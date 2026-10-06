@@ -450,3 +450,37 @@ def test_oursong_dm_read_is_bounded_and_separate_from_mio():
     assert "threads-oursong-gui" in oursong.locks
     assert "threads-mio-gui" in mio.locks
     assert oursong.locks != mio.locks
+
+
+def test_oursong_threads_session_intents_are_isolated():
+    install, params = resolve_intent(
+        "persona.social.dm",
+        "oursong.session.install",
+        source_commit="d" * 40,
+        payload={},
+    )
+    assert install.action == bc.ACTION_INSTALL_OURSONG_THREADS_SESSION
+    assert params == {"source_commit": "d" * 40}
+
+    login, params = resolve_intent(
+        "persona.social.dm",
+        "oursong.login.start",
+        source_commit="e" * 40,
+        payload={},
+    )
+    assert login.action == bc.ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN
+    assert params == {"source_commit": "e" * 40}
+
+    from agentos_node.bootstrap_scheduler import policy_for
+    login_policy = policy_for(bc.ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN)
+    assert "threads-oursong-gui" in login_policy.locks
+    assert "threads-mio-gui" not in login_policy.locks
+
+
+def test_persona_dm_bindings_use_distinct_cdp_sessions():
+    from agentos_node.social.persona_dm import binding_for
+    mio = binding_for("mio")
+    oursong = binding_for("oursong")
+    assert mio.cdp_url == "http://127.0.0.1:9222"
+    assert oursong.cdp_url == "http://127.0.0.1:9223"
+    assert mio.profile_key != oursong.profile_key
