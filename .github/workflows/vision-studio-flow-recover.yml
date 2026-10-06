@@ -13,7 +13,7 @@ permissions:
 jobs:
   recover:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     env:
       AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
     steps:
@@ -50,7 +50,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          AGENTOS_DISPATCH_WAIT_SECONDS=240 \
+          AGENTOS_DISPATCH_WAIT_SECONDS=1200 \
             bash scripts/agentos_dispatch.sh media.google-flow recover "$GITHUB_SHA" \
             | tee "$RUNNER_TEMP/flow-recover.txt"
           grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/flow-recover.txt"
