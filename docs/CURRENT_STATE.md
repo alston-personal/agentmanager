@@ -141,6 +141,12 @@ Dashboard secrets and OAuth configuration are configuration state, not source-tr
 
 `scripts/deploy_dashboard_release.sh` owns the release switch, exact listener verification, canary, PM2 replacement, rollback, auth/admin route checks and a regression probe that temporarily removes only the legacy shared `.next` build. A release is accepted only if the public protected routes remain healthy while that legacy build is absent. Until the first successful Oracle receipt, the registry marks this Dashboard migration as candidate rather than live.
 
+## Windows Thin Client self-update receipt boundary
+
+As of 2026-10-06, governed Thin Client upgrades initiated through ONE must not execute the installer inline inside the same `shell.exec` task that is expected to report the rollout receipt. The Windows installer intentionally stops the existing Thin Client process before replacing runtime files; if invoked inline, that process can terminate itself before it submits the task receipt.
+
+The canonical rollout pattern is therefore two-stage: ONE asks the current Thin Client to register a delayed, one-shot Windows Scheduled Task pinned to an immutable source commit; that scheduling action returns a receipt first. The deferred updater then stops/replaces/restarts the Thin Client independently. Live acceptance waits for a fresh heartbeat and only then invokes the new capability. This keeps GitHub Actions as a deployment trigger/audit surface while Windows execution and acceptance continue through ControllerService/ONE.
+
 ## Windows one-click node onboarding
 
 The canonical Windows onboarding entry point is `install-agentos.cmd`, backed by `install-agentos.ps1`. A user starts the installer once. The bootstrap resolves an immutable source commit, ensures a real Python 3 interpreter is available, installs the Thin Client files, preserves any existing enrollment identity, and configures the per-user `AgentOS Thin Client` Scheduled Task. The scheduled task is headless: it launches a hidden PowerShell runner rather than a visible `cmd.exe`, so logon starts, watchdog restarts, and task restarts must not flash a console window in the interactive desktop session. Upgrades also remove obsolete `AgentOS Thin Client Watchdog` and `AgentOS Thin Client Headless Switch` tasks from earlier builds, and the successful `.cmd` bootstrap exits automatically instead of pausing in a visible console.
