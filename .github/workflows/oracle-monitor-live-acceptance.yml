@@ -122,6 +122,9 @@ jobs:
           assert all(x.get('state')=='OPEN' for x in rows),rows
           print('atlas_attention_projection=PASS')
           print('open_attention_count='+str(len(rows)))
+          for x in rows[:10]:
+              safe={k:x.get(k) for k in ('monitor_id','severity','summary','occurrence_count','state')}
+              print('attention_item='+json.dumps(safe,ensure_ascii=False,sort_keys=True))
           PY
           echo 'monitor_live_acceptance=PASS'
           REMOTE
