@@ -177,32 +177,35 @@ systemctl --user enable --now \
 # A repair must recycle an already-active Chromium process. "enable --now"
 # starts inactive units but does not restart an active browser, so a wedged
 # CDP websocket can survive an otherwise successful repair indefinitely.
-# Recycle the browser. If CDP HTTP is alive but websocket attach is wedged,
-# rotate the persistent profile instead of endlessly restarting the same state.
-systemctl --user restart agentos-gui-browser.service
-
+#
+# IMPORTANT: the persistent Chromium profile contains authenticated sessions.
+# A routine repair must NEVER silently rotate or replace it. Losing that profile
+# means losing Google/Threads/etc. login state. Retry a clean restart of the same
+# profile a few times; if CDP is still unusable, fail closed and require a
+# separate explicit profile-reset operation.
 CDP_ATTACH_OK=0
-if curl -fsS --max-time 3 http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
-  if timeout 15s "$VENV/bin/python" - <<'PY' >/dev/null 2>&1
+for attempt in 1 2 3; do
+  systemctl --user restart agentos-gui-browser.service
+  sleep 3
+  if curl -fsS --max-time 3 http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
+    if timeout 15s "$VENV/bin/python" - <<'PY' >/dev/null 2>&1
 from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
     b=p.chromium.connect_over_cdp('http://127.0.0.1:9222', timeout=10000)
     assert b.contexts
 PY
-  then
-    CDP_ATTACH_OK=1
+    then
+      CDP_ATTACH_OK=1
+      break
+    fi
   fi
-fi
+done
 
 if [ "$CDP_ATTACH_OK" -ne 1 ]; then
-  STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-  systemctl --user stop agentos-gui-browser.service
-  if [ -d "$PROFILE" ]; then
-    mv "$PROFILE" "$ROOT/chromium-profile.corrupt-$STAMP"
-  fi
-  mkdir -p "$PROFILE"
-  chmod 700 "$PROFILE"
-  systemctl --user start agentos-gui-browser.service
+  echo "agentos_gui_worker_cdp_attach=FAIL" >&2
+  echo "agentos_gui_worker_profile_preserved=YES" >&2
+  echo "agentos_gui_worker_profile_reset_required=YES" >&2
+  exit 5
 fi
 
 for unit in agentos-gui-display agentos-gui-window-manager agentos-gui-browser agentos-gui-vnc agentos-gui-novnc; do
