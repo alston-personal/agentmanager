@@ -4,7 +4,7 @@ import io
 import re
 from typing import Any
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageEnhance, ImageOps
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from rapidocr import RapidOCR
@@ -200,6 +200,151 @@ def choose_layout_amounts(evidence: list[dict[str, Any]]) -> tuple[dict[str, int
             evidence_used["total_amount"] = top
 
     return chosen, evidence_used
+
+
+
+def _image_bytes(image: Image.Image, *, fmt: str = "PNG") -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format=fmt)
+    return buf.getvalue()
+
+
+def anchor_row_reocr(
+    engine: "RapidOCR",
+    image_bytes: bytes,
+    evidence: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Re-OCR only the numeric row beside explicit amount labels.
+
+    This is a local recovery layer for handwriting/detection misses. It does not
+    infer values from arithmetic and does not inspect unrelated page regions.
+    """
+    labels = {
+        "amount_before_tax": ("銷售額合計", "銷售額", "合計"),
+        "tax_amount": ("營業稅", "稅額"),
+        "total_amount": ("總計",),
+    }
+    anchors: dict[str, list[tuple[float, float, float, float]]] = {
+        key: [] for key in labels
+    }
+    for token in evidence:
+        bounds = _box_bounds(token.get("box"))
+        if not bounds:
+            continue
+        label = _norm_label(str(token.get("text") or ""))
+        for field, names in labels.items():
+            if any(name in label for name in names):
+                anchors[field].append(bounds)
+
+    out: dict[str, list[dict[str, Any]]] = {key: [] for key in labels}
+    if not any(anchors.values()):
+        return out
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as src:
+            page = ImageOps.exif_transpose(src).convert("RGB")
+            width, height = page.size
+            for field, boxes in anchors.items():
+                candidates: list[dict[str, Any]] = []
+                for ax1, ay1, ax2, ay2 in boxes:
+                    ah = max(4.0, ay2 - ay1)
+                    top = max(0, int(ay1 - ah * 0.9))
+                    bottom = min(height, int(ay2 + ah * 0.9))
+                    left = max(0, int(ax2 - ah * 0.5))
+                    right = min(width, int(width * 0.99))
+                    if right <= left or bottom <= top:
+                        continue
+                    crop = page.crop((left, top, right, bottom))
+                    scale = 3
+                    crop = crop.resize(
+                        (max(1, crop.width * scale), max(1, crop.height * scale)),
+                        Image.Resampling.LANCZOS,
+                    )
+                    gray = ImageOps.grayscale(crop)
+                    gray = ImageOps.autocontrast(gray)
+                    variants = [
+                        ("autocontrast", gray),
+                        ("high_contrast", ImageEnhance.Contrast(gray).enhance(1.8)),
+                    ]
+                    for variant_name, variant in variants:
+                        result = engine(_image_bytes(variant))
+                        sub_evidence, _, _ = _ocr_evidence(result)
+                        for token in sub_evidence:
+                            value = _amount_token(str(token.get("text") or ""))
+                            if value is None or not 0 <= value <= 50_000_000:
+                                continue
+                            conf = token.get("confidence")
+                            candidates.append({
+                                "value": value,
+                                "text": token.get("text"),
+                                "confidence": conf,
+                                "variant": variant_name,
+                                "source_crop": [left, top, right, bottom],
+                            })
+
+                # Prefer candidates seen across multiple preprocess variants,
+                # then OCR confidence. Repetition is evidence, not arithmetic.
+                grouped: dict[int, dict[str, Any]] = {}
+                for item in candidates:
+                    entry = grouped.setdefault(item["value"], {
+                        **item,
+                        "votes": 0,
+                        "best_confidence": 0.0,
+                    })
+                    entry["votes"] += 1
+                    conf = item.get("confidence")
+                    if isinstance(conf, (int, float)):
+                        entry["best_confidence"] = max(entry["best_confidence"], float(conf))
+                ranked = list(grouped.values())
+                ranked.sort(
+                    key=lambda item: (item["votes"], item["best_confidence"]),
+                    reverse=True,
+                )
+                out[field] = ranked[:5]
+    except Exception:
+        return out
+    return out
+
+
+def choose_reocr_amounts(
+    candidates: dict[str, list[dict[str, Any]]]
+) -> tuple[dict[str, int | None], dict[str, Any]]:
+    """Choose independently OCR-observed retry values; arithmetic only validates."""
+    chosen = {
+        "amount_before_tax": None,
+        "tax_amount": None,
+        "total_amount": None,
+    }
+    used: dict[str, Any] = {}
+
+    for subtotal in candidates.get("amount_before_tax", [])[:4]:
+        for tax in candidates.get("tax_amount", [])[:4]:
+            for total in candidates.get("total_amount", [])[:4]:
+                if subtotal["value"] + tax["value"] == total["value"]:
+                    chosen.update({
+                        "amount_before_tax": subtotal["value"],
+                        "tax_amount": tax["value"],
+                        "total_amount": total["value"],
+                    })
+                    used = {
+                        "amount_before_tax": subtotal,
+                        "tax_amount": tax,
+                        "total_amount": total,
+                        "validation": "subtotal_plus_tax_equals_total",
+                    }
+                    return chosen, used
+
+    for field in chosen:
+        items = candidates.get(field) or []
+        if not items:
+            continue
+        top = items[0]
+        # Without a complete triple, require repeated preprocess agreement or
+        # very high OCR confidence before keeping an isolated value.
+        if top.get("votes", 0) >= 2 or top.get("best_confidence", 0.0) >= 0.93:
+            chosen[field] = top["value"]
+            used[field] = top
+    return chosen, used
 
 
 def normalize_invoice_number(text: str) -> str | None:
