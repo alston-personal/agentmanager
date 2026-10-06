@@ -50,7 +50,8 @@ echo "oursong_activate_stage=heartbeat_install_pass"
 systemctl --user daemon-reload
 echo "oursong_activate_stage=heartbeat_start"
 if ! systemctl --user start agentos-persona-pdca-heartbeat.service; then
-  echo "oursong_activate_stage=heartbeat_failed"\n  systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true
+  echo "oursong_activate_stage=heartbeat_failed"
+  systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true
   journalctl --user -u agentos-persona-pdca-heartbeat.service -n 20 --no-pager || true
   exit 11
 fi
