@@ -319,6 +319,33 @@ def test_receipt_projection_drops_username_paths_and_window_titles():
     assert 'C:/Users/private' not in rendered
 
 
+def test_desktop_preview_projection_keeps_only_bounded_image_evidence():
+    encoded = "QUJDRA=="
+    projected = _project_receipt({
+        'schema': 'agentos.node-receipt/v0.1',
+        'node_id': 'node-a',
+        'task_id': 'preview-1',
+        'action': 'desktop.preview.capture',
+        'ok': True,
+        'mime_type': 'image/jpeg',
+        'bytes': 4,
+        'sha256': 'a' * 64,
+        'width': 320,
+        'height': 180,
+        'image_base64': encoded,
+        'path': 'C:/Users/private/desktop.bmp',
+        'session': {'username': 'private-user'},
+    }, 'desktop.preview.capture')
+    assert projected['mime_type'] == 'image/jpeg'
+    assert projected['bytes'] == 4
+    assert projected['width'] == 320
+    assert projected['height'] == 180
+    assert projected['image_base64'] == encoded
+    rendered = json.dumps(projected)
+    assert 'C:/Users/private' not in rendered
+    assert 'private-user' not in rendered
+
+
 def test_typed_desktop_receipt_projection_is_bounded_and_private():
     staged = _project_receipt({
         'schema': 'agentos.node-receipt/v0.1',
