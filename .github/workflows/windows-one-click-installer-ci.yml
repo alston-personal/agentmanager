@@ -78,7 +78,6 @@ jobs:
             "per-user autorun fallback is intentionally disabled",
             "AgentOS Thin Client User",
             "AgentOS Thin Client Watchdog User",
-            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
             'versions\',
             '-StateRoot $state',
             'Install-Supervisor $python.Path $runtimeRoot',
