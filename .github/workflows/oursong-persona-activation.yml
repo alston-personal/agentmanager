@@ -43,6 +43,7 @@ jobs:
           heartbeat=Path('scripts/persona_pdca_heartbeat_user.py').read_text(encoding='utf-8')
           probe=Path('.github/workflows/persona-pdca-runtime-origin-probe.yml').read_text(encoding='utf-8')
           assert '):\\n    ' not in heartbeat
+          assert '+"\\\\n"' not in heartbeat
           assert 'ev),ev\\n          assert' not in probe
           print('persona_runtime_source_static=PASS')
           PY
