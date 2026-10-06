@@ -93,7 +93,11 @@ def main() -> int:
         current=str(tab.get("url") or "")
         if "/messages" not in current:
             _call(ws,"Page.navigate",{"url":"https://www.threads.com/messages"},1)
+            ws.close()
             time.sleep(5)
+            STAGE="cdp_reconnect"
+            tab=_threads_tab()
+            ws=_WS(str(tab["webSocketDebuggerUrl"]))
         else:
             time.sleep(1)
         STAGE="login_check"
