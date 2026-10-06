@@ -144,9 +144,14 @@ echo "dashboard_bg_old_slot_unit=$OLD_UNIT"
 # Prove the public surface remains healthy with only the new slot serving.
 ps2=$(curl -sS -o /tmp/bg-public-session-post-retire -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/auth/session || true)
 ph2=$(curl -sS -o /tmp/bg-public-health-post-retire -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true)
-test "$ps2" = 200
-test "$ph2" = 200
-grep -q 'agentos.one-health/v0.1' /tmp/bg-public-health-post-retire
+if [ "$ps2" != 200 ] || [ "$ph2" != 200 ] || ! grep -q 'agentos.one-health/v0.1' /tmp/bg-public-health-post-retire; then
+  systemctl --user restart "$OLD_UNIT" || true
+  sudo -n cp "$NGINX_SITE.pre-bg-$RUN_ID-$RUN_ATTEMPT" "$NGINX_SITE"
+  sudo -n nginx -t
+  sudo -n systemctl reload nginx
+  echo "ERROR: post-retire public verification failed; old slot and nginx upstream restored" >&2
+  exit 10
+fi
 echo "dashboard_bg_post_retire_public_verify=PASS"
 
 grep -Fq "set \$agentos_dashboard_upstream http://127.0.0.1:$TARGET_PORT;" "$NGINX_SITE"
