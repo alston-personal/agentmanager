@@ -852,10 +852,9 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, source_commit=source_commit, env_extra=env_extra)
     if action == ACTION_RECONCILE_CONTROL_INBOX:
         return _run_canonical_script(
-            "scripts/install_control_inbox_bridge_user.sh",
+            "scripts/reconcile_control_inbox_runtime_user.sh",
             timeout=180,
             source_commit=source_commit,
-            env_extra={"AGENTOS_REF": "core/integration"},
         )
     if action == ACTION_DEPLOY_REALM_GATEWAY:
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=600, source_commit=source_commit)
