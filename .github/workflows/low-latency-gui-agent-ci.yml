@@ -19,6 +19,7 @@ on:
     paths:
       - 'agentos_node/desktop_plan.py'
       - 'agentos_node/interactive_desktop.py'
+      - 'agentos_node/semantic_preview.py'
       - 'agentos_node/thin_client.py'
       - 'agentos_node/thin_client_transport.py'
       - 'agent_core/realm_server.py'
