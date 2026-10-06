@@ -93,6 +93,9 @@ jobs:
           if receipt.get('ok') is not True:
               print('mio_dm_oursong_acceptance_receipt_ok=false')
               print('mio_dm_oursong_dispatch_rc='+str(dispatch_rc))
+              print('mio_dm_oursong_failure_class='+str(receipt.get('failure_class') or ''))
+              for step in receipt.get('steps') or []:
+                  print('mio_dm_oursong_failure_step='+str(step.get('step') or 'unknown')+':rc='+str(step.get('returncode') if step.get('returncode') is not None else 'na')+':error='+str(step.get('error') or ''))
               raise SystemExit(4)
           assert 'mio_dm_oursong_acceptance=PASS' in safe, safe
           assert 'mio_dm_oursong_readback=PASS' in safe, safe
