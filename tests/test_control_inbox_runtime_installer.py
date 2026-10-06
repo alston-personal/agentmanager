@@ -29,7 +29,7 @@ def test_installer_is_exact_integration_generation_and_enables_identity_only_con
 
 def test_auth_repair_rebuilds_same_fixed_action_allowlist():
     text = _text(AUTH_REPAIR)
-    expected = 'agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,desktop.preview.capture,desktop.window.stage,desktop.pointer.click,desktop.text.insert,agentos.continuation.inspect,agentos.executor.job,node.runtime.converge,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover'
+    expected = 'agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,desktop.preview.capture,desktop.window.stage,desktop.pointer.click,desktop.text.insert,agentos.continuation.inspect,agentos.executor.job,node.runtime.converge,node.runtime.converge.inspect,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover'
     assert f'ALLOWED_ACTIONS="{expected}"' in text
     assert 'AGENTOS_CONTROL_ALLOWED_ACTIONS=$ALLOWED_ACTIONS' in text
     assert 'Exactly eleven fixed KEY=VALUE lines' in text
