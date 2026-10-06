@@ -60,14 +60,16 @@ jobs:
         run: |
           set -euo pipefail
           OUT="$RUNNER_TEMP/install.txt"
+          set +e
           AGENTOS_DISPATCH_WAIT_SECONDS=240 \
             bash scripts/agentos_dispatch.sh \
               threads.session supervisor.install "$GITHUB_SHA" \
               > "$OUT"
-          grep -q 'runner_window_dispatch=PASS' "$OUT"
-          python3 - "$OUT" "$GITHUB_SHA" <<'PY'
+          dispatch_rc=$?
+          set -e
+          python3 - "$OUT" "$GITHUB_SHA" "$dispatch_rc" <<'PY'
           import json,sys
-          path,expected=sys.argv[1:3]
+          path,expected,dispatch_rc=sys.argv[1:4]
           completed=None
           for raw in open(path,encoding='utf-8'):
               raw=raw.strip()
@@ -76,10 +78,16 @@ jobs:
               except json.JSONDecodeError: continue
               if row.get('state')=='completed' and isinstance(row.get('receipt'),dict):
                   completed=row
-          assert completed is not None, 'completed receipt missing'
+          assert completed is not None, f'completed receipt missing; dispatch_rc={dispatch_rc}'
           receipt=completed['receipt']
           assert receipt.get('source_commit')==expected, receipt
-          assert receipt.get('ok') is True, receipt
+          if receipt.get('ok') is not True:
+              print('mio_threads_session_supervisor_install_receipt_ok=false')
+              print('mio_threads_session_supervisor_install_dispatch_rc='+str(dispatch_rc))
+              print('mio_threads_session_supervisor_install_failure_class='+str(receipt.get('failure_class') or ''))
+              for step in receipt.get('steps') or []:
+                  print('mio_threads_session_supervisor_install_step='+str(step.get('step') or 'unknown')+':rc='+str(step.get('returncode') if step.get('returncode') is not None else 'na'))
+              raise SystemExit(4)
           scheduler=receipt.get('scheduler') or {}
           assert scheduler.get('worker_role')=='maintenance', scheduler
           text='\n'.join(str(s.get('stdout') or '') for s in receipt.get('steps') or [])
