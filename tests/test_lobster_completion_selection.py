@@ -60,6 +60,18 @@ class LobsterCompletionSelectionTests(unittest.TestCase):
             self.assertEqual(project, "z-project")
             self.assertEqual(task["work_id"], "running-work")
 
+    def test_completion_begin_transitions_and_handoffs_to_lobster(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = self.state_path(td)
+            self.register(path, "wi-claim", "market-master-evolution")
+            with patch.object(lobster, "COMPLETION_STATE", path):
+                work_id = lobster.completion_begin("[WI:wi-claim] finish wi-claim")
+            self.assertEqual(work_id, "wi-claim")
+            item = work_completion.load(path)["items"]["wi-claim"]
+            self.assertEqual(item["status"], "in_progress")
+            self.assertEqual(item["owner"], "role://lobster")
+            self.assertTrue(any(h.get("event") == "handoff" for h in item["history"]))
+
     def test_non_execution_owner_is_not_claimed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = self.state_path(td)
