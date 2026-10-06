@@ -27,7 +27,7 @@ jobs:
         查看這張完整辨識結果
         已掃描發票
         快速確認
-        請快速確認
+        review-guidance
       credit_account: ''
       credit_cost: 0
     secrets:
