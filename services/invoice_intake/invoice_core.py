@@ -275,6 +275,11 @@ def crop_rel(image: Image.Image, box: tuple[float, float, float, float]) -> Imag
     return image.crop((int(w*l), int(h*t), int(w*r), int(h*b)))
 
 
+def crop_abs(image: Image.Image, box: tuple[int, int, int, int]) -> Image.Image:
+    l, t, r, b = box
+    return image.crop((max(0,l), max(0,t), min(image.width,r), min(image.height,b)))
+
+
 def stamp_variants(image: Image.Image) -> list[Image.Image]:
     """Return OCR-friendly variants for red/blue/black stamps on white paper."""
     rgb = image.convert("RGB")
@@ -291,12 +296,16 @@ def stamp_variants(image: Image.Image) -> list[Image.Image]:
     return variants
 
 
-def ocr_stamp_text(image: Image.Image, *, digits_only: bool = False) -> list[str]:
+def ocr_stamp_text(image: Image.Image, *, digits_only: bool = False, fast: bool = False) -> list[str]:
     texts: list[str] = []
     whitelist = "0123456789" if digits_only else None
     lang = "eng" if digits_only else "chi_tra+eng"
-    for variant in stamp_variants(image):
-        for psm in (6, 11, 12):
+    variants = stamp_variants(image)
+    if fast:
+        variants = variants[:2]
+    psms = (6, 11) if fast else (6, 11, 12)
+    for variant in variants:
+        for psm in psms:
             text = ocr_image(variant, psm=psm, whitelist=whitelist, lang=lang)
             if text.strip() and text not in texts:
                 texts.append(text)
@@ -392,12 +401,15 @@ def extract_legacy_invoice(
     invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
     date_crop = crop_rel(image, (0.43, 0.11, 0.79, 0.30))
     amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
-    stamp_crop = crop_rel(image, (0.60, 0.38, 0.98, 0.96))
+    stamp_crop = (
+        crop_abs(image, stamp_regions[0].box)
+        if stamp_regions
+        else crop_rel(image, (0.60, 0.38, 0.98, 0.96))
+    )
 
     if not fields["invoice_number"]:
         invoice_texts = [
             ocr_image(invoice_crop, psm=7, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
-            ocr_image(invoice_crop, psm=6, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
             ocr_image(invoice_crop, psm=11, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
         ]
         value = next((normalize_invoice_number(x) for x in invoice_texts if normalize_invoice_number(x)), None)
@@ -410,7 +422,6 @@ def extract_legacy_invoice(
     if not fields["invoice_date"]:
         date_texts = [
             ocr_image(date_crop, psm=6, whitelist="0123456789/-"),
-            ocr_image(date_crop, psm=11, whitelist="0123456789/-"),
         ]
         value = next((normalize_roc_date(x) for x in date_texts if normalize_roc_date(x)), None)
         if value:
@@ -423,8 +434,6 @@ def extract_legacy_invoice(
         amount_regions = [
             amount_crop,
             crop_rel(image, (0.18, 0.24, 0.95, 0.90)),
-            crop_rel(image, (0.04, 0.42, 0.96, 0.97)),
-            image,
         ]
         amount_texts = []
         for region in amount_regions:
@@ -446,7 +455,7 @@ def extract_legacy_invoice(
         raw["fallback_used"].append("amounts")
 
     if not fields["seller_tax_id"]:
-        stamp_texts = ocr_stamp_text(stamp_crop, digits_only=True)
+        stamp_texts = ocr_stamp_text(stamp_crop, digits_only=True, fast=bool(stamp_regions))
         tax_ids: list[str] = []
         for stamp_text in stamp_texts:
             for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text)):
@@ -464,7 +473,7 @@ def extract_legacy_invoice(
         vendor_texts = [seller_region_text(rapid.get("raw_text") or "")]
         if rapid.get("document_type") != "three_part_uniform_invoice":
             vendor_texts.append(ocr_image(crop_rel(image, (0.02, 0.00, 0.98, 0.34)), psm=6, lang="chi_tra+eng"))
-        vendor_texts.extend(ocr_stamp_text(crop_rel(image, (0.42, 0.42, 0.99, 0.99))))
+        vendor_texts.extend(ocr_stamp_text(stamp_crop, fast=bool(stamp_regions)))
         vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
         if vendor:
             fields["vendor_name"] = vendor
@@ -616,7 +625,8 @@ class InvoiceStore:
         self.data_scope = data_scope
         self.originals = root / "originals"
         self.db_path = root / "invoice-intake.sqlite3"
-        self.processing_lock = threading.Lock()
+        max_parallel = max(1, min(4, int(os.environ.get("INVOICE_OCR_PARALLELISM", "2"))))
+        self.processing_slots = threading.BoundedSemaphore(max_parallel)
         stamp_db = Path(os.environ.get("STAMP_REGISTRY_PATH", str(root / "stamp-recognition.sqlite3")))
         self.stamp_store = StampStore(stamp_db)
         ocr_memory_db = Path(os.environ.get("OCR_MEMORY_PATH", str(root / "ocr-memory.sqlite3")))
@@ -852,7 +862,7 @@ class InvoiceStore:
 
     def process(self, invoice_id: str) -> dict[str, Any]:
         """Run OCR for one archived invoice and update its DB row."""
-        with self.processing_lock:
+        with self.processing_slots:
             with self.connect() as db:
                 row = db.execute("""
                   SELECT i.*, d.stored_path, d.sha256, d.original_filename
