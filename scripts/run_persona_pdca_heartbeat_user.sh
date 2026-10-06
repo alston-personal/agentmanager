@@ -10,6 +10,7 @@ REPLY_INTENT_GENERATOR="${AGENTOS_PERSONA_REPLY_INTENT_GENERATOR:-$HOME/.local/l
 POST_INTENT_GENERATOR="${AGENTOS_PERSONA_POST_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_post_intent_generator.py}"
 PUBLIC_ACTIVITY_PUBLISHER="${AGENTOS_MIO_PUBLIC_ACTIVITY_PUBLISHER:-$HOME/.local/lib/agentos/publish_mio_public_activity.py}"
 PUBLIC_ACTIVITY_OUTPUT="${AGENTOS_MIO_PUBLIC_ACTIVITY_OUTPUT:-/home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json}"
+TRIGGER="${AGENTOS_PERSONA_PDCA_TRIGGER:-oracle_local_timer}"
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
 exec 9>"$LOCK"
@@ -42,7 +43,7 @@ test -f "$DATA_REPO/$PERSONA_PATH/persona_state.json"
 test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
 test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 
-python3 "$TICK" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT" --trigger oracle_local_timer
+python3 "$TICK" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT" --trigger "$TRIGGER"
 python3 -m json.tool "$RECEIPT" >/dev/null
 
 # Core lane: internal PDCA + Observer only. Social cognition/execution runs on
