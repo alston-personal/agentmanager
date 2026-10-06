@@ -362,7 +362,7 @@ def seller_region_text(text: str) -> str:
 def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
     from rapidocr import RapidOCR
     engine = RapidOCR()
-    text, page_conf = ocr_page(engine, image_bytes)
+    evidence, text, page_conf = ocr_page_evidence(engine, image_bytes)
     doc_type, template_conf = classify(text)
     # Second-stage structural probe: some handwritten 3-part samples have a badly OCR'd
     # printed title, while invoice number + 5% subtotal/tax/total remain unambiguous.
@@ -405,19 +405,37 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
             confidence["seller_tax_id"] = 0.86
 
     visual_amounts = False
+    layout_values, layout_evidence = choose_layout_amounts(evidence)
+    amount_sources: dict[str, str] = {}
     if doc_type == "three_part_uniform_invoice":
         subtotal, tax, total, visual_amounts = choose_three_part_amounts(text)
         fields["amount_before_tax"] = subtotal
         fields["tax_amount"] = tax
         fields["total_amount"] = total
-        if total is not None:
+
+        # Spatial evidence is a conservative fill-only layer. It recovers values
+        # that the flattened-text parser missed but never overwrites an existing
+        # OCR value.
+        for key in ("amount_before_tax", "tax_amount", "total_amount"):
+            if fields[key] is None and layout_values.get(key) is not None:
+                fields[key] = layout_values[key]
+                amount_sources[key] = "layout_anchor"
+                confidence[key] = 0.90
+
+        if fields["total_amount"] is not None:
             conf = 0.97 if visual_amounts else 0.82
-            confidence["amount_before_tax"] = conf if subtotal is not None else 0.0
-            confidence["tax_amount"] = conf if tax is not None else 0.0
-            confidence["total_amount"] = conf
+            if "amount_before_tax" not in amount_sources:
+                confidence["amount_before_tax"] = conf if fields["amount_before_tax"] is not None else 0.0
+            if "tax_amount" not in amount_sources:
+                confidence["tax_amount"] = conf if fields["tax_amount"] is not None else 0.0
+            if "total_amount" not in amount_sources:
+                confidence["total_amount"] = conf
     else:
         nums = amount_candidates(text)
         total = total_from_lines(text)
+        if total is None and layout_values.get("total_amount") is not None:
+            total = layout_values["total_amount"]
+            amount_sources["total_amount"] = "layout_anchor"
         if total is None and nums:
             freq: dict[int, int] = {}
             for v in nums:
@@ -429,7 +447,7 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
                 total = repeated[0][1]
         fields["total_amount"] = total
         if total is not None:
-            confidence["total_amount"] = 0.94
+            confidence["total_amount"] = 0.90 if amount_sources.get("total_amount") == "layout_anchor" else 0.94
 
     return {
         "matched": True,
@@ -441,4 +459,6 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
         "raw_text": text,
         "page_confidence": page_conf,
         "visual_amounts": visual_amounts,
+        "amount_sources": amount_sources,
+        "layout_amount_evidence": layout_evidence,
     }
