@@ -106,3 +106,5 @@ jobs:
           assert 'mio_dm_oursong_acceptance=PASS' in safe, safe
           assert 'mio_dm_oursong_readback=PASS' in safe, safe
           PY
+
+# post-login acceptance 2026-10-06T11:48+08:00
