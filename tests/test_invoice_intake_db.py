@@ -306,6 +306,70 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
         self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
         self.assertFalse(result.raw["deep_fallback"].get("stamp_dependency", False))
 
+    def test_deep_fallback_error_clears_pending_without_destroying_fast_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            created = store.ingest(
+                jpeg_bytes(),
+                "deep-error.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-deep-error",
+            )
+            invoice_id = created["invoice_id"]
+            document_id = created["document_id"]
+            fast_raw = {
+                "engine": "fast-test",
+                "deep_fallback_pending": True,
+                "review": {
+                    "status": "needs_review",
+                    "required_fields": ["vendor_name"],
+                    "confirm_fields": [],
+                    "reasons": ["missing:vendor_name"],
+                },
+            }
+            with store.connect() as db:
+                db.execute(
+                    "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                    (
+                        "fast-extraction",
+                        document_id,
+                        "fast-test",
+                        __import__("json").dumps(fast_raw),
+                        "2026-10-06T00:00:00Z",
+                    ),
+                )
+                db.execute(
+                    """UPDATE invoices SET
+                         invoice_number='AB12345678',
+                         invoice_date='2026-10-06',
+                         vendor_name=NULL,
+                         seller_tax_id='16908319',
+                         amount_before_tax=1000,
+                         tax_amount=50,
+                         total_amount=1050,
+                         status='needs_review',
+                         confidence_json='{"invoice_number":0.99,"total_amount":0.99}'
+                       WHERE id=?""",
+                    (invoice_id,),
+                )
+
+            with patch(
+                "services.invoice_intake.invoice_core.deep_fallback_enrich",
+                side_effect=RuntimeError("synthetic deep failure"),
+            ):
+                store._deep_enrich_invoice(invoice_id)
+
+            item = store.get_invoice(invoice_id)
+            self.assertEqual(item["status"], "needs_review")
+            self.assertFalse(item["deep_fallback_pending"])
+            self.assertEqual(item["fields"]["invoice_number"], "AB12345678")
+            self.assertEqual(item["fields"]["total_amount"], 1050)
+            self.assertEqual(
+                (item.get("recognition") or {}).get("deep_fallback", {}).get("status"),
+                "error",
+            )
+
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
