@@ -26,6 +26,7 @@ class ControllerService:
     EXECUTOR_JOB_ACTION = 'agentos.executor.job'
     EXECUTOR_JOB_NODE = 'oracle-core-node'
     RUNTIME_CONVERGE_ACTION = 'node.runtime.converge'
+    RUNTIME_CONVERGE_INSPECT_ACTION = 'node.runtime.converge.inspect'
     RUNTIME_CONVERGE_NODE = 'oracle-core-node'
 
     def __init__(self, fabric: RealmFabricStore, executor_job_dispatcher: Any | None = None,
@@ -51,6 +52,7 @@ class ControllerService:
         'desktop.pointer.click': 'desktop.mouse',
         'desktop.text.insert': 'desktop.keyboard',
         'desktop.preview.capture': 'desktop.preview.capture',
+        RUNTIME_CONVERGE_INSPECT_ACTION: RUNTIME_CONVERGE_ACTION,
     }
 
     @classmethod
@@ -167,6 +169,28 @@ class ControllerService:
         validate_runtime_converge_request(canonical)
         return dict(self._runtime_dispatcher().submit(request=canonical))
 
+    def _inspect_runtime_converge(self, *, node_id: str, task_id: str,
+                                  payload: dict[str, Any], passthrough: dict[str, Any]) -> dict[str, Any]:
+        if payload:
+            raise ValueError('runtime converge inspect does not accept generic payload')
+        if passthrough:
+            raise ValueError(f'unexpected runtime-converge inspect fields: {sorted(passthrough)}')
+        if node_id != self.RUNTIME_CONVERGE_NODE:
+            raise ValueError(f'runtime converge inspect is not routable to target node: {node_id}')
+        task_id = str(task_id or '').strip()
+        if not task_id.startswith('action-') or len(task_id) > 96:
+            raise ValueError('invalid runtime converge task_id')
+        result = self._runtime_dispatcher().inspect(task_id)
+        if result is None:
+            return {
+                'schema': 'agentos.runtime-converge-receipt/v1',
+                'ok': True,
+                'action': self.RUNTIME_CONVERGE_ACTION,
+                'task_id': task_id,
+                'status': 'pending',
+            }
+        return dict(result)
+
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(request, dict):
             raise ValueError('controller request must be an object')
@@ -200,9 +224,18 @@ class ControllerService:
             raise ValueError(f'target node does not advertise capability: {required_capability}')
 
         if action == self.RUNTIME_CONVERGE_ACTION:
+            task_hint = str(request.get('task_id') or '').strip()
             return self._dispatch_runtime_converge(
                 node_id=node_id,
-                task_hint=str(request.get('task_id') or '').strip(),
+                task_hint=task_hint,
+                payload=payload,
+                passthrough=passthrough,
+            )
+
+        if action == self.RUNTIME_CONVERGE_INSPECT_ACTION:
+            return self._inspect_runtime_converge(
+                node_id=node_id,
+                task_id=str(request.get('task_id') or ''),
                 payload=payload,
                 passthrough=passthrough,
             )
