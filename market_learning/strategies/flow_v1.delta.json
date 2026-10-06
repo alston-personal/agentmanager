@@ -1,0 +1,15 @@
+{
+  "schema": "agentos.market-strategy-delta/v1",
+  "delta_id": "delta-flow-v1",
+  "strategy_id": "master-flow-v1",
+  "base_ref": "market-base-v1",
+  "set": {
+    "features.foreign_flow": 1.8,
+    "features.ownership_distribution": 1.7,
+    "features.margin": 1.4,
+    "features.price_action": 0.7
+  },
+  "add": {
+    "patterns.preferred": ["accumulation", "distribution", "ownership_migration"]
+  }
+}
