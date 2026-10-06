@@ -16,6 +16,7 @@ on:
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/issue117_experience_provider.py'
       - 'agentos_node/layoutlib_release_materialize_provider.py'
+      - 'agentos_node/layoutlib_production_promote_provider.py'
       - 'agentos_node/layoutlib_parity_provider.py'
       - 'agentos_node/typesafe_skill_install_provider.py'
       - 'agentos_node/gemini_cli_install_provider.py'
@@ -45,6 +46,7 @@ on:
       - 'tests/test_issue117_regression_floor.py'
       - 'tests/test_typesafe_skill_install_provider.py'
       - 'tests/test_layoutlib_release_materialize_provider.py'
+      - 'tests/test_layoutlib_production_promote_provider.py'
       - 'tests/test_layoutlib_parity_provider.py'
       - 'tests/test_gemini_cli_install_provider.py'
       - 'tests/test_codex_cli_install_provider.py'
@@ -129,6 +131,7 @@ jobs:
             tests/test_issue117_regression_floor.py \
             tests/test_typesafe_skill_install_provider.py \
             tests/test_layoutlib_release_materialize_provider.py \
+            tests/test_layoutlib_production_promote_provider.py \
             tests/test_layoutlib_parity_provider.py \
             tests/test_gemini_cli_install_provider.py \
             tests/test_codex_cli_install_provider.py \
@@ -195,6 +198,7 @@ jobs:
             agentos_node/executor_job_action_relay.py \
             agentos_node/issue117_experience_provider.py \
             agentos_node/layoutlib_release_materialize_provider.py \
+            agentos_node/layoutlib_production_promote_provider.py \
             agentos_node/layoutlib_parity_provider.py \
             agentos_node/gemini_cli_install_provider.py \
             agentos_node/codex_cli_install_provider.py \
