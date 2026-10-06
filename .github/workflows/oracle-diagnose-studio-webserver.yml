@@ -73,3 +73,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(layoutlab): Studio web-server diagnostic'
           git push origin HEAD:main
+
+# trigger: zero-downtime-dashboard-20261006
