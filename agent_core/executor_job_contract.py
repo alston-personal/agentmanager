@@ -422,6 +422,8 @@ def project_executor_job_receipt(
             "layoutlib_matching_files",
             "layoutlib_public_http",
             "layoutlib_parity",
+            "layoutlib_promoted_files",
+            "layoutlib_rollback_retained",
             "work_id",
             "completion_status",
             "completion_owner",
