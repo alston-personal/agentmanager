@@ -1,97 +1,130 @@
-# verify post-reauth keyword search 2026-09-19
-# operator requested Mio activity verification 2026-09-21; run existing governed monitor (no automatic unapproved posting)
-# refresh current Threads replies 2026-09-18T19:46+08:00
-# rerun after Threads reauthorization 2026-09-18
-# provider diagnostic retry
+# Immutable Galaxy monitor runtime migration. No social cycle is triggered here.
 name: Oracle Install Galaxy Threads Experiment Monitor
 
 on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-install-galaxy-threads-experiment-monitor.yml'
+      - 'scripts/migrate_galaxy_monitor_immutable_runtime_user.sh'
+      - 'scripts/install_galaxy_threads_experiment_monitor_user.sh'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - 'agent_core/runner_window.py'
   workflow_dispatch:
+
 permissions:
   contents: read
+  id-token: write
 
-# Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
+concurrency:
+  group: oracle-galaxy-monitor-runtime-migration
+  cancel-in-progress: false
+
 jobs:
-  install:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preflight monitor
+      - name: Mint GitHub OIDC Runner Window credential
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/core/integration"
-          test "$(id -un)" = "agentos-node"
-          python3 -m py_compile agentos_node/bootstrap_control.py agentos_node/persona_life.py agentos_node/social/post_experiment.py scripts/monitor_galaxy_threads_experiment_user.py scripts/monitor_social_post_experiment_user.py scripts/run_social_post_experiment_queue_user.py scripts/sync_sunlake_milkcat_persona_user.py scripts/evolve_mio_persona_ir_user.py scripts/mio_persona_social_loop_user.py scripts/sync_mio_pdca_social_outcome_user.py scripts/diagnose_mio_threads_search_scope_user.py
-          bash -n scripts/install_galaxy_threads_experiment_monitor_user.sh
-          grep -Fq "mio_social_outbound=SEARCH_READ_PASS" scripts/mio_persona_social_loop_user.py
-          PYTHONPATH=. python3 -m unittest discover -s tests -p test_mio_social_contract.py -v
-          echo "mio_social_regression=PASS"
-          echo "galaxy_experiment_monitor_preflight=PASS"
-
-      - name: Install persistent monitor through bootstrap control
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
-          REQUEST_ID="galaxy-monitor-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
-          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
-
-          # Only bootstrap_control is updated by the runner identity. The
-          # ubuntu-owned installer materializes all companion scripts from the
-          # immutable source commit, avoiding cross-user write failures.
-          for i in $(seq 1 120); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS"
-          test -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
-          import json, os, sys
-          from datetime import datetime, timezone
-          from pathlib import Path
-          path=Path(sys.argv[1]); request_id=sys.argv[2]; sha=sys.argv[3]
-          payload={
-            'schema':'agentos.bootstrap-request/v1',
-            'request_id':request_id,
-            'action':'agentos.social_threads_experiment_monitor.install',
-            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
-            'params':{'source_commit':sha},
-            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
-          }
-          tmp=path.with_suffix(path.suffix+'.tmp')
-          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+'\n',encoding='utf-8')
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
-          PY
-
-          for i in $(seq 1 480); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT" || { echo "galaxy_experiment_monitor_receipt=TIMEOUT"; exit 3; }
-
-          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
-          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
-          assert r.get('action')=='agentos.social_threads_experiment_monitor.install',r
-          assert r.get('executor_user')=='ubuntu',r
-          assert r.get('executor_uid')==1001,r
-          assert r.get('source_commit')==expected,r
-          assert r.get('ok') is True,r
-          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
-          assert 'galaxy_experiment_monitor_install=PASS' in text,text[-12000:]
-          assert 'galaxy_experiment_monitor_interval=10m' in text,text[-12000:]
-          assert 'galaxy_experiment_monitor_snapshot=PASS' in text,text[-12000:]
-          print('galaxy_experiment_monitor_receipt=PASS')
-          for line in text.splitlines():
-              if line.startswith(('galaxy_experiment_monitor_reply_count=','galaxy_experiment_monitor_new_replies=','galaxy_experiment_monitor_needs_attention=','galaxy_experiment_monitor_reply_catalog=','mio_social_loop=','mio_social_decision=','mio_social_publish=','mio_social_pdca_authority=','mio_pdca_social_outcome=','mio_pdca_outcome_sync=','mio_pdca_outcome_status=','mio_pdca_outcome_result=','mio_social_pending=','mio_social_new_external=','mio_social_outbound=','mio_social_outbound_today=','mio_life_event=','mio_energy=','mio_life_phase=','mio_relay_','mio_agy_probe=','mio_agy_relay=','mio_persona_ir_evolve=','mio_persona_ir_revision=','mio_persona_ir_new_events=','mio_persona_ir_new_growth=','mio_search_scope_probe=','mio_carousel_read_probe=','mio_carousel_existing_target=','mio_latest_comment_')):
-                  print(line)
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Wait for governed migration intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for _ in $(seq 1 90); do
+            if curl -fsS --max-time 5 \
+              -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+              "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" > "$RUNNER_TEMP/catalog.json"; then
+              if python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=d.get('intents') or d.get('catalog') or []
+          got={(x.get('capability'),x.get('operation')) for x in rows if isinstance(x,dict)}
+          raise SystemExit(0 if ('social.monitor','runtime.migrate') in got else 1)
+          PY
+              then
+                ready=1
+                break
+              fi
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          echo "galaxy_monitor_migration_intent=PASS"
+
+      - name: Migrate runtime through Runner Window
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=180 \
+            bash scripts/agentos_dispatch.sh social.monitor runtime.migrate "$GITHUB_SHA" \
+            | tee "$RUNNER_TEMP/galaxy-monitor-migration.txt"
+          python3 - "$RUNNER_TEMP/galaxy-monitor-migration.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          assert docs, 'missing migration receipt'
+          receipt=docs[-1].get('receipt') or {}
+          assert receipt.get('ok') is True, receipt
+          assert receipt.get('source_commit') == sys.argv[2], receipt
+          print('galaxy_monitor_runtime_migration_receipt=PASS')
           PY
 
-          # Snapshot/timer evidence is emitted by the ubuntu bootstrap action.
-          # Do not cross the user boundary from the self-hosted runner to inspect private state.
-# 2026-09-25 owner confirmed Mio lifecycle: observe -> event ledger -> persona IR -> reply.
+      - name: Start SSH agent for read-only live verification
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify immutable live unit roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          CURRENT=/home/ubuntu/.local/share/agentos/galaxy-experiment-monitor/current
+          RELEASE="$(readlink -f "$CURRENT")"
+          test -n "$RELEASE"
+          case "$RELEASE" in
+            /home/ubuntu/.local/share/agentos/galaxy-experiment-monitor/releases/*) ;;
+            *) echo "ERROR: unexpected Galaxy monitor release: $RELEASE" >&2; exit 20;;
+          esac
+          for unit in agentos-galaxy-experiment-monitor.service agentos-mio-agy-relay.service; do
+            wd="$(systemctl --user show "$unit" -p WorkingDirectory --value)"
+            test "$(readlink -f "$wd")" = "$RELEASE"
+            systemctl --user cat "$unit" | grep -Fq "$RELEASE"
+            if systemctl --user cat "$unit" | grep -Fq '/home/ubuntu/agentmanager'; then
+              echo "ERROR: mutable checkout remains in $unit" >&2
+              exit 21
+            fi
+            echo "galaxy_monitor_live_unit=$unit:immutable"
+          done
+          echo "galaxy_monitor_live_release=$RELEASE"
+          echo "galaxy_monitor_live_runtime=PASS"
+          REMOTE

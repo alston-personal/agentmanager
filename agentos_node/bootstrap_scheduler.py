@@ -71,6 +71,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_PROJECT_MIO_OBSERVER: ActionPolicy("maintenance", LOW, "low", ("observer.update",), ("oracle-core-runtime",)),
     bc.ACTION_DEPLOY_STUDIO_WEB_MIO: ActionPolicy("maintenance", LOW, "low", ("deployment",), ("oracle-core-runtime",)),
     bc.ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR: ActionPolicy("maintenance", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
+    bc.ACTION_MIGRATE_GALAXY_EXPERIMENT_MONITOR: ActionPolicy("maintenance", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
     bc.ACTION_INSTALL_MIO_OBSERVER_TIMER: ActionPolicy("maintenance", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
     bc.ACTION_DEPLOY_SOCIAL_RUNTIME: ActionPolicy("maintenance", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
     bc.ACTION_RECONCILE_CONTENT_SOCIAL: ActionPolicy("maintenance", 35, "normal", ("content.social.reconcile",), ("content-social-runtime",)),

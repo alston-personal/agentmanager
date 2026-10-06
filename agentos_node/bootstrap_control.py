@@ -39,6 +39,7 @@ ACTION_PUBLISH_MIO_DAY2 = "agentos.social_threads_mio_day2.publish"
 ACTION_PUBLISH_MIO_APPROVED = "agentos.social_threads_mio_approved.publish"
 ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES = "agentos.social_threads_sunlake_persona_replies.publish"
 ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR = "agentos.social_threads_experiment_monitor.install"
+ACTION_MIGRATE_GALAXY_EXPERIMENT_MONITOR = "agentos.social_threads_experiment_monitor.migrate_runtime"
 ACTION_INSPECT_MIO_SQUIRREL = "agentos.social_threads_mio_squirrel.inspect"
 ACTION_INSPECT_MIO_RECENT = "agentos.social_threads_mio_recent.inspect"
 ACTION_PROBE_MIO_IMAGE_CONTAINER = "agentos.social_threads_mio_image_container.probe"
@@ -93,6 +94,7 @@ ALLOWED_ACTIONS = {
     ACTION_PUBLISH_MIO_APPROVED,
     ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES,
     ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
+    ACTION_MIGRATE_GALAXY_EXPERIMENT_MONITOR,
     ACTION_INSPECT_MIO_SQUIRREL,
     ACTION_INSPECT_MIO_RECENT,
     ACTION_PROBE_MIO_IMAGE_CONTAINER,
@@ -255,6 +257,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_PUBLISH_GALAXY_DAY1,
         ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES,
         ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
+        ACTION_MIGRATE_GALAXY_EXPERIMENT_MONITOR,
         ACTION_INSPECT_MIO_SQUIRREL,
         ACTION_INSPECT_MIO_RECENT,
         ACTION_PROBE_MIO_IMAGE_CONTAINER,
@@ -868,6 +871,8 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/publish_sunlake_persona_replies_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR:
         return _run_canonical_script("scripts/install_galaxy_threads_experiment_monitor_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_MIGRATE_GALAXY_EXPERIMENT_MONITOR:
+        return _run_canonical_script("scripts/migrate_galaxy_monitor_immutable_runtime_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_INSPECT_MIO_SQUIRREL:
         return _run_canonical_script("scripts/inspect_mio_squirrel_followup_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_INSPECT_MIO_RECENT:
