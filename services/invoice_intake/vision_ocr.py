@@ -146,28 +146,23 @@ def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
 
 
 
-def read_amounts(image_bytes: bytes, *, api_key: str, model: str) -> dict:
-    """Targeted retry for the amount block when whole-image Vision leaves money fields blank."""
-    if not api_key or not model:
-        raise VisionError('CONFIGURATION_MISSING')
-    try:
-        with Image.open(BytesIO(image_bytes)) as source:
-            image = ImageOps.exif_transpose(source).convert('RGB')
-            width, height = image.size
-            # Taiwan handwritten invoices commonly place subtotal/tax/total in the
-            # lower-right summary area. Keep a broad crop so handwritten labels
-            # and nearby column context remain visible.
-            crop = image.crop((
-                int(width * 0.35),
-                int(height * 0.28),
-                int(width * 0.99),
-                int(height * 0.97),
-            ))
-            buf = BytesIO()
-            crop.save(buf, format='JPEG', quality=92)
-            crop_bytes = buf.getvalue()
-    except Exception:
-        raise VisionError('INVALID_IMAGE') from None
+def _read_amount_crop(
+    image: Image.Image,
+    crop_box: tuple[float, float, float, float],
+    *,
+    api_key: str,
+    model: str,
+) -> dict:
+    width, height = image.size
+    crop = image.crop((
+        int(width * crop_box[0]),
+        int(height * crop_box[1]),
+        int(width * crop_box[2]),
+        int(height * crop_box[3]),
+    ))
+    buf = BytesIO()
+    crop.save(buf, format='JPEG', quality=92)
+    crop_bytes = buf.getvalue()
 
     body = {
         'model': model,
@@ -229,9 +224,87 @@ def read_amounts(image_bytes: bytes, *, api_key: str, model: str) -> dict:
     return {
         'payload': payload,
         'model': model,
-        'crop': [0.35, 0.28, 0.99, 0.97],
+        'crop': list(crop_box),
         'input_bytes': len(crop_bytes),
-        'prompt_version': 'invoice-amount-crop-v1',
+        'prompt_version': 'invoice-amount-crop-v2',
+    }
+
+
+def _amount_score(payload: dict) -> tuple[int, int, int]:
+    present = sum(payload.get(key) is not None for key in MONEY_FIELDS)
+    arithmetic = 0
+    if all(payload.get(key) is not None for key in MONEY_FIELDS):
+        arithmetic = int(
+            payload['amount_before_tax'] + payload['tax_amount'] == payload['total_amount']
+        )
+    confident = int(not payload.get('needs_review'))
+    return (present, arithmetic, confident)
+
+
+def read_amounts(image_bytes: bytes, *, api_key: str, model: str) -> dict:
+    """Targeted multi-crop retry for handwritten subtotal/tax/total."""
+    if not api_key or not model:
+        raise VisionError('CONFIGURATION_MISSING')
+    try:
+        with Image.open(BytesIO(image_bytes)) as source:
+            image = ImageOps.exif_transpose(source).convert('RGB')
+            # Different Taiwanese invoice layouts place the summary block in
+            # different horizontal bands. Try a small ensemble only for hard
+            # cases where local OCR and whole-image Vision both missed money.
+            crop_boxes = [
+                (0.35, 0.28, 0.99, 0.97),  # right-biased broad summary area
+                (0.04, 0.42, 0.99, 0.98),  # full-width lower half
+                (0.18, 0.24, 0.99, 0.92),  # wide middle/lower document
+            ]
+            attempts = []
+            errors = []
+            for crop_box in crop_boxes:
+                try:
+                    result = _read_amount_crop(
+                        image, crop_box, api_key=api_key, model=model
+                    )
+                    attempts.append(result)
+                    payload = result['payload']
+                    if (
+                        all(payload.get(key) is not None for key in MONEY_FIELDS)
+                        and payload['amount_before_tax'] + payload['tax_amount'] == payload['total_amount']
+                        and not payload.get('needs_review')
+                    ):
+                        break
+                except VisionError as exc:
+                    errors.append(str(exc))
+    except VisionError:
+        raise
+    except Exception:
+        raise VisionError('INVALID_IMAGE') from None
+
+    if not attempts:
+        raise VisionError(errors[-1] if errors else 'INVALID_RESPONSE')
+
+    best = max(attempts, key=lambda item: _amount_score(item['payload']))
+    best_payload = dict(best['payload'])
+    conflicts = {}
+    for key in MONEY_FIELDS:
+        values = sorted({
+            item['payload'].get(key)
+            for item in attempts
+            if item['payload'].get(key) is not None
+        })
+        if len(values) > 1:
+            conflicts[key] = values
+            uncertain = set(best_payload.get('uncertain_fields') or [])
+            uncertain.add(key)
+            best_payload['uncertain_fields'] = sorted(uncertain)
+            best_payload['needs_review'] = True
+
+    return {
+        **best,
+        'payload': best_payload,
+        'attempt_count': len(attempts),
+        'attempt_crops': [item['crop'] for item in attempts],
+        'conflicts': conflicts,
+        'errors': errors,
+        'prompt_version': 'invoice-amount-multicrop-v2',
     }
 
 
