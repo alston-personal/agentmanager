@@ -38,13 +38,23 @@ test -f "${RELEASE}/scripts/sync_persona_pdca_social_outcome_user.py"
 test -f "${RELEASE}/scripts/install_persona_social_timer_user.sh"
 test -f "${RELEASE}/scripts/persona_pdca_heartbeat_user.py"
 
-echo "oursong_activate_stage=bootstrap_start"\npython3 "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"\necho "oursong_activate_stage=bootstrap_pass"
+echo "oursong_activate_stage=bootstrap_start"
+python3 "${RELEASE}/scripts/bootstrap_oursong_persona_user.py"
+echo "oursong_activate_stage=bootstrap_pass"
 
 # Cut over the legacy runtime-only producer to the repo-owned generic producer.
 # Keep the existing systemd unit/timer contract so rollback is a single symlink/file restore.
-echo "oursong_activate_stage=heartbeat_install_start"\ninstall -m 0755 "${RELEASE}/scripts/persona_pdca_heartbeat_user.py" "${HOME}/.local/bin/agentos-persona-pdca-heartbeat"\necho "oursong_activate_stage=heartbeat_install_pass"
+echo "oursong_activate_stage=heartbeat_install_start"
+install -m 0755 "${RELEASE}/scripts/persona_pdca_heartbeat_user.py" "${HOME}/.local/bin/agentos-persona-pdca-heartbeat"
+echo "oursong_activate_stage=heartbeat_install_pass"
 systemctl --user daemon-reload
-echo "oursong_activate_stage=heartbeat_start"\nif ! systemctl --user start agentos-persona-pdca-heartbeat.service; then\n  echo "oursong_activate_stage=heartbeat_failed"\n  systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true\n  journalctl --user -u agentos-persona-pdca-heartbeat.service -n 20 --no-pager || true\n  exit 11\nfi\necho "oursong_activate_stage=heartbeat_pass"
+echo "oursong_activate_stage=heartbeat_start"
+if ! systemctl --user start agentos-persona-pdca-heartbeat.service; then
+  echo "oursong_activate_stage=heartbeat_failed"\n  systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true
+  journalctl --user -u agentos-persona-pdca-heartbeat.service -n 20 --no-pager || true
+  exit 11
+fi
+echo "oursong_activate_stage=heartbeat_pass"
 HB_STATE="$(git -C "${HOME}/agent-data" show origin/main:personas/oursong_alstonhuang/pdca/state.json 2>/dev/null || true)"
 python3 -c 'import json,sys; s=json.load(sys.stdin); assert int(s.get("cycle") or 0)>=1; assert s.get("last_tick_at"); print("oursong_heartbeat_cutover=PASS"); print("oursong_heartbeat_cycle="+str(s["cycle"])); print("oursong_heartbeat_last_tick_at="+str(s["last_tick_at"]))' <<<"${HB_STATE}"
 
