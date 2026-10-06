@@ -247,7 +247,7 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
                 time.sleep(0.4)
 
             started = time.perf_counter()
-            with patch("services.invoice_intake.invoice_core.extract_invoice", return_value=fast), \
+            with patch("services.invoice_intake.invoice_core.extract_legacy_invoice", return_value=fast), \
                  patch.object(store, "_deep_enrich_invoice", side_effect=slow_deep):
                 result = store.process(created["invoice_id"])
             elapsed = time.perf_counter() - started
@@ -256,6 +256,79 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             self.assertEqual(result["status"], "recognition_insufficient")
             self.assertFalse(result["deep_fallback_pending"])
             self.assertTrue(result["background_enrichment_pending"])
+
+
+    def test_process_returns_terminal_fast_result_before_background_vision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            created = store.ingest(
+                jpeg_bytes(),
+                "vision-background.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-vision-background",
+            )
+            local = Extraction(
+                fields={
+                    "invoice_number": "EC55544057",
+                    "invoice_date": None,
+                    "vendor_name": "榮昌企業有限公司",
+                    "buyer_tax_id": None,
+                    "seller_tax_id": "16672215",
+                    "amount_before_tax": None,
+                    "tax_amount": None,
+                    "total_amount": None,
+                },
+                confidence={
+                    "invoice_number": 0.99,
+                    "vendor_name": 0.95,
+                    "seller_tax_id": 0.95,
+                },
+                raw={
+                    "engine": "local-fast",
+                    "review": {
+                        "status": "needs_review",
+                        "required_fields": ["invoice_date", "total_amount"],
+                        "confirm_fields": [],
+                        "reasons": ["missing:invoice_date", "missing:total_amount"],
+                    },
+                    "line_items": [],
+                },
+                review_required=True,
+            )
+            with patch.dict(
+                __import__("os").environ,
+                {
+                    "INVOICE_VISION_MODE": "primary",
+                    "GEMINI_INVOICE_MODEL": "test-model",
+                    "GEMINI_API_KEY": "test-key",
+                },
+            ), patch(
+                "services.invoice_intake.invoice_core.extract_legacy_invoice",
+                return_value=local,
+            ), patch("services.invoice_intake.invoice_core.threading.Thread") as thread_cls:
+                result = store.process(created["invoice_id"])
+
+            self.assertNotEqual(result["status"], "processing")
+            self.assertEqual(result["status"], "needs_review")
+            self.assertTrue(result["background_enrichment_pending"])
+            self.assertTrue(result["vision_enrichment_pending"])
+            target = thread_cls.call_args.kwargs["target"]
+            self.assertEqual(target, store._vision_enrich_invoice)
+
+    def test_prepare_reprocess_returns_immediately_in_processing_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            created = store.ingest(
+                jpeg_bytes(),
+                "queued-reprocess.jpg",
+                "image/jpeg",
+                source_type="upload",
+                batch_id="batch-reprocess",
+            )
+            queued = store.prepare_reprocess(created["invoice_id"])
+            self.assertEqual(queued["status"], "processing")
+            self.assertEqual(queued["invoice_id"], created["invoice_id"])
 
     def test_deep_fallback_only_fills_missing_fields(self):
         image = Image.new("RGB", (700, 1000), "white")
@@ -385,7 +458,7 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
                 batch_id="batch-error",
             )
             with patch(
-                "services.invoice_intake.invoice_core.extract_invoice",
+                "services.invoice_intake.invoice_core.extract_legacy_invoice",
                 side_effect=RuntimeError("synthetic provider/parser failure"),
             ):
                 with self.assertRaises(RuntimeError):
