@@ -384,3 +384,5 @@ On 2026-10-06 this trigger is being used to diagnose the shared Core runtime-con
 ### 2026-10-06 vopc5750 rollout diagnostic
 
 After the first semantic-preview rollout attempted an inline Thin Client self-update, the expected rollout receipt was not returned. A second attempt using deferred self-update also failed before the deferred task could be scheduled, indicating that vopc5750 was no longer consuming ONE tasks. The recovery sequence therefore treats node liveness as the blocker: refresh the existing ONE runtime inspection, verify NodeRegistry heartbeat freshness and bootstrap/health surfaces, restore the Windows Thin Client transport if stale, and only then resume semantic-preview live acceptance. No semantic-preview PASS is claimed until a new node receipt is observed.
+
+The ONE runtime inspection now also emits only task_id/action/queued_at metadata for vopc5750's pending queue during this recovery, so a stale self-update action can be detected before the Windows Thin Client is restarted. Payloads, credentials, and receipt contents are not exposed by this queue diagnostic.
