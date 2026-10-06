@@ -28,7 +28,11 @@ fi
 chmod 700 "$OUT_ROOT"
 echo "google_flow_runtime_preflight=PASS"
 
-timeout 900s "$PY" - "$CDP_URL" "$OUT_ROOT" "$PROMPT" <<'PY'
+ERR_LOG="$(mktemp /tmp/agentos-google-flow-error-XXXXXX.log)"
+cleanup_err() { rm -f "$ERR_LOG"; }
+trap cleanup_err EXIT
+set +e
+timeout 900s "$PY" - "$CDP_URL" "$OUT_ROOT" "$PROMPT" 2>"$ERR_LOG" <<'PY'
 from __future__ import annotations
 import hashlib,json,os,re,sys,time
 from datetime import datetime,timezone
@@ -254,3 +258,24 @@ with sync_playwright() as p:
     print("google_flow_sha256="+sha)
     print("google_flow_artifact_root="+str(run_dir))
 PY
+PY_RC=$?
+set -e
+if [ "$PY_RC" -ne 0 ]; then
+  class="UNKNOWN"
+  if grep -Eqi 'TargetClosedError|browser.*closed|context.*closed' "$ERR_LOG"; then
+    class="BROWSER_CONTEXT_LOST"
+  elif grep -Eqi 'connect_over_cdp|ECONNREFUSED|Connection refused|CDP' "$ERR_LOG"; then
+    class="CDP_ATTACH_FAILED"
+  elif grep -Eqi 'TimeoutError|timed out|timeout' "$ERR_LOG"; then
+    class="PLAYWRIGHT_TIMEOUT"
+  elif grep -Eqi 'net::ERR|navigation|Page\.goto' "$ERR_LOG"; then
+    class="NAVIGATION_ERROR"
+  elif grep -Eqi 'Traceback|AttributeError|TypeError|NameError|ValueError|RuntimeError' "$ERR_LOG"; then
+    class="SCRIPT_RUNTIME_ERROR"
+  fi
+  diag="$(sha256sum "$ERR_LOG" | awk '{print $1}')"
+  echo "google_flow_generate=RUNTIME_ERROR"
+  echo "google_flow_runtime_error_class=$class"
+  echo "google_flow_runtime_error_sha256=$diag"
+  exit 0
+fi
