@@ -1,0 +1,49 @@
+name: Direct Receipt Submit Probe
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/direct-receipt-submit-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Direct-submit one synthetic receipt from node runtime
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore(); tid='direct-receipt-submit-task-20261006-1015'
+          code="import os,json,traceback\nfrom pathlib import Path\nfrom agentos_node.client_cli import _load_policy\nfrom agentos_node.thin_client_transport import ClientConfig,build_client\nhome=Path(os.environ.get('AGENTOS_CLIENT_HOME') or (Path.home()/'.agentos'))\ncfg=ClientConfig.load(home/'client.json')\npol=_load_policy(home/'policy.json')\nt=build_client(cfg,pol)\nreceipt={'schema':'agentos.node-receipt/v0.1','realm_id':cfg.realm_id,'node_id':cfg.node_id,'task_id':'direct-submit-probe-20261006-1015','action':'shell.exec','started_at':'2026-10-06T02:15:00Z','completed_at':'2026-10-06T02:15:00Z','ok':False,'cognition_ids_used':['demo://receipt-submit-probe/20261006'],'error':'direct submit probe'}\ntry:\n    r=t.submit_receipt(receipt)\n    print('SUBMIT_OK='+json.dumps(r,ensure_ascii=False,separators=(',',':')))\nexcept Exception as e:\n    print('SUBMIT_ERROR='+type(e).__name__+': '+str(e))\n    traceback.print_exc()\n    raise"
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe','argv':['-c',code],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':['demo://receipt-submit-probe/20261006']})
+          for _ in range(35):
+              r=f.get_receipt(tid)
+              if r:
+                  print('TASK='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  break
+              time.sleep(1)
+          else: raise SystemExit('direct_submit_task_receipt_missing')
+          print('DIRECT='+json.dumps(f.get_receipt('direct-submit-probe-20261006-1015'),ensure_ascii=False,separators=(',',':')))
+          PY
+          REMOTE
