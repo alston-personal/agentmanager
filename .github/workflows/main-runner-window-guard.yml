@@ -26,6 +26,7 @@ jobs:
       - run: python3 scripts/check_main_runner_window_guard.py
 
 
+  # reconcile generation marker: runtime-converge observability 2026-10-06
   control-inbox-live-reconcile-once:
     if: >-
       github.event_name == 'push' &&
