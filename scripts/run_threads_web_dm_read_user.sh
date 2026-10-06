@@ -57,6 +57,15 @@ except ModuleNotFoundError as exc:
     print("threads_web_dm_error_type=ModuleNotFoundError")
     print("threads_web_dm_missing_module="+name)
     raise SystemExit(7)
+except SystemExit:
+    raise
+except Exception as exc:
+    kind=type(exc).__name__
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}",kind):
+        kind="UnknownError"
+    print("threads_web_dm_bridge=ERROR")
+    print("threads_web_dm_error_type="+kind)
+    raise SystemExit(8)
 PY
 )"
 RC=$?
