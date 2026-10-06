@@ -95,7 +95,8 @@ class StampRuntimeTests(unittest.TestCase):
                 "visual_amounts": True,
                 "total_amount": 1050,
             }
-            with patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
+            with patch.dict("os.environ", {"INVOICE_STAMP_ASSIST_MODE": "active"}), \
+                 patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
                  patch("services.invoice_intake.invoice_core.ocr_stamp_text") as stamp_ocr:
                 result = extract_legacy_invoice(image, stamp_store=store)
             stamp_ocr.assert_not_called()
@@ -103,6 +104,39 @@ class StampRuntimeTests(unittest.TestCase):
             self.assertEqual(result.fields["seller_tax_id"], "16908319")
             self.assertEqual(result.raw["stamp_recognition"]["status"], "MATCHED_CONFIRMED")
             self.assertEqual(result.raw["field_sources"]["vendor_name"], "stamp_registry")
+
+    def test_default_baseline_mode_does_not_call_stamp_detector(self):
+        image = synthetic_invoice()
+        template = {
+            "matched": True,
+            "document_type": "three_part_uniform_invoice",
+            "raw_text": "",
+            "fields": {
+                "invoice_number": "AB12345678",
+                "invoice_date": "2026-10-05",
+                "vendor_name": "基準企業有限公司",
+                "seller_tax_id": "16908319",
+                "amount_before_tax": 1000,
+                "tax_amount": 50,
+                "total_amount": 1050,
+            },
+            "confidence": {key: 0.99 for key in (
+                "invoice_number", "invoice_date", "vendor_name", "seller_tax_id",
+                "amount_before_tax", "tax_amount", "total_amount"
+            )},
+            "visual_amounts": True,
+            "total_amount": 1050,
+        }
+        with patch.dict("os.environ", {}, clear=False), \
+             patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
+             patch("services.invoice_intake.invoice_core.detect_stamp_regions") as detector:
+            import os
+            os.environ.pop("INVOICE_STAMP_ASSIST_MODE", None)
+            result = extract_legacy_invoice(image)
+        detector.assert_not_called()
+        self.assertEqual(result.raw["stamp_recognition"]["mode"], "legacy")
+        self.assertEqual(result.raw["stamp_recognition"]["status"], "DISABLED_BASELINE")
+        self.assertEqual(result.fields["vendor_name"], "基準企業有限公司")
 
     def test_public_invoice_fixtures_detect_stamp_candidates(self):
         # Real public invoice photos catch detector assumptions that synthetic
@@ -155,7 +189,8 @@ class StampRuntimeTests(unittest.TestCase):
                 return ["16908319"]
             return ["測試企業有限公司"]
 
-        with patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
+        with patch.dict("os.environ", {"INVOICE_STAMP_ASSIST_MODE": "active"}), \
+             patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
              patch("services.invoice_intake.invoice_core.detect_stamp_regions", return_value=[region]), \
              patch("services.invoice_intake.invoice_core.ocr_stamp_text", side_effect=fake_stamp_ocr):
             result = extract_legacy_invoice(image)
