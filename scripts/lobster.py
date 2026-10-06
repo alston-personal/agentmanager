@@ -265,7 +265,7 @@ def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
         # 注入角色 Persona, SOP 以及路徑約束
         full_prompt = (
             f"{system_prompt}\n\n"
-            f"你是 AgentOS Lobster Engine 調度之 {role}。\n"
+            f"你是 AgentOS Lobster Engine 調度之 {role_name}。\n"
             f"PRIMARY_OUTPUT_DIRECTORY: {target_dir}\n\n"
             f"## 執行 SOP:\n{sop}\n\n"
             f"## 任務內容：\n**{task_text}**\n\n"
