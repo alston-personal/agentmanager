@@ -154,6 +154,9 @@ def main() -> int:
                         return 4
                 else:
                     print("threads_web_dm_bridge=LOGIN_REQUIRED")
+                    if args.oursong_acceptance:
+                        print("mio_dm_oursong_stage=login_check")
+                        print("mio_dm_oursong_acceptance=LOGIN_REQUIRED")
                     if owns_context:
                         context.close()
                     else:
