@@ -27,6 +27,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pip install --disable-pip-version-check -q pillow
+      - name: Probe Gemini Interactions transport
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/gemini_interactions_probe.py
+
       - name: Run public handwritten invoice benchmark
         shell: bash
         run: |
