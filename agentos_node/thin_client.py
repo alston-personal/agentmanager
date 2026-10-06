@@ -153,7 +153,7 @@ class ThinClient:
         if platform.system() == 'Windows':
             caps.extend([
                 'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
-                'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
+                'desktop.preview.capture', 'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
                 'desktop.windows.tile', 'desktop.demo.start', 'desktop.demo.stage', 'desktop.demo.stop',
             ])
         elif platform.system() == 'Darwin':
@@ -311,6 +311,14 @@ class ThinClient:
             elif action == 'desktop.screenshot':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
                 result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
+            elif action == 'desktop.preview.capture':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
+                result = interactive_desktop.preview_capture(
+                    workspace,
+                    max_width=int(task.get('max_width') or 480),
+                    max_height=int(task.get('max_height') or 270),
+                    quality=int(task.get('quality') or 30),
+                )
             elif action == 'desktop.windows.tile':
                 result = interactive_desktop.tile_windows(task)
             elif action == 'desktop.demo.start':
