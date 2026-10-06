@@ -27,7 +27,10 @@ def _online_fabric(tmp_path: Path, *, include_workspace_roots: bool = True, plat
         'hostname': 'node-a',
         'platform': platform_name,
         'platform_release': '11' if platform_name == 'Windows' else '6.8.0',
-        'capabilities': ['agent.surface.inspect', 'desktop.open_url', 'shell.exec'],
+        'capabilities': [
+            'agent.surface.inspect', 'desktop.open_url', 'shell.exec',
+            'desktop.windows.tile', 'desktop.mouse', 'desktop.keyboard',
+        ],
         'tool_presence': {'python': 'C:/Python/python.exe'} if platform_name == 'Windows' else {'python3': '/usr/bin/python3', 'git': '/usr/bin/git'},
         'surface_inventory': {'surfaces': [], 'surface_count': 0, 'capabilities': []},
         'observed_at': '2099-01-01T00:00:00Z',
@@ -83,6 +86,67 @@ def test_controller_rejects_arbitrary_shell_even_when_node_has_capability(tmp_pa
     controller = ControllerService(fabric)
     with pytest.raises(PermissionError, match='controller action not permitted'):
         controller.dispatch('node-a', {'action': 'shell.exec', 'executable': 'cmd'})
+
+
+def test_typed_desktop_actions_map_to_bounded_node_capabilities(tmp_path: Path) -> None:
+    fabric, node_token = _online_fabric(tmp_path)
+    controller = ControllerService(fabric)
+
+    staged = controller.dispatch('node-a', {
+        'action': 'desktop.window.stage',
+        'title_contains': 'Google Gemini',
+        'zone': 'full',
+        'reserve_top_px': 8,
+        'margin_px': 4,
+        'unexpected': 'must-not-pass-through',
+    })
+    assert staged['action'] == 'desktop.window.stage'
+    task = fabric.pull_tasks('node-a', node_token)[0]
+    assert task == {
+        'schema': 'agentos.node-task/v0.1',
+        'task_id': staged['task_id'],
+        'controller_action': 'desktop.window.stage',
+        'cognition_ids_used': [],
+        'action': 'desktop.windows.tile',
+        'windows': [{'title_contains': 'Google Gemini', 'zone': 'full'}],
+        'reserve_top_px': 8,
+        'margin_px': 4,
+    }
+
+    clicked = controller.dispatch('node-a', {
+        'action': 'desktop.pointer.click', 'x': 123, 'y': 456, 'button': 'left',
+    })
+    task = fabric.pull_tasks('node-a', node_token)[0]
+    assert task['task_id'] == clicked['task_id']
+    assert task['action'] == 'desktop.mouse'
+    assert task['controller_action'] == 'desktop.pointer.click'
+    assert task['operation'] == 'click'
+    assert (task['x'], task['y'], task['button']) == (123, 456, 'left')
+
+    typed = controller.dispatch('node-a', {
+        'action': 'desktop.text.insert', 'text': 'hello Gemini',
+    })
+    task = fabric.pull_tasks('node-a', node_token)[0]
+    assert task['task_id'] == typed['task_id']
+    assert task['action'] == 'desktop.keyboard'
+    assert task['controller_action'] == 'desktop.text.insert'
+    assert task['operation'] == 'type'
+    assert task['text'] == 'hello Gemini'
+
+
+@pytest.mark.parametrize('request', [
+    {'action': 'desktop.window.stage', 'title_contains': 'x', 'zone': 'diagonal'},
+    {'action': 'desktop.window.stage', 'title_contains': '', 'zone': 'full'},
+    {'action': 'desktop.pointer.click', 'x': -1, 'y': 5},
+    {'action': 'desktop.pointer.click', 'x': 5, 'y': 5, 'button': 'middle'},
+    {'action': 'desktop.text.insert', 'text': ''},
+    {'action': 'desktop.text.insert', 'text': 'x' * 1001},
+])
+def test_typed_desktop_actions_reject_out_of_contract_payloads(tmp_path: Path, request: dict) -> None:
+    fabric, _ = _online_fabric(tmp_path)
+    controller = ControllerService(fabric)
+    with pytest.raises(ValueError):
+        controller.dispatch('node-a', request)
 
 
 def test_runtime_convergence_constructs_fixed_shell_and_preserves_watchdog(tmp_path: Path) -> None:
