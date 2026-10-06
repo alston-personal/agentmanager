@@ -37,9 +37,14 @@ def call(name, body, revision=None, query_key=False):
     except urllib.error.HTTPError as exc:
         status=None
         message=None
+        shape=None
+        raw_text=None
         try:
-            payload=json.loads(exc.read(64*1024))
-            error=payload.get("error")
+            raw_error=exc.read(64*1024)
+            raw_text=raw_error.decode("utf-8","replace")[:300].replace("\n"," ")
+            payload=json.loads(raw_error)
+            shape=",".join(sorted(payload.keys())) if isinstance(payload,dict) else type(payload).__name__
+            error=payload.get("error") if isinstance(payload,dict) else None
             if isinstance(error,dict):
                 status=error.get("status")
                 message=str(error.get("message") or "")[:500].replace("\n"," ")
@@ -49,7 +54,7 @@ def call(name, body, revision=None, query_key=False):
             pass
         ctype=exc.headers.get("Content-Type") if exc.headers else None
         server=exc.headers.get("Server") if exc.headers else None
-        print(f"probe={name} http={exc.code} google_status={status} content_type={ctype} server={server} message={message}")
+        print(f"probe={name} http={exc.code} google_status={status} content_type={ctype} server={server} shape={shape} message={message} raw={raw_text}")
         return False
     except Exception as exc:
         print(f"probe={name} transport={type(exc).__name__}")
@@ -69,7 +74,8 @@ def main():
         with urllib.request.urlopen(req,timeout=30) as response:
             print(f"probe=models_list http={response.status} content_type={response.headers.get('Content-Type')}")
     except urllib.error.HTTPError as exc:
-        print(f"probe=models_list http={exc.code} content_type={exc.headers.get('Content-Type') if exc.headers else None}")
+        raw=exc.read(64*1024).decode("utf-8","replace")[:300].replace("\n"," ")
+        print(f"probe=models_list http={exc.code} content_type={exc.headers.get('Content-Type') if exc.headers else None} raw={raw}")
 
     cases=[
       ("text_plain",{"model":MODEL,"input":"Return the integer 50."}),
