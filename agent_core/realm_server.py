@@ -495,13 +495,24 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'threads_web_dm_autonomous=',
                     'threads_web_dm_python_rc=',
                 )
-            elif action == bootstrap_control.ACTION_START_THREADS_WEB_DM_LOGIN:
+            elif action in {
+                bootstrap_control.ACTION_START_THREADS_WEB_DM_LOGIN,
+                bootstrap_control.ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN,
+            }:
                 safe_prefixes = (
                     'threads_web_dm_login_start=',
                     'threads_web_dm_login_mode=',
                     'threads_web_dm_login_browser_persistent=',
                     'threads_web_dm_login_remote_view=',
                     'threads_web_dm_login_transport=',
+                )
+            elif action == bootstrap_control.ACTION_INSTALL_OURSONG_THREADS_SESSION:
+                safe_prefixes = (
+                    'oursong_threads_session_install=',
+                    'oursong_threads_session_profile=',
+                    'oursong_threads_session_cdp_url=',
+                    'oursong_threads_session_cdp=',
+                    'oursong_threads_session_mio_isolated=',
                 )
             elif action == bootstrap_control.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR:
                 safe_prefixes = (
