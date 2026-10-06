@@ -175,7 +175,20 @@ with sync_playwright() as p:
         print("google_flow_host="+host)
         raise SystemExit(0)
 
-    # Enter an existing project or create a new one.
+    # Landing page / consent surface before the actual Flow workspace.
+    # Dismiss optional consent UI first, then enter Flow explicitly.
+    click_text(page,[r"^no thanks$",r"not now",r"稍後",r"不用了"],timeout_ms=1800)
+    page.wait_for_timeout(500)
+    if find_prompt(page) is None:
+        entered=click_text(
+            page,
+            [r"create with google flow",r"try in google flow",r"open.*flow",r"start.*flow"],
+            timeout_ms=3000,
+        )
+        if entered:
+            page.wait_for_timeout(5000)
+
+    # Enter an existing project or create a new one once inside the workspace.
     if find_prompt(page) is None:
         click_text(page,[r"new project",r"new",r"create.*project",r"start.*project",r"新增.*專案",r"建立.*專案",r"新增",r"建立"])
         page.wait_for_timeout(4000)
