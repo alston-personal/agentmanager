@@ -170,8 +170,40 @@ jobs:
               python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" register                 --id agentos-core-470-runtime-completion                 --project agentmanager                 --title 'Runtime isolation and completion ownership controller'                 --owner role://chatgpt.current                 --lease-seconds 3600                 --workspace "$DEV"                 --source 'https://github.com/alston-personal/agentmanager/issues/470'                 --next-action 'Migrate Dashboard production runtime from shared checkout to a service-specific immutable release/live pointer and prove the usage route survives unrelated checkout changes.'                 --accept 'Dashboard production runtime no longer executes from /home/ubuntu/agentmanager'                 --accept 'Runtime ownership CI rejects newly added shared-checkout production mutations'                 --accept 'Completion watchdog and immutable Lobster runtime have live Oracle receipts' >/dev/null
             fi
           fi
+          INTAKE="$TMP/market-master-intake.json"
+          cat > "$INTAKE" <<'JSON'
+          {
+            "schema": "agentos.work-intake/v1",
+            "work_id": "market-master-1200-mvp",
+            "project_id": "market-master-evolution",
+            "title": "Finish Market Master MVP v0.1",
+            "next_action": "Run recent-years 2454 replay with TWSE STOCK_DAY + T86 using 2022-2024 discovery, 2025 validation, and 2026 locked holdout; produce an evidence-backed result report before expanding scope.",
+            "acceptance": [
+              "Recent-years 2454 dataset is archived from official sources with immutable raw receipts",
+              "Discovery 2022-2024, validation 2025, and locked holdout 2026 replay are executed without future leakage",
+              "Flow, Momentum, Reversal, and Neutral seed strategies are compared on identical cutoffs",
+              "Result report includes sample count, directional accuracy, Brier score, abstention rate, MFE/MAE, and an explicit edge/no-edge conclusion",
+              "Terminal completion includes Inspector/verification evidence"
+            ],
+            "source": "https://github.com/alston-personal/agentmanager/issues/1200",
+            "workspace": "/home/ubuntu/agent-workspaces/agentmanager",
+            "lease_seconds": 1800
+          }
+          JSON
+          python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" register-intake --input "$INTAKE" >/tmp/market-master-intake-receipt.json
+          python3 - "$STATE" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf8'))
+          item=data.get('items',{}).get('market-master-1200-mvp')
+          assert item, 'market master intake missing'
+          assert item.get('owner') == 'role://completion.controller', item
+          assert item.get('status') in {'accepted','in_progress','blocked','verifying','done'}, item
+          assert item.get('project_id') == 'market-master-evolution', item
+          print('market_master_completion_intake=PASS status='+str(item.get('status'))+' owner='+str(item.get('owner')))
+          PY
+
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" audit >/dev/null
-          echo 'completion_ledger=PASS issue_470=durable'
+          echo 'completion_ledger=PASS issue_470=durable market_master_1200=durable'
 
           # Prove the two watchdog commands work as the real user before touching units.
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" reclaim-stale --lease-seconds 1800 >/tmp/completion-reclaim-preflight.json
