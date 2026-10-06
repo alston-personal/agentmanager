@@ -50,4 +50,4 @@ jobs:
           done
           REMOTE
 
-# trigger: initial
+# trigger: auth-callback-502-20261006
