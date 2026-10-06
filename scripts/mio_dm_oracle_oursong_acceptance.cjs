@@ -54,39 +54,56 @@ async function newMessagesTarget(){
   return t;
 }
 
-async function evalValue(cmd, expr){
-  const res = await cmd('Runtime.evaluate',{expression:expr,returnByValue:true,awaitPromise:true});
-  const rr = (((res||{}).result||{}).result)||{};
-  if(rr.exceptionDetails) throw new Error('RUNTIME_EVALUATE_EXCEPTION');
-  return rr.value;
+function axValue(node,key){
+  const v=(node||{})[key];
+  return v && typeof v==='object' ? String(v.value||'') : String(v||'');
+}
+
+async function axNodes(cmd){
+  const res=await cmd('Accessibility.getFullAXTree',{});
+  return (((res||{}).result||{}).nodes)||[];
+}
+
+async function clickBackend(cmd,backendNodeId){
+  const box=await cmd('DOM.getBoxModel',{backendNodeId});
+  const model=((box||{}).result||{}).model||{};
+  const q=model.content||model.border||[];
+  if(!Array.isArray(q)||q.length<8) throw new Error('BOXMODEL_UNAVAILABLE');
+  const xs=[q[0],q[2],q[4],q[6]], ys=[q[1],q[3],q[5],q[7]];
+  const x=xs.reduce((a,b)=>a+b,0)/4, y=ys.reduce((a,b)=>a+b,0)/4;
+  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});
+  await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});
 }
 
 async function main(){
   STAGE='target_new';
-  const target = await newMessagesTarget();
+  const target=await newMessagesTarget();
   await sleep(10000);
   STAGE='ws_connect';
-  const session = await connectTarget(String(target.webSocketDebuggerUrl));
-  try {
+  const session=await connectTarget(String(target.webSocketDebuggerUrl));
+  try{
     STAGE='login_check';
-    const stateExpr = "(()=>({url:location.href,body:(document.body?.innerText||'').slice(0,1200)}))()";
-    const state = await evalValue(session.cmd, stateExpr) || {};
-    const url = String(state.url||'').toLowerCase();
-    if(url.includes('/login') || url.includes('accountscenter')) {
+    const ft=await session.cmd('Page.getFrameTree',{});
+    const frame=((((ft||{}).result||{}).frameTree||{}).frame)||{};
+    const url=String(frame.url||'').toLowerCase();
+    if(url.includes('/login')||url.includes('accountscenter')){
       console.log('mio_dm_oursong_acceptance=LOGIN_REQUIRED');
       return 4;
     }
 
     STAGE='conversation_find';
-    const clickExpr = "(()=>{const target=" + JSON.stringify(TARGET) + ";const els=[...document.querySelectorAll('a,button,[role=\\\"button\\\"],[role=\\\"link\\\"]')];const e=els.find(x=>((x.innerText||'').trim()).includes(target));if(!e)return 'NOT_FOUND';e.click();return 'CLICKED';})()";
-    const clicked = await evalValue(session.cmd, clickExpr);
-    if(clicked!=='CLICKED'){ console.log('mio_dm_oursong_acceptance=NO_CONVERSATION'); return 5; }
+    let nodes=await axNodes(session.cmd);
+    const conv=nodes.find(n=>!n.ignored && axValue(n,'name').includes(TARGET) && n.backendDOMNodeId);
+    if(!conv){
+      console.log('mio_dm_oursong_acceptance=NO_CONVERSATION');
+      return 5;
+    }
+    await clickBackend(session.cmd,conv.backendDOMNodeId);
     await sleep(2500);
 
     STAGE='precheck';
-    const preExpr = "(()=>((document.querySelector('main')?.innerText||document.body.innerText||'').includes(" + JSON.stringify(MESSAGE) + ")?'FOUND':'MISSING'))()";
-    const already = await evalValue(session.cmd, preExpr);
-    if(already==='FOUND'){
+    nodes=await axNodes(session.cmd);
+    if(nodes.some(n=>axValue(n,'name').includes(MESSAGE))){
       console.log('mio_dm_oursong_acceptance=PASS');
       console.log('mio_dm_oursong_send=ALREADY_PRESENT');
       console.log('mio_dm_oursong_readback=PASS');
@@ -94,21 +111,41 @@ async function main(){
     }
 
     STAGE='composer';
-    const sendExpr = "(()=>{const text=" + JSON.stringify(MESSAGE) + ";const box=[...document.querySelectorAll('textarea,[contenteditable=\\\"true\\\"]')].find(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0});if(!box)return 'NO_COMPOSER';box.focus();if(box.tagName==='TEXTAREA'){const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;set.call(box,text);box.dispatchEvent(new Event('input',{bubbles:true}));}else{document.execCommand('selectAll',false,null);document.execCommand('insertText',false,text);box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));}const buttons=[...document.querySelectorAll('button,[role=\\\"button\\\"]')];const send=buttons.find(x=>/^(Send|傳送)$/i.test((x.innerText||x.getAttribute('aria-label')||'').trim()));if(send){send.click();return 'SENT_BUTTON';}box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));box.dispatchEvent(new KeyboardEvent('keypress',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));box.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return 'SENT_ENTER';})()";
-    const sendResult = await evalValue(session.cmd, sendExpr);
-    if(sendResult==='NO_COMPOSER'){ console.log('mio_dm_oursong_acceptance=NO_COMPOSER'); return 6; }
+    const textboxes=nodes.filter(n=>!n.ignored && axValue(n,'role')==='textbox' && n.backendDOMNodeId);
+    const box=textboxes[textboxes.length-1];
+    if(!box){
+      console.log('mio_dm_oursong_acceptance=NO_COMPOSER');
+      return 6;
+    }
+    await session.cmd('DOM.focus',{backendNodeId:box.backendDOMNodeId});
+    await session.cmd('Input.insertText',{text:MESSAGE});
+    await sleep(800);
+
+    STAGE='send';
+    nodes=await axNodes(session.cmd);
+    const send=nodes.find(n=>!n.ignored && n.backendDOMNodeId && /^(send|傳送)$/i.test(axValue(n,'name').trim()));
+    if(send){
+      await clickBackend(session.cmd,send.backendDOMNodeId);
+    }else{
+      await session.cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,nativeVirtualKeyCode:13});
+      await session.cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,nativeVirtualKeyCode:13});
+    }
 
     STAGE='readback';
     await sleep(3000);
-    const verifyExpr = "(()=>((document.querySelector('main')?.innerText||document.body.innerText||'').includes(" + JSON.stringify(MESSAGE) + ")?'FOUND':'MISSING'))()";
-    const verify = await evalValue(session.cmd, verifyExpr);
-    if(verify!=='FOUND'){ console.log('mio_dm_oursong_acceptance=UNVERIFIED'); return 7; }
+    nodes=await axNodes(session.cmd);
+    if(!nodes.some(n=>axValue(n,'name').includes(MESSAGE))){
+      console.log('mio_dm_oursong_acceptance=UNVERIFIED');
+      return 7;
+    }
 
     console.log('mio_dm_oursong_acceptance=PASS');
     console.log('mio_dm_oursong_send=PASS');
     console.log('mio_dm_oursong_readback=PASS');
     return 0;
-  } finally { try { session.ws.close(); } catch {} }
+  }finally{
+    try{session.ws.close();}catch{}
+  }
 }
 
 main().then(rc=>process.exit(rc)).catch(err=>{
