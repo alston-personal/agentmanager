@@ -36,6 +36,27 @@ with sync_playwright() as p:
     print("google_flow_recover_stage=FLOW_LOADED",flush=True)
     print("google_flow_recover_url="+str(page.url or "")[:500])
 
+    # Surface bounded controls for Google auth/security interstitials.
+    host=(page.url.split("/")[2] if "://" in str(page.url or "") else "")
+    if "myaccount.google.com" in host or "accounts.google.com" in host:
+        controls=[]
+        for sel in ("button","a","input"):
+            loc=page.locator(sel)
+            for i in range(min(loc.count(),40)):
+                item=loc.nth(i)
+                try:
+                    if not item.is_visible(timeout=100):
+                        continue
+                    label=(item.get_attribute("aria-label") or item.get_attribute("value") or item.inner_text(timeout=300) or "").strip()
+                    if label:
+                        controls.append((sel+":"+label)[:120])
+                except Exception:
+                    pass
+        if controls:
+            print("google_flow_recover_controls="+json.dumps(controls[:40],ensure_ascii=False,separators=(",",":")))
+        print("google_flow_recover=AUTH_INTERSTITIAL")
+        raise SystemExit(0)
+
     # Never treat public landing/marketing demo reels as generated project output.
     # First, try to enter the authenticated Flow workspace without creating or
     # generating anything.
