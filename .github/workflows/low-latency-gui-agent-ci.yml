@@ -5,6 +5,7 @@ on:
     paths:
       - 'agentos_node/desktop_plan.py'
       - 'agentos_node/interactive_desktop.py'
+      - 'agentos_node/semantic_preview.py'
       - 'agentos_node/thin_client.py'
       - 'agentos_node/thin_client_transport.py'
       - 'agent_core/realm_server.py'
@@ -40,7 +41,7 @@ jobs:
           python-version: '3.13'
       - name: Compile changed runtime modules
         run: |
-          python -m py_compile             agentos_node/desktop_plan.py             agentos_node/interactive_desktop.py             agentos_node/thin_client.py             agentos_node/thin_client_transport.py             agent_core/realm_server.py             agent_core/product_experience.py
+          python -m py_compile             agentos_node/desktop_plan.py             agentos_node/interactive_desktop.py             agentos_node/semantic_preview.py             agentos_node/thin_client.py             agentos_node/thin_client_transport.py             agent_core/realm_server.py             agent_core/product_experience.py
       - name: Run focused tests
         run: |
           python -m unittest             tests.test_low_latency_gui_agent             tests.test_product_experience
