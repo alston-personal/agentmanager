@@ -1,4 +1,5 @@
 name: Invoice Vision Benchmark
+# Includes sanitized Gemini transport diagnostics before extraction scoring.
 
 on:
   workflow_dispatch:
