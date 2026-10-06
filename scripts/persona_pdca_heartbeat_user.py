@@ -78,6 +78,9 @@ def main():
         p=run(["git","-c",GIT_CREDENTIAL,"push",DATA_HTTPS,"HEAD:main"],cwd=work,check=False)
         if p.returncode:
             print("persona_pdca_heartbeat=PUSH_FAILED",file=sys.stderr); return 5
+        refreshed=run(["git","-c",GIT_CREDENTIAL,"fetch",DATA_HTTPS,"+refs/heads/main:refs/remotes/origin/main"],check=False)
+        if refreshed.returncode:
+            print("persona_pdca_heartbeat=POST_PUSH_REFRESH_FAILED",file=sys.stderr); return 6
         print("persona_pdca_heartbeat=PASS")
         print("persona_pdca_heartbeat_at="+stamp)
         for slug,pid,cycle in changed:
