@@ -230,31 +230,39 @@ try {
   # Scheduled Task may have spawned python.exe as a child. Stopping the task wrapper
   # does not reliably terminate that child on Windows, leaving AgentOS source files
   # locked during an in-place upgrade. Kill only AgentOS Thin Client processes.
-  $agentProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object {
-      $_.CommandLine -and
-      $_.CommandLine -match 'agentos_node\.client_cli' -and
-      $_.CommandLine -match '\brun\b'
-    }
+  function Get-AgentOSThinClientProcesses {
+    return Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object {
+        if (-not $_.CommandLine) { return $false }
+        $cmd=[string]$_.CommandLine
+        $isClient =
+          ($cmd -match 'agentos_node\.client_cli') -or
+          ($cmd -match 'agentos-client\.cmd') -or
+          ($cmd -match 'AgentOS\\agentos_node\\thin_client\.py') -or
+          (($cmd -match '(?i)python(?:\.exe)?') -and ($cmd -match '(?i)AgentOS') -and ($cmd -match '(?i)client_cli|thin_client'))
+        $isRun =
+          ($cmd -match '(?i)(^|\s|")run($|\s|")') -or
+          ($cmd -match '(?i)client_cli.*run') -or
+          ($cmd -match '(?i)thin_client')
+        return ($isClient -and $isRun)
+      }
+  }
+
+  $agentProcesses = @(Get-AgentOSThinClientProcesses)
 
   foreach($proc in $agentProcesses) {
     Write-Host ("Stopping stale AgentOS Thin Client process PID " + $proc.ProcessId)
     & taskkill.exe /PID $proc.ProcessId /T /F | Out-Null
   }
 
-  if($agentProcesses) {
+  if($agentProcesses.Count -gt 0) {
     $deadline=(Get-Date).AddSeconds(10)
     do {
       Start-Sleep -Milliseconds 300
-      $stillRunning = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-          $_.CommandLine -and
-          $_.CommandLine -match 'agentos_node\.client_cli' -and
-          $_.CommandLine -match '\brun\b'
-        }
-    } while($stillRunning -and (Get-Date) -lt $deadline)
+      $stillRunning = @(Get-AgentOSThinClientProcesses)
+    } while($stillRunning.Count -gt 0 -and (Get-Date) -lt $deadline)
 
-    if($stillRunning) {
+    if($stillRunning.Count -gt 0) {
       $pids=($stillRunning | Select-Object -ExpandProperty ProcessId) -join ','
       throw "Stale AgentOS Thin Client process did not stop: PID(s) $pids"
     }
