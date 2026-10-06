@@ -347,6 +347,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'node_id'}
         elif action in {bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE, bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE}:
             allowed_params |= {'prompt'}
+        elif action == bootstrap_control.ACTION_GOOGLE_FLOW_RECOVER:
+            pass
         elif action == bootstrap_control.ACTION_VISION_STUDIO_PRODUCE:
             allowed_params |= {'project_id'}
         elif action == bootstrap_control.ACTION_EXECUTOR_JOB_SUBMIT:
@@ -491,6 +493,14 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'mio_dm_oursong_stage=',
                     'mio_dm_oursong_send=',
                     'mio_dm_oursong_readback=',
+                )
+            elif action == bootstrap_control.ACTION_GOOGLE_FLOW_RECOVER:
+                safe_prefixes = (
+                    'google_flow_recover=',
+                    'google_flow_recover_stage=',
+                    'google_flow_recover_output=',
+                    'google_flow_recover_bytes=',
+                    'google_flow_recover_sha256=',
                 )
             elif action == bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE:
                 safe_prefixes = (
