@@ -222,10 +222,22 @@ try {
   Write-Host "Pinned source: $sourceCommit"
 
   $oldTask=Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue
+  $oldWatchdog=Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction SilentlyContinue
+
+  # Stop the watchdog first. Otherwise it can race the repair by immediately
+  # restarting the Thin Client after we terminate it, re-locking source files
+  # while the installer is overwriting them.
+  if($oldWatchdog){
+    Stop-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction SilentlyContinue
+    Disable-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction SilentlyContinue | Out-Null
+  }
+
   if($oldTask){
     Stop-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
+    Disable-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue | Out-Null
   }
+
+  Start-Sleep -Seconds 1
 
   # Scheduled Task may have spawned python.exe as a child. Stopping the task wrapper
   # does not reliably terminate that child on Windows, leaving AgentOS source files
