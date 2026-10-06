@@ -263,6 +263,10 @@ jobs:
           print('invoice_intake_service_identity=PASS')
           PY
           tesseract --list-langs | grep -Fxq 'chi_tra'
+          echo '--- stale recovery receipt ---'
+          journalctl --user -u invoice-intake.service --since '-15 minutes' --no-pager \
+            | grep 'invoice_stale_recovery=' \
+            | tail -n 5 || true
           echo 'invoice_intake_service=PASS'
           REMOTE
 
