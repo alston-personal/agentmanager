@@ -1,9 +1,5 @@
-name: Oracle Layout Lab Official V2
+name: Oracle Layout Lab Official V2 (retired)
 
-# Product deployment is an explicit authority event. Do not bind it to generic
-# AgentOS/Core file pushes: an unrelated relay change previously triggered a
-# live Layout Lab deployment. Canonical product/release work must dispatch this
-# workflow intentionally with its own acceptance context.
 on:
   workflow_dispatch:
 
@@ -11,25 +7,11 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 14
+  retired:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Prepare image support
-        shell: bash
-        run: python3 -m pip install --user 'Pillow>=10,<13'
-
-      - name: Deploy and independently accept official Layout Lab
-        shell: bash
-        run: python3 scripts/deploy_layoutlab_official_v2.py
-
-      - name: Upload deployment evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: layoutlab-official-v2-deployment-evidence
-          path: .agentos/evidence/layoutlab-official-v2.txt
-          if-no-files-found: ignore
-          retention-days: 30
+      - name: Retirement notice
+        run: |
+          echo 'RETIRED: legacy Layout Lab Official V2 deploy carrier.'
+          echo 'Use the governed LayoutLib executor path: materialize -> production.promote -> production.parity.inspect.'
+          echo 'This workflow performs no Oracle or production mutation.'
