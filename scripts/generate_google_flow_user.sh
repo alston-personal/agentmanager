@@ -211,13 +211,23 @@ with sync_playwright() as p:
     click_text(page,[r"^video$",r"影片"],timeout_ms=1800)
     page.wait_for_timeout(1200)
 
+    print("google_flow_stage=PROMPT_INPUT_BEGIN")
     try:
-        box.click(timeout=2000)
-        box.fill(prompt,timeout=5000)
+        tag=(box.evaluate("(el) => el.tagName.toLowerCase()") or "").lower()
     except Exception:
-        box.click(timeout=2000)
+        tag=""
+    try:
+        editable=str(box.get_attribute("contenteditable") or "").lower()=="true"
+    except Exception:
+        editable=False
+
+    if tag in ("textarea","input") and not editable:
+        box.click(timeout=2500)
+        box.fill(prompt,timeout=8000)
+    else:
+        box.click(timeout=2500)
         page.keyboard.press("Control+A")
-        page.keyboard.type(prompt,delay=1)
+        page.keyboard.type(prompt,delay=0)
 
     save_debug(page,"before-generate")
     print("google_flow_stage=PROMPT_FILLED")
