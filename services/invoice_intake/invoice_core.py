@@ -95,6 +95,19 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def processing_is_stale(status: str | None, updated_at: str | None, *, threshold_seconds: int = 120) -> bool:
+    if status != "processing" or not updated_at:
+        return False
+    try:
+        stamp = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return False
+    age = (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()
+    return age >= threshold_seconds
+
+
 def normalize_invoice_number(text: str) -> str | None:
     compact = re.sub(r"[^A-Z0-9]", "", text.upper())
     for match in re.finditer(r"[A-Z0-9]{10}", compact):
@@ -1014,6 +1027,11 @@ class InvoiceStore:
             "batch_id": row["batch_id"] if "batch_id" in row.keys() else None,
             "source_type": row["source_type"] if "source_type" in row.keys() else None,
             "data_scope": row["data_scope"] if "data_scope" in row.keys() else None,
+            "updated_at": row["updated_at"] if "updated_at" in row.keys() else None,
+            "processing_stale": processing_is_stale(
+                row["status"] if "status" in row.keys() else None,
+                row["updated_at"] if "updated_at" in row.keys() else None,
+            ),
             "review": (
                 (json.loads(row["extraction_payload"]).get("review") or {})
                 if "extraction_payload" in row.keys() and row["extraction_payload"]
