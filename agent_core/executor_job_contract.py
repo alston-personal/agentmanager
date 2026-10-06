@@ -215,6 +215,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="issue://1200",
         read_only=False,
     ),
+    "completion.next.inspect": JobTypeSpec(
+        job_type="completion.next.inspect",
+        capability="agentos.completion.work.inspect",
+        authority="bounded-read-only",
+        executor_class="completion-controller",
+        project_id="agentos-core",
+        workload_ref="completion://next",
+        read_only=True,
+    ),
 }
 
 
