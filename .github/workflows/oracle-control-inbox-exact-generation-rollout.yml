@@ -5,6 +5,11 @@ name: Oracle Control Inbox Exact Generation Rollout
 # hook is restored before exit and never becomes runtime authority.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-control-inbox-exact-generation-rollout.yml'
 
 permissions:
   contents: read
