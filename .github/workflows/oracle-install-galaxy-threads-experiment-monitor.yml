@@ -118,11 +118,21 @@ jobs:
           for unit in agentos-galaxy-experiment-monitor.service agentos-mio-agy-relay.service; do
             wd="$(systemctl --user show "$unit" -p WorkingDirectory --value)"
             test "$(readlink -f "$wd")" = "$RELEASE"
-            systemctl --user cat "$unit" | grep -Fq "$RELEASE"
-            if systemctl --user cat "$unit" | grep -Fq '/home/ubuntu/agentmanager'; then
-              echo "ERROR: mutable checkout remains in $unit" >&2
-              exit 21
-            fi
+            fragment="$(systemctl --user show "$unit" -p FragmentPath --value)"
+            drops="$(systemctl --user show "$unit" -p DropInPaths --value)"
+            echo "galaxy_monitor_live_unit=$unit"
+            echo "galaxy_monitor_fragment=$(basename "$fragment")"
+            echo "galaxy_monitor_dropin_count=$(printf '%s' "$drops" | wc -w)"
+            found=0
+            for path in "$fragment" $drops; do
+              [ -f "$path" ] || continue
+              if grep -Fq '/home/ubuntu/agentmanager' "$path"; then
+                echo "galaxy_monitor_mutable_ref_file=$(basename "$path")"
+                found=1
+              fi
+              grep -Fq "$RELEASE" "$path" || true
+            done
+            test "$found" = 0 || { echo "ERROR: mutable checkout remains in $unit" >&2; exit 21; }
             echo "galaxy_monitor_live_unit=$unit:immutable"
           done
           echo "galaxy_monitor_live_release=$RELEASE"
