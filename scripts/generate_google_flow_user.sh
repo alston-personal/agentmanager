@@ -168,7 +168,7 @@ with sync_playwright() as p:
     print("google_flow_stage=FLOW_LOADED")
     host=(urlparse(page.url).hostname or "").lower()
     body=text_blob(page).lower()
-    login_markers=("sign in","choose an account","登入","登录","使用 google 帳戶","使用 google 账号")
+    login_markers=("sign in","choose an account","登入","登录","使用 google 帳戶","使用 google 账号","email or phone","forgot email?")
     if host.endswith("accounts.google.com") or any(x in body for x in login_markers):
         save_debug(page,"auth-required")
         print("google_flow_generate=AUTH_REQUIRED")
