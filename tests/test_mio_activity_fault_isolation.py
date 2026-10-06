@@ -74,3 +74,14 @@ def test_public_activity_exposes_autonomy_health_semantics():
     assert '"autonomy_health":health' in text
     assert 'age_minutes > heartbeat*1.75' in text
     assert 'activity_cycle==cycle and projection_cycle==cycle' in text
+
+
+def test_social_lane_fails_closed_on_malformed_persona_state():
+    repo=Path(__file__).resolve().parents[1]
+    text=(repo/"scripts"/"run_persona_social_actions_user.sh").read_text(encoding="utf-8")
+    assert 'persona_social_state_integrity=DEGRADED' in text
+    assert 'persona_social_action_runtime=DEGRADED_STATE' in text
+    assert 'json.loads(p.read_text(encoding="utf-8"))' in text
+    integrity=text.index('persona_social_state_integrity=PASS')
+    executor=text.index('python3 "$SOCIAL_EXECUTOR"')
+    assert integrity < executor
