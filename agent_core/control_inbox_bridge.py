@@ -177,6 +177,51 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
                 processes.append(window['process_name'][:128])
         if processes:
             projected['processes'] = sorted(set(processes))[:64]
+    elif action == 'desktop.window.stage':
+        screen = receipt.get('screen')
+        if (
+            isinstance(screen, list)
+            and len(screen) == 2
+            and all(isinstance(value, int) for value in screen)
+        ):
+            projected['screen'] = [int(screen[0]), int(screen[1])]
+        if isinstance(receipt.get('reserve_top_px'), int):
+            projected['reserve_top_px'] = int(receipt['reserve_top_px'])
+        windows = []
+        for row in receipt.get('windows') or []:
+            if not isinstance(row, dict):
+                continue
+            safe = {}
+            if str(row.get('zone') or '') in {'left', 'right', 'full'}:
+                safe['zone'] = str(row['zone'])
+            for key in ('matched', 'moved'):
+                if isinstance(row.get(key), bool):
+                    safe[key] = bool(row[key])
+            rect = row.get('rect')
+            if (
+                isinstance(rect, list)
+                and len(rect) == 4
+                and all(isinstance(value, int) for value in rect)
+            ):
+                safe['rect'] = [int(value) for value in rect]
+            if safe:
+                windows.append(safe)
+        if windows:
+            projected['windows'] = windows[:4]
+    elif action == 'desktop.pointer.click':
+        if str(receipt.get('operation') or '') == 'click':
+            projected['operation'] = 'click'
+        if str(receipt.get('button') or '') in {'left', 'right'}:
+            projected['button'] = str(receipt['button'])
+        for key in ('x', 'y'):
+            value = receipt.get(key)
+            if isinstance(value, int):
+                projected[key] = int(value)
+    elif action == 'desktop.text.insert':
+        if str(receipt.get('operation') or '') == 'type':
+            projected['operation'] = 'type'
+        if isinstance(receipt.get('characters'), int):
+            projected['characters'] = int(receipt['characters'])
     elif action == 'agentos.executor.job':
         # Executor receipts are already sanitized by the Node-local adapter, but
         # the public Control Inbox applies an independent allowlist. No raw model
