@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import base64, json, os, socket, struct, time, urllib.request
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote
 
 TARGET="oursong_alstonhuang"
 MESSAGE="聽說你那邊最近很會發文？等你的 DM 接好，我們再來看看誰比較會吐槽。"
@@ -9,6 +9,14 @@ STAGE="module"
 
 def _json_get(url: str):
     with urllib.request.urlopen(url, timeout=5) as r:
+        return json.load(r)
+
+def _json_new(url: str):
+    req=urllib.request.Request(
+        "http://127.0.0.1:9222/json/new?"+quote(url,safe=""),
+        method="PUT",
+    )
+    with urllib.request.urlopen(req, timeout=8) as r:
         return json.load(r)
 
 class _WS:
@@ -84,22 +92,15 @@ def _threads_tab():
 
 def main() -> int:
     global STAGE
-    STAGE="cdp_list"
-    tab=_threads_tab()
+    STAGE="target_new"
+    tab=_json_new("https://www.threads.com/messages")
+    if not tab.get("webSocketDebuggerUrl"):
+        raise RuntimeError("new Threads messages target missing websocket")
+    STAGE="target_settle"
+    time.sleep(10)
     STAGE="cdp_ws"
     ws=_WS(str(tab["webSocketDebuggerUrl"]))
     try:
-        STAGE="messages_goto"
-        current=str(tab.get("url") or "")
-        if "/messages" not in current:
-            _call(ws,"Page.navigate",{"url":"https://www.threads.com/messages"},1)
-            ws.close()
-            time.sleep(10)
-            STAGE="cdp_reconnect"
-            tab=_threads_tab()
-            ws=_WS(str(tab["webSocketDebuggerUrl"]))
-        else:
-            time.sleep(1)
         STAGE="login_check"
         state=_eval(ws,'(()=>({url:location.href,body:(document.body?.innerText||"").slice(0,1200)}))()',2) or {}
         url=str((state or {}).get("url") or "").lower()
