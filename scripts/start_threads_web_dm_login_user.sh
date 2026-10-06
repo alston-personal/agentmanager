@@ -6,12 +6,15 @@ if [ "$(id -un)" != "ubuntu" ]; then
   exit 2
 fi
 
-python3 - <<'PY'
+PERSONA="${AGENTOS_DM_PERSONA:-mio}"
+case "$PERSONA" in mio) CDP_BASE=http://127.0.0.1:9222 ;; oursong) CDP_BASE=http://127.0.0.1:9223 ;; *) echo "threads_web_dm_login_start=INVALID_PERSONA" >&2; exit 2 ;; esac
+AGENTOS_WEB_DM_CDP_URL="$CDP_BASE" python3 - <<'PY'
 import json
 import urllib.parse
 import urllib.request
 
-base='http://127.0.0.1:9222'
+import os
+base=os.environ['AGENTOS_WEB_DM_CDP_URL']
 with urllib.request.urlopen(base+'/json/version',timeout=3) as r:
     meta=json.load(r)
 assert meta.get('webSocketDebuggerUrl')
@@ -33,4 +36,5 @@ print('threads_web_dm_login_mode=oracle_gui_worker')
 print('threads_web_dm_login_browser_persistent=true')
 print('threads_web_dm_login_remote_view=localhost_only')
 print('threads_web_dm_login_transport=cdp_http')
+print('threads_web_dm_login_cdp_url='+base)
 PY

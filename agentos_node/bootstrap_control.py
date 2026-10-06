@@ -53,6 +53,8 @@ ACTION_READ_THREADS_WEB_DM = "agentos.social_threads_web_dm.read"
 ACTION_READ_OURSONG_THREADS_WEB_DM = "agentos.social_threads_web_dm.oursong_read"
 ACTION_PROBE_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_probe"
 ACTION_START_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_start"
+ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.oursong_login_start"
+ACTION_INSTALL_OURSONG_THREADS_SESSION = "agentos.social_threads_web_dm.oursong_session_install"
 ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR = "agentos.social_threads_web_dm.session_supervisor.install"
 ACTION_ACCEPT_MIO_DM_OURSONG = "agentos.social_threads_web_dm.oursong_acceptance"
 ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
@@ -114,6 +116,8 @@ ALLOWED_ACTIONS = {
     ACTION_READ_OURSONG_THREADS_WEB_DM,
     ACTION_PROBE_THREADS_WEB_DM_LOGIN,
     ACTION_START_THREADS_WEB_DM_LOGIN,
+    ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN,
+    ACTION_INSTALL_OURSONG_THREADS_SESSION,
     ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR,
     ACTION_ACCEPT_MIO_DM_OURSONG,
     ACTION_RUN_MIO_DM_DECISION,
@@ -985,7 +989,11 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_PROBE_THREADS_WEB_DM_LOGIN:
         return _run_canonical_script("scripts/probe_threads_web_dm_login_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_START_THREADS_WEB_DM_LOGIN:
-        return _run_canonical_script("scripts/start_threads_web_dm_login_user.sh", timeout=60, source_commit=source_commit)
+        return _run_canonical_script("scripts/start_threads_web_dm_login_user.sh", timeout=60, source_commit=source_commit, env_extra={"AGENTOS_DM_PERSONA":"mio"})
+    if action == ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN:
+        return _run_canonical_script("scripts/start_threads_web_dm_login_user.sh", timeout=60, source_commit=source_commit, env_extra={"AGENTOS_DM_PERSONA":"oursong"})
+    if action == ACTION_INSTALL_OURSONG_THREADS_SESSION:
+        return _run_canonical_script("scripts/install_oursong_threads_session_user.sh", timeout=180, source_commit=source_commit)
     if action == ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR:
         return _run_canonical_script("scripts/install_mio_threads_session_supervisor_user.sh", timeout=180, source_commit=source_commit)
     if action == ACTION_ACCEPT_MIO_DM_OURSONG:

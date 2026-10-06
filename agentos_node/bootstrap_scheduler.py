@@ -54,6 +54,8 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_READ_OURSONG_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read", "persona.social.dm.read"), ("oracle-gui-profile", "threads-oursong-gui")),
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui"), queue_ttl_seconds=90),
+    bc.ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write", "persona.social.dm.login"), ("threads-oursong-gui",), queue_ttl_seconds=90),
+    bc.ACTION_INSTALL_OURSONG_THREADS_SESSION: ActionPolicy("maintenance", 22, "high", ("browser.persistent_profile", "persona.social.dm.session"), ("threads-oursong-session",)),
     bc.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR: ActionPolicy("maintenance", 25, "normal", ("monitor.install",), ("oracle-core-runtime",)),
     bc.ACTION_ACCEPT_MIO_DM_OURSONG: ActionPolicy("gui", 11, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui"), queue_ttl_seconds=120),
     bc.ACTION_PROBE_THREADS_WEB_DM: ActionPolicy("gui", 15, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),

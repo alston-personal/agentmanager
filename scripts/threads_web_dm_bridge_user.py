@@ -121,7 +121,7 @@ def main() -> int:
             page=None
             owns_context=False
             transport="persistent_profile"
-            cdp_url=os.environ.get("AGENTOS_WEB_DM_CDP_URL") or ("http://127.0.0.1:9222" if sys.platform!="darwin" else "")
+            cdp_url=os.environ.get("AGENTOS_WEB_DM_CDP_URL") or (binding.cdp_url if sys.platform!="darwin" else "")
             if cdp_url:
                 try:
                     browser=p.chromium.connect_over_cdp(cdp_url,timeout=5000)

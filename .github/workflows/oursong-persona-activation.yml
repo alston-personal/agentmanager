@@ -12,6 +12,10 @@ on:
       - 'scripts/install_persona_social_timer_user.sh'
       - 'scripts/probe_oursong_persona_user.sh'
       - 'scripts/run_threads_web_dm_read_user.sh'
+      - 'scripts/install_oursong_threads_session_user.sh'
+      - 'scripts/start_threads_web_dm_login_user.sh'
+      - 'scripts/threads_web_dm_bridge_user.py'
+      - 'agentos_node/social/persona_dm.py'
       - '.github/workflows/oursong-persona-activation.yml'
   pull_request:
     branches:
@@ -41,6 +45,9 @@ jobs:
           python3 -m py_compile scripts/persona_pdca_heartbeat_user.py
           bash -n scripts/probe_oursong_persona_user.sh
           bash -n scripts/run_threads_web_dm_read_user.sh
+          bash -n scripts/install_oursong_threads_session_user.sh
+          bash -n scripts/start_threads_web_dm_login_user.sh
+          python3 -m py_compile scripts/threads_web_dm_bridge_user.py agentos_node/social/persona_dm.py
       - name: Reject literal escaped-newline contamination
         run: |
           python3 - <<'PY'
@@ -201,6 +208,31 @@ jobs:
           done
           test "$ok" = 1
 
+      - name: Ensure isolated Oursong Threads session
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oursong-session-install.txt"
+          AGENTOS_DISPATCH_WAIT_SECONDS=180 \
+            bash scripts/agentos_dispatch.sh \
+              persona.social.dm oursong.session.install "$GITHUB_SHA" \
+              | tee "$OUT"
+          grep -q 'runner_window_dispatch=PASS' "$OUT"
+          python3 - "$OUT" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          receipt=next((x.get('receipt') for x in reversed(docs) if x.get('state')=='completed' and isinstance(x.get('receipt'),dict)),None)
+          assert receipt and receipt.get('ok') is True, receipt
+          pairs={}
+          for line in receipt.get('evidence') or []:
+              if '=' in line:
+                  k,v=line.split('=',1);pairs[k]=v
+          assert pairs.get('oursong_threads_session_install')=='PASS',pairs
+          assert pairs.get('oursong_threads_session_cdp_url')=='http://127.0.0.1:9223',pairs
+          assert pairs.get('oursong_threads_session_mio_isolated')=='true',pairs
+          print('oursong_threads_session_acceptance=PASS')
+          PY
+
       - name: Read-only Oursong Threads DM identity acceptance
         shell: bash
         run: |
@@ -251,7 +283,7 @@ jobs:
           LOGIN_OUT="$RUNNER_TEMP/oursong-dm-login-start.txt"
           AGENTOS_DISPATCH_WAIT_SECONDS=90 \
             bash scripts/agentos_dispatch.sh \
-              threads.dm login.start "$GITHUB_SHA" \
+              persona.social.dm oursong.login.start "$GITHUB_SHA" \
               | tee "$LOGIN_OUT"
           grep -q 'runner_window_dispatch=PASS' "$LOGIN_OUT"
           python3 - "$LOGIN_OUT" "$GITHUB_SHA" <<'PY'
