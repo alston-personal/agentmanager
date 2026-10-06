@@ -478,6 +478,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             elif action == bootstrap_control.ACTION_ACCEPT_MIO_DM_OURSONG:
                 safe_prefixes = (
                     'mio_dm_oursong_acceptance=',
+                    'mio_dm_oursong_stage=',
                     'mio_dm_oursong_send=',
                     'mio_dm_oursong_readback=',
                 )
