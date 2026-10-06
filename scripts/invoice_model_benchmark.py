@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Provider-neutral benchmark for invoice OCR/VLM recognition quality."""
 from __future__ import annotations
 
 import argparse
