@@ -28,3 +28,15 @@ def test_bootstrap_control_uses_isolated_reconcile_script():
     )[0]
     assert "scripts/reconcile_control_inbox_runtime_user.sh" in block
     assert "scripts/install_control_inbox_bridge_user.sh" not in block
+
+
+def test_realm_core_carrier_reconciles_isolated_control_inbox():
+    workflow = Path(".github/workflows/deploy-realm-fabric-core.yml").read_text(encoding="utf-8")
+    assert "scripts/reconcile_control_inbox_runtime_user.sh" in workflow
+    assert "control_inbox_isolated_reconcile=PASS" in workflow
+    assert "AGENTOS_SOURCE_COMMIT=\"$SHA\"" in workflow
+
+
+def test_control_inbox_env_rebuild_preserves_runtime_reconnect_action():
+    script = Path("scripts/repair_control_inbox_github_auth_user.sh").read_text(encoding="utf-8")
+    assert "node.runtime.converge.inspect" in script
