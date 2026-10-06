@@ -18,13 +18,22 @@ if [[ "$PROJECT_ID" != "rain-exit-v001" ]]; then
   exit 4
 fi
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FLOW="$ROOT/scripts/generate_google_flow_user.sh"
+REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
+SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 FFMPEG="$(command -v ffmpeg || true)"
-if [[ ! -x "$FLOW" ]]; then
-  echo "vision_studio_produce=FLOW_GENERATOR_MISSING"
+if [[ -z "$SOURCE_COMMIT" || ! "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "vision_studio_produce=SOURCE_COMMIT_MISSING"
   exit 5
 fi
+FLOW_TMP="$(mktemp /tmp/agentos-vision-flow-XXXXXX.sh)"
+cleanup() { rm -f "$FLOW_TMP"; }
+trap cleanup EXIT
+if ! git -C "$REPO" show "$SOURCE_COMMIT:scripts/generate_google_flow_user.sh" > "$FLOW_TMP"; then
+  echo "vision_studio_produce=FLOW_GENERATOR_MATERIALIZE_FAILED"
+  exit 5
+fi
+chmod 0700 "$FLOW_TMP"
+FLOW="$FLOW_TMP"
 if [[ -z "$FFMPEG" ]]; then
   echo "vision_studio_produce=FFMPEG_MISSING"
   exit 6
