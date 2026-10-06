@@ -1,4 +1,5 @@
 name: Deploy Distributed AgentOS Core
+# trigger: provenance-based Oracle Core dirty recovery
 
 on:
   push:
