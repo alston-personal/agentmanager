@@ -43,6 +43,26 @@ def _session_info() -> dict[str, Any]:
 def _foreground_window() -> dict[str, Any]:
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
+    user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
+    user32.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowTextW.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+    user32.GetWindowThreadProcessId.argtypes = [ctypes.wintypes.HWND, ctypes.POINTER(ctypes.wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
+    user32.GetWindowRect.argtypes = [ctypes.wintypes.HWND, ctypes.POINTER(ctypes.wintypes.RECT)]
+    user32.GetWindowRect.restype = ctypes.wintypes.BOOL
+    kernel32.OpenProcess.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.BOOL, ctypes.wintypes.DWORD]
+    kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        ctypes.wintypes.HANDLE,
+        ctypes.wintypes.DWORD,
+        ctypes.wintypes.LPWSTR,
+        ctypes.POINTER(ctypes.wintypes.DWORD),
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+    kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
     hwnd = int(user32.GetForegroundWindow())
     if not hwnd:
         raise RuntimeError("no foreground window")
@@ -132,17 +152,50 @@ def _capture_bmp(region: dict[str, int], *, max_pixels: int) -> tuple[bytes, int
     src_w, src_h = region["width"], region["height"]
     out_w, out_h = _scaled_size(src_w, src_h, max_pixels)
 
-    screen_dc = user32.GetDC(0)
+    user32.GetDC.argtypes = [ctypes.wintypes.HWND]
+    user32.GetDC.restype = ctypes.wintypes.HDC
+    user32.ReleaseDC.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.HDC]
+    user32.ReleaseDC.restype = ctypes.c_int
+    gdi32.CreateCompatibleDC.argtypes = [ctypes.wintypes.HDC]
+    gdi32.CreateCompatibleDC.restype = ctypes.wintypes.HDC
+    gdi32.CreateCompatibleBitmap.argtypes = [ctypes.wintypes.HDC, ctypes.c_int, ctypes.c_int]
+    gdi32.CreateCompatibleBitmap.restype = ctypes.wintypes.HBITMAP
+    gdi32.SelectObject.argtypes = [ctypes.wintypes.HDC, ctypes.wintypes.HGDIOBJ]
+    gdi32.SelectObject.restype = ctypes.wintypes.HGDIOBJ
+    gdi32.BitBlt.argtypes = [
+        ctypes.wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.wintypes.DWORD,
+    ]
+    gdi32.BitBlt.restype = ctypes.wintypes.BOOL
+    gdi32.StretchBlt.argtypes = [
+        ctypes.wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.wintypes.DWORD,
+    ]
+    gdi32.StretchBlt.restype = ctypes.wintypes.BOOL
+    gdi32.SetStretchBltMode.argtypes = [ctypes.wintypes.HDC, ctypes.c_int]
+    gdi32.SetStretchBltMode.restype = ctypes.c_int
+    gdi32.GetDIBits.argtypes = [
+        ctypes.wintypes.HDC, ctypes.wintypes.HBITMAP, ctypes.wintypes.UINT,
+        ctypes.wintypes.UINT, ctypes.c_void_p, ctypes.c_void_p, ctypes.wintypes.UINT,
+    ]
+    gdi32.GetDIBits.restype = ctypes.c_int
+    gdi32.DeleteObject.argtypes = [ctypes.wintypes.HGDIOBJ]
+    gdi32.DeleteObject.restype = ctypes.wintypes.BOOL
+    gdi32.DeleteDC.argtypes = [ctypes.wintypes.HDC]
+    gdi32.DeleteDC.restype = ctypes.wintypes.BOOL
+
+    screen_dc = user32.GetDC(None)
     if not screen_dc:
         raise ctypes.WinError()
     mem_dc = gdi32.CreateCompatibleDC(screen_dc)
     if not mem_dc:
-        user32.ReleaseDC(0, screen_dc)
+        user32.ReleaseDC(None, screen_dc)
         raise ctypes.WinError()
     bitmap = gdi32.CreateCompatibleBitmap(screen_dc, out_w, out_h)
     if not bitmap:
         gdi32.DeleteDC(mem_dc)
-        user32.ReleaseDC(0, screen_dc)
+        user32.ReleaseDC(None, screen_dc)
         raise ctypes.WinError()
 
     old_obj = gdi32.SelectObject(mem_dc, bitmap)
@@ -210,7 +263,7 @@ def _capture_bmp(region: dict[str, int], *, max_pixels: int) -> tuple[bytes, int
         gdi32.SelectObject(mem_dc, old_obj)
         gdi32.DeleteObject(bitmap)
         gdi32.DeleteDC(mem_dc)
-        user32.ReleaseDC(0, screen_dc)
+        user32.ReleaseDC(None, screen_dc)
 
 
 def semantic_preview(task: dict[str, Any]) -> dict[str, Any]:
