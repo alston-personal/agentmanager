@@ -118,16 +118,20 @@ def save_debug(page,name):
     return path
 
 with sync_playwright() as p:
+    print("google_flow_stage=CONNECT_CDP")
     browser=p.chromium.connect_over_cdp(cdp_url)
+    print("google_flow_stage=CDP_CONNECTED")
     if not browser.contexts:
         raise RuntimeError("google_flow_no_browser_context")
     ctx=browser.contexts[0]
     page=next((x for x in ctx.pages if "flow.google.com" in str(x.url or "") or "accounts.google.com" in str(x.url or "")),None)
     if page is None:
         page=ctx.new_page()
+    print("google_flow_stage=NAVIGATE_FLOW")
     page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
     page.wait_for_timeout(5000)
 
+    print("google_flow_stage=FLOW_LOADED")
     host=(urlparse(page.url).hostname or "").lower()
     body=text_blob(page).lower()
     login_markers=("sign in","choose an account","登入","登录","使用 google 帳戶","使用 google 账号")
@@ -143,6 +147,8 @@ with sync_playwright() as p:
         page.wait_for_timeout(4000)
 
     box=find_prompt(page)
+    if box is not None:
+        print("google_flow_stage=PROMPT_READY")
     if box is None:
         save_debug(page,"no-prompt")
         print("google_flow_generate=UI_UNRECOGNIZED")
@@ -164,6 +170,7 @@ with sync_playwright() as p:
         page.keyboard.type(prompt,delay=1)
 
     save_debug(page,"before-generate")
+    print("google_flow_stage=PROMPT_FILLED")
 
     generated=False
     if click_text(page,[r"generate",r"create",r"生成",r"產生"],timeout_ms=3000):
@@ -179,6 +186,7 @@ with sync_playwright() as p:
         print("google_flow_generate=GENERATE_CONTROL_NOT_FOUND")
         raise SystemExit(0)
 
+    print("google_flow_stage=GENERATE_TRIGGERED")
     deadline=time.monotonic()+720
     video=None
     while time.monotonic()<deadline:
@@ -208,6 +216,7 @@ with sync_playwright() as p:
         print("google_flow_generate=TIMEOUT")
         raise SystemExit(0)
 
+    print("google_flow_stage=VIDEO_VISIBLE")
     save_debug(page,"generated")
     src=str(video.get_attribute("src") or "")
     output=run_dir/"google-flow.mp4"
@@ -274,8 +283,21 @@ if [ "$PY_RC" -ne 0 ]; then
     class="SCRIPT_RUNTIME_ERROR"
   fi
   diag="$(sha256sum "$ERR_LOG" | awk '{print $1}')"
+  exc_type="$(python3 - "$ERR_LOG" <<'PYERR'
+import re,sys
+lines=open(sys.argv[1],encoding='utf-8',errors='replace').read().splitlines()
+value='UNKNOWN'
+for line in reversed(lines[-40:]):
+    m=re.match(r'^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):', line.strip())
+    if m:
+        value=m.group(1)[:120]
+        break
+print(value)
+PYERR
+)"
   echo "google_flow_generate=RUNTIME_ERROR"
   echo "google_flow_runtime_error_class=$class"
+  echo "google_flow_runtime_exception_type=$exc_type"
   echo "google_flow_runtime_error_sha256=$diag"
   exit 0
 fi
