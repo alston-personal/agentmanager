@@ -111,7 +111,7 @@ class TestControllerService(ControllerFixture):
         task = self.fabric.pull_tasks('vopc5750', self.node_token)[0]
         self.assertEqual(typed['action'], 'desktop.text.insert')
         self.assertEqual(task['action'], 'desktop.keyboard')
-        self.assertEqual(task['operation'], 'type')
+        self.assertEqual(task['operation'], 'paste')
         self.assertEqual(task['text'], 'hello Gemini')
 
     def test_typed_desktop_actions_validate_contract(self):
