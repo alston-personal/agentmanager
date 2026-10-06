@@ -1,0 +1,76 @@
+name: Deploy VO10005870 Interactive Desktop Paste
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.github/workflows/deploy-vo10005870-interactive-desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy interactive desktop and reload singleton
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          f=RealmFabricStore()
+          tid='deploy-interactive-desktop-paste-20261006-1325'
+          ps=r'''$ErrorActionPreference='Stop'
+          $dst=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos_node\interactive_desktop.py'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/alston-personal/agentmanager/core/integration/agentos_node/interactive_desktop.py' -OutFile $dst
+          $script=@'
+          Stop-ScheduledTask -TaskName "AgentOS Thin Client Watchdog" -ErrorAction SilentlyContinue
+          Stop-ScheduledTask -TaskName "AgentOS Thin Client" -ErrorAction SilentlyContinue
+          Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -match '-m agentos_node\.client_cli run' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          Start-Sleep -Seconds 2
+          Start-ScheduledTask -TaskName "AgentOS Thin Client"
+          Start-Sleep -Seconds 5
+          Start-ScheduledTask -TaskName "AgentOS Thin Client Watchdog"
+          '@
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$script)
+          [pscustomobject]@{desktop=$dst;bytes=(Get-Item $dst).Length;reload='scheduled'}|ConvertTo-Json -Compress'''
+          if f.get_receipt(tid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':['demo://interactive-desktop/20261006']})
+          for _ in range(45):
+              r=f.get_receipt(tid)
+              if r is not None:
+                  print('DEPLOY='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0,r
+                  break
+              time.sleep(1)
+          else: raise SystemExit('deploy_receipt_missing')
+          time.sleep(15)
+          vid='verify-interactive-desktop-paste-20261006-1325'
+          code="import inspect,agentos_node.interactive_desktop as m; s=inspect.getsource(m.keyboard); print('HAS_PASTE='+str(\"op == 'paste'\" in s and 'Clipboard' in s and \"SendWait('^v')\" in s)); print(m.__file__)"
+          if f.get_receipt(vid) is None:
+              f.queue_task('VO10005870',{'schema':'agentos.node-task/v0.1','task_id':vid,'action':'shell.exec','executable':r'C:\Users\alston.huang\AppData\Local\Programs\Python\Python312\python.exe','argv':['-c',code],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':['demo://interactive-desktop/20261006']})
+          for _ in range(45):
+              r=f.get_receipt(vid)
+              if r is not None:
+                  print('VERIFY='+json.dumps(r,ensure_ascii=False,separators=(',',':')))
+                  assert r.get('ok') is True and 'HAS_PASTE=True' in str(r.get('stdout') or ''),r
+                  break
+              time.sleep(1)
+          else: raise SystemExit('verify_receipt_missing')
+          PY
+          REMOTE
