@@ -763,7 +763,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             source_commit = monitor_runtime_source_commit()
             result = run_monitor(store, monitor_id, source_commit)
         elif method == 'monitor.triggered':
-            result = store.notifications(unread_only=bool(params.get('unread_only', True)))
+            view = str(params.get('view') or 'notifications')
+            if view == 'notifications':
+                result = store.notifications(unread_only=bool(params.get('unread_only', True)))
+            elif view == 'attention':
+                result = store.attention(open_only=bool(params.get('open_only', True)))
+            else:
+                raise ValueError('unsupported monitor.triggered view')
         else:
             raise ValueError('unsupported monitor method')
         return {
