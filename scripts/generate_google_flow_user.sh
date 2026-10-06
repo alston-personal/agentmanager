@@ -87,6 +87,8 @@ def click_text(page, patterns, timeout_ms=2500):
                             return True
                     except Exception:
                         pass
+            except Exception:
+                pass
         try:
             loc=page.get_by_text(rgx,exact=False)
             for i in range(min(loc.count(),12)):
