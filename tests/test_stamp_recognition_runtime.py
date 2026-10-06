@@ -167,6 +167,42 @@ class StampRuntimeTests(unittest.TestCase):
         self.assertEqual(result.fields["seller_tax_id"], "16908319")
         self.assertEqual(result.fields["vendor_name"], "測試企業有限公司")
 
+    def test_extraction_reports_stage_timings(self):
+        image = synthetic_invoice()
+        template = {
+            "matched": True,
+            "document_type": "three_part_uniform_invoice",
+            "raw_text": "",
+            "fields": {
+                "invoice_number": "AB12345678",
+                "invoice_date": "2026-10-05",
+                "vendor_name": "測試企業有限公司",
+                "seller_tax_id": "16908319",
+                "amount_before_tax": 1000,
+                "tax_amount": 50,
+                "total_amount": 1050,
+            },
+            "confidence": {
+                "invoice_number": 0.99,
+                "invoice_date": 0.99,
+                "vendor_name": 0.99,
+                "seller_tax_id": 0.99,
+                "amount_before_tax": 0.99,
+                "tax_amount": 0.99,
+                "total_amount": 0.99,
+            },
+            "visual_amounts": True,
+            "total_amount": 1050,
+        }
+        with patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template), \
+             patch("services.invoice_intake.invoice_core.detect_stamp_regions", return_value=[]):
+            result = extract_legacy_invoice(image)
+        timings = result.raw["timings_ms"]
+        for key in ("template_ocr_ms", "stamp_detect_match_ms", "fallback_ocr_ms", "ocr_memory_ms", "total_local_ms"):
+            self.assertIn(key, timings)
+            self.assertGreaterEqual(timings[key], 0)
+        self.assertGreaterEqual(timings["total_local_ms"], timings["template_ocr_ms"])
+
     def test_unknown_stamp_never_auto_resolves_from_text(self):
         a = synthetic_invoice()
         other = Image.new("RGB", (700, 1000), "white")
