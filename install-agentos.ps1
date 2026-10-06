@@ -88,37 +88,42 @@ function Resolve-SourceCommit([string]$Ref) {
 
 function Install-UserRuntime([string]$Runner) {
   $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-  $watchdog=Join-Path $InstallRoot 'agentos-user-watchdog.ps1'
-  $escapedRunner=$Runner.Replace("'","''")
-
-  $watchdogBody=@(
-    '$ErrorActionPreference=''SilentlyContinue'''
-    'while($true){'
-    '  $client=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -match ''agentos_node\.client_cli'' -and $_.CommandLine -match ''\brun\b'' } | Select-Object -First 1'
-    ("  if(-not `$client){ Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File','" + $escapedRunner + "') }")
-    '  Start-Sleep -Seconds 60'
-    '}'
-  ) -join [Environment]::NewLine
-  $watchdogBody | Set-Content -Encoding UTF8 -LiteralPath $watchdog
+  $watchdog=Join-Path $InstallRoot 'scripts\windows\user_runtime_watchdog.ps1'
+  if(-not (Test-Path -LiteralPath $watchdog)){
+    throw "Per-user watchdog script missing: $watchdog"
+  }
 
   New-Item -Path $runKey -Force | Out-Null
   $clientRun='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $Runner + '"'
-  $watchdogRun='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdog + '"'
+  $watchdogRun='powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdog + '" -Runner "' + $Runner + '"'
   New-ItemProperty -Path $runKey -Name 'AgentOS Thin Client User' -Value $clientRun -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $runKey -Name 'AgentOS Thin Client Watchdog User' -Value $watchdogRun -PropertyType String -Force | Out-Null
 
-  Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',$watchdog)
+  Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+    '-NoProfile',
+    '-NonInteractive',
+    '-WindowStyle','Hidden',
+    '-ExecutionPolicy','Bypass',
+    '-File',$watchdog,
+    '-Runner',$Runner
+  )
   Start-Sleep -Seconds 4
 
   $running=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and $_.CommandLine -match 'agentos_node\.client_cli' -and $_.CommandLine -match '\brun\b' } |
+    Where-Object {
+      $_.CommandLine -and
+      $_.CommandLine -match 'agentos_node\.client_cli' -and
+      $_.CommandLine -match '\brun\b'
+    } |
     Select-Object -First 1
   if(-not $running){ throw 'Per-user hidden Thin Client did not start' }
 
-  $clientValue=(Get-ItemProperty -Path $runKey -Name 'AgentOS Thin Client User').'AgentOS Thin Client User'
-  $watchdogValue=(Get-ItemProperty -Path $runKey -Name 'AgentOS Thin Client Watchdog User').'AgentOS Thin Client Watchdog User'
-  if($clientValue -notmatch '(?i)-WindowStyle\s+Hidden' -or $watchdogValue -notmatch '(?i)-WindowStyle\s+Hidden'){
-    throw 'Per-user AgentOS autorun is not hidden'
+  $values=Get-ItemProperty -Path $runKey
+  if([string]$values.'AgentOS Thin Client User' -notmatch '(?i)-WindowStyle\s+Hidden'){
+    throw 'Per-user Thin Client autorun is not hidden'
+  }
+  if([string]$values.'AgentOS Thin Client Watchdog User' -notmatch '(?i)-WindowStyle\s+Hidden'){
+    throw 'Per-user watchdog autorun is not hidden'
   }
 
   Write-Host 'Background service: Running (headless, per-user)' -ForegroundColor Green
