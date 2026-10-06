@@ -1129,6 +1129,8 @@ class InvoiceStore:
                 updated = utcnow()
                 review = extraction.raw.get("review") or {}
                 status = str(review.get("status") or ("needs_review" if extraction.review_required else "extracted"))
+                deep_pending = status in {"recognition_insufficient", "needs_review"}
+                extraction.raw["deep_fallback_pending"] = deep_pending
                 f = extraction.fields
 
                 with self.connect() as db:
@@ -1181,7 +1183,16 @@ class InvoiceStore:
                     """, (json.dumps(extraction.raw, ensure_ascii=False), invoice_id)).fetchone()
                     payload = self._row_payload(done)
                     payload["engine"] = extraction.raw["engine"]
-                    return payload
+                    payload["deep_fallback_pending"] = deep_pending
+
+                if deep_pending:
+                    threading.Thread(
+                        target=self._deep_enrich_invoice,
+                        args=(invoice_id,),
+                        name=f"invoice-deep-{invoice_id[:8]}",
+                        daemon=True,
+                    ).start()
+                return payload
             except Exception:
                 with self.connect() as db:
                     db.execute(
@@ -1189,6 +1200,95 @@ class InvoiceStore:
                         (utcnow(), invoice_id),
                     )
                 raise
+
+    def _deep_enrich_invoice(self, invoice_id: str) -> None:
+        """Improve an already-visible fast result without blocking the user."""
+        with self.deep_fallback_slots:
+            try:
+                with self.connect() as db:
+                    row = db.execute(
+                        """SELECT i.*, d.stored_path, d.sha256, d.original_filename
+                           FROM invoices i JOIN documents d ON d.id=i.document_id
+                           WHERE i.id=? AND i.deleted_at IS NULL""",
+                        (invoice_id,),
+                    ).fetchone()
+                    if not row or row["status"] not in {"recognition_insufficient", "needs_review"}:
+                        return
+                    extraction_row = db.execute(
+                        """SELECT payload_json FROM extractions
+                           WHERE document_id=? ORDER BY rowid DESC LIMIT 1""",
+                        (row["document_id"],),
+                    ).fetchone()
+                    if not extraction_row:
+                        return
+                    base_raw = json.loads(extraction_row["payload_json"])
+                    base = Extraction(
+                        fields={
+                            "invoice_number": row["invoice_number"],
+                            "invoice_date": row["invoice_date"],
+                            "vendor_name": row["vendor_name"],
+                            "seller_tax_id": row["seller_tax_id"],
+                            "amount_before_tax": row["amount_before_tax"],
+                            "tax_amount": row["tax_amount"],
+                            "total_amount": row["total_amount"],
+                        },
+                        confidence=json.loads(row["confidence_json"] or "{}"),
+                        raw=base_raw,
+                        review_required=True,
+                    )
+                    image_path = Path(row["stored_path"])
+                    original_status = str(row["status"])
+
+                budget = max(
+                    5.0,
+                    min(60.0, float(os.environ.get("INVOICE_DEEP_FALLBACK_BUDGET_SECONDS", "20"))),
+                )
+                enriched = deep_fallback_enrich(
+                    image_path.read_bytes(),
+                    base,
+                    budget_seconds=budget,
+                )
+                enriched.raw["deep_fallback_pending"] = False
+                review = enriched.raw.get("review") or {}
+                new_status = str(review.get("status") or original_status)
+                updated = utcnow()
+                fields = enriched.fields
+
+                with self.connect() as db:
+                    current = db.execute(
+                        "SELECT status FROM invoices WHERE id=? AND deleted_at IS NULL",
+                        (invoice_id,),
+                    ).fetchone()
+                    if not current or current["status"] != original_status:
+                        return
+                    db.execute(
+                        "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                        (
+                            str(uuid.uuid4()),
+                            row["document_id"],
+                            enriched.raw["engine"],
+                            json.dumps(enriched.raw, ensure_ascii=False),
+                            updated,
+                        ),
+                    )
+                    db.execute(
+                        """UPDATE invoices SET
+                             invoice_number=?, invoice_date=?, vendor_name=?, seller_tax_id=?,
+                             amount_before_tax=?, tax_amount=?, total_amount=?, status=?,
+                             confidence_json=?, updated_at=?
+                           WHERE id=?""",
+                        (
+                            fields["invoice_number"], fields["invoice_date"],
+                            fields["vendor_name"], fields["seller_tax_id"],
+                            fields["amount_before_tax"], fields["tax_amount"],
+                            fields["total_amount"], new_status,
+                            json.dumps(enriched.confidence, ensure_ascii=False),
+                            updated, invoice_id,
+                        ),
+                    )
+            except Exception:
+                # Fast result remains authoritative; deep fallback is optional.
+                return
 
     def stale_processing_ids(self, *, limit: int = 50) -> list[str]:
         """Return old processing rows that no longer have a trustworthy in-process worker."""
@@ -1322,6 +1422,11 @@ class InvoiceStore:
                 (json.loads(row["extraction_payload"]).get("review") or {})
                 if "extraction_payload" in row.keys() and row["extraction_payload"]
                 else {}
+            ),
+            "deep_fallback_pending": (
+                bool(json.loads(row["extraction_payload"]).get("deep_fallback_pending"))
+                if "extraction_payload" in row.keys() and row["extraction_payload"]
+                else False
             ),
         }
 
