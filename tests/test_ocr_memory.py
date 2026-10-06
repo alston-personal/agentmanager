@@ -193,7 +193,7 @@ class OCRMemoryTests(unittest.TestCase):
             image = Image.new("RGB", (700, 1000), "white")
             buf = BytesIO()
             image.save(buf, format="JPEG")
-            with patch(
+            with patch.dict("os.environ", {"INVOICE_OCR_MEMORY_MODE": "active"}), patch(
                 "services.invoice_intake.invoice_core.extract_template_invoice",
                 return_value=template,
             ), patch(
@@ -205,6 +205,50 @@ class OCRMemoryTests(unittest.TestCase):
             self.assertEqual(result.raw["field_sources"]["vendor_name"], "ocr_memory")
             self.assertEqual(result.raw["ocr_memory"]["applied"][0]["field"], "vendor_name")
             self.assertEqual(result.review_required, False)
+
+    def test_default_memory_mode_suggests_but_does_not_mutate_ocr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = OCRMemoryStore(Path(tmp) / "memory.sqlite3")
+            ctx = OCRMemoryContext(template_id="three_part_uniform_invoice", entity_id="16908319")
+            for _ in range(2):
+                memory.remember(
+                    field_name="vendor_name",
+                    observed_value="好日子食晶有限公司",
+                    corrected_value="好日子食品有限公司",
+                    context=ctx,
+                )
+            template = {
+                "matched": True,
+                "document_type": "three_part_uniform_invoice",
+                "raw_text": "",
+                "fields": {
+                    "invoice_number": "AB12345678",
+                    "invoice_date": "2026-10-05",
+                    "vendor_name": "好日子食晶有限公司",
+                    "seller_tax_id": "16908319",
+                    "amount_before_tax": 1000,
+                    "tax_amount": 50,
+                    "total_amount": 1050,
+                },
+                "confidence": {
+                    "invoice_number": 0.99, "invoice_date": 0.99, "vendor_name": 0.78,
+                    "seller_tax_id": 0.99, "amount_before_tax": 0.99,
+                    "tax_amount": 0.99, "total_amount": 0.99,
+                },
+                "visual_amounts": True,
+                "total_amount": 1050,
+            }
+            image = Image.new("RGB", (700, 1000), "white")
+            buf = BytesIO(); image.save(buf, format="JPEG")
+            with patch.dict("os.environ", {}, clear=False), \
+                 patch("services.invoice_intake.invoice_core.extract_template_invoice", return_value=template):
+                import os
+                os.environ.pop("INVOICE_OCR_MEMORY_MODE", None)
+                result = extract_legacy_invoice(buf.getvalue(), ocr_memory=memory)
+            self.assertEqual(result.fields["vendor_name"], "好日子食晶有限公司")
+            self.assertEqual(result.raw["ocr_memory"]["mode"], "suggest")
+            self.assertEqual(result.raw["ocr_memory"]["applied"], [])
+            self.assertEqual(result.raw["ocr_memory"]["suggestions"][0]["field"], "vendor_name")
 
     def test_no_context_does_not_create_global_rule(self):
         with tempfile.TemporaryDirectory() as tmp:
