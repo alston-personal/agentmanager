@@ -28,12 +28,18 @@ def call(name, body):
         return True
     except urllib.error.HTTPError as exc:
         status=None
+        message=None
         try:
             payload=json.loads(exc.read(64*1024))
-            status=((payload.get("error") or {}).get("status"))
+            error=payload.get("error")
+            if isinstance(error,dict):
+                status=error.get("status")
+                message=str(error.get("message") or "")[:500].replace("\n"," ")
+            else:
+                message=str(error)[:500].replace("\n"," ")
         except Exception:
             pass
-        print(f"probe={name} http={exc.code} google_status={status}")
+        print(f"probe={name} http={exc.code} google_status={status} message={message}")
         return False
     except Exception as exc:
         print(f"probe={name} transport={type(exc).__name__}")
