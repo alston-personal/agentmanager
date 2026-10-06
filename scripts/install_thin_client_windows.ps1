@@ -1,6 +1,7 @@
 param(
   [string]$InstallRoot = "$env:LOCALAPPDATA\AgentOS",
   [string]$WorkspaceRoot = "$HOME\AgentOS",
+  [string]$StateRoot = "",
   [string]$SourceRef = "main",
   [string]$PythonExe = ""
 )
@@ -66,7 +67,7 @@ if ($Ref -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve immutable source
 $Base = "https://raw.githubusercontent.com/$Repo/$Ref"
 
 $Pkg = Join-Path $InstallRoot 'agentos_node'
-$State = Join-Path $InstallRoot 'state'
+$State = if([string]::IsNullOrWhiteSpace($StateRoot)){ Join-Path $InstallRoot 'state' } else { $StateRoot }
 New-Item -ItemType Directory -Force -Path $Pkg, $State, $WorkspaceRoot | Out-Null
 
 $pythonInfo = Resolve-RealPython $PythonExe
@@ -130,5 +131,6 @@ Write-Host "AgentOS Thin Client files installed: $InstallRoot"
 Write-Host "Source commit: $Ref"
 Write-Host "Python: $version"
 Write-Host "Policy workspace: $WorkspaceRoot"
+Write-Host "Shared state: $State"
 Write-Host "Launcher: $launcherPath"
 Write-Host "Watchdog: $watchdogScript"
