@@ -90,6 +90,8 @@ function Install-Supervisor([string]$PythonPath) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
   $watchdogTaskName='AgentOS Thin Client Watchdog'
+  $fallbackTaskName='AgentOS Thin Client User'
+  $fallbackWatchdogTaskName='AgentOS Thin Client Watchdog User'
 
   $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   if($existing){
@@ -105,7 +107,12 @@ function Install-Supervisor([string]$PythonPath) {
     $legacy=Get-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
     if($legacy){
       Stop-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
-      Unregister-ScheduledTask -TaskName $legacyTask -Confirm:$false
+      try { Disable-ScheduledTask -TaskName $legacyTask -ErrorAction Stop | Out-Null } catch {}
+      try {
+        Unregister-ScheduledTask -TaskName $legacyTask -Confirm:$false -ErrorAction Stop
+      } catch {
+        Write-Host ("Legacy task retained disabled because its ACL does not allow removal: " + $legacyTask) -ForegroundColor Yellow
+      }
     }
   }
   foreach($legacyScript in @(
@@ -151,7 +158,16 @@ function Install-Supervisor([string]$PythonPath) {
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -Hidden
-  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force | Out-Null
+  try {
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
+  } catch {
+    if($_.Exception.Message -notmatch '(?i)access.*denied|存取被拒|unauthorized'){
+      throw
+    }
+    $taskName=$fallbackTaskName
+    Write-Host ("Protected legacy task ACL detected; using user-owned fallback: " + $taskName) -ForegroundColor Yellow
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force -ErrorAction Stop | Out-Null
+  }
 
   $registeredAction=(Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).Actions | Select-Object -First 1
   if([string]$registeredAction.Execute -match '(?i)cmd\.exe$'){
@@ -174,7 +190,18 @@ function Install-Supervisor([string]$PythonPath) {
     -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
     -Hidden
-  Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force | Out-Null
+  try {
+    Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force -ErrorAction Stop | Out-Null
+  } catch {
+    if($_.Exception.Message -notmatch '(?i)access.*denied|存取被拒|unauthorized'){
+      throw
+    }
+    $watchdogTaskName=$fallbackWatchdogTaskName
+    $watchdogArgs='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdogScript + '" -TaskName "' + $taskName + '" -InstallRoot "' + $InstallRoot + '"'
+    $watchdogAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $watchdogArgs -WorkingDirectory $InstallRoot
+    Write-Host ("Protected legacy watchdog ACL detected; using user-owned fallback: " + $watchdogTaskName) -ForegroundColor Yellow
+    Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force -ErrorAction Stop | Out-Null
+  }
 
   $registeredWatchdogAction=(Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop).Actions | Select-Object -First 1
   if([string]$registeredWatchdogAction.Execute -notmatch '(?i)powershell\.exe$' -or [string]$registeredWatchdogAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden'){
