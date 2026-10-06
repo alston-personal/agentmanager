@@ -74,7 +74,10 @@ jobs:
           assert r.get('ok') is True,r
           assert r.get('source_commit')==expected,r
           ev=r.get('evidence') or []
-          # The public receipt intentionally caps evidence. Validate durable producer\n          # evidence instead of a trailing sentinel that can be truncated.\n          assert any(x=='persona_pdca_heartbeat_present=1' for x in ev),ev\n          assert any(x=='persona_pdca_runtime_unit=agentos-persona-pdca-heartbeat.service' for x in ev),ev
+          # The public receipt intentionally caps evidence. Validate durable producer
+          # evidence instead of a trailing sentinel that can be truncated.
+          assert any(x=='persona_pdca_heartbeat_present=1' for x in ev),ev
+          assert any(x=='persona_pdca_runtime_unit=agentos-persona-pdca-heartbeat.service' for x in ev),ev
           print('persona_pdca_origin_receipt=PASS')
           for line in ev:
               if line.startswith(('persona_pdca_runtime_unit=','persona_pdca_runtime_directive=','persona_pdca_runtime_file=','persona_pdca_runtime_sha256=','persona_pdca_runtime_units_found=')):
