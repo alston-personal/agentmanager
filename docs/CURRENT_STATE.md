@@ -369,6 +369,8 @@ labels and additional samples before promoting accuracy claims.
 
 ## Read-only ONE runtime inspection trigger
 
-`.agentos/commands/realm-one-runtime-inspect.json` is a bounded read-only trigger for the existing Oracle Realm/ONE inspection carrier. Changing its nonce requests a fresh observation of live identity, processes, listeners, user/system services, the local ONE health surface, and Node Map. It does not grant deployment authority, mutate runtime state, select an executor, or bypass ONE.
+`.agentos/commands/realm-one-runtime-inspect.json` is a bounded read-only trigger for the existing Oracle Realm/ONE inspection carrier. Changing its nonce requests a fresh observation of live identity, processes, listeners, user/system services, the local ONE health surface, Node Map, current shared-checkout HEAD/dirty-count, and a bounded projection of recent runtime-converge Action Relay receipts. Receipt projection excludes raw stdout/stderr, paths, argv, credentials, and free-form error text; only a short error type and allowlisted convergence fields may be emitted.
+
+Inspection evidence is uploaded as a short-retention GitHub Actions artifact. The workflow does not commit or push evidence directly to protected `main`.
 
 On 2026-10-06 this trigger is being used to diagnose the shared Core runtime-convergence failure blocking #200/#470 completion-ownership acceptance for Market Master #1200. A successful inspection is evidence only; it is not a deployment or completion claim.
