@@ -57,6 +57,22 @@ class InvoiceRealUserRegressionTests(unittest.TestCase):
         self.assertEqual(review["required_fields"], [])
         self.assertEqual(review["confirm_fields"], ["vendor_name"])
 
+    def test_almost_empty_result_is_recognition_insufficient(self):
+        fields = {
+            "invoice_number": None,
+            "invoice_date": None,
+            "vendor_name": None,
+            "seller_tax_id": None,
+            "amount_before_tax": None,
+            "tax_amount": None,
+            "total_amount": 1050,
+        }
+        confidence = {key: 0.0 for key in fields}
+        confidence["total_amount"] = 0.92
+        review = classify_review(fields, confidence)
+        self.assertEqual(review["status"], "recognition_insufficient")
+        self.assertIn("recognition:insufficient_fields", review["reasons"])
+
     def test_missing_core_field_stays_needs_review(self):
         fields = {
             "invoice_number": None,

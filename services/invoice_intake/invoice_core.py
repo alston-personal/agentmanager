@@ -76,7 +76,16 @@ def classify_review(
     hard_fields = list(dict.fromkeys(hard_fields))
     quick_fields = [x for x in dict.fromkeys(quick_fields) if x not in hard_fields]
 
-    if hard_fields:
+    meaningful_fields = (
+        "invoice_number", "invoice_date", "vendor_name", "seller_tax_id",
+        "amount_before_tax", "total_amount",
+    )
+    meaningful_count = sum(fields.get(key) not in (None, "") for key in meaningful_fields)
+
+    if meaningful_count <= 2:
+        status = "recognition_insufficient"
+        reasons.append("recognition:insufficient_fields")
+    elif hard_fields:
         status = "needs_review"
     elif quick_fields:
         status = "quick_confirm"
