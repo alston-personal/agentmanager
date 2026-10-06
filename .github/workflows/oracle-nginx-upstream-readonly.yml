@@ -1,0 +1,51 @@
+name: Oracle Nginx Upstream Readonly Diagnose
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-nginx-upstream-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read nginx topology and privilege boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo '=== identity ==='
+          id
+          echo '=== listeners ==='
+          ss -ltnp 2>&1 | grep -E ':(80|443|3000|3001|3099)\b' || true
+          echo '=== nginx site ==='
+          sed -n '1,240p' /etc/nginx/sites-enabled/studio.milkcat.org 2>&1 || true
+          echo '=== nginx includes ==='
+          grep -nE 'include|user ' /etc/nginx/nginx.conf 2>&1 || true
+          echo '=== nginx status ==='
+          systemctl --no-pager --full status nginx.service 2>&1 | head -100 || true
+          echo '=== sudo boundary ==='
+          sudo -n -l 2>&1 || true
+          echo '=== writable candidates ==='
+          for p in /etc/nginx/sites-enabled/studio.milkcat.org /etc/nginx/sites-available/studio.milkcat.org /etc/nginx/conf.d; do
+            [ -e "$p" ] || continue
+            stat -c '%U:%G %a %n' "$p" 2>&1 || true
+            [ -w "$p" ] && echo "writable=$p" || true
+          done
+          echo '=== dashboard units ==='
+          systemctl --user cat agentos-dashboard.service 2>&1 || true
+          systemctl --user list-units --type=service --all --no-pager | grep -Ei 'dashboard|studio|proxy' || true
+          REMOTE
