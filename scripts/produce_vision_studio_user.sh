@@ -63,11 +63,13 @@ for i in 0 1 2 3; do
     flow_exc="$(awk -F= '/^google_flow_runtime_exception_type=/{print $2}' "$log" | tail -n1)"
     flow_stage="$(awk -F= '/^google_flow_stage=/{print $2}' "$log" | tail -n1)"
     flow_host="$(awk -F= '/^google_flow_host=/{print $2}' "$log" | tail -n1)"
+    flow_controls="$(awk -F= '/^google_flow_ui_controls=/{print substr($0,index($0,"=")+1)}' "$log" | tail -n1)"
     echo "vision_studio_flow_status=${flow_status:-PROCESS_FAILED}"
     if [[ -n "$flow_class" ]]; then echo "vision_studio_flow_error_class=$flow_class"; fi
     if [[ -n "$flow_exc" ]]; then echo "vision_studio_flow_exception_type=$flow_exc"; fi
     if [[ -n "$flow_stage" ]]; then echo "vision_studio_flow_stage=$flow_stage"; fi
     if [[ -n "$flow_host" ]]; then echo "vision_studio_flow_host=$flow_host"; fi
+    if [[ -n "$flow_controls" ]]; then echo "vision_studio_flow_ui_controls=$flow_controls"; fi
     echo "vision_studio_produce=SHOT_GENERATION_FAILED"
     echo "vision_studio_failed_shot=$shot"
     exit 10
@@ -83,6 +85,7 @@ for i in 0 1 2 3; do
     flow_offset="$(awk -F= '/^google_flow_runtime_syntax_offset=/{print $2}' "$log" | tail -n1)"
     flow_stage="$(awk -F= '/^google_flow_stage=/{print $2}' "$log" | tail -n1)"
     flow_host="$(awk -F= '/^google_flow_host=/{print $2}' "$log" | tail -n1)"
+    flow_controls="$(awk -F= '/^google_flow_ui_controls=/{print substr($0,index($0,"=")+1)}' "$log" | tail -n1)"
     echo "vision_studio_flow_status=${status:-MISSING}"
     if [[ -n "$flow_class" ]]; then echo "vision_studio_flow_error_class=$flow_class"; fi
     if [[ -n "$flow_exc" ]]; then echo "vision_studio_flow_exception_type=$flow_exc"; fi
@@ -92,6 +95,7 @@ for i in 0 1 2 3; do
     if [[ -n "$flow_offset" ]]; then echo "vision_studio_flow_syntax_offset=$flow_offset"; fi
     if [[ -n "$flow_stage" ]]; then echo "vision_studio_flow_stage=$flow_stage"; fi
     if [[ -n "$flow_host" ]]; then echo "vision_studio_flow_host=$flow_host"; fi
+    if [[ -n "$flow_controls" ]]; then echo "vision_studio_flow_ui_controls=$flow_controls"; fi
     echo "vision_studio_produce=SHOT_ARTIFACT_MISSING"
     echo "vision_studio_failed_shot=$shot"
     exit 11
