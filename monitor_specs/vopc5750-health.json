@@ -1,0 +1,10 @@
+{
+  "schema":"agentos.monitor/v1",
+  "monitor":{"id":"vopc5750-health","owner":"user"},
+  "goal":{"description":"Monitor vopc5750 node health"},
+  "schedule":{"type":"interval","every":"5m","timezone":"Asia/Taipei","run_immediately":true},
+  "execution":{"capability":"node.realm.inspect"},
+  "payload":{"node_id":"vopc5750"},
+  "condition":{"state_change":["online->offline","healthy->degraded"]},
+  "notification_policy":{"severity":"high","cooldown":"30m","dedupe":true}
+}
