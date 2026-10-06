@@ -415,6 +415,44 @@ def completion_begin(task_text: str) -> Optional[str]:
         logger.error(f"completion begin failed for {work_id}: {exc}")
         return None
 
+def next_durable_completion_task() -> Optional[tuple[str, dict]]:
+    """Return the authoritative next durable completion item.
+
+    TASK_BOARD is only a projection/UI. Durable work ordering comes from the
+    completion ledger so project-name ordering cannot silently become scheduler
+    policy.
+    """
+    if WorkCompletion is None or not COMPLETION_STATE.exists():
+        return None
+    try:
+        item = WorkCompletion.next_item(COMPLETION_STATE)
+        if not item:
+            return None
+        owner = str(item.get("owner") or "")
+        if owner not in WorkCompletion.EXECUTION_OWNERS:
+            return None
+        status = str(item.get("status") or "")
+        status_map = {
+            "accepted": "todo",
+            "in_progress": "in_progress",
+            "verifying": "in_progress",
+        }
+        if status not in status_map:
+            return None
+        work_id = str(item["work_id"])
+        task_text = f"[WI:{work_id}] {item['next_action']}"
+        return str(item["project_id"]), {
+            "status": status_map[status],
+            "text": task_text,
+            "raw_line": "",
+            "source": "completion-ledger",
+            "work_id": work_id,
+        }
+    except Exception as exc:
+        logger.error(f"completion ledger selection failed: {exc}")
+        return None
+
+
 def completion_workspace(work_id: Optional[str], fallback_project: str) -> Path:
     if WorkCompletion is not None and work_id:
         try:
@@ -875,8 +913,17 @@ def main():
         if args.project:
             did_work = process_project(args.project, args.dry_run)
         elif TASK_BOARD.exists():
-            # 優先讀中央看板
-            board_projects = get_all_projects_from_board()
+            # Durable completion ledger is authoritative. TASK_BOARD is a projection/UI,
+            # never the scheduler policy.
+            durable = next_durable_completion_task()
+            if durable is not None:
+                board_projects = [(durable[0], [durable[1]])]
+                logger.info(
+                    f"🧭 [COMPLETION] ledger selected {durable[1].get('work_id')} "
+                    f"for project {durable[0]}"
+                )
+            else:
+                board_projects = get_all_projects_from_board()
             pending_found = False
             for proj_name, todos in board_projects:
                 if not running[0]:
