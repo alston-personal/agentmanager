@@ -20,12 +20,6 @@ GITHUB_READ = "https://api.github.com/repos/alston-personal/agentmanager/issues/
 ONE_READ = "http://127.0.0.1:8780/v1/controller/nodes"
 # Incident #845's observed count is the maintenance budget, not unlimited cleanup.
 MAX_IGNORED_LINES = 7
-REQUIRED_TYPED_ACTIONS = frozenset({
-    "desktop.window.stage",
-    "desktop.pointer.click",
-    "desktop.text.insert",
-})
-
 
 class RepairFailure(Exception):
     pass
@@ -254,20 +248,11 @@ def repair() -> dict[str, object]:
     if not env.get("AGENTOS_CONTROL_ALLOWED_ACTIONS") or not env.get("AGENTOS_CONTROL_STATE"):
         raise RepairFailure("configuration_incomplete")
 
-    existing_actions = {
-        item.strip()
-        for item in env["AGENTOS_CONTROL_ALLOWED_ACTIONS"].split(",")
-        if item.strip()
-    }
-    merged_actions = existing_actions | set(REQUIRED_TYPED_ACTIONS)
-    action_allowlist_extended = merged_actions != existing_actions
-    if action_allowlist_extended:
-        normalized = replace_env_assignment(
-            normalized,
-            "AGENTOS_CONTROL_ALLOWED_ACTIONS",
-            ",".join(sorted(merged_actions)),
-        )
-        env = parse_env(normalized)
+    # Maintenance must preserve host-owned capability authority. Adding new
+    # actions here would turn credential/config repair into an implicit
+    # privilege-escalation path. Capability changes belong to the governed
+    # install/reconcile contract, never routine maintenance.
+    action_allowlist_extended = False
 
     updates: dict[str, str] = {}
     github_before = http_status(GITHUB_READ, env.get("AGENTOS_GITHUB_TOKEN", ""))
