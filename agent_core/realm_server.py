@@ -495,6 +495,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'google_flow_runtime_error_class=',
                     'google_flow_runtime_error_sha256=',
                     'google_flow_runtime_exception_type=',
+                    'google_flow_runtime_syntax_line=',
+                    'google_flow_runtime_syntax_offset=',
                     'google_flow_stage=',
                 )
             elif action == bootstrap_control.ACTION_VISION_STUDIO_PRODUCE:
@@ -504,6 +506,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'vision_studio_flow_status=',
                     'vision_studio_flow_error_class=',
                     'vision_studio_flow_exception_type=',
+                    'vision_studio_flow_syntax_line=',
+                    'vision_studio_flow_syntax_offset=',
                     'vision_studio_flow_stage=',
                     'vision_studio_flow_host=',
                     'vision_studio_project_id=',
