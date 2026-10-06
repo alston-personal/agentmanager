@@ -347,7 +347,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'node_id'}
         elif action in {bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE, bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE}:
             allowed_params |= {'prompt'}
-        elif action == bootstrap_control.ACTION_GOOGLE_FLOW_RECOVER:
+        elif action in {bootstrap_control.ACTION_GOOGLE_FLOW_RECOVER, bootstrap_control.ACTION_GOOGLE_FLOW_RAIN_EXIT_RESUME}:
             pass
         elif action == bootstrap_control.ACTION_VISION_STUDIO_PRODUCE:
             allowed_params |= {'project_id'}
@@ -493,6 +493,16 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'mio_dm_oursong_stage=',
                     'mio_dm_oursong_send=',
                     'mio_dm_oursong_readback=',
+                )
+            elif action == bootstrap_control.ACTION_GOOGLE_FLOW_RAIN_EXIT_RESUME:
+                safe_prefixes = (
+                    'google_flow_rain_exit_stage=',
+                    'google_flow_rain_exit_url=',
+                    'google_flow_rain_exit_project_match=',
+                    'google_flow_rain_exit_resume=',
+                    'google_flow_rain_exit_output=',
+                    'google_flow_rain_exit_bytes=',
+                    'google_flow_rain_exit_sha256=',
                 )
             elif action == bootstrap_control.ACTION_GOOGLE_FLOW_RECOVER:
                 safe_prefixes = (
