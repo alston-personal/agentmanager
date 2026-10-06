@@ -496,6 +496,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'google_flow_runtime_error_sha256=',
                     'google_flow_runtime_exception_type=',
                     'google_flow_runtime_syntax_line=',
+                    'google_flow_runtime_syntax_source=',
+                    'google_flow_python_version=',
                     'google_flow_runtime_syntax_offset=',
                     'google_flow_stage=',
                 )
@@ -507,6 +509,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'vision_studio_flow_error_class=',
                     'vision_studio_flow_exception_type=',
                     'vision_studio_flow_syntax_line=',
+                    'vision_studio_flow_syntax_source=',
+                    'vision_studio_flow_python_version=',
                     'vision_studio_flow_syntax_offset=',
                     'vision_studio_flow_stage=',
                     'vision_studio_flow_host=',
