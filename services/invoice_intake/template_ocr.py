@@ -567,6 +567,15 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
                 amount_sources[key] = "layout_anchor"
                 confidence[key] = 0.90
 
+        if any(fields[key] is None for key in ("amount_before_tax", "tax_amount", "total_amount")):
+            retry_candidates = anchor_row_reocr(engine, image_bytes, evidence)
+            retry_values, retry_evidence = choose_reocr_amounts(retry_candidates)
+            for key in ("amount_before_tax", "tax_amount", "total_amount"):
+                if fields[key] is None and retry_values.get(key) is not None:
+                    fields[key] = retry_values[key]
+                    amount_sources[key] = "anchor_row_reocr"
+                    confidence[key] = 0.91
+
         if fields["total_amount"] is not None:
             conf = 0.97 if visual_amounts else 0.82
             if "amount_before_tax" not in amount_sources:
@@ -576,11 +585,18 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
             if "total_amount" not in amount_sources:
                 confidence["total_amount"] = conf
     else:
+        retry_evidence = {}
         nums = amount_candidates(text)
         total = total_from_lines(text)
         if total is None and layout_values.get("total_amount") is not None:
             total = layout_values["total_amount"]
             amount_sources["total_amount"] = "layout_anchor"
+        if total is None:
+            retry_candidates = anchor_row_reocr(engine, image_bytes, evidence)
+            retry_values, retry_evidence = choose_reocr_amounts(retry_candidates)
+            if retry_values.get("total_amount") is not None:
+                total = retry_values["total_amount"]
+                amount_sources["total_amount"] = "anchor_row_reocr"
         if total is None and nums:
             freq: dict[int, int] = {}
             for v in nums:
@@ -606,4 +622,5 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
         "visual_amounts": visual_amounts,
         "amount_sources": amount_sources,
         "layout_amount_evidence": layout_evidence,
+        "reocr_amount_evidence": retry_evidence,
     }
