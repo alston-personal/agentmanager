@@ -26,3 +26,30 @@ def binding_for(persona_id: str) -> PersonaDMBinding:
 
 def bindings() -> tuple[PersonaDMBinding, ...]:
     return tuple(_BINDINGS.values())
+
+
+def account_from_profile_hrefs(hrefs: list[str]) -> str | None:
+    """Resolve the logged-in persona from profile-navigation href metadata only.
+
+    This intentionally does not consume message/body text. Ambiguous or unknown
+    account metadata fails closed.
+    """
+    from urllib.parse import urlparse, unquote
+
+    allowed = {binding.account.lower(): binding.account for binding in bindings()}
+    found: set[str] = set()
+    for raw in hrefs:
+        try:
+            parsed = urlparse(str(raw or ""))
+        except Exception:
+            continue
+        host = (parsed.hostname or "").lower()
+        if host and host not in {"threads.com", "www.threads.com"}:
+            continue
+        path = unquote(parsed.path or "").strip("/")
+        if not path.startswith("@"):
+            continue
+        handle = path[1:].split("/", 1)[0].lower()
+        if handle in allowed:
+            found.add(allowed[handle])
+    return next(iter(found)) if len(found) == 1 else None
