@@ -507,6 +507,59 @@ def test_runtime_converge_receipt_projects_failure_stage():
     assert 'private' not in json.dumps(projected)
 
 
+def test_runtime_converge_inspect_is_read_only_and_posts_dispatch_as_receipt(tmp_path: Path):
+    command = _command(command_id='reconnect', action='node.runtime.converge.inspect')
+    command['node_id'] = 'oracle-core-node'
+    command['args'] = {
+        'request_id': 'original-runtime-request',
+        'repository': 'alston-personal/agentmanager',
+        'source_ref': 'core/integration',
+        'source_commit': 'a' * 40,
+    }
+
+    class ReconnectOne(FakeOne):
+        def dispatch(self, node_id, command):
+            self.dispatched.append((node_id, command))
+            return {
+                'schema': 'agentos.runtime-converge-reconnect/v1',
+                'ok': True,
+                'action': 'node.runtime.converge',
+                'request_id': 'original-runtime-request',
+                'task_id': 'action-existing-123',
+                'status': 'completed',
+                'classification': 'CURRENT_GENERATION_RECONCILED',
+                'source_ref': 'core/integration',
+                'source_commit': 'a' * 40,
+                'credential_exposed': False,
+                'reconnected': True,
+            }
+
+        def receipt(self, task_id):
+            raise AssertionError('read-only reconnect must not poll node receipt endpoint')
+
+    github = FakeGitHub([_comment(310, command)])
+    one = ReconnectOne()
+    bridge = ControlInboxBridge(
+        _config(tmp_path, actions={'node.runtime.converge.inspect'}),
+        github=github,
+        one=one,
+    )
+    assert bridge.process_once() == 1
+    assert len(one.dispatched) == 1
+    assert github.results[0]['status'] == 'completed'
+    assert github.results[0]['task_id'] == 'action-existing-123'
+    projected = github.results[0]['receipt']
+    assert projected['classification'] == 'CURRENT_GENERATION_RECONCILED'
+    assert projected['source_commit'] == 'a' * 40
+    rendered = json.dumps(github.results[0])
+    assert 'original-runtime-request' not in rendered
+
+
+def test_runtime_converge_inspect_can_be_explicitly_allowlisted(tmp_path: Path):
+    config = _config(tmp_path, actions={'node.runtime.converge.inspect'})
+    assert config.allowed_actions == frozenset({'node.runtime.converge.inspect'})
+
+
 def test_generic_execution_action_cannot_be_allowlisted(tmp_path: Path):
     with pytest.raises(ValueError, match='cannot be allowlisted'):
         _config(tmp_path, actions={'shell.exec'})

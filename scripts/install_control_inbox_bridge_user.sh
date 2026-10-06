@@ -16,7 +16,7 @@ CONTROL_ISSUE="${AGENTOS_CONTROL_ISSUE:-50}"
 ALLOWED_LOGIN="${AGENTOS_CONTROL_ALLOWED_LOGIN:-alstonhuang}"
 # Source-owned bounded allowlist. The continuation action is controller-local,
 # Oracle-only and identity-only; it is deliberately not a Node capability.
-ALLOWED_ACTIONS="agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect,agentos.executor.job,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover"
+ALLOWED_ACTIONS="agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect,agentos.executor.job,node.runtime.converge.inspect,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover"
 UNIT_DIR="/home/ubuntu/.config/systemd/user"
 CONFIG_DIR="/home/ubuntu/.config/agentos"
 CONTROLLER_ENV="$CONFIG_DIR/controller.env"
@@ -203,7 +203,7 @@ systemctl --user enable agentos-control-inbox.service >/dev/null
 sleep 1
 systemctl --user is-active --quiet agentos-control-inbox.service
 
-grep -Fq 'AGENTOS_CONTROL_ALLOWED_ACTIONS=agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect,agentos.executor.job,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover' "$BRIDGE_ENV"
+grep -Fq 'AGENTOS_CONTROL_ALLOWED_ACTIONS=agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect,agentos.executor.job,node.runtime.converge.inspect,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover' "$BRIDGE_ENV"
 
 echo "control_inbox_install=PASS"
 echo "control_inbox_exact_generation=PASS"

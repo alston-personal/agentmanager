@@ -23,6 +23,7 @@ DEFAULT_ALLOWED_LOGIN = 'alstonhuang'
 DEFAULT_ONE_URL = 'http://127.0.0.1:8780'
 MAX_COMMAND_LIFETIME_SECONDS = 600
 CONTINUATION_INSPECT_ACTION = 'agentos.continuation.inspect'
+RUNTIME_CONVERGE_INSPECT_ACTION = 'node.runtime.converge.inspect'
 FORBIDDEN_ACTION_PREFIXES = (
     'shell.', 'filesystem.', 'fs.', 'keyboard.', 'mouse.',
     'gui.input', 'desktop.input',
@@ -163,7 +164,7 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
                 safe = _safe_scalar(receipt.get(key))
                 if safe is not None or receipt.get(key) is None:
                     projected[key] = safe
-    if action == 'node.runtime.converge':
+    if action in {'node.runtime.converge', RUNTIME_CONVERGE_INSPECT_ACTION}:
         for key in RUNTIME_CONVERGE_RECEIPT_FIELDS:
             if key in receipt:
                 safe = _safe_scalar(receipt.get(key))
@@ -644,6 +645,14 @@ class ControlInboxBridge:
                 if command['action'] == CONTINUATION_INSPECT_ACTION:
                     receipt = self.one.inspect_continuation()
                     result = self._result(command, status='completed', receipt=receipt)
+                elif command['action'] == RUNTIME_CONVERGE_INSPECT_ACTION:
+                    receipt = self.one.dispatch(command['node_id'], command)
+                    result = self._result(
+                        command,
+                        status='completed',
+                        task_id=str(receipt.get('task_id') or '') or None,
+                        receipt=receipt,
+                    )
                 else:
                     dispatch = self.one.dispatch(command['node_id'], command)
                     task_id = str(dispatch.get('task_id') or _task_id(command_id))
