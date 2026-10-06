@@ -24,9 +24,9 @@ echo "dashboard_bg_lock=PASS"
 
 ACTIVE_PORT="$(sed -n 's/.*set \$agentos_dashboard_upstream http:\/\/127\.0\.0\.1:\([0-9][0-9]*\);.*/\1/p' "$NGINX_SITE" | head -n1)"
 case "$ACTIVE_PORT" in
-  3040) TARGET_PORT=3041; TARGET_SLOT=green ;;
-  3041) TARGET_PORT=3040; TARGET_SLOT=blue ;;
-  3000) TARGET_PORT=3040; TARGET_SLOT=blue ;;
+  3040) TARGET_PORT=3041; TARGET_SLOT=green; OLD_UNIT=agentos-dashboard-blue.service ;;
+  3041) TARGET_PORT=3040; TARGET_SLOT=blue; OLD_UNIT=agentos-dashboard-green.service ;;
+  3000) TARGET_PORT=3040; TARGET_SLOT=blue; OLD_UNIT=agentos-dashboard.service ;;
   *) echo "ERROR: unsupported active Dashboard upstream: $ACTIVE_PORT" >&2; exit 3 ;;
 esac
 TARGET_LINK="$RUNTIME_ROOT/$TARGET_SLOT"
@@ -128,6 +128,26 @@ if [ "$public_ok" != 1 ]; then
 fi
 grep -q 'agentos.one-health/v0.1' /tmp/bg-public-health
 echo "dashboard_bg_public_verify=PASS"
+
+# Retire the previous slot only after the switched public surface has passed
+# auth/session, Realm health, and application acceptance.
+if systemctl --user is-active --quiet "$OLD_UNIT"; then
+  systemctl --user stop "$OLD_UNIT"
+fi
+if systemctl --user is-active --quiet "$OLD_UNIT"; then
+  echo "ERROR: old Dashboard slot is still active after retirement: $OLD_UNIT" >&2
+  exit 9
+fi
+echo "dashboard_bg_old_slot_stopped=PASS"
+echo "dashboard_bg_old_slot_unit=$OLD_UNIT"
+
+# Prove the public surface remains healthy with only the new slot serving.
+ps2=$(curl -sS -o /tmp/bg-public-session-post-retire -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/auth/session || true)
+ph2=$(curl -sS -o /tmp/bg-public-health-post-retire -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true)
+test "$ps2" = 200
+test "$ph2" = 200
+grep -q 'agentos.one-health/v0.1' /tmp/bg-public-health-post-retire
+echo "dashboard_bg_post_retire_public_verify=PASS"
 
 grep -Fq "set \$agentos_dashboard_upstream http://127.0.0.1:$TARGET_PORT;" "$NGINX_SITE"
 printf 'source_sha=%s\nrun_id=%s\nrun_attempt=%s\nslot=%s\nport=%s\nstate=active\nrelease=%s\n'   "$SOURCE_SHA" "$RUN_ID" "$RUN_ATTEMPT" "$TARGET_SLOT" "$TARGET_PORT" "$RELEASE" > "$RELEASE/RELEASE_RECEIPT"
