@@ -254,6 +254,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
             "workflow": str(params.get("workflow") or ""),
             "ref": str(params.get("ref") or ""),
             "inputs": params.get("inputs") or {},
+            "expected_head_sha": str(source_commit or ""),
         })
         capsule_id = str(capsule.get("capsule_id") or "")
         deadline = time.monotonic() + 60.0
