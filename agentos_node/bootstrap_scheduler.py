@@ -49,6 +49,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui"), queue_ttl_seconds=90),
+    bc.ACTION_ACCEPT_MIO_DM_OURSONG: ActionPolicy("gui", 11, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui"), queue_ttl_seconds=120),
     bc.ACTION_PROBE_THREADS_WEB_DM: ActionPolicy("gui", 15, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_PROBE_CHATGPT_WEB: ActionPolicy("gui", 12, "high", ("chatgpt.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_ACCEPT_CHATGPT_WEB_SESSION: ActionPolicy("gui", 14, "high", ("chatgpt.web.session", "agent.session.attach", "agent.session.inspect", "agent.context.inject"), ("oracle-gui-profile",)),
