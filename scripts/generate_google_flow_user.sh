@@ -124,6 +124,33 @@ def save_debug(page,name):
         return None
     return path
 
+def ui_control_summary(page):
+    out=[]
+    selectors=[
+        ("button","button"),
+        ("link","a"),
+        ("textarea","textarea"),
+        ("contenteditable",'[contenteditable="true"]'),
+        ("textbox",'input[type="text"]'),
+    ]
+    for kind,selector in selectors:
+        try:
+            loc=page.locator(selector)
+            for i in range(min(loc.count(),20)):
+                item=loc.nth(i)
+                try:
+                    if not item.is_visible(timeout=150):
+                        continue
+                    label=(item.get_attribute("aria-label") or item.get_attribute("placeholder") or item.inner_text(timeout=300) or "").strip()
+                    label=re.sub(r"\s+"," ",label)[:120]
+                    if label:
+                        out.append(f"{kind}:{label}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    return out[:40]
+
 with sync_playwright() as p:
     print("google_flow_stage=CONNECT_CDP")
     browser=p.chromium.connect_over_cdp(cdp_url)
@@ -158,6 +185,9 @@ with sync_playwright() as p:
         print("google_flow_stage=PROMPT_READY")
     if box is None:
         save_debug(page,"no-prompt")
+        controls=ui_control_summary(page)
+        if controls:
+            print("google_flow_ui_controls="+json.dumps(controls,ensure_ascii=False,separators=(",",":")))
         print("google_flow_generate=UI_UNRECOGNIZED")
         print("google_flow_host="+host)
         raise SystemExit(0)
