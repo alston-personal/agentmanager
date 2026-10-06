@@ -254,7 +254,8 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
 
             self.assertLess(elapsed, 0.25)
             self.assertEqual(result["status"], "recognition_insufficient")
-            self.assertTrue(result["deep_fallback_pending"])
+            self.assertFalse(result["deep_fallback_pending"])
+            self.assertTrue(result["background_enrichment_pending"])
 
     def test_deep_fallback_only_fills_missing_fields(self):
         image = Image.new("RGB", (700, 1000), "white")
