@@ -184,24 +184,78 @@ class VisionTests(unittest.TestCase):
         self.assertEqual(result.raw['vision']['field_trace']['total_amount']['source'],'image_amount_crop')
         self.assertEqual(result.raw['vision']['field_trace']['total_amount']['evidence_region'],[0.35,0.28,0.99,0.97])
 
-    def test_read_amounts_sends_cropped_image_and_small_schema(self):
-        response=MagicMock()
-        payload={
-            'amount_before_tax':24500,
-            'tax_amount':1225,
-            'total_amount':25725,
-            'needs_review':False,
-            'uncertain_fields':[],
+    def test_read_amounts_tries_multiple_crops_and_keeps_best_result(self):
+        weak={
+            'payload':{
+                'amount_before_tax':24500,
+                'tax_amount':None,
+                'total_amount':None,
+                'needs_review':True,
+                'uncertain_fields':['tax_amount','total_amount'],
+            },
+            'model':'test','crop':[0.35,0.28,0.99,0.97],
+            'input_bytes':100,'prompt_version':'invoice-amount-crop-v2',
         }
-        response.__enter__.return_value.read.return_value=json.dumps({'output_text':json.dumps(payload)}).encode()
-        data=image_bytes()
-        with patch.object(vision.urllib.request,'urlopen',return_value=response) as call:
-            result=vision.read_amounts(data,api_key='test-secret',model='configured-model')
-        body=json.loads(call.call_args.args[0].data)
-        self.assertEqual(body['input'][0]['text'],vision.AMOUNT_PROMPT)
-        self.assertEqual(body['response_format']['schema'],vision.AMOUNT_SCHEMA)
-        self.assertLess(len(base64.b64decode(body['input'][1]['data'])),len(data)*20)
+        strong={
+            'payload':{
+                'amount_before_tax':24500,
+                'tax_amount':1225,
+                'total_amount':25725,
+                'needs_review':False,
+                'uncertain_fields':[],
+            },
+            'model':'test','crop':[0.04,0.42,0.99,0.98],
+            'input_bytes':110,'prompt_version':'invoice-amount-crop-v2',
+        }
+        with patch.object(vision,'_read_amount_crop',side_effect=[weak,strong]) as read:
+            result=vision.read_amounts(image_bytes(),api_key='test-secret',model='configured-model')
+        self.assertEqual(read.call_count,2)
+        self.assertEqual(result['payload']['amount_before_tax'],24500)
+        self.assertEqual(result['payload']['tax_amount'],1225)
         self.assertEqual(result['payload']['total_amount'],25725)
+        self.assertEqual(result['attempt_count'],2)
+        self.assertEqual(result['conflicts'],{})
+
+    def test_read_amounts_marks_cross_crop_conflicts_for_review(self):
+        a={
+            'payload':{
+                'amount_before_tax':24500,
+                'tax_amount':1225,
+                'total_amount':25725,
+                'needs_review':True,
+                'uncertain_fields':[],
+            },
+            'model':'test','crop':[0.35,0.28,0.99,0.97],
+            'input_bytes':100,'prompt_version':'invoice-amount-crop-v2',
+        }
+        b={
+            'payload':{
+                'amount_before_tax':24500,
+                'tax_amount':1225,
+                'total_amount':25720,
+                'needs_review':True,
+                'uncertain_fields':['total_amount'],
+            },
+            'model':'test','crop':[0.04,0.42,0.99,0.98],
+            'input_bytes':110,'prompt_version':'invoice-amount-crop-v2',
+        }
+        c={
+            'payload':{
+                'amount_before_tax':24500,
+                'tax_amount':1225,
+                'total_amount':25725,
+                'needs_review':True,
+                'uncertain_fields':[],
+            },
+            'model':'test','crop':[0.18,0.24,0.99,0.92],
+            'input_bytes':120,'prompt_version':'invoice-amount-crop-v2',
+        }
+        with patch.object(vision,'_read_amount_crop',side_effect=[a,b,c]):
+            result=vision.read_amounts(image_bytes(),api_key='test-secret',model='configured-model')
+        self.assertIn('total_amount',result['conflicts'])
+        self.assertTrue(result['payload']['needs_review'])
+        self.assertIn('total_amount',result['payload']['uncertain_fields'])
+
 
     def test_buyer_header_is_excluded_from_seller_text(self):
         text='三聯式\n買受人\n買方有限公司\n12345678\n營業人蓋用統一發票專用章\n測試商行\n16908319'
