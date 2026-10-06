@@ -83,6 +83,8 @@ class VisionTests(unittest.TestCase):
                 self.assertEqual(persisted['status'],'needs_review')
                 raw=persisted['recognition']
                 self.assertEqual(raw['vision']['payload']['line_items'][0]['quantity'],1000)
+                self.assertEqual(raw['vision']['field_trace']['buyer_tax_id']['value'],'23040145')
+                self.assertEqual(raw['vision']['field_trace']['buyer_tax_id']['status'],'extracted')
                 self.assertFalse(raw['comparison']['vendor_name']['equal'])
                 self.assertEqual(Path(store.get_original(initial['invoice_id'])['path']).read_bytes(),image_bytes())
 
