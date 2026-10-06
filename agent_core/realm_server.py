@@ -346,6 +346,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'node_id'}
         elif action in {bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE, bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE}:
             allowed_params |= {'prompt'}
+        elif action == bootstrap_control.ACTION_VISION_STUDIO_PRODUCE:
+            allowed_params |= {'project_id'}
         elif action == bootstrap_control.ACTION_EXECUTOR_JOB_SUBMIT:
             allowed_params |= {'job_type'}
         elif action == bootstrap_control.ACTION_EXECUTOR_JOB_INSPECT:
