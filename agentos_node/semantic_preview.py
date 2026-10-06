@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import ctypes
+import ctypes.wintypes
 import hashlib
 import os
 import platform
