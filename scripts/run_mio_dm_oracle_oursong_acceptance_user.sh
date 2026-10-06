@@ -14,4 +14,19 @@ TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 git -C "$REPO" show "$SOURCE_COMMIT:scripts/mio_dm_oracle_oursong_acceptance.py" > "$TMP"
 
-PYTHONPATH="$REPO" python3 "$TMP"
+set +e
+OUT="$(PYTHONPATH="$REPO" python3 "$TMP" 2>&1)"
+RC=$?
+set -e
+printf '%s\n' "$OUT" | grep -E '^mio_dm_oursong_(acceptance|send|readback)=' || true
+if [ "$RC" -ne 0 ]; then
+  if printf '%s' "$OUT" | grep -qi 'playwright'; then
+    echo "mio_dm_oursong_acceptance=RUNTIME_PLAYWRIGHT_ERROR"
+  elif printf '%s' "$OUT" | grep -qiE 'cdp|127\.0\.0\.1:9222|connect_over_cdp'; then
+    echo "mio_dm_oursong_acceptance=RUNTIME_CDP_ERROR"
+  else
+    echo "mio_dm_oursong_acceptance=RUNTIME_ERROR"
+  fi
+  exit "$RC"
+fi
+exit 0
