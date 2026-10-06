@@ -36,6 +36,44 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertEqual(active, ["wi-1"])
 
+    def test_bounded_intake_registers_completion_controller_owner(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            item = mod.register_intake_envelope(
+                path,
+                {
+                    "schema": "agentos.work-intake/v1",
+                    "work_id": "market-master-1200-mvp",
+                    "project_id": "market-master-evolution",
+                    "title": "Finish Market Master MVP",
+                    "next_action": "Run recent-years 2454 replay with T86",
+                    "acceptance": ["real replay report", "verified completion receipt"],
+                    "source": "https://github.com/alston-personal/agentmanager/issues/1200",
+                    "workspace": str(Path(temp) / "workspace"),
+                    "lease_seconds": 600,
+                },
+            )
+            self.assertEqual(item["owner"], "role://completion.controller")
+            self.assertEqual(item["status"], "accepted")
+            self.assertEqual(item["project_id"], "market-master-evolution")
+
+    def test_bounded_intake_rejects_unknown_execution_fields(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            with self.assertRaises(ValueError):
+                mod.register_intake_envelope(
+                    path,
+                    {
+                        "schema": "agentos.work-intake/v1",
+                        "work_id": "wi-unsafe",
+                        "project_id": "agentmanager",
+                        "title": "unsafe",
+                        "next_action": "do thing",
+                        "acceptance": ["verified"],
+                        "shell": "rm -rf /",
+                    },
+                )
+
     def test_done_requires_verification_evidence(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)
