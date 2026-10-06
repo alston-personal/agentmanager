@@ -170,6 +170,19 @@ jobs:
           grep -q 'realm-alston' /tmp/realm-health.json
           echo 'realm_fabric_health=PASS'
 
+          # Realm maintenance intentionally stops 8780 for compaction. Services
+          # that Require=agentos-realm-fabric.service are stopped by systemd
+          # but are not automatically started again when the required unit
+          # returns. Restore the enabled Control Inbox bridge explicitly so
+          # ChatGPT -> Control Inbox -> ONE remains live after every core deploy.
+          if systemctl --user is-enabled --quiet agentos-control-inbox.service 2>/dev/null; then
+            systemctl --user start agentos-control-inbox.service
+            systemctl --user is-active --quiet agentos-control-inbox.service
+            echo 'control_inbox_post_realm_restart=PASS'
+          else
+            echo 'control_inbox_post_realm_restart=SKIP_NOT_ENABLED'
+          fi
+
           PYTHONPATH="$RELEASE" AGENT_DATA_ROOT="$DATA" /usr/bin/python3 - <<'PY'
           import json
           from agent_core.realm_fabric import RealmFabricStore
