@@ -18,17 +18,23 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Correlate heartbeat starts with SSH activity
+      - name: Find local heartbeat starter
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          echo '=== HEARTBEAT JOURNAL ==='
-          journalctl --user -u agentos-persona-pdca-heartbeat.service --since '2026-10-06 16:40:00' --until '2026-10-06 17:00:00' --no-pager -o short-iso 2>&1 || true
-          echo '=== USER SYSTEMD JOURNAL FILTER ==='
-          journalctl --user --since '2026-10-06 16:40:00' --until '2026-10-06 17:00:00' --no-pager -o short-iso 2>&1 | grep -E 'persona-pdca-heartbeat|persona-social-actions|daemon-reload|Reloading|Started|Starting' || true
-          echo '=== SSH JOURNAL ==='
-          journalctl -u ssh --since '2026-10-06 16:40:00' --until '2026-10-06 17:00:00' --no-pager -o short-iso 2>&1 | grep -E 'Accepted publickey|session opened|session closed' || true
-          echo '=== TIMER NOW ==='
-          systemctl --user list-timers --all --no-pager | grep agentos-persona-pdca-heartbeat || true
+          echo '=== MIO OBSERVER UNIT ==='
+          systemctl --user cat agentos-mio-observer.service agentos-mio-observer.timer 2>&1 || true
+          echo '=== ALL USER TIMERS AROUND FIVE MINUTES ==='
+          systemctl --user list-timers --all --no-pager 2>&1 | grep -E 'persona|mio|observer|completion|maintenance|reconcile' || true
+          echo '=== HEARTBEAT START REFERENCES ==='
+          grep -RInsE 'agentos-persona-pdca-heartbeat\.service|agentos-persona-pdca-heartbeat-v2|systemctl.+persona-pdca'             "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/.config/systemd/user" "$HOME/agentmanager/scripts" 2>/dev/null | head -n 1000 || true
+          echo '=== MIO OBSERVER EXECUTABLE ==='
+          for p in "$HOME/.local/bin/agentos-mio-observer" "$HOME/.local/lib/agentos/mio_observer.py" "$HOME/.local/lib/agentos/mio-observer.py"; do
+            [ -e "$p" ] || continue
+            echo "--- $p"
+            sed -n '1,320p' "$p" 2>&1 || true
+          done
+          echo '=== RECENT OBSERVER JOURNAL ==='
+          journalctl --user -u agentos-mio-observer.service --since '2026-10-06 16:40:00' --no-pager -o short-iso 2>&1 || true
           REMOTE
