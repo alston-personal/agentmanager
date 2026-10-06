@@ -489,6 +489,19 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'google_flow_runtime_error_class=',
                     'google_flow_runtime_error_sha256=',
                 )
+            elif action == bootstrap_control.ACTION_VISION_STUDIO_PRODUCE:
+                safe_prefixes = (
+                    'vision_studio_produce=',
+                    'vision_studio_failed_shot=',
+                    'vision_studio_flow_status=',
+                    'vision_studio_flow_error_class=',
+                    'vision_studio_flow_host=',
+                    'vision_studio_project_id=',
+                    'vision_studio_output=',
+                    'vision_studio_receipt=',
+                    'vision_studio_sha256=',
+                    'vision_studio_bytes=',
+                )
             elif action == bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE:
                 safe_prefixes = (
                     'google_vids_generate=',
