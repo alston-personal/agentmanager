@@ -43,7 +43,14 @@ for _ in range(70):
     if r:
         rc=int(r.get("returncode") if r.get("returncode") is not None else -999)
         out=str(r.get("stdout") or "")
-        if r.get("ok") is not True or rc != 0 or "agentos_ota_controller_acceptance=PENDING" not in out:
+        err=str(r.get("error") or "")
+        marker=("agentos_ota_controller_acceptance=PENDING" in out)
+        error_class=(err.split(":",1)[0] if err else "none")[:80]
+        print("node_ota_stage_receipt_ok="+str(r.get("ok") is True))
+        print("node_ota_stage_returncode="+str(rc))
+        print("node_ota_stage_pending_marker="+str(marker))
+        print("node_ota_stage_error_class="+error_class)
+        if r.get("ok") is not True or rc != 0 or not marker:
             raise SystemExit("OTA staging subprocess failed")
         print("node_ota_stage_receipt=PASS")
         break
