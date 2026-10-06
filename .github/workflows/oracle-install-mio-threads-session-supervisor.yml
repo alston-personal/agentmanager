@@ -87,6 +87,8 @@ jobs:
               print('mio_threads_session_supervisor_install_failure_class='+str(receipt.get('failure_class') or ''))
               for step in receipt.get('steps') or []:
                   print('mio_threads_session_supervisor_install_step='+str(step.get('step') or 'unknown')+':rc='+str(step.get('returncode') if step.get('returncode') is not None else 'na'))
+              for step in receipt.get('failed_steps') or []:
+                  print('mio_threads_session_supervisor_install_failed_step='+str(step.get('step') or 'unknown')+':rc='+str(step.get('returncode') if step.get('returncode') is not None else 'na'))
               raise SystemExit(4)
           scheduler=receipt.get('scheduler') or {}
           assert scheduler.get('worker_role')=='maintenance', scheduler
