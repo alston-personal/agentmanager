@@ -143,6 +143,11 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
     rows.sort(key=lambda r: (r["risk"], r["path"]))
     counts = Counter(row["risk"] for row in rows)
     classes = Counter(row["classification"] for row in rows)
+    p0_paths = sorted(row["path"] for row in rows if row["risk"] == "P0")
+    baseline_paths = sorted(set((policy.get("p0_baseline") or {}).get("paths") or []))
+    baseline_set = set(baseline_paths)
+    new_unreviewed_p0 = sorted(path for path in p0_paths if path not in baseline_set)
+    stale_baseline_paths = sorted(path for path in baseline_paths if path not in set(p0_paths))
     return {
         "schema": "agentos.oracle-identity-boundary-audit/v1",
         "policy_version": policy["policy_version"],
@@ -151,6 +156,10 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
             "p0": counts.get("P0", 0),
             "p1": counts.get("P1", 0),
             "p2": counts.get("P2", 0),
+            "p0_paths": p0_paths,
+            "p0_baseline_paths": baseline_paths,
+            "new_unreviewed_p0": new_unreviewed_p0,
+            "stale_p0_baseline_paths": stale_baseline_paths,
             "confirmed_migrations": sum(1 for row in rows if row["classification"] == "confirmed-migration"),
             "resolved_live_migrations": sum(1 for row in rows if row["classification"] == "resolved-live-migration"),
             "classifications": dict(sorted(classes.items())),
@@ -169,6 +178,8 @@ def _markdown(payload: dict[str, Any]) -> str:
         f"- P0: **{s['p0']}**",
         f"- P1: **{s['p1']}**",
         f"- P2: **{s['p2']}**",
+        f"- New unreviewed P0: **{len(s.get('new_unreviewed_p0') or [])}**",
+        f"- Stale P0 baseline entries: **{len(s.get('stale_p0_baseline_paths') or [])}**",
         "",
         "| Risk | Classification | Path | Tags |",
         "|---|---|---|---|",
@@ -187,6 +198,7 @@ def main() -> int:
     parser.add_argument("--json-out")
     parser.add_argument("--markdown-out")
     parser.add_argument("--fail-on-p0", action="store_true")
+    parser.add_argument("--fail-on-new-p0", action="store_true")
     args = parser.parse_args()
 
     payload = build_inventory()
@@ -201,9 +213,18 @@ def main() -> int:
     if args.fail_on_p0 and payload["summary"]["p0"]:
         print(f"ORACLE_IDENTITY_BOUNDARY_AUDIT=FAIL p0={payload['summary']['p0']}")
         return 2
+    if args.fail_on_new_p0 and payload["summary"]["new_unreviewed_p0"]:
+        print(
+            "ORACLE_IDENTITY_BOUNDARY_AUDIT=FAIL "
+            f"new_unreviewed_p0={len(payload['summary']['new_unreviewed_p0'])} "
+            f"paths={','.join(payload['summary']['new_unreviewed_p0'])}"
+        )
+        return 2
+    state = "PASS" if not payload["summary"]["new_unreviewed_p0"] else "REPORT"
     print(
-        "ORACLE_IDENTITY_BOUNDARY_AUDIT=PASS "
-        f"p0={payload['summary']['p0']} p1={payload['summary']['p1']} p2={payload['summary']['p2']}"
+        f"ORACLE_IDENTITY_BOUNDARY_AUDIT={state} "
+        f"p0={payload['summary']['p0']} p1={payload['summary']['p1']} p2={payload['summary']['p2']} "
+        f"new_unreviewed_p0={len(payload['summary']['new_unreviewed_p0'])}"
     )
     return 0
 
