@@ -166,9 +166,33 @@ class MonitorStore:
           dedupe_key TEXT,
           provenance_json TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS attention_items(
+          attention_id TEXT PRIMARY KEY,
+          monitor_id TEXT NOT NULL,
+          severity TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          state TEXT NOT NULL,
+          opened_at TEXT NOT NULL,
+          last_observed_at TEXT NOT NULL,
+          resolved_at TEXT,
+          dedupe_key TEXT,
+          occurrence_count INTEGER NOT NULL DEFAULT 1,
+          notification_id TEXT,
+          provenance_json TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_attention_open_dedupe
+          ON attention_items(monitor_id,dedupe_key) WHERE state='OPEN' AND dedupe_key IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_monitors_due ON monitors(status,next_due);
         CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read,resolved_at);
+        CREATE INDEX IF NOT EXISTS idx_attention_state ON attention_items(state,severity,last_observed_at);
         """)
+        for row in self.db.execute("SELECT * FROM notifications WHERE resolved_at IS NULL"):
+            key=row["dedupe_key"] or stable_digest({"monitor_id":row["monitor_id"],"summary":row["summary"]})
+            aid="attention-"+hashlib.sha256(("backfill:"+row["notification_id"]).encode()).hexdigest()[:20]
+            self.db.execute("""INSERT OR IGNORE INTO attention_items(attention_id,monitor_id,severity,summary,state,opened_at,last_observed_at,
+              resolved_at,dedupe_key,occurrence_count,notification_id,provenance_json)
+              VALUES(?,?,?,?, 'OPEN', ?,?,NULL,?,1,?,?)""",
+              (aid,row["monitor_id"],row["severity"],row["summary"],row["observed_at"],row["observed_at"],key,row["notification_id"],row["provenance_json"]))
         self.db.commit()
 
     def register(self,spec: dict[str,Any], *, replace: bool=False) -> dict[str,Any]:
@@ -213,6 +237,39 @@ class MonitorStore:
         return [r["monitor_id"] for r in self.db.execute(
           "SELECT monitor_id FROM monitors WHERE status='active' AND next_due<=? ORDER BY next_due LIMIT ?",(now,limit))]
 
+    def _attention_observe(self,mid:str,summary:str,severity:str,dedupe_key:str|None,now:str,provenance:dict[str,Any],notification_id:str|None=None) -> None:
+        key=dedupe_key or stable_digest({"monitor_id":mid,"summary":summary})
+        row=self.db.execute(
+          "SELECT attention_id FROM attention_items WHERE monitor_id=? AND dedupe_key=? AND state='OPEN' LIMIT 1",
+          (mid,key)).fetchone()
+        if row:
+            self.db.execute("""UPDATE attention_items SET severity=?,summary=?,last_observed_at=?,
+              occurrence_count=occurrence_count+1,notification_id=COALESCE(?,notification_id),provenance_json=?
+              WHERE attention_id=?""",
+              (severity,summary,now,notification_id,json.dumps(provenance,sort_keys=True),row["attention_id"]))
+            return
+        aid="attention-"+hashlib.sha256((mid+key+now).encode()).hexdigest()[:20]
+        self.db.execute("""INSERT INTO attention_items(attention_id,monitor_id,severity,summary,state,opened_at,last_observed_at,
+          resolved_at,dedupe_key,occurrence_count,notification_id,provenance_json)
+          VALUES(?,?,?,?, 'OPEN', ?,?,NULL,?,1,?,?)""",
+          (aid,mid,severity,summary,now,now,key,notification_id,json.dumps(provenance,sort_keys=True)))
+
+    def _attention_resolve(self,mid:str,now:str) -> None:
+        self.db.execute("""UPDATE attention_items SET state='AUTO_RESOLVED',resolved_at=?,last_observed_at=?
+          WHERE monitor_id=? AND state='OPEN'""",(now,now,mid))
+
+    def attention(self,open_only:bool=True) -> list[dict[str,Any]]:
+        sql="SELECT * FROM attention_items"
+        if open_only: sql+=" WHERE state='OPEN'"
+        sql+=" ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, last_observed_at DESC"
+        out=[]
+        for row in self.db.execute(sql):
+            d=dict(row)
+            d["schema"]="agentos.attention/v1"
+            d["provenance"]=json.loads(d.pop("provenance_json"))
+            out.append(d)
+        return out
+
     def record(self,mid:str, *, observed:dict[str,Any], dispatch:DispatchResult, triggered:bool, summary:str|None, severity:str, dedupe_key:str|None, cooldown_seconds:int) -> dict[str,Any]:
         row=self.inspect(mid); spec=row["spec"]; now=iso()
         baseline=row["baseline"]
@@ -244,11 +301,15 @@ class MonitorStore:
                now if notify else None,next_due,dedupe_key,1 if triggered else 0,now,mid))
             if not triggered and row.get("last_condition"):
                 self.db.execute("UPDATE notifications SET resolved_at=? WHERE monitor_id=? AND resolved_at IS NULL",(now,mid))
-            if notify and summary:
-                nid="notify-"+hashlib.sha256((mid+str(dedupe_key)+now).encode()).hexdigest()[:20]
+                self._attention_resolve(mid,now)
+            if triggered and summary:
                 prov={"monitor_receipt_id":rid,**dispatch.provenance}
-                self.db.execute("""INSERT INTO notifications(notification_id,monitor_id,severity,summary,observed_at,read,resolved_at,dedupe_key,provenance_json)
-                  VALUES(?,?,?,?,?,0,NULL,?,?)""",(nid,mid,severity,summary,now,dedupe_key,json.dumps(prov,sort_keys=True)))
+                nid=None
+                if notify:
+                    nid="notify-"+hashlib.sha256((mid+str(dedupe_key)+now).encode()).hexdigest()[:20]
+                    self.db.execute("""INSERT INTO notifications(notification_id,monitor_id,severity,summary,observed_at,read,resolved_at,dedupe_key,provenance_json)
+                      VALUES(?,?,?,?,?,0,NULL,?,?)""",(nid,mid,severity,summary,now,dedupe_key,json.dumps(prov,sort_keys=True)))
+                self._attention_observe(mid,summary,severity,dedupe_key,now,prov,nid)
         else:
             self.db.execute("UPDATE monitors SET last_checked=?,next_due=?,updated_at=? WHERE monitor_id=?",(now,next_due,now,mid))
         self.db.commit()
@@ -439,6 +500,7 @@ def main(argv:list[str]|None=None)->int:
     s=sub.add_parser("run"); s.add_argument("monitor_id")
     sub.add_parser("tick")
     sub.add_parser("notifications")
+    sub.add_parser("attention")
     a=p.parse_args(argv); store=MonitorStore(Path(a.db))
     if a.cmd=="register":
         spec=json.loads(Path(a.spec).read_text(encoding="utf-8")); out=store.register(spec)
@@ -453,7 +515,8 @@ def main(argv:list[str]|None=None)->int:
     elif a.cmd=="tick":
         if not a.source_commit: raise SystemExit("source commit required")
         out=tick(store,a.source_commit)
-    else: out=store.notifications()
+    elif a.cmd=="notifications": out=store.notifications()
+    else: out=store.attention()
     print(json.dumps(out,ensure_ascii=False,indent=2,sort_keys=True))
     return 0
 

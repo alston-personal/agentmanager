@@ -85,3 +85,21 @@ def test_material_projection_detects_relevant_change(tmp_path):
     a=material_projection("chatgpt-plus","<p>ChatGPT Plus $20 per month</p>")
     b=material_projection("chatgpt-plus","<p>ChatGPT Plus $25 per month</p>")
     assert a["material_sha256"]!=b["material_sha256"]
+
+
+def test_attention_dedup_accumulates_and_auto_resolves(tmp_path):
+    s=MonitorStore(tmp_path/"m.sqlite3"); s.register(spec("attn"))
+    bad=DispatchResult(True,{"stdout_lines":["realm_node_status=offline"]},{"capability":"node.realm","one_request_id":"r1"})
+    row=s.inspect("attn"); trig,summary,sev,key=evaluate(row["spec"],row,bad)
+    s.record("attn",observed=bad.value,dispatch=bad,triggered=trig,summary=summary,severity=sev,dedupe_key=key,cooldown_seconds=1)
+    s.record("attn",observed=bad.value,dispatch=bad,triggered=trig,summary=summary,severity=sev,dedupe_key=key,cooldown_seconds=1)
+    items=s.attention()
+    assert len(items)==1
+    assert items[0]["schema"]=="agentos.attention/v1"
+    assert items[0]["occurrence_count"]==2
+    good=DispatchResult(True,{"stdout_lines":["realm_node_status=online"]},{"capability":"node.realm","one_request_id":"r2"})
+    s.record("attn",observed=good.value,dispatch=good,triggered=False,summary=None,severity="high",dedupe_key=None,cooldown_seconds=1)
+    assert s.attention()==[]
+    history=s.attention(open_only=False)
+    assert history[0]["state"]=="AUTO_RESOLVED"
+    assert history[0]["resolved_at"]
