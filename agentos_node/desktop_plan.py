@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agentos_node import interactive_desktop
+from agentos_node.semantic_preview import semantic_preview
 
 PLAN_SCHEMA = 'agentos.desktop-plan/v0.1'
 _ALLOWED_STEP_ACTIONS = {
@@ -14,6 +15,7 @@ _ALLOWED_STEP_ACTIONS = {
     'desktop.wait',
     'desktop.windows.inspect',
     'desktop.screenshot',
+    'desktop.semantic_preview',
 }
 
 
@@ -55,6 +57,8 @@ def execute_plan(task: dict[str, Any], *, workspace: Path, max_steps: int = 64) 
                 result = interactive_desktop.inspect_windows()
             elif action == 'desktop.screenshot':
                 result = interactive_desktop.screenshot(workspace, quality=int(raw.get('quality') or 55))
+            elif action == 'desktop.semantic_preview':
+                result = semantic_preview(raw)
             else:  # pragma: no cover
                 raise ValueError(action)
             results.append({
