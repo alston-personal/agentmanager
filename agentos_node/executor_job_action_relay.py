@@ -25,6 +25,7 @@ from agentos_node.gemini_cli_install_provider import register_gemini_cli_install
 from agentos_node.codex_cli_install_provider import register_codex_cli_install_provider
 from agentos_node.engineering_subagent_provider import register_engineering_subagent_providers
 from agentos_node.layoutlib_parity_provider import register_layoutlib_parity_provider
+from agentos_node.layoutlib_release_materialize_provider import register_layoutlib_release_materialize_provider
 
 
 ACTION = "agentos.executor.job"
@@ -36,6 +37,7 @@ TYPESAFE_SKILL_PROVIDER_REGISTERED = register_typesafe_skill_install_provider()
 GEMINI_CLI_PROVIDER_REGISTERED = register_gemini_cli_install_provider()
 CODEX_CLI_PROVIDER_REGISTERED = register_codex_cli_install_provider()
 ENGINEERING_SUBAGENT_PROVIDERS_REGISTERED = register_engineering_subagent_providers()
+LAYOUTLIB_RELEASE_MATERIALIZE_PROVIDER_REGISTERED = register_layoutlib_release_materialize_provider()
 LAYOUTLIB_PARITY_PROVIDER_REGISTERED = register_layoutlib_parity_provider()
 
 
