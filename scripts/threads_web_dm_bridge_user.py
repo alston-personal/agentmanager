@@ -449,7 +449,7 @@ def main() -> int:
                 with EVENTS.open("a",encoding="utf-8") as fh:
                     for event in fresh:
                         payload=event.to_dict()
-                        payload["account_id"]=args.account
+                        payload["account_id"]=account
                         fh.write(json.dumps(payload,ensure_ascii=False,separators=(",",":"))+"\n")
                 os.chmod(EVENTS,0o600)
             seen.update(e.message_id for e in fresh)
