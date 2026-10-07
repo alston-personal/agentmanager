@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CURRENT_STAGE="preflight"
+STAGE=""
+cleanup() {
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "threads_web_dm_failure_stage=$CURRENT_STAGE"
+    echo "threads_web_dm_failure_rc=$rc"
+  fi
+  if [ -n "$STAGE" ] && [ -d "$STAGE" ]; then rm -rf "$STAGE"; fi
+}
+trap cleanup EXIT
+
 if [ "$(id -un)" != "ubuntu" ]; then
   echo "threads_web_dm_read=WRONG_USER" >&2
   exit 2
 fi
 
+CURRENT_STAGE="configuration"
 REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 PERSONA="${AGENTOS_DM_PERSONA:-mio}"
@@ -15,13 +28,14 @@ if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
   exit 2
 fi
 
+CURRENT_STAGE="archive"
 STAGE="$(mktemp -d /tmp/agentos-threads-dm-read.XXXXXX)"
-trap 'rm -rf "$STAGE"' EXIT
 echo "threads_web_dm_stage=START"
 git -C "$REPO" archive "$SOURCE_COMMIT" | tar -x -C "$STAGE"
 test -f "$STAGE/scripts/threads_web_dm_bridge_user.py"
 echo "threads_web_dm_stage=PASS"
 
+CURRENT_STAGE="import_probe"
 set +e
 (
 cd "$STAGE"
@@ -50,6 +64,7 @@ except ModuleNotFoundError:
     raise SystemExit(13)
 PY
 )
+CURRENT_STAGE="bridge"
 OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
 import os, re, runpy, sys
 path=sys.argv[1]
@@ -82,6 +97,7 @@ echo "threads_web_dm_python_rc=$RC"
 
 if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
   if [ "$PERSONA" = "oursong" ]; then
+    CURRENT_STAGE="oursong_autonomous"
     set +e
     AUTO_OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 "$STAGE/scripts/oursong_threads_dm_autonomous_user.py" 2>&1)"
     AUTO_RC=$?
@@ -100,6 +116,7 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
     echo "threads_web_dm_read=PASS"
     exit 0
   fi
+  CURRENT_STAGE="mio_autonomous"
   set +e
   AUTO_OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 "$STAGE/scripts/mio_threads_dm_autonomous_user.py" 2>&1)"
   AUTO_RC=$?
@@ -115,6 +132,7 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
 fi
 if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=LOGIN_REQUIRED'; then
   if [ "$PERSONA" = "oursong" ]; then
+    CURRENT_STAGE="session_resume"
     echo "threads_web_dm_stage=SESSION_RESUME"
     set +e
     RESUME_OUT="$(AGENTOS_DM_PERSONA="$PERSONA" bash "$STAGE/scripts/resume_threads_persona_login_user.sh" 2>&1)"
@@ -133,6 +151,7 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=LOGIN_REQUIRED'; then
       if [ -n "$ERR_TYPE" ]; then echo "threads_web_dm_resume_error_type=$ERR_TYPE"; fi
     fi
     if [ "$RESUME_RC" -eq 0 ] && printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
+      CURRENT_STAGE="bridge_retry"
       set +e
       OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
 import os, runpy, sys
