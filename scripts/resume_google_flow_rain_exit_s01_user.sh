@@ -33,6 +33,7 @@ with sync_playwright() as p:
     if page is None:
         page=ctx.new_page()
         page.goto(PROJECT_URL,wait_until="domcontentloaded",timeout=60000)
+    page.bring_to_front()
     page.wait_for_timeout(5000)
     print("google_flow_rain_exit_stage=PROJECT_LOADED",flush=True)
     print("google_flow_rain_exit_url="+str(page.url or "")[:500])
