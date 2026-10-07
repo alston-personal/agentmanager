@@ -704,7 +704,18 @@ VISION_MODEL = (
     or os.environ.get("GEMINI_INVOICE_MODEL")
     or "gemini-3.8-flash"
 )
+VISION_MODELS = tuple(dict.fromkeys([
+    VISION_MODEL,
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+]))
 IMAGE_MODEL = os.environ.get("GEMINI_CHARACTER_IMAGE_MODEL", "gemini-3.1-flash-image")
+IMAGE_MODELS = tuple(dict.fromkeys([
+    IMAGE_MODEL,
+    "gemini-3.1-flash-lite-image",
+    "gemini-3-pro-image",
+]))
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 
@@ -816,6 +827,25 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
     )
 
 
+def gemini_generate_any(
+    models: tuple[str, ...],
+    parts: list[dict[str, Any]],
+    generation_config: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    errors: list[str] = []
+    for model in models:
+        try:
+            return model, gemini_generate(model, parts, generation_config)
+        except RuntimeError as exc:
+            message = str(exc)
+            errors.append(f"{model}: {message}"[:1800])
+            if not _should_fallback_from_gemini(exc):
+                raise
+    raise RuntimeError(
+        "all Gemini model candidates failed: " + " | ".join(errors[-len(models):])
+    )
+
+
 def response_parts(payload: dict[str, Any]) -> list[dict[str, Any]]:
     candidates = payload.get("candidates") or []
     if not candidates:
@@ -890,8 +920,8 @@ Use this exact top-level shape:
 Omit categories that are not visibly supported. Keep descriptions short and visual.
 """
     try:
-        result = gemini_generate(
-            VISION_MODEL,
+        _model, result = gemini_generate_any(
+            VISION_MODELS,
             [{"text": prompt}, image_part(path)],
             {"responseMimeType": "application/json"},
         )
@@ -918,8 +948,8 @@ Return ONLY JSON using Character IR candidate shape:
 The body_plan must describe the dominant species/silhouette, not incidental clothing.
 """
     try:
-        result = gemini_generate(
-            VISION_MODEL,
+        _model, result = gemini_generate_any(
+            VISION_MODELS,
             [{"text": prompt}, image_part(path)],
             {"responseMimeType": "application/json"},
         )
@@ -1175,8 +1205,8 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
         image_part(person),
     ])
     try:
-        result = gemini_generate(
-            IMAGE_MODEL,
+        _image_model, result = gemini_generate_any(
+            IMAGE_MODELS,
             parts,
             {"responseModalities": ["IMAGE"]},
         )
@@ -1230,13 +1260,12 @@ Inspect this generated mascot image. Return ONLY JSON:
 Judge what is visibly present, not what the prompt intended.
 """
     try:
-        return parse_json_text(
-            gemini_generate(
-                VISION_MODEL,
-                [{"text": prompt}, image_part(image_path)],
-                {"responseMimeType": "application/json"},
-            )
+        _model, result = gemini_generate_any(
+            VISION_MODELS,
+            [{"text": prompt}, image_part(image_path)],
+            {"responseMimeType": "application/json"},
         )
+        return parse_json_text(result)
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
