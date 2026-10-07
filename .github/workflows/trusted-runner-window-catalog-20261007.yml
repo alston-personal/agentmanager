@@ -1,0 +1,35 @@
+name: Trusted Runner Window Catalog 20261007
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/trusted-runner-window-catalog-20261007.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mint trusted scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8'))['value'])
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+      - name: Print Runner Window catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 15 -H "Authorization: Bearer $TOKEN"             https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch             | python3 -m json.tool
