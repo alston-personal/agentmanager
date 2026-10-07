@@ -1,0 +1,38 @@
+name: Inspect Production Receipt Store 20261007
+
+on:
+  push:
+    branches:
+      - ops/inspect-production-receipt-store-20261007
+    paths:
+      - '.github/workflows/inspect-production-receipt-store-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - name: Inspect production source receipt implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== REPO HEAD ==='
+          git -C /home/ubuntu/agentmanager rev-parse HEAD 2>/dev/null || true
+          git -C /home/ubuntu/agentmanager status --short 2>/dev/null | head -n 80 || true
+          echo '=== RECEIPT REFERENCES ==='
+          grep -Rni --exclude-dir=.git -E 'receipts\.sqlite3|payload_json|ReceiptStore|record_receipt|get_receipt' /home/ubuntu/agentmanager/agent_core /home/ubuntu/agentmanager/scripts 2>/dev/null | head -n 240 || true
+          echo '=== REALM FABRIC RECEIPT SECTION ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/home/ubuntu/agentmanager/agent_core/realm_fabric.py')
+          if p.exists():
+              lines=p.read_text(encoding='utf-8').splitlines()
+              for i,line in enumerate(lines,1):
+                  if 'receipt' in line.lower() or 'sqlite' in line.lower():
+                      lo=max(1,i-5); hi=min(len(lines),i+18)
+                      print(f'--- around line {i} ---')
+                      for n in range(lo,hi+1): print(f'{n}: {lines[n-1]}')
+          PY
