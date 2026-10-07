@@ -61,3 +61,13 @@ jobs:
               'recent_live_receipts': recent[:20],
           }, indent=2, sort_keys=True))
           PY
+      - name: Inspect ONE service request journal
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== USER SERVICES ==='
+          systemctl --user --no-pager --plain list-units --type=service --all | grep -Ei 'agentos|realm|one' || true
+          echo '=== RECENT ONE HTTP REQUESTS ==='
+          journalctl --user --since '20 minutes ago' --no-pager -o short-iso 2>/dev/null \
+            | grep -Ei '/v1/(tasks|receipts|heartbeat)|vopc5750|realm.*error|agentos-client' \
+            | tail -n 500 || true
