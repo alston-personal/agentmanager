@@ -12,6 +12,7 @@ _ALLOWED_STEP_ACTIONS = {
     'desktop.open_url',
     'desktop.mouse',
     'desktop.keyboard',
+    'desktop.image_paste',
     'desktop.wait',
     'desktop.windows.inspect',
     'desktop.screenshot',
@@ -49,6 +50,8 @@ def execute_plan(task: dict[str, Any], *, workspace: Path, max_steps: int = 64) 
                 result = interactive_desktop.mouse(raw)
             elif action == 'desktop.keyboard':
                 result = interactive_desktop.keyboard(raw)
+            elif action == 'desktop.image_paste':
+                result = interactive_desktop.image_paste(raw, workspace=workspace)
             elif action == 'desktop.wait':
                 seconds = max(0.0, min(float(raw.get('seconds') or 0), 30.0))
                 time.sleep(seconds)
