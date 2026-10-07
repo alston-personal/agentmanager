@@ -85,7 +85,6 @@ $files = @(
   'agentos_node/client_cli.py',
   'agentos_node/session_bridge.py',
   'agentos_node/agent_surfaces.py',
-  'scripts/windows/thin_client_watchdog.ps1',
   'scripts/windows/user_runtime_watchdog.ps1'
 )
 foreach ($rel in $files) {
@@ -103,11 +102,6 @@ foreach ($required in @('thin_client.py','interactive_desktop.py','semantic_prev
   if (-not (Test-Path (Join-Path $Pkg $required))) {
     throw "Thin Client dependency missing: $required (ref=$Ref)"
   }
-}
-
-$watchdogScript = Join-Path $InstallRoot 'scripts\windows\thin_client_watchdog.ps1'
-if (-not (Test-Path -LiteralPath $watchdogScript)) {
-  throw "Thin Client watchdog missing: $watchdogScript (ref=$Ref)"
 }
 
 $policyPath = Join-Path $State 'policy.json'
@@ -140,4 +134,3 @@ Write-Host "Python: $version"
 Write-Host "Policy workspace: $WorkspaceRoot"
 Write-Host "Shared state: $State"
 Write-Host "Launcher: $launcherPath"
-Write-Host "Watchdog: $watchdogScript"
