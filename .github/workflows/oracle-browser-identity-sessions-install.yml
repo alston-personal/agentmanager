@@ -1,0 +1,64 @@
+name: Oracle Browser Identity Sessions Install
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-browser-identity-sessions-install.json'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate install command
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re
+          p=json.load(open('.agentos/commands/oracle-browser-identity-sessions-install.json',encoding='utf-8'))
+          assert p.get('schema')=='agentos.browser-identity-sessions-install/v1'
+          assert p.get('target')=='oracle'
+          assert re.fullmatch(r'install-browser-identity-sessions-[0-9]{8}-r[0-9]+',str(p.get('nonce') or ''))
+          print('browser_identity_sessions_command=APPROVED')
+          PY
+      - name: Mint OIDC credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+      - name: Install identity sessions through Runner Window
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=300 \
+            bash scripts/agentos_dispatch.sh browser.session install "$GITHUB_SHA" \
+            | tee "$RUNNER_TEMP/browser-identity-sessions.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/browser-identity-sessions.txt"
+          grep -q 'browser_identity_sessions_install=PASS' "$RUNNER_TEMP/browser-identity-sessions.txt"
+      - name: Upload bounded install receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-identity-sessions-${{ github.run_id }}
+          path: ${{ runner.temp }}/browser-identity-sessions.txt
+          if-no-files-found: warn
+          retention-days: 7
