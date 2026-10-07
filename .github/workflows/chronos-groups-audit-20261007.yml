@@ -1,0 +1,26 @@
+name: Chronos Groups Audit 20261007
+
+on:
+  push:
+    branches:
+      - ops/chronos-groups-audit-20261007
+    paths:
+      - '.github/workflows/chronos-groups-audit-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Inspect Chronos supplementary groups
+        shell: bash
+        run: |
+          set -euo pipefail
+          pid=$(pgrep -f 'scripts/chronos.py' | head -n1)
+          echo "chronos_pid=$pid"
+          grep -E '^(Uid|Gid|Groups):' "/proc/$pid/status" || true
+          echo "ubuntu_groups_now=$(id -Gn ubuntu 2>/dev/null || true)"
+          echo "bridge_stat=$(stat -c '%U:%G %a' /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe 2>/dev/null || true)"
