@@ -129,12 +129,12 @@ def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
                 'Content-Type': 'application/json', 'x-goog-api-key': api_key, 'Api-Revision': '2026-05-20'})
 
         envelope = None
-        retry_delays = (0, 1.5, 4.0)
+        retry_delays = (0, 1.5)
         for attempt, delay in enumerate(retry_delays, start=1):
             if delay:
                 time.sleep(delay)
             try:
-                with urllib.request.urlopen(req, timeout=90) as response:
+                with urllib.request.urlopen(req, timeout=35) as response:
                     raw = response.read(1024 * 1024 + 1)
                 if len(raw) > 1024 * 1024:
                     raise VisionError('RESPONSE_TOO_LARGE')
