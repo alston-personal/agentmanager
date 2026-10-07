@@ -378,7 +378,7 @@ def test_vision_studio_scheduler_policy():
     policy = policy_for(bc.ACTION_VISION_STUDIO_PRODUCE)
     assert policy.role == "gui"
     assert "media.vision-studio.produce" in policy.capabilities
-    assert "oracle-gui-profile" in policy.locks
+    assert "session:google:flow" in policy.locks
 
 
 def test_github_actions_dispatch_is_bounded_public_intent():
@@ -447,8 +447,8 @@ def test_oursong_dm_read_is_bounded_and_separate_from_mio():
     from agentos_node.bootstrap_scheduler import policy_for
     oursong = policy_for(bc.ACTION_READ_OURSONG_THREADS_WEB_DM)
     mio = policy_for(bc.ACTION_READ_THREADS_WEB_DM)
-    assert "threads-oursong-gui" in oursong.locks
-    assert "threads-mio-gui" in mio.locks
+    assert "session:threads:oursong" in oursong.locks
+    assert "session:threads:mio" in mio.locks
     assert oursong.locks != mio.locks
 
 
@@ -473,15 +473,15 @@ def test_oursong_threads_session_intents_are_isolated():
 
     from agentos_node.bootstrap_scheduler import policy_for
     login_policy = policy_for(bc.ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN)
-    assert "threads-oursong-gui" in login_policy.locks
-    assert "threads-mio-gui" not in login_policy.locks
+    assert "session:threads:oursong" in login_policy.locks
+    assert "session:threads:mio" not in login_policy.locks
 
 
 def test_persona_dm_bindings_use_distinct_cdp_sessions():
     from agentos_node.social.persona_dm import binding_for
     mio = binding_for("mio")
     oursong = binding_for("oursong")
-    assert mio.cdp_url == "http://127.0.0.1:9222"
+    assert mio.cdp_url == "http://127.0.0.1:9224"
     assert oursong.cdp_url == "http://127.0.0.1:9223"
     assert mio.profile_key != oursong.profile_key
 
@@ -497,6 +497,6 @@ def test_oursong_mio_dm_roundtrip_intent_is_bounded():
     assert params == {"source_commit": "f" * 40}
     from agentos_node.bootstrap_scheduler import policy_for
     policy = policy_for(bc.ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP)
-    assert "threads-mio-gui" in policy.locks
-    assert "threads-oursong-gui" in policy.locks
+    assert "session:threads:mio" in policy.locks
+    assert "session:threads:oursong" in policy.locks
     assert "persona.social.dm.roundtrip" in policy.capabilities
