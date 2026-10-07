@@ -35,13 +35,56 @@ def _load_env_file(path: Path) -> None:
         if key and value and key not in os.environ:
             os.environ[key] = value
 
-for _env in [
-    Path.home() / ".config" / "agentos" / "character-fusion.env",
-    REPO_ROOT / ".env",
-    Path("/home/ubuntu/invoice-intake-service/vision.env"),
-    Path.home() / ".agentos.secrets",
-]:
-    _load_env_file(_env)
+_ENV_SOURCES = [
+    ("process", None),
+    ("character-fusion", Path.home() / ".config" / "agentos" / "character-fusion.env"),
+    ("stable-agentmanager", Path("/home/ubuntu/agentmanager/.env")),
+    ("release", REPO_ROOT / ".env"),
+    ("invoice-vision", Path("/home/ubuntu/invoice-intake-service/vision.env")),
+    ("agentos-secrets", Path.home() / ".agentos.secrets"),
+    ("dashboard", Path.home() / ".config" / "milkcat" / "dashboard.env.local"),
+]
+
+for _label, _env in _ENV_SOURCES:
+    if _env is not None:
+        _load_env_file(_env)
+
+
+def _read_env_value(path: Path, key: str) -> str:
+    if not path.is_file():
+        return ""
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        k, value = line.split("=", 1)
+        if k.strip() != key:
+            continue
+        return value.strip().strip('"').strip("'")
+    return ""
+
+
+def _gemini_key_candidates() -> list[tuple[str, str]]:
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    process_value = os.environ.get("GEMINI_API_KEY", "").strip()
+    if process_value:
+        candidates.append(("process", process_value))
+        seen.add(process_value)
+
+    for label, path in _ENV_SOURCES:
+        if path is None:
+            continue
+        value = _read_env_value(path, "GEMINI_API_KEY").strip()
+        if value and value not in seen:
+            candidates.append((label, value))
+            seen.add(value)
+    return candidates
 
 _RECONCILIATION_PATH = REPO_ROOT / "libs" / "model2ir" / "src" / "model2ir" / "reconciliation.py"
 if not _RECONCILIATION_PATH.is_file():
@@ -118,26 +161,38 @@ def image_part(path: Path) -> dict[str, Any]:
 
 
 def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: dict[str, Any] | None = None) -> dict[str, Any]:
-    if not API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is not configured")
+    candidates = _gemini_key_candidates()
+    if not candidates:
+        raise RuntimeError("GEMINI_API_KEY is not configured in any governed source")
+
     payload: dict[str, Any] = {"contents": [{"role": "user", "parts": parts}]}
     if generation_config:
         payload["generationConfig"] = generation_config
-    req = urllib.request.Request(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        method="POST",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": API_KEY,
-        },
+
+    invalid_sources: list[str] = []
+    for source_label, api_key in candidates:
+        req = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            method="POST",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=180) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "replace")[:3000]
+            if exc.code == 400 and ("API_KEY_INVALID" in body or "API key not valid" in body):
+                invalid_sources.append(source_label)
+                continue
+            raise RuntimeError(f"Gemini HTTP {exc.code} using key source {source_label}: {body}") from exc
+
+    raise RuntimeError(
+        "GEMINI_API_KEY is invalid in all governed sources: " + ", ".join(invalid_sources)
     )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "replace")[:3000]
-        raise RuntimeError(f"Gemini HTTP {exc.code}: {body}") from exc
 
 
 def response_parts(payload: dict[str, Any]) -> list[dict[str, Any]]:
