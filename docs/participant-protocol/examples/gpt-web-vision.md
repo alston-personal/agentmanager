@@ -59,3 +59,17 @@ local/template OCR
 3. Parse only structured JSON matching the invoice contract.
 4. Run the same public handwritten-invoice benchmark as Gemini/RapidOCR.
 5. Prove bounded latency and 0 unsafe field claims before setting `verified=true`.
+
+
+## Browser-side response worker
+
+A read-only CDP worker now implements the provider side of the harvest contract. It:
+
+- attaches only to an already-running Chromium session configured by `AGENTOS_GPT_WEB_CDP_URL`;
+- accepts only `operation=harvest` with selector `assistant.response_by_request_id`;
+- reads only DOM nodes authored by the assistant;
+- returns only the response containing the current correlation ID;
+- never logs in, navigates, sends prompts, reads cookies/storage/network traffic, or scrapes arbitrary page text;
+- emits standard `agentos.session-receipt/v0.1` receipts.
+
+The worker is still not considered production READY until it is deployed against the actual logged-in ChatGPT browser surface and the same invoice benchmark proves end-to-end extraction.
