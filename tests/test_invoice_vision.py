@@ -461,3 +461,21 @@ class VisionRoutingTests(unittest.TestCase):
         read.assert_called_once()
         self.assertEqual(result.raw['vision_route']['decision'],'invoke')
         self.assertEqual(result.raw['vision_route']['reason'],'local_review_required')
+
+
+class VisionFallbackTests(unittest.TestCase):
+    @patch.dict(os.environ, {'GEMINI_INVOICE_FALLBACK_MODELS':'fallback-model'})
+    def test_provider_unavailable_falls_back_to_next_model(self):
+        success=MagicMock()
+        success.__enter__.return_value.read.return_value=json.dumps({'output_text':json.dumps(fixture())}).encode()
+        unavailable=urllib.error.HTTPError(
+            'https://generativelanguage.googleapis.com/v1beta/interactions',
+            503,'Service Unavailable',{},BytesIO(json.dumps({'error':{'message':'high demand'}}).encode())
+        )
+        with patch.object(vision.time,'sleep'), \
+             patch.object(vision.urllib.request,'urlopen',side_effect=[unavailable,unavailable,unavailable,success]) as call:
+            result=vision.read_invoice(image_bytes(),api_key='test-secret',model='primary-model')
+        self.assertEqual(call.call_count,4)
+        self.assertEqual(result['model'],'fallback-model')
+        self.assertEqual(result['requested_model'],'primary-model')
+        self.assertTrue(result['fallback_used'])
