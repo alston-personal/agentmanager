@@ -442,3 +442,10 @@ A successful readiness verification is authoritative. Each accepted immutable in
 ### Thin Client active runtime provenance
 
 Each immutable Windows runtime instance writes `runtime-provenance.json` with its exact source ref, source commit, instance path and installation timestamp. The Thin Client reads the provenance file adjacent to its own loaded package and includes it in every capability manifest/heartbeat. NodeRegistry therefore records the runtime that is actually sending the heartbeat instead of preserving stale provenance from an older instance.
+
+
+### Mobile Node protocol
+
+Mobile devices join the existing Realm through the canonical `agentos.node-manifest/v0.1` enrollment flow with an `agentos.mobile-node/v0.1` profile extension; they do not use a parallel enrollment schema. Mobile Node presence is distinct from executor readiness. iOS/Android manifests report mobile transport/presence plus executor states such as ready, permission_required, auth_required, suspended, or unavailable.
+
+The mobile enrollment bootstrap is represented as an `agentos://join?one=<ONE_URL>&v=v1` deep link suitable for QR encoding. The link carries only the ONE endpoint and protocol version; it is not a credential. The mobile app then generates its local device identity and uses the existing request -> approve -> claim flow. Native iOS/Android clients are not yet implemented; current source provides the shared manifest, heartbeat, executor-readiness, and enrollment-link contracts plus unit coverage.
