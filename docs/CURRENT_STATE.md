@@ -422,3 +422,7 @@ Per-user persistence via HKCU Run plus hidden PowerShell watchdog is not an acce
 ### Windows runtime dependency closure
 
 The Windows Thin Client installer must ship every transitive `agentos_node.*` module imported by the installed CLI/runtime. `thin_client_transport.py` imports `agentos_node.onboarding`, so `onboarding.py` is part of the required runtime payload. CI now guards this dependency to prevent readiness failures caused by incomplete file manifests.
+
+### Windows immutable install instance
+
+A Windows repair run must never overwrite files in an already-running version directory, even when reinstalling the same source commit. The installer therefore creates a unique runtime instance under `%LOCALAPPDATA%\AgentOS\versions\<commit>\<install-id>` for every repair execution. Only after readiness passes does it write `current-runtime.txt` to point at the accepted instance. This makes same-commit repair idempotent with respect to Windows file locks.

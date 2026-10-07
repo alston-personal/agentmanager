@@ -309,9 +309,11 @@ try {
   }
 
   Write-Step 'Installing AgentOS Thin Client'
-  $runtimeRoot=Join-Path $InstallRoot ("versions\" + $sourceCommit)
+  $installId=[DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ')
+  $runtimeRoot=Join-Path $InstallRoot ("versions\" + $sourceCommit + "\" + $installId)
   $state=Join-Path $InstallRoot 'state'
   New-Item -ItemType Directory -Force -Path $runtimeRoot,$state | Out-Null
+  Write-Host ("Runtime install instance: " + $runtimeRoot)
 
   $bootstrap=Join-Path $env:TEMP ("agentos-thin-client-" + $sourceCommit.Substring(0,12) + ".ps1")
   $raw="https://raw.githubusercontent.com/$Repo/$sourceCommit/scripts/install_thin_client_windows.ps1"
@@ -342,6 +344,10 @@ try {
   Write-Step 'Verifying end-to-end readiness'
   & $launcher verify
   if($LASTEXITCODE -ne 0){ throw "AgentOS readiness verification failed with exit code $LASTEXITCODE" }
+
+  $currentFile=Join-Path $InstallRoot 'current-runtime.txt'
+  $runtimeRoot | Set-Content -Encoding ASCII -LiteralPath $currentFile
+  Write-Host ("Current runtime: " + $runtimeRoot)
 
   Write-Host ''
   Write-Host 'AGENTOS_ONE_CLICK_INSTALL=PASS' -ForegroundColor Green

@@ -81,6 +81,8 @@ jobs:
             'versions\',
             '-StateRoot $state',
             'Install-Supervisor $python.Path $runtimeRoot',
+            'Runtime install instance:',
+            'current-runtime.txt',
             "Protected legacy watchdog ACL detected; using user-owned fallback",
             "AgentOS Thin Client Watchdog",
             "Independent watchdog: Installed (60s cadence)",
