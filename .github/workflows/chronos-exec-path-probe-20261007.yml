@@ -1,0 +1,53 @@
+name: Chronos Exec Path Probe 20261007
+
+on:
+  push:
+    branches:
+      - ops/chronos-exec-path-probe-20261007
+    paths:
+      - '.github/workflows/chronos-exec-path-probe-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - name: Bounded one-cycle Chronos path probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=/home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+          BACKUP=/tmp/agentos-update-scheduler-board-probe-backup.py
+          MARKER=/tmp/agentos-chronos-exec-path-probe.json
+          rm -f "$MARKER"
+          cp "$TARGET" "$BACKUP"
+          restore() { cat "$BACKUP" > "$TARGET" || true; }
+          trap restore EXIT
+
+          python3 - "$TARGET" "$MARKER" <<'PY'
+          from pathlib import Path
+          import sys
+          target=Path(sys.argv[1]); marker=sys.argv[2]
+          original=target.read_text(encoding='utf-8')
+          probe=f"""import os as _probe_os, json as _probe_json\nfrom pathlib import Path as _ProbePath\ntry:\n    _ProbePath({marker!r}).write_text(_probe_json.dumps({{'cwd':_probe_os.getcwd(),'file':__file__,'uid':_probe_os.getuid(),'gid':_probe_os.getgid(),'groups':_probe_os.getgroups()}},indent=2)+'\\n',encoding='utf-8')\nexcept BaseException:\n    pass\n\n"""
+          target.write_text(probe+original,encoding='utf-8')
+          compile(target.read_text(encoding='utf-8'),str(target),'exec')
+          PY
+
+          echo 'probe_installed=YES'
+          for i in $(seq 1 90); do
+            if [ -f "$MARKER" ]; then break; fi
+            sleep 1
+          done
+          if [ -f "$MARKER" ]; then
+            echo 'probe_executed=YES'
+            cat "$MARKER"
+          else
+            echo 'probe_executed=NO'
+          fi
+          restore
+          trap - EXIT
+          echo 'target_restored=YES'
