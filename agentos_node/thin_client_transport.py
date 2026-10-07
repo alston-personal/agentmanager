@@ -201,6 +201,46 @@ class ThinClientTransport:
             token=self.config.node_token,
         )
 
+    def bind_work(
+        self,
+        work_id: str,
+        *,
+        project_id: str | None = None,
+        executor_id: str | None = None,
+        participant_id: str | None = None,
+        session_id: str | None = None,
+        runner_id: str | None = None,
+        state: str = 'active',
+        logical_checkpoint_ref: str | None = None,
+        executor_checkpoint_ref: str | None = None,
+    ) -> dict[str, Any]:
+        if not self.config:
+            raise RuntimeError('client is not enrolled')
+        work_id = str(work_id or '').strip()
+        if not work_id:
+            raise ValueError('work_id is required')
+        body = {
+            'node_id': self.config.node_id,
+            'work_id': work_id,
+            'state': state,
+        }
+        optional = {
+            'project_id': project_id,
+            'executor_id': executor_id,
+            'participant_id': participant_id,
+            'session_id': session_id,
+            'runner_id': runner_id,
+            'logical_checkpoint_ref': logical_checkpoint_ref,
+            'executor_checkpoint_ref': executor_checkpoint_ref,
+        }
+        body.update({key: value for key, value in optional.items() if value is not None})
+        return self._request(
+            self.config.one_url + '/v1/work/bind',
+            method='POST',
+            body=body,
+            token=self.config.node_token,
+        )
+
     def submit_benchmark(self, report: dict[str, Any]) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
