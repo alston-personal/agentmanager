@@ -9,6 +9,7 @@ on:
       - 'agentos_node/social/persona_dm.py'
       - 'scripts/threads_web_dm_bridge_user.py'
       - 'scripts/run_threads_web_dm_read_user.sh'
+      - 'scripts/resume_threads_persona_login_user.sh'
       - 'agentos_node/bootstrap_control.py'
       - 'agent_core/runner_window.py'
       - '.github/workflows/oursong-dm-read-acceptance.yml'
@@ -35,6 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/run_threads_web_dm_read_user.sh
+          bash -n scripts/resume_threads_persona_login_user.sh
           python3 -m py_compile             scripts/threads_web_dm_bridge_user.py             agentos_node/social/web_dm.py             agentos_node/social/persona_dm.py
 
       - name: Mint Runner Window credential
