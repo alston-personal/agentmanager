@@ -14,7 +14,7 @@ let package = Package(
         .target(
             name: "AgentOSMobileCore",
             path: ".",
-            exclude: ["README.md", "Tests", "Package.swift"],
+            exclude: ["README.md", "Tests", "Package.swift", "AgentOSMobileApp.swift", "ContentView.swift", "Info.plist", "project.yml"],
             sources: ["AgentOSMobileCore.swift", "AgentOSKeychain.swift"]
         ),
         .testTarget(
