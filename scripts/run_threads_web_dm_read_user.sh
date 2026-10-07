@@ -100,6 +100,33 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
   exit 0
 fi
 if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=LOGIN_REQUIRED'; then
+  if [ "$PERSONA" = "oursong" ]; then
+    echo "threads_web_dm_stage=SESSION_RESUME"
+    set +e
+    RESUME_OUT="$(AGENTOS_DM_PERSONA="$PERSONA" bash "$STAGE/scripts/resume_threads_persona_login_user.sh" 2>&1)"
+    RESUME_RC=$?
+    set -e
+    printf '%s\n' "$RESUME_OUT" | grep -E '^threads_persona_login_resume' || true
+    if [ "$RESUME_RC" -eq 0 ] && printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
+      set +e
+      OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
+import os, runpy, sys
+path=sys.argv[1]
+sys.argv=[path,"--persona",os.environ.get("AGENTOS_DM_PERSONA","mio")]
+runpy.run_path(path,run_name="__main__")
+PY
+)"
+      RC=$?
+      set -e
+      printf '%s\n' "$OUT" | grep -E '^threads_web_dm_' || true
+      echo "threads_web_dm_python_rc=$RC"
+      if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
+        echo "threads_web_dm_autonomous=DISABLED_FOR_PERSONA"
+        echo "threads_web_dm_read=PASS"
+        exit 0
+      fi
+    fi
+  fi
   echo "threads_web_dm_read=LOGIN_REQUIRED"
   exit 0
 fi
