@@ -163,6 +163,7 @@ with sync_playwright() as p:
         page=ctx.new_page()
     print("google_flow_stage=NAVIGATE_FLOW")
     page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
+    page.bring_to_front()
     page.wait_for_timeout(5000)
 
     print("google_flow_stage=FLOW_LOADED")
