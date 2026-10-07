@@ -39,4 +39,4 @@ jobs:
       - name: Test DM contracts
         run: |
           python -m unittest -v tests.test_social_web_dm
-          pytest -q tests/test_dm_loop_guard.py
+          python -m unittest -v tests.test_dm_loop_guard
