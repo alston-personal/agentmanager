@@ -25,6 +25,7 @@ on:
       - 'scripts/compact_realm_fabric_receipts.py'
       - 'tests/test_controller_api.py'
       - 'tests/test_controller_service.py'
+      - 'tests/test_runner_window.py'
       - 'tests/test_realm_fabric.py'
 
 permissions:
@@ -246,4 +247,4 @@ jobs:
 
 # recovery-trigger: 2026-10-02T03:50Z intermittent-8780-upstream
 
-# browser-session-rollout-trigger: 2026-10-07
+# browser-session-rollout-trigger: 2026-10-07-r2
