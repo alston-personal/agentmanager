@@ -173,3 +173,14 @@ printf 'source_sha=%s\nrun_id=%s\nrun_attempt=%s\nslot=%s\nport=%s\nstate=active
 echo "$TARGET_SLOT" > /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-slot
 echo "$TARGET_PORT" > /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-port
 echo "dashboard_bg_cutover=PASS"
+
+# Bound release growth after the cutover has fully succeeded. The deploy lock is
+# already held by this process, so the retention helper must not reacquire it.
+RETENTION_SCRIPT="$REPO/scripts/prune_dashboard_blue_green_releases.sh"
+if [ -f "$RETENTION_SCRIPT" ]; then
+  if DASHBOARD_RETENTION_LOCK_HELD=1 DASHBOARD_RELEASE_KEEP_NEWEST=6 bash "$RETENTION_SCRIPT"; then
+    echo "dashboard_bg_release_retention=PASS"
+  else
+    echo "dashboard_bg_release_retention=WARN" >&2
+  fi
+fi
