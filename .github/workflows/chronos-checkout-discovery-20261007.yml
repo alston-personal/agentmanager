@@ -1,0 +1,36 @@
+name: Chronos Checkout Discovery 20261007
+
+on:
+  push:
+    branches:
+      - ops/chronos-checkout-discovery-20261007
+    paths:
+      - '.github/workflows/chronos-checkout-discovery-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - name: Discover scheduler script copies
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== update_scheduler_board.py copies ==='
+          find /home /opt /srv -type f -path '*/scripts/update_scheduler_board.py' -print 2>/dev/null | while read -r f; do
+            stat -c 'path=%n owner=%U:%G mode=%a inode=%i size=%s mtime=%y' "$f" 2>/dev/null || true
+            sha256sum "$f" 2>/dev/null || true
+            git -C "$(dirname "$(dirname "$f")")" rev-parse --show-toplevel 2>/dev/null || true
+            git -C "$(dirname "$(dirname "$f")")" rev-parse HEAD 2>/dev/null || true
+            echo
+          done
+
+          echo '=== chronos.py copies ==='
+          find /home /opt /srv -type f -path '*/scripts/chronos.py' -print 2>/dev/null | while read -r f; do
+            stat -c 'path=%n owner=%U:%G mode=%a inode=%i size=%s mtime=%y' "$f" 2>/dev/null || true
+            sha256sum "$f" 2>/dev/null || true
+            echo
+          done
