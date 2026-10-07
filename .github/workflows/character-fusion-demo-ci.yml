@@ -1,0 +1,52 @@
+name: Character Fusion Demo CI
+
+on:
+  pull_request:
+    paths:
+      - 'dashboard/app/api/character-fusion/**'
+      - 'dashboard/lib/character-fusion-jobs.ts'
+      - 'scripts/character_fusion_worker.py'
+      - 'tests/test_character_fusion_worker.py'
+      - 'libs/model2ir/**'
+      - '.github/workflows/character-fusion-demo-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/app/api/character-fusion/**'
+      - 'dashboard/lib/character-fusion-jobs.ts'
+      - 'scripts/character_fusion_worker.py'
+      - 'tests/test_character_fusion_worker.py'
+      - 'libs/model2ir/**'
+      - '.github/workflows/character-fusion-demo-ci.yml'
+
+jobs:
+  python-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pytest
+      - name: Run Character IR fusion tests
+        env:
+          PYTHONPATH: libs/model2ir/src:.
+        run: |
+          pytest -q tests/test_character_fusion_worker.py libs/model2ir/tests/test_weighted_reconciliation.py
+
+  dashboard-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run build
