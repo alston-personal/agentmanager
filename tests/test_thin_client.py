@@ -113,5 +113,33 @@ class TestThinClient(unittest.TestCase):
         self.assertGreater(report['uplift']['task_success'], 0)
 
 
+
+    def test_manifest_reports_runtime_provenance_when_present(self):
+        import json
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runtime_root = Path(tmpdir)
+            pkg = runtime_root / 'agentos_node'
+            pkg.mkdir()
+            provenance = {
+                'schema': 'agentos.thin-client-runtime/v0.1',
+                'status': 'observed',
+                'source_ref': 'main',
+                'source_commit': 'a' * 40,
+                'path': str(runtime_root),
+                'provenance_path': str(runtime_root / 'runtime-provenance.json'),
+                'installed_at': '2026-10-07T00:00:00Z',
+            }
+            (runtime_root / 'runtime-provenance.json').write_text(json.dumps(provenance), encoding='utf-8')
+            policy = ThinClientPolicy()
+            client = ThinClient(NodeIdentity('realm-test', 'node-test'), policy)
+            with mock.patch('agentos_node.thin_client.__file__', str(pkg / 'thin_client.py')):
+                manifest = client.capability_manifest()
+            self.assertEqual(manifest['runtime']['source_commit'], 'a' * 40)
+            self.assertEqual(manifest['runtime']['path'], str(runtime_root))
+
+
 if __name__ == '__main__':
     unittest.main()
