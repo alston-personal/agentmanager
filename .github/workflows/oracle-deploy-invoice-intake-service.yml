@@ -14,6 +14,7 @@ on:
       - 'tests/test_stamp_recognition_*.py'
       - 'agentos_node/gpt_web_vision.py'
       - 'scripts/gpt_web_response_bridge.py'
+      - 'scripts/gpt_web_cdp_renderer_health.py'
       - 'scripts/gpt_web_invoice_roundtrip.py'
       - 'ops/systemd/agentos-gpt-web-bridge.service'
       - 'ops/systemd/agentos-gpt-web-bridge.timer'
@@ -31,6 +32,7 @@ on:
       - 'tests/test_stamp_recognition_*.py'
       - 'agentos_node/gpt_web_vision.py'
       - 'scripts/gpt_web_response_bridge.py'
+      - 'scripts/gpt_web_cdp_renderer_health.py'
       - 'scripts/gpt_web_invoice_roundtrip.py'
       - 'ops/systemd/agentos-gpt-web-bridge.service'
       - 'ops/systemd/agentos-gpt-web-bridge.timer'
@@ -410,6 +412,9 @@ jobs:
           scp -o StrictHostKeyChecking=accept-new -P "$PORT" \
             scripts/gpt_web_response_bridge.py \
             "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/gpt_web_response_bridge.py"
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" \
+            scripts/gpt_web_cdp_renderer_health.py \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/gpt_web_cdp_renderer_health.py"
 
           ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
@@ -431,6 +436,47 @@ jobs:
 
           mkdir -p "$APP_ROOT" "$BRIDGE_ROOT" "$FIXTURE_ROOT" /home/ubuntu/.config/systemd/user
           install -m 700 /tmp/gpt_web_response_bridge.py "$APP_ROOT/gpt_web_response_bridge.py"
+          install -m 700 /tmp/gpt_web_cdp_renderer_health.py "$APP_ROOT/gpt_web_cdp_renderer_health.py"
+
+          set +e
+          "$GUI_PY" "$APP_ROOT/gpt_web_cdp_renderer_health.py" --cdp-url http://127.0.0.1:9222
+          RENDERER_RC=$?
+          set -e
+          if [ "$RENDERER_RC" -ne 0 ]; then
+            echo 'gpt_web_renderer_health=FAILED attempting_managed_recovery'
+            mapfile -t CHROME_PIDS < <(pgrep -f 'chrom(e|ium).*remote-debugging-port=9222' || true)
+            printf 'gpt_web_chrome_pids=%s\n' "${CHROME_PIDS[*]:-none}"
+            declare -A UNITS=()
+            for pid in "${CHROME_PIDS[@]:-}"; do
+              [ -r "/proc/$pid/cgroup" ] || continue
+              while IFS= read -r unit; do
+                [ -n "$unit" ] && UNITS["$unit"]=1
+              done < <(grep -oE '[A-Za-z0-9_.@:-]+\.service' "/proc/$pid/cgroup" | tail -n 3 || true)
+            done
+            mapfile -t UNIT_LIST < <(printf '%s\n' "${!UNITS[@]}" | sed '/^$/d')
+            printf 'gpt_web_browser_units=%s\n' "${UNIT_LIST[*]:-none}"
+            if [ "${#UNIT_LIST[@]}" -eq 1 ] && systemctl --user show "${UNIT_LIST[0]}" >/dev/null 2>&1; then
+              echo "gpt_web_browser_restart_unit=${UNIT_LIST[0]}"
+              systemctl --user restart "${UNIT_LIST[0]}"
+              ready=0
+              for _ in $(seq 1 30); do
+                if curl -fsS --max-time 2 http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
+                  ready=1
+                  break
+                fi
+                sleep 1
+              done
+              test "$ready" -eq 1
+              "$GUI_PY" "$APP_ROOT/gpt_web_cdp_renderer_health.py" --cdp-url http://127.0.0.1:9222
+              echo 'gpt_web_renderer_recovery=PASS'
+            else
+              echo 'gpt_web_renderer_recovery=UNMANAGED_BROWSER' >&2
+              ps -eo pid,ppid,user,args | grep -E '[c]hrom(e|ium).*remote-debugging-port=9222' || true
+              exit 42
+            fi
+          else
+            echo 'gpt_web_renderer_health=PASS'
+          fi
 
           cat > /home/ubuntu/.config/systemd/user/agentos-gpt-web-bridge.service <<UNIT
           [Unit]
