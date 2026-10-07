@@ -1,0 +1,63 @@
+name: VOPC Task State 20261007
+
+on:
+  push:
+    branches:
+      - ops/vopc-task-state-20261007
+    paths:
+      - '.github/workflows/vopc-task-state-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect task and receipt state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          data = RealmFabricStore().load()
+          tasks = list((data.get('tasks') or {}).get('vopc5750') or [])
+          receipts = data.get('receipts') or {}
+          recent = []
+          for task_id, receipt in receipts.items():
+              if str(task_id).startswith('task-live-'):
+                  recent.append({
+                      'task_id': task_id,
+                      'action': receipt.get('action'),
+                      'ok': receipt.get('ok'),
+                      'error': receipt.get('error'),
+                      'received_at': receipt.get('received_at'),
+                      'started_at': receipt.get('started_at'),
+                      'completed_at': receipt.get('completed_at'),
+                  })
+          recent.sort(key=lambda x: x.get('received_at') or '', reverse=True)
+
+          node_map = NodeRegistry().node_map()
+          node = next((n for n in node_map.get('nodes', []) if n.get('node_id') == 'vopc5750'), {})
+
+          print(json.dumps({
+              'node': {
+                  'status': node.get('status'),
+                  'last_heartbeat_at': node.get('last_heartbeat_at'),
+                  'heartbeat_age_seconds': node.get('heartbeat_age_seconds'),
+                  'runtime': node.get('runtime'),
+              },
+              'queued_tasks': [
+                  {'task_id': t.get('task_id'), 'action': t.get('action'), 'queued_at': t.get('queued_at')}
+                  for t in tasks if isinstance(t, dict)
+              ],
+              'recent_live_receipts': recent[:20],
+          }, indent=2, sort_keys=True))
+          PY
