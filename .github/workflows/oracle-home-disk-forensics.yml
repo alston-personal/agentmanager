@@ -1,0 +1,50 @@
+name: Oracle Home Disk Forensics
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-home-disk-forensics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: ${{ vars.ORACLE_HOST || '161.33.24.170' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect home filesystem without crossing mounts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -u
+          echo '=== disk ==='
+          df -h /
+          echo '=== home first level local fs only ==='
+          timeout 90 du -x -h -d1 "$HOME" 2>/dev/null | sort -h | tail -n 50 || true
+          echo '=== .local first level ==='
+          timeout 60 du -x -h -d1 "$HOME/.local" 2>/dev/null | sort -h | tail -n 50 || true
+          echo '=== .local/share first level ==='
+          timeout 90 du -x -h -d1 "$HOME/.local/share" 2>/dev/null | sort -h | tail -n 80 || true
+          echo '=== agentos share first level ==='
+          timeout 90 du -x -h -d1 "$HOME/.local/share/agentos" 2>/dev/null | sort -h | tail -n 80 || true
+          echo '=== gui-worker depth2 ==='
+          timeout 90 du -x -h -d2 "$HOME/.local/share/agentos/gui-worker" 2>/dev/null | sort -h | tail -n 100 || true
+          echo '=== agent-data first level ==='
+          timeout 60 du -x -h -d1 "$HOME/agent-data" 2>/dev/null | sort -h | tail -n 50 || true
+          echo '=== other hidden home candidates ==='
+          for p in "$HOME/.config" "$HOME/.vscode-server" "$HOME/.cursor-server" "$HOME/.ollama" "$HOME/.cargo" "$HOME/.rustup" "$HOME/.nvm" "$HOME/.gradle"; do
+            [ -e "$p" ] || continue
+            printf '%s\t' "$p"
+            timeout 20 du -x -sh "$p" 2>/dev/null || echo TIMEOUT
+          done
+          REMOTE
