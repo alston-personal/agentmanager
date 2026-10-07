@@ -32,6 +32,7 @@ def should_auto_reply(
     peer_account: str | None,
     max_auto_hops: int,
     cooldown_seconds: int,
+    hop_window_seconds: int = 600,
     now_epoch: float | None = None,
 ) -> DMLoopDecision:
     direction=str(event.get("direction") or "")
@@ -58,12 +59,14 @@ def should_auto_reply(
     if fp in seen_fp:
         return DMLoopDecision(False,"semantic_duplicate",fp)
 
+    now=float(now_epoch if now_epoch is not None else datetime.now(timezone.utc).timestamp())
+    last=float(state.get("last_auto_reply_epoch") or 0)
     hops=int(state.get("auto_hops") or 0)
+    if last>0 and now-last>=max(1,int(hop_window_seconds)):
+        hops=0
     if hops>=max(0,int(max_auto_hops)):
         return DMLoopDecision(False,"hop_budget_exhausted",fp)
 
-    now=float(now_epoch if now_epoch is not None else datetime.now(timezone.utc).timestamp())
-    last=float(state.get("last_auto_reply_epoch") or 0)
     if last>0 and now-last<max(0,int(cooldown_seconds)):
         return DMLoopDecision(False,"cooldown",fp)
 
