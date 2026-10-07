@@ -3,12 +3,13 @@ on:
   push:
     paths:
       - '.github/workflows/run-mio-dm-cycle.yml'
+      - 'scripts/run_mio_oursong_dm_live_once.py'
 permissions:
   contents: read
 jobs:
   dm:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     env:
       DEPLOY_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -18,77 +19,25 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Read Oursong DM through authenticated Mio CDP
+      - name: Transfer live DM runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            scripts/run_mio_oursong_dm_live_once.py \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/run_mio_oursong_dm_live_once.py"
+      - name: Run authenticated Mio DM cycle
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
+          journalctl --user -u mio-threads-session-supervisor.service -n 30 --no-pager | grep -q 'mio_threads_session_supervisor_state=AUTHENTICATED'
+          test -n "$(curl -fsS http://127.0.0.1:9222/json/version)"
+          test -n "$(curl -fsS http://127.0.0.1:9223/json/version)"
           cd "$HOME/agentmanager"
           GUI_PY="$HOME/.local/share/agentos/gui-worker/venv/bin/python"
           test -x "$GUI_PY"
-          "$GUI_PY" - <<'PY'
-from playwright.sync_api import sync_playwright
-import json,re
-TARGET='oursong_alstonhuang'
-with sync_playwright() as p:
-    browser=p.chromium.connect_over_cdp('http://127.0.0.1:9222',timeout=5000)
-    assert browser.contexts, 'mio_cdp_no_context'
-    ctx=browser.contexts[0]
-    page=ctx.new_page()
-    try:
-        page.goto('https://www.threads.com/messages',wait_until='domcontentloaded',timeout=30000)
-        page.wait_for_timeout(1800)
-        if '/login' in page.url.lower() or 'accountscenter' in page.url.lower():
-            print('mio_dm_read=LOGIN_REQUIRED'); raise SystemExit(4)
-        loc=page.get_by_text(TARGET,exact=False)
-        if loc.count()==0:
-            print('mio_dm_read=TARGET_NOT_FOUND'); raise SystemExit(5)
-        loc.first.click(timeout=5000)
-        page.wait_for_timeout(1000)
-        main=(page.locator('main').inner_text(timeout=5000) or '').strip()
-        lines=[x.strip() for x in main.splitlines() if x.strip()]
-        # Emit only a small tail with message content redacted from logs; persist exact
-        # text temporarily for the next local decision step.
-        out={'target':TARGET,'lines':lines[-30:]}
-        path='/tmp/mio-oursong-dm-visible.json'
-        open(path,'w',encoding='utf-8').write(json.dumps(out,ensure_ascii=False))
-        print('mio_dm_read=PASS')
-        print('mio_dm_read_target='+TARGET)
-        print('mio_dm_read_visible_lines='+str(len(lines)))
-    finally:
-        page.close()
-PY
-          echo '=== DECISION ==='
-          "$GUI_PY" - <<'PY'
-import json,subprocess,sys,re
-from pathlib import Path
-p=Path('/tmp/mio-oursong-dm-visible.json')
-d=json.loads(p.read_text(encoding='utf-8'))
-lines=d.get('lines') or []
-target=d['target']
-# Infer latest inbound candidate from visible conversation tail: remove chrome labels,
-# timestamps, target/self labels and obvious outbound markers conservatively.
-ignore={'訊息','收件匣','Messages','Inbox',target,'mio.milkcat','澪','Mio'}
-cands=[]
-for x in lines:
-    s=str(x).strip()
-    if not s or s in ignore: continue
-    if re.fullmatch(r'\d+[smhdw]|\d+\s*(?:秒|分|分鐘|小時|天|週)|昨天|Yesterday',s,re.I): continue
-    if s.startswith('你傳送了') or s.lower().startswith('you sent'): continue
-    cands.append(s)
-if not cands:
-    print('mio_dm_decision=NO_INBOUND_CANDIDATE'); raise SystemExit(6)
-message=cands[-1]
-dm={'platform':'threads','account':'mio.milkcat','sender':target,'message':message,'context_scope':'visible_conversation_tail','relationship_status':'unknown_new_interaction','relationship_context':{}}
-cp=subprocess.run([sys.executable,'-m','scripts.mio_persona_dm_decision_user'],input=json.dumps(dm,ensure_ascii=False),text=True,capture_output=True,timeout=170)
-print('mio_dm_decision_rc='+str(cp.returncode))
-if cp.returncode!=0:
-    print('mio_dm_decision=ERROR'); print((cp.stderr or '')[-500:]); raise SystemExit(cp.returncode)
-decision=json.loads(cp.stdout.strip().splitlines()[-1])
-Path('/tmp/mio-oursong-dm-decision.json').write_text(json.dumps(decision,ensure_ascii=False),encoding='utf-8')
-print('mio_dm_decision='+str(decision.get('decision')))
-print('mio_dm_decision_source='+str(decision.get('decision_source') or 'relay'))
-print('mio_dm_consistency='+str(decision.get('consistency_check')))
-PY
+          PYTHONPATH="$HOME/agentmanager" "$GUI_PY" /tmp/run_mio_oursong_dm_live_once.py
+          rm -f /tmp/run_mio_oursong_dm_live_once.py
           REMOTE
