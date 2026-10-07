@@ -129,6 +129,8 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=LOGIN_REQUIRED'; then
       if [ -n "$REASON" ]; then echo "threads_web_dm_resume_reason=$REASON"; fi
     else
       echo "threads_web_dm_resume=ERROR"
+      ERR_TYPE="$(printf '%s\n' "$RESUME_OUT" | sed -n 's/^threads_persona_login_resume_error_type=//p' | tail -n1)"
+      if [ -n "$ERR_TYPE" ]; then echo "threads_web_dm_resume_error_type=$ERR_TYPE"; fi
     fi
     if [ "$RESUME_RC" -eq 0 ] && printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
       set +e
