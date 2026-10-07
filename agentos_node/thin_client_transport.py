@@ -241,6 +241,34 @@ class ThinClientTransport:
             token=self.config.node_token,
         )
 
+    def transition_work(
+        self,
+        work_id: str,
+        *,
+        state: str,
+        reason: str | None = None,
+        receipt_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not self.config:
+            raise RuntimeError('client is not enrolled')
+        body = {
+            'node_id': self.config.node_id,
+            'work_id': str(work_id or '').strip(),
+            'state': str(state or '').strip(),
+        }
+        if not body['work_id'] or not body['state']:
+            raise ValueError('work_id and state are required')
+        if reason:
+            body['reason'] = str(reason)
+        if receipt_id:
+            body['receipt_id'] = str(receipt_id)
+        return self._request(
+            self.config.one_url + '/v1/work/transition',
+            method='POST',
+            body=body,
+            token=self.config.node_token,
+        )
+
     def submit_benchmark(self, report: dict[str, Any]) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
