@@ -15,7 +15,7 @@ class PersonaDMBinding:
     profile_key: str
 
 _BINDINGS = {
-    "mio": PersonaDMBinding("mio", "mio.milkcat", "mio", "mio", True, 2, 120, "http://127.0.0.1:9222", "mio"),
+    "mio": PersonaDMBinding("mio", "mio.milkcat", "mio", "mio", True, 2, 120, "http://127.0.0.1:9224", "mio"),
     "oursong": PersonaDMBinding("oursong", "oursong_alstonhuang", "oursong", "oursong", True, 2, 120, "http://127.0.0.1:9223", "oursong"),
 }
 
