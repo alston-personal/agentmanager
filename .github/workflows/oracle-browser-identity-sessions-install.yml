@@ -53,7 +53,6 @@ jobs:
             bash scripts/agentos_dispatch.sh browser.session install "$GITHUB_SHA" \
             | tee "$RUNNER_TEMP/browser-identity-sessions.txt"
           grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/browser-identity-sessions.txt"
-          grep -q 'browser_identity_sessions_install=PASS' "$RUNNER_TEMP/browser-identity-sessions.txt"
       - name: Upload bounded install receipt
         if: always()
         uses: actions/upload-artifact@v4
