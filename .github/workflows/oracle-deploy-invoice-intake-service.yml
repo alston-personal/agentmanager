@@ -453,26 +453,103 @@ jobs:
                 [ -n "$unit" ] && UNITS["$unit"]=1
               done < <(grep -oE '[A-Za-z0-9_.@:-]+\.service' "/proc/$pid/cgroup" | tail -n 3 || true)
             done
-            mapfile -t UNIT_LIST < <(printf '%s\n' "${!UNITS[@]}" | sed '/^$/d')
+            mapfile -t UNIT_LIST < <(
+              printf '%s\n' "${!UNITS[@]}" |
+                sed '/^$/d' |
+                grep -Ev '^(user@|dbus|systemd-|session-)' || true
+            )
             printf 'gpt_web_browser_units=%s\n' "${UNIT_LIST[*]:-none}"
+
+            recovered=0
             if [ "${#UNIT_LIST[@]}" -eq 1 ] && systemctl --user show "${UNIT_LIST[0]}" >/dev/null 2>&1; then
               echo "gpt_web_browser_restart_unit=${UNIT_LIST[0]}"
               systemctl --user restart "${UNIT_LIST[0]}"
+              recovered=1
+            elif [ "${#CHROME_PIDS[@]}" -eq 1 ]; then
+              pid="${CHROME_PIDS[0]}"
+              owner="$(ps -o user= -p "$pid" | xargs)"
+              uid="$(ps -o uid= -p "$pid" | xargs)"
+              echo "gpt_web_browser_relaunch_pid=$pid owner=$owner uid=$uid"
+              ps -ww -o pid,ppid,user,args -p "$pid" || true
+              echo '--- chrome cgroup ---'
+              cat "/proc/$pid/cgroup" 2>/dev/null || sudo -n cat "/proc/$pid/cgroup" || true
+
+              proc_read() {
+                local path="$1"
+                if [ -r "$path" ]; then
+                  cat "$path"
+                else
+                  sudo -n cat "$path"
+                fi
+              }
+
+              mapfile -d '' -t CHROME_CMD < <(proc_read "/proc/$pid/cmdline")
+              if [ "${#CHROME_CMD[@]}" -eq 0 ]; then
+                echo 'gpt_web_browser_relaunch=NO_CMDLINE' >&2
+                exit 42
+              fi
+              printf '%s\n' "${CHROME_CMD[@]}" | grep -Fxq -- '--remote-debugging-port=9222' || {
+                printf '%s\n' "${CHROME_CMD[@]}" | grep -q -- 'remote-debugging-port=9222' || {
+                  echo 'gpt_web_browser_relaunch=PORT_ARGUMENT_MISSING' >&2
+                  exit 42
+                }
+              }
+
+              declare -a CHROME_ENV=()
+              while IFS= read -r -d '' item; do
+                case "$item" in
+                  HOME=*|DISPLAY=*|XAUTHORITY=*|XDG_RUNTIME_DIR=*|DBUS_SESSION_BUS_ADDRESS=*|WAYLAND_DISPLAY=*)
+                    CHROME_ENV+=("$item")
+                    ;;
+                esac
+              done < <(proc_read "/proc/$pid/environ")
+              printf 'gpt_web_browser_env_keys=%s\n' "$(printf '%s\n' "${CHROME_ENV[@]}" | sed 's/=.*//' | paste -sd, -)"
+
+              kill -TERM "$pid"
+              for _ in $(seq 1 20); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.5
+              done
+              if kill -0 "$pid" 2>/dev/null; then
+                echo 'gpt_web_browser_relaunch=TERM_TIMEOUT' >&2
+                exit 42
+              fi
+
+              LOG=/home/ubuntu/agent-data/runtime/gpt-web-browser-relaunch.log
+              mkdir -p "$(dirname "$LOG")"
+              if [ "$(id -un)" = "$owner" ]; then
+                nohup env "${CHROME_ENV[@]}" "${CHROME_CMD[@]}" >>"$LOG" 2>&1 </dev/null &
+              elif sudo -n -u "$owner" true 2>/dev/null; then
+                sudo -n -u "$owner" nohup env "${CHROME_ENV[@]}" "${CHROME_CMD[@]}" >>"$LOG" 2>&1 </dev/null &
+              else
+                echo 'gpt_web_browser_relaunch=OWNER_SWITCH_UNAVAILABLE' >&2
+                exit 42
+              fi
+              disown || true
+              recovered=1
+              echo 'gpt_web_browser_relaunch=STARTED'
+            else
+              echo 'gpt_web_renderer_recovery=AMBIGUOUS_BROWSER_PROCESS' >&2
+              ps -eo pid,ppid,user,args | grep -E '[c]hrom(e|ium).*remote-debugging-port=9222' || true
+              exit 42
+            fi
+
+            if [ "$recovered" -eq 1 ]; then
               ready=0
-              for _ in $(seq 1 30); do
+              for _ in $(seq 1 40); do
                 if curl -fsS --max-time 2 http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
                   ready=1
                   break
                 fi
                 sleep 1
               done
-              test "$ready" -eq 1
+              if [ "$ready" -ne 1 ]; then
+                echo 'gpt_web_renderer_recovery=CDP_DID_NOT_RETURN' >&2
+                tail -n 80 /home/ubuntu/agent-data/runtime/gpt-web-browser-relaunch.log 2>/dev/null || true
+                exit 42
+              fi
               "$GUI_PY" "$APP_ROOT/gpt_web_cdp_renderer_health.py" --cdp-url http://127.0.0.1:9222
               echo 'gpt_web_renderer_recovery=PASS'
-            else
-              echo 'gpt_web_renderer_recovery=UNMANAGED_BROWSER' >&2
-              ps -eo pid,ppid,user,args | grep -E '[c]hrom(e|ium).*remote-debugging-port=9222' || true
-              exit 42
             fi
           else
             echo 'gpt_web_renderer_health=PASS'
