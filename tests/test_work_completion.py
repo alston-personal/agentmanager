@@ -229,6 +229,64 @@ class WorkCompletionTests(unittest.TestCase):
             )
             self.assertNotIn("[WI:wi-live]", mod.board_projection(path))
 
+
+    def test_wait_external_is_durable_but_not_executable_until_due(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            mod.transition(
+                path, work_id="wi-1", target="in_progress",
+                actor="role://completion.controller", next_action="wait for CI",
+            )
+            waiting = mod.wait_external(
+                path,
+                work_id="wi-1",
+                actor="role://lobster",
+                not_before="2099-01-01T00:00:00+00:00",
+                next_action="inspect CI result",
+                reason="github workflow still running",
+            )
+            self.assertEqual(waiting["status"], "waiting_external")
+            self.assertEqual(waiting["owner"], "role://completion.controller")
+            self.assertEqual(waiting["wake_condition"]["kind"], "time")
+            self.assertIsNone(mod.next_item(path))
+
+    def test_due_external_wait_is_woken_without_human_nudge(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            mod.transition(
+                path, work_id="wi-1", target="in_progress",
+                actor="role://completion.controller", next_action="wait for retry window",
+            )
+            mod.wait_external(
+                path,
+                work_id="wi-1",
+                actor="role://lobster",
+                not_before="2000-01-01T00:00:00+00:00",
+                next_action="retry automatically",
+            )
+            awakened = mod.wake_due(path)
+            self.assertEqual(awakened, ["wi-1"])
+            item = mod.load(path)["items"]["wi-1"]
+            self.assertEqual(item["status"], "accepted")
+            self.assertIsNone(item["wake_condition"])
+            self.assertEqual(mod.next_item(path)["work_id"], "wi-1")
+            self.assertTrue(any(h.get("event") == "wake" for h in item["history"]))
+
+    def test_wait_external_requires_typed_wake_condition(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            with self.assertRaises(ValueError):
+                mod.wait_external(
+                    path,
+                    work_id="wi-1",
+                    actor="agent",
+                    not_before="not-a-time",
+                    next_action="resume",
+                )
+
     def test_verified_done_helper_walks_required_states(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)

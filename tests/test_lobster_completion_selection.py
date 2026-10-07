@@ -96,6 +96,28 @@ class LobsterCompletionSelectionTests(unittest.TestCase):
         self.assertFalse(success)
         self.assertEqual(output, "BLOCKED: executor_exception:RuntimeError")
 
+
+    def test_external_wait_directive_is_parsed(self) -> None:
+        got = lobster.external_wait_directive(
+            "some output\nWAIT_EXTERNAL_UNTIL=2026-10-07T08:00:00+00:00 REASON=ci still running\n"
+        )
+        self.assertEqual(got, ("2026-10-07T08:00:00+00:00", "ci still running"))
+
+    def test_completion_finish_persists_external_wait(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = self.state_path(td)
+            self.register(path, "wait-work", "agentmanager", status="in_progress")
+            with patch.object(lobster, "COMPLETION_STATE", path):
+                lobster.completion_finish(
+                    "wait-work",
+                    False,
+                    "WAIT_EXTERNAL_UNTIL=2026-10-07T08:00:00+00:00 REASON=ci still running",
+                )
+            item = work_completion.load(path)["items"]["wait-work"]
+            self.assertEqual(item["status"], "waiting_external")
+            self.assertEqual(item["owner"], "role://completion.controller")
+            self.assertEqual(item["wake_condition"]["kind"], "time")
+
     def test_non_execution_owner_is_not_claimed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = self.state_path(td)

@@ -206,6 +206,7 @@ jobs:
           echo 'completion_ledger=PASS issue_470=durable market_master_1200=durable'
 
           # Prove the two watchdog commands work as the real user before touching units.
+          python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" wake-due --lease-seconds 1800 >/tmp/completion-wake-preflight.json
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" reclaim-stale --lease-seconds 1800 >/tmp/completion-reclaim-preflight.json
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" project-board --board "$BOARD" >/tmp/completion-board-preflight.json
           echo 'completion_watchdog_commands_preflight=PASS'
@@ -221,6 +222,7 @@ jobs:
           Environment=HOME=/home/ubuntu
           Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
           Environment=PYTHONDONTWRITEBYTECODE=1
+          ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE wake-due --lease-seconds 1800
           ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE reclaim-stale --lease-seconds 1800
           ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE project-board --board $BOARD
           EOF
@@ -396,6 +398,29 @@ jobs:
           python3 "$LIVE/scripts/work_completion.py" --state "$TEST_STATE" project-board --board "$TEST_BOARD" >/dev/null
           grep -q '\[WI:resume-probe\]' "$TEST_BOARD"
           echo 'completion_stale_resume_probe=PASS'
+
+          WAIT_STATE="$TMP/wait-wake.json"
+          python3 "$LIVE/scripts/work_completion.py" --state "$WAIT_STATE" register \
+            --id wait-wake-probe --project agentmanager --title 'wait wake probe' \
+            --owner role://completion.controller --lease-seconds 60 \
+            --workspace "$DEV" --next-action 'resume after external wait' --accept verified >/dev/null
+          python3 "$LIVE/scripts/work_completion.py" --state "$WAIT_STATE" transition \
+            --id wait-wake-probe --to in_progress --actor role://completion.controller \
+            --next-action 'resume after external wait' >/dev/null
+          python3 "$LIVE/scripts/work_completion.py" --state "$WAIT_STATE" wait-external \
+            --id wait-wake-probe --actor role://lobster \
+            --not-before '2000-01-01T00:00:00+00:00' \
+            --next-action 'resume after external wait' --reason 'live acceptance timer' >/dev/null
+          python3 "$LIVE/scripts/work_completion.py" --state "$WAIT_STATE" wake-due >/tmp/completion-wait-wake-live.json
+          python3 - "$WAIT_STATE" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf8'))
+          item=data['items']['wait-wake-probe']
+          assert item['status']=='accepted', item
+          assert item.get('wake_condition') is None, item
+          assert any(h.get('event')=='wake' for h in item.get('history') or []), item
+          print('completion_wait_wake_probe=PASS')
+          PY
 
           printf 'source_sha=%s\nrelease=%s\nservice=active\nwatchdog=active\nledger=pass\nresume_probe=pass\n'             "$SOURCE_SHA" "$RELEASE" > "$BACKUP/receipt.txt"
           echo "completion_controller_oracle=PASS source_sha=$SOURCE_SHA release=$RELEASE"

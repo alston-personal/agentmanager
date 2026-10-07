@@ -17,17 +17,18 @@ import tempfile
 from typing import Any, Iterator
 
 SCHEMA = "agentos.work-completion/v1"
-ACTIVE = {"accepted", "in_progress", "blocked", "verifying"}
+ACTIVE = {"accepted", "in_progress", "waiting_external", "blocked", "verifying"}
 TERMINAL = {"done", "cancelled"}
 ALLOWED = {
-    "accepted": {"in_progress", "blocked", "cancelled"},
-    "in_progress": {"blocked", "verifying", "cancelled"},
-    "blocked": {"in_progress", "cancelled"},
-    "verifying": {"in_progress", "blocked", "done"},
+    "accepted": {"in_progress", "waiting_external", "blocked", "cancelled"},
+    "in_progress": {"waiting_external", "blocked", "verifying", "cancelled"},
+    "waiting_external": {"accepted", "in_progress", "blocked", "cancelled"},
+    "blocked": {"in_progress", "waiting_external", "cancelled"},
+    "verifying": {"in_progress", "waiting_external", "blocked", "done"},
     "done": set(),
     "cancelled": set(),
 }
-PRIORITY = {"in_progress": 0, "accepted": 1, "verifying": 2, "blocked": 3}
+PRIORITY = {"in_progress": 0, "accepted": 1, "verifying": 2, "waiting_external": 3, "blocked": 4}
 EXECUTION_OWNERS = {"role://completion.controller", "role://lobster"}
 DEFAULT_LEASE_SECONDS = 1800
 INTAKE_SCHEMA = "agentos.work-intake/v1"
@@ -127,6 +128,12 @@ def validate_item(item: dict[str, Any]) -> list[str]:
             problems.append("active_acceptance_missing")
     if status == "blocked" and not str(item.get("blocker") or "").strip():
         problems.append("blocked_reason_missing")
+    if status == "waiting_external":
+        wake = item.get("wake_condition")
+        if not isinstance(wake, dict):
+            problems.append("waiting_external_wake_condition_missing")
+        elif wake.get("kind") != "time" or not str(wake.get("not_before") or "").strip():
+            problems.append("waiting_external_wake_condition_invalid")
     if status == "done":
         evidence = item.get("evidence")
         verification = item.get("verification") or {}
@@ -176,6 +183,7 @@ def register(
             "source": source or None,
             "workspace": workspace or None,
             "blocker": None,
+            "wake_condition": None,
             "evidence": [],
             "verification": None,
             "created_at": stamp,
@@ -266,6 +274,8 @@ def transition(
             item["blocker"] = blocker.strip()
         else:
             item["blocker"] = None
+        if target != "waiting_external":
+            item["wake_condition"] = None
         if evidence:
             item.setdefault("evidence", []).extend(str(x).strip() for x in evidence if str(x).strip())
         if target == "done":
@@ -283,6 +293,106 @@ def transition(
             raise ValueError(",".join(problems))
         save(path, state)
         return item
+
+
+def wait_external(
+    path: Path,
+    *,
+    work_id: str,
+    actor: str,
+    not_before: str,
+    next_action: str,
+    reason: str = "",
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> dict[str, Any]:
+    """Persist a non-human wait and hand durable responsibility to the controller."""
+    try:
+        wake_at = datetime.fromisoformat(not_before.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("wait_not_before_invalid") from exc
+    if wake_at.tzinfo is None:
+        raise ValueError("wait_not_before_timezone_required")
+    if not next_action.strip():
+        raise ValueError("wait_next_action_required")
+    with locked(path):
+        state = load(path)
+        item = state["items"].get(work_id)
+        if not item:
+            raise KeyError("work_item_not_found")
+        current = str(item.get("status") or "")
+        if current in TERMINAL:
+            raise ValueError("terminal_work_cannot_wait")
+        if "waiting_external" not in ALLOWED.get(current, set()) and current != "waiting_external":
+            raise ValueError(f"invalid_transition:{current}->waiting_external")
+        previous_owner = str(item.get("owner") or "")
+        item["status"] = "waiting_external"
+        item["owner"] = "role://completion.controller"
+        if previous_owner != item["owner"]:
+            item["owner_generation"] = int(item.get("owner_generation") or 0) + 1
+        item["lease_expires_at"] = lease_deadline(lease_seconds)
+        item["next_action"] = next_action.strip()
+        item["blocker"] = reason.strip() or None
+        item["wake_condition"] = {
+            "kind": "time",
+            "not_before": wake_at.astimezone(timezone.utc).isoformat(),
+        }
+        item["updated_at"] = now()
+        item.setdefault("history", []).append(
+            {
+                "at": now(),
+                "event": "wait_external",
+                "actor": actor,
+                "from": current,
+                "from_owner": previous_owner,
+                "to_owner": item["owner"],
+                "wake_condition": item["wake_condition"],
+            }
+        )
+        problems = validate_item(item)
+        if problems:
+            raise ValueError(",".join(problems))
+        save(path, state)
+        return item
+
+
+def wake_due(
+    path: Path,
+    *,
+    actor: str = "role://completion.watchdog",
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    at: datetime | None = None,
+) -> list[str]:
+    """Wake due non-human waits so the normal durable queue can resume them."""
+    point = at or datetime.now(timezone.utc)
+    awakened: list[str] = []
+    with locked(path):
+        state = load(path)
+        for work_id, item in sorted(state["items"].items()):
+            if item.get("status") != "waiting_external":
+                continue
+            wake = item.get("wake_condition") or {}
+            if wake.get("kind") != "time":
+                continue
+            raw = str(wake.get("not_before") or "")
+            try:
+                due = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if due > point:
+                continue
+            item["status"] = "accepted"
+            item["wake_condition"] = None
+            item["blocker"] = None
+            item["owner"] = "role://completion.controller"
+            item["lease_expires_at"] = lease_deadline(lease_seconds)
+            item["updated_at"] = now()
+            item.setdefault("history", []).append(
+                {"at": now(), "event": "wake", "actor": actor, "reason": "time_condition_due"}
+            )
+            awakened.append(work_id)
+        if awakened:
+            save(path, state)
+    return awakened
 
 
 def handoff(
@@ -389,6 +499,8 @@ def next_item(path: Path, *, include_blocked: bool = False) -> dict[str, Any] | 
         status = item.get("status")
         if status not in ACTIVE:
             continue
+        if status == "waiting_external":
+            continue
         if status == "blocked" and not include_blocked:
             continue
         candidates.append(item)
@@ -418,7 +530,7 @@ def board_projection(path: Path) -> str:
     ]
     if not active:
         return ""
-    marks = {"accepted": " ", "in_progress": "/", "blocked": "!", "verifying": "/"}
+    marks = {"accepted": " ", "in_progress": "/", "waiting_external": "~", "blocked": "!", "verifying": "/"}
     projects: dict[str, list[dict[str, Any]]] = {}
     for item in active:
         projects.setdefault(str(item["project_id"]), []).append(item)
@@ -470,6 +582,8 @@ def verified_done(path: Path, *, work_id: str, actor: str, evidence: str) -> dic
     if status == "accepted":
         transition(path, work_id=work_id, target="in_progress", actor=actor, next_action=item["next_action"])
         status = "in_progress"
+    if status == "waiting_external":
+        raise ValueError("waiting_external_not_due")
     if status == "blocked":
         transition(path, work_id=work_id, target="in_progress", actor=actor, next_action=item["next_action"])
         status = "in_progress"
@@ -514,6 +628,18 @@ def cli() -> int:
     p.add_argument("--verification", choices=["passed"])
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
+    p = sub.add_parser("wait-external")
+    p.add_argument("--id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--not-before", required=True)
+    p.add_argument("--next-action", required=True)
+    p.add_argument("--reason", default="")
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
+    p = sub.add_parser("wake-due")
+    p.add_argument("--actor", default="role://completion.watchdog")
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
     p = sub.add_parser("handoff")
     p.add_argument("--id", required=True)
     p.add_argument("--actor", required=True)
@@ -556,6 +682,17 @@ def cli() -> int:
             evidence=args.evidence, verification=args.verification,
             lease_seconds=args.lease_seconds,
         )
+    elif args.command == "wait-external":
+        result = wait_external(
+            args.state, work_id=args.id, actor=args.actor,
+            not_before=args.not_before, next_action=args.next_action,
+            reason=args.reason, lease_seconds=args.lease_seconds,
+        )
+    elif args.command == "wake-due":
+        awakened = wake_due(
+            args.state, actor=args.actor, lease_seconds=args.lease_seconds,
+        )
+        result = {"awakened": awakened}
     elif args.command == "handoff":
         result = handoff(
             args.state, work_id=args.id, actor=args.actor,
