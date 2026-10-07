@@ -1,0 +1,70 @@
+{
+  "participant": {
+    "id": "participant://agent/gpt-web",
+    "instance_id": "gpt-web-unenrolled",
+    "roles": ["agent", "model-provider", "browser-surface-client"]
+  },
+  "adapter": {
+    "name": "agentos-gpt-web-vision-adapter",
+    "version": "0.1.0"
+  },
+  "protocol": {
+    "name": "agentos-participant",
+    "supported": ["1.0"],
+    "negotiated": null
+  },
+  "methods": {
+    "describe": {"implemented": true, "available": true, "verified": false},
+    "probe": {"implemented": true, "available": true, "verified": false},
+    "invoke": {"implemented": true, "available": false, "verified": false, "unavailable_reason": "PENDING_RESPONSE_ADAPTER"},
+    "status": {"implemented": true, "available": true, "verified": false},
+    "receipt": {"implemented": true, "available": true, "verified": false},
+    "shutdown": {"implemented": true, "available": true, "verified": false}
+  },
+  "capabilities": {
+    "vision.document.extract": {
+      "supported_versions": ["1"],
+      "available": false,
+      "verified": false,
+      "unavailable_reason": "PENDING_RESPONSE_ADAPTER"
+    },
+    "vision.invoice.extract": {
+      "supported_versions": ["1"],
+      "available": false,
+      "verified": false,
+      "unavailable_reason": "PENDING_RESPONSE_ADAPTER"
+    }
+  },
+  "features": {
+    "input.image_paste": {"available": true, "verified": false},
+    "output.structured_json": {"available": false, "verified": false}
+  },
+  "requirements": [
+    {
+      "id": "gpt.web.session",
+      "status": "HUMAN_REQUIRED",
+      "detail": "Requires a logged-in ChatGPT Web browser session on the selected GUI surface."
+    },
+    {
+      "id": "desktop.image_paste",
+      "status": "INSTALLABLE",
+      "detail": "Requires a verified GUI executor exposing governed workspace image paste."
+    },
+    {
+      "id": "gpt.web.response.adapter",
+      "status": "FAILED",
+      "detail": "A structured response harvester must be implemented and verified before invoke may become READY."
+    }
+  ],
+  "relationships": [
+    {"type": "depends_on", "participant": "participant://surface/chromium-session"}
+  ],
+  "health": {
+    "observable": true,
+    "state": "DEGRADED",
+    "last_probe_at": null
+  },
+  "receipt": {
+    "supported": true
+  }
+}
