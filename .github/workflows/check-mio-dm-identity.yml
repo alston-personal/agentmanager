@@ -1,0 +1,38 @@
+name: Check Mio DM Identity
+on:
+  push:
+    paths:
+      - '.github/workflows/check-mio-dm-identity.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify Mio CDP/session identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/agentmanager"
+          echo '=== BINDINGS ==='
+          grep -n '"mio":\|"oursong":' agentos_node/social/persona_dm.py
+          echo '=== 9222 ==='
+          curl -fsS http://127.0.0.1:9222/json/version | python3 -m json.tool | head -n 40 || true
+          echo '=== 9223 ==='
+          curl -fsS http://127.0.0.1:9223/json/version | python3 -m json.tool | head -n 40 || true
+          echo '=== SESSION SUPERVISOR ==='
+          systemctl --user --no-pager --full status mio-threads-session-supervisor.service 2>&1 || true
+          echo '=== LOGIN PROBE ==='
+          bash scripts/probe_threads_web_dm_login_user.sh 2>&1 | grep -E 'threads_web_dm_login_(probe|mode|transport|session_state|resume_candidate|mio_account_hint|error_type)=' || true
+          REMOTE
