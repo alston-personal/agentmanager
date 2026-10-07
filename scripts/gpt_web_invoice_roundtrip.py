@@ -5,12 +5,13 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 BRIDGE_APP = Path(os.environ.get('AGENTOS_GPT_WEB_APP_ROOT', '/home/ubuntu/.local/share/agentos/gpt-web-bridge')).expanduser().resolve()
 if str(BRIDGE_APP) not in sys.path:
     sys.path.insert(0, str(BRIDGE_APP))
-from gpt_web_response_bridge import process_one, refresh_sessions
+from gpt_web_response_bridge import refresh_sessions
 
 EXPECTED = {
     "invoice_number": "MY04200253",
@@ -32,8 +33,9 @@ def main() -> int:
         raise FileNotFoundError(str(image))
 
     session_id=refresh_sessions(root,args.cdp_url)
-    corr="invoice-roundtrip-my04200253"
-    outer="session-invoice-roundtrip-my04200253"
+    suffix=str(int(time.time()))
+    corr="invoice-roundtrip-my04200253-"+suffix
+    outer="session-invoice-roundtrip-my04200253-"+suffix
     prompt=(
         'Read the attached Taiwan invoice image and return raw JSON only, no markdown. '
         'Include exactly "agentos_request_id":"' + corr + '". '
@@ -56,12 +58,17 @@ def main() -> int:
     }
     q=root/"requests"/f"{outer}.json"
     q.parent.mkdir(parents=True,exist_ok=True)
-    q.write_text(json.dumps(request,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-    process_one(root,args.cdp_url,q)
+    tmp=q.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(request,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    os.replace(tmp,q)
+    print("gpt_web_invoice_roundtrip_request=QUEUED")
 
     receipt_path=root/"receipts"/f"{outer}.json"
+    deadline=time.monotonic()+60
+    while time.monotonic()<deadline and not receipt_path.is_file():
+        time.sleep(0.5)
     if not receipt_path.is_file():
-        raise RuntimeError("roundtrip receipt missing")
+        raise RuntimeError("roundtrip receipt timeout")
     receipt=json.loads(receipt_path.read_text(encoding="utf-8"))
     print("gpt_web_invoice_roundtrip_receipt_ok="+str(bool(receipt.get("ok"))).lower())
     if not receipt.get("ok"):
