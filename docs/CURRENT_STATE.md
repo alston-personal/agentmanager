@@ -438,3 +438,7 @@ The canonical Windows runtime no longer uses a separate one-minute Scheduled Tas
 ### Windows accepted runtime pointer semantics
 
 A successful readiness verification is authoritative. Each accepted immutable install instance writes a unique record under `accepted-runtimes/<install-id>.txt`. The legacy `current-runtime.txt` file is only a compatibility mirror and is updated best-effort after readiness. If another process holds that compatibility file open, the installer reports a warning but must not convert an already-running, readiness-verified runtime into `AGENTOS_ONE_CLICK_INSTALL=FAIL`.
+
+### Thin Client active runtime provenance
+
+Each immutable Windows runtime instance writes `runtime-provenance.json` with its exact source ref, source commit, instance path and installation timestamp. The Thin Client reads the provenance file adjacent to its own loaded package and includes it in every capability manifest/heartbeat. NodeRegistry therefore records the runtime that is actually sending the heartbeat instead of preserving stale provenance from an older instance.
