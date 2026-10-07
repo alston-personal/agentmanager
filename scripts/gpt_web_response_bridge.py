@@ -123,10 +123,13 @@ class CdpPage:
         except Exception:
             pass
 
-    def call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def call(self, method: str, params: dict[str, Any] | None = None, *, session_id: str | None = None) -> dict[str, Any]:
         self.seq += 1
         call_id = self.seq
-        self.ws.send(json.dumps({"id": call_id, "method": method, "params": params or {}}))
+        message: dict[str, Any] = {"id": call_id, "method": method, "params": params or {}}
+        if session_id:
+            message["sessionId"] = session_id
+        self.ws.send(json.dumps(message))
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             try:
@@ -144,19 +147,86 @@ class CdpPage:
             return result if isinstance(result, dict) else {}
         raise TimeoutError("CDP_COMMAND_TIMEOUT:" + method)
 
-    def evaluate(self, expression: str) -> Any:
+    def evaluate(self, expression: str, *, session_id: str | None = None) -> Any:
         result = self.call("Runtime.evaluate", {
             "expression": expression,
             "returnByValue": True,
             "awaitPromise": True,
-        })
+        }, session_id=session_id)
         obj = result.get("result") or {}
         if obj.get("subtype") == "error":
             raise RuntimeError("CDP_EVALUATE_ERROR")
         return obj.get("value")
 
 
-def _responsive_chatgpt_target(cdp_url: str) -> tuple[dict[str, Any], str]:
+class CdpTargetSession:
+    def __init__(self, connection: CdpPage, *, session_id: str | None, mode: str):
+        self.connection = connection
+        self.session_id = session_id
+        self.mode = mode
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self.connection.call(method, params, session_id=self.session_id)
+
+    def evaluate(self, expression: str) -> Any:
+        return self.connection.evaluate(expression, session_id=self.session_id)
+
+
+def _browser_ws_url(cdp_url: str) -> str:
+    payload = _json_get(cdp_url.rstrip("/") + "/json/version")
+    ws = str((payload or {}).get("webSocketDebuggerUrl") or "")
+    if not ws:
+        raise RuntimeError("CDP_BROWSER_WS_MISSING")
+    return ws
+
+
+def _open_target_connection(cdp_url: str, target: dict[str, Any]) -> CdpTargetSession:
+    target_id = str(target.get("id") or "")
+    direct_error: str | None = None
+    direct = None
+    try:
+        direct = CdpPage(str(target.get("webSocketDebuggerUrl") or ""))
+        endpoint = CdpTargetSession(direct, session_id=None, mode="page-ws")
+        href = endpoint.evaluate("location.href")
+        if isinstance(href, str) and href.startswith("https://chatgpt.com/"):
+            return endpoint
+        direct_error = f"unexpected_href:{href!r}"
+    except Exception as exc:
+        direct_error = f"{type(exc).__name__}:{exc}"
+    finally:
+        if direct is not None and direct_error is not None:
+            direct.close()
+
+    browser = None
+    try:
+        browser = CdpPage(_browser_ws_url(cdp_url))
+        browser.call("Browser.getVersion")
+        attached = browser.call("Target.attachToTarget", {
+            "targetId": target_id,
+            "flatten": True,
+        })
+        sid = str(attached.get("sessionId") or "")
+        if not sid:
+            raise RuntimeError("CDP_ATTACH_SESSION_ID_MISSING")
+        endpoint = CdpTargetSession(browser, session_id=sid, mode="browser-session")
+        href = endpoint.evaluate("location.href")
+        if not isinstance(href, str) or not href.startswith("https://chatgpt.com/"):
+            endpoint.close()
+            raise RuntimeError(f"CDP_ATTACHED_UNEXPECTED_HREF:{href!r}")
+        return endpoint
+    except Exception as exc:
+        if browser is not None:
+            browser.close()
+        raise RuntimeError(
+            "CDP_TARGET_OPEN_FAILED:"
+            + f"direct={direct_error};browser_session={type(exc).__name__}:{exc}"
+        ) from exc
+
+
+def _responsive_chatgpt_target(cdp_url: str) -> tuple[dict[str, Any], str, str]:
     target = _chatgpt_target(cdp_url, create_if_missing=True)
     candidates = [target] + [
         item for item in reversed(_targets(cdp_url))
@@ -167,24 +237,21 @@ def _responsive_chatgpt_target(cdp_url: str) -> tuple[dict[str, Any], str]:
     ]
     errors: list[str] = []
     for item in candidates:
-        ws = str(item.get("webSocketDebuggerUrl") or "")
-        page = None
+        endpoint = None
         try:
-            page = CdpPage(ws)
-            href = page.evaluate("location.href")
-            if isinstance(href, str) and href.startswith("https://chatgpt.com/"):
-                return item, href
-            errors.append(f"{item.get('id')}:unexpected_href:{href!r}")
+            endpoint = _open_target_connection(cdp_url, item)
+            href = endpoint.evaluate("location.href")
+            return item, str(href), endpoint.mode
         except Exception as exc:
             errors.append(f"{item.get('id')}:{type(exc).__name__}:{exc}")
         finally:
-            if page is not None:
-                page.close()
+            if endpoint is not None:
+                endpoint.close()
     raise RuntimeError("CHATGPT_CDP_TARGET_UNRESPONSIVE:" + " | ".join(errors[-5:]))
 
 
 def refresh_sessions(root: Path, cdp_url: str) -> str:
-    target, href = _responsive_chatgpt_target(cdp_url)
+    target, href, transport = _responsive_chatgpt_target(cdp_url)
     session_id = "chatgpt-web:" + str(target.get("id") or "page")
     atomic_json(root / "sessions.json", {
         "schema": SESSION_INDEX_SCHEMA,
@@ -195,15 +262,16 @@ def refresh_sessions(root: Path, cdp_url: str) -> str:
             "title": target.get("title"),
             "ready": True,
             "capabilities": ["agent.session.invoke", "agent.context.harvest"],
+            "transport": transport,
         }],
         "observed_at": now(),
     })
     return session_id
 
 
-def _page(cdp_url: str) -> CdpPage:
+def _page(cdp_url: str) -> CdpTargetSession:
     target = _chatgpt_target(cdp_url)
-    return CdpPage(str(target["webSocketDebuggerUrl"]))
+    return _open_target_connection(cdp_url, target)
 
 
 def _assistant_text(page: CdpPage, request_id: str) -> str | None:

@@ -3,8 +3,15 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-from scripts.gpt_web_response_bridge import _chatgpt_target, _validate_request, atomic_json
+from scripts.gpt_web_response_bridge import (
+    _chatgpt_target,
+    _open_target_connection,
+    _responsive_chatgpt_target,
+    _validate_request,
+    atomic_json,
+)
 
 
 class GptWebResponseBridgeTests(unittest.TestCase):
@@ -40,11 +47,6 @@ class GptWebResponseBridgeTests(unittest.TestCase):
             atomic_json(target, {"ok": True})
             self.assertIn('"ok": true', target.read_text())
 
-
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_accepts_scoped_vision_invoke(self):
         payload = self.request()
         payload["operation"] = "invoke"
@@ -60,9 +62,7 @@ if __name__ == "__main__":
         self.assertEqual(request_id, "invoice:req:12345678")
         self.assertEqual(inner["capability"], "vision.invoice.extract")
 
-
     def test_chatgpt_target_prefers_page_with_websocket(self):
-        from unittest.mock import patch
         targets = [
             {"type":"page","url":"https://example.com/","webSocketDebuggerUrl":"ws://x"},
             {"type":"page","url":"https://chatgpt.com/c/123","webSocketDebuggerUrl":"ws://chat"},
@@ -71,23 +71,42 @@ if __name__ == "__main__":
             target = _chatgpt_target("http://127.0.0.1:9222")
         self.assertEqual(target["webSocketDebuggerUrl"], "ws://chat")
 
-
     def test_missing_chatgpt_target_can_bootstrap(self):
-        from unittest.mock import patch
         created = {"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://chat"}
         with patch("scripts.gpt_web_response_bridge._targets", return_value=[]), \
              patch("scripts.gpt_web_response_bridge._create_target", return_value=created):
-            from scripts.gpt_web_response_bridge import _chatgpt_target
             target = _chatgpt_target("http://127.0.0.1:9222", create_if_missing=True)
         self.assertEqual(target["id"], "p1")
 
-
     def test_responsive_target_rejects_unresponsive_socket(self):
-        from unittest.mock import patch
-        from scripts.gpt_web_response_bridge import _responsive_chatgpt_target
         target={"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://dead"}
         with patch("scripts.gpt_web_response_bridge._chatgpt_target", return_value=target), \
              patch("scripts.gpt_web_response_bridge._targets", return_value=[target]), \
              patch("scripts.gpt_web_response_bridge.CdpPage", side_effect=TimeoutError("CDP_WS_CONNECT_TIMEOUT")):
             with self.assertRaisesRegex(RuntimeError, "CHATGPT_CDP_TARGET_UNRESPONSIVE"):
                 _responsive_chatgpt_target("http://127.0.0.1:9222")
+
+    def test_browser_session_fallback_when_page_socket_stalls(self):
+        target={"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://page"}
+        direct = Mock()
+        direct.evaluate.side_effect = TimeoutError("CDP_COMMAND_RECV_TIMEOUT:Runtime.evaluate")
+        browser = Mock()
+        browser.call.side_effect = [
+            {"product":"Chrome/1"},
+            {"sessionId":"sid-1"},
+        ]
+        browser.evaluate.return_value = "https://chatgpt.com/c/abc"
+
+        calls=[direct,browser]
+        with patch("scripts.gpt_web_response_bridge.CdpPage", side_effect=calls), \
+             patch("scripts.gpt_web_response_bridge._browser_ws_url", return_value="ws://browser"):
+            endpoint = _open_target_connection("http://127.0.0.1:9222", target)
+
+        self.assertEqual(endpoint.mode, "browser-session")
+        self.assertEqual(endpoint.session_id, "sid-1")
+        direct.close.assert_called_once()
+        endpoint.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
