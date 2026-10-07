@@ -33,15 +33,29 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
+          LEGACY="$HOME/gdrive"
           STATE="$HOME/.local/state/agentos/gdrive-health.state"
           now="$(date -Is)"
 
-          if mountpoint -q "$MOUNT" && timeout 10 test -d "$MOUNT/backups"; then
-            printf 'checked_at=%s\nstate=READY\n' "$now" > "$STATE"
+          legacy_integrity() {
+            [ -L "$LEGACY" ] || return 1
+            [ "$(readlink -f "$LEGACY" 2>/dev/null || true)" = "$MOUNT" ] || return 1
+          }
+
+          if mountpoint -q "$MOUNT" && timeout 10 test -d "$MOUNT/backups" && legacy_integrity; then
+            printf 'checked_at=%s\nstate=READY\nlegacy_path=READY\n' "$now" > "$STATE"
             exit 0
           fi
 
-          printf 'checked_at=%s\nstate=RECOVERING\n' "$now" > "$STATE"
+          if ! legacy_integrity; then
+            legacy_kind="missing"
+            [ -L "$LEGACY" ] && legacy_kind="wrong_symlink"
+            [ -e "$LEGACY" ] && [ ! -L "$LEGACY" ] && legacy_kind="local_path"
+            printf 'checked_at=%s\nstate=FAILED\nreason=legacy_path_integrity\nlegacy_kind=%s\n' "$now" "$legacy_kind" > "$STATE"
+            exit 42
+          fi
+
+          printf 'checked_at=%s\nstate=RECOVERING\nlegacy_path=READY\n' "$now" > "$STATE"
           if findmnt -rn "$MOUNT" >/dev/null 2>&1; then
             (command -v fusermount3 >/dev/null && fusermount3 -uz "$MOUNT") || \
               (command -v fusermount >/dev/null && fusermount -uz "$MOUNT") || true
@@ -50,13 +64,13 @@ jobs:
           systemctl --user reset-failed agentos-gdrive-mount.service || true
           systemctl --user restart agentos-gdrive-mount.service
           for i in $(seq 1 60); do
-            if mountpoint -q "$MOUNT" && timeout 15 test -d "$MOUNT/backups"; then
-              printf 'checked_at=%s\nstate=RECOVERED\n' "$(date -Is)" > "$STATE"
+            if mountpoint -q "$MOUNT" && timeout 15 test -d "$MOUNT/backups" && legacy_integrity; then
+              printf 'checked_at=%s\nstate=RECOVERED\nlegacy_path=READY\n' "$(date -Is)" > "$STATE"
               exit 0
             fi
             sleep 2
           done
-          printf 'checked_at=%s\nstate=FAILED\n' "$(date -Is)" > "$STATE"
+          printf 'checked_at=%s\nstate=FAILED\nreason=mount_recovery_failed\nlegacy_path=READY\n' "$(date -Is)" > "$STATE"
           exit 42
           SH
           chmod 700 "$HOME/.local/bin/check_agentos_gdrive.sh"
@@ -87,7 +101,7 @@ jobs:
 
           systemctl --user daemon-reload
           systemctl --user enable --now agentos-gdrive-health.timer
-          systemctl --user start agentos-gdrive-health.service
+          systemctl --user start agentos-gdrive-health.service || true
           cat "$HOME/.local/state/agentos/gdrive-health.state"
           systemctl --user is-active agentos-gdrive-health.timer
           echo 'gdrive_health_guard_install=PASS'
@@ -96,3 +110,5 @@ jobs:
 # user-mountpoint-fix 2026-10-01T09:32+08:00
 
 # storage-resource-publisher-split 2026-10-02
+
+# legacy-path-integrity 2026-10-07
