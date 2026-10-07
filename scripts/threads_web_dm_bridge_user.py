@@ -179,7 +179,16 @@ def main() -> int:
                     else:
                         page.close()
                     return 4
-            profile_hrefs = page.locator('a[href][aria-label*="profile" i], a[href][title*="profile" i], a[href][aria-label*="個人檔案"], a[href][title*="個人檔案"]')
+            profile_hrefs = page.locator(
+                'a[href][aria-label*="profile" i], '
+                'a[href][title*="profile" i], '
+                'a[href][aria-label*="個人檔案"], '
+                'a[href][title*="個人檔案"], '
+                'a[href]:has(svg[aria-label*="profile" i]), '
+                'a[href]:has(svg[aria-label*="個人檔案"]), '
+                '[role="navigation"] a[href^="/@"], '
+                'nav a[href^="/@"]'
+            )
             hrefs=[]
             try:
                 for i in range(min(profile_hrefs.count(),20)):
@@ -193,6 +202,7 @@ def main() -> int:
                 print("threads_web_dm_identity=FAIL")
                 print("threads_web_dm_expected_account="+account)
                 print("threads_web_dm_observed_account="+(observed_account or "UNKNOWN"))
+                print("threads_web_dm_identity_candidate_count="+str(len(set(hrefs))))
                 if owns_context:
                     context.close()
                 else:
