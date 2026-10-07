@@ -1,0 +1,38 @@
+name: Chronos Runtime Path Audit 20261007
+
+on:
+  push:
+    branches:
+      - ops/chronos-runtime-path-audit-20261007
+    paths:
+      - '.github/workflows/chronos-runtime-path-audit-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect Chronos process paths read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          pids=$(pgrep -f 'scripts/chronos.py' || true)
+          echo "chronos_pids=$pids"
+          for pid in $pids; do
+            echo "=== pid=$pid ==="
+            ps -p "$pid" -o user=,group=,pid=,ppid=,lstart=,args= || true
+            readlink -f "/proc/$pid/cwd" 2>/dev/null | sed 's/^/cwd=/' || true
+            tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | sed 's/^/cmdline=/' || true
+            echo
+          done
+
+          echo '=== canonical target ==='
+          stat -c 'target=%n owner=%U:%G mode=%a inode=%i size=%s mtime=%y' /home/ubuntu/agentmanager/scripts/update_scheduler_board.py 2>/dev/null || true
+          sha256sum /home/ubuntu/agentmanager/scripts/update_scheduler_board.py 2>/dev/null || true
+          head -n 8 /home/ubuntu/agentmanager/scripts/update_scheduler_board.py 2>/dev/null || true
+
+          echo '=== recent chronos log ==='
+          tail -n 120 /home/ubuntu/agent-data/logs/chronos.log 2>/dev/null || true
