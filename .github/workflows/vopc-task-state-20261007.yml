@@ -97,3 +97,27 @@ jobs:
           stat -c '%U %G %a %s %y %n'             /home/ubuntu/agent-data/realm             /home/ubuntu/agent-data/realm/fabric.json             /home/ubuntu/agent-data/realm/fabric.json.tmp 2>/dev/null || true
           echo '=== REALM DIR ==='
           ls -la /home/ubuntu/agent-data/realm 2>/dev/null | tail -n 80 || true
+      - name: Inspect receipt SQLite store
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB=/home/ubuntu/agent-data/realm/receipts.sqlite3
+          echo '=== RECEIPT SQLITE ==='
+          test -f "$DB" || { echo 'receipt_db=MISSING'; exit 0; }
+          python3 - "$DB" <<'PY'
+          import json, sqlite3, sys
+          db=sys.argv[1]
+          con=sqlite3.connect(f'file:{db}?mode=ro', uri=True)
+          con.row_factory=sqlite3.Row
+          tables=[r['name'] for r in con.execute("select name from sqlite_master where type='table' order by name")]
+          print('tables='+json.dumps(tables))
+          for table in tables:
+              cols=[dict(r) for r in con.execute(f'pragma table_info({table})')]
+              print('table_schema '+table+'='+json.dumps(cols, sort_keys=True))
+              names={c['name'] for c in cols}
+              if 'task_id' in names:
+                  q=f"select * from {table} where task_id like 'task-live-%' or task_id like 'task-post-restart-%' order by rowid desc limit 30"
+                  rows=[dict(r) for r in con.execute(q)]
+                  print('matching_rows '+table+'='+json.dumps(rows, sort_keys=True, default=str))
+          con.close()
+          PY
