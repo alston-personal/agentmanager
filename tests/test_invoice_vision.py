@@ -479,3 +479,14 @@ class VisionFallbackTests(unittest.TestCase):
         self.assertEqual(result['model'],'fallback-model')
         self.assertEqual(result['requested_model'],'primary-model')
         self.assertTrue(result['fallback_used'])
+
+
+class VisionFastFailoverTests(unittest.TestCase):
+    @patch.dict(os.environ, {'GEMINI_INVOICE_FALLBACK_MODELS':'second,third'})
+    def test_fallback_order_is_primary_then_configured_models(self):
+        self.assertEqual(vision._fallback_models('primary'), ['primary','second','third'])
+
+    def test_transport_timeout_is_bounded_for_fast_failover(self):
+        source = Path(vision.__file__).read_text(encoding='utf-8')
+        self.assertIn('urlopen(req, timeout=35)', source)
+        self.assertIn('retry_delays = (0, 1.5)', source)
