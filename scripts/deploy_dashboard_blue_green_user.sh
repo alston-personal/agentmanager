@@ -46,11 +46,16 @@ mkdir -p "$RELEASE"
 git -C "$REPO" archive "$SOURCE_SHA:dashboard" | tar -x -C "$RELEASE"
 git -C "$REPO" archive "$SOURCE_SHA" \
   scripts/character_fusion_worker.py \
+  scripts/character_fusion_gemini_web_raw.py \
   libs/model2ir/src/model2ir/reconciliation.py \
   | tar -x -C "$RELEASE"
 test -f "$RELEASE/scripts/character_fusion_worker.py"
+test -f "$RELEASE/scripts/character_fusion_gemini_web_raw.py"
 test -f "$RELEASE/libs/model2ir/src/model2ir/reconciliation.py"
-python3 -m py_compile "$RELEASE/scripts/character_fusion_worker.py" "$RELEASE/libs/model2ir/src/model2ir/reconciliation.py"
+python3 -m py_compile \
+  "$RELEASE/scripts/character_fusion_worker.py" \
+  "$RELEASE/scripts/character_fusion_gemini_web_raw.py" \
+  "$RELEASE/libs/model2ir/src/model2ir/reconciliation.py"
 echo "dashboard_bg_character_fusion_support=PASS"
 cp "$CONFIG" "$RELEASE/.env.local"
 chmod 600 "$RELEASE/.env.local"
