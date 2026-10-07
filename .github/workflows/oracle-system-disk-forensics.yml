@@ -1,0 +1,57 @@
+name: Oracle System Disk Forensics
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-system-disk-forensics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect system-level root disk consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -u
+          echo '=== disk ==='
+          df -h /
+          echo '=== bounded system directory sizes ==='
+          for p in /var/lib/docker /var/lib/containerd /var/lib/snapd /var/log /var/cache /opt /root /srv /usr/local /var/tmp; do
+            if sudo -n test -e "$p" 2>/dev/null; then
+              printf '%s\t' "$p"
+              timeout 25 sudo -n du -x -sh "$p" 2>/dev/null || echo TIMEOUT
+            fi
+          done
+          echo '=== /var first level ==='
+          timeout 90 sudo -n du -x -h -d1 /var 2>/dev/null | sort -h | tail -n 40 || true
+          echo '=== large system files >=256MiB ==='
+          timeout 120 sudo -n find /var /opt /root /srv /usr/local -xdev -type f -size +256M -printf '%s\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -nr | head -n 100 || true
+          echo '=== journal ==='
+          sudo -n journalctl --disk-usage 2>/dev/null || true
+          echo '=== docker ==='
+          if command -v docker >/dev/null 2>&1; then
+            sudo -n docker system df -v 2>/dev/null || true
+          fi
+          echo '=== containerd namespaces ==='
+          if command -v ctr >/dev/null 2>&1; then
+            sudo -n ctr namespaces list 2>/dev/null || true
+          fi
+          echo '=== snap ==='
+          if command -v snap >/dev/null 2>&1; then
+            snap list --all 2>/dev/null | tail -n 80 || true
+          fi
+          REMOTE
