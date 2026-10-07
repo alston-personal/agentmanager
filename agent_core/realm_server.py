@@ -505,6 +505,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'persona_dm_send=',
                     'persona_dm_send_readback=',
                     'threads_web_dm_python_rc=',
+                    'threads_web_dm_failure_stage=',
+                    'threads_web_dm_failure_rc=',
                 )
             elif action in {
                 bootstrap_control.ACTION_START_THREADS_WEB_DM_LOGIN,
