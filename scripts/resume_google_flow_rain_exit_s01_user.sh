@@ -27,7 +27,7 @@ run_dir.mkdir(parents=True,exist_ok=True)
 
 print("google_flow_rain_exit_stage=CONNECT_CDP",flush=True)
 with sync_playwright() as p:
-    browser=p.chromium.connect_over_cdp("http://127.0.0.1:9222",timeout=10000)
+    browser=p.chromium.connect_over_cdp("http://127.0.0.1:9225",timeout=10000)
     ctx=browser.contexts[0]
     page=next((x for x in ctx.pages if PROJECT_URL in str(x.url or "")),None)
     if page is None:
