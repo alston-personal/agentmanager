@@ -18,21 +18,32 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Reap stale persona temp stages
+      - name: Remove old Playwright browser revisions
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
+          ROOT="$HOME/.cache/ms-playwright"
           echo '=== BEFORE ==='
           df -h /
-          echo '=== CANDIDATES ==='
-          find /tmp -maxdepth 1 -mindepth 1 -type d -mmin +10 \
-            \( -name 'agentos-threads-dm-read.*' -o -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) \
-            -print 2>/dev/null | sort
-          find /tmp -maxdepth 1 -mindepth 1 -type d -mmin +10 \
-            \( -name 'agentos-threads-dm-read.*' -o -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) \
-            -print0 2>/dev/null | xargs -0 -r rm -rf --
+          du -sh "$ROOT"/* 2>/dev/null | sort -h || true
+          echo '=== DELETE OLD CHROMIUM REVISIONS ==='
+          for d in "$ROOT"/chromium-*; do
+            [ -d "$d" ] || continue
+            case "$(basename "$d")" in
+              chromium-1243) echo "keep $d" ;;
+              *) echo "remove $d"; rm -rf -- "$d" ;;
+            esac
+          done
+          for d in "$ROOT"/chromium_headless_shell-*; do
+            [ -d "$d" ] || continue
+            case "$(basename "$d")" in
+              chromium_headless_shell-1243) echo "keep $d" ;;
+              *) echo "remove $d"; rm -rf -- "$d" ;;
+            esac
+          done
           echo '=== AFTER ==='
           df -h /
+          du -sh "$ROOT"/* 2>/dev/null | sort -h || true
           REMOTE
