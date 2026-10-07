@@ -79,19 +79,26 @@ def _read_env_value(path: Path, key: str) -> str:
 def _gemini_key_candidates() -> list[tuple[str, str]]:
     candidates: list[tuple[str, str]] = []
     seen: set[str] = set()
+    key_names = (
+        "GEMINI_API_PAID_KEY",
+        "CONTINUE_GEMINI_API_KEY",
+        "GEMINI_API_KEY",
+    )
 
-    process_value = os.environ.get("GEMINI_API_KEY", "").strip()
-    if process_value:
-        candidates.append(("process", process_value))
-        seen.add(process_value)
+    for key_name in key_names:
+        process_value = os.environ.get(key_name, "").strip()
+        if process_value and process_value not in seen:
+            candidates.append((f"process:{key_name}", process_value))
+            seen.add(process_value)
 
     for label, path in _ENV_SOURCES:
         if path is None:
             continue
-        value = _read_env_value(path, "GEMINI_API_KEY").strip()
-        if value and value not in seen:
-            candidates.append((label, value))
-            seen.add(value)
+        for key_name in key_names:
+            value = _read_env_value(path, key_name).strip()
+            if value and value not in seen:
+                candidates.append((f"{label}:{key_name}", value))
+                seen.add(value)
     return candidates
 
 
