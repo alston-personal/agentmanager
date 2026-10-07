@@ -29,5 +29,9 @@ jobs:
           systemctl --machine=ubuntu@.host --user show os-chronos.service             -p FragmentPath -p WorkingDirectory -p ExecStart -p User -p Group -p Environment 2>&1 || true
           echo '=== machine user cat ==='
           systemctl --machine=ubuntu@.host --user cat os-chronos.service 2>&1 || true
+          echo '=== direct unit path ==='
+          namei -l /home/ubuntu/.config/systemd/user/os-chronos.service 2>&1 || true
+          stat -c '%n owner=%U:%G mode=%a type=%F' /home/ubuntu/.config/systemd/user/os-chronos.service 2>&1 || true
+          cat /home/ubuntu/.config/systemd/user/os-chronos.service 2>&1 || true
           echo '=== runtime dir ==='
           stat -c '%n owner=%U:%G mode=%a type=%F' /run/user/1001 /run/user/1001/bus 2>&1 || true
