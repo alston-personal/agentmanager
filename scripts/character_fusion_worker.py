@@ -106,6 +106,97 @@ def _resolve_hf_token() -> str:
                 return value
     return ""
 
+
+def _parse_loose_json_text(text: str) -> dict[str, Any]:
+    value = text.strip()
+    if value.startswith("```"):
+        value = value.split("\n", 1)[1] if "\n" in value else value
+        if value.endswith("```"):
+            value = value[:-3]
+        value = value.strip()
+        if value.startswith("json"):
+            value = value[4:].lstrip()
+    parsed = json.loads(value)
+    if not isinstance(parsed, dict):
+        raise RuntimeError("VLM fallback returned non-object JSON")
+    return parsed
+
+
+def _hf_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
+    token = _resolve_hf_token()
+    if not token:
+        raise RuntimeError("HF_TOKEN is not configured for Character Fusion vision fallback")
+
+    python_bin = Path("/home/ubuntu/.local/share/mio-tryon-venv/bin/python")
+    if not python_bin.is_file():
+        raise RuntimeError("Mio try-on inference venv is unavailable for Character Fusion vision fallback")
+
+    model = os.environ.get("HF_CHARACTER_VISION_MODEL", "Qwen/Qwen2.5-VL-3B-Instruct")
+    with tempfile.TemporaryDirectory(prefix="character-fusion-hf-vlm-") as tmp:
+        prompt_path = Path(tmp) / "prompt.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        helper = r'''
+import base64
+import mimetypes
+import os
+import sys
+from pathlib import Path
+from huggingface_hub import InferenceClient
+
+prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
+image_path = Path(sys.argv[2])
+model = sys.argv[3]
+mime = mimetypes.guess_type(image_path.name)[0] or "image/jpeg"
+data = base64.b64encode(image_path.read_bytes()).decode("ascii")
+image_url = f"data:{mime};base64,{data}"
+client = InferenceClient(api_key=os.environ["HF_TOKEN"], provider="auto")
+result = client.chat.completions.create(
+    model=model,
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": image_url}},
+                {"type": "text", "text": prompt},
+            ],
+        }
+    ],
+    max_tokens=1400,
+    temperature=0.1,
+)
+content = result.choices[0].message.content
+if not isinstance(content, str):
+    raise RuntimeError("HF VLM returned non-text content")
+print(content)
+'''
+        proc = subprocess.run(
+            [str(python_bin), "-c", helper, str(prompt_path), str(image_path), model],
+            env={**os.environ, "HF_TOKEN": token},
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+        if proc.returncode != 0:
+            tail = (proc.stderr or proc.stdout or "")[-3000:]
+            raise RuntimeError(f"Hugging Face vision fallback failed: {tail}")
+        return _parse_loose_json_text(proc.stdout)
+
+
+def _should_fallback_from_gemini(exc: Exception) -> bool:
+    message = str(exc)
+    markers = (
+        "Gemini HTTP 429",
+        "Gemini HTTP 500",
+        "Gemini HTTP 502",
+        "Gemini HTTP 503",
+        "Gemini HTTP 504",
+        "RESOURCE_EXHAUSTED",
+        "quota",
+        "GEMINI_API_KEY is not configured",
+        "GEMINI_API_KEY is invalid",
+    )
+    return any(marker in message for marker in markers)
+
 _RECONCILIATION_PATH = REPO_ROOT / "libs" / "model2ir" / "src" / "model2ir" / "reconciliation.py"
 if not _RECONCILIATION_PATH.is_file():
     raise RuntimeError(f"weighted reconciliation module missing: {_RECONCILIATION_PATH}")
@@ -302,12 +393,17 @@ Use this exact top-level shape:
 }
 Omit categories that are not visibly supported. Keep descriptions short and visual.
 """
-    result = gemini_generate(
-        VISION_MODEL,
-        [{"text": prompt}, image_part(path)],
-        {"responseMimeType": "application/json"},
-    )
-    return parse_json_text(result)
+    try:
+        result = gemini_generate(
+            VISION_MODEL,
+            [{"text": prompt}, image_part(path)],
+            {"responseMimeType": "application/json"},
+        )
+        return parse_json_text(result)
+    except RuntimeError as exc:
+        if not _should_fallback_from_gemini(exc):
+            raise
+        return _hf_vlm_json(prompt, path)
 
 
 def extract_custom_main(path: Path) -> dict[str, Any]:
@@ -327,12 +423,17 @@ Return ONLY JSON using Character IR candidate shape:
 }
 The body_plan must describe the dominant species/silhouette, not incidental clothing.
 """
-    result = gemini_generate(
-        VISION_MODEL,
-        [{"text": prompt}, image_part(path)],
-        {"responseMimeType": "application/json"},
-    )
-    return parse_json_text(result)
+    try:
+        result = gemini_generate(
+            VISION_MODEL,
+            [{"text": prompt}, image_part(path)],
+            {"responseMimeType": "application/json"},
+        )
+        return parse_json_text(result)
+    except RuntimeError as exc:
+        if not _should_fallback_from_gemini(exc):
+            raise
+        return _hf_vlm_json(prompt, path)
 
 
 def fuse(main_ir: dict[str, Any], person_ir: dict[str, Any]) -> dict[str, Any]:
@@ -484,13 +585,18 @@ Inspect this generated mascot image. Return ONLY JSON:
 }
 Judge what is visibly present, not what the prompt intended.
 """
-    return parse_json_text(
-        gemini_generate(
-            VISION_MODEL,
-            [{"text": prompt}, image_part(image_path)],
-            {"responseMimeType": "application/json"},
+    try:
+        return parse_json_text(
+            gemini_generate(
+                VISION_MODEL,
+                [{"text": prompt}, image_part(image_path)],
+                {"responseMimeType": "application/json"},
+            )
         )
-    )
+    except RuntimeError as exc:
+        if not _should_fallback_from_gemini(exc):
+            raise
+        return _hf_vlm_json(prompt, image_path)
 
 
 def accept(preset: str, target: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
