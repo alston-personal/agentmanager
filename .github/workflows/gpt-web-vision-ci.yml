@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'agentos_node/gpt_web_vision.py'
+      - 'agentos_node/session_bridge.py'
       - 'agentos_node/desktop_plan.py'
       - 'agentos_node/interactive_desktop.py'
       - 'agentos_node/thin_client.py'
@@ -12,6 +13,7 @@ on:
       - 'tests/test_gpt_web_vision.py'
       - 'scripts/gpt_web_response_bridge.py'
       - 'tests/test_gpt_web_response_bridge.py'
+      - 'tests/test_thin_client.py'
       - 'ops/systemd/agentos-gpt-web-bridge.service'
       - 'ops/systemd/agentos-gpt-web-bridge.timer'
       - 'tests/test_low_latency_gui_agent.py'
@@ -46,6 +48,6 @@ jobs:
         with:
           python-version: '3.13'
       - name: Compile
-        run: python -m py_compile agentos_node/gpt_web_vision.py agentos_node/desktop_plan.py agentos_node/interactive_desktop.py agentos_node/thin_client.py scripts/gpt_web_response_bridge.py
+        run: python -m py_compile agentos_node/gpt_web_vision.py agentos_node/session_bridge.py agentos_node/desktop_plan.py agentos_node/interactive_desktop.py agentos_node/thin_client.py scripts/gpt_web_response_bridge.py
       - name: Test
-        run: python -m unittest -v tests.test_gpt_web_vision tests.test_gpt_web_response_bridge tests.test_low_latency_gui_agent
+        run: python -m unittest -v tests.test_gpt_web_vision tests.test_gpt_web_response_bridge tests.test_low_latency_gui_agent tests.test_thin_client

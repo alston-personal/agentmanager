@@ -185,13 +185,14 @@ class ThinClient:
                 result = {'surface_inventory': self.surface_inventory()}
             elif action == 'agent.session.discover':
                 result = {'session_index': self._session_bridge(task).discover()}
-            elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff'}:
+            elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff', 'agent.session.invoke'}:
                 op = {
                     'agent.session.attach': 'attach',
                     'agent.session.inspect': 'snapshot',
                     'agent.context.harvest': 'harvest',
                     'agent.context.inject': 'inject',
                     'agent.session.handoff': 'handoff',
+                    'agent.session.invoke': 'invoke',
                 }[str(action)]
                 request = self._session_bridge(task).request(
                     op,

@@ -19,6 +19,7 @@ _OPERATION_CAPS = {
     'attach': 'agent.session.attach',
     'inject': 'agent.context.inject',
     'handoff': 'agent.session.handoff',
+    'invoke': 'agent.session.invoke',
 }
 
 

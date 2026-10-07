@@ -73,3 +73,20 @@ A read-only CDP worker now implements the provider side of the harvest contract.
 - emits standard `agentos.session-receipt/v0.1` receipts.
 
 The worker is still not considered production READY until it is deployed against the actual logged-in ChatGPT browser surface and the same invoice benchmark proves end-to-end extraction.
+
+
+## Browser-side invoke
+
+The provider now implements a governed `invoke` operation in addition to read-only harvest. On a host with an already logged-in ChatGPT Chromium session, the bridge may:
+
+1. accept only `vision.document.extract` or `vision.invoice.extract`;
+2. load an image only from configured allowlisted roots;
+3. upload that image through ChatGPT's existing file input;
+4. fill the bounded prompt;
+5. submit once;
+6. wait up to 45 seconds for an assistant response containing the invocation correlation ID;
+7. return that response in the standard session receipt.
+
+This removes the earlier Oracle/Windows mismatch: `desktop.image_paste` remains useful for Windows interactive surfaces, but Oracle's persistent Linux Chromium uses browser-session invoke directly.
+
+The participant remains unverified until live conformance proves the actual ChatGPT session, upload selector, response selector, bounded latency and invoice benchmark behavior.

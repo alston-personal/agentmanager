@@ -143,3 +143,24 @@ class TestThinClient(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+    def test_session_invoke_routes_to_provider_bridge(self):
+        client = ThinClient(NodeIdentity('realm-test','client-invoke'), ThinClientPolicy())
+        fake = mock.Mock()
+        fake.request.return_value = {'request_id':'session-123'}
+        with mock.patch.object(client, '_session_bridge', return_value=fake):
+            receipt = client.execute({
+                'schema':'agentos.node-task/v0.1',
+                'task_id':'invoke-1',
+                'action':'agent.session.invoke',
+                'provider':'gpt-web',
+                'session_id':'chatgpt-web:1',
+                'payload':{'schema':'agentos.gpt-web-vision-invoke/v0.1','request_id':'invoice:req:1'},
+            })
+        self.assertTrue(receipt['ok'])
+        fake.request.assert_called_once_with(
+            'invoke',
+            session_id='chatgpt-web:1',
+            payload={'schema':'agentos.gpt-web-vision-invoke/v0.1','request_id':'invoice:req:1'},
+        )

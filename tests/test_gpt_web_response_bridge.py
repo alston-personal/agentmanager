@@ -24,10 +24,9 @@ class GptWebResponseBridgeTests(unittest.TestCase):
         }
 
     def test_accepts_only_scoped_harvest(self):
-        self.assertEqual(
-            _validate_request(self.request()),
-            ("chatgpt-web:1", "invoice:req:12345678"),
-        )
+        session_id, request_id, inner = _validate_request(self.request())
+        self.assertEqual((session_id, request_id), ("chatgpt-web:1", "invoice:req:12345678"))
+        self.assertEqual(inner["selector"], "assistant.response_by_request_id")
 
     def test_rejects_arbitrary_selector(self):
         payload = self.request()
@@ -44,3 +43,19 @@ class GptWebResponseBridgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_accepts_scoped_vision_invoke(self):
+        payload = self.request()
+        payload["operation"] = "invoke"
+        payload["payload"] = {
+            "schema":"agentos.gpt-web-vision-invoke/v0.1",
+            "request_id":"invoice:req:12345678",
+            "capability":"vision.invoice.extract",
+            "image_path":"/home/ubuntu/agentmanager/benchmarks/invoice_handwriting/fixtures/x.png",
+            "prompt":"return json with invoice:req:12345678",
+        }
+        session_id, request_id, inner = _validate_request(payload)
+        self.assertEqual(session_id, "chatgpt-web:1")
+        self.assertEqual(request_id, "invoice:req:12345678")
+        self.assertEqual(inner["capability"], "vision.invoice.extract")

@@ -16,7 +16,7 @@
   "methods": {
     "describe": {"implemented": true, "available": true, "verified": false},
     "probe": {"implemented": true, "available": true, "verified": false},
-    "invoke": {"implemented": true, "available": false, "verified": false, "unavailable_reason": "PENDING_RESPONSE_ADAPTER"},
+    "invoke": {"implemented": true, "available": true, "verified": false, "unavailable_reason": "PENDING_LIVE_CONFORMANCE"},
     "status": {"implemented": true, "available": true, "verified": false},
     "receipt": {"implemented": true, "available": true, "verified": false},
     "shutdown": {"implemented": true, "available": true, "verified": false}
@@ -24,9 +24,9 @@
   "capabilities": {
     "vision.document.extract": {
       "supported_versions": ["1"],
-      "available": false,
+      "available": true,
       "verified": false,
-      "unavailable_reason": "PENDING_RESPONSE_ADAPTER"
+      "unavailable_reason": "PENDING_LIVE_CONFORMANCE"
     },
     "vision.invoice.extract": {
       "supported_versions": ["1"],
@@ -37,7 +37,7 @@
   },
   "features": {
     "input.image_paste": {"available": true, "verified": false},
-    "output.structured_json": {"available": false, "verified": false}
+    "output.structured_json": {"available": true, "verified": false}
   },
   "requirements": [
     {
@@ -52,7 +52,7 @@
     },
     {
       "id": "gpt.web.response.adapter",
-      "status": "INSTALLABLE",
+      "status": "SATISFIED",
       "detail": "A structured response harvester must be implemented and verified before invoke may become READY."
     }
   ],
