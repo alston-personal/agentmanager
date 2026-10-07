@@ -484,3 +484,19 @@ def test_persona_dm_bindings_use_distinct_cdp_sessions():
     assert mio.cdp_url == "http://127.0.0.1:9222"
     assert oursong.cdp_url == "http://127.0.0.1:9223"
     assert mio.profile_key != oursong.profile_key
+
+
+def test_oursong_mio_dm_roundtrip_intent_is_bounded():
+    intent, params = resolve_intent(
+        "persona.social.dm",
+        "oursong.roundtrip.mio",
+        source_commit="f" * 40,
+        payload={},
+    )
+    assert intent.action == bc.ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP
+    assert params == {"source_commit": "f" * 40}
+    from agentos_node.bootstrap_scheduler import policy_for
+    policy = policy_for(bc.ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP)
+    assert "threads-mio-gui" in policy.locks
+    assert "threads-oursong-gui" in policy.locks
+    assert "persona.social.dm.roundtrip" in policy.capabilities

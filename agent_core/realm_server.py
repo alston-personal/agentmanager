@@ -532,6 +532,14 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'mio_dm_oursong_send=',
                     'mio_dm_oursong_readback=',
                 )
+            elif action == bootstrap_control.ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP:
+                safe_prefixes = (
+                    'oursong_dm_mio_roundtrip=',
+                    'oursong_dm_mio_stage=',
+                    'oursong_dm_mio_inbound=',
+                    'oursong_dm_mio_reply=',
+                    'mio_dm_oursong_reply_verify=',
+                )
             elif action == bootstrap_control.ACTION_GOOGLE_FLOW_RAIN_EXIT_RESUME:
                 safe_prefixes = (
                     'google_flow_rain_exit_stage=',
