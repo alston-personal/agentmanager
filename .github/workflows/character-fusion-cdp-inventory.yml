@@ -1,0 +1,60 @@
+name: Character Fusion CDP Inventory
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-cdp-inventory.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-cdp-inventory.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'cdp_inventory=PASS' .github/workflows/character-fusion-cdp-inventory.yml
+
+  inventory:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inventory isolated CDP profiles
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import json, urllib.request
+          from urllib.parse import urlparse
+          for port in (9222,9223,9224):
+              try:
+                  with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
+                      rows=json.loads(r.read().decode("utf-8"))
+              except Exception as exc:
+                  print(f"cdp_port={port} state=unavailable error={type(exc).__name__}")
+                  continue
+              hosts=[]
+              for row in rows if isinstance(rows,list) else []:
+                  if not isinstance(row,dict) or row.get("type")!="page":
+                      continue
+                  u=urlparse(str(row.get("url") or ""))
+                  host=(u.hostname or "").lower()
+                  path=u.path or "/"
+                  if host:
+                      hosts.append(f"{host}{path[:80]}")
+              print(f"cdp_port={port} state=ready pages={len(hosts)} targets={json.dumps(hosts,ensure_ascii=False)}")
+          print("cdp_inventory=PASS")
+          PY
