@@ -8,13 +8,13 @@ from scripts.mio_persona_dm_decision_user import decide
 from agentos_node.social.dm_loop_guard import should_auto_reply, record_auto_reply, record_consumed
 from agentos_node.social.persona_dm import binding_for
 
-ROOT=Path(os.environ.get("AGENTOS_THREADS_WEB_DM_ROOT") or (Path.home()/".local"/"share"/"agentos"/"social"/"threads-web-dm"))
+BINDING=binding_for("mio")
+ROOT=Path(os.environ.get("AGENTOS_THREADS_WEB_DM_ROOT") or (Path.home()/".local"/"share"/"agentos"/"social"/"threads-web-dm"/BINDING.runtime_key))
 EVENTS=ROOT/"events.jsonl"
 STATE=ROOT/"autonomous-state.json"
 DATA_REPO=Path("/home/ubuntu/agent-data")
 REL_DIR="personas/sunlake-milkcat/relationships/threads"
 USERNAME_RE=re.compile(r"^[A-Za-z0-9._]{1,64}$")
-BINDING=binding_for("mio")
 
 def load_json(path:Path, default):
     try:
@@ -55,7 +55,16 @@ def events():
 def main()->int:
     if os.geteuid()!=1001:
         print("mio_dm_autonomous=WRONG_USER"); return 2
+    state_exists=STATE.exists()
     state=load_json(STATE,{"schema":"agentos.mio-dm-autonomous-state/v2","processed_ids":[],"loop_by_peer":{}})
+    if not state_exists:
+        baseline=[str(e.get("message_id") or "") for e in events() if str(e.get("message_id") or "")]
+        state={"schema":"agentos.mio-dm-autonomous-state/v2","processed_ids":baseline[-5000:],"loop_by_peer":{}}
+        save_json(STATE,state)
+        print("mio_dm_autonomous=PASS")
+        print("mio_dm_autonomous_baseline_count="+str(len(baseline)))
+        print("mio_dm_autonomous_pending=0")
+        return 0
     processed=set(str(x) for x in state.get("processed_ids") or [])
     loop_by_peer=state.get("loop_by_peer") if isinstance(state.get("loop_by_peer"),dict) else {}
     candidates=[]
