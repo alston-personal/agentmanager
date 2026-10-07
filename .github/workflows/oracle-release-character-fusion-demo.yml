@@ -26,8 +26,8 @@ jobs:
       acceptance_anchors: |-
         CHARACTER IR FUSION · DEMO
         生成我的角色
-        /dashboard/api/character-fusion/v1
         Target Character IR
+        主視覺
       credit_account: ''
       credit_cost: 0
     secrets:
