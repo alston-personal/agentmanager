@@ -1,0 +1,32 @@
+name: Check Mio DM Replay State
+on:
+  push:
+    paths:
+      - '.github/workflows/check-mio-dm-replay-state.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Check bounded state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          STATE=/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/oursong-dm-state.json
+          echo '=== STATE ==='
+          cat "$STATE"
+          echo '=== LATEST RECEIPT ==='
+          f="$(find /home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/dm-receipts -maxdepth 1 -type f -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -n 1 | cut -d' ' -f2-)"
+          [ -n "$f" ] && cat "$f" || true
+          REMOTE
