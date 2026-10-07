@@ -581,6 +581,52 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
                 amount_sources[key] = "layout_anchor"
                 confidence[key] = 0.90
 
+        # If the three-part amount block is still incomplete or internally
+        # inconsistent, locally re-OCR only the rows beside explicit amount
+        # labels. New values must be independently observed by OCR; arithmetic
+        # validates combinations but never synthesizes a missing digit/value.
+        amount_complete = all(
+            fields.get(key) is not None
+            for key in ("amount_before_tax", "tax_amount", "total_amount")
+        )
+        amount_consistent = bool(
+            amount_complete
+            and fields["amount_before_tax"] + fields["tax_amount"] == fields["total_amount"]
+        )
+        row_reocr_candidates = {}
+        row_reocr_evidence = {}
+        if not amount_consistent:
+            row_reocr_candidates = anchor_row_reocr(engine, image_bytes, evidence)
+            retry_values, row_reocr_evidence = choose_reocr_amounts(row_reocr_candidates)
+            for key in ("amount_before_tax", "tax_amount", "total_amount"):
+                if fields[key] is None and retry_values.get(key) is not None:
+                    fields[key] = retry_values[key]
+                    amount_sources[key] = "anchor_row_reocr"
+                    confidence[key] = 0.92
+
+            # If the original flattened OCR produced a conflicting triple but
+            # the row-specific retry independently observes a complete,
+            # arithmetic-consistent triple, prefer the row-specific evidence.
+            if all(retry_values.get(key) is not None for key in (
+                "amount_before_tax", "tax_amount", "total_amount"
+            )) and (
+                retry_values["amount_before_tax"] + retry_values["tax_amount"]
+                == retry_values["total_amount"]
+            ):
+                current_complete = all(
+                    fields.get(key) is not None
+                    for key in ("amount_before_tax", "tax_amount", "total_amount")
+                )
+                current_consistent = bool(
+                    current_complete
+                    and fields["amount_before_tax"] + fields["tax_amount"] == fields["total_amount"]
+                )
+                if not current_consistent:
+                    for key in ("amount_before_tax", "tax_amount", "total_amount"):
+                        fields[key] = retry_values[key]
+                        amount_sources[key] = "anchor_row_reocr"
+                        confidence[key] = 0.92
+
         if fields["total_amount"] is not None:
             conf = 0.97 if visual_amounts else 0.82
             if "amount_before_tax" not in amount_sources:
@@ -620,6 +666,8 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
         "visual_amounts": visual_amounts,
         "amount_sources": amount_sources,
         "layout_amount_evidence": layout_evidence,
+        "row_reocr_candidates": row_reocr_candidates if doc_type == "three_part_uniform_invoice" else {},
+        "row_reocr_evidence": row_reocr_evidence if doc_type == "three_part_uniform_invoice" else {},
         "amount_anchor_evidence": [
             token for token in evidence
             if any(
