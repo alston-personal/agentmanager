@@ -307,9 +307,21 @@ try {
   & $launcher verify
   if($LASTEXITCODE -ne 0){ throw "AgentOS readiness verification failed with exit code $LASTEXITCODE" }
 
+  $acceptedDir=Join-Path $InstallRoot 'accepted-runtimes'
+  New-Item -ItemType Directory -Force -Path $acceptedDir | Out-Null
+  $acceptedFile=Join-Path $acceptedDir ($installId + '.txt')
+  $runtimeRoot | Set-Content -Encoding ASCII -LiteralPath $acceptedFile
+  Write-Host ("Accepted runtime record: " + $acceptedFile)
+
   $currentFile=Join-Path $InstallRoot 'current-runtime.txt'
-  $runtimeRoot | Set-Content -Encoding ASCII -LiteralPath $currentFile
-  Write-Host ("Current runtime: " + $runtimeRoot)
+  try {
+    $tmpCurrent=Join-Path $InstallRoot ('current-runtime.' + $installId + '.tmp')
+    $runtimeRoot | Set-Content -Encoding ASCII -LiteralPath $tmpCurrent
+    Move-Item -Force -LiteralPath $tmpCurrent -Destination $currentFile -ErrorAction Stop
+    Write-Host ("Current runtime: " + $runtimeRoot)
+  } catch {
+    Write-Host ("Current runtime compatibility pointer update skipped because the file is locked; accepted runtime remains authoritative. Error=" + $_.Exception.Message) -ForegroundColor Yellow
+  }
 
   Write-Host ''
   Write-Host 'AGENTOS_ONE_CLICK_INSTALL=PASS' -ForegroundColor Green
