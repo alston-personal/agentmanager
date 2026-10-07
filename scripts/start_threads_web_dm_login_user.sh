@@ -7,7 +7,7 @@ if [ "$(id -un)" != "ubuntu" ]; then
 fi
 
 PERSONA="${AGENTOS_DM_PERSONA:-mio}"
-case "$PERSONA" in mio) CDP_BASE=http://127.0.0.1:9222 ;; oursong) CDP_BASE=http://127.0.0.1:9223 ;; *) echo "threads_web_dm_login_start=INVALID_PERSONA" >&2; exit 2 ;; esac
+case "$PERSONA" in mio) CDP_BASE=http://127.0.0.1:9224 ;; oursong) CDP_BASE=http://127.0.0.1:9223 ;; *) echo "threads_web_dm_login_start=INVALID_PERSONA" >&2; exit 2 ;; esac
 AGENTOS_WEB_DM_CDP_URL="$CDP_BASE" python3 - <<'PY'
 import json
 import urllib.parse
