@@ -7,17 +7,19 @@ if [ "$(id -u)" != "1001" ]; then
 fi
 
 SOURCE="${1:-}"
+SOURCE_GUARD="${2:-}"
 test -f "$SOURCE"
+test -f "$SOURCE_GUARD"
 GUI_PY="$HOME/.local/share/agentos/gui-worker/venv/bin/python"
 test -x "$GUI_PY"
 test -f "$HOME/agentmanager/scripts/mio_persona_dm_decision_user.py"
 test -f "$HOME/agentmanager/scripts/mio_dm_oracle_oursong_acceptance.py"
-test -f "$HOME/agentmanager/agentos_node/social/dm_loop_guard.py"
 
 BIN="$HOME/.local/bin"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 mkdir -p "$BIN" "$UNIT_DIR"
 install -m 0755 "$SOURCE" "$BIN/mio-oursong-dm-oracle-cycle"
+install -m 0644 "$SOURCE_GUARD" "$BIN/dm_loop_guard_runtime.py"
 
 cat > "$UNIT_DIR/mio-oursong-dm-autonomous.service" <<EOF
 [Unit]
