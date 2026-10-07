@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "inspect disk exhaustion blocking Mio wardrobe auth deployment",
-  "requested_at": "2026-10-01T06:25:30+08:00"
+  "purpose": "deep inspect current 193G/194G root disk exhaustion; quantify /tmp, home, agent-data, caches and journal after quick check found 151280 old user tmp directories",
+  "requested_at": "2026-10-07T13:18:40+08:00"
 }
