@@ -274,6 +274,36 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
                 return
+            if self.path == '/v1/work/transition':
+                body = self._json_body()
+                node_id = str(body.get('node_id') or '').strip()
+                if not node_id:
+                    raise ValueError('node_id is required')
+                token = self._bearer()
+                self.fabric.authenticate(node_id, token)
+                work_id = str(body.get('work_id') or '').strip()
+                state = str(body.get('state') or '').strip()
+                if not work_id or not state:
+                    raise ValueError('work_id and state are required')
+                store = WorkBindingStore()
+                current = store.get(work_id)
+                if current is None:
+                    raise KeyError(work_id)
+                bound_node = str(current.get('node_id') or '').strip()
+                if bound_node and bound_node != node_id:
+                    raise PermissionError('work is bound to another node')
+                binding = store.transition(
+                    work_id,
+                    state=state,
+                    reason=str(body.get('reason') or '').strip() or None,
+                    receipt_id=str(body.get('receipt_id') or '').strip() or None,
+                )
+                self._send(200, {
+                    'ok': True,
+                    'schema': 'agentos.work-transition/v1',
+                    'binding': binding,
+                })
+                return
             if self.path == '/v1/work/bind':
                 body = self._json_body()
                 node_id = str(body.get('node_id') or '').strip()
