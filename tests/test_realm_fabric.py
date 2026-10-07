@@ -77,6 +77,51 @@ class TestRealmFabric(unittest.TestCase):
         self.assertEqual(node_map['nodes'][0]['status'], 'online')
         self.assertIn('filesystem.write', node_map['realm_capabilities'])
 
+
+    def test_task_pull_is_leased_until_receipt(self):
+        invite = self.fabric.create_invite(expires_minutes=5, label='lease-node')
+        policy = ThinClientPolicy(readable_roots=(self.workspace,))
+        config = ThinClientTransport.enroll(
+            one_url=self.base_url,
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            node_id='lease-node',
+            policy=policy,
+            config_path=self.config_path,
+        )
+
+        task = {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': 'task-lease',
+            'action': 'desktop.session.inspect',
+        }
+        self.fabric.queue_task('lease-node', task)
+
+        first = self.fabric.pull_tasks('lease-node', config.node_token)
+        self.assertEqual([item['task_id'] for item in first], ['task-lease'])
+
+        leased_store = self.fabric.load()['tasks']['lease-node']
+        self.assertEqual(len(leased_store), 1)
+        self.assertEqual(leased_store[0]['task_id'], 'task-lease')
+        self.assertEqual(leased_store[0]['_lease_count'], 1)
+        self.assertTrue(leased_store[0]['_lease_until'])
+
+        second = self.fabric.pull_tasks('lease-node', config.node_token)
+        self.assertEqual(second, [])
+
+        receipt = {
+            'schema': 'agentos.node-receipt/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'lease-node',
+            'task_id': 'task-lease',
+            'action': 'desktop.session.inspect',
+            'ok': True,
+        }
+        self.fabric.record_receipt(receipt, config.node_token)
+
+        self.assertEqual(self.fabric.load()['tasks']['lease-node'], [])
+        self.assertTrue(self.fabric.get_receipt('task-lease')['ok'])
+
     def test_invite_is_one_time(self):
         invite = self.fabric.create_invite()
         policy = ThinClientPolicy(readable_roots=(self.workspace,))
