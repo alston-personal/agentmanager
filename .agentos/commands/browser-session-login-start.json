@@ -1,0 +1,5 @@
+{
+  "schema": "agentos.browser-session-login-start/v1",
+  "session": "threads:mio",
+  "nonce": "login-threads:mio-20261007-r1"
+}
