@@ -164,6 +164,19 @@ def send_telegram_alert(message: str):
         pass
 
 
+WAIT_EXTERNAL_RE = re.compile(
+    r"(?m)^WAIT_EXTERNAL_UNTIL=(?P<until>\S+)(?:\s+REASON=(?P<reason>.*))?$"
+)
+
+
+def external_wait_directive(output: str) -> tuple[str, str] | None:
+    """Parse the bounded executor protocol for a durable non-human wait."""
+    match = WAIT_EXTERNAL_RE.search(output or "")
+    if not match:
+        return None
+    return match.group("until"), (match.group("reason") or "external condition pending").strip()
+
+
 def run_with_completion_guard(proj_dir: Path, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
     """Never allow an exception after durable claim to strand work in_progress."""
     try:
@@ -190,6 +203,12 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
     for attempt in range(1, 4):
         logger.info(f"  任務嘗試 {attempt}/3: {task_text[:50]}")
         success, output = run_claude_task_wrapper(proj_dir, task_text)
+        if success:
+            wait = external_wait_directive(output)
+            if wait:
+                until, reason = wait
+                logger.info(f"  ⏳ external wait requested until {until}: {reason[:80]}")
+                return False, f"WAIT_EXTERNAL:{until}:{reason}"
         if not success:
             logger.warning(f"  Lobster 執行失敗: {output[:100]}")
             # TIMEOUT 立刻 SKIP，不浪費時間重試
@@ -278,7 +297,10 @@ def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
             f"PRIMARY_OUTPUT_DIRECTORY: {target_dir}\n\n"
             f"## 執行 SOP:\n{sop}\n\n"
             f"## 任務內容：\n**{task_text}**\n\n"
-            f"執行後必須輸出 `✅ 任務完成：{task_text[:40]}` 或 `⚠️ 需要人工介入：原因`"
+            f"執行後必須輸出 `✅ 任務完成：{task_text[:40]}` 或 `⚠️ 需要人工介入：原因`。\n"
+            "若唯一剩餘條件是非人工的外部等待（例如 CI、重試窗、部署觀察窗），"
+            "不要要求人工繼續；輸出單獨一行 "
+            "`WAIT_EXTERNAL_UNTIL=<RFC3339時間> REASON=<原因>`，讓 Completion Controller 自動喚醒。"
         )
         cmd = [
             str(get_claude_bin()),
@@ -502,6 +524,19 @@ def completion_finish(work_id: Optional[str], success: bool, output: str) -> Non
                 COMPLETION_STATE, work_id=work_id, actor="role://lobster+inspector",
                 evidence=f"lobster_inspector_pass:{output[:240]}",
             )
+        elif output.startswith("WAIT_EXTERNAL:"):
+            _, rest = output.split("WAIT_EXTERNAL:", 1)
+            until, _, reason = rest.partition(":")
+            state = WorkCompletion.load(COMPLETION_STATE)
+            item = state["items"][work_id]
+            WorkCompletion.wait_external(
+                COMPLETION_STATE,
+                work_id=work_id,
+                actor="role://lobster",
+                not_before=until,
+                next_action=item["next_action"],
+                reason=reason[:500],
+            )
         elif "BLOCKED:" in output:
             state = WorkCompletion.load(COMPLETION_STATE)
             item = state["items"][work_id]
@@ -717,6 +752,8 @@ def run_claude_task(proj_name: str, task: dict, dry_run: bool = False) -> tuple[
 2. 實際執行（修改代碼/建立文件/測試等）
 3. 驗證結果
 4. 最後輸出一句「✅ 任務完成：[任務名稱]」或「⚠️ 需要人工介入：[原因]」
+5. 若只是等待非人工外部條件（CI、重試窗、部署觀察窗），不要要求人工繼續；輸出單獨一行：
+   WAIT_EXTERNAL_UNTIL=<RFC3339時間> REASON=<原因>
 """
     
     if dry_run:
