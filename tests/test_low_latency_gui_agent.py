@@ -88,6 +88,34 @@ class LowLatencyGuiAgentTests(unittest.TestCase):
         self.assertTrue(result['results'][0]['result']['read_only'])
         preview.assert_called_once()
 
+    def test_desktop_plan_routes_governed_image_paste(self):
+        with tempfile.TemporaryDirectory() as td, \
+             patch('agentos_node.desktop_plan.interactive_desktop.image_paste', return_value={
+                 'operation':'paste-image','sha256':'abc','bytes':123,
+             }) as paste:
+            image = Path(td) / 'invoice.png'
+            image.write_bytes(b'fake-image')
+            result = execute_plan(
+                {'plan': {'schema':'agentos.desktop-plan/v0.1','steps':[
+                    {'action':'desktop.image_paste','path':'invoice.png'}
+                ]}},
+                workspace=Path(td),
+            )
+        self.assertTrue(result['plan_ok'])
+        paste.assert_called_once()
+        self.assertEqual(paste.call_args.kwargs['workspace'], Path(td))
+
+    @patch('agentos_node.interactive_desktop._require_windows')
+    @patch('agentos_node.interactive_desktop.session_info', return_value={'interactive': True})
+    def test_image_paste_rejects_path_escape(self, _session, _windows):
+        from agentos_node import interactive_desktop
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(PermissionError):
+                interactive_desktop.image_paste(
+                    {'path': str(Path(td).parent / 'outside.png')},
+                    workspace=Path(td),
+                )
+
     def test_desktop_plan_stops_on_first_error(self):
         with tempfile.TemporaryDirectory() as td,              patch('agentos_node.desktop_plan.interactive_desktop.open_url', side_effect=RuntimeError('boom')):
             result = execute_plan(
