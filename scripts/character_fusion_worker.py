@@ -114,6 +114,93 @@ def _resolve_hf_token() -> str:
     return ""
 
 
+def _resolve_groq_key() -> str:
+    direct = os.environ.get("GROQ_API_KEY", "").strip()
+    if direct:
+        return direct
+    for _label, path in _ENV_SOURCES:
+        if path is None:
+            continue
+        value = _read_env_value(path, "GROQ_API_KEY").strip()
+        if value:
+            return value
+    return ""
+
+
+def _groq_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
+    api_key = _resolve_groq_key()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured for Character Fusion vision fallback")
+
+    mime = mimetypes.guess_type(image_path.name)[0] or "image/jpeg"
+    data_url = f"data:{mime};base64,{base64.b64encode(image_path.read_bytes()).decode('ascii')}"
+    model = os.environ.get("GROQ_CHARACTER_VISION_MODEL", "qwen/qwen3.8-27b")
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            }
+        ],
+        "temperature": 0.1,
+        "max_completion_tokens": 1400,
+        "response_format": {"type": "json_object"},
+        "stream": False,
+    }
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        method="POST",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=90) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Groq vision fallback failed: {type(exc).__name__}: {exc}") from exc
+
+    choices = body.get("choices") or []
+    if not choices:
+        raise RuntimeError("Groq vision fallback returned no choices")
+    content = (((choices[0].get("message") or {}).get("content")) or "").strip()
+    if not content:
+        raise RuntimeError("Groq vision fallback returned empty content")
+    return _parse_loose_json_text(content)
+
+
+def _vision_fallback_json(prompt: str, image_path: Path) -> dict[str, Any]:
+    errors: list[str] = []
+
+    try:
+        return _groq_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"groq={type(exc).__name__}: {exc}")
+
+    try:
+        return _gemini_cli_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"gemini_cli={type(exc).__name__}: {exc}")
+
+    try:
+        return _hf_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"hf={type(exc).__name__}: {exc}")
+
+    try:
+        return _gemini_web_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"gemini_web={type(exc).__name__}: {exc}")
+
+    raise RuntimeError("all vision fallbacks failed; " + "; ".join(errors[-4:]))
+
+
 def _parse_loose_json_text(text: str) -> dict[str, Any]:
     value = text.strip()
     if value.startswith("```"):
@@ -812,32 +899,7 @@ Omit categories that are not visibly supported. Keep descriptions short and visu
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        cli_error = ""
-        try:
-            return _gemini_cli_vlm_json(prompt, path)
-        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
-            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
-        try:
-            return _hf_vlm_json(prompt, path)
-        except RuntimeError as hf_exc:
-            hf_message = str(hf_exc)
-            if not any(marker in hf_message for marker in (
-                "402 Payment Required",
-                "depleted your monthly included credits",
-                "model_not_supported",
-                "No HF VLM succeeded",
-                "timeout",
-                "unavailable",
-            )):
-                raise
-            try:
-                return _gemini_web_vlm_json(prompt, path)
-            except RuntimeError as web_exc:
-                raise RuntimeError(
-                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
-                ) from web_exc
-
-
+        return _vision_fallback_json(prompt, path)
 def extract_custom_main(path: Path) -> dict[str, Any]:
     prompt = """
 Analyze this image as a MAIN VISUAL / mascot species reference.
@@ -865,32 +927,7 @@ The body_plan must describe the dominant species/silhouette, not incidental clot
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        cli_error = ""
-        try:
-            return _gemini_cli_vlm_json(prompt, path)
-        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
-            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
-        try:
-            return _hf_vlm_json(prompt, path)
-        except RuntimeError as hf_exc:
-            hf_message = str(hf_exc)
-            if not any(marker in hf_message for marker in (
-                "402 Payment Required",
-                "depleted your monthly included credits",
-                "model_not_supported",
-                "No HF VLM succeeded",
-                "timeout",
-                "unavailable",
-            )):
-                raise
-            try:
-                return _gemini_web_vlm_json(prompt, path)
-            except RuntimeError as web_exc:
-                raise RuntimeError(
-                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
-                ) from web_exc
-
-
+        return _vision_fallback_json(prompt, path)
 def fuse(main_ir: dict[str, Any], person_ir: dict[str, Any]) -> dict[str, Any]:
     return weighted_reconcile_ir(
         [
@@ -1203,32 +1240,7 @@ Judge what is visibly present, not what the prompt intended.
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        cli_error = ""
-        try:
-            return _gemini_cli_vlm_json(prompt, image_path)
-        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
-            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
-        try:
-            return _hf_vlm_json(prompt, image_path)
-        except RuntimeError as hf_exc:
-            hf_message = str(hf_exc)
-            if not any(marker in hf_message for marker in (
-                "402 Payment Required",
-                "depleted your monthly included credits",
-                "model_not_supported",
-                "No HF VLM succeeded",
-                "timeout",
-                "unavailable",
-            )):
-                raise
-            try:
-                return _gemini_web_vlm_json(prompt, image_path)
-            except RuntimeError as web_exc:
-                raise RuntimeError(
-                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
-                ) from web_exc
-
-
+        return _vision_fallback_json(prompt, image_path)
 def accept(preset: str, target: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
     expected = ((target.get("body_plan") or {}).get("kind") or "").strip()
     actual_kind = ((actual.get("body_plan") or {}).get("kind") or "").strip()
