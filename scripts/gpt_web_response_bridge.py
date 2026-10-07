@@ -108,7 +108,13 @@ def _chatgpt_target(cdp_url: str, *, create_if_missing: bool = False) -> dict[st
 class CdpPage:
     def __init__(self, ws_url: str):
         import websocket
-        self.ws = websocket.create_connection(ws_url, timeout=10, suppress_origin=True)
+        try:
+            self.ws = websocket.create_connection(ws_url, timeout=5, suppress_origin=True)
+        except websocket.WebSocketTimeoutException as exc:
+            raise TimeoutError("CDP_WS_CONNECT_TIMEOUT") from exc
+        except Exception as exc:
+            raise RuntimeError(f"CDP_WS_CONNECT_FAILED:{type(exc).__name__}:{exc}") from exc
+        self.ws.settimeout(5)
         self.seq = 0
 
     def close(self) -> None:
@@ -123,7 +129,12 @@ class CdpPage:
         self.ws.send(json.dumps({"id": call_id, "method": method, "params": params or {}}))
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            raw = self.ws.recv()
+            try:
+                raw = self.ws.recv()
+            except Exception as exc:
+                if type(exc).__name__ == "WebSocketTimeoutException":
+                    raise TimeoutError(f"CDP_COMMAND_RECV_TIMEOUT:{method}") from exc
+                raise RuntimeError(f"CDP_COMMAND_RECV_FAILED:{method}:{type(exc).__name__}:{exc}") from exc
             message = json.loads(raw)
             if message.get("id") != call_id:
                 continue
@@ -145,15 +156,42 @@ class CdpPage:
         return obj.get("value")
 
 
-def refresh_sessions(root: Path, cdp_url: str) -> str:
+def _responsive_chatgpt_target(cdp_url: str) -> tuple[dict[str, Any], str]:
     target = _chatgpt_target(cdp_url, create_if_missing=True)
+    candidates = [target] + [
+        item for item in reversed(_targets(cdp_url))
+        if str(item.get("id") or "") != str(target.get("id") or "")
+        and str(item.get("type") or "") == "page"
+        and str(item.get("url") or "").startswith("https://chatgpt.com/")
+        and str(item.get("webSocketDebuggerUrl") or "")
+    ]
+    errors: list[str] = []
+    for item in candidates:
+        ws = str(item.get("webSocketDebuggerUrl") or "")
+        page = None
+        try:
+            page = CdpPage(ws)
+            href = page.evaluate("location.href")
+            if isinstance(href, str) and href.startswith("https://chatgpt.com/"):
+                return item, href
+            errors.append(f"{item.get('id')}:unexpected_href:{href!r}")
+        except Exception as exc:
+            errors.append(f"{item.get('id')}:{type(exc).__name__}:{exc}")
+        finally:
+            if page is not None:
+                page.close()
+    raise RuntimeError("CHATGPT_CDP_TARGET_UNRESPONSIVE:" + " | ".join(errors[-5:]))
+
+
+def refresh_sessions(root: Path, cdp_url: str) -> str:
+    target, href = _responsive_chatgpt_target(cdp_url)
     session_id = "chatgpt-web:" + str(target.get("id") or "page")
     atomic_json(root / "sessions.json", {
         "schema": SESSION_INDEX_SCHEMA,
         "provider": PROVIDER,
         "sessions": [{
             "session_id": session_id,
-            "url": target.get("url"),
+            "url": href,
             "title": target.get("title"),
             "ready": True,
             "capabilities": ["agent.session.invoke", "agent.context.harvest"],
