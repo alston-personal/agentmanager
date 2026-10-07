@@ -9,16 +9,52 @@ import mimetypes
 import os
 import sys
 import tempfile
+import importlib.util
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "libs" / "model2ir" / "src"))
+REPO_ROOT = Path(os.environ.get("AGENTOS_REPO_ROOT", str(Path(__file__).resolve().parents[1]))).expanduser()
 
-from model2ir import ReconciliationPolicy, ReconciliationSource, weighted_reconcile_ir  # noqa: E402
+def _load_env_file(path: Path) -> None:
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+
+for _env in [
+    Path.home() / ".config" / "agentos" / "character-fusion.env",
+    REPO_ROOT / ".env",
+    Path("/home/ubuntu/invoice-intake-service/vision.env"),
+    Path.home() / ".agentos.secrets",
+]:
+    _load_env_file(_env)
+
+_RECONCILIATION_PATH = REPO_ROOT / "libs" / "model2ir" / "src" / "model2ir" / "reconciliation.py"
+if not _RECONCILIATION_PATH.is_file():
+    raise RuntimeError(f"weighted reconciliation module missing: {_RECONCILIATION_PATH}")
+_spec = importlib.util.spec_from_file_location("agentos_model2ir_reconciliation", _RECONCILIATION_PATH)
+if _spec is None or _spec.loader is None:
+    raise RuntimeError("unable to load weighted reconciliation module")
+_reconciliation = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = _reconciliation
+_spec.loader.exec_module(_reconciliation)
+ReconciliationPolicy = _reconciliation.ReconciliationPolicy
+ReconciliationSource = _reconciliation.ReconciliationSource
+weighted_reconcile_ir = _reconciliation.weighted_reconcile_ir
 
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data"))).expanduser()
 ROOT = DATA_ROOT / "projects" / "character-fusion"
