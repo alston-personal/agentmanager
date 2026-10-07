@@ -119,3 +119,20 @@ python3 scripts/documentation_reality_guard.py
 ## Git reporting
 
 After pushing changes, report the remote/branch and latest commit hash.
+
+
+## Growth Proof ownership
+
+AgentOS has a fixed **Growth Auditor** responsibility. Executors perform work; the Closure Owner / Atlast keeps goals moving through execution -> acceptance -> close -> next work; the Growth Auditor independently evaluates whether accumulated validated experience caused later execution to improve.
+
+Architecture-sensitive runtimes that reuse prior experience SHOULD emit Growth Auditor observations after acceptance. Mutable proof evidence belongs in `$AGENT_DATA_ROOT/growth-proof/ledger.json`; do not commit live evidence into this repository.
+
+The Growth Auditor must classify conservatively:
+
+- persistence/source experience alone is not self-growth;
+- independent later reuse may qualify as G2;
+- causal/measured before-vs-after uplift is required for G3;
+- cross-boundary measured transfer may qualify as G4;
+- G5 is longitudinal and must not be inferred from one event.
+
+See `docs/GROWTH_AUDITOR.md` for the runtime contract.
