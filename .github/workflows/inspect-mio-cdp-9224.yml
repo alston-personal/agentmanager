@@ -6,9 +6,9 @@ on:
 permissions:
   contents: read
 jobs:
-  inspect:
+  recover:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
     env:
       DEPLOY_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -18,22 +18,22 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect targeted disk consumers
+      - name: Restart Mio browser only
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          echo '=== DF ==='
+          set -euo pipefail
+          systemctl --user restart agentos-threads-browser-mio.service
+          systemctl --user reset-failed mio-threads-session-supervisor.service || true
+          sleep 6
+          systemctl --user is-active --quiet agentos-threads-browser-mio.service
+          curl -fsS --max-time 3 http://127.0.0.1:9224/json/version >/tmp/mio-cdp-version.json
+          python3 - <<'PY'
+import json
+d=json.load(open('/tmp/mio-cdp-version.json'))
+assert d.get('webSocketDebuggerUrl')
+print('mio_cdp_http=PASS')
+PY
           df -h /
-          echo '=== TARGETED SIZES ==='
-          for p in             "$HOME/.local/share/agentos"             "$HOME/.cache/ms-playwright"             "$HOME/.cache"             "$HOME/agentmanager"             "$HOME/agent-data"             "$HOME/zeus-writer"             /tmp; do
-            [ -e "$p" ] || continue
-            timeout 25s du -sh "$p" 2>/dev/null || echo "du_timeout $p"
-          done
-          echo '=== AGENTOS CHILDREN ==='
-          timeout 35s du -sh "$HOME/.local/share/agentos"/* 2>/dev/null | sort -h | tail -n 40 || true
-          echo '=== SESSION SUPERVISOR RELEASES ==='
-          find "$HOME/.local/share/agentos/mio-threads-session-supervisor/releases" -mindepth 1 -maxdepth 1 -type d -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort || true
-          echo '=== TMP TOP ==='
-          timeout 25s du -sh /tmp/* 2>/dev/null | sort -h | tail -n 30 || true
           REMOTE
