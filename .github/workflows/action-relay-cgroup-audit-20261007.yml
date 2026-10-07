@@ -1,0 +1,26 @@
+name: Action Relay Cgroup Audit 20261007
+
+on:
+  push:
+    branches:
+      - ops/action-relay-cgroup-audit-20261007
+    paths:
+      - '.github/workflows/action-relay-cgroup-audit-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Inspect live relay cgroups
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pid in $(pgrep -f 'agentos_node.executor_job_action_relay|agentos_node.action_relay' || true); do
+            echo "=== pid=$pid ==="
+            ps -p "$pid" -o user=,group=,pid=,ppid=,lstart=,args= || true
+            cat "/proc/$pid/cgroup" 2>/dev/null || true
+          done
