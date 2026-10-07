@@ -37,6 +37,41 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, Real) and not isinstance(value, bool)
 
 
+def _is_evidence_leaf(value: Any) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and "value" in value
+        and (
+            "confidence" in value
+            or "status" in value
+            or "sourceRefs" in value
+            or "provenance" in value
+        )
+    )
+
+
+def _decision_path(field_path: str, policy: ReconciliationPolicy) -> str:
+    value_path = f"{field_path}.value"
+    if value_path in policy.per_field or value_path in policy.preserve_from:
+        return value_path
+    return field_path
+
+
+def _choose_evidence_leaf(field_path, candidates, policy):
+    decision_path = _decision_path(field_path, policy)
+    pinned = policy.preserve_from.get(decision_path)
+    if pinned:
+        for source, value in candidates:
+            if source.name == pinned:
+                return dict(value)
+
+    source, value = max(
+        candidates,
+        key=lambda item: policy.weight_for(decision_path, item[0]),
+    )
+    return dict(value)
+
+
 def _choose_scalar(field_path, candidates, policy):
     pinned = policy.preserve_from.get(field_path)
     if pinned:
@@ -68,10 +103,15 @@ def _merge_node(nodes, policy, path=""):
     for key in sorted(keys):
         field_path = f"{path}.{key}" if path else key
         candidates = [(source, node[key]) for source, node in nodes if key in node]
+        evidence_leaves = [
+            (source, value)
+            for source, value in candidates
+            if _is_evidence_leaf(value)
+        ]
         mappings = [
             (source, value)
             for source, value in candidates
-            if isinstance(value, Mapping)
+            if isinstance(value, Mapping) and not _is_evidence_leaf(value)
         ]
         scalars = [
             (source, value)
@@ -79,7 +119,17 @@ def _merge_node(nodes, policy, path=""):
             if not isinstance(value, Mapping)
         ]
 
-        if mappings and scalars:
+        if evidence_leaves and not mappings and not scalars:
+            out[key] = _choose_evidence_leaf(
+                field_path,
+                evidence_leaves,
+                policy,
+            )
+        elif evidence_leaves:
+            raise ValueError(
+                f"incompatible evidence-leaf and non-leaf shapes at {field_path!r}"
+            )
+        elif mappings and scalars:
             pinned = policy.preserve_from.get(field_path)
             if pinned:
                 selected = next(
