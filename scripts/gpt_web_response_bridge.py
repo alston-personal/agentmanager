@@ -236,7 +236,8 @@ def _responsive_chatgpt_target(cdp_url: str) -> tuple[dict[str, Any], str, str]:
         and str(item.get("webSocketDebuggerUrl") or "")
     ]
     errors: list[str] = []
-    for item in candidates:
+
+    def try_target(item: dict[str, Any]) -> tuple[dict[str, Any], str, str] | None:
         endpoint = None
         try:
             endpoint = _open_target_connection(cdp_url, item)
@@ -244,10 +245,34 @@ def _responsive_chatgpt_target(cdp_url: str) -> tuple[dict[str, Any], str, str]:
             return item, str(href), endpoint.mode
         except Exception as exc:
             errors.append(f"{item.get('id')}:{type(exc).__name__}:{exc}")
+            return None
         finally:
             if endpoint is not None:
                 endpoint.close()
-    raise RuntimeError("CHATGPT_CDP_TARGET_UNRESPONSIVE:" + " | ".join(errors[-5:]))
+
+    for item in candidates:
+        result = try_target(item)
+        if result is not None:
+            return result
+
+    # A persistent browser can retain a dead renderer indefinitely. Do not keep
+    # retrying the same stale ChatGPT tab: create one fresh page in the same
+    # browser profile so authentication cookies/session are preserved.
+    fresh = _create_target(cdp_url, "https://chatgpt.com/")
+    fresh_id = str(fresh.get("id") or "")
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        matches = [
+            item for item in _targets(cdp_url)
+            if str(item.get("id") or "") == fresh_id
+        ]
+        item = matches[0] if matches else fresh
+        result = try_target(item)
+        if result is not None:
+            return result
+        time.sleep(0.5)
+
+    raise RuntimeError("CHATGPT_CDP_TARGET_UNRESPONSIVE:" + " | ".join(errors[-8:]))
 
 
 def refresh_sessions(root: Path, cdp_url: str) -> str:
