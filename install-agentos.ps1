@@ -128,11 +128,6 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   $state=Join-Path $InstallRoot 'state'
   $runner=Join-Path $RuntimeRoot 'agentos-thin-client-hidden.ps1'
   $log=Join-Path $InstallRoot 'thin-client.log'
-  $watchdogScript=Join-Path $RuntimeRoot 'scripts\windows\thin_client_watchdog.ps1'
-  if(-not (Test-Path -LiteralPath $watchdogScript)){
-    throw "AgentOS Thin Client watchdog script missing: $watchdogScript"
-  }
-
   $escapedInstall=$RuntimeRoot.Replace("'","''")
   $escapedState=$state.Replace("'","''")
   $escapedPython=$PythonPath.Replace("'","''")
