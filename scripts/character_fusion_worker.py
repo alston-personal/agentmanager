@@ -493,6 +493,83 @@ with lock_path.open("a+") as lock:
         return _parse_loose_json_text(output_path.read_text(encoding="utf-8"))
 
 
+def _gemini_cli_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
+    gemini = Path.home() / ".local/bin/gemini"
+    if not gemini.is_file():
+        raise RuntimeError("Gemini CLI is not installed")
+
+    with tempfile.TemporaryDirectory(prefix="character-fusion-gemini-cli-") as tmp:
+        temp_root = Path(tmp)
+        workspace = temp_root / "workspace"
+        workspace.mkdir()
+        suffix = image_path.suffix.lower() or ".png"
+        local_image = workspace / ("input" + suffix)
+        local_image.write_bytes(image_path.read_bytes())
+
+        cli_home = temp_root / "cli-home"
+        settings_dir = cli_home / ".gemini"
+        settings_dir.mkdir(parents=True)
+        (settings_dir / "settings.json").write_text(
+            json.dumps({
+                "security": {"auth": {"selectedType": "oauth-personal"}},
+                "hooksConfig": {"enabled": False},
+                "skills": {"enabled": False},
+                "output": {"format": "json"},
+            }, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        source_settings = Path.home() / ".gemini"
+        for credential_name in ("oauth_creds.json", "google_accounts.json"):
+            source = source_settings / credential_name
+            if source.exists():
+                (settings_dir / credential_name).symlink_to(source)
+
+        prompt_text = "@{" + local_image.name + "}\n" + prompt
+        env = {
+            **os.environ,
+            "HOME": str(Path.home()),
+            "USER": "ubuntu",
+            "PATH": f"{Path.home()}/.local/bin:{Path.home()}/.local/share/agentos/npm-global/bin:"
+                    + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "GEMINI_CLI_HOME": str(cli_home),
+            "CI": "1",
+        }
+        proc = subprocess.run(
+            [
+                str(gemini),
+                "-p", prompt_text,
+                "--approval-mode", "plan",
+                "--skip-trust",
+                "--output-format", "json",
+            ],
+            cwd=str(workspace),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=150,
+            check=False,
+            env=env,
+        )
+        if proc.returncode != 0:
+            tail = ((proc.stdout or "") + "\n" + (proc.stderr or ""))[-3000:]
+            raise RuntimeError(
+                f"Gemini CLI vision fallback failed rc={proc.returncode}: {tail}"
+            )
+        try:
+            payload = json.loads(proc.stdout or "{}")
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Gemini CLI vision fallback returned invalid JSON") from exc
+        response = str(payload.get("response") or "").strip()
+        if not response:
+            error = payload.get("error")
+            raise RuntimeError(
+                "Gemini CLI vision fallback returned no response: "
+                + json.dumps(error, ensure_ascii=False)[:1200]
+            )
+        return _parse_loose_json_text(response)
+
+
 def _should_fallback_from_gemini(exc: Exception) -> bool:
     message = str(exc)
     markers = (
@@ -594,7 +671,7 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
 
     invalid_sources: list[str] = []
     transient_codes = {429, 500, 502, 503, 504}
-    max_attempts = max(1, int(os.environ.get("GEMINI_CHARACTER_MAX_ATTEMPTS", "4")))
+    max_attempts = max(1, int(os.environ.get("GEMINI_CHARACTER_MAX_ATTEMPTS", "2")))
 
     for source_label, api_key in candidates:
         for attempt in range(1, max_attempts + 1):
@@ -729,6 +806,10 @@ Omit categories that are not visibly supported. Keep descriptions short and visu
         if not _should_fallback_from_gemini(exc):
             raise
         try:
+            return _gemini_cli_vlm_json(prompt, path)
+        except (RuntimeError, subprocess.TimeoutExpired):
+            pass
+        try:
             return _hf_vlm_json(prompt, path)
         except RuntimeError as hf_exc:
             hf_message = str(hf_exc)
@@ -771,6 +852,10 @@ The body_plan must describe the dominant species/silhouette, not incidental clot
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
+        try:
+            return _gemini_cli_vlm_json(prompt, path)
+        except (RuntimeError, subprocess.TimeoutExpired):
+            pass
         try:
             return _hf_vlm_json(prompt, path)
         except RuntimeError as hf_exc:
@@ -1099,6 +1184,10 @@ Judge what is visibly present, not what the prompt intended.
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
+        try:
+            return _gemini_cli_vlm_json(prompt, image_path)
+        except (RuntimeError, subprocess.TimeoutExpired):
+            pass
         try:
             return _hf_vlm_json(prompt, image_path)
         except RuntimeError as hf_exc:
