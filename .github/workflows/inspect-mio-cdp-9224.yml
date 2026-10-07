@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 jobs:
-  recover:
+  cleanup:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
@@ -18,17 +18,21 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Restart Mio browser only
+      - name: Reap stale persona temp stages
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
-          systemctl --user restart agentos-threads-browser-mio.service
-          systemctl --user reset-failed mio-threads-session-supervisor.service || true
-          sleep 6
-          systemctl --user is-active --quiet agentos-threads-browser-mio.service
-          curl -fsS --max-time 3 http://127.0.0.1:9224/json/version >/tmp/mio-cdp-version.json
-          python3 -c 'import json; d=json.load(open("/tmp/mio-cdp-version.json")); assert d.get("webSocketDebuggerUrl"); print("mio_cdp_http=PASS")'
+          echo '=== BEFORE ==='
+          df -h /
+          echo '=== CANDIDATES ==='
+          find /tmp -maxdepth 1 -mindepth 1 -type d -mmin +10 \
+            \( -name 'agentos-threads-dm-read.*' -o -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) \
+            -print 2>/dev/null | sort
+          find /tmp -maxdepth 1 -mindepth 1 -type d -mmin +10 \
+            \( -name 'agentos-threads-dm-read.*' -o -name 'persona-agent-data-*' -o -name 'persona-social-data-*' -o -name 'mio-public-snapshot-*' \) \
+            -print0 2>/dev/null | xargs -0 -r rm -rf --
+          echo '=== AFTER ==='
           df -h /
           REMOTE
