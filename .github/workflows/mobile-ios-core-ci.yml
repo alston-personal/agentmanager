@@ -1,0 +1,28 @@
+name: Mobile iOS Core CI
+
+on:
+  pull_request:
+    paths:
+      - 'clients/mobile/ios/**'
+      - '.github/workflows/mobile-ios-core-ci.yml'
+  push:
+    branches:
+      - feat/mobile-node-protocol
+    paths:
+      - 'clients/mobile/ios/**'
+      - '.github/workflows/mobile-ios-core-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  swift-test:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: clients/mobile/ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift test
+        run: swift test
