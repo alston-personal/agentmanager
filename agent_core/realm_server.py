@@ -493,6 +493,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'threads_web_dm_resume=',
                     'threads_web_dm_resume_reason=',
                     'threads_web_dm_resume_error_type=',
+                    'threads_web_dm_resume_error_stage=',
                     'threads_web_dm_bridge=',
                     'threads_web_dm_error_type=',
                     'threads_web_dm_transport=',
