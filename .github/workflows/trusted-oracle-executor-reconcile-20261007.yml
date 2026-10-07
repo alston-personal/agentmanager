@@ -1,0 +1,80 @@
+name: Trusted Oracle Executor Reconcile 20261007
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/trusted-oracle-executor-reconcile-20261007.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Mint trusted scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8'))['value'])
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Reconcile Oracle executor through Runner Window
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY="$(python3 - "$GITHUB_SHA" <<'PY'
+          import json,sys
+          print(json.dumps({
+            "schema":"agentos.runner-window-dispatch/v1",
+            "capability":"node.executor",
+            "operation":"reconcile",
+            "source_commit":sys.argv[1],
+            "payload":{"node_id":"oracle"}
+          },separators=(",",":")))
+          PY
+          )"
+          SUBMIT="$RUNNER_TEMP/submit.json"
+          code="$(curl -sS -o "$SUBMIT" -w '%{http_code}' --max-time 20             -H "Authorization: Bearer $TOKEN"             -H 'Content-Type: application/json'             -d "$BODY" https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch || true)"
+          cat "$SUBMIT"; echo
+          test "$code" = 202
+          REQUEST_ID="$(python3 - "$SUBMIT" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(d['request_id'])
+          PY
+          )"
+          deadline=$((SECONDS+180))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            STATUS="$RUNNER_TEMP/status.json"
+            code="$(curl -sS -o "$STATUS" -w '%{http_code}' --max-time 20               -H "Authorization: Bearer $TOKEN"               "https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch/requests/$REQUEST_ID" || true)"
+            if [ "$code" = 200 ]; then
+              state="$(python3 - "$STATUS" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8')).get('state') or 'unknown')
+          PY
+          )"
+              if [ "$state" = completed ]; then
+                cat "$STATUS"; echo
+                python3 - "$STATUS" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          r=d.get('receipt') or {}
+          raise SystemExit(0 if r.get('ok') is True else 4)
+          PY
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+          exit 5
