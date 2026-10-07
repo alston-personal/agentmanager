@@ -37,25 +37,35 @@ def main():
             if "/login" in low or "accountscenter" in low:
                 print("mio_dm_live=LOGIN_REQUIRED"); return 4
 
-            rows=page.locator('[role="main"] [role="link"], [role="main"] a')
+            target_text=page.get_by_text(TARGET,exact=False)
+            if target_text.count()==0:
+                print("mio_dm_live=TARGET_NOT_FOUND"); return 5
+            target_node=target_text.first
             target_row=None
             preview=None
             direction=None
-            for i in range(min(rows.count(),120)):
-                row=rows.nth(i)
+
+            # Threads may render conversation rows as links, buttons or plain divs.
+            # Walk ancestors from the visible username and choose the smallest
+            # container that contains enough text to include an inbox preview.
+            for level in range(0,7):
                 try:
-                    href=row.get_attribute("href") or ""
-                    text=(row.inner_text(timeout=500) or "").strip()
+                    node=target_node if level==0 else target_node.locator("xpath=" + "/.."*level)
+                    text=(node.inner_text(timeout=500) or "").strip()
                 except Exception:
                     continue
-                if "/messages" not in href or not text:
+                if not text or TARGET not in text:
                     continue
                 user,msg,dirn=parse_row(text)
-                if str(user or "").lstrip("@")==TARGET:
-                    target_row=row; preview=msg; direction=dirn; break
+                if str(user or "").lstrip("@")==TARGET and msg:
+                    target_row=node
+                    preview=msg
+                    direction=dirn
+                    break
 
             if target_row is None:
-                print("mio_dm_live=TARGET_NOT_FOUND"); return 5
+                # Fallback: click the visible target to open the conversation.
+                target_row=target_node
             print("mio_dm_live_target="+TARGET)
             print("mio_dm_live_direction="+str(direction or "unknown"))
             if direction!="inbound" or not preview:
