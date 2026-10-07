@@ -80,3 +80,14 @@ if __name__ == "__main__":
             from scripts.gpt_web_response_bridge import _chatgpt_target
             target = _chatgpt_target("http://127.0.0.1:9222", create_if_missing=True)
         self.assertEqual(target["id"], "p1")
+
+
+    def test_responsive_target_rejects_unresponsive_socket(self):
+        from unittest.mock import patch
+        from scripts.gpt_web_response_bridge import _responsive_chatgpt_target
+        target={"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://dead"}
+        with patch("scripts.gpt_web_response_bridge._chatgpt_target", return_value=target), \
+             patch("scripts.gpt_web_response_bridge._targets", return_value=[target]), \
+             patch("scripts.gpt_web_response_bridge.CdpPage", side_effect=TimeoutError("CDP_WS_CONNECT_TIMEOUT")):
+            with self.assertRaisesRegex(RuntimeError, "CHATGPT_CDP_TARGET_UNRESPONSIVE"):
+                _responsive_chatgpt_target("http://127.0.0.1:9222")
