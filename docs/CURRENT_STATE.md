@@ -442,3 +442,7 @@ A successful readiness verification is authoritative. Each accepted immutable in
 ### Thin Client active runtime provenance
 
 Each immutable Windows runtime instance writes `runtime-provenance.json` with its exact source ref, source commit, instance path and installation timestamp. The Thin Client reads the provenance file adjacent to its own loaded package and includes it in every capability manifest/heartbeat. NodeRegistry therefore records the runtime that is actually sending the heartbeat instead of preserving stale provenance from an older instance.
+
+### Thin Client runtime provenance in heartbeat
+
+Each immutable Windows runtime instance writes its own `runtime-provenance.json` containing source ref, source commit, install path, provenance path, and install timestamp. The Thin Client includes that object in every capability manifest/heartbeat. NodeRegistry can therefore replace stale provenance with the runtime that is actually sending the current heartbeat instead of preserving an older observed installation indefinitely.
