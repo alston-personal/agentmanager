@@ -44,6 +44,14 @@ mkdir -p "$RELEASE_ROOT" "$RUNTIME_ROOT"
 test ! -e "$RELEASE"
 mkdir -p "$RELEASE"
 git -C "$REPO" archive "$SOURCE_SHA:dashboard" | tar -x -C "$RELEASE"
+git -C "$REPO" archive "$SOURCE_SHA" \
+  scripts/character_fusion_worker.py \
+  libs/model2ir/src/model2ir/reconciliation.py \
+  | tar -x -C "$RELEASE"
+test -f "$RELEASE/scripts/character_fusion_worker.py"
+test -f "$RELEASE/libs/model2ir/src/model2ir/reconciliation.py"
+python3 -m py_compile "$RELEASE/scripts/character_fusion_worker.py" "$RELEASE/libs/model2ir/src/model2ir/reconciliation.py"
+echo "dashboard_bg_character_fusion_support=PASS"
 cp "$CONFIG" "$RELEASE/.env.local"
 chmod 600 "$RELEASE/.env.local"
 
@@ -64,6 +72,9 @@ for (const r of [
   '/api/wardrobe/tryon/render/route',
   '/api/wardrobe/tryon/jobs/[jobId]/route',
   '/api/wardrobe/tryon/assets/[jobId]/route',
+  '/api/character-fusion/v1/jobs/route',
+  '/api/character-fusion/v1/jobs/[jobId]/route',
+  '/api/character-fusion/v1/assets/[jobId]/route',
 ]) {
   if (!p[r]) throw new Error('missing built route: '+r);
 }
@@ -81,7 +92,8 @@ for _ in $(seq 1 40); do
   s=$(curl -sS -o /tmp/bg-session -w '%{http_code}' --max-time 3 "http://127.0.0.1:$TARGET_PORT/dashboard/api/auth/session" || true)
   h=$(curl -sS -o /tmp/bg-health -w '%{http_code}' --max-time 3 "http://127.0.0.1:$TARGET_PORT/dashboard/api/agentos/v1/health" || true)
   c=$(curl -sS -o /tmp/bg-catalog -w '%{http_code}' --max-time 3 "http://127.0.0.1:$TARGET_PORT/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001" || true)
-  if [ "$s" = 200 ] && [ "$h" = 200 ] && [ "$c" = 200 ]; then ready=1; break; fi
+  f=$(curl -sS -o /tmp/bg-character-fusion -w '%{http_code}' --max-time 3 "http://127.0.0.1:$TARGET_PORT/dashboard/api/character-fusion/v1/jobs/__probe__" || true)
+  if [ "$s" = 200 ] && [ "$h" = 200 ] && [ "$c" = 200 ] && [ "$f" = 401 ]; then ready=1; break; fi
   sleep 1
 done
 test "$ready" = 1
@@ -116,7 +128,8 @@ for _ in $(seq 1 20); do
   ps=$(curl -sS -o /tmp/bg-public-session -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/auth/session || true)
   ph=$(curl -sS -o /tmp/bg-public-health -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true)
   pc=$(curl -sS -o /tmp/bg-public-catalog -w '%{http_code}' --max-time 5 'https://studio.milkcat.org/dashboard/api/wardrobe/catalog?characterId=sunlake-milkcat-ai-001' || true)
-  if [ "$ps" = 200 ] && [ "$ph" = 200 ] && [ "$pc" = 200 ]; then public_ok=1; break; fi
+  pf=$(curl -sS -o /tmp/bg-public-character-fusion -w '%{http_code}' --max-time 5 'https://studio.milkcat.org/dashboard/api/character-fusion/v1/jobs/__probe__' || true)
+  if [ "$ps" = 200 ] && [ "$ph" = 200 ] && [ "$pc" = 200 ] && [ "$pf" = 401 ]; then public_ok=1; break; fi
   sleep 0.5
 done
 if [ "$public_ok" != 1 ]; then
