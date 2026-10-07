@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import importlib.util
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -170,25 +171,39 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
         payload["generationConfig"] = generation_config
 
     invalid_sources: list[str] = []
+    transient_codes = {429, 500, 502, 503, 504}
+    max_attempts = max(1, int(os.environ.get("GEMINI_CHARACTER_MAX_ATTEMPTS", "4")))
+
     for source_label, api_key in candidates:
-        req = urllib.request.Request(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-            method="POST",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": api_key,
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=180) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", "replace")[:3000]
-            if exc.code == 400 and ("API_KEY_INVALID" in body or "API key not valid" in body):
-                invalid_sources.append(source_label)
-                continue
-            raise RuntimeError(f"Gemini HTTP {exc.code} using key source {source_label}: {body}") from exc
+        for attempt in range(1, max_attempts + 1):
+            req = urllib.request.Request(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                method="POST",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=180) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", "replace")[:3000]
+                if exc.code == 400 and ("API_KEY_INVALID" in body or "API key not valid" in body):
+                    invalid_sources.append(source_label)
+                    break
+                if exc.code in transient_codes and attempt < max_attempts:
+                    retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                    try:
+                        delay = min(30.0, max(1.0, float(retry_after))) if retry_after else min(30.0, 2 ** attempt)
+                    except ValueError:
+                        delay = min(30.0, 2 ** attempt)
+                    time.sleep(delay)
+                    continue
+                raise RuntimeError(
+                    f"Gemini HTTP {exc.code} using key source {source_label} after attempt {attempt}/{max_attempts}: {body}"
+                ) from exc
 
     raise RuntimeError(
         "GEMINI_API_KEY is invalid in all governed sources: " + ", ".join(invalid_sources)
