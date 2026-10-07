@@ -15,8 +15,17 @@ BROWSER="$(cat "$ROOT/browser-path")"
 TMP_PROFILE="$(mktemp -d /tmp/agentos-gui-ephemeral-profile-XXXXXX)"
 EPHEMERAL_LOG="$(mktemp /tmp/agentos-gui-ephemeral-XXXXXX.log)"
 cleanup_ephemeral() {
-  if [[ -n "${EPHEMERAL_PID:-}" ]]; then kill "$EPHEMERAL_PID" >/dev/null 2>&1 || true; fi
-  rm -rf "$TMP_PROFILE" "$EPHEMERAL_LOG"
+  if [[ -n "${EPHEMERAL_PID:-}" ]]; then
+    kill "$EPHEMERAL_PID" >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do
+      kill -0 "$EPHEMERAL_PID" >/dev/null 2>&1 || break
+      sleep 0.1
+    done
+    kill -9 "$EPHEMERAL_PID" >/dev/null 2>&1 || true
+    wait "$EPHEMERAL_PID" >/dev/null 2>&1 || true
+  fi
+  # Cleanup must never turn a successful browser smoke into a failure.
+  rm -rf "$TMP_PROFILE" "$EPHEMERAL_LOG" >/dev/null 2>&1 || true
 }
 trap cleanup_ephemeral EXIT
 DISPLAY=:99 "$BROWSER" \
