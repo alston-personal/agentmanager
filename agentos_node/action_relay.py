@@ -5,7 +5,6 @@ import grp
 import hashlib
 import json
 import os
-import re
 from pathlib import Path
 import stat
 import subprocess
@@ -116,20 +115,92 @@ def _restart_user_service(unit: str, *, timeout: float = 20.0) -> dict[str, Any]
 
 def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
     site = params.get("site")
-    if site != "studio.milkcat.org": raise ValueError("site is not allowlisted")
-    repo = Path("/home/ubuntu/zeus-writer"); website = repo / "website"
-    if not (repo / ".git").exists() or not (website / "package.json").exists(): raise RuntimeError("allowlisted site checkout unavailable")
-    git = ["git", "-c", f"safe.directory={repo}", "-C", str(repo)]
-    dirty = subprocess.check_output(git + ["status", "--porcelain"], text=True).strip()
-    if dirty: raise RuntimeError("site checkout is dirty; refusing automated sync")
-    steps = [_run(git + ["fetch", "origin", "master"], cwd=repo)]
-    if steps[-1]["returncode"] != 0: return {"ok": False, "steps": steps}
-    steps.append(_run(git + ["merge", "--ff-only", "origin/master"], cwd=repo))
-    if steps[-1]["returncode"] != 0: return {"ok": False, "steps": steps}
-    steps.append(_run(["npm", "run", "build"], cwd=website, timeout=600))
-    ok = steps[-1]["returncode"] == 0 and (website / "dist" / "layout-lab" / "index.html").exists()
-    return {"ok": ok, "site": site, "artifact": str(website / "dist" / "layout-lab" / "index.html"), "steps": steps}
+    if site != "studio.milkcat.org":
+        raise ValueError("site is not allowlisted")
+    # Studio Web source authority moved to alston-personal/studio-web.
+    # Keep the legacy action name fail-closed so an old caller cannot silently
+    # fetch/build Zeus Writer and overwrite platform-owned website artifacts.
+    return {
+        "ok": False,
+        "site": site,
+        "blocked": True,
+        "reason": "legacy_zeus_writer_site_authority_retired",
+        "canonical_source_repository": "alston-personal/studio-web",
+        "required_path": "governed_studio_web_release",
+    }
 
+
+
+def _register_agentos_core_project(params: dict[str, Any]) -> dict[str, Any]:
+    """Register the canonical AgentOS Core project through the ubuntu authority boundary.
+
+    This bootstrap action is deliberately fixed: no arbitrary project id, repository,
+    checkout path, node id, command, or state path is accepted from the producer.
+    """
+    if params not in ({}, {'replace': True}):
+        raise ValueError('unexpected parameters')
+
+    import sys as _pc_sys
+    # core_project_runtime_binding_v1: bind mutation logic to the exact deployed Core
+    # release, never to a mutable source checkout that may be refreshed independently.
+    unit = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service')
+    if not unit.is_file():
+        return {'ok': False, 'stage': 'runtime_binding', 'error': 'Realm Fabric unit unavailable'}
+    exec_line = ''
+    for raw in unit.read_text(encoding='utf-8').splitlines():
+        if raw.startswith('ExecStart='):
+            exec_line = raw.split('=', 1)[1].strip()
+            break
+    launcher = Path(exec_line.split()[0]) if exec_line else None
+    release_root = launcher.parent.parent if launcher else None
+    if release_root is None or not (release_root / 'agent_core' / 'project_store.py').is_file():
+        return {'ok': False, 'stage': 'runtime_binding', 'error': 'deployed Core project store unavailable', 'exec_start': exec_line}
+    if str(release_root) not in _pc_sys.path:
+        _pc_sys.path.insert(0, str(release_root))
+
+    from agent_core.project_store import (
+        CanonicalProjectRegistration,
+        ProjectSourceAuthority,
+        project_dir,
+        register_canonical_project,
+    )
+
+    project_id = 'agentos-core'
+    state_dir = project_dir(project_id)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    status = state_dir / 'STATUS.md'
+    if not status.exists():
+        status.write_text(
+            '# Project Status: agentos-core\n\n'
+            '## Current Focus\n'
+            'Make ONE the canonical continuation path across nodes, executors, and sessions.\n\n'
+            '## Current Acceptance Gate\n'
+            'Authenticated live /v1/resolve must return canonical project/source/state authority.\n\n'
+            '## Next Action\n'
+            'Complete authenticated live resolve acceptance, then connect ChatGPT Web logical node to ONE.\n',
+            encoding='utf-8',
+        )
+
+    result = register_canonical_project(
+        CanonicalProjectRegistration(
+            project_id=project_id,
+            display_name='AgentOS Core',
+            aliases=('AgentOS', 'AgentOS Core'),
+            source=ProjectSourceAuthority(
+                repo='alston-personal/agentmanager',
+                branch='main',
+                canonical_path='/home/ubuntu/agentmanager',
+                node='oracle-core-node',
+            ),
+            state_document='STATUS.md',
+            phase='active',
+            summary='Canonical AgentOS Core development mainline.',
+            current_focus='ONE canonical continuation and project authority.',
+            next_action='Run authenticated live /v1/resolve acceptance.',
+        ),
+        replace=bool(params.get('replace')),
+    )
+    return {'ok': True, **result}
 
 def _layoutlab_static_deploy(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"site": "studio.milkcat.org"}): raise ValueError("unexpected parameters")
@@ -178,6 +249,233 @@ def _ensure_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
     ok = view["returncode"] == 0 and 'alston-personal/studio-web' in (view.get("stdout") or "") and 'PRIVATE' in (view.get("stdout") or "").upper()
     return {"ok": ok, "repository": repo, "created": created, "auth": auth, "view": view, "create": create}
 
+
+
+def _ensure_arcanaforge_remote(params: dict[str, Any]) -> dict[str, Any]:
+    """Ensure the one allowlisted ArcanaForge repository exists as private.
+
+    This capability is intentionally narrow: no arbitrary repository name,
+    visibility, description, command, or shell text is accepted. Execution is
+    performed only by the ubuntu Action Relay GitHub identity.
+    """
+    if params not in ({}, {"repository": "alston-personal/arcanaforge"}):
+        raise ValueError("unexpected parameters")
+    repo = "alston-personal/arcanaforge"
+    description = "Symbolic collection generator: SymbolicSystem × Subject × Style, initially Tarot + I Ching, packaging outputs for Divination OS"
+    auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
+    if auth["returncode"] != 0:
+        return {"ok": False, "repository": repo, "auth": auth, "created": False, "error": "ubuntu GitHub identity is not authenticated"}
+
+    view = _run(["/usr/bin/gh", "repo", "view", repo, "--json", "nameWithOwner,isPrivate,description"], cwd=Path.home(), timeout=20)
+    created = False
+    create = None
+    if view["returncode"] != 0:
+        create = _run([
+            "/usr/bin/gh", "repo", "create", repo,
+            "--private",
+            "--description", description,
+        ], cwd=Path.home(), timeout=30)
+        if create["returncode"] != 0:
+            return {"ok": False, "repository": repo, "auth": auth, "view_before": view, "create": create, "created": False}
+        created = True
+        view = _run(["/usr/bin/gh", "repo", "view", repo, "--json", "nameWithOwner,isPrivate,description"], cwd=Path.home(), timeout=20)
+
+    try:
+        meta = json.loads(view.get("stdout") or "{}")
+    except json.JSONDecodeError:
+        meta = {}
+    ok = (
+        view["returncode"] == 0
+        and meta.get("nameWithOwner") == repo
+        and meta.get("isPrivate") is True
+    )
+    return {"ok": ok, "repository": repo, "created": created, "auth": auth, "view": view, "create": create}
+
+
+def _ensure_layoutlib_remote(params: dict[str, Any]) -> dict[str, Any]:
+    """Ensure the one allowlisted LayoutLib repository exists as private.
+
+    This capability is intentionally narrow: no arbitrary repository name,
+    visibility, description, command, or shell text is accepted. Execution is
+    performed only by the ubuntu Action Relay GitHub identity.
+    """
+    if params not in ({}, {"repository": "alston-personal/layoutlib"}):
+        raise ValueError("unexpected parameters")
+    repo = "alston-personal/layoutlib"
+    description = "LayoutLib spatial layout library with the Layout Lab reference demo"
+    auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
+    if auth["returncode"] != 0:
+        return {"ok": False, "repository": repo, "auth": auth, "created": False, "error": "ubuntu GitHub identity is not authenticated"}
+
+    view = _run(["/usr/bin/gh", "repo", "view", repo, "--json", "nameWithOwner,isPrivate,description"], cwd=Path.home(), timeout=20)
+    created = False
+    create = None
+    if view["returncode"] != 0:
+        create = _run([
+            "/usr/bin/gh", "repo", "create", repo,
+            "--private",
+            "--description", description,
+        ], cwd=Path.home(), timeout=30)
+        if create["returncode"] != 0:
+            return {"ok": False, "repository": repo, "auth": auth, "view_before": view, "create": create, "created": False}
+        created = True
+        view = _run(["/usr/bin/gh", "repo", "view", repo, "--json", "nameWithOwner,isPrivate,description"], cwd=Path.home(), timeout=20)
+
+    try:
+        meta = json.loads(view.get("stdout") or "{}")
+    except json.JSONDecodeError:
+        meta = {}
+    ok = (
+        view["returncode"] == 0
+        and meta.get("nameWithOwner") == repo
+        and meta.get("isPrivate") is True
+    )
+    return {"ok": ok, "repository": repo, "created": created, "auth": auth, "view": view, "create": create}
+
+
+def _import_layoutlib_v079(params: dict[str, Any]) -> dict[str, Any]:
+    """Import the fixed LayoutLib v0.7.9 production package into its canonical repo."""
+    import hashlib as _ll_hashlib
+    import json as _ll_json
+    import shutil as _ll_shutil
+    import subprocess as _ll_subprocess
+    import tempfile as _ll_tempfile
+    from pathlib import Path as _LLPath
+
+    source_repo = 'alston-personal/agentmanager'
+    source_commit = 'e8efc4ed7cbd41839f960373f79c5fb6a5f82375'
+    target_repo = 'alston-personal/layoutlib'
+    release = 'v0.7.9'
+    files = [
+        'web_assets/layoutlab_v0_5.html',
+        'web_assets/layoutlib-browser-v0.5.js',
+        'web_assets/layoutlib-spatial-semantics-v0.1.js',
+        'web_assets/layoutlib-editor-v0.7.js',
+        'web_assets/layoutlab-editor-ui-v0.7.js',
+        'web_assets/layoutlab-capability-bridge-v0.7.js',
+        'web_assets/layoutlab-v0.7-release-fix.js',
+    ]
+    expected = {'repository': target_repo, 'source_commit': source_commit}
+    if params not in ({}, expected):
+        raise ValueError('unexpected parameters')
+
+    def run(argv, cwd=None, timeout=90):
+        p = _ll_subprocess.run(argv, cwd=cwd, text=True, capture_output=True, timeout=timeout, check=False)
+        return {'argv': argv, 'returncode': p.returncode, 'stdout': p.stdout[-4000:], 'stderr': p.stderr[-4000:]}
+
+    auth = run(['/usr/bin/gh', 'auth', 'status'], cwd=str(_LLPath.home()), timeout=20)
+    if auth['returncode'] != 0:
+        return {'ok': False, 'error': 'ubuntu GitHub identity is not authenticated', 'auth': auth}
+
+    with _ll_tempfile.TemporaryDirectory(prefix='layoutlib-v079-import-') as td:
+        root = _LLPath(td)
+        src = root / 'source'
+        dst = root / 'layoutlib'
+        clone_src = run(['/usr/bin/gh', 'repo', 'clone', source_repo, str(src)], timeout=120)
+        if clone_src['returncode'] != 0:
+            return {'ok': False, 'stage': 'clone_source', 'clone_source': clone_src}
+        checkout = run(['/usr/bin/git', '-C', str(src), 'checkout', '--detach', source_commit], timeout=60)
+        if checkout['returncode'] != 0:
+            return {'ok': False, 'stage': 'checkout_source', 'checkout': checkout}
+
+        source_hashes = {}
+        for rel in files:
+            p = src / rel
+            if not p.is_file():
+                return {'ok': False, 'stage': 'source_manifest', 'missing': rel}
+            source_hashes[rel] = _ll_hashlib.sha256(p.read_bytes()).hexdigest()
+
+        clone_dst = run(['/usr/bin/gh', 'repo', 'clone', target_repo, str(dst)], timeout=120)
+        if clone_dst['returncode'] != 0:
+            return {'ok': False, 'stage': 'clone_target', 'clone_target': clone_dst}
+        branch = run(['/usr/bin/git', '-C', str(dst), 'checkout', '-B', 'main'], timeout=30)
+        if branch['returncode'] != 0:
+            return {'ok': False, 'stage': 'checkout_target', 'checkout_target': branch}
+
+        release_dir = dst / 'release' / release
+        release_dir.mkdir(parents=True, exist_ok=True)
+        for rel in files:
+            _ll_shutil.copy2(src / rel, release_dir / _LLPath(rel).name)
+
+        provenance = f"""# LayoutLib {release} production extraction
+
+Canonical source extraction from `{source_repo}` at exact commit `{source_commit}`.
+
+The files in this directory are the seven assets used by the authoritative Oracle `Layout Lab v0.7` production release path. They are preserved flat so historical release identity remains auditable.
+
+## Ownership boundary
+
+- LayoutLib library/parser/editor semantics: `layoutlib-browser-v0.5.js`, `layoutlib-spatial-semantics-v0.1.js`, `layoutlib-editor-v0.7.js`.
+- Layout Lab reference/demo surface: `layoutlab_v0_5.html`, `layoutlab-editor-ui-v0.7.js`, `layoutlab-capability-bridge-v0.7.js`, `layoutlab-v0.7-release-fix.js`.
+- The historical filename `layoutlib-browser-v0.5.js` identifies itself internally as Browser Adapter v0.6.0; it is intentionally not renamed in this extraction.
+
+This extraction is provenance-preserving. Refactoring/version normalization must be a later, separately reviewed change.
+"""
+        (release_dir / 'PROVENANCE.md').write_text(provenance, encoding='utf-8')
+        manifest = {
+            'schema': 'layoutlib.production-extraction/v1',
+            'release': release,
+            'source_repository': source_repo,
+            'source_commit': source_commit,
+            'files': [
+                {
+                    'source': rel,
+                    'destination': f'release/{release}/{_LLPath(rel).name}',
+                    'sha256': source_hashes[rel],
+                }
+                for rel in files
+            ],
+        }
+        (release_dir / 'manifest.json').write_text(_ll_json.dumps(manifest, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+        readme = f"""# LayoutLib
+
+Canonical repository for the LayoutLib spatial layout library.
+
+The first canonicalized production snapshot is preserved under `release/{release}/`, extracted byte-for-byte from `{source_repo}@{source_commit}`. Layout Lab files in that snapshot are historical reference/demo surface assets, not LayoutLib project identity.
+"""
+        (dst / 'README.md').write_text(readme, encoding='utf-8')
+
+        for key, value in [('user.name', 'AgentOS Oracle Core'), ('user.email', 'agentos-core@users.noreply.github.com')]:
+            cfg = run(['/usr/bin/git', '-C', str(dst), 'config', key, value])
+            if cfg['returncode'] != 0:
+                return {'ok': False, 'stage': 'git_config', 'git_config': cfg}
+        add = run(['/usr/bin/git', '-C', str(dst), 'add', 'README.md', f'release/{release}'])
+        if add['returncode'] != 0:
+            return {'ok': False, 'stage': 'git_add', 'git_add': add}
+        status = run(['/usr/bin/git', '-C', str(dst), 'status', '--porcelain'])
+        changed = bool(status['stdout'].strip())
+        if changed:
+            commit = run(['/usr/bin/git', '-C', str(dst), 'commit', '-m', 'chore: import canonical LayoutLib v0.7.9 production snapshot'], timeout=60)
+            if commit['returncode'] != 0:
+                return {'ok': False, 'stage': 'git_commit', 'git_commit': commit}
+            push = run(['/usr/bin/git', '-C', str(dst), 'push', 'origin', 'HEAD:main'], timeout=120)
+            if push['returncode'] != 0:
+                return {'ok': False, 'stage': 'git_push', 'git_push': push}
+        head = run(['/usr/bin/git', '-C', str(dst), 'rev-parse', 'HEAD'])
+        if head['returncode'] != 0:
+            return {'ok': False, 'stage': 'head', 'head': head}
+        target_commit = head['stdout'].strip()
+
+        destination_hashes = {}
+        for rel in files:
+            name = _LLPath(rel).name
+            p = release_dir / name
+            destination_hashes[name] = _ll_hashlib.sha256(p.read_bytes()).hexdigest()
+            if destination_hashes[name] != source_hashes[rel]:
+                return {'ok': False, 'stage': 'hash_verify', 'file': name}
+
+        return {
+            'ok': True,
+            'repository': target_repo,
+            'release': release,
+            'source_repository': source_repo,
+            'source_commit': source_commit,
+            'target_commit': target_commit,
+            'changed': changed,
+            'file_count': len(files),
+            'source_sha256': source_hashes,
+            'destination_sha256': destination_hashes,
+        }
 
 def _seed_verify_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
     """Push the one governed Studio Web checkout and prove remote rebuildability."""
@@ -295,98 +593,613 @@ def _seed_verify_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
         _run(["rm", "-rf", str(verify_root)], cwd=Path.home(), timeout=30)
 
 
-def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
-    """Dispatch one explicitly allowlisted GitHub Actions workflow.
 
-    GitHub credentials remain owned by the ubuntu relay identity. Callers may
-    select only a registered workflow/ref pair and JSON object inputs; arbitrary
-    repositories, workflow paths, refs, CLI flags, and shell text are rejected.
-    """
-    allowed = {
-        ("alston-personal/agentmanager", "oursong-persona-activation.yml", "core/integration"),
-    }
-    repository = str(params.get("repository") or "")
-    workflow = str(params.get("workflow") or "")
-    ref = str(params.get("ref") or "")
-    inputs = params.get("inputs") or {}
-    expected_head_sha = str(params.get("expected_head_sha") or "")
-    if not re.fullmatch(r"[0-9a-f]{40}", expected_head_sha):
-        raise ValueError("expected_head_sha must be an exact lowercase 40-hex commit SHA")
-    if (repository, workflow, ref) not in allowed:
-        raise ValueError("GitHub Actions dispatch target is not allowlisted")
-    if not isinstance(inputs, dict):
-        raise ValueError("GitHub Actions dispatch inputs must be an object")
-    if inputs:
-        raise ValueError("this workflow does not accept dispatch inputs")
+# realm_fabric_deployment_fence_v1
+_DEPLOYMENT_STATE = Path('/home/ubuntu/agent-data/governance/core-deployment.json')
+_DEPLOYMENT_LOCK = Path('/home/ubuntu/agent-data/governance/core-deployment.lock')
 
-    auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
-    if auth["returncode"] != 0:
+
+def _deployment_state_read() -> dict[str, Any]:
+    if not _DEPLOYMENT_STATE.exists():
         return {
-            "ok": False,
-            "repository": repository,
-            "workflow": workflow,
-            "ref": ref,
-            "auth": auth,
-            "error": "ubuntu GitHub identity is not authenticated",
+            'schema': 'agentos.core-deployment/v1',
+            'deployment_generation': 0,
+            'desired_core_commit': None,
+            'observed_core_commit': None,
+            'lease_owner': None,
+            'lease_expires_at': None,
+            'deployment_status': 'uninitialized',
         }
+    data = json.loads(_DEPLOYMENT_STATE.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        raise ValueError('invalid Core deployment state')
+    return data
 
-    dispatch = _run([
-        "/usr/bin/gh", "workflow", "run", workflow,
-        "--repo", repository,
-        "--ref", ref,
-    ], cwd=Path.home(), timeout=30)
-    if dispatch["returncode"] != 0:
-        return {
-            "ok": False,
-            "repository": repository,
-            "workflow": workflow,
-            "ref": ref,
-            "dispatched": False,
-            "dispatch": dispatch,
-        }
 
-    deadline = time.monotonic() + 30.0
-    observed = None
-    probes: list[dict[str, Any]] = []
-    while time.monotonic() < deadline:
-        probe = _run([
-            "/usr/bin/gh", "run", "list",
-            "--repo", repository,
-            "--workflow", workflow,
-            "--branch", ref,
-            "--commit", expected_head_sha,
-            "--event", "workflow_dispatch",
-            "--limit", "5",
-            "--json", "databaseId,headSha,status,conclusion,url,createdAt",
-        ], cwd=Path.home(), timeout=20)
-        probes.append(probe)
-        if probe["returncode"] == 0:
+def _deployment_state_write(state: dict[str, Any]) -> None:
+    _DEPLOYMENT_STATE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _DEPLOYMENT_STATE.with_suffix('.tmp')
+    tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    _share(tmp)
+    tmp.replace(_DEPLOYMENT_STATE)
+    _share(_DEPLOYMENT_STATE)
+
+
+def _observed_realm_commit() -> str | None:
+    unit = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service')
+    if not unit.is_file():
+        return None
+    for raw in unit.read_text(encoding='utf-8').splitlines():
+        if not raw.startswith('ExecStart='):
+            continue
+        value = raw.split('=', 1)[1]
+        parts = value.split('/realm-fabric/releases/', 1)
+        if len(parts) != 2:
+            return None
+        commit = parts[1].split('/', 1)[0].strip().lower()
+        if len(commit) == 40 and all(c in '0123456789abcdef' for c in commit):
+            return commit
+    return None
+
+
+def _claim_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _df_fcntl
+    from datetime import datetime as _df_datetime, timezone as _df_timezone, timedelta as _df_timedelta
+    import re as _df_re
+
+    required = {'desired_core_commit', 'lease_owner', 'expected_generation'}
+    optional = {'lease_seconds'}
+    if set(params) - (required | optional) or not required.issubset(params):
+        raise ValueError('unexpected parameters')
+    desired = str(params['desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    expected = int(params['expected_generation'])
+    lease_seconds = int(params.get('lease_seconds') or 900)
+    if not _df_re.fullmatch(r'[0-9a-f]{40}', desired):
+        raise ValueError('desired_core_commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+    if lease_seconds < 60 or lease_seconds > 3600:
+        raise ValueError('lease_seconds out of range')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _df_fcntl.flock(lock.fileno(), _df_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        generation = int(state.get('deployment_generation') or 0)
+        now = _df_datetime.now(_df_timezone.utc)
+        lease_owner = state.get('lease_owner')
+        expires_raw = state.get('lease_expires_at')
+        active = False
+        if lease_owner and expires_raw:
             try:
-                rows = json.loads(probe.get("stdout") or "[]")
-            except json.JSONDecodeError:
-                rows = []
-            observed = next(
-                (row for row in rows if str(row.get("headSha") or "") == expected_head_sha),
-                None,
-            )
-            if observed is not None:
-                break
-        time.sleep(1.0)
+                active = _df_datetime.fromisoformat(str(expires_raw)) > now
+            except ValueError:
+                active = False
+        # realm_fabric_lease_immutability_v1: an active lease freezes the desired
+        # generation. Sharing the same owner label must not allow a second workflow
+        # to replace the desired commit. Identical claims are idempotent.
+        if active:
+            if lease_owner == owner and state.get('desired_core_commit') == desired:
+                return {'ok': True, **state, 'claim_status': 'idempotent'}
+            return {
+                'ok': False,
+                'deployment_status': 'rejected_lease',
+                'desired_core_commit': state.get('desired_core_commit'),
+                'observed_core_commit': _observed_realm_commit(),
+                'deployment_generation': generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': expires_raw,
+            }
+        if expected != generation:
+            return {
+                'ok': False,
+                'deployment_status': 'rejected_generation',
+                'desired_core_commit': state.get('desired_core_commit'),
+                'observed_core_commit': _observed_realm_commit(),
+                'deployment_generation': generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': expires_raw,
+            }
+        new_generation = generation + 1
+        state = {
+            'schema': 'agentos.core-deployment/v1',
+            'desired_core_commit': desired,
+            'observed_core_commit': _observed_realm_commit(),
+            'deployment_generation': new_generation,
+            'lease_owner': owner,
+            'lease_expires_at': (now + _df_timedelta(seconds=lease_seconds)).isoformat(),
+            'deployment_status': 'desired',
+            'updated_at': now.isoformat(),
+        }
+        _deployment_state_write(state)
+        return {'ok': True, **state}
 
+
+
+# realm_fabric_generation_advance_v1
+def _advance_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _da_fcntl
+    from datetime import datetime as _da_datetime, timezone as _da_timezone, timedelta as _da_timedelta
+    import re as _da_re
+
+    required = {'current_desired_core_commit', 'next_desired_core_commit', 'lease_owner', 'expected_generation'}
+    optional = {'lease_seconds'}
+    if set(params) - (required | optional) or not required.issubset(params):
+        raise ValueError('unexpected parameters')
+    current_desired = str(params['current_desired_core_commit']).strip().lower()
+    next_desired = str(params['next_desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    expected = int(params['expected_generation'])
+    lease_seconds = int(params.get('lease_seconds') or 900)
+    for value in (current_desired, next_desired):
+        if not _da_re.fullmatch(r'[0-9a-f]{40}', value):
+            raise ValueError('Core commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+    if lease_seconds < 60 or lease_seconds > 3600:
+        raise ValueError('lease_seconds out of range')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _da_fcntl.flock(lock.fileno(), _da_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        generation = int(state.get('deployment_generation') or 0)
+        # realm_fabric_advance_active_lease_fence_v1
+        # Generation changes require an explicit release (or natural expiry).
+        # The same textual lease_owner is not sufficient authority to replace
+        # an actively leased desired generation.
+        _lease_status = str(state.get('lease_status') or 'active')
+        _lease_expiry = str(state.get('lease_expires_at') or '')
+        _lease_active = False
+        if _lease_status != 'released' and _lease_expiry:
+            try:
+                _lease_active = _da_datetime.fromisoformat(_lease_expiry.replace('Z', '+00:00')).astimezone(_da_timezone.utc) > _da_datetime.now(_da_timezone.utc)
+            except ValueError:
+                _lease_active = True
+        if _lease_active:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_active_lease'}
+        if generation != expected:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
+        if state.get('lease_owner') != owner:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
+        if state.get('desired_core_commit') != current_desired:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_current_desired'}
+        if state.get('observed_core_commit') not in (None, current_desired) and _observed_realm_commit() != current_desired:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_not_converged'}
+        now = _da_datetime.now(_da_timezone.utc)
+        advanced = {
+            'schema': 'agentos.core-deployment/v1',
+            'desired_core_commit': next_desired,
+            'observed_core_commit': _observed_realm_commit(),
+            'deployment_generation': generation + 1,
+            'lease_owner': owner,
+            'lease_expires_at': (now + _da_timedelta(seconds=lease_seconds)).isoformat(),
+            'lease_status': 'active',
+            'deployment_status': 'desired',
+            'advanced_from_commit': current_desired,
+            'advanced_from_generation': generation,
+            'updated_at': now.isoformat(),
+        }
+        _deployment_state_write(advanced)
+        return {'ok': True, **advanced}
+
+
+# realm_fabric_deployment_renew_v1
+def _renew_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _dr_fcntl
+    from datetime import datetime as _dr_datetime, timezone as _dr_timezone, timedelta as _dr_timedelta
+    import re as _dr_re
+
+    required = {'desired_core_commit', 'lease_owner', 'deployment_generation'}
+    optional = {'lease_seconds'}
+    if set(params) - (required | optional) or not required.issubset(params):
+        raise ValueError('unexpected parameters')
+    desired = str(params['desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    generation = int(params['deployment_generation'])
+    lease_seconds = int(params.get('lease_seconds') or 900)
+    if not _dr_re.fullmatch(r'[0-9a-f]{40}', desired):
+        raise ValueError('desired_core_commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+    if lease_seconds < 60 or lease_seconds > 3600:
+        raise ValueError('lease_seconds out of range')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _dr_fcntl.flock(lock.fileno(), _dr_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        current_generation = int(state.get('deployment_generation') or 0)
+        if current_generation != generation:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
+        if state.get('desired_core_commit') != desired:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_desired'}
+        if state.get('lease_owner') != owner:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
+        now = _dr_datetime.now(_dr_timezone.utc)
+        renewed = dict(state)
+        renewed['lease_expires_at'] = (now + _dr_timedelta(seconds=lease_seconds)).isoformat()
+        renewed['updated_at'] = now.isoformat()
+        # Renewal is intentionally incapable of changing desired commit or generation.
+        renewed['deployment_generation'] = current_generation
+        renewed['desired_core_commit'] = desired
+        renewed['lease_owner'] = owner
+        renewed['observed_core_commit'] = _observed_realm_commit()
+        if renewed.get('observed_core_commit') == desired:
+            renewed['deployment_status'] = 'converged'
+        else:
+            renewed['deployment_status'] = 'desired'
+        _deployment_state_write(renewed)
+        return {'ok': True, **renewed}
+
+
+# realm_fabric_deployment_release_v1
+def _release_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _rl_fcntl
+    from datetime import datetime as _rl_datetime, timezone as _rl_timezone
+    import re as _rl_re
+
+    required = {'desired_core_commit', 'lease_owner', 'deployment_generation'}
+    if set(params) != required:
+        raise ValueError('unexpected parameters')
+    desired = str(params['desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    generation = int(params['deployment_generation'])
+    if not _rl_re.fullmatch(r'[0-9a-f]{40}', desired):
+        raise ValueError('desired_core_commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _rl_fcntl.flock(lock.fileno(), _rl_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        if int(state.get('deployment_generation') or 0) != generation:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
+        if state.get('desired_core_commit') != desired:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_desired'}
+        if state.get('lease_owner') != owner:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
+        observed = _observed_realm_commit()
+        if observed != desired:
+            return {'ok': False, 'deployment_status': 'rejected_not_converged', **state, 'observed_core_commit': observed}
+        now = _rl_datetime.now(_rl_timezone.utc)
+        released = dict(state)
+        released.update({
+            'observed_core_commit': observed,
+            'lease_status': 'released',
+            'lease_expires_at': now.isoformat(),
+            'released_by': owner,
+            'released_at': now.isoformat(),
+            'deployment_status': 'converged',
+            'updated_at': now.isoformat(),
+        })
+        _deployment_state_write(released)
+        return {'ok': True, **released}
+
+def _realm_fabric_deployment_status(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({},):
+        raise ValueError('unexpected parameters')
+    state = _deployment_state_read()
+    state['observed_core_commit'] = _observed_realm_commit()
+    if state.get('desired_core_commit') and state.get('desired_core_commit') == state.get('observed_core_commit'):
+        state['deployment_status'] = 'converged'
+    return {'ok': True, **state}
+
+def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
+    """Install one exact AgentOS Core commit as the ubuntu Realm Fabric service.
+
+    The request supplies only a 40-hex source commit. Repository, release root,
+    service name, bind address, port, and canonical data root are fixed here.
+    No arbitrary path, command, shell, unit, or endpoint is accepted.
+    """
+    import re as _rf_re
+    import shutil as _rf_shutil
+    import tempfile as _rf_tempfile
+    import urllib.request as _rf_urllib
+
+    required = {'source_commit', 'desired_core_commit', 'lease_owner', 'deployment_generation'}
+    if set(params) != required:
+        raise ValueError('unexpected parameters')
+    source_commit = str(params.get('source_commit') or '').strip().lower()
+    desired_core_commit = str(params.get('desired_core_commit') or '').strip().lower()
+    lease_owner = str(params.get('lease_owner') or '').strip()
+    deployment_generation = int(params.get('deployment_generation'))
+    if not _rf_re.fullmatch(r'[0-9a-f]{40}', source_commit):
+        raise ValueError('source_commit must be a 40-hex git commit')
+    if desired_core_commit != source_commit:
+        return {'ok': False, 'deployment_status': 'rejected_desired_mismatch', 'source_commit': source_commit, 'desired_core_commit': desired_core_commit}
+
+    import fcntl as _rf_fcntl
+    from datetime import datetime as _rf_datetime, timezone as _rf_timezone
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    _deployment_guard = _DEPLOYMENT_LOCK.open('a+', encoding='utf-8')
+    _rf_fcntl.flock(_deployment_guard.fileno(), _rf_fcntl.LOCK_EX)
+    _deployment_state = _deployment_state_read()
+    _current_generation = int(_deployment_state.get('deployment_generation') or 0)
+    _lease_expires = _deployment_state.get('lease_expires_at')
+    try:
+        _lease_active = bool(_lease_expires) and _rf_datetime.fromisoformat(str(_lease_expires)) > _rf_datetime.now(_rf_timezone.utc)
+    except ValueError:
+        _lease_active = False
+    if (
+        _current_generation != deployment_generation
+        or _deployment_state.get('desired_core_commit') != source_commit
+        or _deployment_state.get('lease_owner') != lease_owner
+        or not _lease_active
+    ):
+        _deployment_guard.close()
+        return {
+            'ok': False,
+            'deployment_status': 'rejected_fence',
+            'source_commit': source_commit,
+            'desired_core_commit': _deployment_state.get('desired_core_commit'),
+            'observed_core_commit': _observed_realm_commit(),
+            'deployment_generation': _current_generation,
+            'lease_owner': _deployment_state.get('lease_owner'),
+            'lease_expires_at': _deployment_state.get('lease_expires_at'),
+        }
+
+    repo = Path('/home/ubuntu/agentmanager')
+    if not (repo / '.git').exists():
+        return {'ok': False, 'stage': 'source_repo', 'error': 'canonical Core checkout unavailable'}
+
+    realm_root = Path('/home/ubuntu/.local/share/agentos/realm-fabric')
+    release = realm_root / 'releases' / source_commit
+    current = realm_root / 'current'
+    unit = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service')
+    data_root = Path('/home/ubuntu/agent-data')
+    previous = current.resolve() if current.is_symlink() else None
+    steps: list[dict[str, Any]] = []
+
+    fetch = _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'fetch', 'origin', source_commit], cwd=repo, timeout=120)
+    steps.append({'step': 'fetch_source_commit', **fetch})
+    if fetch['returncode'] != 0:
+        return {'ok': False, 'stage': 'fetch_source_commit', 'source_commit': source_commit, 'steps': steps}
+
+    with _rf_tempfile.TemporaryDirectory(prefix='realm-fabric-release-') as td:
+        checkout = Path(td) / 'source'
+        wt = _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'worktree', 'add', '--detach', str(checkout), source_commit], cwd=repo, timeout=90)
+        steps.append({'step': 'materialize_source', **wt})
+        if wt['returncode'] != 0:
+            return {'ok': False, 'stage': 'materialize_source', 'source_commit': source_commit, 'steps': steps}
+        try:
+            release.mkdir(parents=True, exist_ok=True)
+            for name in ('agent_core', 'agentos_node', 'runtime_core'):
+                src = checkout / name
+                dst = release / name
+                if dst.exists():
+                    _rf_shutil.rmtree(dst)
+                if src.is_dir():
+                    _rf_shutil.copytree(src, dst)
+            bindir = release / 'bin'
+            bindir.mkdir(parents=True, exist_ok=True)
+            launcher = bindir / 'agentos-one'
+            launcher.write_text(
+                '#!/usr/bin/env bash\nset -euo pipefail\n'
+                f'# realm_fabric_release_isolation_v1\ncd {release}\n'
+                'export PYTHONNOUSERSITE=1\n'
+                f'export PYTHONPATH={release}:"${{PYTHONPATH:-}}"\n'
+                'exec /usr/bin/python3 -m agent_core.realm_cli "$@"\n',
+                encoding='utf-8',
+            )
+            launcher.chmod(0o755)
+
+            verify = _run([str(launcher), '--help'], cwd=release, timeout=20)
+            steps.append({'step': 'verify_launcher', **verify})
+            if verify['returncode'] != 0:
+                return {'ok': False, 'stage': 'verify_launcher', 'source_commit': source_commit, 'steps': steps}
+
+            realm_id = 'realm-alston'
+            env_file = repo / '.env'
+            if env_file.is_file():
+                for raw in env_file.read_text(encoding='utf-8').splitlines():
+                    if raw.startswith('AGENTOS_REALM_ID=') and raw.split('=', 1)[1].strip():
+                        realm_id = raw.split('=', 1)[1].strip()
+            init = _run([str(launcher), 'init', '--realm-id', realm_id], cwd=release, timeout=30)
+            steps.append({'step': 'init_realm', **init})
+            if init['returncode'] != 0:
+                return {'ok': False, 'stage': 'init_realm', 'source_commit': source_commit, 'steps': steps}
+
+            unit.parent.mkdir(parents=True, exist_ok=True)
+            unit.write_text(
+                '[Unit]\nDescription=AgentOS ONE Realm Fabric\nAfter=network.target\n\n'
+                '[Service]\nType=simple\n'
+                f'Environment=AGENT_DATA_ROOT={data_root}\n'
+                'Environment=PYTHONNOUSERSITE=1\n'
+                f'WorkingDirectory={release}\n'
+                f'ExecStart={launcher} serve --host 127.0.0.1 --port 8780\n'
+                'Restart=always\nRestartSec=5\n'
+                f'StandardOutput=append:{data_root}/logs/realm-fabric.log\n'
+                f'StandardError=append:{data_root}/logs/realm-fabric.log\n\n'
+                '[Install]\nWantedBy=default.target\n',
+                encoding='utf-8',
+            )
+
+            # realm_fabric_effective_unit_fence_v1
+            # A historical drop-in can override the exact-release WorkingDirectory,
+            # PYTHONPATH and ExecStart written above.  The fenced installer is the
+            # only authority allowed to neutralize that generation override.  Keep
+            # unrelated drop-ins (for example controller.env) intact.
+            legacy_dropin = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service.d/runtime-generation.conf')
+            legacy_backup = Path('/home/ubuntu/agent-data/governance/legacy-systemd-dropins') / 'agentos-realm-fabric.runtime-generation.conf'
+            if legacy_dropin.is_file():
+                legacy_text = legacy_dropin.read_text(encoding='utf-8')
+                required_markers = (
+                    '/home/ubuntu/.local/share/agentos/realm-fabric/current',
+                    'ExecStart=/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780',
+                )
+                if not all(m in legacy_text for m in required_markers):
+                    return {
+                        'ok': False,
+                        'stage': 'effective_unit_fence',
+                        'error': 'unrecognized runtime-generation.conf; refusing mutation',
+                        'source_commit': source_commit,
+                        'steps': steps,
+                    }
+                legacy_backup.parent.mkdir(parents=True, exist_ok=True)
+                if not legacy_backup.exists():
+                    legacy_backup.write_text(legacy_text, encoding='utf-8')
+                    _share(legacy_backup)
+                legacy_dropin.unlink()
+                steps.append({
+                    'step': 'quarantine_legacy_runtime_generation_dropin',
+                    'ok': True,
+                    'source': str(legacy_dropin),
+                    'backup': str(legacy_backup),
+                })
+
+            reload_step = _run(['systemctl', '--user', 'daemon-reload'], cwd=Path.home(), timeout=15)
+            steps.append({'step': 'daemon_reload', **reload_step})
+            if reload_step['returncode'] != 0:
+                return {'ok': False, 'stage': 'daemon_reload', 'source_commit': source_commit, 'steps': steps}
+            enable = _run(['systemctl', '--user', 'enable', 'agentos-realm-fabric.service'], cwd=Path.home(), timeout=15)
+            steps.append({'step': 'enable_service', **enable})
+            if enable['returncode'] != 0:
+                return {'ok': False, 'stage': 'enable_service', 'source_commit': source_commit, 'steps': steps}
+            # realm_fabric_process_attestation_v1
+            before_pid_result = _run(['systemctl', '--user', 'show', 'agentos-realm-fabric.service', '--property=MainPID', '--value'], cwd=Path.home(), timeout=10)
+            try:
+                main_pid_before = int((before_pid_result.get('stdout') or '0').strip() or '0')
+            except ValueError:
+                main_pid_before = 0
+            restart = _restart_user_service('agentos-realm-fabric.service', timeout=25)
+            steps.append({'step': 'restart_service', 'main_pid_before': main_pid_before, **restart})
+            if not restart.get('ok'):
+                if previous and previous.is_dir():
+                    current.unlink(missing_ok=True)
+                    current.symlink_to(previous)
+                return {'ok': False, 'stage': 'restart_service', 'source_commit': source_commit, 'steps': steps}
+
+            main_pid_after = 0
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                pid_result = _run(['systemctl', '--user', 'show', 'agentos-realm-fabric.service', '--property=MainPID', '--value'], cwd=Path.home(), timeout=10)
+                try:
+                    candidate = int((pid_result.get('stdout') or '0').strip() or '0')
+                except ValueError:
+                    candidate = 0
+                if candidate > 0 and (main_pid_before <= 0 or candidate != main_pid_before):
+                    main_pid_after = candidate
+                    break
+                time.sleep(0.25)
+            if main_pid_after <= 0:
+                return {'ok': False, 'stage': 'process_identity', 'source_commit': source_commit, 'main_pid_before': main_pid_before, 'main_pid_after': main_pid_after, 'steps': steps}
+
+            health = None
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                try:
+                    with _rf_urllib.urlopen('http://127.0.0.1:8780/v1/health', timeout=2) as resp:
+                        body = resp.read().decode('utf-8', 'replace')
+                        health = {'status': resp.status, 'body': body[-4000:]}
+                        if resp.status == 200:
+                            break
+                except Exception as exc:
+                    health = {'error': type(exc).__name__ + ': ' + str(exc)}
+                time.sleep(0.5)
+            if not health or health.get('status') != 200:
+                return {'ok': False, 'stage': 'health', 'source_commit': source_commit, 'health': health, 'main_pid_before': main_pid_before, 'main_pid_after': main_pid_after, 'steps': steps}
+
+            resolve_auth_probe = None
+            try:
+                req = _rf_urllib.Request(
+                    'http://127.0.0.1:8780/v1/resolve',
+                    data=json.dumps({'schema':'agentos.resolve-request/v1','node_id':'realm-fabric-deploy-attestation','intent':'continue','project':'agentos-core'}).encode('utf-8'),
+                    headers={'Content-Type':'application/json'},
+                    method='POST',
+                )
+                try:
+                    with _rf_urllib.urlopen(req, timeout=3) as resp:
+                        resolve_auth_probe = {'status': resp.status, 'body': resp.read().decode('utf-8','replace')[-4000:]}
+                except _rf_urllib.HTTPError as exc:
+                    resolve_auth_probe = {'status': exc.code, 'body': exc.read().decode('utf-8','replace')[-4000:]}
+            except Exception as exc:
+                resolve_auth_probe = {'error': type(exc).__name__ + ': ' + str(exc)}
+            if not resolve_auth_probe or resolve_auth_probe.get('status') != 401:
+                return {'ok': False, 'stage': 'resolve_auth_probe', 'source_commit': source_commit, 'health': health, 'resolve_auth_probe': resolve_auth_probe, 'main_pid_before': main_pid_before, 'main_pid_after': main_pid_after, 'steps': steps}
+
+            current_pointer_mode = 'symlink'
+            if current.exists() and not current.is_symlink():
+                # Preserve the legacy real directory. The systemd unit already
+                # points at this exact versioned release, so replacing a live
+                # directory just to normalize the pointer would be destructive.
+                current_pointer_mode = 'legacy_directory_preserved'
+            else:
+                tmp_link = realm_root / f'.current-{source_commit}'
+                tmp_link.unlink(missing_ok=True)
+                tmp_link.symlink_to(release)
+                tmp_link.replace(current)
+            _deployment_state['observed_core_commit'] = source_commit
+            _deployment_state['deployment_status'] = 'converged'
+            _deployment_state['updated_at'] = _rf_datetime.now(_rf_timezone.utc).isoformat()
+            _deployment_state_write(_deployment_state)
+            return {
+                'ok': True,
+                'deployment_status': 'converged',
+                'desired_core_commit': source_commit,
+                'observed_core_commit': source_commit,
+                'deployment_generation': deployment_generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': _deployment_state.get('lease_expires_at'),
+                'source_commit': source_commit,
+                'realm_id': realm_id,
+                'release': str(release),
+                'current': str(current),
+                'current_pointer_mode': current_pointer_mode,
+                'service': 'agentos-realm-fabric.service',
+                'endpoint': 'http://127.0.0.1:8780',
+                'health': health,
+                'resolve_auth_probe': resolve_auth_probe,
+                'main_pid_before': main_pid_before,
+                'main_pid_after': main_pid_after,
+                'process_identity_attested': True,
+                'steps': steps,
+            }
+        finally:
+            _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'worktree', 'remove', '--force', str(checkout)], cwd=repo, timeout=30)
+            _deployment_guard.close()
+
+
+# realm_fabric_service_attestation_v1
+def _inspect_realm_fabric_service(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({},):
+        raise ValueError('unexpected parameters')
+    steps=[]
+    show=_run([
+        'systemctl','--user','show','agentos-realm-fabric.service',
+        '--property=ActiveState','--property=SubState','--property=MainPID',
+        '--property=ExecMainStatus','--property=ExecMainCode','--property=ExecStart',
+    ], cwd=Path.home(), timeout=15)
+    steps.append({'step':'systemd_show',**show})
+    status=_run(['systemctl','--user','status','agentos-realm-fabric.service','--no-pager','-l'], cwd=Path.home(), timeout=15)
+    steps.append({'step':'systemd_status',**status})
+    proc=_run(['pgrep','-af','agent_core.realm_cli serve'], cwd=Path.home(), timeout=10)
+    steps.append({'step':'processes',**proc})
+    log_path=Path('/home/ubuntu/agent-data/logs/realm-fabric.log')
+    log_tail=''
+    if log_path.is_file():
+        try:
+            lines=log_path.read_text(encoding='utf-8',errors='replace').splitlines()
+            log_tail='\n'.join(lines[-160:])[-20000:]
+        except OSError as exc:
+            log_tail=type(exc).__name__+': '+str(exc)
+    fields={}
+    for raw in (show.get('stdout') or '').splitlines():
+        if '=' in raw:
+            k,v=raw.split('=',1); fields[k]=v
     return {
-        "ok": observed is not None,
-        "repository": repository,
-        "workflow": workflow,
-        "ref": ref,
-        "expected_head_sha": expected_head_sha,
-        "dispatched": True,
-        "run_id": observed.get("databaseId") if observed else None,
-        "run_status": observed.get("status") if observed else None,
-        "run_conclusion": observed.get("conclusion") if observed else None,
-        "run_url": observed.get("url") if observed else None,
-        "dispatch": dispatch,
-        "observe_attempts": len(probes),
-        "error": None if observed is not None else "dispatched workflow run was not observed before deadline",
+        'ok': True,
+        'service': 'agentos-realm-fabric.service',
+        'configured_core_commit': _observed_realm_commit(),
+        'active_state': fields.get('ActiveState'),
+        'sub_state': fields.get('SubState'),
+        'main_pid': int(fields.get('MainPID') or 0),
+        'exec_main_status': fields.get('ExecMainStatus'),
+        'exec_main_code': fields.get('ExecMainCode'),
+        'log_tail': log_tail,
+        'steps': steps,
     }
 
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
@@ -394,31 +1207,180 @@ def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     return _restart_user_service("layoutlab-api.service")
 
 
-
-def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
-    """Publish the canonical AgentOS Core continuation through one narrow action.
-
-    The relay accepts no arbitrary path or shell. Project identity, mutation
-    authority, schemas, index generation, and canonical target paths are all
-    revalidated by the publisher under the ubuntu execution identity.
-    """
-    from agent_core.project_continuation_index import publish_project_continuation
-    return publish_project_continuation(params)
-
 def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "agentos-antigravity-relay"}): raise ValueError("unexpected parameters")
     return _restart_user_service("agentos-antigravity-relay.service")
 
 
+
+# issue71_node_registry_repair_action_v1
+# One-time, narrowly-scoped recovery primitive for GitHub Issue #71.  It has no
+# arbitrary path/service/hash parameters: all authority-relevant values are
+# fixed below.  It may only run while the previously accepted generation is
+# converged and explicitly released.  A repair failure restarts the old Realm;
+# success intentionally leaves Realm stopped so the fenced generation advance
+# + install sequence owns the next start.
+def _issue71_repair_node_registry(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({},):
+        raise ValueError('unexpected parameters')
+
+    import fcntl as _i71_fcntl
+    import hashlib as _i71_hashlib
+    import tempfile as _i71_tempfile
+    from datetime import datetime as _i71_datetime, timezone as _i71_timezone
+
+    expected_commit = 'dedca4b1894987c4ed23fa43c442dbc11810b623'
+    expected_generation = 3
+    expected_owner = 'agentos-core-mainline'
+    expected_forensic_sha = 'd9087bdecd1f2afdbddfde6a81673d35006df17f0e273053367fd4b5d1997a45'
+    expected_first_object_end = 4674
+    data_root = Path('/home/ubuntu/agent-data')
+    registry = data_root / 'realm/nodes.json'
+    forensic = data_root / 'forensics/issue-71/20260829T081141Z/nodes.json'
+
+    state = _deployment_state_read()
+    observed = _observed_realm_commit()
+    if (
+        int(state.get('deployment_generation') or 0) != expected_generation
+        or state.get('desired_core_commit') != expected_commit
+        or observed != expected_commit
+        or state.get('lease_owner') != expected_owner
+        or state.get('lease_status') != 'released'
+        or state.get('deployment_status') != 'converged'
+    ):
+        return {
+            'ok': False,
+            'stage': 'deployment_precondition',
+            'deployment_generation': state.get('deployment_generation'),
+            'desired_core_commit': state.get('desired_core_commit'),
+            'observed_core_commit': observed,
+            'lease_owner': state.get('lease_owner'),
+            'lease_status': state.get('lease_status'),
+            'deployment_status': state.get('deployment_status'),
+        }
+
+    # issue71_node_registry_forensic_digest_bridge_v2
+    # The preserved forensic file is owned 0600 by the capture identity.  Do
+    # not chmod or rewrite it.  Prove equivalence by requiring the live bytes
+    # to still match the already-recorded forensic digest, then parse those
+    # identical bytes under the ubuntu-owned repair authority.
+    if not registry.is_file() or not forensic.is_file():
+        return {'ok': False, 'stage': 'forensic_presence'}
+    forensic_raw = registry.read_bytes()
+    forensic_sha = _i71_hashlib.sha256(forensic_raw).hexdigest()
+    if forensic_sha != expected_forensic_sha:
+        return {'ok': False, 'stage': 'forensic_digest_bridge', 'forensic_sha256': forensic_sha}
+
+    stop = _run(['systemctl', '--user', 'stop', 'agentos-realm-fabric.service'], cwd=Path.home(), timeout=20)
+    if stop.get('returncode') != 0:
+        return {'ok': False, 'stage': 'stop_realm', 'stop': stop}
+
+    restarted_after_failure = False
+    try:
+        raw = registry.read_bytes()
+        pre_sha = _i71_hashlib.sha256(raw).hexdigest()
+        # issue71_node_registry_ubuntu_preserve_v3
+        stamp = _i71_datetime.now(_i71_timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        preserve_dir = Path.home() / '.local/state/agentos/forensics/issue-71' / stamp
+        preserve_dir.mkdir(parents=True, exist_ok=False)
+        preserve = preserve_dir / 'nodes.pre-repair.json'
+        preserve.write_bytes(raw)
+        preserve.chmod(0o600)
+        if _i71_hashlib.sha256(preserve.read_bytes()).hexdigest() != pre_sha:
+            raise RuntimeError('pre-repair forensic copy digest mismatch')
+
+        repair_mode = 'already_valid'
+        try:
+            current = json.loads(raw.decode('utf-8'))
+            if current.get('schema') != 'agentos.node-registry/v0.1' or not isinstance(current.get('nodes'), dict):
+                raise ValueError('current registry schema invalid')
+        except Exception:
+            repair_mode = 'forensic_first_valid_object'
+            if pre_sha != expected_forensic_sha:
+                raise RuntimeError('live malformed registry digest no longer matches preserved forensic evidence')
+            obj, end = json.JSONDecoder().raw_decode(forensic_raw.decode('utf-8'))
+            if end != expected_first_object_end:
+                raise RuntimeError(f'unexpected first JSON object end: {end}')
+            if obj.get('schema') != 'agentos.node-registry/v0.1':
+                raise RuntimeError('forensic first object schema mismatch')
+            if obj.get('realm_id') != 'realm-alston':
+                raise RuntimeError('forensic first object Realm mismatch')
+            if not isinstance(obj.get('nodes'), dict) or len(obj['nodes']) != 2:
+                raise RuntimeError('forensic first object node set mismatch')
+
+            lock_path = registry.with_suffix(registry.suffix + '.lock')
+            with lock_path.open('a+', encoding='utf-8') as lock:
+                _i71_fcntl.flock(lock.fileno(), _i71_fcntl.LOCK_EX)
+                if _i71_hashlib.sha256(registry.read_bytes()).hexdigest() != pre_sha:
+                    raise RuntimeError('live registry changed after repair lock acquisition')
+                payload = json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
+                fd, tmp_name = _i71_tempfile.mkstemp(
+                    prefix='.nodes.json.issue71-', suffix='.tmp', dir=str(registry.parent), text=True
+                )
+                tmp = Path(tmp_name)
+                try:
+                    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+                        handle.write(payload)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    tmp.chmod(0o600)
+                    os.replace(tmp, registry)
+                    dir_fd = os.open(str(registry.parent), os.O_RDONLY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                finally:
+                    tmp.unlink(missing_ok=True)
+            current = json.loads(registry.read_text(encoding='utf-8'))
+
+        if current.get('schema') != 'agentos.node-registry/v0.1' or not isinstance(current.get('nodes'), dict):
+            raise RuntimeError('post-repair registry invalid')
+        if current.get('realm_id') != 'realm-alston' or len(current['nodes']) != 2:
+            raise RuntimeError('post-repair registry identity/node-count mismatch')
+        post_sha = _i71_hashlib.sha256(registry.read_bytes()).hexdigest()
+        return {
+            'ok': True,
+            'stage': 'repaired',
+            'repair_mode': repair_mode,
+            'forensic_sha256': forensic_sha,
+            'pre_repair_sha256': pre_sha,
+            'pre_repair_copy': str(preserve),
+            'post_repair_sha256': post_sha,
+            'realm_id': current.get('realm_id'),
+            'node_ids': sorted(current['nodes']),
+            'node_count': len(current['nodes']),
+            'realm_service_stopped': True,
+            'deployment_generation': expected_generation,
+            'desired_core_commit': expected_commit,
+            'observed_core_commit': observed,
+            'lease_status': 'released',
+        }
+    except BaseException:
+        restart = _restart_user_service('agentos-realm-fabric.service', timeout=25)
+        restarted_after_failure = bool(restart.get('ok'))
+        raise
+
+# deployment_rejection_precedence_v1
 ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "site.sync_build": _site_sync_build,
     "layoutlab.static.deploy": _layoutlab_static_deploy,
     "github.repo.ensure_studio_web": _ensure_studio_web_remote,
+    "github.repo.ensure_arcanaforge": _ensure_arcanaforge_remote,
+    "github.repo.ensure_layoutlib": _ensure_layoutlib_remote,
+    "github.repo.import_layoutlib_v079": _import_layoutlib_v079,
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
-    "github.actions.workflow.dispatch": _github_actions_dispatch,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
-    "agentos.project.publish_continuation": _publish_project_continuation,
+    "agentos.realm-fabric.claim_deployment": _claim_realm_fabric_deployment,
+    "agentos.realm-fabric.deployment_status": _realm_fabric_deployment_status,
+    "agentos.realm-fabric.release_deployment": _release_realm_fabric_deployment,
+    "agentos.realm-fabric.renew_deployment": _renew_realm_fabric_deployment,
+    "agentos.realm-fabric.inspect_service": _inspect_realm_fabric_service,
+    "agentos.realm-fabric.advance_deployment": _advance_realm_fabric_deployment,
+    "agentos.realm-fabric.install_release": _install_realm_fabric_release,
+    "agentos.maintenance.issue71_repair_node_registry": _issue71_repair_node_registry,
+    "agentos.project.register_core": _register_agentos_core_project,
 }
 
 
@@ -483,7 +1445,20 @@ class ActionRelayWorker:
             expected = "sha256:" + hashlib.sha256(_canonical(unsigned)).hexdigest()
             if supplied != expected: raise ValueError("capsule digest mismatch")
             result = ACTIONS[action](params)
-            receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"action": action,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),**result}
+            # governed_receipt_reserved_fields_v1: the relay owns receipt identity.
+            # Capability results may carry their own schema/metadata but must never
+            # overwrite the governance envelope used for validation and audit.
+            receipt = {
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "action": action,
+                "started_at": started,
+                "completed_at": _now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+            }
+            reserved = {"schema", "capsule_id", "action", "started_at", "completed_at", "executor_user"}
+            for key, value in result.items():
+                receipt[("result_" + key) if key in reserved else key] = value
         except Exception as exc:
             receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),"ok": False,"error": f"{type(exc).__name__}: {exc}"}
         target = self.paths.receipts / f"{capsule_id}.json"; tmp = target.with_suffix(".json.tmp")
