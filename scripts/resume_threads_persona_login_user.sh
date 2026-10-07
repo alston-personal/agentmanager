@@ -22,6 +22,7 @@ base=os.environ["AGENTOS_RESUME_CDP"]
 account=os.environ["AGENTOS_RESUME_ACCOUNT"]
 persona=os.environ["AGENTOS_RESUME_PERSONA"]
 inbox="https://www.threads.com/messages"
+stage="module"
 
 def out(key,value):
     print(f"threads_persona_login_resume_{key}={value}")
@@ -33,21 +34,27 @@ def is_login(url):
     return path=="/login" or path.startswith("/login/") or "accountscenter" in host
 
 def main():
+    global stage
+    stage="playwright_start"
     with sync_playwright() as p:
+        stage="cdp_attach"
         browser=p.chromium.connect_over_cdp(base,timeout=5000)
         if not browser.contexts:
             raise RuntimeError("NO_BROWSER_CONTEXT")
         ctx=browser.contexts[0]
+        stage="new_page"
         page=ctx.new_page()
         try:
-            page.goto(inbox,wait_until="domcontentloaded",timeout=30000)
-            page.wait_for_timeout(1500)
+            stage="navigate"
+            page.goto(inbox,wait_until="commit",timeout=15000)
+            page.wait_for_timeout(2000)
             if not is_login(page.url):
                 out("state","ALREADY_AUTHENTICATED")
                 out("persona",persona)
                 print("threads_persona_login_resume=PASS")
                 return 0
 
+            stage="body_read"
             body=(page.locator("body").inner_text(timeout=5000) or "")[:16000]
             low=body.lower()
             hint=(account.lower() in low) or (("@"+account).lower() in low)
@@ -58,6 +65,7 @@ def main():
                 print("threads_persona_login_resume=HUMAN_REQUIRED")
                 return 0
 
+            stage="resume_control_find"
             escaped=re.escape(account)
             patterns=[
                 re.compile(r"continue as.*"+escaped,re.I),
@@ -82,6 +90,7 @@ def main():
                 print("threads_persona_login_resume=HUMAN_REQUIRED")
                 return 0
 
+            stage="resume_click"
             candidate.click(timeout=5000)
             for _ in range(20):
                 page.wait_for_timeout(500)
@@ -101,6 +110,7 @@ try:
 except SystemExit:
     raise
 except Exception as exc:
+    out("error_stage",stage)
     out("error_type",type(exc).__name__)
     print("threads_persona_login_resume=ERROR")
     raise SystemExit(8)
