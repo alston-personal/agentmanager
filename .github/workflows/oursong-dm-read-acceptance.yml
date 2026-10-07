@@ -7,7 +7,10 @@ on:
     paths:
       - 'agentos_node/social/web_dm.py'
       - 'agentos_node/social/persona_dm.py'
+      - 'agentos_node/social/dm_loop_guard.py'
       - 'scripts/threads_web_dm_bridge_user.py'
+      - 'scripts/oursong_threads_dm_autonomous_user.py'
+      - 'scripts/send_threads_dm_from_decision_user.py'
       - 'scripts/run_threads_web_dm_read_user.sh'
       - 'scripts/resume_threads_persona_login_user.sh'
       - 'agentos_node/bootstrap_control.py'
@@ -37,7 +40,13 @@ jobs:
           set -euo pipefail
           bash -n scripts/run_threads_web_dm_read_user.sh
           bash -n scripts/resume_threads_persona_login_user.sh
-          python3 -m py_compile             scripts/threads_web_dm_bridge_user.py             agentos_node/social/web_dm.py             agentos_node/social/persona_dm.py
+          python3 -m py_compile \
+            scripts/threads_web_dm_bridge_user.py \
+            scripts/oursong_threads_dm_autonomous_user.py \
+            scripts/send_threads_dm_from_decision_user.py \
+            agentos_node/social/web_dm.py \
+            agentos_node/social/persona_dm.py \
+            agentos_node/social/dm_loop_guard.py
 
       - name: Mint Runner Window credential
         shell: bash
@@ -124,12 +133,14 @@ jobs:
           account=pairs.get('threads_web_dm_account')
           observed=pairs.get('threads_web_dm_observed_account')
           err=pairs.get('threads_web_dm_error_type')
+          autonomous=pairs.get('threads_web_dm_autonomous')
           print('oursong_dm_dispatch_rc='+dispatch_rc)
           print('oursong_dm_read_state='+(state or 'UNKNOWN'))
           print('oursong_dm_identity='+(identity or 'UNKNOWN'))
           print('oursong_dm_account='+(account or observed or 'UNKNOWN'))
           if err:
               print('oursong_dm_error_type='+err)
+          print('oursong_dm_autonomous='+(autonomous or 'UNKNOWN'))
           if state=='LOGIN_REQUIRED':
               print('oursong_dm_acceptance=LOGIN_REQUIRED')
               raise SystemExit(20)
@@ -140,5 +151,6 @@ jobs:
           assert state=='PASS', pairs
           assert identity=='PASS', pairs
           assert account=='oursong_alstonhuang', pairs
+          assert autonomous=='PASS', pairs
           print('oursong_dm_acceptance=PASS')
           PY
