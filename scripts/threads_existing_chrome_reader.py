@@ -105,7 +105,7 @@ class _WS:
 
 
 def _threads_tab():
-    tabs = _json_get("http://127.0.0.1:9222/json/list")
+    tabs = _json_get("http://127.0.0.1:9224/json/list")
     candidates = [
         t for t in tabs
         if "/messages" in str(t.get("url") or "")
@@ -139,7 +139,7 @@ def _eval(ws: _WS, expression: str, call_id: int):
 
 
 def inspect_threads_tabs() -> dict:
-    tabs = _json_get("http://127.0.0.1:9222/json/list")
+    tabs = _json_get("http://127.0.0.1:9224/json/list")
     found = []
     for tab in tabs:
         url = str(tab.get("url") or "")
