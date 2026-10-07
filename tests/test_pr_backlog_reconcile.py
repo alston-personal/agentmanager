@@ -21,6 +21,7 @@ class PrBacklogReconcileTests(unittest.TestCase):
             "title": "example",
             "url": "https://example.invalid/1",
             "updated_at": "2026-10-06T00:00:00Z",
+            "body": "",
             "ahead_by": 2,
             "behind_by": 1,
             "mergeable_state": "clean",
@@ -48,6 +49,25 @@ class PrBacklogReconcileTests(unittest.TestCase):
         )
         self.assertEqual(got["status"], "NEEDS_REVIEW")
         self.assertTrue(any("behind_main_by_600_commits" == x for x in got["reasons"]))
+
+    def test_explicit_rebased_follow_up_marks_old_pr_superseded(self):
+        old = self.base(number=1027, title="same")
+        new = self.base(
+            number=1028,
+            title="same",
+            body="Rebased follow-up to #1027 on latest main.",
+        )
+        report = mod.reconcile([old, new], now=NOW)
+        rows = {row["number"]: row for row in report["rows"]}
+        self.assertEqual(rows[1027]["status"], "SUPERSEDED")
+        self.assertEqual(rows[1027]["superseded_by"], 1028)
+
+    def test_plain_follow_up_does_not_imply_supersession(self):
+        old = self.base(number=10)
+        new = self.base(number=11, body="Dependent follow-up to #10")
+        report = mod.reconcile([old, new], now=NOW)
+        rows = {row["number"]: row for row in report["rows"]}
+        self.assertNotEqual(rows[10]["status"], "SUPERSEDED")
 
     def test_report_is_dry_run(self):
         report = mod.reconcile([self.base()], now=NOW)

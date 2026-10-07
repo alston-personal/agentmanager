@@ -2,6 +2,12 @@ name: PR Backlog Reconciliation
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/pr_backlog_reconcile.py'
+      - 'tests/test_pr_backlog_reconcile.py'
+      - '.github/workflows/pr-backlog-reconciliation.yml'
   schedule:
     - cron: '17 1 * * *'
 
@@ -47,6 +53,7 @@ jobs:
                   "title": detail["title"],
                   "url": detail["html_url"],
                   "updated_at": detail["updated_at"],
+                  "body": detail.get("body") or "",
                   "ahead_by": compare.get("ahead_by"),
                   "behind_by": compare.get("behind_by"),
                   "mergeable_state": detail.get("mergeable_state"),
