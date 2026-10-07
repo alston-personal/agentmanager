@@ -12,6 +12,7 @@ on:
       - 'docs/participant-protocol/examples/gpt-web-vision.md'
       - 'tests/test_gpt_web_vision.py'
       - 'scripts/gpt_web_response_bridge.py'
+      - 'scripts/gpt_web_cdp_renderer_health.py'
       - 'scripts/gpt_web_invoice_roundtrip.py'
       - 'tests/test_gpt_web_response_bridge.py'
       - 'tests/test_thin_client.py'
@@ -30,6 +31,7 @@ on:
       - 'docs/participant-protocol/examples/gpt-web-vision.md'
       - 'tests/test_gpt_web_vision.py'
       - 'scripts/gpt_web_response_bridge.py'
+      - 'scripts/gpt_web_cdp_renderer_health.py'
       - 'scripts/gpt_web_invoice_roundtrip.py'
       - 'tests/test_gpt_web_response_bridge.py'
       - 'ops/systemd/agentos-gpt-web-bridge.service'
@@ -50,6 +52,6 @@ jobs:
         with:
           python-version: '3.13'
       - name: Compile
-        run: python -m py_compile agentos_node/gpt_web_vision.py agentos_node/session_bridge.py agentos_node/desktop_plan.py agentos_node/interactive_desktop.py agentos_node/thin_client.py scripts/gpt_web_response_bridge.py scripts/gpt_web_invoice_roundtrip.py
+        run: python -m py_compile agentos_node/gpt_web_vision.py agentos_node/session_bridge.py agentos_node/desktop_plan.py agentos_node/interactive_desktop.py agentos_node/thin_client.py scripts/gpt_web_response_bridge.py scripts/gpt_web_invoice_roundtrip.py scripts/gpt_web_cdp_renderer_health.py
       - name: Test
         run: python -m unittest -v tests.test_gpt_web_vision tests.test_gpt_web_response_bridge tests.test_low_latency_gui_agent tests.test_thin_client
