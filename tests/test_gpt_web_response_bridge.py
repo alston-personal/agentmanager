@@ -147,3 +147,17 @@ class GptWebResponseBridgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_generic_target_connection_can_accept_about_blank(self):
+        target={"id":"blank","type":"page","url":"about:blank","webSocketDebuggerUrl":"ws://blank"}
+        direct=Mock()
+        direct.evaluate.return_value="about:blank"
+        with patch("scripts.gpt_web_response_bridge.CdpPage", return_value=direct):
+            endpoint=_open_target_connection(
+                "http://127.0.0.1:9222",
+                target,
+                expected_url_prefix="about:blank",
+            )
+        self.assertEqual(endpoint.mode, "page-ws")
+        endpoint.close()
