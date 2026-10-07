@@ -191,9 +191,9 @@ def _open_target_connection(cdp_url: str, target: dict[str, Any]) -> CdpTargetSe
         direct = CdpPage(str(target.get("webSocketDebuggerUrl") or ""))
         endpoint = CdpTargetSession(direct, session_id=None, mode="page-ws")
         href = endpoint.evaluate("location.href")
-        if isinstance(href, str) and href.startswith("https://chatgpt.com/"):
+        if isinstance(href, str):
             return endpoint
-        direct_error = f"unexpected_href:{href!r}"
+        direct_error = f"invalid_href:{href!r}"
     except Exception as exc:
         direct_error = f"{type(exc).__name__}:{exc}"
     finally:
@@ -213,9 +213,9 @@ def _open_target_connection(cdp_url: str, target: dict[str, Any]) -> CdpTargetSe
             raise RuntimeError("CDP_ATTACH_SESSION_ID_MISSING")
         endpoint = CdpTargetSession(browser, session_id=sid, mode="browser-session")
         href = endpoint.evaluate("location.href")
-        if not isinstance(href, str) or not href.startswith("https://chatgpt.com/"):
+        if not isinstance(href, str):
             endpoint.close()
-            raise RuntimeError(f"CDP_ATTACHED_UNEXPECTED_HREF:{href!r}")
+            raise RuntimeError(f"CDP_ATTACHED_INVALID_HREF:{href!r}")
         return endpoint
     except Exception as exc:
         if browser is not None:
@@ -224,6 +224,21 @@ def _open_target_connection(cdp_url: str, target: dict[str, Any]) -> CdpTargetSe
             "CDP_TARGET_OPEN_FAILED:"
             + f"direct={direct_error};browser_session={type(exc).__name__}:{exc}"
         ) from exc
+
+
+def _ensure_chatgpt_location(endpoint: CdpTargetSession) -> str:
+    href = endpoint.evaluate("location.href")
+    if isinstance(href, str) and href.startswith("https://chatgpt.com/"):
+        return href
+    endpoint.call("Page.navigate", {"url": "https://chatgpt.com/"})
+    deadline = time.monotonic() + 8
+    last = href
+    while time.monotonic() < deadline:
+        time.sleep(0.4)
+        last = endpoint.evaluate("location.href")
+        if isinstance(last, str) and last.startswith("https://chatgpt.com/"):
+            return last
+    raise RuntimeError(f"CHATGPT_NAVIGATION_NOT_READY:{last!r}")
 
 
 def _responsive_chatgpt_target(cdp_url: str) -> tuple[dict[str, Any], str, str]:
@@ -240,14 +255,44 @@ def _responsive_chatgpt_target(cdp_url: str) -> tuple[dict[str, Any], str, str]:
         endpoint = None
         try:
             endpoint = _open_target_connection(cdp_url, item)
-            href = endpoint.evaluate("location.href")
+            href = _ensure_chatgpt_location(endpoint)
             return item, str(href), endpoint.mode
         except Exception as exc:
             errors.append(f"{item.get('id')}:{type(exc).__name__}:{exc}")
         finally:
             if endpoint is not None:
                 endpoint.close()
-    raise RuntimeError("CHATGPT_CDP_TARGET_UNRESPONSIVE:" + " | ".join(errors[-5:]))
+    # Existing targets may have a wedged renderer while the persistent
+    # browser profile itself is still healthy. Preserve them and open one fresh
+    # ChatGPT tab in the same profile/cookie jar before declaring failure.
+    fresh_errors: list[str] = []
+    try:
+        fresh = _create_target(cdp_url, "https://chatgpt.com/")
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            endpoint = None
+            try:
+                current = fresh
+                matches = [
+                    item for item in _targets(cdp_url)
+                    if str(item.get("id") or "") == str(fresh.get("id") or "")
+                ]
+                if matches:
+                    current = matches[0]
+                endpoint = _open_target_connection(cdp_url, current)
+                href = _ensure_chatgpt_location(endpoint)
+                return current, href, "fresh-" + endpoint.mode
+            except Exception as exc:
+                fresh_errors.append(f"{type(exc).__name__}:{exc}")
+                time.sleep(0.5)
+            finally:
+                if endpoint is not None:
+                    endpoint.close()
+    except Exception as exc:
+        fresh_errors.append(f"create:{type(exc).__name__}:{exc}")
+
+    detail = errors[-5:] + ["fresh:" + x for x in fresh_errors[-3:]]
+    raise RuntimeError("CHATGPT_CDP_TARGET_UNRESPONSIVE:" + " | ".join(detail))
 
 
 def refresh_sessions(root: Path, cdp_url: str) -> str:
@@ -270,7 +315,7 @@ def refresh_sessions(root: Path, cdp_url: str) -> str:
 
 
 def _page(cdp_url: str) -> CdpTargetSession:
-    target = _chatgpt_target(cdp_url)
+    target, _href, _transport = _responsive_chatgpt_target(cdp_url)
     return _open_target_connection(cdp_url, target)
 
 

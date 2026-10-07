@@ -82,9 +82,27 @@ class GptWebResponseBridgeTests(unittest.TestCase):
         target={"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://dead"}
         with patch("scripts.gpt_web_response_bridge._chatgpt_target", return_value=target), \
              patch("scripts.gpt_web_response_bridge._targets", return_value=[target]), \
+             patch("scripts.gpt_web_response_bridge._create_target", side_effect=RuntimeError("create failed")), \
              patch("scripts.gpt_web_response_bridge.CdpPage", side_effect=TimeoutError("CDP_WS_CONNECT_TIMEOUT")):
             with self.assertRaisesRegex(RuntimeError, "CHATGPT_CDP_TARGET_UNRESPONSIVE"):
                 _responsive_chatgpt_target("http://127.0.0.1:9222")
+
+    def test_fresh_target_recovers_from_wedged_existing_tab(self):
+        old={"id":"old","type":"page","url":"https://chatgpt.com/c/old","webSocketDebuggerUrl":"ws://old"}
+        fresh={"id":"fresh","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://fresh"}
+        endpoint=Mock()
+        endpoint.evaluate.return_value="https://chatgpt.com/"
+        endpoint.mode="page-ws"
+        with patch("scripts.gpt_web_response_bridge._chatgpt_target", return_value=old), \
+             patch("scripts.gpt_web_response_bridge._targets", return_value=[old]), \
+             patch("scripts.gpt_web_response_bridge._create_target", return_value=fresh), \
+             patch("scripts.gpt_web_response_bridge._open_target_connection", side_effect=[
+                 RuntimeError("wedged"), endpoint
+             ]):
+            target, href, mode = _responsive_chatgpt_target("http://127.0.0.1:9222")
+        self.assertEqual(target["id"], "fresh")
+        self.assertEqual(href, "https://chatgpt.com/")
+        self.assertEqual(mode, "fresh-page-ws")
 
     def test_browser_session_fallback_when_page_socket_stalls(self):
         target={"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://page"}
