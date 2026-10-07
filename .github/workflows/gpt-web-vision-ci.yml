@@ -16,7 +16,6 @@ on:
       - 'ops/systemd/agentos-gpt-web-bridge.timer'
       - 'tests/test_low_latency_gui_agent.py'
       - '.github/workflows/gpt-web-vision-ci.yml'
-      - '.github/workflows/oracle-gpt-web-vision-acceptance.yml'
   push:
     branches: [main]
     paths:
