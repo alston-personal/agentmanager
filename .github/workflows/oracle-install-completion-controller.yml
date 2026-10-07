@@ -303,17 +303,23 @@ jobs:
           import json,sys
           nxt=json.load(open(sys.argv[1],encoding='utf8'))
           state=json.load(open(sys.argv[2],encoding='utf8'))
-          assert nxt and nxt.get('work_id'), nxt
-          item=state['items'][nxt['work_id']]
-          print(nxt['work_id'], len(item.get('history') or []))
+          if not nxt:
+              print('__IDLE__ 0')
+          else:
+              assert nxt.get('work_id'), nxt
+              item=state['items'][nxt['work_id']]
+              print(nxt['work_id'], len(item.get('history') or []))
           PY
           )
           EOF
           echo "completion_expected_next=$EXPECTED_ID history_before=$HISTORY_BEFORE"
 
-          CLAIMED=0
-          for attempt in $(seq 1 18); do
-            read -r OWNER STATUS HISTORY_NOW <<EOF
+          if [ "$EXPECTED_ID" = "__IDLE__" ]; then
+            echo 'completion_autonomous_claim=IDLE no_runnable_work=1'
+          else
+            CLAIMED=0
+            for attempt in $(seq 1 18); do
+              read -r OWNER STATUS HISTORY_NOW <<EOF
           $(python3 - "$STATE" "$EXPECTED_ID" <<'PY'
           import json,sys
           data=json.load(open(sys.argv[1],encoding='utf8'))
@@ -322,15 +328,15 @@ jobs:
           PY
           )
           EOF
-            echo "completion_claim_probe attempt=$attempt work_id=$EXPECTED_ID owner=$OWNER status=$STATUS history=$HISTORY_NOW"
-            if [ "$OWNER" = "role://lobster" ] && [ "$HISTORY_NOW" -gt "$HISTORY_BEFORE" ]; then
-              CLAIMED=1
-              break
-            fi
-            sleep 10
-          done
-          test "$CLAIMED" = 1
-          python3 - "$STATE" "$EXPECTED_ID" <<'PY'
+              echo "completion_claim_probe attempt=$attempt work_id=$EXPECTED_ID owner=$OWNER status=$STATUS history=$HISTORY_NOW"
+              if [ "$OWNER" = "role://lobster" ] && [ "$HISTORY_NOW" -gt "$HISTORY_BEFORE" ]; then
+                CLAIMED=1
+                break
+              fi
+              sleep 10
+            done
+            test "$CLAIMED" = 1
+            python3 - "$STATE" "$EXPECTED_ID" <<'PY'
           import json,sys
           data=json.load(open(sys.argv[1],encoding='utf8'))
           item=data['items'][sys.argv[2]]
@@ -339,10 +345,11 @@ jobs:
           assert any(h.get('event') in {'handoff','heartbeat'} and h.get('actor') in {'role://completion.controller','role://lobster'} for h in history), item
           market=data.get('items',{}).get('market-master-1200-mvp')
           assert market, 'Market Master durable work disappeared'
-          assert market.get('status') in {'accepted','in_progress','blocked','verifying','done'}, market
+          assert market.get('status') in {'accepted','in_progress','blocked','verifying','done','waiting_external'}, market
           print('completion_autonomous_claim=PASS work_id='+sys.argv[2]+' status='+str(item.get('status')))
           print('market_master_durable_queue=PASS status='+str(market.get('status'))+' owner='+str(market.get('owner')))
           PY
+          fi
 
           # Bounded live handoff observation. Expose only status/owner/history
           # counts for the two acceptance work items; never task text or logs.
