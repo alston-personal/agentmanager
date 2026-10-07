@@ -472,3 +472,28 @@ jobs:
           print('gpt_web_session_count='+str(len(sessions['sessions'])))
           PY
           REMOTE
+
+
+      - name: GPT Web first invoice round-trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" \
+            scripts/gpt_web_invoice_roundtrip.py \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/gpt_web_invoice_roundtrip.py"
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" \
+            benchmarks/invoice_handwriting/fixtures/tw-2part-my04200253.jpg \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/gpt-web-invoice-roundtrip.jpg"
+
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          GUI_PY=/home/ubuntu/.local/share/agentos/gui-worker/venv/bin/python
+          export AGENTOS_GPT_WEB_ALLOWED_ROOTS=/tmp
+          export AGENTOS_GPT_WEB_APP_ROOT=/home/ubuntu/.local/share/agentos/gpt-web-bridge
+          "$GUI_PY" /tmp/gpt_web_invoice_roundtrip.py \
+            --bridge-root /home/ubuntu/agent-data/runtime/gpt-web-bridge \
+            --image /tmp/gpt-web-invoice-roundtrip.jpg \
+            --cdp-url http://127.0.0.1:9222
+          REMOTE
