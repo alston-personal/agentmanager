@@ -1,6 +1,7 @@
 from agentos_node.social.dm_loop_guard import (
     message_fingerprint,
     record_auto_reply,
+    record_consumed,
     reset_hop_budget,
     should_auto_reply,
 )
@@ -110,3 +111,35 @@ def test_record_and_reset_state():
     assert s["processed_message_ids"]==["m1"]
     assert s["processed_fingerprints"]==[fp]
     assert reset_hop_budget(s)["auto_hops"]==0
+
+
+def test_consumed_event_is_never_replied_later_after_cooldown():
+    event=inbound(mid="m9",text="cooldown message")
+    fp=message_fingerprint(sender="mio.milkcat",text="cooldown message")
+    state=record_consumed(event=event,state={"last_auto_reply_epoch":950},fingerprint=fp)
+    later=should_auto_reply(
+        event=event,
+        state=state,
+        own_account="oursong_alstonhuang",
+        peer_account="mio.milkcat",
+        max_auto_hops=2,
+        cooldown_seconds=120,
+        hop_window_seconds=600,
+        now_epoch=2000,
+    )
+    assert later.allow is False
+    assert later.reason=="duplicate_message_id"
+
+
+def test_hop_budget_resets_after_quiet_window():
+    d=should_auto_reply(
+        event=inbound(mid="m10",text="new burst"),
+        state={"auto_hops":2,"last_auto_reply_epoch":1000},
+        own_account="oursong_alstonhuang",
+        peer_account="mio.milkcat",
+        max_auto_hops=2,
+        cooldown_seconds=120,
+        hop_window_seconds=600,
+        now_epoch=1701,
+    )
+    assert d.allow is True
