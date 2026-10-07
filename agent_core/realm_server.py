@@ -274,6 +274,36 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
                 return
+            if self.path == '/v1/work/bind':
+                body = self._json_body()
+                node_id = str(body.get('node_id') or '').strip()
+                if not node_id:
+                    raise ValueError('node_id is required')
+                token = self._bearer()
+                self.fabric.authenticate(node_id, token)
+                work_id = str(body.get('work_id') or '').strip()
+                if not work_id:
+                    raise ValueError('work_id is required')
+                binding = WorkBindingStore().upsert({
+                    'work_id': work_id,
+                    'project_id': body.get('project_id') or body.get('project'),
+                    'node_id': node_id,
+                    'executor_id': body.get('executor_id'),
+                    'participant_id': body.get('participant_id'),
+                    'session_id': body.get('session_id'),
+                    'runner_id': body.get('runner_id'),
+                    'state': str(body.get('state') or 'active'),
+                    'node_assigned': bool(body.get('node_assigned', True)),
+                    'global_assigned': bool(body.get('global_assigned', False)),
+                    'logical_checkpoint_ref': body.get('logical_checkpoint_ref'),
+                    'executor_checkpoint_ref': body.get('executor_checkpoint_ref'),
+                })
+                self._send(200, {
+                    'ok': True,
+                    'schema': 'agentos.work-binding/v1',
+                    'binding': binding,
+                })
+                return
             if self.path == '/v1/controller/dispatch':
                 body = self._json_body()
                 result = ControllerService(self.fabric).dispatch(body)
@@ -335,15 +365,19 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 binding = dict(resolution.binding or {})
                 bound_project = str(binding.get('project_id') or '').strip()
                 if bound_project:
-                    result = resolve_continuation(bound_project, node_context=node_context)
-                    result['resolution'] = {
-                        'work_id': resolution.work_id,
-                        'source': resolution.source,
-                        'binding': binding,
-                    }
-                    result['availability']['work_binding'] = True
-                    self._send(200, {'ok': True, **result})
-                    return
+                    try:
+                        result = resolve_continuation(bound_project, node_context=node_context)
+                    except KeyError:
+                        result = None
+                    if result is not None:
+                        result['resolution'] = {
+                            'work_id': resolution.work_id,
+                            'source': resolution.source,
+                            'binding': binding,
+                        }
+                        result['availability']['work_binding'] = True
+                        self._send(200, {'ok': True, **result})
+                        return
 
                 self._send(200, {
                     'ok': True,
