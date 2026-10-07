@@ -1,0 +1,50 @@
+name: Oracle Release Tree Forensics
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-release-tree-forensics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      ORACLE_HOST: ${{ vars.ORACLE_HOST || '161.33.24.170' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect release retention candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -u
+          ROOT="$HOME/agent-data/releases"
+          echo '=== disk ==='
+          df -h /
+          echo '=== release top-level metadata ==='
+          find "$ROOT" -mindepth 1 -maxdepth 1 -printf '%y\t%TY-%Tm-%TdT%TH:%TM:%TS\t%f\t%l\n' 2>/dev/null | sort | head -n 300 || true
+          echo '=== top-level counts ==='
+          printf 'dirs='; find "$ROOT" -mindepth 1 -maxdepth 1 -type d -printf '.\n' 2>/dev/null | wc -l
+          printf 'files='; find "$ROOT" -mindepth 1 -maxdepth 1 -type f -printf '.\n' 2>/dev/null | wc -l
+          printf 'symlinks='; find "$ROOT" -mindepth 1 -maxdepth 1 -type l -printf '.\n' 2>/dev/null | wc -l
+          echo '=== per-top-level size KB, bounded parallel ==='
+          find "$ROOT" -mindepth 1 -maxdepth 1 -print0 2>/dev/null |
+            xargs -0 -r -P 12 -n 1 bash -c '
+              p="$1"
+              out="$(timeout 25 du -x -sk "$p" 2>/dev/null || true)"
+              if [ -n "$out" ]; then printf "OK\t%s\n" "$out"; else printf "TIMEOUT\t%s\n" "$p"; fi
+            ' _ | sort -t$'\t' -k2,2nr | head -n 300 || true
+          echo '=== newest 100 dirs ==='
+          find "$ROOT" -mindepth 1 -maxdepth 2 -type d -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -nr | head -n 100 || true
+          echo '=== oldest 100 dirs ==='
+          find "$ROOT" -mindepth 1 -maxdepth 2 -type d -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -n | head -n 100 || true
+          REMOTE
