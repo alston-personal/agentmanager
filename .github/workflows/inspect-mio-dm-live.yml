@@ -1,0 +1,44 @@
+name: Inspect Mio DM Live
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-mio-dm-live.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Mio DM runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          echo '=== TIMER ==='
+          systemctl --user list-timers --all --no-pager | grep mio-oursong-dm-autonomous || true
+          echo '=== SERVICE ==='
+          systemctl --user --no-pager --full status mio-oursong-dm-autonomous.service 2>&1 || true
+          echo '=== MIO DM ROOTS ==='
+          find "$HOME/.local/share/agentos/social/threads-web-dm" -maxdepth 2 -type f \( -name 'events.jsonl' -o -name 'autonomous-state.json' \) -print 2>/dev/null || true
+          echo '=== MIO EVENTS TAIL ==='
+          for f in "$HOME"/.local/share/agentos/social/threads-web-dm/*/events.jsonl; do
+            [ -e "$f" ] || continue
+            echo "--- $f"
+            tail -n 30 "$f" 2>/dev/null || true
+          done
+          echo '=== AUTONOMOUS STATE ==='
+          for f in "$HOME"/.local/share/agentos/social/threads-web-dm/*/autonomous-state.json; do
+            [ -e "$f" ] || continue
+            echo "--- $f"
+            sed -n '1,260p' "$f" 2>/dev/null || true
+          done
+          REMOTE
