@@ -107,6 +107,15 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=LOGIN_REQUIRED'; then
     RESUME_RC=$?
     set -e
     printf '%s\n' "$RESUME_OUT" | grep -E '^threads_persona_login_resume' || true
+    if printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
+      echo "threads_web_dm_resume=PASS"
+    elif printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=HUMAN_REQUIRED'; then
+      echo "threads_web_dm_resume=HUMAN_REQUIRED"
+      REASON="$(printf '%s\n' "$RESUME_OUT" | sed -n 's/^threads_persona_login_resume_reason=//p' | tail -n1)"
+      if [ -n "$REASON" ]; then echo "threads_web_dm_resume_reason=$REASON"; fi
+    else
+      echo "threads_web_dm_resume=ERROR"
+    fi
     if [ "$RESUME_RC" -eq 0 ] && printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
       set +e
       OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
