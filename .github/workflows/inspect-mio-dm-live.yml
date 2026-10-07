@@ -35,6 +35,13 @@ jobs:
             echo "--- $f"
             tail -n 30 "$f" 2>/dev/null || true
           done
+          echo '=== COMBINED MIO OURSONG STATE ==='
+          sed -n '1,320p' /home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/oursong-dm-state.json 2>/dev/null || true
+          echo '=== COMBINED DM RECEIPTS ==='
+          find /home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/dm-receipts -maxdepth 1 -type f -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -n 20 | cut -d' ' -f2- | while read f; do
+            echo "--- $f"
+            sed -n '1,220p' "$f" 2>/dev/null || true
+          done
           echo '=== AUTONOMOUS STATE ==='
           for f in "$HOME"/.local/share/agentos/social/threads-web-dm/*/autonomous-state.json; do
             [ -e "$f" ] || continue
