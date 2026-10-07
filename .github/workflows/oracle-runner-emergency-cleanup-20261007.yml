@@ -1,0 +1,33 @@
+name: Oracle Runner Emergency Cleanup 20261007
+
+on:
+  push:
+    branches:
+      - ops/oracle-runner-emergency-cleanup-20261007
+    paths:
+      - '.github/workflows/oracle-runner-emergency-cleanup-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Free runner-local disposable space
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== BEFORE ==='
+          df -h /
+          du -sh /home/agentos-node/runner/_diag 2>/dev/null || true
+          du -sh /home/agentos-node/runner/_work/_temp 2>/dev/null || true
+
+          find /home/agentos-node/runner/_diag -type f -mtime +2 -print -delete 2>/dev/null || true
+          find /home/agentos-node/runner/_work/_temp -mindepth 1 -mtime +1 -print -delete 2>/dev/null || true
+
+          echo '=== AFTER ==='
+          df -h /
+          du -sh /home/agentos-node/runner/_diag 2>/dev/null || true
+          du -sh /home/agentos-node/runner/_work/_temp 2>/dev/null || true
