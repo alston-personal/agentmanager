@@ -78,11 +78,14 @@ class GptWebResponseBridgeTests(unittest.TestCase):
             target = _chatgpt_target("http://127.0.0.1:9222", create_if_missing=True)
         self.assertEqual(target["id"], "p1")
 
-    def test_responsive_target_rejects_unresponsive_socket(self):
-        target={"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://dead"}
-        with patch("scripts.gpt_web_response_bridge._chatgpt_target", return_value=target), \
-             patch("scripts.gpt_web_response_bridge._targets", return_value=[target]), \
-             patch("scripts.gpt_web_response_bridge.CdpPage", side_effect=TimeoutError("CDP_WS_CONNECT_TIMEOUT")):
+    def test_responsive_target_rejects_when_existing_and_fresh_are_unresponsive(self):
+        stale={"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://dead"}
+        fresh={"id":"p2","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://fresh"}
+        with patch("scripts.gpt_web_response_bridge._chatgpt_target", return_value=stale), \
+             patch("scripts.gpt_web_response_bridge._targets", return_value=[stale, fresh]), \
+             patch("scripts.gpt_web_response_bridge._create_target", return_value=fresh), \
+             patch("scripts.gpt_web_response_bridge._open_target_connection", side_effect=TimeoutError("CDP_WS_CONNECT_TIMEOUT")), \
+             patch("scripts.gpt_web_response_bridge.time.sleep"):
             with self.assertRaisesRegex(RuntimeError, "CHATGPT_CDP_TARGET_UNRESPONSIVE"):
                 _responsive_chatgpt_target("http://127.0.0.1:9222")
 
@@ -107,6 +110,40 @@ class GptWebResponseBridgeTests(unittest.TestCase):
         direct.close.assert_called_once()
         endpoint.close()
 
+
+    def test_unresponsive_existing_target_bootstraps_fresh_target(self):
+        from unittest.mock import patch
+        stale = {"id":"stale","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://stale"}
+        fresh = {"id":"fresh","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://fresh"}
+    
+        class Endpoint:
+            mode="page-ws"
+            def __init__(self, href): self.href=href
+            def evaluate(self, expr): return self.href
+            def close(self): pass
+    
+        attempts=[]
+        def open_target(_cdp,item):
+            attempts.append(item["id"])
+            if item["id"]=="stale":
+                raise TimeoutError("stale")
+            return Endpoint("https://chatgpt.com/")
+    
+        with patch("scripts.gpt_web_response_bridge._chatgpt_target", return_value=stale), \
+             patch("scripts.gpt_web_response_bridge._targets", side_effect=[
+                 [stale],
+                 [stale, fresh],
+             ]), \
+             patch("scripts.gpt_web_response_bridge._create_target", return_value=fresh), \
+             patch("scripts.gpt_web_response_bridge._open_target_connection", side_effect=open_target):
+            from scripts.gpt_web_response_bridge import _responsive_chatgpt_target
+            target, href, mode = _responsive_chatgpt_target("http://127.0.0.1:9222")
+        self.assertEqual(target["id"], "fresh")
+        self.assertEqual(href, "https://chatgpt.com/")
+        self.assertEqual(mode, "page-ws")
+        self.assertIn("stale", attempts)
+        self.assertIn("fresh", attempts)
+    
 
 if __name__ == "__main__":
     unittest.main()
