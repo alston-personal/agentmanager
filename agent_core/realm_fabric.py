@@ -554,16 +554,47 @@ class RealmFabricStore:
         return self._mutate(mutate)
 
     def pull_tasks(self, node_id: str, token: str, *, limit: int = 10) -> list[dict[str, Any]]:
-        # Polling an empty queue must not fsync/rewrite the Realm snapshot.
+        # Pull is a bounded lease, not destructive dequeue. A task remains
+        # durable until the matching receipt acknowledges it.
         with self._exclusive_lock():
             data = self._load_unlocked()
             self._authenticate_data(data, node_id, token)
             queue = list(data['tasks'].get(node_id, []))
-            take = queue[:max(1, min(limit, 50))]
-            if not take:
+            if not queue:
                 return []
-            data['tasks'][node_id] = queue[len(take):]
-            self._save_unlocked(data)
+
+            now = datetime.now(timezone.utc)
+            take: list[dict[str, Any]] = []
+            changed = False
+            max_take = max(1, min(limit, 50))
+            for index, item in enumerate(queue):
+                if len(take) >= max_take:
+                    break
+                if not isinstance(item, dict):
+                    continue
+                lease_until = None
+                raw = str(item.get('_lease_until') or '')
+                if raw:
+                    try:
+                        lease_until = _parse_utc(raw)
+                    except Exception:
+                        lease_until = None
+                if lease_until is not None and lease_until > now:
+                    continue
+
+                leased = dict(item)
+                leased['_leased_at'] = _utc_now()
+                leased['_lease_until'] = (
+                    now + timedelta(seconds=60)
+                ).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+                leased['_lease_count'] = int(item.get('_lease_count') or 0) + 1
+                queue[index] = leased
+                take.append({k: v for k, v in leased.items() if not str(k).startswith('_')})
+                changed = True
+
+            if changed:
+                data['tasks'][node_id] = queue
+                self._save_unlocked(data)
             return take
 
     def record_receipt(self, receipt: dict[str, Any], token: str) -> dict[str, Any]:
@@ -582,6 +613,11 @@ class RealmFabricStore:
             self._authenticate_data(data, node_id, token)
             stored = {**receipt, 'received_at': _utc_now()}
             self.receipt_archive.put(task_id, stored)
+            data['tasks'][node_id] = [
+                task for task in list(data['tasks'].get(node_id, []))
+                if not (isinstance(task, dict) and str(task.get('task_id') or '') == task_id)
+            ]
+            self._save_unlocked(data)
             return stored
 
     def get_receipt(self, task_id: str) -> dict[str, Any] | None:
