@@ -15,11 +15,31 @@ if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
   exit 2
 fi
 
+# Read execution only needs the DM runtime slice. Do not unpack the whole
+# repository into /tmp on every scan; stale full-repo stages previously filled
+# the Oracle filesystem and made otherwise healthy GUI reads fail.
+find /tmp -maxdepth 1 -type d -user "$(id -un)" -name 'agentos-threads-dm-read.*' -mmin +10 -exec rm -rf -- {} + 2>/dev/null || true
 STAGE="$(mktemp -d /tmp/agentos-threads-dm-read.XXXXXX)"
 trap 'rm -rf "$STAGE"' EXIT
 echo "threads_web_dm_stage=START"
-git -C "$REPO" archive "$SOURCE_COMMIT" | tar -x -C "$STAGE"
+DM_RUNTIME_PATHS=(
+  agentos_node/antigravity_relay.py
+  agentos_node/persona_life.py
+  agentos_node/social/web_dm.py
+  agentos_node/social/persona_dm.py
+  agentos_node/social/dm_loop_guard.py
+  scripts/threads_web_dm_bridge_user.py
+  scripts/mio_threads_dm_autonomous_user.py
+  scripts/oursong_threads_dm_autonomous_user.py
+  scripts/send_threads_dm_from_decision_user.py
+  scripts/mio_persona_dm_decision_user.py
+  scripts/mio_persona_social_loop_user.py
+  scripts/resume_threads_persona_login_user.sh
+)
+git -C "$REPO" archive "$SOURCE_COMMIT" -- "${DM_RUNTIME_PATHS[@]}" | tar -x -C "$STAGE"
 test -f "$STAGE/scripts/threads_web_dm_bridge_user.py"
+test -f "$STAGE/agentos_node/social/dm_loop_guard.py"
+echo "threads_web_dm_stage_scope=MINIMAL"
 echo "threads_web_dm_stage=PASS"
 
 set +e
