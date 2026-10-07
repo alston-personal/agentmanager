@@ -57,6 +57,7 @@ ACTION_START_OURSONG_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.ourso
 ACTION_INSTALL_OURSONG_THREADS_SESSION = "agentos.social_threads_web_dm.oursong_session_install"
 ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR = "agentos.social_threads_web_dm.session_supervisor.install"
 ACTION_ACCEPT_MIO_DM_OURSONG = "agentos.social_threads_web_dm.oursong_acceptance"
+ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP = "agentos.social_threads_web_dm.oursong_mio_roundtrip"
 ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
 ACTION_INSTALL_GUI_WORKER = "agentos.gui_worker.install"
 ACTION_SMOKE_GUI_WORKER = "agentos.gui_worker.smoke"
@@ -120,6 +121,7 @@ ALLOWED_ACTIONS = {
     ACTION_INSTALL_OURSONG_THREADS_SESSION,
     ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR,
     ACTION_ACCEPT_MIO_DM_OURSONG,
+    ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP,
     ACTION_RUN_MIO_DM_DECISION,
     ACTION_INSTALL_GUI_WORKER,
     ACTION_SMOKE_GUI_WORKER,
@@ -998,6 +1000,8 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/install_mio_threads_session_supervisor_user.sh", timeout=180, source_commit=source_commit)
     if action == ACTION_ACCEPT_MIO_DM_OURSONG:
         return _run_canonical_script("scripts/run_mio_dm_oracle_oursong_acceptance_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP:
+        return _run_canonical_script("scripts/run_oursong_dm_mio_roundtrip_user.sh", timeout=150, source_commit=source_commit)
     if action == ACTION_RUN_MIO_DM_DECISION:
         params=params or {}
         return _run_canonical_script(
