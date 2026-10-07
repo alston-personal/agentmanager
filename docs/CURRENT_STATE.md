@@ -438,3 +438,12 @@ The canonical Windows runtime no longer uses a separate one-minute Scheduled Tas
 ### Windows accepted runtime pointer semantics
 
 A successful readiness verification is authoritative. Each accepted immutable install instance writes a unique record under `accepted-runtimes/<install-id>.txt`. The legacy `current-runtime.txt` file is only a compatibility mirror and is updated best-effort after readiness. If another process holds that compatibility file open, the installer reports a warning but must not convert an already-running, readiness-verified runtime into `AGENTOS_ONE_CLICK_INSTALL=FAIL`.
+
+
+### Scoped continuation routing
+
+Implicit continuation is no longer modeled as "load the globally newest project state." AgentOS now has an explicit, transport-agnostic continuation policy in `agent_core/continuation.py`. Durable continuation is centered on Work identity; Node, Executor, Participant, Runner, and Session scopes carry bindings or runtime state rather than replacing canonical Work progress.
+
+Resolution precedence is: explicit Work ID, existing Session binding, matching Participant+Executor+Node binding, matching Executor+Node binding, work explicitly assigned to the current Node, then compatible unbound/global assignment. A resolver must return no continuation rather than guess unrelated globally recent work. Global work already targeted to another Node is not eligible as a fallback.
+
+The ownership contract is documented in `docs/CONTEXT_CONTINUATION_PROTOCOL.md`. Session state is disposable; logical Work progress must survive session loss, executor restart, and eventually cross-executor/cross-node handoff. Executor IR owns physical/runtime checkpoint state, while Work IR owns logical progress and acceptance state. The current module establishes deterministic policy and unit acceptance coverage; persistent Work-binding storage and integration into `/v1/resolve` remain follow-up work and are not yet claimed complete.
