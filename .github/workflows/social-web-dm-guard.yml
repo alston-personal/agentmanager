@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - core/integration
+  pull_request:
+    branches:
+      - core/integration
     paths:
       - 'agentos_node/social/web_dm.py'
       - 'agentos_node/social/persona_dm.py'
