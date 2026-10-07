@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 from datetime import datetime, timezone
 import json
+import time
+import urllib.request
 import os
 from pathlib import Path
 from typing import Any
@@ -47,43 +48,169 @@ def write_descriptor(root: Path, *, ready: bool) -> None:
     })
 
 
-async def discover_page(cdp_url: str):
-    from playwright.async_api import async_playwright
-    playwright = await async_playwright().start()
-    browser = await playwright.chromium.connect_over_cdp(cdp_url)
-    candidates = []
-    for context in browser.contexts:
-        for page in context.pages:
-            if page.url.startswith("https://chatgpt.com/"):
-                candidates.append(page)
+def _json_get(url: str) -> Any:
+    req = urllib.request.Request(url, headers={"User-Agent": "agentos-gpt-web-bridge/0.2"})
+    with urllib.request.urlopen(req, timeout=5) as response:
+        return json.loads(response.read(1024 * 1024))
+
+
+def _targets(cdp_url: str) -> list[dict[str, Any]]:
+    base = cdp_url.rstrip("/")
+    payload = _json_get(base + "/json/list")
+    if not isinstance(payload, list):
+        raise RuntimeError("CDP_TARGET_LIST_INVALID")
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def _chatgpt_target(cdp_url: str) -> dict[str, Any]:
+    candidates = [
+        item for item in _targets(cdp_url)
+        if str(item.get("type") or "") == "page"
+        and str(item.get("url") or "").startswith("https://chatgpt.com/")
+        and str(item.get("webSocketDebuggerUrl") or "")
+    ]
     if not candidates:
-        await browser.close()
-        await playwright.stop()
         raise RuntimeError("CHATGPT_SESSION_NOT_FOUND")
-    page = candidates[-1]
-    return playwright, browser, page
+    return candidates[-1]
 
 
-async def refresh_sessions(root: Path, cdp_url: str) -> str:
-    playwright, browser, page = await discover_page(cdp_url)
-    try:
-        session_id = "chatgpt-web:" + str(abs(hash(page.url)))
-        atomic_json(root / "sessions.json", {
-            "schema": SESSION_INDEX_SCHEMA,
-            "provider": PROVIDER,
-            "sessions": [{
-                "session_id": session_id,
-                "url": page.url,
-                "title": await page.title(),
-                "ready": True,
-                "capabilities": ["agent.session.invoke", "agent.context.harvest"],
-            }],
-            "observed_at": now(),
+class CdpPage:
+    def __init__(self, ws_url: str):
+        import websocket
+        self.ws = websocket.create_connection(ws_url, timeout=10, suppress_origin=True)
+        self.seq = 0
+
+    def close(self) -> None:
+        try:
+            self.ws.close()
+        except Exception:
+            pass
+
+    def call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        self.seq += 1
+        call_id = self.seq
+        self.ws.send(json.dumps({"id": call_id, "method": method, "params": params or {}}))
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            raw = self.ws.recv()
+            message = json.loads(raw)
+            if message.get("id") != call_id:
+                continue
+            if "error" in message:
+                raise RuntimeError("CDP_" + method.replace(".", "_") + "_FAILED:" + str(message["error"]))
+            result = message.get("result")
+            return result if isinstance(result, dict) else {}
+        raise TimeoutError("CDP_COMMAND_TIMEOUT:" + method)
+
+    def evaluate(self, expression: str) -> Any:
+        result = self.call("Runtime.evaluate", {
+            "expression": expression,
+            "returnByValue": True,
+            "awaitPromise": True,
         })
-        return session_id
+        obj = result.get("result") or {}
+        if obj.get("subtype") == "error":
+            raise RuntimeError("CDP_EVALUATE_ERROR")
+        return obj.get("value")
+
+
+def refresh_sessions(root: Path, cdp_url: str) -> str:
+    target = _chatgpt_target(cdp_url)
+    session_id = "chatgpt-web:" + str(target.get("id") or "page")
+    atomic_json(root / "sessions.json", {
+        "schema": SESSION_INDEX_SCHEMA,
+        "provider": PROVIDER,
+        "sessions": [{
+            "session_id": session_id,
+            "url": target.get("url"),
+            "title": target.get("title"),
+            "ready": True,
+            "capabilities": ["agent.session.invoke", "agent.context.harvest"],
+        }],
+        "observed_at": now(),
+    })
+    return session_id
+
+
+def _page(cdp_url: str) -> CdpPage:
+    target = _chatgpt_target(cdp_url)
+    return CdpPage(str(target["webSocketDebuggerUrl"]))
+
+
+def _assistant_text(page: CdpPage, request_id: str) -> str | None:
+    expr = """(() => {
+      const id = %s;
+      const nodes = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        const text = (nodes[i].innerText || nodes[i].textContent || '').trim();
+        if (text.includes(id)) return text;
+      }
+      return null;
+    })()""" % json.dumps(request_id)
+    value = page.evaluate(expr)
+    return str(value) if isinstance(value, str) else None
+
+
+def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, Any]) -> str:
+    image = Path(str(inner["image_path"])).expanduser().resolve()
+    allowed_raw = os.environ.get("AGENTOS_GPT_WEB_ALLOWED_ROOTS", "/home/ubuntu/agentmanager/benchmarks/invoice_handwriting/fixtures")
+    allowed = [Path(x).expanduser().resolve() for x in allowed_raw.split(os.pathsep) if x.strip()]
+    if not any(_inside(image, root) for root in allowed):
+        raise PermissionError("GPT Web invoke image_path outside allowed roots")
+    if not image.is_file() or image.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise ValueError("GPT Web invoke requires an allowed image file")
+    if image.stat().st_size > 12 * 1024 * 1024:
+        raise ValueError("GPT Web invoke image too large")
+
+    page = _page(cdp_url)
+    try:
+        element = page.call("Runtime.evaluate", {
+            "expression": "document.querySelector('input[type=file]')",
+            "returnByValue": False,
+        }).get("result") or {}
+        object_id = element.get("objectId")
+        if not object_id:
+            raise RuntimeError("GPT_WEB_FILE_INPUT_NOT_FOUND")
+        page.call("DOM.setFileInputFiles", {"objectId": object_id, "files": [str(image)]})
+
+        prompt = str(inner["prompt"])
+        found = page.evaluate("""(() => {
+          const el = document.querySelector('#prompt-textarea') ||
+                     Array.from(document.querySelectorAll('[contenteditable="true"]')).pop();
+          if (!el) return false;
+          el.focus();
+          return true;
+        })()""")
+        if found is not True:
+            raise RuntimeError("GPT_WEB_COMPOSER_NOT_FOUND")
+        page.call("Input.insertText", {"text": prompt})
+        page.call("Input.dispatchKeyEvent", {"type": "keyDown", "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13})
+        page.call("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13})
+
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            text = _assistant_text(page, request_id)
+            if text:
+                if len(text) > MAX_TEXT:
+                    raise RuntimeError("GPT_WEB_RESPONSE_TOO_LARGE")
+                return text
+            time.sleep(0.5)
+        raise RuntimeError("GPT_WEB_RESPONSE_TIMEOUT")
     finally:
-        await browser.close()
-        await playwright.stop()
+        page.close()
+
+
+def harvest(cdp_url: str, *, session_id: str, request_id: str) -> str:
+    page = _page(cdp_url)
+    try:
+        text = _assistant_text(page, request_id)
+        if not text:
+            raise RuntimeError("GPT_WEB_RESPONSE_NOT_READY")
+        if len(text) > MAX_TEXT:
+            raise RuntimeError("GPT_WEB_RESPONSE_TOO_LARGE")
+        return text
+    finally:
+        page.close()
 
 
 def _validate_request(payload: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
@@ -184,7 +311,7 @@ async def harvest(cdp_url: str, *, session_id: str, request_id: str) -> str:
         await playwright.stop()
 
 
-async def process_one(root: Path, cdp_url: str, path: Path) -> None:
+def process_one(root: Path, cdp_url: str, path: Path) -> None:
     request = json.loads(path.read_text(encoding="utf-8-sig"))
     request_id = str(request.get("request_id") or path.stem)
     receipt = {
@@ -199,9 +326,9 @@ async def process_one(root: Path, cdp_url: str, path: Path) -> None:
     try:
         session_id, correlation_id, inner = _validate_request(request)
         if request.get("operation") == "invoke":
-            text = await invoke(cdp_url, session_id=session_id, request_id=correlation_id, inner=inner)
+            text = invoke(cdp_url, session_id=session_id, request_id=correlation_id, inner=inner)
         else:
-            text = await harvest(cdp_url, session_id=session_id, request_id=correlation_id)
+            text = harvest(cdp_url, session_id=session_id, request_id=correlation_id)
         receipt["ok"] = True
         receipt["result"] = {
             "request_id": correlation_id,
@@ -215,10 +342,10 @@ async def process_one(root: Path, cdp_url: str, path: Path) -> None:
     os.replace(path, done / path.name)
 
 
-async def tick(root: Path, cdp_url: str) -> int:
+def tick(root: Path, cdp_url: str) -> int:
     write_descriptor(root, ready=False)
     try:
-        await refresh_sessions(root, cdp_url)
+        refresh_sessions(root, cdp_url)
         write_descriptor(root, ready=True)
     except Exception:
         return 2
@@ -226,7 +353,7 @@ async def tick(root: Path, cdp_url: str) -> int:
     request_dir.mkdir(parents=True, exist_ok=True)
     processed = 0
     for path in sorted(request_dir.glob("*.json")):
-        await process_one(root, cdp_url, path)
+        process_one(root, cdp_url, path)
         processed += 1
     return 0 if processed >= 0 else 1
 
@@ -236,7 +363,7 @@ def main() -> int:
     ap.add_argument("--bridge-root", type=Path, default=Path(os.environ.get("AGENTOS_GPT_WEB_BRIDGE", "/home/ubuntu/agent-data/runtime/gpt-web-bridge")))
     ap.add_argument("--cdp-url", default=os.environ.get("AGENTOS_GPT_WEB_CDP_URL", "http://127.0.0.1:9222"))
     args = ap.parse_args()
-    return asyncio.run(tick(args.bridge_root.expanduser().resolve(), args.cdp_url))
+    return tick(args.bridge_root.expanduser().resolve(), args.cdp_url)
 
 
 if __name__ == "__main__":
