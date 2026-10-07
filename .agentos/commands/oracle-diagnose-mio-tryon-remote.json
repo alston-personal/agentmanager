@@ -1,7 +1,7 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "check current production Mio wardrobe admin login/session and recent 401s",
-  "requested_at": "2026-10-01T06:19:30+08:00",
-  "nonce": "auth-session-check-20261001-061930"
+  "purpose": "diagnose Mio try-on jobs stuck in AI generating: inspect recent job progress heartbeat, worker service, provider activity, recent errors, and run one bounded production probe",
+  "requested_at": "2026-10-07T15:49:00+08:00",
+  "nonce": "mio-tryon-stuck-20261007-154900"
 }
