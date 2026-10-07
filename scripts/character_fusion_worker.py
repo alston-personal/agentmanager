@@ -227,6 +227,170 @@ raise RuntimeError("No HF VLM succeeded: " + " | ".join(errors[-6:]))
         return _parse_loose_json_text(proc.stdout)
 
 
+def _gemini_web_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
+    python_bin = Path.home() / ".local/share/agentos/gui-worker/venv/bin/python"
+    if not python_bin.is_file():
+        raise RuntimeError("Gemini Web GUI worker venv is unavailable for vision fallback")
+
+    with tempfile.TemporaryDirectory(prefix="character-fusion-gemini-web-vlm-") as tmp:
+        prompt_path = Path(tmp) / "prompt.txt"
+        output_path = Path(tmp) / "response.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        browser_script = r'''
+import fcntl
+import sys
+import time
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
+image_path = Path(sys.argv[2])
+output_path = Path(sys.argv[3])
+lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
+lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+composer_selectors = [
+    'rich-textarea div[contenteditable="true"]',
+    'textarea[aria-label*="prompt" i]',
+    '[contenteditable="true"][aria-label*="prompt" i]',
+    'div.ql-editor[contenteditable="true"]',
+    'textarea',
+    '[contenteditable="true"]',
+]
+response_selectors = [
+    'model-response',
+    '[data-test-id*="model-response"]',
+    '.model-response-text',
+    'message-content',
+]
+file_selectors = [
+    'input[type="file"]',
+    'input[accept*="image"]',
+]
+
+def first_visible(page, selectors):
+    for selector in selectors:
+        try:
+            loc = page.locator(selector)
+            for i in range(min(loc.count(), 20)):
+                item = loc.nth(i)
+                try:
+                    if item.is_visible(timeout=250):
+                        return item
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    return None
+
+def response_rows(page):
+    rows=[]
+    seen=set()
+    for selector in response_selectors:
+        try:
+            loc=page.locator(selector)
+            for i in range(max(0,loc.count()-10),loc.count()):
+                try:
+                    text=loc.nth(i).inner_text(timeout=800).strip()
+                except Exception:
+                    continue
+                if text and text not in seen:
+                    seen.add(text)
+                    rows.append(text)
+        except Exception:
+            pass
+    return rows
+
+with lock_path.open("a+") as lock:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    with sync_playwright() as p:
+        browser=p.chromium.connect_over_cdp("http://127.0.0.1:9222")
+        if not browser.contexts:
+            raise RuntimeError("gemini_web_no_browser_context")
+        pages=[x for x in browser.contexts[0].pages if "gemini.google.com" in str(x.url or "")]
+        if not pages:
+            raise RuntimeError("gemini_web_no_session")
+        page=next((x for x in pages if first_visible(x,composer_selectors) is not None),pages[0])
+        page.bring_to_front()
+        composer=first_visible(page,composer_selectors)
+        if composer is None:
+            raise RuntimeError("gemini_web_composer_not_found")
+
+        file_input=None
+        for selector in file_selectors:
+            try:
+                loc=page.locator(selector)
+                if loc.count():
+                    file_input=loc.nth(0)
+                    break
+            except Exception:
+                pass
+        if file_input is None:
+            attachment_selectors=[
+                'button[aria-label*="upload" i]',
+                'button[aria-label*="file" i]',
+                'button[aria-label*="add" i]',
+                '[data-test-id*="upload"]',
+                '[data-test-id*="file"]',
+            ]
+            button=first_visible(page,attachment_selectors)
+            if button is not None:
+                try:
+                    with page.expect_file_chooser(timeout=3000) as chooser_info:
+                        button.click()
+                    chooser_info.value.set_files(str(image_path))
+                except Exception:
+                    pass
+            for selector in file_selectors:
+                try:
+                    loc=page.locator(selector)
+                    if loc.count():
+                        file_input=loc.nth(0)
+                        break
+                except Exception:
+                    pass
+        if file_input is not None:
+            file_input.set_input_files(str(image_path))
+        else:
+            raise RuntimeError("gemini_web_image_upload_control_not_found")
+
+        baseline=response_rows(page)
+        try:
+            composer.fill(prompt)
+        except Exception:
+            composer.click()
+            page.keyboard.press("ControlOrMeta+A")
+            page.keyboard.type(prompt)
+        page.keyboard.press("Enter")
+
+        deadline=time.monotonic()+150
+        response=""
+        while time.monotonic()<deadline:
+            rows=response_rows(page)
+            fresh=[x for x in rows if x not in baseline]
+            if fresh:
+                response=fresh[-1]
+                if response.strip():
+                    break
+            time.sleep(1.5)
+        if not response:
+            raise TimeoutError("gemini_web_vlm_response_timeout")
+        output_path.write_text(response,encoding="utf-8")
+        print("character_fusion_gemini_web_vlm=PASS")
+'''
+        proc = subprocess.run(
+            [str(python_bin), "-c", browser_script, str(prompt_path), str(image_path), str(output_path)],
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=210,
+        )
+        if proc.returncode != 0:
+            tail=(proc.stderr or proc.stdout or "")[-3000:]
+            raise RuntimeError(f"Gemini Web vision fallback failed: {tail}")
+        return _parse_loose_json_text(output_path.read_text(encoding="utf-8"))
+
+
 def _should_fallback_from_gemini(exc: Exception) -> bool:
     message = str(exc)
     markers = (
@@ -462,7 +626,20 @@ Omit categories that are not visibly supported. Keep descriptions short and visu
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        return _hf_vlm_json(prompt, path)
+        try:
+            return _hf_vlm_json(prompt, path)
+        except RuntimeError as hf_exc:
+            hf_message = str(hf_exc)
+            if not any(marker in hf_message for marker in (
+                "402 Payment Required",
+                "depleted your monthly included credits",
+                "model_not_supported",
+                "No HF VLM succeeded",
+                "timeout",
+                "unavailable",
+            )):
+                raise
+            return _gemini_web_vlm_json(prompt, path)
 
 
 def extract_custom_main(path: Path) -> dict[str, Any]:
@@ -492,7 +669,20 @@ The body_plan must describe the dominant species/silhouette, not incidental clot
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        return _hf_vlm_json(prompt, path)
+        try:
+            return _hf_vlm_json(prompt, path)
+        except RuntimeError as hf_exc:
+            hf_message = str(hf_exc)
+            if not any(marker in hf_message for marker in (
+                "402 Payment Required",
+                "depleted your monthly included credits",
+                "model_not_supported",
+                "No HF VLM succeeded",
+                "timeout",
+                "unavailable",
+            )):
+                raise
+            return _gemini_web_vlm_json(prompt, path)
 
 
 def fuse(main_ir: dict[str, Any], person_ir: dict[str, Any]) -> dict[str, Any]:
@@ -807,7 +997,20 @@ Judge what is visibly present, not what the prompt intended.
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        return _hf_vlm_json(prompt, image_path)
+        try:
+            return _hf_vlm_json(prompt, image_path)
+        except RuntimeError as hf_exc:
+            hf_message = str(hf_exc)
+            if not any(marker in hf_message for marker in (
+                "402 Payment Required",
+                "depleted your monthly included credits",
+                "model_not_supported",
+                "No HF VLM succeeded",
+                "timeout",
+                "unavailable",
+            )):
+                raise
+            return _gemini_web_vlm_json(prompt, image_path)
 
 
 def accept(preset: str, target: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
