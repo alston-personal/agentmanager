@@ -4,9 +4,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
-from scripts.gpt_web_response_bridge import process_one, refresh_sessions
+BRIDGE_APP = Path(os.environ.get('AGENTOS_GPT_WEB_APP_ROOT', '/home/ubuntu/.local/share/agentos/gpt-web-bridge')).expanduser().resolve()
+if str(BRIDGE_APP) not in sys.path:
+    sys.path.insert(0, str(BRIDGE_APP))
+from gpt_web_response_bridge import process_one, refresh_sessions
 
 EXPECTED = {
     "invoice_number": "MY04200253",
