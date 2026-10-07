@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 import time
 import urllib.request
+import urllib.parse
 import os
 from pathlib import Path
 from typing import Any
@@ -62,16 +63,46 @@ def _targets(cdp_url: str) -> list[dict[str, Any]]:
     return [item for item in payload if isinstance(item, dict)]
 
 
-def _chatgpt_target(cdp_url: str) -> dict[str, Any]:
+def _create_target(cdp_url: str, url: str) -> dict[str, Any]:
+    base = cdp_url.rstrip("/")
+    encoded = urllib.parse.quote(url, safe=":/?=&")
+    req = urllib.request.Request(
+        base + "/json/new?" + encoded,
+        method="PUT",
+        headers={"User-Agent": "agentos-gpt-web-bridge/0.3"},
+    )
+    with urllib.request.urlopen(req, timeout=5) as response:
+        payload = json.loads(response.read(1024 * 1024))
+    if not isinstance(payload, dict) or not payload.get("webSocketDebuggerUrl"):
+        raise RuntimeError("CDP_TARGET_CREATE_FAILED")
+    return payload
+
+
+def _chatgpt_target(cdp_url: str, *, create_if_missing: bool = False) -> dict[str, Any]:
     candidates = [
         item for item in _targets(cdp_url)
         if str(item.get("type") or "") == "page"
         and str(item.get("url") or "").startswith("https://chatgpt.com/")
         and str(item.get("webSocketDebuggerUrl") or "")
     ]
-    if not candidates:
+    if candidates:
+        return candidates[-1]
+    if not create_if_missing:
         raise RuntimeError("CHATGPT_SESSION_NOT_FOUND")
-    return candidates[-1]
+    target = _create_target(cdp_url, "https://chatgpt.com/")
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        url = str(target.get("url") or "")
+        if url.startswith("https://chatgpt.com/"):
+            return target
+        time.sleep(0.25)
+        matches = [
+            item for item in _targets(cdp_url)
+            if str(item.get("id") or "") == str(target.get("id") or "")
+        ]
+        if matches:
+            target = matches[0]
+    return target
 
 
 class CdpPage:
@@ -115,7 +146,7 @@ class CdpPage:
 
 
 def refresh_sessions(root: Path, cdp_url: str) -> str:
-    target = _chatgpt_target(cdp_url)
+    target = _chatgpt_target(cdp_url, create_if_missing=True)
     session_id = "chatgpt-web:" + str(target.get("id") or "page")
     atomic_json(root / "sessions.json", {
         "schema": SESSION_INDEX_SCHEMA,
@@ -248,69 +279,6 @@ def _validate_request(payload: dict[str, Any]) -> tuple[str, str, dict[str, Any]
     return session_id, request_id, inner
 
 
-async def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, Any]) -> str:
-    playwright, browser, page = await discover_page(cdp_url)
-    try:
-        image = Path(str(inner["image_path"])).expanduser().resolve()
-        allowed_raw = os.environ.get("AGENTOS_GPT_WEB_ALLOWED_ROOTS", "/home/ubuntu/agentmanager/benchmarks/invoice_handwriting/fixtures")
-        allowed = [Path(x).expanduser().resolve() for x in allowed_raw.split(os.pathsep) if x.strip()]
-        if not any(_inside(image, root) for root in allowed):
-            raise PermissionError("GPT Web invoke image_path outside allowed roots")
-        if not image.is_file() or image.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
-            raise ValueError("GPT Web invoke requires an allowed image file")
-        if image.stat().st_size > 12 * 1024 * 1024:
-            raise ValueError("GPT Web invoke image too large")
-
-        file_input = page.locator('input[type="file"]').last
-        if await file_input.count() == 0:
-            raise RuntimeError("GPT_WEB_FILE_INPUT_NOT_FOUND")
-        await file_input.set_input_files(str(image))
-
-        prompt = str(inner["prompt"])
-        composer = page.locator('#prompt-textarea')
-        if await composer.count() == 0:
-            composer = page.locator('[contenteditable="true"]').last
-        if await composer.count() == 0:
-            raise RuntimeError("GPT_WEB_COMPOSER_NOT_FOUND")
-        await composer.fill(prompt)
-        await composer.press("Enter")
-
-        deadline = asyncio.get_running_loop().time() + 45
-        while asyncio.get_running_loop().time() < deadline:
-            messages = page.locator('[data-message-author-role="assistant"]')
-            count = await messages.count()
-            for index in range(count - 1, -1, -1):
-                text = (await messages.nth(index).inner_text()).strip()
-                if request_id in text:
-                    if len(text) > MAX_TEXT:
-                        raise RuntimeError("GPT_WEB_RESPONSE_TOO_LARGE")
-                    return text
-            await page.wait_for_timeout(500)
-        raise RuntimeError("GPT_WEB_RESPONSE_TIMEOUT")
-    finally:
-        await browser.close()
-        await playwright.stop()
-
-
-async def harvest(cdp_url: str, *, session_id: str, request_id: str) -> str:
-    playwright, browser, page = await discover_page(cdp_url)
-    try:
-        # Read only assistant-authored message DOM. Do not inspect user messages,
-        # arbitrary page text, credentials, storage, cookies, or network traffic.
-        messages = page.locator('[data-message-author-role="assistant"]')
-        count = await messages.count()
-        for index in range(count - 1, -1, -1):
-            text = (await messages.nth(index).inner_text()).strip()
-            if request_id in text:
-                if len(text) > MAX_TEXT:
-                    raise RuntimeError("GPT_WEB_RESPONSE_TOO_LARGE")
-                return text
-        raise RuntimeError("GPT_WEB_RESPONSE_NOT_READY")
-    finally:
-        await browser.close()
-        await playwright.stop()
-
-
 def process_one(root: Path, cdp_url: str, path: Path) -> None:
     request = json.loads(path.read_text(encoding="utf-8-sig"))
     request_id = str(request.get("request_id") or path.stem)
@@ -347,7 +315,17 @@ def tick(root: Path, cdp_url: str) -> int:
     try:
         refresh_sessions(root, cdp_url)
         write_descriptor(root, ready=True)
-    except Exception:
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        atomic_json(root / "bridge.json", {
+            "schema": BRIDGE_SCHEMA,
+            "provider": PROVIDER,
+            "ready": False,
+            "operations": ["discover", "invoke", "harvest"],
+            "error": error,
+            "observed_at": now(),
+        })
+        print("gpt_web_bridge_error=" + error, flush=True)
         return 2
     request_dir = root / "requests"
     request_dir.mkdir(parents=True, exist_ok=True)
