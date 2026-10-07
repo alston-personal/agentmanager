@@ -522,6 +522,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'oursong_threads_session_cdp=',
                     'oursong_threads_session_mio_isolated=',
                 )
+            elif action == bootstrap_control.ACTION_INSTALL_BROWSER_IDENTITY_SESSIONS:
+                safe_prefixes = (
+                    'browser_identity_sessions_install=',
+                    'browser_identity_sessions_registry=',
+                    'browser_identity_session=',
+                    'browser_identity_session_cdp=',
+                )
             elif action == bootstrap_control.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR:
                 safe_prefixes = (
                     'mio_threads_session_supervisor_install=',
