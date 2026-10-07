@@ -35,8 +35,6 @@ struct AgentOSKeychain: AgentOSCredentialStore {
         }
         return String(data: data, encoding: .utf8)
     }
-}
-
 
     func saveNodeToken(_ token: String, nodeID: String) throws {
         try Self.save(token, account: "node-token:\(nodeID)")
@@ -45,3 +43,4 @@ struct AgentOSKeychain: AgentOSCredentialStore {
     func loadNodeToken(nodeID: String) throws -> String? {
         try Self.load(account: "node-token:\(nodeID)")
     }
+}
