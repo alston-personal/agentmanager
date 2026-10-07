@@ -85,6 +85,8 @@ jobs:
             'Install-Supervisor $python.Path $runtimeRoot',
             'Runtime install instance:',
             'current-runtime.txt',
+            'accepted-runtimes',
+            'accepted runtime remains authoritative',
             "AgentOS Thin Client Headless Switch",
             "Unregister-ScheduledTask"
           )) {
