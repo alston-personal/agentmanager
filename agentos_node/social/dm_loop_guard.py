@@ -73,12 +73,11 @@ def should_auto_reply(
     return DMLoopDecision(True,"allow",fp)
 
 
-def record_auto_reply(
+def record_consumed(
     *,
     event: dict[str, Any],
     state: dict[str, Any],
     fingerprint: str,
-    now_epoch: float,
 ) -> dict[str, Any]:
     processed=[str(x) for x in state.get("processed_message_ids") or []]
     fps=[str(x) for x in state.get("processed_fingerprints") or []]
@@ -87,13 +86,26 @@ def record_auto_reply(
         processed.append(mid)
     if fingerprint and fingerprint not in fps:
         fps.append(fingerprint)
-    return {
+    out=dict(state)
+    out.update({
         "schema":"agentos.persona-dm-loop-state/v1",
         "processed_message_ids":processed[-5000:],
         "processed_fingerprints":fps[-5000:],
-        "auto_hops":int(state.get("auto_hops") or 0)+1,
-        "last_auto_reply_epoch":float(now_epoch),
-    }
+    })
+    return out
+
+
+def record_auto_reply(
+    *,
+    event: dict[str, Any],
+    state: dict[str, Any],
+    fingerprint: str,
+    now_epoch: float,
+) -> dict[str, Any]:
+    out=record_consumed(event=event,state=state,fingerprint=fingerprint)
+    out["auto_hops"]=int(state.get("auto_hops") or 0)+1
+    out["last_auto_reply_epoch"]=float(now_epoch)
+    return out
 
 
 def reset_hop_budget(state: dict[str, Any]) -> dict[str, Any]:
