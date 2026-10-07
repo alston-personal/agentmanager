@@ -43,7 +43,18 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as r:
                   return json.load(r)
           prs = get(f"https://api.github.com/repos/{repo}/pulls?state=open&per_page=100")
-          closed = get(f"https://api.github.com/repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100")
+          oldest_open = min((pr["number"] for pr in prs), default=0)
+          closed = []
+          for page in range(1, 21):
+              batch = get(
+                  f"https://api.github.com/repos/{repo}/pulls"
+                  f"?state=closed&sort=created&direction=desc&per_page=100&page={page}"
+              )
+              if not batch:
+                  break
+              closed.extend(batch)
+              if oldest_open and min(pr["number"] for pr in batch) < oldest_open:
+                  break
           rows = []
           for pr in prs:
               n = pr["number"]
