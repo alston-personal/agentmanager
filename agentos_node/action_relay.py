@@ -389,6 +389,615 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
         "error": None if observed is not None else "dispatched workflow run was not observed before deadline",
     }
 
+# realm_fabric_deployment_fence_v1
+_DEPLOYMENT_STATE = Path('/home/ubuntu/agent-data/governance/core-deployment.json')
+_DEPLOYMENT_LOCK = Path('/home/ubuntu/agent-data/governance/core-deployment.lock')
+
+
+def _deployment_state_read() -> dict[str, Any]:
+    if not _DEPLOYMENT_STATE.exists():
+        return {
+            'schema': 'agentos.core-deployment/v1',
+            'deployment_generation': 0,
+            'desired_core_commit': None,
+            'observed_core_commit': None,
+            'lease_owner': None,
+            'lease_expires_at': None,
+            'deployment_status': 'uninitialized',
+        }
+    data = json.loads(_DEPLOYMENT_STATE.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        raise ValueError('invalid Core deployment state')
+    return data
+
+
+def _deployment_state_write(state: dict[str, Any]) -> None:
+    _DEPLOYMENT_STATE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _DEPLOYMENT_STATE.with_suffix('.tmp')
+    tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    _share(tmp)
+    tmp.replace(_DEPLOYMENT_STATE)
+    _share(_DEPLOYMENT_STATE)
+
+
+def _observed_realm_commit() -> str | None:
+    unit = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service')
+    if not unit.is_file():
+        return None
+    for raw in unit.read_text(encoding='utf-8').splitlines():
+        if not raw.startswith('ExecStart='):
+            continue
+        value = raw.split('=', 1)[1]
+        parts = value.split('/realm-fabric/releases/', 1)
+        if len(parts) != 2:
+            return None
+        commit = parts[1].split('/', 1)[0].strip().lower()
+        if len(commit) == 40 and all(c in '0123456789abcdef' for c in commit):
+            return commit
+    return None
+
+
+def _claim_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _df_fcntl
+    from datetime import datetime as _df_datetime, timezone as _df_timezone, timedelta as _df_timedelta
+    import re as _df_re
+
+    required = {'desired_core_commit', 'lease_owner', 'expected_generation'}
+    optional = {'lease_seconds'}
+    if set(params) - (required | optional) or not required.issubset(params):
+        raise ValueError('unexpected parameters')
+    desired = str(params['desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    expected = int(params['expected_generation'])
+    lease_seconds = int(params.get('lease_seconds') or 900)
+    if not _df_re.fullmatch(r'[0-9a-f]{40}', desired):
+        raise ValueError('desired_core_commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+    if lease_seconds < 60 or lease_seconds > 3600:
+        raise ValueError('lease_seconds out of range')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _df_fcntl.flock(lock.fileno(), _df_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        generation = int(state.get('deployment_generation') or 0)
+        now = _df_datetime.now(_df_timezone.utc)
+        lease_owner = state.get('lease_owner')
+        expires_raw = state.get('lease_expires_at')
+        active = False
+        if lease_owner and expires_raw:
+            try:
+                active = _df_datetime.fromisoformat(str(expires_raw)) > now
+            except ValueError:
+                active = False
+        # realm_fabric_lease_immutability_v1: an active lease freezes the desired
+        # generation. Sharing the same owner label must not allow a second workflow
+        # to replace the desired commit. Identical claims are idempotent.
+        if active:
+            if lease_owner == owner and state.get('desired_core_commit') == desired:
+                return {'ok': True, **state, 'claim_status': 'idempotent'}
+            return {
+                'ok': False,
+                'deployment_status': 'rejected_lease',
+                'desired_core_commit': state.get('desired_core_commit'),
+                'observed_core_commit': _observed_realm_commit(),
+                'deployment_generation': generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': expires_raw,
+            }
+        if expected != generation:
+            return {
+                'ok': False,
+                'deployment_status': 'rejected_generation',
+                'desired_core_commit': state.get('desired_core_commit'),
+                'observed_core_commit': _observed_realm_commit(),
+                'deployment_generation': generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': expires_raw,
+            }
+        new_generation = generation + 1
+        state = {
+            'schema': 'agentos.core-deployment/v1',
+            'desired_core_commit': desired,
+            'observed_core_commit': _observed_realm_commit(),
+            'deployment_generation': new_generation,
+            'lease_owner': owner,
+            'lease_expires_at': (now + _df_timedelta(seconds=lease_seconds)).isoformat(),
+            'deployment_status': 'desired',
+            'updated_at': now.isoformat(),
+        }
+        _deployment_state_write(state)
+        return {'ok': True, **state}
+
+
+
+# realm_fabric_generation_advance_v1
+def _advance_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _da_fcntl
+    from datetime import datetime as _da_datetime, timezone as _da_timezone, timedelta as _da_timedelta
+    import re as _da_re
+
+    required = {'current_desired_core_commit', 'next_desired_core_commit', 'lease_owner', 'expected_generation'}
+    optional = {'lease_seconds'}
+    if set(params) - (required | optional) or not required.issubset(params):
+        raise ValueError('unexpected parameters')
+    current_desired = str(params['current_desired_core_commit']).strip().lower()
+    next_desired = str(params['next_desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    expected = int(params['expected_generation'])
+    lease_seconds = int(params.get('lease_seconds') or 900)
+    for value in (current_desired, next_desired):
+        if not _da_re.fullmatch(r'[0-9a-f]{40}', value):
+            raise ValueError('Core commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+    if lease_seconds < 60 or lease_seconds > 3600:
+        raise ValueError('lease_seconds out of range')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _da_fcntl.flock(lock.fileno(), _da_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        generation = int(state.get('deployment_generation') or 0)
+        # realm_fabric_advance_active_lease_fence_v1
+        # Generation changes require an explicit release (or natural expiry).
+        # The same textual lease_owner is not sufficient authority to replace
+        # an actively leased desired generation.
+        _lease_status = str(state.get('lease_status') or 'active')
+        _lease_expiry = str(state.get('lease_expires_at') or '')
+        _lease_active = False
+        if _lease_status != 'released' and _lease_expiry:
+            try:
+                _lease_active = _da_datetime.fromisoformat(_lease_expiry.replace('Z', '+00:00')).astimezone(_da_timezone.utc) > _da_datetime.now(_da_timezone.utc)
+            except ValueError:
+                _lease_active = True
+        if _lease_active:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_active_lease'}
+        if generation != expected:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
+        if state.get('lease_owner') != owner:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
+        if state.get('desired_core_commit') != current_desired:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_current_desired'}
+        if state.get('observed_core_commit') not in (None, current_desired) and _observed_realm_commit() != current_desired:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_not_converged'}
+        now = _da_datetime.now(_da_timezone.utc)
+        advanced = {
+            'schema': 'agentos.core-deployment/v1',
+            'desired_core_commit': next_desired,
+            'observed_core_commit': _observed_realm_commit(),
+            'deployment_generation': generation + 1,
+            'lease_owner': owner,
+            'lease_expires_at': (now + _da_timedelta(seconds=lease_seconds)).isoformat(),
+            'lease_status': 'active',
+            'deployment_status': 'desired',
+            'advanced_from_commit': current_desired,
+            'advanced_from_generation': generation,
+            'updated_at': now.isoformat(),
+        }
+        _deployment_state_write(advanced)
+        return {'ok': True, **advanced}
+
+
+# realm_fabric_deployment_renew_v1
+def _renew_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _dr_fcntl
+    from datetime import datetime as _dr_datetime, timezone as _dr_timezone, timedelta as _dr_timedelta
+    import re as _dr_re
+
+    required = {'desired_core_commit', 'lease_owner', 'deployment_generation'}
+    optional = {'lease_seconds'}
+    if set(params) - (required | optional) or not required.issubset(params):
+        raise ValueError('unexpected parameters')
+    desired = str(params['desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    generation = int(params['deployment_generation'])
+    lease_seconds = int(params.get('lease_seconds') or 900)
+    if not _dr_re.fullmatch(r'[0-9a-f]{40}', desired):
+        raise ValueError('desired_core_commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+    if lease_seconds < 60 or lease_seconds > 3600:
+        raise ValueError('lease_seconds out of range')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _dr_fcntl.flock(lock.fileno(), _dr_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        current_generation = int(state.get('deployment_generation') or 0)
+        if current_generation != generation:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
+        if state.get('desired_core_commit') != desired:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_desired'}
+        if state.get('lease_owner') != owner:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
+        now = _dr_datetime.now(_dr_timezone.utc)
+        renewed = dict(state)
+        renewed['lease_expires_at'] = (now + _dr_timedelta(seconds=lease_seconds)).isoformat()
+        renewed['updated_at'] = now.isoformat()
+        # Renewal is intentionally incapable of changing desired commit or generation.
+        renewed['deployment_generation'] = current_generation
+        renewed['desired_core_commit'] = desired
+        renewed['lease_owner'] = owner
+        renewed['observed_core_commit'] = _observed_realm_commit()
+        if renewed.get('observed_core_commit') == desired:
+            renewed['deployment_status'] = 'converged'
+        else:
+            renewed['deployment_status'] = 'desired'
+        _deployment_state_write(renewed)
+        return {'ok': True, **renewed}
+
+
+# realm_fabric_deployment_release_v1
+def _release_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _rl_fcntl
+    from datetime import datetime as _rl_datetime, timezone as _rl_timezone
+    import re as _rl_re
+
+    required = {'desired_core_commit', 'lease_owner', 'deployment_generation'}
+    if set(params) != required:
+        raise ValueError('unexpected parameters')
+    desired = str(params['desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    generation = int(params['deployment_generation'])
+    if not _rl_re.fullmatch(r'[0-9a-f]{40}', desired):
+        raise ValueError('desired_core_commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _rl_fcntl.flock(lock.fileno(), _rl_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        if int(state.get('deployment_generation') or 0) != generation:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
+        if state.get('desired_core_commit') != desired:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_desired'}
+        if state.get('lease_owner') != owner:
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
+        observed = _observed_realm_commit()
+        if observed != desired:
+            return {'ok': False, 'deployment_status': 'rejected_not_converged', **state, 'observed_core_commit': observed}
+        now = _rl_datetime.now(_rl_timezone.utc)
+        released = dict(state)
+        released.update({
+            'observed_core_commit': observed,
+            'lease_status': 'released',
+            'lease_expires_at': now.isoformat(),
+            'released_by': owner,
+            'released_at': now.isoformat(),
+            'deployment_status': 'converged',
+            'updated_at': now.isoformat(),
+        })
+        _deployment_state_write(released)
+        return {'ok': True, **released}
+
+def _realm_fabric_deployment_status(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({},):
+        raise ValueError('unexpected parameters')
+    state = _deployment_state_read()
+    state['observed_core_commit'] = _observed_realm_commit()
+    if state.get('desired_core_commit') and state.get('desired_core_commit') == state.get('observed_core_commit'):
+        state['deployment_status'] = 'converged'
+    return {'ok': True, **state}
+
+def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
+    """Install one exact AgentOS Core commit as the ubuntu Realm Fabric service.
+
+    The request supplies only a 40-hex source commit. Repository, release root,
+    service name, bind address, port, and canonical data root are fixed here.
+    No arbitrary path, command, shell, unit, or endpoint is accepted.
+    """
+    import re as _rf_re
+    import shutil as _rf_shutil
+    import tempfile as _rf_tempfile
+    import urllib.request as _rf_urllib
+
+    required = {'source_commit', 'desired_core_commit', 'lease_owner', 'deployment_generation'}
+    if set(params) != required:
+        raise ValueError('unexpected parameters')
+    source_commit = str(params.get('source_commit') or '').strip().lower()
+    desired_core_commit = str(params.get('desired_core_commit') or '').strip().lower()
+    lease_owner = str(params.get('lease_owner') or '').strip()
+    deployment_generation = int(params.get('deployment_generation'))
+    if not _rf_re.fullmatch(r'[0-9a-f]{40}', source_commit):
+        raise ValueError('source_commit must be a 40-hex git commit')
+    if desired_core_commit != source_commit:
+        return {'ok': False, 'deployment_status': 'rejected_desired_mismatch', 'source_commit': source_commit, 'desired_core_commit': desired_core_commit}
+
+    import fcntl as _rf_fcntl
+    from datetime import datetime as _rf_datetime, timezone as _rf_timezone
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    _deployment_guard = _DEPLOYMENT_LOCK.open('a+', encoding='utf-8')
+    _rf_fcntl.flock(_deployment_guard.fileno(), _rf_fcntl.LOCK_EX)
+    _deployment_state = _deployment_state_read()
+    _current_generation = int(_deployment_state.get('deployment_generation') or 0)
+    _lease_expires = _deployment_state.get('lease_expires_at')
+    try:
+        _lease_active = bool(_lease_expires) and _rf_datetime.fromisoformat(str(_lease_expires)) > _rf_datetime.now(_rf_timezone.utc)
+    except ValueError:
+        _lease_active = False
+    if (
+        _current_generation != deployment_generation
+        or _deployment_state.get('desired_core_commit') != source_commit
+        or _deployment_state.get('lease_owner') != lease_owner
+        or not _lease_active
+    ):
+        _deployment_guard.close()
+        return {
+            'ok': False,
+            'deployment_status': 'rejected_fence',
+            'source_commit': source_commit,
+            'desired_core_commit': _deployment_state.get('desired_core_commit'),
+            'observed_core_commit': _observed_realm_commit(),
+            'deployment_generation': _current_generation,
+            'lease_owner': _deployment_state.get('lease_owner'),
+            'lease_expires_at': _deployment_state.get('lease_expires_at'),
+        }
+
+    repo = Path('/home/ubuntu/agentmanager')
+    if not (repo / '.git').exists():
+        return {'ok': False, 'stage': 'source_repo', 'error': 'canonical Core checkout unavailable'}
+
+    realm_root = Path('/home/ubuntu/.local/share/agentos/realm-fabric')
+    release = realm_root / 'releases' / source_commit
+    current = realm_root / 'current'
+    unit = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service')
+    data_root = Path('/home/ubuntu/agent-data')
+    previous = current.resolve() if current.is_symlink() else None
+    steps: list[dict[str, Any]] = []
+
+    fetch = _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'fetch', 'origin', source_commit], cwd=repo, timeout=120)
+    steps.append({'step': 'fetch_source_commit', **fetch})
+    if fetch['returncode'] != 0:
+        return {'ok': False, 'stage': 'fetch_source_commit', 'source_commit': source_commit, 'steps': steps}
+
+    with _rf_tempfile.TemporaryDirectory(prefix='realm-fabric-release-') as td:
+        checkout = Path(td) / 'source'
+        wt = _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'worktree', 'add', '--detach', str(checkout), source_commit], cwd=repo, timeout=90)
+        steps.append({'step': 'materialize_source', **wt})
+        if wt['returncode'] != 0:
+            return {'ok': False, 'stage': 'materialize_source', 'source_commit': source_commit, 'steps': steps}
+        try:
+            release.mkdir(parents=True, exist_ok=True)
+            for name in ('agent_core', 'agentos_node', 'runtime_core'):
+                src = checkout / name
+                dst = release / name
+                if dst.exists():
+                    _rf_shutil.rmtree(dst)
+                if src.is_dir():
+                    _rf_shutil.copytree(src, dst)
+            bindir = release / 'bin'
+            bindir.mkdir(parents=True, exist_ok=True)
+            launcher = bindir / 'agentos-one'
+            launcher.write_text(
+                '#!/usr/bin/env bash\nset -euo pipefail\n'
+                f'# realm_fabric_release_isolation_v1\ncd {release}\n'
+                'export PYTHONNOUSERSITE=1\n'
+                f'export PYTHONPATH={release}:"${{PYTHONPATH:-}}"\n'
+                'exec /usr/bin/python3 -m agent_core.realm_cli "$@"\n',
+                encoding='utf-8',
+            )
+            launcher.chmod(0o755)
+
+            verify = _run([str(launcher), '--help'], cwd=release, timeout=20)
+            steps.append({'step': 'verify_launcher', **verify})
+            if verify['returncode'] != 0:
+                return {'ok': False, 'stage': 'verify_launcher', 'source_commit': source_commit, 'steps': steps}
+
+            realm_id = 'realm-alston'
+            env_file = repo / '.env'
+            if env_file.is_file():
+                for raw in env_file.read_text(encoding='utf-8').splitlines():
+                    if raw.startswith('AGENTOS_REALM_ID=') and raw.split('=', 1)[1].strip():
+                        realm_id = raw.split('=', 1)[1].strip()
+            init = _run([str(launcher), 'init', '--realm-id', realm_id], cwd=release, timeout=30)
+            steps.append({'step': 'init_realm', **init})
+            if init['returncode'] != 0:
+                return {'ok': False, 'stage': 'init_realm', 'source_commit': source_commit, 'steps': steps}
+
+            unit.parent.mkdir(parents=True, exist_ok=True)
+            unit.write_text(
+                '[Unit]\nDescription=AgentOS ONE Realm Fabric\nAfter=network.target\n\n'
+                '[Service]\nType=simple\n'
+                f'Environment=AGENT_DATA_ROOT={data_root}\n'
+                'Environment=PYTHONNOUSERSITE=1\n'
+                f'WorkingDirectory={release}\n'
+                f'ExecStart={launcher} serve --host 127.0.0.1 --port 8780\n'
+                'Restart=always\nRestartSec=5\n'
+                f'StandardOutput=append:{data_root}/logs/realm-fabric.log\n'
+                f'StandardError=append:{data_root}/logs/realm-fabric.log\n\n'
+                '[Install]\nWantedBy=default.target\n',
+                encoding='utf-8',
+            )
+
+            # realm_fabric_effective_unit_fence_v1
+            # A historical drop-in can override the exact-release WorkingDirectory,
+            # PYTHONPATH and ExecStart written above.  The fenced installer is the
+            # only authority allowed to neutralize that generation override.  Keep
+            # unrelated drop-ins (for example controller.env) intact.
+            legacy_dropin = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service.d/runtime-generation.conf')
+            legacy_backup = Path('/home/ubuntu/agent-data/governance/legacy-systemd-dropins') / 'agentos-realm-fabric.runtime-generation.conf'
+            if legacy_dropin.is_file():
+                legacy_text = legacy_dropin.read_text(encoding='utf-8')
+                required_markers = (
+                    '/home/ubuntu/.local/share/agentos/realm-fabric/current',
+                    'ExecStart=/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780',
+                )
+                if not all(m in legacy_text for m in required_markers):
+                    return {
+                        'ok': False,
+                        'stage': 'effective_unit_fence',
+                        'error': 'unrecognized runtime-generation.conf; refusing mutation',
+                        'source_commit': source_commit,
+                        'steps': steps,
+                    }
+                legacy_backup.parent.mkdir(parents=True, exist_ok=True)
+                if not legacy_backup.exists():
+                    legacy_backup.write_text(legacy_text, encoding='utf-8')
+                    _share(legacy_backup)
+                legacy_dropin.unlink()
+                steps.append({
+                    'step': 'quarantine_legacy_runtime_generation_dropin',
+                    'ok': True,
+                    'source': str(legacy_dropin),
+                    'backup': str(legacy_backup),
+                })
+
+            reload_step = _run(['systemctl', '--user', 'daemon-reload'], cwd=Path.home(), timeout=15)
+            steps.append({'step': 'daemon_reload', **reload_step})
+            if reload_step['returncode'] != 0:
+                return {'ok': False, 'stage': 'daemon_reload', 'source_commit': source_commit, 'steps': steps}
+            enable = _run(['systemctl', '--user', 'enable', 'agentos-realm-fabric.service'], cwd=Path.home(), timeout=15)
+            steps.append({'step': 'enable_service', **enable})
+            if enable['returncode'] != 0:
+                return {'ok': False, 'stage': 'enable_service', 'source_commit': source_commit, 'steps': steps}
+            # realm_fabric_process_attestation_v1
+            before_pid_result = _run(['systemctl', '--user', 'show', 'agentos-realm-fabric.service', '--property=MainPID', '--value'], cwd=Path.home(), timeout=10)
+            try:
+                main_pid_before = int((before_pid_result.get('stdout') or '0').strip() or '0')
+            except ValueError:
+                main_pid_before = 0
+            restart = _restart_user_service('agentos-realm-fabric.service', timeout=25)
+            steps.append({'step': 'restart_service', 'main_pid_before': main_pid_before, **restart})
+            if not restart.get('ok'):
+                if previous and previous.is_dir():
+                    current.unlink(missing_ok=True)
+                    current.symlink_to(previous)
+                return {'ok': False, 'stage': 'restart_service', 'source_commit': source_commit, 'steps': steps}
+
+            main_pid_after = 0
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                pid_result = _run(['systemctl', '--user', 'show', 'agentos-realm-fabric.service', '--property=MainPID', '--value'], cwd=Path.home(), timeout=10)
+                try:
+                    candidate = int((pid_result.get('stdout') or '0').strip() or '0')
+                except ValueError:
+                    candidate = 0
+                if candidate > 0 and (main_pid_before <= 0 or candidate != main_pid_before):
+                    main_pid_after = candidate
+                    break
+                time.sleep(0.25)
+            if main_pid_after <= 0:
+                return {'ok': False, 'stage': 'process_identity', 'source_commit': source_commit, 'main_pid_before': main_pid_before, 'main_pid_after': main_pid_after, 'steps': steps}
+
+            health = None
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                try:
+                    with _rf_urllib.urlopen('http://127.0.0.1:8780/v1/health', timeout=2) as resp:
+                        body = resp.read().decode('utf-8', 'replace')
+                        health = {'status': resp.status, 'body': body[-4000:]}
+                        if resp.status == 200:
+                            break
+                except Exception as exc:
+                    health = {'error': type(exc).__name__ + ': ' + str(exc)}
+                time.sleep(0.5)
+            if not health or health.get('status') != 200:
+                return {'ok': False, 'stage': 'health', 'source_commit': source_commit, 'health': health, 'main_pid_before': main_pid_before, 'main_pid_after': main_pid_after, 'steps': steps}
+
+            resolve_auth_probe = None
+            try:
+                req = _rf_urllib.Request(
+                    'http://127.0.0.1:8780/v1/resolve',
+                    data=json.dumps({'schema':'agentos.resolve-request/v1','node_id':'realm-fabric-deploy-attestation','intent':'continue','project':'agentos-core'}).encode('utf-8'),
+                    headers={'Content-Type':'application/json'},
+                    method='POST',
+                )
+                try:
+                    with _rf_urllib.urlopen(req, timeout=3) as resp:
+                        resolve_auth_probe = {'status': resp.status, 'body': resp.read().decode('utf-8','replace')[-4000:]}
+                except _rf_urllib.HTTPError as exc:
+                    resolve_auth_probe = {'status': exc.code, 'body': exc.read().decode('utf-8','replace')[-4000:]}
+            except Exception as exc:
+                resolve_auth_probe = {'error': type(exc).__name__ + ': ' + str(exc)}
+            if not resolve_auth_probe or resolve_auth_probe.get('status') != 401:
+                return {'ok': False, 'stage': 'resolve_auth_probe', 'source_commit': source_commit, 'health': health, 'resolve_auth_probe': resolve_auth_probe, 'main_pid_before': main_pid_before, 'main_pid_after': main_pid_after, 'steps': steps}
+
+            current_pointer_mode = 'symlink'
+            if current.exists() and not current.is_symlink():
+                # Preserve the legacy real directory. The systemd unit already
+                # points at this exact versioned release, so replacing a live
+                # directory just to normalize the pointer would be destructive.
+                current_pointer_mode = 'legacy_directory_preserved'
+            else:
+                tmp_link = realm_root / f'.current-{source_commit}'
+                tmp_link.unlink(missing_ok=True)
+                tmp_link.symlink_to(release)
+                tmp_link.replace(current)
+            _deployment_state['observed_core_commit'] = source_commit
+            _deployment_state['deployment_status'] = 'converged'
+            _deployment_state['updated_at'] = _rf_datetime.now(_rf_timezone.utc).isoformat()
+            _deployment_state_write(_deployment_state)
+            return {
+                'ok': True,
+                'deployment_status': 'converged',
+                'desired_core_commit': source_commit,
+                'observed_core_commit': source_commit,
+                'deployment_generation': deployment_generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': _deployment_state.get('lease_expires_at'),
+                'source_commit': source_commit,
+                'realm_id': realm_id,
+                'release': str(release),
+                'current': str(current),
+                'current_pointer_mode': current_pointer_mode,
+                'service': 'agentos-realm-fabric.service',
+                'endpoint': 'http://127.0.0.1:8780',
+                'health': health,
+                'resolve_auth_probe': resolve_auth_probe,
+                'main_pid_before': main_pid_before,
+                'main_pid_after': main_pid_after,
+                'process_identity_attested': True,
+                'steps': steps,
+            }
+        finally:
+            _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'worktree', 'remove', '--force', str(checkout)], cwd=repo, timeout=30)
+            _deployment_guard.close()
+
+
+# realm_fabric_service_attestation_v1
+def _inspect_realm_fabric_service(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({},):
+        raise ValueError('unexpected parameters')
+    steps=[]
+    show=_run([
+        'systemctl','--user','show','agentos-realm-fabric.service',
+        '--property=ActiveState','--property=SubState','--property=MainPID',
+        '--property=ExecMainStatus','--property=ExecMainCode','--property=ExecStart',
+    ], cwd=Path.home(), timeout=15)
+    steps.append({'step':'systemd_show',**show})
+    status=_run(['systemctl','--user','status','agentos-realm-fabric.service','--no-pager','-l'], cwd=Path.home(), timeout=15)
+    steps.append({'step':'systemd_status',**status})
+    proc=_run(['pgrep','-af','agent_core.realm_cli serve'], cwd=Path.home(), timeout=10)
+    steps.append({'step':'processes',**proc})
+    log_path=Path('/home/ubuntu/agent-data/logs/realm-fabric.log')
+    log_tail=''
+    if log_path.is_file():
+        try:
+            lines=log_path.read_text(encoding='utf-8',errors='replace').splitlines()
+            log_tail='\n'.join(lines[-160:])[-20000:]
+        except OSError as exc:
+            log_tail=type(exc).__name__+': '+str(exc)
+    fields={}
+    for raw in (show.get('stdout') or '').splitlines():
+        if '=' in raw:
+            k,v=raw.split('=',1); fields[k]=v
+    return {
+        'ok': True,
+        'service': 'agentos-realm-fabric.service',
+        'configured_core_commit': _observed_realm_commit(),
+        'active_state': fields.get('ActiveState'),
+        'sub_state': fields.get('SubState'),
+        'main_pid': int(fields.get('MainPID') or 0),
+        'exec_main_status': fields.get('ExecMainStatus'),
+        'exec_main_code': fields.get('ExecMainCode'),
+        'log_tail': log_tail,
+        'steps': steps,
+    }
+
+
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
     return _restart_user_service("layoutlab-api.service")
@@ -418,6 +1027,13 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "github.actions.workflow.dispatch": _github_actions_dispatch,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
+    "agentos.realm-fabric.claim_deployment": _claim_realm_fabric_deployment,
+    "agentos.realm-fabric.deployment_status": _realm_fabric_deployment_status,
+    "agentos.realm-fabric.release_deployment": _release_realm_fabric_deployment,
+    "agentos.realm-fabric.renew_deployment": _renew_realm_fabric_deployment,
+    "agentos.realm-fabric.inspect_service": _inspect_realm_fabric_service,
+    "agentos.realm-fabric.advance_deployment": _advance_realm_fabric_deployment,
+    "agentos.realm-fabric.install_release": _install_realm_fabric_release,
     "agentos.project.publish_continuation": _publish_project_continuation,
 }
 
