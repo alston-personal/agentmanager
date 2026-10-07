@@ -131,46 +131,68 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
   exit 0
 fi
 if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=LOGIN_REQUIRED'; then
-  if [ "$PERSONA" = "oursong" ]; then
-    CURRENT_STAGE="session_resume"
-    echo "threads_web_dm_stage=SESSION_RESUME"
+  CURRENT_STAGE="session_resume"
+  echo "threads_web_dm_stage=SESSION_RESUME"
+  set +e
+  RESUME_OUT="$(AGENTOS_DM_PERSONA="$PERSONA" bash "$STAGE/scripts/resume_threads_persona_login_user.sh" 2>&1)"
+  RESUME_RC=$?
+  set -e
+  printf '%s\n' "$RESUME_OUT" | grep -E '^threads_persona_login_resume' || true
+  if printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
+    echo "threads_web_dm_resume=PASS"
+  elif printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=HUMAN_REQUIRED'; then
+    echo "threads_web_dm_resume=HUMAN_REQUIRED"
+    REASON="$(printf '%s\n' "$RESUME_OUT" | sed -n 's/^threads_persona_login_resume_reason=//p' | tail -n1)"
+    if [ -n "$REASON" ]; then echo "threads_web_dm_resume_reason=$REASON"; fi
+  else
+    echo "threads_web_dm_resume=ERROR"
+    ERR_TYPE="$(printf '%s\n' "$RESUME_OUT" | sed -n 's/^threads_persona_login_resume_error_type=//p' | tail -n1)"
+    if [ -n "$ERR_TYPE" ]; then echo "threads_web_dm_resume_error_type=$ERR_TYPE"; fi
+    ERR_STAGE="$(printf '%s\n' "$RESUME_OUT" | sed -n 's/^threads_persona_login_resume_error_stage=//p' | tail -n1)"
+    if [ -n "$ERR_STAGE" ]; then echo "threads_web_dm_resume_error_stage=$ERR_STAGE"; fi
+  fi
+  if [ "$RESUME_RC" -eq 0 ] && printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
+    CURRENT_STAGE="bridge_retry"
     set +e
-    RESUME_OUT="$(AGENTOS_DM_PERSONA="$PERSONA" bash "$STAGE/scripts/resume_threads_persona_login_user.sh" 2>&1)"
-    RESUME_RC=$?
-    set -e
-    printf '%s\n' "$RESUME_OUT" | grep -E '^threads_persona_login_resume' || true
-    if printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
-      echo "threads_web_dm_resume=PASS"
-    elif printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=HUMAN_REQUIRED'; then
-      echo "threads_web_dm_resume=HUMAN_REQUIRED"
-      REASON="$(printf '%s\n' "$RESUME_OUT" | sed -n 's/^threads_persona_login_resume_reason=//p' | tail -n1)"
-      if [ -n "$REASON" ]; then echo "threads_web_dm_resume_reason=$REASON"; fi
-    else
-      echo "threads_web_dm_resume=ERROR"
-      ERR_TYPE="$(printf '%s\n' "$RESUME_OUT" | sed -n 's/^threads_persona_login_resume_error_type=//p' | tail -n1)"
-      if [ -n "$ERR_TYPE" ]; then echo "threads_web_dm_resume_error_type=$ERR_TYPE"; fi
-      ERR_STAGE="$(printf '%s\n' "$RESUME_OUT" | sed -n 's/^threads_persona_login_resume_error_stage=//p' | tail -n1)"
-      if [ -n "$ERR_STAGE" ]; then echo "threads_web_dm_resume_error_stage=$ERR_STAGE"; fi
-    fi
-    if [ "$RESUME_RC" -eq 0 ] && printf '%s\n' "$RESUME_OUT" | grep -Fq 'threads_persona_login_resume=PASS'; then
-      CURRENT_STAGE="bridge_retry"
-      set +e
-      OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
+    OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 - "$STAGE/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
 import os, runpy, sys
 path=sys.argv[1]
 sys.argv=[path,"--persona",os.environ.get("AGENTOS_DM_PERSONA","mio")]
 runpy.run_path(path,run_name="__main__")
 PY
 )"
-      RC=$?
-      set -e
-      printf '%s\n' "$OUT" | grep -E '^threads_web_dm_' || true
-      echo "threads_web_dm_python_rc=$RC"
-      if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
-        echo "threads_web_dm_autonomous=DISABLED_FOR_PERSONA"
-        echo "threads_web_dm_read=PASS"
-        exit 0
+    RC=$?
+    set -e
+    printf '%s\n' "$OUT" | grep -E '^threads_web_dm_' || true
+    echo "threads_web_dm_python_rc=$RC"
+    if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
+      if [ "$PERSONA" = "mio" ]; then
+        CURRENT_STAGE="mio_autonomous_after_resume"
+        set +e
+        AUTO_OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 "$STAGE/scripts/mio_threads_dm_autonomous_user.py" 2>&1)"
+        AUTO_RC=$?
+        set -e
+        printf '%s\n' "$AUTO_OUT" | grep -E '^(mio_dm_autonomous|persona_dm_send)' || true
+        if [ "$AUTO_RC" -ne 0 ]; then
+          echo "threads_web_dm_autonomous=FAIL"
+          exit "$AUTO_RC"
+        fi
+        echo "threads_web_dm_autonomous=PASS"
+      else
+        CURRENT_STAGE="oursong_autonomous_after_resume"
+        set +e
+        AUTO_OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 "$STAGE/scripts/oursong_threads_dm_autonomous_user.py" 2>&1)"
+        AUTO_RC=$?
+        set -e
+        printf '%s\n' "$AUTO_OUT" | grep -E '^(oursong_dm_autonomous|persona_dm_send)' || true
+        if [ "$AUTO_RC" -ne 0 ]; then
+          echo "threads_web_dm_autonomous=FAIL"
+          exit "$AUTO_RC"
+        fi
+        echo "threads_web_dm_autonomous=PASS"
       fi
+      echo "threads_web_dm_read=PASS"
+      exit 0
     fi
   fi
   echo "threads_web_dm_read=LOGIN_REQUIRED"
