@@ -36,10 +36,7 @@ jobs:
           bash /tmp/install_mio_oursong_dm_timer.sh /tmp/mio_oursong_dm_cycle.py /tmp/dm_loop_guard.py
           systemctl --user is-active --quiet mio-oursong-dm-autonomous.timer
           systemctl --user is-enabled --quiet mio-oursong-dm-autonomous.timer
-          systemctl --user start mio-oursong-dm-autonomous.service || true
           systemctl --user --no-pager --full status mio-oursong-dm-autonomous.timer
-          echo '=== SERVICE JOURNAL ==='
-          journalctl --user -u mio-oursong-dm-autonomous.service -n 40 --no-pager | grep -E 'mio_oursong_dm_(guard|decision|consistency|cycle|readback)=' || true
           rm -f /tmp/install_mio_oursong_dm_timer.sh /tmp/mio_oursong_dm_cycle.py /tmp/dm_loop_guard.py
           echo "mio_oursong_dm_install_acceptance=PASS"
           REMOTE
