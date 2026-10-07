@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.gpt_web_response_bridge import _validate_request, atomic_json
+from scripts.gpt_web_response_bridge import _chatgpt_target, _validate_request, atomic_json
 
 
 class GptWebResponseBridgeTests(unittest.TestCase):
@@ -59,3 +59,14 @@ if __name__ == "__main__":
         self.assertEqual(session_id, "chatgpt-web:1")
         self.assertEqual(request_id, "invoice:req:12345678")
         self.assertEqual(inner["capability"], "vision.invoice.extract")
+
+
+    def test_chatgpt_target_prefers_page_with_websocket(self):
+        from unittest.mock import patch
+        targets = [
+            {"type":"page","url":"https://example.com/","webSocketDebuggerUrl":"ws://x"},
+            {"type":"page","url":"https://chatgpt.com/c/123","webSocketDebuggerUrl":"ws://chat"},
+        ]
+        with patch("scripts.gpt_web_response_bridge._targets", return_value=targets):
+            target = _chatgpt_target("http://127.0.0.1:9222")
+        self.assertEqual(target["webSocketDebuggerUrl"], "ws://chat")
