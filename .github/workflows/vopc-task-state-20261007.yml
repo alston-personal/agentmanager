@@ -87,3 +87,13 @@ jobs:
             tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true
             echo
           done
+      - name: Inspect RealmFabric file ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== REALM FABRIC PATH ==='
+          namei -l /home/ubuntu/agent-data/realm/fabric.json 2>/dev/null || true
+          echo '=== REALM FABRIC STAT ==='
+          stat -c '%U %G %a %s %y %n'             /home/ubuntu/agent-data/realm             /home/ubuntu/agent-data/realm/fabric.json             /home/ubuntu/agent-data/realm/fabric.json.tmp 2>/dev/null || true
+          echo '=== REALM DIR ==='
+          ls -la /home/ubuntu/agent-data/realm 2>/dev/null | tail -n 80 || true
