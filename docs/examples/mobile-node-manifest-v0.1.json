@@ -1,19 +1,34 @@
 {
-  "schema": "agentos.mobile-node-manifest/v0.1",
+  "schema": "agentos.node-manifest/v0.1",
   "realm_id": "pending",
   "node_id": "mobile-example",
   "role": "client",
+  "hostname": "mobile-example",
   "platform": "ios|android",
-  "transport": {
-    "mode": "push-assisted",
-    "provider": "apns|fcm"
+  "platform_release": "unknown",
+  "capabilities": [
+    "notification.present"
+  ],
+  "tool_presence": {},
+  "surface_inventory": {
+    "surface_count": 0,
+    "surfaces": []
   },
-  "presence": "foreground|background|suspended",
-  "executors": [
-    {
-      "executor_id": "mobile.notification",
-      "capabilities": ["notification.present"],
-      "state": "ready"
-    }
-  ]
+  "mobile": {
+    "profile": "agentos.mobile-node/v0.1",
+    "transport": {
+      "mode": "push-assisted",
+      "provider": "apns|fcm"
+    },
+    "presence": "foreground|background|suspended",
+    "executors": [
+      {
+        "executor_id": "mobile.notification",
+        "capabilities": [
+          "notification.present"
+        ],
+        "state": "ready"
+      }
+    ]
+  }
 }
