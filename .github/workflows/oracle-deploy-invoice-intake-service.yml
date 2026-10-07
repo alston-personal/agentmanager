@@ -417,6 +417,7 @@ jobs:
           GUI_PY="$GUI_ROOT/venv/bin/python"
           APP_ROOT=/home/ubuntu/.local/share/agentos/gpt-web-bridge
           BRIDGE_ROOT=/home/ubuntu/agent-data/runtime/gpt-web-bridge
+          FIXTURE_ROOT=/home/ubuntu/agent-data/runtime/gpt-web-fixtures
           test -x "$GUI_PY"
           "$GUI_PY" -m pip install --disable-pip-version-check -q websocket-client
           "$GUI_PY" -c 'import websocket; print("gpt_web_websocket_client=PASS")'
@@ -428,7 +429,7 @@ jobs:
           print('gpt_web_cdp=PASS')
           PY
 
-          mkdir -p "$APP_ROOT" "$BRIDGE_ROOT" /home/ubuntu/.config/systemd/user
+          mkdir -p "$APP_ROOT" "$BRIDGE_ROOT" "$FIXTURE_ROOT" /home/ubuntu/.config/systemd/user
           install -m 700 /tmp/gpt_web_response_bridge.py "$APP_ROOT/gpt_web_response_bridge.py"
 
           cat > /home/ubuntu/.config/systemd/user/agentos-gpt-web-bridge.service <<UNIT
@@ -440,6 +441,7 @@ jobs:
           Type=oneshot
           Environment=AGENTOS_GPT_WEB_BRIDGE=$BRIDGE_ROOT
           Environment=AGENTOS_GPT_WEB_CDP_URL=http://127.0.0.1:9222
+          Environment=AGENTOS_GPT_WEB_ALLOWED_ROOTS=$FIXTURE_ROOT
           ExecStart=$GUI_PY $APP_ROOT/gpt_web_response_bridge.py
           UNIT
 
@@ -492,10 +494,13 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
           GUI_PY=/home/ubuntu/.local/share/agentos/gui-worker/venv/bin/python
-          export AGENTOS_GPT_WEB_ALLOWED_ROOTS=/tmp
+          FIXTURE_ROOT=/home/ubuntu/agent-data/runtime/gpt-web-fixtures
+          mkdir -p "$FIXTURE_ROOT"
+          install -m 600 /tmp/gpt-web-invoice-roundtrip.jpg "$FIXTURE_ROOT/tw-2part-my04200253.jpg"
+          export AGENTOS_GPT_WEB_ALLOWED_ROOTS="$FIXTURE_ROOT"
           export AGENTOS_GPT_WEB_APP_ROOT=/home/ubuntu/.local/share/agentos/gpt-web-bridge
           "$GUI_PY" /tmp/gpt_web_invoice_roundtrip.py \
             --bridge-root /home/ubuntu/agent-data/runtime/gpt-web-bridge \
-            --image /tmp/gpt-web-invoice-roundtrip.jpg \
+            --image /home/ubuntu/agent-data/runtime/gpt-web-fixtures/tw-2part-my04200253.jpg \
             --cdp-url http://127.0.0.1:9222
           REMOTE
