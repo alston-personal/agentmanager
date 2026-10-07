@@ -8,6 +8,11 @@ from .v06 import (
     compile_reversible_gltf,
     save_reversible_gltf,
 )
+from .reconciliation import (
+    ReconciliationPolicy,
+    ReconciliationSource,
+    weighted_reconcile_ir,
+)
 from .reversible import ir_digest
 from .glb_container import (
     compile_reversible_glb,
@@ -36,6 +41,9 @@ __all__ = [
     "diff_ir",
     "reconcile_ir",
     "score_roundtrip",
+    "ReconciliationPolicy",
+    "ReconciliationSource",
+    "weighted_reconcile_ir",
     "compile_reversible_gltf",
     "save_reversible_gltf",
     "compile_reversible_glb",

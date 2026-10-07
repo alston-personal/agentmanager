@@ -14,6 +14,9 @@ from model2ir import (
     audit_asset,
     diff_ir,
     reconcile_ir,
+    ReconciliationPolicy,
+    ReconciliationSource,
+    weighted_reconcile_ir,
     score_roundtrip,
     compile_reversible_gltf,
     save_reversible_gltf,
@@ -127,3 +130,36 @@ Multi-file glTF requires a separate bundle contract covering URI resolution, pat
 Repository-level scripts may provide renderers, benchmark harnesses, CI, downloads, and product integration. They should call the package API rather than reimplement extraction, truth policy, hashing, admission, manifest semantics, or container preservation.
 
 This boundary lets Image→IR, Character Blueprint, future training pipelines, and external repositories consume the same 3D→IR behavior without depending on AgentOS internals.
+
+
+## Weighted multi-source reconciliation
+
+Character Blueprint, Image2IR, IP Genome Studio, Model2IR and future visual sources should converge on the existing Character IR contract instead of introducing a parallel visual-IR schema.
+
+```python
+from model2ir import (
+    ReconciliationPolicy,
+    ReconciliationSource,
+    weighted_reconcile_ir,
+)
+
+target_ir = weighted_reconcile_ir(
+    [
+        ReconciliationSource("main_visual", main_visual_ir, 0.75),
+        ReconciliationSource("person", person_ir, 0.25),
+    ],
+    ReconciliationPolicy(
+        preserve_from={"body_plan.kind": "main_visual"},
+        per_field={
+            "identity_traits.eyewear.primary.value": {
+                "main_visual": 0.2,
+                "person": 0.8,
+            },
+        },
+    ),
+)
+```
+
+Evidence fragments without a top-level schema may participate alongside one authoritative Character IR schema. This lets specialist extractors contribute visual traits without pretending to own a complete canonical document.
+
+The web demo remains only a consumer of this boundary and must not duplicate reconciliation logic.
