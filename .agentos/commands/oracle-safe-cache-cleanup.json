@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-maintenance-command/v1",
   "target": "oracle",
-  "purpose": "free rebuildable cache space blocking Mio wardrobe auth deployment",
-  "requested_at": "2026-10-01T06:27:40+08:00"
+  "purpose": "emergency safe cleanup after root disk reached 99-100%; remove only rebuildable caches and user-owned /tmp entries older than one day",
+  "requested_at": "2026-10-07T13:32:00+08:00"
 }
