@@ -1,0 +1,43 @@
+name: GPT Web Vision Participant CI
+
+on:
+  pull_request:
+    paths:
+      - 'agentos_node/gpt_web_vision.py'
+      - 'agentos_node/desktop_plan.py'
+      - 'agentos_node/interactive_desktop.py'
+      - 'agentos_node/thin_client.py'
+      - 'docs/participant-protocol/examples/gpt-web.manifest.json'
+      - 'docs/participant-protocol/examples/gpt-web-vision.md'
+      - 'tests/test_gpt_web_vision.py'
+      - 'tests/test_low_latency_gui_agent.py'
+      - '.github/workflows/gpt-web-vision-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'agentos_node/gpt_web_vision.py'
+      - 'agentos_node/desktop_plan.py'
+      - 'agentos_node/interactive_desktop.py'
+      - 'agentos_node/thin_client.py'
+      - 'docs/participant-protocol/examples/gpt-web.manifest.json'
+      - 'docs/participant-protocol/examples/gpt-web-vision.md'
+      - 'tests/test_gpt_web_vision.py'
+      - 'tests/test_low_latency_gui_agent.py'
+      - '.github/workflows/gpt-web-vision-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Compile
+        run: python -m py_compile agentos_node/gpt_web_vision.py agentos_node/desktop_plan.py agentos_node/interactive_desktop.py agentos_node/thin_client.py
+      - name: Test
+        run: python -m unittest -v tests.test_gpt_web_vision tests.test_low_latency_gui_agent
