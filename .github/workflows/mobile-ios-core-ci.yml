@@ -1,0 +1,34 @@
+name: Mobile iOS Core CI
+
+on:
+  pull_request:
+    paths:
+      - 'clients/mobile/ios/**'
+      - '.github/workflows/mobile-ios-core-ci.yml'
+  push:
+    branches:
+      - feat/mobile-node-protocol
+    paths:
+      - 'clients/mobile/ios/**'
+      - '.github/workflows/mobile-ios-core-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  swift-test:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: clients/mobile/ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift test
+        run: swift test
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate iOS project
+        run: xcodegen generate
+      - name: Build iOS simulator app
+        run: xcodebuild -project AgentOSMobile.xcodeproj -scheme AgentOSMobile -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build

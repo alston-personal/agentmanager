@@ -1,0 +1,25 @@
+name: AgentOSMobile
+options:
+  bundleIdPrefix: org.agentos
+settings:
+  base:
+    SWIFT_VERSION: 5.9
+targets:
+  AgentOSMobile:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: .
+        excludes:
+          - Tests
+          - Package.swift
+          - README.md
+          - project.yml
+    info:
+      path: Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.agentos.mobile.dev
+        CODE_SIGNING_ALLOWED: NO
+        GENERATE_INFOPLIST_FILE: NO
