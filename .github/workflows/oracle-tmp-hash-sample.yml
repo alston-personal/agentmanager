@@ -1,0 +1,58 @@
+name: Oracle Tmp Hash Sample
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-tmp-hash-sample.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Sample hash-named tmp directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -u
+          echo '=== disk ==='
+          df -h /
+          echo '=== 40-hex tmp dir count ==='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null |
+            grep -E '^[0-9a-f]{40}$' | wc -l || true
+          echo '=== 40-hex dirs older than 1 day ==='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -mtime +1 -printf '%f\n' 2>/dev/null |
+            grep -E '^[0-9a-f]{40}$' | wc -l || true
+          echo '=== sample 200 hash-dir sizes KB ==='
+          mapfile -t dirs < <(find /tmp -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | grep -E '^[0-9a-f]{40}$' | head -n 200 || true)
+          total=0
+          n=0
+          max=0
+          for name in "${dirs[@]}"; do
+            kb="$(timeout 3 du -sk "/tmp/$name" 2>/dev/null | awk '{print $1}' || true)"
+            [ -n "$kb" ] || continue
+            echo "$kb /tmp/$name"
+            total=$((total + kb))
+            n=$((n + 1))
+            [ "$kb" -gt "$max" ] && max="$kb"
+          done
+          echo "sample_count=$n"
+          echo "sample_total_kb=$total"
+          if [ "$n" -gt 0 ]; then echo "sample_avg_kb=$((total / n))"; fi
+          echo "sample_max_kb=$max"
+          echo '=== old hash-dir sample ==='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -mtime +1 -printf '%f\n' 2>/dev/null |
+            grep -E '^[0-9a-f]{40}$' | head -n 50 || true
+          REMOTE
