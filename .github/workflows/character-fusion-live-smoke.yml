@@ -1,4 +1,5 @@
 name: Character Fusion Live Smoke
+# trigger: production provider acceptance
 
 on:
   pull_request:
