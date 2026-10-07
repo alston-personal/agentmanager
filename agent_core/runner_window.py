@@ -34,6 +34,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("media.google-vids", "generate", bc.ACTION_GOOGLE_VIDS_GENERATE, frozenset({"prompt"})),
     RunnerWindowIntent("media.vision-studio", "produce", bc.ACTION_VISION_STUDIO_PRODUCE, frozenset({"project_id"})),
     RunnerWindowIntent("browser.gui", "install", bc.ACTION_INSTALL_GUI_WORKER),
+    RunnerWindowIntent("browser.session", "install", bc.ACTION_INSTALL_BROWSER_IDENTITY_SESSIONS),
     RunnerWindowIntent("browser.gui", "smoke", bc.ACTION_SMOKE_GUI_WORKER),
     RunnerWindowIntent("social.runtime", "deploy", bc.ACTION_DEPLOY_SOCIAL_RUNTIME),
     RunnerWindowIntent("social.monitor", "runtime.migrate", bc.ACTION_MIGRATE_GALAXY_EXPERIMENT_MONITOR),
