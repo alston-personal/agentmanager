@@ -30,6 +30,23 @@ class TestWorkBindingStore(unittest.TestCase):
             self.assertEqual(result["state"], "completed")
             self.assertEqual(result["terminal_receipt_id"], "task-1")
 
+    def test_transition_rejects_terminal_reopen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = WorkBindingStore(Path(tmp) / "bindings.json")
+            store.upsert({"work_id": "work-a", "state": "active", "node_id": "vopc5750"})
+            store.transition("work-a", state="completed", receipt_id="receipt-1")
+            with self.assertRaises(ValueError):
+                store.transition("work-a", state="active")
+
+    def test_failed_work_can_be_explicitly_retried(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = WorkBindingStore(Path(tmp) / "bindings.json")
+            store.upsert({"work_id": "work-a", "state": "active"})
+            store.transition("work-a", state="failed", reason="executor crash")
+            result = store.transition("work-a", state="active", reason="rerouted")
+            self.assertEqual(result["state"], "active")
+            self.assertEqual(result["previous_state"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()
