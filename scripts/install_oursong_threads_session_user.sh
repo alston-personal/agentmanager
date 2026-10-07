@@ -64,8 +64,25 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now agentos-threads-browser-oursong.service >/dev/null
-systemctl --user restart agentos-threads-browser-oursong.service
+systemctl --user enable agentos-threads-browser-oursong.service >/dev/null
+
+PRESERVED=false
+if systemctl --user is-active --quiet agentos-threads-browser-oursong.service; then
+  if python3 - <<'PY'
+import json,urllib.request
+with urllib.request.urlopen('http://127.0.0.1:9223/json/version',timeout=2) as r:
+    d=json.load(r)
+assert d.get('webSocketDebuggerUrl')
+PY
+  then
+    PRESERVED=true
+    echo "oursong_threads_session_existing_browser=preserved"
+  fi
+fi
+
+if [ "$PRESERVED" != "true" ]; then
+  systemctl --user start agentos-threads-browser-oursong.service
+fi
 systemctl --user is-active --quiet agentos-threads-browser-oursong.service
 
 python3 - <<'PY'
@@ -100,3 +117,4 @@ echo "oursong_threads_session_install=PASS"
 echo "oursong_threads_session_profile=$PROFILE"
 echo "oursong_threads_session_cdp_url=http://127.0.0.1:9223"
 echo "oursong_threads_session_mio_isolated=true"
+echo "oursong_threads_session_existing_browser=$([ "$PRESERVED" = "true" ] && echo preserved || echo started)"

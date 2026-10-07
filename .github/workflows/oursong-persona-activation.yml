@@ -46,6 +46,7 @@ jobs:
           bash -n scripts/probe_oursong_persona_user.sh
           bash -n scripts/run_threads_web_dm_read_user.sh
           bash -n scripts/install_oursong_threads_session_user.sh
+          grep -Fq 'oursong_threads_session_existing_browser=preserved' scripts/install_oursong_threads_session_user.sh
           bash -n scripts/start_threads_web_dm_login_user.sh
           python3 -m py_compile scripts/threads_web_dm_bridge_user.py agentos_node/social/persona_dm.py
       - name: Reject literal escaped-newline contamination
