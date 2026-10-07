@@ -121,3 +121,13 @@ jobs:
                   print('matching_rows '+table+'='+json.dumps(rows, sort_keys=True, default=str))
           con.close()
           PY
+      - name: Inspect RealmFabric production log
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=/home/ubuntu/agent-data/logs/realm-fabric.log
+          echo '=== REALM FABRIC LOG ==='
+          test -f "$LOG" || { echo 'realm_fabric_log=MISSING'; exit 0; }
+          grep -Ei 'task-post-restart|task-live-|/v1/(tasks|receipts)|receipt|error|traceback' "$LOG"             | tail -n 500 || true
+          echo '=== LOG TAIL ==='
+          tail -n 250 "$LOG" || true
