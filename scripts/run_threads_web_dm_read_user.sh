@@ -31,7 +31,7 @@ fi
 CURRENT_STAGE="archive"
 STAGE="$(mktemp -d /tmp/agentos-threads-dm-read.XXXXXX)"
 echo "threads_web_dm_stage=START"
-git -C "$REPO" archive "$SOURCE_COMMIT" | tar -x -C "$STAGE"
+git -C "$REPO" archive "$SOURCE_COMMIT" agentos_node scripts | tar -x -C "$STAGE"
 test -f "$STAGE/scripts/threads_web_dm_bridge_user.py"
 echo "threads_web_dm_stage=PASS"
 
