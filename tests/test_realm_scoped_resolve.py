@@ -63,13 +63,13 @@ class TestScopedRealmResolve(unittest.TestCase):
             "participant_id": "codex",
             "state": "active",
         })
-        store.upsert({
-            "work_id": "work-vopc-gui",
-            "node_id": "vopc5750",
-            "executor_id": "gui-worker",
-            "participant_id": "gemini-web",
-            "state": "active",
-        })
+        bound = client.bind_work(
+            "work-vopc-gui",
+            executor_id="gui-worker",
+            participant_id="gemini-web",
+            session_id="old-chat",
+        )
+        self.assertTrue(bound["ok"])
 
         result = client.resolve(
             executor_id="gui-worker",
