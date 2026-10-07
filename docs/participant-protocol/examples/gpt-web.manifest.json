@@ -52,7 +52,7 @@
     },
     {
       "id": "gpt.web.response.adapter",
-      "status": "FAILED",
+      "status": "INSTALLABLE",
       "detail": "A structured response harvester must be implemented and verified before invoke may become READY."
     }
   ],
