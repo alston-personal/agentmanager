@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_core.node_registry import NodeRegistry
+from agent_core.work_bindings import WorkBindingStore
 
 
 def _utc_now() -> str:
@@ -41,6 +42,7 @@ class RealmFabricStore:
         data_root = Path(os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
         self.path = Path(path) if path else data_root / 'realm' / 'fabric.json'
         self.node_registry = node_registry or NodeRegistry()
+        self.work_bindings = WorkBindingStore()
 
     def _empty(self) -> dict[str, Any]:
         return {
@@ -371,6 +373,26 @@ class RealmFabricStore:
         ]
         data['nodes'][node_id]['last_seen_at'] = _utc_now()
         self.save(data)
+
+        work_id = str(receipt.get('work_id') or '').strip()
+        if work_id:
+            update = {
+                'work_id': work_id,
+                'project_id': receipt.get('project_id'),
+                'node_id': node_id,
+                'executor_id': receipt.get('executor_id'),
+                'participant_id': receipt.get('participant_id'),
+                'session_id': receipt.get('session_id'),
+                'runner_id': receipt.get('runner_id'),
+                'last_receipt_id': task_id,
+                'last_action': receipt.get('action'),
+                'last_action_ok': bool(receipt.get('ok')),
+            }
+            work_state = str(receipt.get('work_state') or '').strip()
+            if work_state:
+                update['state'] = work_state
+            self.work_bindings.upsert(update)
+
         return data['receipts'][task_id]
 
     def get_receipt(self, task_id: str) -> dict[str, Any] | None:
