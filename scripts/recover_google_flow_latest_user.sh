@@ -37,6 +37,7 @@ with sync_playwright() as p:
         page=ctx.new_page()
     if PROJECT_URL not in str(page.url or ""):
         page.goto(PROJECT_URL,wait_until="domcontentloaded",timeout=60000)
+        page.bring_to_front()
         page.wait_for_timeout(5000)
     print("google_flow_recover_stage=FLOW_LOADED",flush=True)
     print("google_flow_recover_url="+str(page.url or "")[:500])
