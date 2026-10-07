@@ -69,6 +69,49 @@ class PrBacklogReconcileTests(unittest.TestCase):
         rows = {row["number"]: row for row in report["rows"]}
         self.assertNotEqual(rows[10]["status"], "SUPERSEDED")
 
+
+    def test_merged_versioned_successor_marks_old_pr_superseded(self):
+        old = self.base(
+            number=484,
+            title="chore: release continuous invoice scanner UI",
+            head="chore/release-continuous-invoice-ui",
+            base="main",
+        )
+        merged = self.base(
+            number=487,
+            title="chore: release continuous invoice scanner UI v2",
+            head="chore/release-continuous-invoice-ui-v2",
+            base="main",
+            merged_at="2026-09-25T10:51:33Z",
+        )
+        report = mod.reconcile(
+            {"pull_requests": [old], "merged_pull_requests": [merged]},
+            now=NOW,
+        )
+        row = report["rows"][0]
+        self.assertEqual(row["status"], "SUPERSEDED")
+        self.assertEqual(row["superseded_by"], 487)
+        self.assertIn("merged_versioned_successor=#487", row["reasons"])
+
+    def test_similar_merged_pr_without_versioned_head_is_not_supersession(self):
+        old = self.base(
+            number=20,
+            title="chore: release scanner UI",
+            head="chore/release-scanner-ui",
+            base="main",
+        )
+        merged = self.base(
+            number=21,
+            title="chore: release scanner UI v2",
+            head="chore/other-scanner-ui-v2",
+            base="main",
+        )
+        report = mod.reconcile(
+            {"pull_requests": [old], "merged_pull_requests": [merged]},
+            now=NOW,
+        )
+        self.assertNotEqual(report["rows"][0]["status"], "SUPERSEDED")
+
     def test_report_is_dry_run(self):
         report = mod.reconcile([self.base()], now=NOW)
         self.assertTrue(report["dry_run"])
