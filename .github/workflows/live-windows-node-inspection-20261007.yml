@@ -1,0 +1,38 @@
+name: Live Windows Node Inspection 20261007
+
+on:
+  push:
+    branches:
+      - ops/live-windows-node-inspection-20261007
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect live Windows nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+
+          nodes = NodeRegistry().node_map()
+          wanted = {'vopc5750', 'VO10005870'}
+          picked = []
+          for node in nodes:
+              if node.get('node_id') in wanted:
+                  picked.append(node)
+
+          print(json.dumps({
+              'schema': 'agentos.windows-node-live-inspection/v1',
+              'nodes': picked,
+          }, indent=2, sort_keys=True))
+          PY
