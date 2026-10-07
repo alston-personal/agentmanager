@@ -39,3 +39,13 @@ def test_mio_oursong_dm_runtime_materializes_loop_guard():
     assert 'SOURCE_GUARD="${2:-}"' in installer
     assert 'dm_loop_guard_runtime.py' in installer
     assert 'agentos_node/social/dm_loop_guard.py' not in installer
+
+
+def test_mio_oursong_dm_cycle_persists_bounded_receipts():
+    cycle=Path('scripts/mio_oursong_dm_oracle_cycle_user.py').read_text(encoding='utf-8')
+    assert 'agentos.mio-dm-cycle-receipt/v1' in cycle
+    assert 'dm-receipts' in cycle
+    for status in ('ALIVE_IDLE','AUTH_REQUIRED','DEGRADED','PASS_NO_ACTION','PASS_NO_REPLY','PASS_REPLY'):
+        assert f'"{status}"' in cycle
+    assert 'message_id=mid' in cycle
+    assert 'readback="PASS"' in cycle
