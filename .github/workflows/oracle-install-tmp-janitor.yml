@@ -1,0 +1,110 @@
+name: Oracle Install Tmp Janitor
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-install-tmp-janitor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: ${{ vars.ORACLE_HOST || '161.33.24.170' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install bounded tmp janitor and root disk health guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/state/agentos" "$HOME/.config/systemd/user"
+
+          cat > "$HOME/.local/bin/agentos-tmp-janitor.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          STATE_DIR="$HOME/.local/state/agentos"
+          STATE="$STATE_DIR/root-disk-health.state"
+          LOCK="$STATE_DIR/tmp-janitor.lock"
+          mkdir -p "$STATE_DIR"
+
+          exec 9>"$LOCK"
+          flock -n 9 || exit 0
+
+          before_used="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
+          before_avail="$(df -B1 --output=avail / | tail -n1 | tr -d ' ')"
+          old_before="$(find /tmp -mindepth 1 -maxdepth 1 -user "$(id -u)" -mtime +2 -printf '.\n' 2>/dev/null | wc -l)"
+
+          # Only remove this user's stale top-level temporary entries.
+          # Never touch named AgentOS control/lock paths even if their mtimes are old.
+          find /tmp -mindepth 1 -maxdepth 1 -user "$(id -u)" -mtime +2             ! -name 'agentos-locks'             ! -name 'agentos-bootstrap-control'             ! -name 'watchdog_locks'             ! -name '.X11-unix'             ! -name '.ICE-unix'             -exec rm -rf -- {} + 2>/dev/null || true
+
+          after_used="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
+          after_avail="$(df -B1 --output=avail / | tail -n1 | tr -d ' ')"
+          old_after="$(find /tmp -mindepth 1 -maxdepth 1 -user "$(id -u)" -mtime +2 -printf '.\n' 2>/dev/null | wc -l)"
+
+          if [ "$after_used" -ge 95 ]; then
+            health="CRITICAL"
+          elif [ "$after_used" -ge 90 ]; then
+            health="DEGRADED"
+          else
+            health="READY"
+          fi
+
+          {
+            echo "checked_at=$(date -Is)"
+            echo "state=$health"
+            echo "root_used_percent=$after_used"
+            echo "root_available_bytes=$after_avail"
+            echo "before_used_percent=$before_used"
+            echo "before_available_bytes=$before_avail"
+            echo "stale_tmp_before=$old_before"
+            echo "stale_tmp_after=$old_after"
+          } > "$STATE"
+
+          cat "$STATE"
+          SH
+          chmod 700 "$HOME/.local/bin/agentos-tmp-janitor.sh"
+
+          cat > "$HOME/.config/systemd/user/agentos-tmp-janitor.service" <<'UNIT'
+          [Unit]
+          Description=AgentOS bounded stale /tmp janitor and root disk health guard
+
+          [Service]
+          Type=oneshot
+          ExecStart=%h/.local/bin/agentos-tmp-janitor.sh
+          UNIT
+
+          cat > "$HOME/.config/systemd/user/agentos-tmp-janitor.timer" <<'UNIT'
+          [Unit]
+          Description=Run AgentOS stale /tmp janitor periodically
+
+          [Timer]
+          OnBootSec=10min
+          OnUnitActiveSec=1h
+          AccuracySec=5min
+          Persistent=true
+          Unit=agentos-tmp-janitor.service
+
+          [Install]
+          WantedBy=timers.target
+          UNIT
+
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-tmp-janitor.timer
+          systemctl --user start agentos-tmp-janitor.service
+          systemctl --user is-active agentos-tmp-janitor.timer
+          cat "$HOME/.local/state/agentos/root-disk-health.state"
+          echo 'tmp_janitor_install=PASS'
+          REMOTE
