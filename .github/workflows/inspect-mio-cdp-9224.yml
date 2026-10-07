@@ -29,11 +29,6 @@ jobs:
           sleep 6
           systemctl --user is-active --quiet agentos-threads-browser-mio.service
           curl -fsS --max-time 3 http://127.0.0.1:9224/json/version >/tmp/mio-cdp-version.json
-          python3 - <<'PY'
-import json
-d=json.load(open('/tmp/mio-cdp-version.json'))
-assert d.get('webSocketDebuggerUrl')
-print('mio_cdp_http=PASS')
-PY
+          python3 -c 'import json; d=json.load(open("/tmp/mio-cdp-version.json")); assert d.get("webSocketDebuggerUrl"); print("mio_cdp_http=PASS")'
           df -h /
           REMOTE
