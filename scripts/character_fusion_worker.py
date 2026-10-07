@@ -237,11 +237,14 @@ def _gemini_web_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
         output_path = Path(tmp) / "response.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
         browser_script = r'''
+import asyncio
 import fcntl
+import json
 import sys
 import time
+import urllib.request
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+import websockets
 
 prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
 image_path = Path(sys.argv[2])
@@ -249,141 +252,151 @@ output_path = Path(sys.argv[3])
 lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
 lock_path.parent.mkdir(parents=True, exist_ok=True)
 
-composer_selectors = [
-    'rich-textarea div[contenteditable="true"]',
-    'textarea[aria-label*="prompt" i]',
-    '[contenteditable="true"][aria-label*="prompt" i]',
-    'div.ql-editor[contenteditable="true"]',
-    'textarea',
-    '[contenteditable="true"]',
-]
-response_selectors = [
-    'model-response',
-    '[data-test-id*="model-response"]',
-    '.model-response-text',
-    'message-content',
-]
-file_selectors = [
-    'input[type="file"]',
-    'input[accept*="image"]',
-]
+def inventory():
+    with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=5) as r:
+        return json.loads(r.read().decode("utf-8"))
 
-def first_visible(page, selectors):
-    for selector in selectors:
-        try:
-            loc = page.locator(selector)
-            for i in range(min(loc.count(), 20)):
-                item = loc.nth(i)
-                try:
-                    if item.is_visible(timeout=250):
-                        return item
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return None
+targets=[x for x in inventory() if x.get("type")=="page" and "gemini.google.com" in str(x.get("url") or "")]
+if not targets:
+    raise RuntimeError("gemini_web_no_session")
+target=targets[0]
+ws_url=str(target.get("webSocketDebuggerUrl") or "")
+if not ws_url:
+    raise RuntimeError("gemini_web_missing_ws")
 
-def response_rows(page):
-    rows=[]
-    seen=set()
-    for selector in response_selectors:
-        try:
-            loc=page.locator(selector)
-            for i in range(max(0,loc.count()-10),loc.count()):
-                try:
-                    text=loc.nth(i).inner_text(timeout=800).strip()
-                except Exception:
-                    continue
-                if text and text not in seen:
-                    seen.add(text)
-                    rows.append(text)
-        except Exception:
-            pass
-    return rows
+async def main():
+    seq=0
+    async with websockets.connect(ws_url, open_timeout=5, close_timeout=2, max_size=8*1024*1024) as ws:
+        async def call(method, params=None):
+            nonlocal seq
+            seq += 1
+            ident=seq
+            await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+            while True:
+                msg=json.loads(await ws.recv())
+                if msg.get("id")==ident:
+                    if msg.get("error"):
+                        raise RuntimeError(f"cdp {method}: {msg['error']}")
+                    return msg.get("result") or {}
 
-with lock_path.open("a+") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    with sync_playwright() as p:
-        browser=p.chromium.connect_over_cdp("http://127.0.0.1:9222")
-        if not browser.contexts:
-            raise RuntimeError("gemini_web_no_browser_context")
-        pages=[x for x in browser.contexts[0].pages if "gemini.google.com" in str(x.url or "")]
-        if not pages:
-            raise RuntimeError("gemini_web_no_session")
-        page=next((x for x in pages if first_visible(x,composer_selectors) is not None),pages[0])
-        page.bring_to_front()
-        composer=first_visible(page,composer_selectors)
-        if composer is None:
-            raise RuntimeError("gemini_web_composer_not_found")
+        async def evaluate(expr):
+            r=await call("Runtime.evaluate",{
+                "expression":expr,
+                "returnByValue":True,
+                "awaitPromise":True,
+            })
+            return (r.get("result") or {}).get("value")
 
-        file_input=None
-        for selector in file_selectors:
-            try:
-                loc=page.locator(selector)
-                if loc.count():
-                    file_input=loc.nth(0)
-                    break
-            except Exception:
-                pass
-        if file_input is None:
-            attachment_selectors=[
-                'button[aria-label*="upload" i]',
-                'button[aria-label*="file" i]',
-                'button[aria-label*="add" i]',
-                '[data-test-id*="upload"]',
-                '[data-test-id*="file"]',
-            ]
-            button=first_visible(page,attachment_selectors)
-            if button is not None:
-                try:
-                    with page.expect_file_chooser(timeout=3000) as chooser_info:
-                        button.click()
-                    chooser_info.value.set_files(str(image_path))
-                except Exception:
-                    pass
-            for selector in file_selectors:
-                try:
-                    loc=page.locator(selector)
-                    if loc.count():
-                        file_input=loc.nth(0)
-                        break
-                except Exception:
-                    pass
-        if file_input is not None:
-            file_input.set_input_files(str(image_path))
-        else:
+        baseline=await evaluate("""(() => {
+          const sels=['model-response','[data-test-id*="model-response"]','.model-response-text','message-content'];
+          const out=[]; const seen=new Set();
+          for (const s of sels) for (const el of document.querySelectorAll(s)) {
+            const t=(el.innerText||el.textContent||'').trim();
+            if(t&&!seen.has(t)){seen.add(t);out.push(t);}
+          }
+          return out.slice(-10);
+        })()""") or []
+
+        # Try to reveal an upload control if Gemini keeps file inputs lazy.
+        await evaluate("""(() => {
+          const buttons=[...document.querySelectorAll('button,[role="button"]')];
+          const b=buttons.find(x => /upload|file|add|attach|上傳|新增|附件/i.test(
+            [x.getAttribute('aria-label'),x.getAttribute('title'),x.innerText].filter(Boolean).join(' ')
+          ));
+          if(b) b.click();
+          return true;
+        })()""")
+        await asyncio.sleep(0.8)
+
+        doc=await call("DOM.getDocument",{"depth":-1,"pierce":True})
+        root=(doc.get("root") or {}).get("nodeId")
+        if not root:
+            raise RuntimeError("gemini_web_dom_root_missing")
+        q=await call("DOM.querySelector",{"nodeId":root,"selector":"input[type=file]"})
+        node_id=q.get("nodeId")
+        if not node_id:
             raise RuntimeError("gemini_web_image_upload_control_not_found")
+        await call("DOM.setFileInputFiles",{"nodeId":node_id,"files":[str(image_path)]})
+        await asyncio.sleep(1.2)
 
-        baseline=response_rows(page)
-        try:
-            composer.fill(prompt)
-        except Exception:
-            composer.click()
-            page.keyboard.press("ControlOrMeta+A")
-            page.keyboard.type(prompt)
-        page.keyboard.press("Enter")
+        prompt_json=json.dumps(prompt)
+        ok=await evaluate("""(() => {
+          const sels=[
+            'rich-textarea div[contenteditable="true"]',
+            'textarea[aria-label*="prompt" i]',
+            '[contenteditable="true"][aria-label*="prompt" i]',
+            'div.ql-editor[contenteditable="true"]',
+            'textarea',
+            '[contenteditable="true"]'
+          ];
+          let el=null;
+          for(const s of sels){el=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null); if(el)break;}
+          if(!el) return false;
+          const value="""+prompt_json+""";
+          el.focus();
+          if('value' in el){
+            const p=Object.getPrototypeOf(el); const d=Object.getOwnPropertyDescriptor(p,'value');
+            if(d&&d.set)d.set.call(el,value); else el.value=value;
+          } else {
+            el.textContent=value;
+          }
+          el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));
+          return true;
+        })()""")
+        if not ok:
+            raise RuntimeError("gemini_web_composer_not_found")
+        await asyncio.sleep(0.5)
 
-        deadline=time.monotonic()+150
+        sent=await evaluate("""(() => {
+          const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(x=>x.offsetParent!==null);
+          const b=buttons.find(x=>/send|submit|送出|傳送/i.test(
+            [x.getAttribute('aria-label'),x.getAttribute('title'),x.innerText].filter(Boolean).join(' ')
+          ));
+          if(b){b.click();return true;}
+          const el=document.activeElement;
+          if(el){
+            el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
+            el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
+            return true;
+          }
+          return false;
+        })()""")
+        if not sent:
+            raise RuntimeError("gemini_web_submit_failed")
+
+        deadline=time.monotonic()+160
         response=""
         while time.monotonic()<deadline:
-            rows=response_rows(page)
+            rows=await evaluate("""(() => {
+              const sels=['model-response','[data-test-id*="model-response"]','.model-response-text','message-content'];
+              const out=[]; const seen=new Set();
+              for (const s of sels) for (const el of document.querySelectorAll(s)) {
+                const t=(el.innerText||el.textContent||'').trim();
+                if(t&&!seen.has(t)){seen.add(t);out.push(t);}
+              }
+              return out.slice(-10);
+            })()""") or []
             fresh=[x for x in rows if x not in baseline]
-            if fresh:
-                response=fresh[-1]
-                if response.strip():
-                    break
-            time.sleep(1.5)
+            if fresh and str(fresh[-1]).strip():
+                response=str(fresh[-1]).strip()
+                break
+            await asyncio.sleep(1.5)
         if not response:
             raise TimeoutError("gemini_web_vlm_response_timeout")
         output_path.write_text(response,encoding="utf-8")
-        print("character_fusion_gemini_web_vlm=PASS")
+        print("character_fusion_gemini_web_raw_cdp=PASS")
+
+with lock_path.open("a+") as lock:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    asyncio.run(main())
 '''
         proc = subprocess.run(
             [str(python_bin), "-c", browser_script, str(prompt_path), str(image_path), str(output_path)],
             env=os.environ.copy(),
             capture_output=True,
             text=True,
-            timeout=210,
+            timeout=220,
         )
         if proc.returncode != 0:
             tail=(proc.stderr or proc.stdout or "")[-3000:]
