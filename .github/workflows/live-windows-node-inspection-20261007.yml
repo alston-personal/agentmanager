@@ -86,3 +86,41 @@ jobs:
           if not all(required.values()):
               raise SystemExit('semantic_preview acceptance failed')
           PY
+      - name: Inspect vopc task transport state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          fabric = RealmFabricStore().load()
+          queued = list((fabric.get('tasks') or {}).get('vopc5750') or [])
+          semantic = [
+              {
+                  'task_id': item.get('task_id'),
+                  'action': item.get('action'),
+                  'queued_at': item.get('queued_at'),
+              }
+              for item in queued
+              if isinstance(item, dict) and item.get('action') == 'desktop.semantic_preview'
+          ]
+
+          node_map = NodeRegistry().node_map()
+          node = next(
+              (n for n in (node_map.get('nodes') or [])
+               if isinstance(n, dict) and n.get('node_id') == 'vopc5750'),
+              None
+          )
+
+          print(json.dumps({
+              'queued_semantic_tasks': semantic,
+              'queued_task_count': len(queued),
+              'node': {
+                  'status': (node or {}).get('status'),
+                  'last_heartbeat_at': (node or {}).get('last_heartbeat_at'),
+                  'heartbeat_age_seconds': (node or {}).get('heartbeat_age_seconds'),
+              },
+          }, indent=2, sort_keys=True))
+          PY
