@@ -43,6 +43,7 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as r:
                   return json.load(r)
           prs = get(f"https://api.github.com/repos/{repo}/pulls?state=open&per_page=100")
+          closed = get(f"https://api.github.com/repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100")
           rows = []
           for pr in prs:
               n = pr["number"]
@@ -54,13 +55,34 @@ jobs:
                   "url": detail["html_url"],
                   "updated_at": detail["updated_at"],
                   "body": detail.get("body") or "",
+                  "base": detail["base"]["ref"],
+                  "head": detail["head"]["ref"],
                   "ahead_by": compare.get("ahead_by"),
                   "behind_by": compare.get("behind_by"),
                   "mergeable_state": detail.get("mergeable_state"),
                   "files": len(compare.get("files") or []),
               })
+          merged_rows = []
+          for pr in closed:
+              if not pr.get("merged_at"):
+                  continue
+              merged_rows.append({
+                  "number": pr["number"],
+                  "title": pr["title"],
+                  "url": pr["html_url"],
+                  "updated_at": pr["updated_at"],
+                  "merged_at": pr["merged_at"],
+                  "body": pr.get("body") or "",
+                  "base": pr["base"]["ref"],
+                  "head": pr["head"]["ref"],
+              })
           with open("/tmp/pr-backlog-snapshot.json", "w", encoding="utf-8") as f:
-              json.dump({"pull_requests": rows}, f, ensure_ascii=False, indent=2)
+              json.dump(
+                  {"pull_requests": rows, "merged_pull_requests": merged_rows},
+                  f,
+                  ensure_ascii=False,
+                  indent=2,
+              )
           PY
       - name: Reconcile dry-run
         run: |
