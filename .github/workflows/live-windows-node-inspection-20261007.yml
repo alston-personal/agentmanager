@@ -39,3 +39,50 @@ jobs:
               'nodes': picked,
           }, indent=2, sort_keys=True))
           PY
+      - name: Invoke semantic preview through ONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time, uuid
+          from agent_core.realm_fabric import RealmFabricStore
+
+          fabric = RealmFabricStore()
+          task_id = 'task-live-semantic-' + uuid.uuid4().hex
+          task = {
+              'schema': 'agentos.node-task/v0.1',
+              'task_id': task_id,
+              'action': 'desktop.semantic_preview',
+              'max_pixels': 160000,
+          }
+          queued = fabric.queue_task('vopc5750', task)
+          receipt = None
+          deadline = time.time() + 45
+          while time.time() < deadline:
+              receipt = fabric.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(1)
+
+          if not receipt:
+              raise SystemExit('semantic_preview receipt timeout')
+
+          evidence = {
+              'task_id': task_id,
+              'queued_at': queued.get('queued_at'),
+              'receipt': receipt,
+          }
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+
+          required = {
+              'ok': bool(receipt.get('ok')),
+              'read_only': receipt.get('read_only') is True,
+              'mode_present': bool(receipt.get('mode')),
+              'state_hash_present': bool(receipt.get('state_hash')),
+              'foreground_present': isinstance(receipt.get('foreground'), dict),
+              'preview_present': isinstance(receipt.get('preview'), dict),
+          }
+          print('SEMANTIC_PREVIEW_ACCEPTANCE=' + json.dumps(required, sort_keys=True))
+          if not all(required.values()):
+              raise SystemExit('semantic_preview acceptance failed')
+          PY
