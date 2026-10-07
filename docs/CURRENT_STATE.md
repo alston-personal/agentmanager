@@ -434,3 +434,7 @@ ONE task delivery is at-least-once rather than destructive-on-pull. Pulling a no
 ### Windows single hidden supervisor
 
 The canonical Windows runtime no longer uses a separate one-minute Scheduled Task watchdog. Managed endpoints can visibly flash a console when Task Scheduler creates a new PowerShell process every minute even when `-WindowStyle Hidden` is requested. The primary `AgentOS Thin Client` Scheduled Task is now a single long-running hidden PowerShell supervisor that launches the Python Thin Client, waits for exit, and restarts it after a short delay. Installer repair removes/disables legacy auxiliary task names including `AgentOS Thin Client Watchdog`, `AgentOS Thin Client Watchdog User`, `AgentOS Thin Client User`, and `AgentOS Thin Client Headless Switch`. This eliminates periodic process creation while preserving automatic Thin Client recovery.
+
+### Windows accepted runtime pointer semantics
+
+A successful readiness verification is authoritative. Each accepted immutable install instance writes a unique record under `accepted-runtimes/<install-id>.txt`. The legacy `current-runtime.txt` file is only a compatibility mirror and is updated best-effort after readiness. If another process holds that compatibility file open, the installer reports a warning but must not convert an already-running, readiness-verified runtime into `AGENTOS_ONE_CLICK_INSTALL=FAIL`.
