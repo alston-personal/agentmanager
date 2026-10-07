@@ -7,6 +7,7 @@ on:
       - 'dashboard/app/api/character-fusion/**'
       - 'dashboard/lib/character-fusion-jobs.ts'
       - 'scripts/character_fusion_worker.py'
+      - 'scripts/character_fusion_gemini_web_raw.py'
       - 'libs/model2ir/src/model2ir/reconciliation.py'
       - 'scripts/deploy_dashboard_blue_green_user.sh'
       - '.github/workflows/oracle-deploy-character-fusion-dashboard.yml'
@@ -16,6 +17,7 @@ on:
       - 'dashboard/app/api/character-fusion/**'
       - 'dashboard/lib/character-fusion-jobs.ts'
       - 'scripts/character_fusion_worker.py'
+      - 'scripts/character_fusion_gemini_web_raw.py'
       - 'libs/model2ir/src/model2ir/reconciliation.py'
       - 'scripts/deploy_dashboard_blue_green_user.sh'
       - '.github/workflows/oracle-deploy-character-fusion-dashboard.yml'
@@ -40,7 +42,7 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - name: Compile Character Fusion support
         run: |
-          python3 -m py_compile scripts/character_fusion_worker.py libs/model2ir/src/model2ir/reconciliation.py
+          python3 -m py_compile scripts/character_fusion_worker.py scripts/character_fusion_gemini_web_raw.py libs/model2ir/src/model2ir/reconciliation.py
           bash -n scripts/deploy_dashboard_blue_green_user.sh
       - name: Build Dashboard
         working-directory: dashboard
