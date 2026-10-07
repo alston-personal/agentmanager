@@ -33,7 +33,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/windows/thin_client_watchdog.ps1','scripts/windows/user_runtime_watchdog.ps1')
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1')
           foreach($file in $files) {
             $tokens = $null
             $errors = $null
@@ -72,8 +72,10 @@ jobs:
             'agentos-thin-client-hidden.ps1',
             "AgentOS Thin Client task still uses visible cmd.exe",
             "Refusing to start visible cmd.exe Thin Client task after repair",
+            "AgentOS Thin Client Watchdog User",
+            "AgentOS Thin Client User",
+            "Single hidden long-running task (no periodic console spawn)",
             "Refusing to start Thin Client task unless its registered action is hidden PowerShell",
-            "Refusing to start watchdog unless its registered action is hidden PowerShell",
             "WINDOWS_SUPERVISOR_APPROVAL_REQUIRED",
             "per-user autorun fallback is intentionally disabled",
             "AgentOS Thin Client User",
@@ -83,12 +85,6 @@ jobs:
             'Install-Supervisor $python.Path $runtimeRoot',
             'Runtime install instance:',
             'current-runtime.txt',
-            "Protected legacy watchdog ACL detected; using user-owned fallback",
-            "AgentOS Thin Client Watchdog",
-            "Independent watchdog: Installed (60s cadence)",
-            "thin_client_watchdog.ps1",
-            "Register-ScheduledTask -TaskName $watchdogTaskName",
-            "RepetitionInterval (New-TimeSpan -Minutes 1)",
             "AgentOS Thin Client Headless Switch",
             "Unregister-ScheduledTask"
           )) {
@@ -100,8 +96,6 @@ jobs:
             'agentos_node/onboarding.py',
             'agentos_node/session_bridge.py',
             'agentos_node/agent_surfaces.py',
-            'scripts/windows/thin_client_watchdog.ps1',
-            'scripts/windows/user_runtime_watchdog.ps1',
             'StateRoot',
             'Shared state:',
             'Policy: preserved existing',
@@ -115,16 +109,8 @@ jobs:
           $successBlock = ($cmd -split ':fail',2)[0]
           if($successBlock -match '(?im)^pause\s*$') { throw 'successful installer path must not pause or leave a cmd window open' }
 
-          $watchdog = Get-Content -Raw scripts/windows/thin_client_watchdog.ps1
-          foreach($needle in @(
-            'HeartbeatStaleSeconds = 180',
-            'state\heartbeat.json',
-            'restart_requested',
-            'stale_client_restart',
-            'MinRestartSeconds = 45'
-          )) {
-            if(-not $watchdog.Contains($needle)) { throw "missing watchdog contract marker: $needle" }
-          }
-
+          if($one -match 'Register-ScheduledTask -TaskName \\$watchdogTaskName'){ throw 'periodic watchdog task registration must not return' }
+          if($one -match 'RepetitionInterval \\(New-TimeSpan -Minutes 1\\)'){ throw 'one-minute watchdog trigger must not return' }
+          if($one -match 'Protected legacy watchdog ACL detected; using user-owned fallback'){ throw 'watchdog fallback must not return' }
           python -m unittest tests.test_thin_client
           Write-Host 'windows_one_click_contract=PASS'
