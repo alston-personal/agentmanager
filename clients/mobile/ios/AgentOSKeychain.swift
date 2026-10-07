@@ -1,8 +1,8 @@
 import Foundation
 import Security
 
-enum AgentOSKeychain {
-    static func save(_ value: String, account: String) throws {
+struct AgentOSKeychain: AgentOSCredentialStore {
+    private static func save(_ value: String, account: String) throws {
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -19,7 +19,7 @@ enum AgentOSKeychain {
         }
     }
 
-    static func load(account: String) throws -> String? {
+    private static func load(account: String) throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "AgentOSMobile",
@@ -36,3 +36,12 @@ enum AgentOSKeychain {
         return String(data: data, encoding: .utf8)
     }
 }
+
+
+    func saveNodeToken(_ token: String, nodeID: String) throws {
+        try Self.save(token, account: "node-token:\(nodeID)")
+    }
+
+    func loadNodeToken(nodeID: String) throws -> String? {
+        try Self.load(account: "node-token:\(nodeID)")
+    }
