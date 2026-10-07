@@ -1099,7 +1099,20 @@ class ActionRelayWorker:
             expected = "sha256:" + hashlib.sha256(_canonical(unsigned)).hexdigest()
             if supplied != expected: raise ValueError("capsule digest mismatch")
             result = ACTIONS[action](params)
-            receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"action": action,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),**result}
+            # governed_receipt_reserved_fields_v1: the relay owns receipt identity.
+            # Capability results may carry their own schema/metadata but must never
+            # overwrite the governance envelope used for validation and audit.
+            receipt = {
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "action": action,
+                "started_at": started,
+                "completed_at": _now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+            }
+            reserved = {"schema", "capsule_id", "action", "started_at", "completed_at", "executor_user"}
+            for key, value in result.items():
+                receipt[("result_" + key) if key in reserved else key] = value
         except Exception as exc:
             receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),"ok": False,"error": f"{type(exc).__name__}: {exc}"}
         target = self.paths.receipts / f"{capsule_id}.json"; tmp = target.with_suffix(".json.tmp")
