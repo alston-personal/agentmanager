@@ -7,7 +7,7 @@ from typing import Any
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from agentos_node.antigravity_relay import AntigravityRelayClient
-from agentos_node.social.dm_loop_guard import should_auto_reply, record_auto_reply
+from agentos_node.social.dm_loop_guard import should_auto_reply, record_auto_reply, record_consumed
 from agentos_node.social.persona_dm import binding_for
 
 PERSONA="oursong"
@@ -110,29 +110,40 @@ def main()->int:
     if os.geteuid()!=1001:
         print("oursong_dm_autonomous=WRONG_USER"); return 2
     state=load_json(STATE,{"schema":"agentos.persona-dm-loop-state/v1"})
-    candidates=[]
+    pending=[]
     for event in events():
         user=str(event.get("actor_username") or "").lstrip("@")
         text=str(event.get("text") or "").strip()
         if not USERNAME_RE.fullmatch(user) or not text:
             continue
-        decision=should_auto_reply(
-            event=event,
-            state=state,
-            own_account=BINDING.account,
-            peer_account=PEER,
-            max_auto_hops=BINDING.max_auto_hops,
-            cooldown_seconds=BINDING.cooldown_seconds,
-            hop_window_seconds=600,
-        )
-        if decision.allow:
-            candidates.append((event,user,text,decision))
-    if not candidates:
+        mid=str(event.get("message_id") or "")
+        if mid and mid in set(str(x) for x in state.get("processed_message_ids") or []):
+            continue
+        pending.append((event,user,text))
+
+    if not pending:
         print("oursong_dm_autonomous=PASS")
         print("oursong_dm_autonomous_pending=0")
         return 0
 
-    event,user,text,guard=candidates[-1]
+    event,user,text=pending[-1]
+    guard=should_auto_reply(
+        event=event,
+        state=state,
+        own_account=BINDING.account,
+        peer_account=PEER,
+        max_auto_hops=BINDING.max_auto_hops,
+        cooldown_seconds=BINDING.cooldown_seconds,
+        hop_window_seconds=600,
+    )
+    if not guard.allow:
+        if guard.reason in {"cooldown","hop_budget_exhausted","semantic_duplicate","unexpected_peer","own_message","not_inbound","incomplete_event"}:
+            state=record_consumed(event=event,state=state,fingerprint=guard.fingerprint)
+            save_json(STATE,state)
+        print("oursong_dm_autonomous=PASS")
+        print("oursong_dm_autonomous_guard="+guard.reason)
+        print("oursong_dm_autonomous_pending=0")
+        return 0
     decision=decide(text)
     result=str(decision.get("decision") or "no_reply")
     print("oursong_dm_autonomous_guard="+guard.reason)
@@ -166,11 +177,7 @@ def main()->int:
             now_epoch=time.time(),
         )
     else:
-        processed=list(state.get("processed_message_ids") or [])
-        mid=str(event.get("message_id") or "")
-        if mid and mid not in processed: processed.append(mid)
-        state=dict(state)
-        state["processed_message_ids"]=processed[-5000:]
+        state=record_consumed(event=event,state=state,fingerprint=guard.fingerprint)
 
     save_json(STATE,state)
     print("oursong_dm_autonomous=PASS")
