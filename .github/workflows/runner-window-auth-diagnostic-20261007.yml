@@ -1,0 +1,66 @@
+name: Runner Window Auth Diagnostic 20261007
+
+on:
+  push:
+    branches:
+      - ops/runner-window-auth-diagnostic-20261007
+    paths:
+      - '.github/workflows/runner-window-auth-diagnostic-20261007.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mint scheduler OIDC and inspect claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8'))['value'])
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import base64,json,sys
+          t=json.load(open(sys.argv[1],encoding='utf-8'))['value']
+          p=t.split('.')[1]
+          p += '='*((4-len(p)%4)%4)
+          c=json.loads(base64.urlsafe_b64decode(p))
+          keep={k:c.get(k) for k in ('iss','aud','sub','repository','repository_owner','ref','ref_type','event_name','workflow_ref','job_workflow_ref','actor')}
+          print(json.dumps(keep,indent=2,sort_keys=True))
+          PY
+
+      - name: Probe Runner Window auth response
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch'
+          for mode in unauth bearer; do
+            echo "=== $mode ==="
+            headers="$RUNNER_TEMP/$mode.headers"
+            body="$RUNNER_TEMP/$mode.body"
+            if [ "$mode" = bearer ]; then
+              code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $TOKEN" "$BASE" || true)"
+            else
+              code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' --max-time 15 "$BASE" || true)"
+            fi
+            echo "http=$code"
+            grep -iE '^(www-authenticate|server|content-type|x-|date):' "$headers" || true
+            python3 - "$body" <<'PY'
+          import sys
+          data=open(sys.argv[1],'rb').read()[:4000]
+          try: print(data.decode('utf-8','replace'))
+          except Exception: print(repr(data))
+          PY
+          done
