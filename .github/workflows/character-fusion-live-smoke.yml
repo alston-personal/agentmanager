@@ -1,0 +1,102 @@
+name: Character Fusion Live Smoke
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-live-smoke.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-live-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: character-fusion-live-smoke
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate workflow contract
+        run: |
+          grep -Fq 'character_fusion_worker.py' .github/workflows/character-fusion-live-smoke.yml
+          grep -Fq 'smoke_acceptance' .github/workflows/character-fusion-live-smoke.yml
+
+  live:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run production Character Fusion provider smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ACTIVE_SLOT="$(cat /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-slot)"
+          RELEASE="$(readlink -f "/home/ubuntu/agent-data/runtime/dashboard/$ACTIVE_SLOT")"
+          test -f "$RELEASE/scripts/character_fusion_worker.py"
+          test -f "$RELEASE/libs/model2ir/src/model2ir/reconciliation.py"
+
+          SOURCE=/tmp/character-fusion-live-smoke.webp
+          OUTPUT=/tmp/character-fusion-live-smoke.png
+          curl -fL --retry 3 --max-time 30 \
+            https://studio.milkcat.org/personas/mio/mio-base-v2.webp \
+            -o "$SOURCE"
+          test -s "$SOURCE"
+
+          AGENTOS_REPO_ROOT="$RELEASE" python3 - "$SOURCE" "$OUTPUT" <<'PY'
+          import importlib.util
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          source=Path(sys.argv[1])
+          output=Path(sys.argv[2])
+          release=Path(os.environ["AGENTOS_REPO_ROOT"])
+          worker_path=release/"scripts"/"character_fusion_worker.py"
+          spec=importlib.util.spec_from_file_location("character_fusion_live_worker",worker_path)
+          if spec is None or spec.loader is None:
+              raise SystemExit("worker import failed")
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+
+          person_ir=mod.extract_person_traits(source)
+          target=mod.fuse(mod.water_drop_main_ir(),person_ir)
+          image=mod.render_image(target,source,None,strict=True)
+          output.write_bytes(image)
+          actual=mod.inspect_output(output)
+          acceptance=mod.accept("water-drop",target,actual)
+          print(json.dumps({
+              "person_traits": person_ir,
+              "target_body_plan": target.get("body_plan"),
+              "actual": actual,
+              "smoke_acceptance": acceptance,
+              "image_bytes": len(image),
+              "image_model": mod.IMAGE_MODEL,
+              "vision_model": mod.VISION_MODEL,
+          },ensure_ascii=False))
+          if len(image) < 10000:
+              raise SystemExit("generated image unexpectedly small")
+          if not acceptance.get("pass"):
+              raise SystemExit("character fusion live acceptance failed")
+          PY
+          rm -f "$SOURCE" "$OUTPUT"
+          echo 'character_fusion_live_smoke=PASS'
+          REMOTE
