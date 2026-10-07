@@ -1,0 +1,80 @@
+name: Runtime Converge Core Integration 20261007
+
+on:
+  push:
+    branches:
+      - ops/runtime-converge-core-integration-20261007
+    paths:
+      - '.github/workflows/runtime-converge-core-integration-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  converge:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/integration
+          fetch-depth: 0
+
+      - name: Submit governed runtime converge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin core/integration
+          target="$(git rev-parse origin/core/integration)"
+          echo "target_commit=$target"
+
+          python3 - "$target" <<'PY'
+          import json,sys,time,uuid
+          from agentos_node.action_relay import ActionRelayClient
+
+          target=sys.argv[1].strip()
+          request={
+              'schema':'agentos.runtime-converge-request/v1',
+              'request_id':'chatgpt-recover-' + uuid.uuid4().hex[:24],
+              'node_id':'oracle-core-node',
+              'repository':'alston-personal/agentmanager',
+              'source_ref':'core/integration',
+              'source_commit':target,
+          }
+
+          client=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+          capsule=client.submit('agentos.runtime.converge', {'request':request})
+          print(json.dumps({'submission':capsule,'request':request},indent=2))
+
+          deadline=time.monotonic()+720
+          receipt=None
+          while time.monotonic()<deadline:
+              receipt=client.receipt(capsule['capsule_id'])
+              if receipt is not None:
+                  break
+              time.sleep(2)
+
+          if receipt is None:
+              raise SystemExit('runtime_converge_receipt_timeout')
+
+          print(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True))
+          if receipt.get('action') != 'agentos.runtime.converge':
+              raise SystemExit('runtime_converge_wrong_action')
+          if receipt.get('status') != 'completed':
+              raise SystemExit('runtime_converge_not_completed')
+          if receipt.get('health') != 'passed':
+              raise SystemExit('runtime_converge_health_not_passed')
+          if receipt.get('resulting_commit') != target:
+              raise SystemExit('runtime_converge_wrong_commit')
+          print('RUNTIME_CONVERGE=PASS')
+          PY
+
+      - name: Verify live Realm health
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1:8780/v1/health
+          echo
+          echo 'REALM_HEALTH=PASS'
