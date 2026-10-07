@@ -133,6 +133,7 @@ jobs:
       INVOICE_PORT: '18767'
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_INVOICE_MODEL: gemini-3.8-flash
+      GEMINI_INVOICE_FALLBACK_MODELS: gemini-3.7-flash
     steps:
       - uses: actions/checkout@v4
 
@@ -160,6 +161,7 @@ jobs:
           {
             printf '%s\n' 'INVOICE_VISION_MODE=primary'
             printf 'GEMINI_INVOICE_MODEL=%s\n' "${GEMINI_INVOICE_MODEL}"
+            printf 'GEMINI_INVOICE_FALLBACK_MODELS=%s\n' "${GEMINI_INVOICE_FALLBACK_MODELS}"
             printf 'GEMINI_API_KEY=%s\n' "${GEMINI_API_KEY}"
           } | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               'umask 077; cat > /home/ubuntu/invoice-intake-service/vision.env'
