@@ -94,6 +94,16 @@ def configuration() -> dict:
     return {'mode': mode, 'model': model or None, 'status': status}
 
 
+def _fallback_models(primary: str) -> list[str]:
+    raw = os.environ.get('GEMINI_INVOICE_FALLBACK_MODELS', '').strip()
+    models = [primary]
+    for item in raw.split(','):
+        candidate = item.strip()
+        if candidate and candidate not in models:
+            models.append(candidate)
+    return models
+
+
 def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
     if not api_key or not model:
         raise VisionError('CONFIGURATION_MISSING')
@@ -103,81 +113,99 @@ def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
         mime = Image.MIME.get(image.format)
     if mime not in {'image/jpeg', 'image/png', 'image/webp'}:
         raise VisionError('UNSUPPORTED_IMAGE')
-    body = {
-        'model': model,
-        'input': [{'type': 'text', 'text': PROMPT},
-                  {'type': 'image', 'data': base64.b64encode(image_bytes).decode('ascii'), 'mime_type': mime}],
-        'response_format': {'type': 'text', 'mime_type': 'application/json', 'schema': SCHEMA},
-    }
-    req = urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/interactions',
-        data=json.dumps(body).encode(), method='POST', headers={
-            'Content-Type': 'application/json', 'x-goog-api-key': api_key, 'Api-Revision': '2026-05-20'})
-    envelope = None
+
+    terminal_errors = {'API_KEY_INVALID', 'AUTH_REQUIRED', 'INVALID_REQUEST', 'INVALID_RESPONSE'}
     last_error = None
-    retry_delays = (0, 1.5, 4.0)
-    for attempt, delay in enumerate(retry_delays, start=1):
-        if delay:
-            time.sleep(delay)
+
+    for selected_model in _fallback_models(model):
+        body = {
+            'model': selected_model,
+            'input': [{'type': 'text', 'text': PROMPT},
+                      {'type': 'image', 'data': base64.b64encode(image_bytes).decode('ascii'), 'mime_type': mime}],
+            'response_format': {'type': 'text', 'mime_type': 'application/json', 'schema': SCHEMA},
+        }
+        req = urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/interactions',
+            data=json.dumps(body).encode(), method='POST', headers={
+                'Content-Type': 'application/json', 'x-goog-api-key': api_key, 'Api-Revision': '2026-05-20'})
+
+        envelope = None
+        retry_delays = (0, 1.5, 4.0)
+        for attempt, delay in enumerate(retry_delays, start=1):
+            if delay:
+                time.sleep(delay)
+            try:
+                with urllib.request.urlopen(req, timeout=90) as response:
+                    raw = response.read(1024 * 1024 + 1)
+                if len(raw) > 1024 * 1024:
+                    raise VisionError('RESPONSE_TOO_LARGE')
+                envelope = json.loads(raw)
+                break
+            except urllib.error.HTTPError as exc:
+                code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code)
+                retryable = exc.code in {429, 500, 502, 503, 504}
+                if code is None:
+                    try:
+                        raw_error = exc.read(64 * 1024)
+                        payload = json.loads(raw_error)
+                        candidates = payload if isinstance(payload, list) else [payload]
+                        reasons = {
+                            str(detail.get('reason'))
+                            for item in candidates if isinstance(item, dict)
+                            for error in [item.get('error')]
+                            if isinstance(error, dict)
+                            for detail in (error.get('details') or [])
+                            if isinstance(detail, dict)
+                        }
+                        if 'API_KEY_INVALID' in reasons:
+                            code = 'API_KEY_INVALID'
+                        elif exc.code == 400:
+                            code = 'INVALID_REQUEST'
+                    except Exception:
+                        code = None
+                last_error = code or ('PROVIDER_UNAVAILABLE' if retryable else 'PROVIDER_ERROR')
+                if last_error in terminal_errors:
+                    raise VisionError(last_error) from None
+                if not retryable or attempt == len(retry_delays):
+                    break
+            except (urllib.error.URLError, TimeoutError):
+                last_error = 'TRANSPORT_ERROR'
+                if attempt == len(retry_delays):
+                    break
+            except (ValueError, TypeError):
+                raise VisionError('INVALID_RESPONSE') from None
+
+        if envelope is None:
+            continue
+
+        text = envelope.get('output_text')
+        if not text:
+            text = ''.join(c.get('text', '') for step in envelope.get('steps', [])
+                           if step.get('type') == 'model_output' for c in step.get('content', [])
+                           if c.get('type') == 'text')
         try:
-            with urllib.request.urlopen(req, timeout=90) as response:
-                raw = response.read(1024 * 1024 + 1)
-            if len(raw) > 1024 * 1024:
-                raise VisionError('RESPONSE_TOO_LARGE')
-            envelope = json.loads(raw)
-            break
-        except urllib.error.HTTPError as exc:
-            code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code)
-            retryable = exc.code in {429, 500, 502, 503, 504}
-            if code is None:
-                try:
-                    raw_error = exc.read(64 * 1024)
-                    payload = json.loads(raw_error)
-                    candidates = payload if isinstance(payload, list) else [payload]
-                    reasons = {
-                        str(detail.get('reason'))
-                        for item in candidates if isinstance(item, dict)
-                        for error in [item.get('error')]
-                        if isinstance(error, dict)
-                        for detail in (error.get('details') or [])
-                        if isinstance(detail, dict)
-                    }
-                    if 'API_KEY_INVALID' in reasons:
-                        code = 'API_KEY_INVALID'
-                    elif exc.code == 400:
-                        code = 'INVALID_REQUEST'
-                except Exception:
-                    code = None
-            last_error = code or ('PROVIDER_UNAVAILABLE' if retryable else 'PROVIDER_ERROR')
-            if not retryable or attempt == len(retry_delays):
-                raise VisionError(last_error) from None
-        except (urllib.error.URLError, TimeoutError):
-            last_error = 'TRANSPORT_ERROR'
-            if attempt == len(retry_delays):
-                raise VisionError(last_error) from None
+            payload = json.loads(text)
+            validate_payload(payload)
+            payload = {
+                **{k: payload.get(k) for k in TEXT_FIELDS},
+                **{k: payload.get(k) for k in MONEY_FIELDS},
+                'line_items': payload.get('line_items') or [],
+                'needs_review': payload.get('needs_review'),
+                'uncertain_fields': payload.get('uncertain_fields') or [],
+            }
         except (ValueError, TypeError):
             raise VisionError('INVALID_RESPONSE') from None
-    if envelope is None:
-        raise VisionError(last_error or 'PROVIDER_ERROR')
-    text = envelope.get('output_text')
-    if not text:
-        text = ''.join(c.get('text', '') for step in envelope.get('steps', [])
-                       if step.get('type') == 'model_output' for c in step.get('content', [])
-                       if c.get('type') == 'text')
-    try:
-        payload = json.loads(text)
-        validate_payload(payload)
-        payload = {
-            **{k: payload.get(k) for k in TEXT_FIELDS},
-            **{k: payload.get(k) for k in MONEY_FIELDS},
-            'line_items': payload.get('line_items') or [],
-            'needs_review': payload.get('needs_review'),
-            'uncertain_fields': payload.get('uncertain_fields') or [],
+        return {
+            'payload': payload,
+            'model': selected_model,
+            'requested_model': model,
+            'fallback_used': selected_model != model,
+            'image_sha256': hashlib.sha256(image_bytes).hexdigest(),
+            'input_bytes': len(image_bytes),
+            'input_mime': mime,
+            'prompt_version': 'invoice-whole-image-v1',
         }
-    except (ValueError, TypeError):
-        raise VisionError('INVALID_RESPONSE') from None
-    return {'payload': payload, 'model': model, 'image_sha256': hashlib.sha256(image_bytes).hexdigest(),
-            'input_bytes': len(image_bytes), 'input_mime': mime, 'prompt_version': 'invoice-whole-image-v1'}
 
+    raise VisionError(last_error or 'PROVIDER_ERROR') from None
 
 
 def _read_amount_image(
