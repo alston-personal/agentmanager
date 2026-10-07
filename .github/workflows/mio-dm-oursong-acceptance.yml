@@ -13,6 +13,8 @@ on:
       - 'scripts/resume_mio_threads_login_user.sh'
       - 'scripts/threads_web_dm_bridge_user.py'
       - 'scripts/mio_dm_oracle_oursong_acceptance.cjs'
+      - 'scripts/oursong_dm_mio_roundtrip_acceptance.cjs'
+      - 'scripts/run_oursong_dm_mio_roundtrip_user.sh'
 
 permissions:
   contents: read
@@ -37,6 +39,8 @@ jobs:
           set -euo pipefail
           python3 -m py_compile agentos_node/bootstrap_control.py agentos_node/bootstrap_scheduler.py agent_core/runner_window.py
           node --check scripts/mio_dm_oracle_oursong_acceptance.cjs
+          node --check scripts/oursong_dm_mio_roundtrip_acceptance.cjs
+          bash -n scripts/run_oursong_dm_mio_roundtrip_user.sh
           bash -n scripts/run_mio_dm_oracle_oursong_acceptance_user.sh
           bash -n scripts/resume_mio_threads_login_user.sh
           grep -Fq "TARGET = 'oursong_alstonhuang'" scripts/mio_dm_oracle_oursong_acceptance.cjs
@@ -112,3 +116,38 @@ jobs:
 # post-login acceptance 2026-10-06T11:48+08:00
 
 # current-session-check 2026-10-06
+
+      - name: Verify Oursong receives and replies to Mio
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oursong-mio-roundtrip.txt"
+          AGENTOS_DISPATCH_WAIT_SECONDS=180 \
+            bash scripts/agentos_dispatch.sh \
+              persona.social.dm oursong.roundtrip.mio "$GITHUB_SHA" \
+              | tee "$OUT"
+          grep -q 'runner_window_dispatch=PASS' "$OUT"
+          python3 - "$OUT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          path,expected=sys.argv[1:3]
+          completed=None
+          for raw in open(path,encoding='utf-8'):
+              raw=raw.strip()
+              if not raw.startswith('{'): continue
+              try: row=json.loads(raw)
+              except json.JSONDecodeError: continue
+              if row.get('state')=='completed' and isinstance(row.get('receipt'),dict):
+                  completed=row
+          assert completed is not None, 'roundtrip receipt missing'
+          receipt=completed['receipt']
+          assert receipt.get('ok') is True, receipt
+          assert receipt.get('source_commit')==expected, receipt
+          pairs={}
+          for line in receipt.get('evidence') or []:
+              if '=' in str(line):
+                  k,v=str(line).split('=',1);pairs[k]=v
+          assert pairs.get('oursong_dm_mio_inbound')=='PASS',pairs
+          assert pairs.get('oursong_dm_mio_roundtrip')=='PASS',pairs
+          assert pairs.get('mio_dm_oursong_reply_verify')=='PASS',pairs
+          print('mio_oursong_dm_roundtrip_acceptance=PASS')
+          PY
