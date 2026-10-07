@@ -229,164 +229,35 @@ raise RuntimeError("No HF VLM succeeded: " + " | ".join(errors[-6:]))
 
 def _gemini_web_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
     python_bin = Path.home() / ".local/share/agentos/gui-worker/venv/bin/python"
+    helper = REPO_ROOT / "scripts" / "character_fusion_gemini_web_raw.py"
     if not python_bin.is_file():
         raise RuntimeError("Gemini Web GUI worker venv is unavailable for vision fallback")
+    if not helper.is_file():
+        raise RuntimeError("Gemini Web raw CDP helper is unavailable")
 
     with tempfile.TemporaryDirectory(prefix="character-fusion-gemini-web-vlm-") as tmp:
         prompt_path = Path(tmp) / "prompt.txt"
         output_path = Path(tmp) / "response.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
-        browser_script = r'''
-import fcntl
-import sys
-import time
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-
-prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
-image_path = Path(sys.argv[2])
-output_path = Path(sys.argv[3])
-lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
-lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-composer_selectors = [
-    'rich-textarea div[contenteditable="true"]',
-    'textarea[aria-label*="prompt" i]',
-    '[contenteditable="true"][aria-label*="prompt" i]',
-    'div.ql-editor[contenteditable="true"]',
-    'textarea',
-    '[contenteditable="true"]',
-]
-response_selectors = [
-    'model-response',
-    '[data-test-id*="model-response"]',
-    '.model-response-text',
-    'message-content',
-]
-file_selectors = [
-    'input[type="file"]',
-    'input[accept*="image"]',
-]
-
-def first_visible(page, selectors):
-    for selector in selectors:
-        try:
-            loc = page.locator(selector)
-            for i in range(min(loc.count(), 20)):
-                item = loc.nth(i)
-                try:
-                    if item.is_visible(timeout=250):
-                        return item
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return None
-
-def response_rows(page):
-    rows=[]
-    seen=set()
-    for selector in response_selectors:
-        try:
-            loc=page.locator(selector)
-            for i in range(max(0,loc.count()-10),loc.count()):
-                try:
-                    text=loc.nth(i).inner_text(timeout=800).strip()
-                except Exception:
-                    continue
-                if text and text not in seen:
-                    seen.add(text)
-                    rows.append(text)
-        except Exception:
-            pass
-    return rows
-
-with lock_path.open("a+") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    with sync_playwright() as p:
-        browser=p.chromium.connect_over_cdp("http://127.0.0.1:9222")
-        if not browser.contexts:
-            raise RuntimeError("gemini_web_no_browser_context")
-        pages=[x for x in browser.contexts[0].pages if "gemini.google.com" in str(x.url or "")]
-        if not pages:
-            raise RuntimeError("gemini_web_no_session")
-        page=next((x for x in pages if first_visible(x,composer_selectors) is not None),pages[0])
-        page.bring_to_front()
-        composer=first_visible(page,composer_selectors)
-        if composer is None:
-            raise RuntimeError("gemini_web_composer_not_found")
-
-        file_input=None
-        for selector in file_selectors:
-            try:
-                loc=page.locator(selector)
-                if loc.count():
-                    file_input=loc.nth(0)
-                    break
-            except Exception:
-                pass
-        if file_input is None:
-            attachment_selectors=[
-                'button[aria-label*="upload" i]',
-                'button[aria-label*="file" i]',
-                'button[aria-label*="add" i]',
-                '[data-test-id*="upload"]',
-                '[data-test-id*="file"]',
-            ]
-            button=first_visible(page,attachment_selectors)
-            if button is not None:
-                try:
-                    with page.expect_file_chooser(timeout=3000) as chooser_info:
-                        button.click()
-                    chooser_info.value.set_files(str(image_path))
-                except Exception:
-                    pass
-            for selector in file_selectors:
-                try:
-                    loc=page.locator(selector)
-                    if loc.count():
-                        file_input=loc.nth(0)
-                        break
-                except Exception:
-                    pass
-        if file_input is not None:
-            file_input.set_input_files(str(image_path))
-        else:
-            raise RuntimeError("gemini_web_image_upload_control_not_found")
-
-        baseline=response_rows(page)
-        try:
-            composer.fill(prompt)
-        except Exception:
-            composer.click()
-            page.keyboard.press("ControlOrMeta+A")
-            page.keyboard.type(prompt)
-        page.keyboard.press("Enter")
-
-        deadline=time.monotonic()+150
-        response=""
-        while time.monotonic()<deadline:
-            rows=response_rows(page)
-            fresh=[x for x in rows if x not in baseline]
-            if fresh:
-                response=fresh[-1]
-                if response.strip():
-                    break
-            time.sleep(1.5)
-        if not response:
-            raise TimeoutError("gemini_web_vlm_response_timeout")
-        output_path.write_text(response,encoding="utf-8")
-        print("character_fusion_gemini_web_vlm=PASS")
-'''
         proc = subprocess.run(
-            [str(python_bin), "-c", browser_script, str(prompt_path), str(image_path), str(output_path)],
+            [
+                str(python_bin),
+                str(helper),
+                "vlm",
+                "--prompt",
+                str(prompt_path),
+                "--image",
+                str(image_path),
+                "--output",
+                str(output_path),
+            ],
             env=os.environ.copy(),
             capture_output=True,
             text=True,
             timeout=210,
         )
         if proc.returncode != 0:
-            tail=(proc.stderr or proc.stdout or "")[-3000:]
+            tail = (proc.stderr or proc.stdout or "")[-3000:]
             raise RuntimeError(f"Gemini Web vision fallback failed: {tail}")
         return _parse_loose_json_text(output_path.read_text(encoding="utf-8"))
 
@@ -730,8 +601,11 @@ TARGET CHARACTER IR:
 
 def _render_image_gemini_web(target_ir: dict[str, Any], strict: bool) -> bytes:
     python_bin = Path.home() / ".local/share/agentos/gui-worker/venv/bin/python"
+    helper = REPO_ROOT / "scripts" / "character_fusion_gemini_web_raw.py"
     if not python_bin.is_file():
         raise RuntimeError("Gemini Web GUI worker venv is unavailable")
+    if not helper.is_file():
+        raise RuntimeError("Gemini Web raw CDP helper is unavailable")
 
     prompt = render_prompt(target_ir, strict=strict) + """
 Use your image-generation capability now. Return a generated image, not a text description.
@@ -741,118 +615,16 @@ The result must be a single polished mascot on a simple clean background.
         prompt_path = Path(tmp) / "prompt.txt"
         output_path = Path(tmp) / "output.png"
         prompt_path.write_text(prompt, encoding="utf-8")
-        helper = r'''
-import fcntl
-import sys
-import time
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-
-prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
-output = Path(sys.argv[2])
-lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
-lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-composer_selectors = [
-    'rich-textarea div[contenteditable="true"]',
-    'textarea[aria-label*="prompt" i]',
-    '[contenteditable="true"][aria-label*="prompt" i]',
-    'div.ql-editor[contenteditable="true"]',
-    'textarea',
-    '[contenteditable="true"]',
-]
-image_selectors = [
-    'model-response img',
-    '[data-test-id*="model-response"] img',
-    '.model-response-text img',
-    'message-content img',
-    'img[alt*="generated" i]',
-]
-
-def first_visible(page, selectors):
-    for selector in selectors:
-        try:
-            loc = page.locator(selector)
-            for i in range(min(loc.count(), 16)):
-                item = loc.nth(i)
-                try:
-                    if item.is_visible(timeout=250):
-                        return item
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return None
-
-def candidates(page):
-    rows = []
-    seen = set()
-    for selector in image_selectors:
-        try:
-            loc = page.locator(selector)
-            for i in range(loc.count()):
-                item = loc.nth(i)
-                try:
-                    if not item.is_visible(timeout=200):
-                        continue
-                    box = item.bounding_box()
-                    if not box or box.get("width", 0) < 180 or box.get("height", 0) < 180:
-                        continue
-                    key = (selector, i, round(box.get("width", 0)), round(box.get("height", 0)))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    rows.append(item)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return rows
-
-with lock_path.open("a+") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
-        if not browser.contexts:
-            raise RuntimeError("gemini_web_no_browser_context")
-        pages = [x for x in browser.contexts[0].pages if "gemini.google.com" in str(x.url or "")]
-        if not pages:
-            raise RuntimeError("gemini_web_no_session")
-        page = next((x for x in pages if first_visible(x, composer_selectors) is not None), pages[0])
-        page.bring_to_front()
-        composer = first_visible(page, composer_selectors)
-        if composer is None:
-            raise RuntimeError("gemini_web_composer_not_found")
-
-        baseline = len(candidates(page))
-        try:
-            composer.fill(prompt)
-        except Exception:
-            composer.click()
-            page.keyboard.press("ControlOrMeta+A")
-            page.keyboard.type(prompt)
-        page.keyboard.press("Enter")
-
-        deadline = time.monotonic() + 180
-        chosen = None
-        while time.monotonic() < deadline:
-            rows = candidates(page)
-            if len(rows) > baseline:
-                chosen = rows[-1]
-                break
-            time.sleep(1.5)
-
-        if chosen is None:
-            raise TimeoutError("gemini_web_image_response_timeout")
-
-        chosen.scroll_into_view_if_needed()
-        chosen.screenshot(path=str(output), type="png")
-        if not output.is_file() or output.stat().st_size < 10000:
-            raise RuntimeError("gemini_web_image_capture_invalid")
-        print("character_fusion_gemini_web_render=PASS")
-'''
         proc = subprocess.run(
-            [str(python_bin), "-c", helper, str(prompt_path), str(output_path)],
+            [
+                str(python_bin),
+                str(helper),
+                "render",
+                "--prompt",
+                str(prompt_path),
+                "--output",
+                str(output_path),
+            ],
             env=os.environ.copy(),
             capture_output=True,
             text=True,
