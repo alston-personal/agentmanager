@@ -9,7 +9,11 @@ on:
       - '.github/workflows/oracle-read-threads-web-dm.yml'
 
       - 'agentos_node/social/web_dm.py'
+      - 'agentos_node/social/persona_dm.py'
+      - 'agentos_node/social/dm_loop_guard.py'
       - 'scripts/threads_web_dm_bridge_user.py'
+      - 'scripts/mio_threads_dm_autonomous_user.py'
+      - 'scripts/send_threads_dm_from_decision_user.py'
       - 'scripts/run_threads_web_dm_read_user.sh'
       - 'scripts/probe_threads_web_dm_login_user.sh'
 
@@ -38,7 +42,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/core/integration"
-          python3 -m py_compile agentos_node/bootstrap_control.py agentos_node/social/web_dm.py scripts/threads_web_dm_bridge_user.py
+          python3 -m py_compile \
+            agentos_node/bootstrap_control.py \
+            agentos_node/social/web_dm.py \
+            agentos_node/social/persona_dm.py \
+            agentos_node/social/dm_loop_guard.py \
+            scripts/threads_web_dm_bridge_user.py \
+            scripts/mio_threads_dm_autonomous_user.py \
+            scripts/send_threads_dm_from_decision_user.py
           bash -n scripts/run_threads_web_dm_read_user.sh
           bash -n scripts/submit_oracle_bootstrap_request_remote.sh
 
@@ -168,10 +179,10 @@ jobs:
               pairs={
                   "threads_web_dm_new_events=":"new_events",
                   "threads_web_dm_inbound_events=":"inbound_events",
-                  "mio_dm_autonomous=":"autonomous",
+                  "threads_web_dm_autonomous=":"autonomous",
                   "mio_dm_autonomous_decision=":"decision",
-                  "mio_dm_send=":"send",
-                  "mio_dm_send_readback=":"readback",
+                  "persona_dm_send=":"send",
+                  "persona_dm_send_readback=":"readback",
                   "mio_dm_autonomous_pending=":"pending",
               }
               for prefix,key in pairs.items():
@@ -179,6 +190,9 @@ jobs:
                       status[key]=line.split("=",1)[1][:80]
           open("/tmp/mio-dm-e2e-status.json","w",encoding="utf-8").write(json.dumps(status,indent=2)+"\n")
           assert state in {"PASS","LOGIN_REQUIRED"},text[-8000:]
+          if state=="PASS":
+              assert status["autonomous"]=="PASS",status
+          print("mio_dm_live_acceptance="+("PASS" if state=="PASS" else state))
           PY
 
       - name: Upload sanitized Mio DM E2E status
