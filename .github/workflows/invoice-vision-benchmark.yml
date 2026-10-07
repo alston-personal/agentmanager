@@ -4,10 +4,12 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - feat/invoice-vision-benchmark
     paths:
       - 'benchmarks/invoice_handwriting/**'
       - 'scripts/invoice_vision_benchmark.py'
+      - 'services/invoice_intake/vision_ocr.py'
       - '.github/workflows/invoice-vision-benchmark.yml'
 
 permissions:
