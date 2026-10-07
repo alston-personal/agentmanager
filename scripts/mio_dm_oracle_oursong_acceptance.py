@@ -13,7 +13,7 @@ def _json_get(url: str):
 
 def _json_new(url: str):
     req=urllib.request.Request(
-        "http://127.0.0.1:9222/json/new?"+quote(url,safe=""),
+        "http://127.0.0.1:9224/json/new?"+quote(url,safe=""),
         method="PUT",
     )
     with urllib.request.urlopen(req, timeout=8) as r:
@@ -83,7 +83,7 @@ def _eval(ws,expr,cid):
     return value.get("value")
 
 def _threads_tab():
-    tabs=_json_get("http://127.0.0.1:9222/json/list")
+    tabs=_json_get("http://127.0.0.1:9224/json/list")
     candidates=[t for t in tabs if "threads.com" in str(t.get("url") or "") and t.get("webSocketDebuggerUrl")]
     if not candidates:
         raise RuntimeError("no Threads tab")
