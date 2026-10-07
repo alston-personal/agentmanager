@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -71,11 +72,32 @@ def classify(pr: dict[str, Any], *, now: datetime, stale_days: int = 7) -> dict[
     }
 
 
+def explicit_supersessions(prs: list[dict[str, Any]]) -> dict[int, int]:
+    """Return old_pr -> newer_pr only for explicit rebased-successor evidence."""
+    open_numbers = {int(pr.get("number")) for pr in prs if pr.get("number") is not None}
+    result: dict[int, int] = {}
+    for pr in prs:
+        body = str(pr.get("body") or "")
+        newer = int(pr.get("number"))
+        for match in re.finditer(r"(?i)rebased\s+follow-up\s+to\s+#(\d+)", body):
+            older = int(match.group(1))
+            if older in open_numbers and older != newer:
+                result[older] = newer
+    return result
+
+
 def reconcile(snapshot: Any, *, now: datetime, stale_days: int = 7) -> dict[str, Any]:
     prs = snapshot.get("pull_requests", []) if isinstance(snapshot, dict) else snapshot
     if not isinstance(prs, list):
         raise ValueError("snapshot_must_be_list_or_pull_requests_object")
+    superseded = explicit_supersessions(prs)
     rows = [classify(pr, now=now, stale_days=stale_days) for pr in prs]
+    for row in rows:
+        number = int(row["number"])
+        if number in superseded:
+            row["status"] = "SUPERSEDED"
+            row["superseded_by"] = superseded[number]
+            row["reasons"].insert(0, f"explicit_rebased_follow_up=#{superseded[number]}")
     counts: dict[str, int] = {}
     for row in rows:
         counts[row["status"]] = counts.get(row["status"], 0) + 1
