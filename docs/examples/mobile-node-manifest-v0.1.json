@@ -1,0 +1,19 @@
+{
+  "schema": "agentos.mobile-node-manifest/v0.1",
+  "realm_id": "pending",
+  "node_id": "mobile-example",
+  "role": "client",
+  "platform": "ios|android",
+  "transport": {
+    "mode": "push-assisted",
+    "provider": "apns|fcm"
+  },
+  "presence": "foreground|background|suspended",
+  "executors": [
+    {
+      "executor_id": "mobile.notification",
+      "capabilities": ["notification.present"],
+      "state": "ready"
+    }
+  ]
+}
