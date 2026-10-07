@@ -111,7 +111,7 @@ class LobsterCompletionSelectionTests(unittest.TestCase):
                 lobster.completion_finish(
                     "wait-work",
                     False,
-                    "WAIT_EXTERNAL:2026-10-07T08:00:00+00:00:ci still running",
+                    "WAIT_EXTERNAL_UNTIL=2026-10-07T08:00:00+00:00 REASON=ci still running",
                 )
             item = work_completion.load(path)["items"]["wait-work"]
             self.assertEqual(item["status"], "waiting_external")
