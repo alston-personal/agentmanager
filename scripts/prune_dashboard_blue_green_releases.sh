@@ -9,8 +9,10 @@ KEEP_NEWEST="${DASHBOARD_RELEASE_KEEP_NEWEST:-6}"
 [ "$KEEP_NEWEST" -ge 2 ]
 [ -d "$ROOT" ]
 
-exec 9>/tmp/agentos-dashboard-deploy.lock
-flock -w 360 9
+if [ "${DASHBOARD_RETENTION_LOCK_HELD:-0}" != "1" ]; then
+  exec 9>/tmp/agentos-dashboard-deploy.lock
+  flock -w 360 9
+fi
 
 keep_file="$(mktemp)"
 trap 'rm -f "$keep_file"' EXIT
