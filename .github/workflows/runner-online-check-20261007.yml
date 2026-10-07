@@ -1,0 +1,19 @@
+name: Runner Online Check 20261007
+on:
+  push:
+    branches: [ops/runner-online-check-20261007]
+    paths: ['.github/workflows/runner-online-check-20261007.yml']
+permissions:
+  actions: read
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check queued oracle jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -e
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json'             "https://api.github.com/repos/$GH_REPO/actions/runs?status=queued&per_page=20"             | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps([{"id":r["id"],"name":r["name"],"branch":r["head_branch"],"created":r["created_at"]} for r in d.get("workflow_runs",[])],indent=2))'
