@@ -8,7 +8,7 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     env:
       DEPLOY_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -18,17 +18,22 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect Mio session supervisor
+      - name: Inspect targeted disk consumers
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          echo '=== SUPERVISOR STATUS ==='
-          systemctl --user --no-pager --full status mio-threads-session-supervisor.service 2>&1 || true
-          echo '=== SUPERVISOR UNIT ==='
-          systemctl --user cat mio-threads-session-supervisor.service mio-threads-session-supervisor.timer 2>&1 || true
-          echo '=== SUPERVISOR JOURNAL ==='
-          journalctl --user -u mio-threads-session-supervisor.service -n 120 --no-pager -o short-iso 2>&1 || true
-          echo '=== MIO BROWSER STATUS ==='
-          systemctl --user --no-pager --full status agentos-threads-browser-mio.service 2>&1 || true
+          echo '=== DF ==='
+          df -h /
+          echo '=== TARGETED SIZES ==='
+          for p in             "$HOME/.local/share/agentos"             "$HOME/.cache/ms-playwright"             "$HOME/.cache"             "$HOME/agentmanager"             "$HOME/agent-data"             "$HOME/zeus-writer"             /tmp; do
+            [ -e "$p" ] || continue
+            timeout 25s du -sh "$p" 2>/dev/null || echo "du_timeout $p"
+          done
+          echo '=== AGENTOS CHILDREN ==='
+          timeout 35s du -sh "$HOME/.local/share/agentos"/* 2>/dev/null | sort -h | tail -n 40 || true
+          echo '=== SESSION SUPERVISOR RELEASES ==='
+          find "$HOME/.local/share/agentos/mio-threads-session-supervisor/releases" -mindepth 1 -maxdepth 1 -type d -printf '%TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null | sort || true
+          echo '=== TMP TOP ==='
+          timeout 25s du -sh /tmp/* 2>/dev/null | sort -h | tail -n 30 || true
           REMOTE
