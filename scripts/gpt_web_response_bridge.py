@@ -9,8 +9,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-from playwright.async_api import async_playwright
-
 BRIDGE_SCHEMA = "agentos.session-bridge/v0.1"
 SESSION_INDEX_SCHEMA = "agentos.session-index/v0.1"
 REQUEST_SCHEMA = "agentos.session-request/v0.1"
@@ -41,6 +39,7 @@ def write_descriptor(root: Path, *, ready: bool) -> None:
 
 
 async def discover_page(cdp_url: str):
+    from playwright.async_api import async_playwright
     playwright = await async_playwright().start()
     browser = await playwright.chromium.connect_over_cdp(cdp_url)
     candidates = []
