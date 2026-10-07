@@ -32,7 +32,7 @@ def fetch_image(image_url: str) -> tuple[bytes, str]:
 
 def call_gemini(api_key: str, model: str, image_url: str) -> dict[str, Any]:
     image_bytes, image_mime = fetch_image(image_url)
-    return read_invoice(image_bytes, api_key=api_key, model=model)["payload"]
+    return read_invoice(image_bytes, api_key=api_key, model=model)
 
 def norm(v: Any) -> Any:
     if isinstance(v, str):
@@ -93,9 +93,17 @@ def main() -> int:
     total_correct = total_fields = unsafe_count = 0
     for case in manifest["cases"]:
         try:
-            actual = call_gemini(key, args.model, case["image_url"])
+            result = call_gemini(key, args.model, case["image_url"])
+            actual = result["payload"]
             scored = score(case["expected"], actual)
-            row = {"id": case["id"], "actual": actual, "score": scored}
+            row = {
+                "id": case["id"],
+                "actual": actual,
+                "selected_model": result.get("model"),
+                "requested_model": result.get("requested_model"),
+                "fallback_used": bool(result.get("fallback_used")),
+                "score": scored,
+            }
             total_correct += scored["correct"]
             total_fields += scored["total"]
             unsafe_count += int(scored["unsafe_pass"])
