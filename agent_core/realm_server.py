@@ -487,6 +487,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 safe_prefixes = (
                     'threads_web_dm_identity=',
                     'threads_web_dm_account=',
+                    'threads_web_dm_observed_account=',
+                    'threads_web_dm_identity_candidate_count=',
                     'threads_web_dm_read=',
                     'threads_web_dm_bridge=',
                     'threads_web_dm_transport=',
