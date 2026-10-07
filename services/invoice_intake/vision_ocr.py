@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from datetime import date
@@ -111,38 +112,52 @@ def read_invoice(image_bytes: bytes, *, api_key: str, model: str) -> dict:
     req = urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/interactions',
         data=json.dumps(body).encode(), method='POST', headers={
             'Content-Type': 'application/json', 'x-goog-api-key': api_key, 'Api-Revision': '2026-05-20'})
-    try:
-        with urllib.request.urlopen(req, timeout=90) as response:
-            raw = response.read(1024 * 1024 + 1)
-        if len(raw) > 1024 * 1024:
-            raise VisionError('RESPONSE_TOO_LARGE')
-        envelope = json.loads(raw)
-    except urllib.error.HTTPError as exc:
-        code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code)
-        if code is None:
-            try:
-                raw_error = exc.read(64 * 1024)
-                payload = json.loads(raw_error)
-                candidates = payload if isinstance(payload, list) else [payload]
-                reasons = {
-                    str(detail.get('reason'))
-                    for item in candidates if isinstance(item, dict)
-                    for error in [item.get('error')]
-                    if isinstance(error, dict)
-                    for detail in (error.get('details') or [])
-                    if isinstance(detail, dict)
-                }
-                if 'API_KEY_INVALID' in reasons:
-                    code = 'API_KEY_INVALID'
-                elif exc.code == 400:
-                    code = 'INVALID_REQUEST'
-            except Exception:
-                code = None
-        raise VisionError(code or 'PROVIDER_ERROR') from None
-    except (urllib.error.URLError, TimeoutError):
-        raise VisionError('TRANSPORT_ERROR') from None
-    except (ValueError, TypeError):
-        raise VisionError('INVALID_RESPONSE') from None
+    envelope = None
+    last_error = None
+    retry_delays = (0, 1.5, 4.0)
+    for attempt, delay in enumerate(retry_delays, start=1):
+        if delay:
+            time.sleep(delay)
+        try:
+            with urllib.request.urlopen(req, timeout=90) as response:
+                raw = response.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                raise VisionError('RESPONSE_TOO_LARGE')
+            envelope = json.loads(raw)
+            break
+        except urllib.error.HTTPError as exc:
+            code = {401: 'AUTH_REQUIRED', 403: 'AUTH_REQUIRED', 429: 'RATE_LIMITED'}.get(exc.code)
+            retryable = exc.code in {429, 500, 502, 503, 504}
+            if code is None:
+                try:
+                    raw_error = exc.read(64 * 1024)
+                    payload = json.loads(raw_error)
+                    candidates = payload if isinstance(payload, list) else [payload]
+                    reasons = {
+                        str(detail.get('reason'))
+                        for item in candidates if isinstance(item, dict)
+                        for error in [item.get('error')]
+                        if isinstance(error, dict)
+                        for detail in (error.get('details') or [])
+                        if isinstance(detail, dict)
+                    }
+                    if 'API_KEY_INVALID' in reasons:
+                        code = 'API_KEY_INVALID'
+                    elif exc.code == 400:
+                        code = 'INVALID_REQUEST'
+                except Exception:
+                    code = None
+            last_error = code or ('PROVIDER_UNAVAILABLE' if retryable else 'PROVIDER_ERROR')
+            if not retryable or attempt == len(retry_delays):
+                raise VisionError(last_error) from None
+        except (urllib.error.URLError, TimeoutError):
+            last_error = 'TRANSPORT_ERROR'
+            if attempt == len(retry_delays):
+                raise VisionError(last_error) from None
+        except (ValueError, TypeError):
+            raise VisionError('INVALID_RESPONSE') from None
+    if envelope is None:
+        raise VisionError(last_error or 'PROVIDER_ERROR')
     text = envelope.get('output_text')
     if not text:
         text = ''.join(c.get('text', '') for step in envelope.get('steps', [])
