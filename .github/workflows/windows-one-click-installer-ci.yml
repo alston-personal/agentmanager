@@ -85,11 +85,6 @@ jobs:
             'Install-Supervisor $python.Path $runtimeRoot',
             'Runtime install instance:',
             'current-runtime.txt',
-            "Protected legacy watchdog ACL detected; using user-owned fallback",
-            "AgentOS Thin Client Watchdog",
-            "thin_client_watchdog.ps1",
-            "Register-ScheduledTask -TaskName $watchdogTaskName",
-            "RepetitionInterval (New-TimeSpan -Minutes 1)",
             "AgentOS Thin Client Headless Switch",
             "Unregister-ScheduledTask"
           )) {
@@ -101,8 +96,6 @@ jobs:
             'agentos_node/onboarding.py',
             'agentos_node/session_bridge.py',
             'agentos_node/agent_surfaces.py',
-            'scripts/windows/thin_client_watchdog.ps1',
-            'scripts/windows/user_runtime_watchdog.ps1',
             'StateRoot',
             'Shared state:',
             'Policy: preserved existing',
@@ -116,16 +109,8 @@ jobs:
           $successBlock = ($cmd -split ':fail',2)[0]
           if($successBlock -match '(?im)^pause\s*$') { throw 'successful installer path must not pause or leave a cmd window open' }
 
-          $watchdog = Get-Content -Raw scripts/windows/thin_client_watchdog.ps1
-          foreach($needle in @(
-            'HeartbeatStaleSeconds = 180',
-            'state\heartbeat.json',
-            'restart_requested',
-            'stale_client_restart',
-            'MinRestartSeconds = 45'
-          )) {
-            if(-not $watchdog.Contains($needle)) { throw "missing watchdog contract marker: $needle" }
-          }
-
-          python -m unittest tests.test_thin_client
+          if($one -match 'Register-ScheduledTask -TaskName \\$watchdogTaskName'){ throw 'periodic watchdog task registration must not return' }
+if($one -match 'RepetitionInterval \\(New-TimeSpan -Minutes 1\\)'){ throw 'one-minute watchdog trigger must not return' }
+if($one -match 'Protected legacy watchdog ACL detected; using user-owned fallback'){ throw 'watchdog fallback must not return' }
+python -m unittest tests.test_thin_client
           Write-Host 'windows_one_click_contract=PASS'
