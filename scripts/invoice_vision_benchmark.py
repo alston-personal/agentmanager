@@ -118,7 +118,7 @@ def main() -> int:
     print("benchmark_summary=" + json.dumps(summary, ensure_ascii=False))
     if args.out:
         Path(args.out).write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    if error_count == len(rows):
+    if error_count:
         return 3
     return 1 if unsafe_count else 0
 
