@@ -183,7 +183,7 @@ def _browser_ws_url(cdp_url: str) -> str:
     return ws
 
 
-def _open_target_connection(cdp_url: str, target: dict[str, Any]) -> CdpTargetSession:
+def _open_target_connection(cdp_url: str, target: dict[str, Any], *, expected_url_prefix: str | None = "https://chatgpt.com/") -> CdpTargetSession:
     target_id = str(target.get("id") or "")
     direct_error: str | None = None
     direct = None
@@ -191,7 +191,7 @@ def _open_target_connection(cdp_url: str, target: dict[str, Any]) -> CdpTargetSe
         direct = CdpPage(str(target.get("webSocketDebuggerUrl") or ""))
         endpoint = CdpTargetSession(direct, session_id=None, mode="page-ws")
         href = endpoint.evaluate("location.href")
-        if isinstance(href, str) and href.startswith("https://chatgpt.com/"):
+        if isinstance(href, str) and (expected_url_prefix is None or href.startswith(expected_url_prefix)):
             return endpoint
         direct_error = f"unexpected_href:{href!r}"
     except Exception as exc:
@@ -213,7 +213,7 @@ def _open_target_connection(cdp_url: str, target: dict[str, Any]) -> CdpTargetSe
             raise RuntimeError("CDP_ATTACH_SESSION_ID_MISSING")
         endpoint = CdpTargetSession(browser, session_id=sid, mode="browser-session")
         href = endpoint.evaluate("location.href")
-        if not isinstance(href, str) or not href.startswith("https://chatgpt.com/"):
+        if not isinstance(href, str) or (expected_url_prefix is not None and not href.startswith(expected_url_prefix)):
             endpoint.close()
             raise RuntimeError(f"CDP_ATTACHED_UNEXPECTED_HREF:{href!r}")
         return endpoint
