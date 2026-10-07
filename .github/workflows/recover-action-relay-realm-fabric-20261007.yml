@@ -1,0 +1,89 @@
+name: Recover Action Relay and Realm Fabric 20261007
+
+on:
+  push:
+    branches:
+      - ops/recover-action-relay-realm-fabric-20261007
+    paths:
+      - '.github/workflows/recover-action-relay-realm-fabric-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Capture exact main generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          echo "AGENTOS_REALM_FABRIC_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "source_commit=$(git rev-parse HEAD)"
+
+      - name: Refresh governed Action Relay under ubuntu identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp=/tmp/install-action-relay-user-20261007.sh
+          cp scripts/install_action_relay_user.sh "$tmp"
+          chmod 755 "$tmp"
+          sudo -n -u ubuntu env             AGENTOS_ACTION_SPOOL_PREPROVISIONED=1             AGENTOS_REPO=/home/ubuntu/agentmanager             AGENT_DATA_ROOT=/home/ubuntu/agent-data             bash "$tmp"
+
+      - name: Prove current Action Relay capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agentos_node.action_relay import ActionRelayClient
+
+          client=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+          capsule=client.submit('agentos.realm-fabric.deployment_status', {})
+          deadline=time.monotonic()+30
+          receipt=None
+          while time.monotonic()<deadline:
+              receipt=client.receipt(capsule['capsule_id'])
+              if receipt:
+                  break
+              time.sleep(0.5)
+          print(json.dumps(receipt,ensure_ascii=False,indent=2))
+          assert receipt is not None, 'deployment_status receipt timeout'
+          assert receipt.get('ok') is True, receipt
+          assert receipt.get('action') == 'agentos.realm-fabric.deployment_status', receipt
+          assert receipt.get('executor_user') == 'ubuntu', receipt
+          print('action_relay_current=PASS')
+          PY
+
+          echo '=== live relay process ==='
+          ps -eo user:20,group:20,pid,ppid,args             | grep -E '[a]gentos_node\.action_relay|[a]gentos_node\.executor_job_action_relay' || true
+
+      - name: Install exact Realm Fabric release through governed relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/install_realm_fabric_via_action_relay.py
+
+      - name: Verify live Realm health and generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1:8780/v1/health | tee /tmp/realm-health.json
+          python3 - <<'PY'
+          import json,os
+          r=json.load(open('.agentos/evidence/realm-fabric-install-current.json'))
+          assert r.get('ok') is True, r
+          assert r.get('source_commit') == os.environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT'], r
+          assert r.get('deployment_status') == 'converged', r
+          print('realm_fabric_recovery=PASS')
+          PY
