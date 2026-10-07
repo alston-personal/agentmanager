@@ -93,7 +93,12 @@ def classify_field(
         for tf in _token_forms(field, token.get("text") or ""):
             if not tf:
                 continue
-            if any(exp in tf or tf in exp for exp in expected_forms):
+            exact_match = any(
+                tf == exp
+                or (field in {"invoice_number", "invoice_date"} and exp in tf)
+                for exp in expected_forms
+            )
+            if exact_match:
                 exact.append(token)
                 break
             distance = min((_edit_distance(tf, exp) for exp in expected_forms), default=999)
