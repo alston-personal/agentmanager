@@ -125,6 +125,19 @@ if (-not (Test-Path -LiteralPath $policyPath)) {
   Write-Host "Policy: preserved existing $policyPath"
 }
 
+$provenancePath = Join-Path $InstallRoot 'runtime-provenance.json'
+$provenance = @{
+  schema = 'agentos.thin-client-runtime/v0.1'
+  status = 'observed'
+  source_ref = $SourceRef
+  source_commit = $Ref
+  path = $InstallRoot
+  provenance_path = $provenancePath
+  installed_at = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+} | ConvertTo-Json -Depth 4
+$provenance | Set-Content -Encoding UTF8 -LiteralPath $provenancePath
+Write-Host "Runtime provenance: $provenancePath"
+
 $launcher = @"
 @echo off
 set "PYTHONPATH=$InstallRoot"
