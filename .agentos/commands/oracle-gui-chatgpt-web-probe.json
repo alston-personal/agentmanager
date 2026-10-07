@@ -1,8 +1,8 @@
 {
   "schema": "agentos.chatgpt-web-probe-command/v1",
   "target": "oracle-gui-worker",
-  "requested_at": "2026-09-30T07:50:00Z",
-  "purpose": "Final readiness regression after ChatGPT web session provider acceptance and shared-CDP lifecycle fix",
+  "requested_at": "2026-10-07T08:34:30Z",
+  "purpose": "Verify ChatGPT Web persistent session for Character Fusion fallback",
   "retriggered_at": "2026-09-30T07:58:15Z",
   "post_acceptance_regression_at": "2026-09-30T08:00:05Z"
 }
