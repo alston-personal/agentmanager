@@ -239,6 +239,7 @@ def _should_fallback_from_gemini(exc: Exception) -> bool:
         "quota",
         "GEMINI_API_KEY is not configured",
         "GEMINI_API_KEY is invalid",
+        "Gemini transport timeout/unavailable",
     )
     return any(marker in message for marker in markers)
 
@@ -340,8 +341,12 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
                     "x-goog-api-key": api_key,
                 },
             )
+            request_timeout = max(
+                10.0,
+                float(os.environ.get("GEMINI_CHARACTER_REQUEST_TIMEOUT", "45")),
+            )
             try:
-                with urllib.request.urlopen(req, timeout=180) as response:
+                with urllib.request.urlopen(req, timeout=request_timeout) as response:
                     return json.loads(response.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", "replace")[:3000]
@@ -358,6 +363,15 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
                     continue
                 raise RuntimeError(
                     f"Gemini HTTP {exc.code} using key source {source_label} after attempt {attempt}/{max_attempts}: {body}"
+                ) from exc
+            except (TimeoutError, urllib.error.URLError) as exc:
+                if attempt < max_attempts:
+                    time.sleep(min(15.0, 2 ** attempt))
+                    continue
+                raise RuntimeError(
+                    "Gemini transport timeout/unavailable "
+                    f"using key source {source_label} after attempt "
+                    f"{attempt}/{max_attempts}: {type(exc).__name__}: {exc}"
                 ) from exc
 
     raise RuntimeError(
