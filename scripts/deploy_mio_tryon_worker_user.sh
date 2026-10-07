@@ -79,6 +79,8 @@ Type=simple
 Environment=HOME=/home/ubuntu
 Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
 Environment=AGENTOS_TRYON_POLL_SECONDS=2
+Environment=AGENTOS_TRYON_LAYER_TIMEOUT_SECONDS=180
+Environment=AGENTOS_TRYON_PROVIDER_TIMEOUT_SECONDS=120
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/home/ubuntu/.config/agentos/mio-tryon.env
 ExecStart=/home/ubuntu/.local/share/mio-tryon-venv/bin/python /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py

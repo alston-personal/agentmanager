@@ -8,6 +8,7 @@ import inspect
 import io
 import time
 import shutil
+import signal
 import tempfile
 import urllib.request
 import urllib.parse
@@ -44,6 +45,17 @@ BASE_BODY_URL = os.environ.get(
     "AGENTOS_MIO_BASE_BODY_URL",
     "https://studio.milkcat.org/personas/mio/mio-base-v2.webp",
 )
+
+LAYER_TIMEOUT_SECONDS = int(os.environ.get("AGENTOS_TRYON_LAYER_TIMEOUT_SECONDS", "180"))
+PROVIDER_TIMEOUT_SECONDS = float(os.environ.get("AGENTOS_TRYON_PROVIDER_TIMEOUT_SECONDS", "120"))
+
+
+class LayerTimeoutError(TimeoutError):
+    pass
+
+
+def _layer_timeout_handler(signum, frame):
+    raise LayerTimeoutError(f"layer render exceeded {LAYER_TIMEOUT_SECONDS}s")
 
 CLOTHING_SUPPORTED = {
     "upper_inner": "upper garment",
@@ -116,7 +128,7 @@ def client() -> Client:
             SPACE_ID,
             download_files=True,
             verbose=False,
-            httpx_kwargs={"timeout": 240.0},
+            httpx_kwargs={"timeout": PROVIDER_TIMEOUT_SECONDS},
         )
     return _CLIENT
 
@@ -127,7 +139,7 @@ def any_item_client(space_id: str) -> Client:
         client_kwargs = {
             "download_files": True,
             "verbose": False,
-            "httpx_kwargs": {"timeout": 360.0},
+            "httpx_kwargs": {"timeout": PROVIDER_TIMEOUT_SECONDS},
         }
         if HF_TOKEN:
             params = inspect.signature(Client).parameters
@@ -146,7 +158,7 @@ def qwen_edit_client() -> Client:
         client_kwargs = {
             "download_files": True,
             "verbose": False,
-            "httpx_kwargs": {"timeout": 420.0},
+            "httpx_kwargs": {"timeout": PROVIDER_TIMEOUT_SECONDS},
         }
         if HF_TOKEN:
             params = inspect.signature(Client).parameters
@@ -354,7 +366,7 @@ def inference_provider_reference_try_on(
                 client = InferenceClient(
                     provider=provider,
                     api_key=HF_TOKEN,
-                    timeout=420,
+                    timeout=PROVIDER_TIMEOUT_SECONDS,
                 )
                 result = client.image_to_image(
                     board_bytes,
@@ -449,6 +461,7 @@ def omni_try_on(
     object_url: str,
     object_class: str,
     seed: int,
+    progress_cb=None,
 ) -> tuple[str, str]:
     temp_inputs: list[Path] = []
     errors: list[str] = []
@@ -465,8 +478,10 @@ def omni_try_on(
         temp_inputs.append(object_path)
 
         for space_id in ANY_ITEM_SPACE_IDS:
-            for attempt in range(1, 4):
+            for attempt in range(1, 3):
                 try:
+                    if progress_cb:
+                        progress_cb(f"Trying {space_id} attempt {attempt}/2")
                     result = any_item_client(space_id).predict(
                         handle_file(str(person_path)),
                         handle_file(str(object_path)),
@@ -493,11 +508,13 @@ def omni_try_on(
                         f"{space_id}[attempt={attempt}]={message}"[:500]
                     )
                     _ANY_ITEM_CLIENTS.pop(space_id, None)
-                    if not transient or attempt >= 3:
+                    if not transient or attempt >= 2:
                         break
                     time.sleep(4 * attempt)
 
         try:
+            if progress_cb:
+                progress_cb(f"Falling back to {QWEN_EDIT_SPACE_ID}")
             return qwen_reference_try_on(
                 str(person_path),
                 str(object_path),
@@ -508,6 +525,8 @@ def omni_try_on(
             errors.append(f"{QWEN_EDIT_SPACE_ID}={type(exc).__name__}:{exc}"[:700])
 
         try:
+            if progress_cb:
+                progress_cb("Falling back to Hugging Face Inference Provider")
             return inference_provider_reference_try_on(
                 str(person_path),
                 str(object_path),
@@ -778,15 +797,19 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
             warnings.append({"layer": layer, "code": "missing_source_image"})
             continue
 
+        previous_handler = signal.signal(signal.SIGALRM, _layer_timeout_handler)
+        signal.alarm(max(1, LAYER_TIMEOUT_SECONDS))
         try:
             if layer in CLOTHING_SUPPORTED:
                 garment_name = str(item.get("name") or "garment") if isinstance(item, dict) else "garment"
                 description = f"{garment_name}; {CLOTHING_SUPPORTED[layer]}"
                 try:
+                    set_progress(path, job, "rendering", f"Rendering {layer} with {SPACE_ID}")
                     person_url = idm_try_on(person_url, source_url, description, seed_base + index)
                     provider = "idm-vton-gradio-client"
                     provider_space = SPACE_ID
                 except Exception as primary_exc:
+                    set_progress(path, job, "rendering", f"{SPACE_ID} unavailable; trying Inference Provider fallback")
                     person_url, provider_space = inference_provider_reference_try_on(
                         person_url,
                         source_url,
@@ -802,11 +825,14 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                         }
                     )
             else:
+                def any_item_progress(message: str):
+                    set_progress(path, job, "rendering", f"{layer}: {message}")
                 person_url, provider_space = omni_try_on(
                     person_url,
                     source_url,
                     ANY_ITEM_SUPPORTED[layer],
                     seed_base + index,
+                    progress_cb=any_item_progress,
                 )
                 provider = (
                     "qwen-image-2.1-reference-edit"
@@ -835,6 +861,9 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                     "message": error_message,
                 }
             )
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous_handler)
 
     if not rendered_layers:
         detail = "; ".join(
