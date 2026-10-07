@@ -137,37 +137,82 @@ def _hf_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
         prompt_path.write_text(prompt, encoding="utf-8")
         helper = r'''
 import base64
+import json
 import mimetypes
 import os
 import sys
 from pathlib import Path
+
+import httpx
 from huggingface_hub import InferenceClient
 
 prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
 image_path = Path(sys.argv[2])
-model = sys.argv[3]
+preferred = sys.argv[3].strip()
 mime = mimetypes.guess_type(image_path.name)[0] or "image/jpeg"
 data = base64.b64encode(image_path.read_bytes()).decode("ascii")
 image_url = f"data:{mime};base64,{data}"
-client = InferenceClient(api_key=os.environ["HF_TOKEN"], provider="auto")
-result = client.chat.completions.create(
-    model=model,
-    messages=[
-        {
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": image_url}},
-                {"type": "text", "text": prompt},
+token = os.environ["HF_TOKEN"]
+
+candidates = []
+if preferred:
+    candidates.append(preferred)
+
+try:
+    response = httpx.get(
+        "https://router.huggingface.co/v1/models",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    response.raise_for_status()
+    catalog = response.json().get("data") or []
+    for entry in catalog:
+        architecture = entry.get("architecture") or {}
+        modalities = architecture.get("input_modalities") or []
+        model_id = entry.get("id")
+        providers = entry.get("providers") or []
+        if model_id and "image" in modalities and any((p.get("status") or "") == "live" for p in providers):
+            if model_id not in candidates:
+                candidates.append(model_id)
+except Exception:
+    pass
+
+fallbacks = [
+    "zai-org/GLM-5.3-Flash:baseten",
+    "deepseek-ai/DeepSeek-V4.1-Flash:baseten",
+    "meta-llama/Llama-3.2-11B-Vision-Instruct",
+]
+for model_id in fallbacks:
+    if model_id not in candidates:
+        candidates.append(model_id)
+
+client = InferenceClient(api_key=token, provider="auto")
+errors = []
+for model_id in candidates[:12]:
+    try:
+        result = client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                        {"type": "text", "text": prompt},
+                    ],
+                }
             ],
-        }
-    ],
-    max_tokens=1400,
-    temperature=0.1,
-)
-content = result.choices[0].message.content
-if not isinstance(content, str):
-    raise RuntimeError("HF VLM returned non-text content")
-print(content)
+            max_tokens=1400,
+            temperature=0.1,
+        )
+        content = result.choices[0].message.content
+        if isinstance(content, str) and content.strip():
+            print(content)
+            raise SystemExit(0)
+        errors.append(f"{model_id}: empty response")
+    except Exception as exc:
+        errors.append(f"{model_id}: {type(exc).__name__}: {exc}")
+
+raise RuntimeError("No HF VLM succeeded: " + " | ".join(errors[-6:]))
 '''
         proc = subprocess.run(
             [str(python_bin), "-c", helper, str(prompt_path), str(image_path), model],
