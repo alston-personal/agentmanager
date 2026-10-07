@@ -113,12 +113,17 @@ class ObservationContract(unittest.TestCase):
         self.assertFalse(plan['due'])
         self.assertEqual(plan['reason'],'successful_read_fresh')
 
-    def test_due_planning_respects_recovery_and_periodic_policy(self):
-        for phase,energy in [('sleep',72),('rest',72),('afternoon',14)]:
-            with self.subTest(phase=phase,energy=energy):
-                plan=self.tick.social_observation_plan({},self.state,phase,energy,self.now)
-                self.assertEqual(plan['reason'],'recovery_window')
-                self.assertFalse(plan['due'])
+    def test_due_planning_keeps_read_lane_alive_during_recovery(self):
+        for phase in ('sleep','rest'):
+            with self.subTest(phase=phase):
+                plan=self.tick.social_observation_plan({},self.state,phase,72,self.now)
+                self.assertTrue(plan['due'])
+                self.assertEqual(plan['reason'],'recovery_read_due')
+                self.assertEqual(plan['max_age_minutes'],180)
+                self.assertTrue(plan['recovery_window'])
+        plan=self.tick.social_observation_plan({},self.state,'afternoon',14,self.now)
+        self.assertEqual(plan['reason'],'energy_recovery_required')
+        self.assertFalse(plan['due'])
         for interval in [None,False,0,-1,'60',float('nan'),float('inf')]:
             with self.subTest(interval=interval):
                 plan=self.tick.social_observation_plan({'social_observation':{'max_age_minutes':interval}},
@@ -128,8 +133,8 @@ class ObservationContract(unittest.TestCase):
             self.state,'afternoon',72,self.now)
         self.assertEqual(plan['reason'],'periodic_observation_disabled')
 
-    def test_existing_read_or_blocked_incident_prevents_supplemental_duplicate(self):
-        for status in ['candidate','in_progress','blocked']:
+    def test_existing_live_read_prevents_supplemental_duplicate(self):
+        for status in ['candidate','in_progress']:
             with self.subTest(status=status):
                 state={**self.state,'pending_external_actions':[{**self.action,'status':status}]}
                 receipt=self.creative_tick(state)
@@ -137,6 +142,29 @@ class ObservationContract(unittest.TestCase):
                        if x['capability']=='social.threads.observe']
                 self.assertEqual(len(reads),1)
                 self.assertFalse(receipt['plan']['social_observation']['due'])
+
+    def test_blocked_read_retries_after_finite_cooldown(self):
+        recent={**self.action,'status':'blocked',
+                'blocked_at':(self.now-timedelta(minutes=10)).isoformat()}
+        plan=self.tick.social_observation_plan({}, {**self.state,'pending_external_actions':[recent]},
+                                              'afternoon',72,self.now)
+        self.assertFalse(plan['due'])
+        self.assertEqual(plan['reason'],'blocked_read_retry_cooldown')
+
+        stale={**recent,'blocked_at':(self.now-timedelta(minutes=31)).isoformat()}
+        plan=self.tick.social_observation_plan({}, {**self.state,'pending_external_actions':[stale]},
+                                              'afternoon',72,self.now)
+        self.assertTrue(plan['due'])
+        self.assertEqual(plan['reason'],'retry_after_blocked_read')
+
+    def test_fresh_recovery_read_uses_slower_cadence(self):
+        state={**self.state,'pending_external_actions':[], 'last_social_observation':{
+            'read_status':'PASS','receipt_ref':'pdca/social_receipts/pass.json',
+            'observed_at':(self.now-timedelta(minutes=60)).isoformat()}}
+        plan=self.tick.social_observation_plan({},state,'sleep',72,self.now)
+        self.assertFalse(plan['due'])
+        self.assertEqual(plan['reason'],'successful_read_fresh')
+        self.assertEqual(plan['max_age_minutes'],180)
 
     def test_future_naive_failed_or_unproven_summary_does_not_suppress_read(self):
         for summary in [
