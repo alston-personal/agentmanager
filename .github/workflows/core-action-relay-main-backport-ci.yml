@@ -1,0 +1,25 @@
+name: Core Action Relay Main Backport CI
+
+on:
+  push:
+    branches:
+      - test/core-action-relay-main-backport
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile relay compatibility surface
+        run: |
+          python -m py_compile agentos_node/action_relay.py agentos_node/executor_job_action_relay.py
+      - name: Run relay compatibility tests
+        run: |
+          python -m unittest tests.test_action_relay tests.test_executor_job_action_relay -v
