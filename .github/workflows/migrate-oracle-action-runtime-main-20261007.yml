@@ -1,0 +1,128 @@
+name: Migrate Oracle Action Runtime to Main 20261007
+
+on:
+  push:
+    branches:
+      - ops/migrate-oracle-action-runtime-main-20261007
+    paths:
+      - '.github/workflows/migrate-oracle-action-runtime-main-20261007.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+      TARGET_COMMIT: 9c8ee508e567bbaf56544793478e8c6cb206ee87
+    steps:
+      - name: Mint scheduler OIDC token
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Confirm runtime repair catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 15 \
+            -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+            "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" > "$RUNNER_TEMP/catalog.json"
+          python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=d.get('intents') or d.get('catalog') or []
+          matches=[x for x in rows if isinstance(x,dict) and x.get('capability')=='agentos.runtime' and x.get('operation')=='repair']
+          assert matches, d
+          print(json.dumps(matches,indent=2))
+          print('runtime_repair_catalog=PASS')
+          PY
+
+      - name: Dispatch exact main runtime repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY="$(python3 - "$TARGET_COMMIT" <<'PY'
+          import json,sys
+          print(json.dumps({
+            "schema":"agentos.runner-window-dispatch/v1",
+            "capability":"agentos.runtime",
+            "operation":"repair",
+            "source_commit":sys.argv[1],
+            "payload":{}
+          },separators=(",",":")))
+          PY
+          )"
+
+          SUBMIT="$RUNNER_TEMP/submit.json"
+          code="$(curl -sS -o "$SUBMIT" -w '%{http_code}' --max-time 20 \
+            -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY" "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+          cat "$SUBMIT"; echo
+          test "$code" = 202
+
+          REQUEST_ID="$(python3 - "$SUBMIT" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert d.get('ok') is True,d
+          print(d['request_id'])
+          PY
+          )"
+          echo "request_id=$REQUEST_ID"
+
+          deadline=$((SECONDS+720))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            STATUS="$RUNNER_TEMP/status.json"
+            code="$(curl -sS -o "$STATUS" -w '%{http_code}' --max-time 20 \
+              -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+              "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch/requests/$REQUEST_ID" || true)"
+            if [ "$code" = 200 ]; then
+              state="$(python3 - "$STATUS" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8')).get('state') or 'unknown')
+          PY
+          )"
+              echo "state=$state"
+              if [ "$state" = completed ]; then
+                cat "$STATUS"; echo
+                cp "$STATUS" "$RUNNER_TEMP/final.json"
+                break
+              fi
+            fi
+            sleep 2
+          done
+          test -f "$RUNNER_TEMP/final.json"
+
+      - name: Verify migration receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/final.json" "$TARGET_COMMIT" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          r=d.get('receipt') or {}
+          print(json.dumps(r,indent=2,ensure_ascii=False))
+          assert r.get('ok') is True,r
+          assert r.get('source_commit')==sys.argv[2],r
+          evidence=[str(x) for x in (r.get('evidence') or [])]
+          assert 'action_relay_install=PASS' in evidence,evidence
+          assert any(x.startswith('agentos_source_commit=') and x.endswith(sys.argv[2]) for x in evidence),evidence
+          print('oracle_action_runtime_main_migration=PASS')
+          PY
