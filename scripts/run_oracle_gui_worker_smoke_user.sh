@@ -31,15 +31,15 @@ trap cleanup_ephemeral EXIT
 DISPLAY=:99 "$BROWSER" \
   --user-data-dir="$TMP_PROFILE" \
   --remote-debugging-address=127.0.0.1 \
-  --remote-debugging-port=9223 \
+  --remote-debugging-port=9299 \
   --no-first-run --no-default-browser-check --disable-dev-shm-usage \
   about:blank >"$EPHEMERAL_LOG" 2>&1 &
 EPHEMERAL_PID=$!
 for _ in $(seq 1 30); do
-  if curl -fsS --max-time 1 http://127.0.0.1:9223/json/version >/dev/null 2>&1; then break; fi
+  if curl -fsS --max-time 1 http://127.0.0.1:9299/json/version >/dev/null 2>&1; then break; fi
   sleep 0.5
 done
-if ! curl -fsS --max-time 2 http://127.0.0.1:9223/json/version >/dev/null 2>&1; then
+if ! curl -fsS --max-time 2 http://127.0.0.1:9299/json/version >/dev/null 2>&1; then
   echo "oracle_gui_browser_ephemeral_cdp_http=FAIL"
   exit 4
 fi
@@ -49,7 +49,7 @@ echo "oracle_gui_browser_ephemeral_cdp_http=PASS"
 from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
     print("oracle_gui_browser_ephemeral_stage=CONNECT_CDP", flush=True)
-    browser=p.chromium.connect_over_cdp('http://127.0.0.1:9223', timeout=10000)
+    browser=p.chromium.connect_over_cdp('http://127.0.0.1:9299', timeout=10000)
     print("oracle_gui_browser_ephemeral_cdp_attach=PASS", flush=True)
 PY
 
