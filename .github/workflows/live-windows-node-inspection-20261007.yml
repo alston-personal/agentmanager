@@ -24,15 +24,18 @@ jobs:
           import json
           from agent_core.node_registry import NodeRegistry
 
-          nodes = NodeRegistry().node_map()
+          node_map = NodeRegistry().node_map()
           wanted = {'vopc5750', 'VO10005870'}
-          picked = []
-          for node in nodes:
-              if node.get('node_id') in wanted:
-                  picked.append(node)
+          picked = [
+              node for node in (node_map.get('nodes') or [])
+              if isinstance(node, dict) and node.get('node_id') in wanted
+          ]
 
           print(json.dumps({
               'schema': 'agentos.windows-node-live-inspection/v1',
+              'realm_id': node_map.get('realm_id'),
+              'node_count': node_map.get('node_count'),
+              'online_node_count': node_map.get('online_node_count'),
               'nodes': picked,
           }, indent=2, sort_keys=True))
           PY
