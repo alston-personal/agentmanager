@@ -159,6 +159,12 @@ class ThinClient:
             'completed_at': None,
             'ok': False,
             'cognition_ids_used': list(task.get('cognition_ids_used') or []),
+            'work_id': task.get('work_id'),
+            'project_id': task.get('project_id') or task.get('project'),
+            'executor_id': task.get('executor_id'),
+            'participant_id': task.get('participant_id'),
+            'session_id': task.get('session_id'),
+            'runner_id': task.get('runner_id'),
         }
         try:
             if task.get('schema') != 'agentos.node-task/v0.1':
