@@ -33,7 +33,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/windows/thin_client_watchdog.ps1','scripts/windows/user_runtime_watchdog.ps1')
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1')
           foreach($file in $files) {
             $tokens = $null
             $errors = $null
@@ -110,7 +110,7 @@ jobs:
           if($successBlock -match '(?im)^pause\s*$') { throw 'successful installer path must not pause or leave a cmd window open' }
 
           if($one -match 'Register-ScheduledTask -TaskName \\$watchdogTaskName'){ throw 'periodic watchdog task registration must not return' }
-if($one -match 'RepetitionInterval \\(New-TimeSpan -Minutes 1\\)'){ throw 'one-minute watchdog trigger must not return' }
-if($one -match 'Protected legacy watchdog ACL detected; using user-owned fallback'){ throw 'watchdog fallback must not return' }
-python -m unittest tests.test_thin_client
+          if($one -match 'RepetitionInterval \\(New-TimeSpan -Minutes 1\\)'){ throw 'one-minute watchdog trigger must not return' }
+          if($one -match 'Protected legacy watchdog ACL detected; using user-owned fallback'){ throw 'watchdog fallback must not return' }
+          python -m unittest tests.test_thin_client
           Write-Host 'windows_one_click_contract=PASS'
