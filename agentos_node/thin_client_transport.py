@@ -160,24 +160,40 @@ class ThinClientTransport:
         query = urllib.parse.urlencode({'node_id': self.config.node_id})
         return self._request(self.config.one_url + '/v1/bootstrap?' + query, token=self.config.node_token)
 
-    def resolve(self, project: str, *, intent: str = 'continue') -> dict[str, Any]:
-        """Resolve canonical project continuation state through ONE.
+    def resolve(
+        self,
+        project: str | None = None,
+        *,
+        intent: str = 'continue',
+        work_id: str | None = None,
+        executor_id: str | None = None,
+        participant_id: str | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve continuation state through ONE.
 
-        The client does not inspect GitHub, local workspaces, application identity
-        registries, or memory files to reconstruct project truth. ONE/AgentOS is
-        the authority for composing the continuation envelope.
+        A project may be supplied for legacy explicit-project resolution. When it
+        is omitted, ONE resolves the current node/executor/participant/session
+        binding to durable Work state without guessing from globally recent work.
         """
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        project = str(project or '').strip()
-        if not project:
-            raise ValueError('project is required')
         body = {
             'schema': 'agentos.resolve-request/v1',
             'node_id': self.config.node_id,
             'intent': intent,
-            'project': project,
         }
+        project_value = str(project or '').strip()
+        if project_value:
+            body['project'] = project_value
+        if work_id:
+            body['work_id'] = str(work_id)
+        if executor_id:
+            body['executor_id'] = str(executor_id)
+        if participant_id:
+            body['participant_id'] = str(participant_id)
+        if session_id:
+            body['session_id'] = str(session_id)
         return self._request(
             self.config.one_url + '/v1/resolve',
             method='POST',
