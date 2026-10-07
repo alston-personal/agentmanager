@@ -24,6 +24,7 @@ printf '%s\n' "$OUT" | grep -E '^(mio_dm_oursong_(acceptance|stage|send|readback
 
 if [ "$RC" -ne 0 ]; then
   if printf '%s' "$OUT" | grep -Fq 'mio_dm_oursong_acceptance=LOGIN_REQUIRED'; then
+    echo "mio_dm_oursong_stage=session_resume"
     RESUME="$(mktemp --suffix=.sh)"
     git -C "$REPO" show "$SOURCE_COMMIT:scripts/resume_mio_threads_login_user.sh" > "$RESUME"
     chmod 700 "$RESUME"
@@ -40,11 +41,13 @@ if [ "$RC" -ne 0 ]; then
       set -e
       printf '%s\n' "$OUT" | grep -E '^(mio_dm_oursong_(acceptance|stage|send|readback)=)' || true
       if [ "$RC" -eq 0 ]; then
+        echo "mio_dm_oursong_stage=session_resumed"
         printf '%s\n' "$OUT" | grep -Fq 'mio_dm_oursong_acceptance=PASS'
         printf '%s\n' "$OUT" | grep -Fq 'mio_dm_oursong_readback=PASS'
         exit 0
       fi
     fi
+    echo "mio_dm_oursong_stage=session_resume_human_required"
     echo "mio_dm_oursong_acceptance=LOGIN_REQUIRED"
     exit 4
   fi
