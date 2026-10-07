@@ -450,3 +450,6 @@ The ownership contract is documented in `docs/CONTEXT_CONTINUATION_PROTOCOL.md`.
 
 
 Scoped continuation now also has a persistent `runtime/work-bindings.json` store. Controller dispatch records known Work/Node/Executor/Participant/Session bindings; Thin Client receipts project those identities back to ONE; receipt ingestion updates execution evidence without assuming that a successful task completes the entire Work. `/v1/resolve` remains backward-compatible with explicit project resolution, but a bare continue request can now resolve by scoped binding and returns `NO_CONTINUATION` semantics instead of selecting unrelated work. Cross-node physical checkpoint migration and automatic terminal Work closure remain separate follow-up concerns.
+
+
+Nodes can also establish or refresh a scoped Work binding directly through authenticated `POST /v1/work/bind`. This covers execution paths that did not originate in Controller dispatch (for example a GUI/Web participant resuming existing work). The endpoint binds only the authenticated Node's identity and may attach Executor/Participant/Session IDs plus logical/physical checkpoint references; it does not grant permission to impersonate another Node.
