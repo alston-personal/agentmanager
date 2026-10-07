@@ -36,11 +36,16 @@ jobs:
           find /tmp -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null |
             sed -E 's/[._-]?[0-9a-fA-F]{6,}.*$//' |
             sed -E 's/[._-]?[0-9]{6,}.*$//' |
-            sort | uniq -c | sort -nr | head -n 80
+            sort | uniq -c | sort -nr | head -n 80 || true
           echo '=== sample oldest user tmp dirs ==='
-          find /tmp -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -n | head -n 80
+          find /tmp -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -n | head -n 80 || true
           echo '=== sample newest user tmp dirs ==='
-          find /tmp -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -nr | head -n 80
+          find /tmp -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -nr | head -n 80 || true
+          echo '=== ssh tmp count and largest dirs ==='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -name 'ssh-*' 2>/dev/null | wc -l || true
+          find /tmp -mindepth 1 -maxdepth 1 -type d -name 'ssh-*' -print0 2>/dev/null |
+            xargs -0 -r -n 200 du -sk 2>/dev/null |
+            sort -nr | head -n 50 || true
           echo '=== largest files on root fs >=256MiB ==='
           timeout 90 find "$HOME" /tmp /var/tmp -xdev -type f -size +256M -printf '%s\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -nr | head -n 100 || true
           echo '=== deleted but open files ==='
