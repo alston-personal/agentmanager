@@ -93,6 +93,16 @@ class ThinClient:
     def capability_manifest(self) -> dict[str, Any]:
         tools = self.discover_tools()
         surface_inventory = self.surface_inventory()
+        runtime = None
+        try:
+            runtime_root = Path(__file__).resolve().parent.parent
+            provenance_path = runtime_root / 'runtime-provenance.json'
+            if provenance_path.is_file():
+                loaded = json.loads(provenance_path.read_text(encoding='utf-8-sig'))
+                if isinstance(loaded, dict) and loaded.get('schema') == 'agentos.thin-client-runtime/v0.1':
+                    runtime = dict(loaded)
+        except Exception:
+            runtime = None
         caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
         caps.extend(surface_inventory.get('capabilities') or [])
         if self.policy.allowed_executables:
@@ -120,6 +130,7 @@ class ThinClient:
             'capabilities': sorted(set(caps)),
             'tool_presence': tools,
             'surface_inventory': surface_inventory,
+            'runtime': runtime,
             'workspace_roots': {
                 'readable': [str(p.expanduser().resolve()) for p in self.policy.readable_roots],
                 'writable': [str(p.expanduser().resolve()) for p in self.policy.writable_roots],
