@@ -1,0 +1,38 @@
+name: Oracle Disk Pulse
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-disk-pulse.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: ${{ vars.ORACLE_HOST || '161.33.24.170' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read disk pressure
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -u
+          df -h /
+          df -B1 /
+          printf 'old_user_tmp_top_dirs='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -mtime +1 -printf '.\n' 2>/dev/null | wc -l
+          printf 'tmp_top_entries='
+          find /tmp -mindepth 1 -maxdepth 1 -printf '.\n' 2>/dev/null | wc -l
+          printf 'gdrive_legacy='
+          if [ -L "$HOME/gdrive" ]; then readlink -f "$HOME/gdrive"; else echo NOT_SYMLINK; fi
+          REMOTE
