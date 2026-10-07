@@ -15,7 +15,7 @@ test -x "$NODE"
 const fs = require('fs');
 const path = require('path');
 
-const BASE = 'http://127.0.0.1:9222';
+const BASE = 'http://127.0.0.1:9224';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchJson(url, options={}) {
