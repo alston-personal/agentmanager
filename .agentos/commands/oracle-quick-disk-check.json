@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "break down cache usage while second underlay backup is preserving",
-  "requested_at": "2026-10-01T07:50:00+08:00"
+  "purpose": "diagnose root disk exhaustion blocking Realm exact-source rollout and verify cache/release/mount pressure before any cleanup",
+  "requested_at": "2026-10-07T09:52:00+08:00"
 }
