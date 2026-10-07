@@ -1,0 +1,48 @@
+name: Action Relay Runtime Audit 20261007
+
+on:
+  push:
+    branches:
+      - ops/action-relay-runtime-audit-20261007
+    paths:
+      - '.github/workflows/action-relay-runtime-audit-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect runtime and service read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== identity ==='
+          id
+          echo '=== runtime roots ==='
+          for p in             /home/ubuntu/.local/share/agentos/action-relay-runtime             /home/ubuntu/.local/share/agentos/runtime-vnext             /home/ubuntu/agent-data/runtime/action-relay; do
+            if [ -e "$p" ]; then
+              stat -c '%n owner=%U:%G mode=%a type=%F' "$p" || true
+              find "$p" -maxdepth 2 -type f -name 'action_relay.py' -o -name 'antigravity_relay.py' 2>/dev/null | head -n 20
+            else
+              echo "missing=$p"
+            fi
+          done
+
+          echo '=== action relay process ==='
+          ps -eo user:20,pid,ppid,lstart,args | grep -E '[a]gentos_node.action_relay|[a]ction-relay' || true
+
+          echo '=== candidate runtime ACTIONS markers ==='
+          for f in             /home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py             /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/action_relay.py; do
+            if [ -r "$f" ]; then
+              echo "--- $f"
+              stat -c 'owner=%U:%G mode=%a size=%s mtime=%y' "$f"
+              grep -nE 'agentos\.realm-fabric\.(deployment_status|install_release|inspect_service)|agentos\.antigravity\.restart' "$f" || true
+              sha256sum "$f"
+            fi
+          done
+
+          echo '=== service unit read-only ==='
+          cat /home/ubuntu/.config/systemd/user/agentos-action-relay.service 2>/dev/null || true
