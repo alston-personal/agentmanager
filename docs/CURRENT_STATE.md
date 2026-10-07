@@ -426,3 +426,7 @@ The Windows Thin Client installer must ship every transitive `agentos_node.*` mo
 ### Windows immutable install instance
 
 A Windows repair run must never overwrite files in an already-running version directory, even when reinstalling the same source commit. The installer therefore creates a unique runtime instance under `%LOCALAPPDATA%\AgentOS\versions\<commit>\<install-id>` for every repair execution. Only after readiness passes does it write `current-runtime.txt` to point at the accepted instance. This makes same-commit repair idempotent with respect to Windows file locks.
+
+### Realm task lease / receipt acknowledgement
+
+ONE task delivery is at-least-once rather than destructive-on-pull. Pulling a node task now places a bounded lease on the task instead of deleting it. A successful node receipt acknowledges and removes the task. If the client crashes, execution fails before receipt submission, or the receipt transport fails, the lease expires and the task becomes eligible for redelivery. This closes the pull-to-receipt loss window observed during live vopc5750 semantic-preview and desktop-session canaries.
