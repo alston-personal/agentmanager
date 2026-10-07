@@ -90,8 +90,6 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
   $watchdogTaskName='AgentOS Thin Client Watchdog'
-  $fallbackTaskName='AgentOS Thin Client User'
-  $fallbackWatchdogTaskName='AgentOS Thin Client Watchdog User'
 
   $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   if($existing){
@@ -103,7 +101,12 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   # Replace legacy supervisor artifacts with the canonical hidden Thin Client +
   # independent watchdog pair. The watchdog must not share process lifetime with
   # the client it supervises.
-  foreach($legacyTask in @($watchdogTaskName,'AgentOS Thin Client Headless Switch')){
+  foreach($legacyTask in @(
+    'AgentOS Thin Client Watchdog',
+    'AgentOS Thin Client Watchdog User',
+    'AgentOS Thin Client User',
+    'AgentOS Thin Client Headless Switch'
+  )){
     $legacy=Get-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
     if($legacy){
       Stop-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
@@ -135,11 +138,15 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   $escapedPython=$PythonPath.Replace("'","''")
   $escapedLog=$log.Replace("'","''")
   $runnerBody=@(
-    '$ErrorActionPreference=''Stop'''
+    '$ErrorActionPreference=''Continue'''
     ('$env:PYTHONPATH=''' + $escapedInstall + '''')
     ('$env:AGENTOS_CLIENT_HOME=''' + $escapedState + '''')
-    ('& ''' + $escapedPython + ''' -m agentos_node.client_cli run *>> ''' + $escapedLog + '''')
-    'exit $LASTEXITCODE'
+    'while($true){'
+    ('  & ''' + $escapedPython + ''' -m agentos_node.client_cli run *>> ''' + $escapedLog + '''')
+    '  $rc=$LASTEXITCODE'
+    ('  Add-Content -LiteralPath ''' + $escapedLog + ''' -Value ("[supervisor] client exited rc=" + $rc + " at " + [DateTimeOffset]::UtcNow.ToString("o"))')
+    '  Start-Sleep -Seconds 5'
+    '}'
   ) -join [Environment]::NewLine
   $runnerBody | Set-Content -Encoding UTF8 -LiteralPath $runner
 
@@ -175,40 +182,9 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
     throw 'Refusing to start Thin Client task unless its registered action is hidden PowerShell'
   }
 
-  # Independent watchdog: a separate periodic task is required because an
-  # intentional Stop-ScheduledTask is not a process failure and therefore does
-  # not reliably activate RestartCount on the primary task.
-  $watchdogArgs='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdogScript + '" -TaskName "' + $taskName + '" -InstallRoot "' + $InstallRoot + '"'
-  $watchdogAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $watchdogArgs -WorkingDirectory $InstallRoot
-  $watchdogLogonTrigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-  $watchdogPeriodicTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
-  $watchdogSettings=New-ScheduledTaskSettingsSet `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
-    -Hidden
-  try {
-    Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force -ErrorAction Stop | Out-Null
-  } catch {
-    $accessDenied=($_.Exception.HResult -eq -2147024891) -or
-      ($_.FullyQualifiedErrorId -match '(?i)unauthorized|accessdenied') -or
-      ($_.Exception.Message -match '(?i)access.*denied|unauthorized')
-    if(-not $accessDenied){
-      throw
-    }
-    $watchdogTaskName=$fallbackWatchdogTaskName
-    $watchdogArgs='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdogScript + '" -TaskName "' + $taskName + '" -InstallRoot "' + $InstallRoot + '"'
-    $watchdogAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $watchdogArgs -WorkingDirectory $InstallRoot
-    Write-Host ("Protected legacy watchdog ACL detected; using user-owned fallback: " + $watchdogTaskName) -ForegroundColor Yellow
-    Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trigger @($watchdogLogonTrigger,$watchdogPeriodicTrigger) -Settings $watchdogSettings -Description 'AgentOS Thin Client independent liveness watchdog' -Force -ErrorAction Stop | Out-Null
-  }
-
-  $registeredWatchdogAction=(Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop).Actions | Select-Object -First 1
-  if([string]$registeredWatchdogAction.Execute -notmatch '(?i)powershell\.exe$' -or [string]$registeredWatchdogAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden'){
-    throw 'Refusing to start watchdog unless its registered action is hidden PowerShell'
-  }
-
+  # No periodic watchdog Scheduled Task. The primary hidden supervisor
+  # keeps the Thin Client alive inside one long-running process and avoids
+  # per-minute console/process creation on managed Windows endpoints.
   Start-ScheduledTask -TaskName $taskName
   Start-Sleep -Seconds 4
 
@@ -222,17 +198,8 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
     throw 'AgentOS Thin Client task still uses visible cmd.exe'
   }
 
-  $watchdogTask=Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction Stop
-  $watchdogActionActual=$watchdogTask.Actions | Select-Object -First 1
-  if([string]$watchdogActionActual.Execute -notmatch '(?i)powershell\.exe$'){
-    throw 'AgentOS Thin Client watchdog is not using hidden PowerShell'
-  }
-  if([string]$watchdogActionActual.Arguments -notmatch 'thin_client_watchdog\.ps1'){
-    throw 'AgentOS Thin Client watchdog action is not wired to the canonical script'
-  }
-
   Write-Host 'Background service: Running (headless)' -ForegroundColor Green
-  Write-Host 'Independent watchdog: Installed (60s cadence)' -ForegroundColor Green
+  Write-Host 'Supervisor: Single hidden long-running task (no periodic console spawn)' -ForegroundColor Green
 }
 
 try {
