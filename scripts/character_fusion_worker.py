@@ -524,7 +524,7 @@ def _gemini_cli_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
             if source.exists():
                 (settings_dir / credential_name).symlink_to(source)
 
-        prompt_text = "@{" + local_image.name + "}\n" + prompt
+        prompt_text = "@" + local_image.name + "\n" + prompt
         env = {
             **os.environ,
             "HOME": str(Path.home()),
@@ -805,10 +805,11 @@ Omit categories that are not visibly supported. Keep descriptions short and visu
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
+        cli_error = ""
         try:
             return _gemini_cli_vlm_json(prompt, path)
-        except (RuntimeError, subprocess.TimeoutExpired):
-            pass
+        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
+            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
         try:
             return _hf_vlm_json(prompt, path)
         except RuntimeError as hf_exc:
@@ -822,7 +823,12 @@ Omit categories that are not visibly supported. Keep descriptions short and visu
                 "unavailable",
             )):
                 raise
-            return _gemini_web_vlm_json(prompt, path)
+            try:
+                return _gemini_web_vlm_json(prompt, path)
+            except RuntimeError as web_exc:
+                raise RuntimeError(
+                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
+                ) from web_exc
 
 
 def extract_custom_main(path: Path) -> dict[str, Any]:
@@ -852,10 +858,11 @@ The body_plan must describe the dominant species/silhouette, not incidental clot
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
+        cli_error = ""
         try:
             return _gemini_cli_vlm_json(prompt, path)
-        except (RuntimeError, subprocess.TimeoutExpired):
-            pass
+        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
+            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
         try:
             return _hf_vlm_json(prompt, path)
         except RuntimeError as hf_exc:
@@ -869,7 +876,12 @@ The body_plan must describe the dominant species/silhouette, not incidental clot
                 "unavailable",
             )):
                 raise
-            return _gemini_web_vlm_json(prompt, path)
+            try:
+                return _gemini_web_vlm_json(prompt, path)
+            except RuntimeError as web_exc:
+                raise RuntimeError(
+                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
+                ) from web_exc
 
 
 def fuse(main_ir: dict[str, Any], person_ir: dict[str, Any]) -> dict[str, Any]:
@@ -1184,10 +1196,11 @@ Judge what is visibly present, not what the prompt intended.
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
+        cli_error = ""
         try:
             return _gemini_cli_vlm_json(prompt, image_path)
-        except (RuntimeError, subprocess.TimeoutExpired):
-            pass
+        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
+            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
         try:
             return _hf_vlm_json(prompt, image_path)
         except RuntimeError as hf_exc:
@@ -1201,7 +1214,12 @@ Judge what is visibly present, not what the prompt intended.
                 "unavailable",
             )):
                 raise
-            return _gemini_web_vlm_json(prompt, image_path)
+            try:
+                return _gemini_web_vlm_json(prompt, image_path)
+            except RuntimeError as web_exc:
+                raise RuntimeError(
+                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
+                ) from web_exc
 
 
 def accept(preset: str, target: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
