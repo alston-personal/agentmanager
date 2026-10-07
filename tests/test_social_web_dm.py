@@ -42,3 +42,10 @@ class PersonaIdentityTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
+
+def test_dm_read_stages_only_runtime_tree():
+    repo=Path(__file__).resolve().parents[1]
+    text=(repo/"scripts"/"run_threads_web_dm_read_user.sh").read_text(encoding="utf-8")
+    assert 'archive "$SOURCE_COMMIT" agentos_node scripts' in text
+    assert 'archive "$SOURCE_COMMIT" | tar' not in text
