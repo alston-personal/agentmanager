@@ -14,8 +14,17 @@ SESSION_INDEX_SCHEMA = "agentos.session-index/v0.1"
 REQUEST_SCHEMA = "agentos.session-request/v0.1"
 RECEIPT_SCHEMA = "agentos.session-receipt/v0.1"
 HARVEST_SCHEMA = "agentos.gpt-web-response-harvest/v0.1"
+INVOKE_SCHEMA = "agentos.gpt-web-vision-invoke/v0.1"
 PROVIDER = "gpt-web"
 MAX_TEXT = 65536
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def now() -> str:
@@ -34,7 +43,7 @@ def write_descriptor(root: Path, *, ready: bool) -> None:
         "schema": BRIDGE_SCHEMA,
         "provider": PROVIDER,
         "ready": ready,
-        "operations": ["discover", "harvest"],
+        "operations": ["discover", "invoke", "harvest"],
     })
 
 
@@ -67,7 +76,7 @@ async def refresh_sessions(root: Path, cdp_url: str) -> str:
                 "url": page.url,
                 "title": await page.title(),
                 "ready": True,
-                "capabilities": ["agent.context.harvest"],
+                "capabilities": ["agent.session.invoke", "agent.context.harvest"],
             }],
             "observed_at": now(),
         })
@@ -77,23 +86,83 @@ async def refresh_sessions(root: Path, cdp_url: str) -> str:
         await playwright.stop()
 
 
-def _validate_request(payload: dict[str, Any]) -> tuple[str, str]:
+def _validate_request(payload: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
     if payload.get("schema") != REQUEST_SCHEMA:
         raise ValueError("invalid session request schema")
-    if payload.get("provider") != PROVIDER or payload.get("operation") != "harvest":
-        raise ValueError("unsupported provider or operation")
+    if payload.get("provider") != PROVIDER:
+        raise ValueError("unsupported provider")
+    operation = str(payload.get("operation") or "")
+    if operation not in {"harvest", "invoke"}:
+        raise ValueError("unsupported operation")
     inner = payload.get("payload")
-    if not isinstance(inner, dict) or inner.get("schema") != HARVEST_SCHEMA:
-        raise ValueError("invalid GPT Web harvest request")
-    if inner.get("selector") != "assistant.response_by_request_id":
-        raise ValueError("unsupported GPT Web harvest selector")
-    request_id = str(inner.get("request_id") or "").strip()
-    if not request_id or len(request_id) > 128:
-        raise ValueError("invalid request_id")
+    if not isinstance(inner, dict):
+        raise ValueError("request payload missing")
     session_id = str(payload.get("session_id") or "").strip()
     if not session_id:
         raise ValueError("session_id is required")
-    return session_id, request_id
+    request_id = str(inner.get("request_id") or "").strip()
+    if not request_id or len(request_id) > 128:
+        raise ValueError("invalid request_id")
+
+    if operation == "harvest":
+        if inner.get("schema") != HARVEST_SCHEMA:
+            raise ValueError("invalid GPT Web harvest request")
+        if inner.get("selector") != "assistant.response_by_request_id":
+            raise ValueError("unsupported GPT Web harvest selector")
+    else:
+        if inner.get("schema") != INVOKE_SCHEMA:
+            raise ValueError("invalid GPT Web invoke request")
+        if inner.get("capability") not in {"vision.document.extract", "vision.invoice.extract"}:
+            raise ValueError("unsupported GPT Web capability")
+        image_path = str(inner.get("image_path") or "").strip()
+        prompt = str(inner.get("prompt") or "")
+        if not image_path or not prompt or len(prompt) > 12000:
+            raise ValueError("invoke requires bounded image_path and prompt")
+    return session_id, request_id, inner
+
+
+async def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, Any]) -> str:
+    playwright, browser, page = await discover_page(cdp_url)
+    try:
+        image = Path(str(inner["image_path"])).expanduser().resolve()
+        allowed_raw = os.environ.get("AGENTOS_GPT_WEB_ALLOWED_ROOTS", "/home/ubuntu/agentmanager/benchmarks/invoice_handwriting/fixtures")
+        allowed = [Path(x).expanduser().resolve() for x in allowed_raw.split(os.pathsep) if x.strip()]
+        if not any(_inside(image, root) for root in allowed):
+            raise PermissionError("GPT Web invoke image_path outside allowed roots")
+        if not image.is_file() or image.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            raise ValueError("GPT Web invoke requires an allowed image file")
+        if image.stat().st_size > 12 * 1024 * 1024:
+            raise ValueError("GPT Web invoke image too large")
+
+        file_input = page.locator('input[type="file"]').last
+        if await file_input.count() == 0:
+            raise RuntimeError("GPT_WEB_FILE_INPUT_NOT_FOUND")
+        await file_input.set_input_files(str(image))
+
+        prompt = str(inner["prompt"])
+        composer = page.locator('#prompt-textarea')
+        if await composer.count() == 0:
+            composer = page.locator('[contenteditable="true"]').last
+        if await composer.count() == 0:
+            raise RuntimeError("GPT_WEB_COMPOSER_NOT_FOUND")
+        await composer.fill(prompt)
+        await composer.press("Enter")
+
+        deadline = asyncio.get_running_loop().time() + 45
+        while asyncio.get_running_loop().time() < deadline:
+            messages = page.locator('[data-message-author-role="assistant"]')
+            count = await messages.count()
+            for index in range(count - 1, -1, -1):
+                text = (await messages.nth(index).inner_text()).strip()
+                if request_id in text:
+                    if len(text) > MAX_TEXT:
+                        raise RuntimeError("GPT_WEB_RESPONSE_TOO_LARGE")
+                    return text
+            await page.wait_for_timeout(500)
+        raise RuntimeError("GPT_WEB_RESPONSE_TIMEOUT")
+    finally:
+        await browser.close()
+        await playwright.stop()
 
 
 async def harvest(cdp_url: str, *, session_id: str, request_id: str) -> str:
@@ -128,8 +197,11 @@ async def process_one(root: Path, cdp_url: str, path: Path) -> None:
         "ok": False,
     }
     try:
-        session_id, correlation_id = _validate_request(request)
-        text = await harvest(cdp_url, session_id=session_id, request_id=correlation_id)
+        session_id, correlation_id, inner = _validate_request(request)
+        if request.get("operation") == "invoke":
+            text = await invoke(cdp_url, session_id=session_id, request_id=correlation_id, inner=inner)
+        else:
+            text = await harvest(cdp_url, session_id=session_id, request_id=correlation_id)
         receipt["ok"] = True
         receipt["result"] = {
             "request_id": correlation_id,
