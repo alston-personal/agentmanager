@@ -91,5 +91,35 @@ class ActionRelayTests(unittest.TestCase):
             })
 
 
+    @patch("agentos_node.action_relay._share", lambda *args, **kwargs: None)
+    def test_result_schema_cannot_overwrite_receipt_schema(self):
+        from agentos_node import action_relay as relay
+
+        action = "test.receipt-envelope-reserved"
+        with patch.dict(
+            relay.ACTIONS,
+            {action: lambda params: {
+                "schema": "capability.result/v1",
+                "capsule_id": "wrong",
+                "action": "wrong.action",
+                "ok": True,
+            }},
+            clear=False,
+        ):
+            client = relay.ActionRelayClient(self.root)
+            capsule = client.submit(action, {})
+            produced = relay.ActionRelayWorker(self.root).process_one()
+            self.assertEqual(produced["schema"], relay.RECEIPT_SCHEMA)
+            self.assertEqual(produced["capsule_id"], capsule["capsule_id"])
+            self.assertEqual(produced["action"], action)
+            self.assertEqual(produced["result_schema"], "capability.result/v1")
+            self.assertEqual(produced["result_capsule_id"], "wrong")
+            self.assertEqual(produced["result_action"], "wrong.action")
+            self.assertTrue(produced["ok"])
+            stored = client.receipt(capsule["capsule_id"])
+            self.assertEqual(stored["schema"], relay.RECEIPT_SCHEMA)
+
+
+
 if __name__ == "__main__":
     unittest.main()
