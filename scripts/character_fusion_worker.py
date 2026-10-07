@@ -1028,127 +1028,252 @@ The result must be a single polished mascot on a simple clean background.
         output_path = Path(tmp) / "output.png"
         prompt_path.write_text(prompt, encoding="utf-8")
         helper = r'''
+import asyncio
+import base64
 import fcntl
+import json
+import os
 import sys
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+
+import websockets
 
 prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
 output = Path(sys.argv[2])
+preferred_port = int(os.environ.get("AGENTOS_CHARACTER_WEB_CDP_PORT", "9223"))
+ports = [preferred_port] + [p for p in (9223, 9224, 9222) if p != preferred_port]
 lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
 lock_path.parent.mkdir(parents=True, exist_ok=True)
 
-composer_selectors = [
-    'rich-textarea div[contenteditable="true"]',
-    'textarea[aria-label*="prompt" i]',
-    '[contenteditable="true"][aria-label*="prompt" i]',
-    'div.ql-editor[contenteditable="true"]',
-    'textarea',
-    '[contenteditable="true"]',
-]
-image_selectors = [
-    'model-response img',
-    '[data-test-id*="model-response"] img',
-    '.model-response-text img',
-    'message-content img',
-    'img[alt*="generated" i]',
-]
+def inventory(port):
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=4) as r:
+        payload=json.loads(r.read().decode("utf-8"))
+    return [x for x in payload if isinstance(x,dict) and x.get("type")=="page"]
 
-def first_visible(page, selectors):
-    for selector in selectors:
-        try:
-            loc = page.locator(selector)
-            for i in range(min(loc.count(), 16)):
-                item = loc.nth(i)
-                try:
-                    if item.is_visible(timeout=250):
-                        return item
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return None
+def new_target(port, url):
+    req=urllib.request.Request(
+        f"http://127.0.0.1:{port}/json/new?{urllib.parse.quote(url, safe=':/?=&')}",
+        method="PUT",
+    )
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return json.loads(r.read().decode("utf-8"))
 
-def candidates(page):
-    rows = []
-    seen = set()
-    for selector in image_selectors:
-        try:
-            loc = page.locator(selector)
-            for i in range(loc.count()):
-                item = loc.nth(i)
-                try:
-                    if not item.is_visible(timeout=200):
-                        continue
-                    box = item.bounding_box()
-                    if not box or box.get("width", 0) < 180 or box.get("height", 0) < 180:
-                        continue
-                    key = (selector, i, round(box.get("width", 0)), round(box.get("height", 0)))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    rows.append(item)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return rows
+selected_port=None
+target=None
+for port in ports:
+    try:
+        rows=inventory(port)
+    except Exception:
+        continue
+    gemini=next((x for x in rows if "gemini.google.com" in str(x.get("url") or "")),None)
+    if gemini:
+        selected_port=port
+        target=gemini
+        break
+    if selected_port is None and any(
+        ("flow.google.com" in str(x.get("url") or "") or "google.com" in str(x.get("url") or ""))
+        for x in rows
+    ):
+        selected_port=port
 
-with lock_path.open("a+") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
-        if not browser.contexts:
-            raise RuntimeError("gemini_web_no_browser_context")
-        pages = [x for x in browser.contexts[0].pages if "gemini.google.com" in str(x.url or "")]
-        if not pages:
-            raise RuntimeError("gemini_web_no_session")
-        page = next((x for x in pages if first_visible(x, composer_selectors) is not None), pages[0])
-        page.bring_to_front()
-        composer = first_visible(page, composer_selectors)
-        if composer is None:
-            raise RuntimeError("gemini_web_composer_not_found")
+if target is None:
+    if selected_port is None:
+        raise RuntimeError("gemini_web_no_google_profile")
+    target=new_target(selected_port,"https://gemini.google.com/app")
+    time.sleep(3)
 
-        baseline = len(candidates(page))
-        try:
-            composer.fill(prompt)
-        except Exception:
-            composer.click()
-            page.keyboard.press("ControlOrMeta+A")
-            page.keyboard.type(prompt)
-        page.keyboard.press("Enter")
+ws_url=str((target or {}).get("webSocketDebuggerUrl") or "")
+if not ws_url:
+    rows=inventory(selected_port)
+    target=next((x for x in rows if "gemini.google.com" in str(x.get("url") or "")),None)
+    ws_url=str((target or {}).get("webSocketDebuggerUrl") or "")
+if not ws_url:
+    raise RuntimeError("gemini_web_missing_ws")
 
-        deadline = time.monotonic() + 180
-        chosen = None
-        while time.monotonic() < deadline:
-            rows = candidates(page)
-            if len(rows) > baseline:
-                chosen = rows[-1]
+async def run():
+    seq=0
+    async with websockets.connect(ws_url,open_timeout=6,close_timeout=2,max_size=16*1024*1024) as ws:
+        async def call(method,params=None):
+            nonlocal seq
+            seq+=1
+            ident=seq
+            await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+            while True:
+                message=json.loads(await ws.recv())
+                if message.get("id")==ident:
+                    if message.get("error"):
+                        raise RuntimeError(f"cdp {method}: {message['error']}")
+                    return message.get("result") or {}
+
+        async def evaluate(expr):
+            result=await call("Runtime.evaluate",{
+                "expression":expr,
+                "returnByValue":True,
+                "awaitPromise":True,
+            })
+            remote=result.get("result") or {}
+            if remote.get("subtype")=="error":
+                raise RuntimeError("gemini_web_evaluate_error")
+            return remote.get("value")
+
+        await call("Page.enable")
+        await call("Runtime.enable")
+
+        deadline=time.monotonic()+35
+        composer_ready=False
+        while time.monotonic()<deadline:
+            composer_ready=bool(await evaluate("""(() => {
+              const sels=[
+                'rich-textarea div[contenteditable="true"]',
+                'textarea[aria-label*="prompt" i]',
+                '[contenteditable="true"][aria-label*="prompt" i]',
+                'div.ql-editor[contenteditable="true"]',
+                'textarea',
+                '[contenteditable="true"]'
+              ];
+              return sels.some(s=>[...document.querySelectorAll(s)].some(x=>x.offsetParent!==null));
+            })()"""))
+            if composer_ready:
                 break
-            time.sleep(1.5)
+            await asyncio.sleep(1)
+        if not composer_ready:
+            url=await evaluate("location.href")
+            raise RuntimeError(f"gemini_web_composer_not_found url={url}")
 
-        if chosen is None:
+        baseline=await evaluate("""(() => {
+          const sels=[
+            'model-response img',
+            '[data-test-id*="model-response"] img',
+            '.model-response-text img',
+            'message-content img',
+            'img[alt*="generated" i]'
+          ];
+          const out=[];
+          for(const s of sels){
+            for(const el of document.querySelectorAll(s)){
+              const r=el.getBoundingClientRect();
+              if(r.width>=180 && r.height>=180){
+                out.push([el.currentSrc||el.src||'',Math.round(r.width),Math.round(r.height)].join('|'));
+              }
+            }
+          }
+          return [...new Set(out)];
+        })()""") or []
+
+        prompt_json=json.dumps(prompt)
+        ok=await evaluate("""(() => {
+          const sels=[
+            'rich-textarea div[contenteditable="true"]',
+            'textarea[aria-label*="prompt" i]',
+            '[contenteditable="true"][aria-label*="prompt" i]',
+            'div.ql-editor[contenteditable="true"]',
+            'textarea',
+            '[contenteditable="true"]'
+          ];
+          let el=null;
+          for(const s of sels){el=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null);if(el)break;}
+          if(!el)return false;
+          const value="""+prompt_json+""";
+          el.focus();
+          if('value' in el){
+            const proto=Object.getPrototypeOf(el);
+            const desc=Object.getOwnPropertyDescriptor(proto,'value');
+            if(desc&&desc.set)desc.set.call(el,value);else el.value=value;
+          }else{
+            el.textContent=value;
+          }
+          el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));
+          return true;
+        })()""")
+        if not ok:
+            raise RuntimeError("gemini_web_composer_fill_failed")
+
+        sent=await evaluate("""(() => {
+          const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(x=>x.offsetParent!==null);
+          const b=buttons.find(x=>/send|submit|送出|傳送/i.test(
+            [x.getAttribute('aria-label'),x.getAttribute('title'),x.innerText].filter(Boolean).join(' ')
+          ));
+          if(b){b.click();return true;}
+          return false;
+        })()""")
+        if not sent:
+            await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
+            await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
+
+        deadline=time.monotonic()+210
+        chosen=None
+        while time.monotonic()<deadline:
+            candidate=await evaluate("""(() => {
+              const baseline=new Set("""+json.dumps(baseline)+""");
+              const sels=[
+                'model-response img',
+                '[data-test-id*="model-response"] img',
+                '.model-response-text img',
+                'message-content img',
+                'img[alt*="generated" i]'
+              ];
+              const rows=[];
+              for(const s of sels){
+                for(const el of document.querySelectorAll(s)){
+                  const r=el.getBoundingClientRect();
+                  if(r.width<180||r.height<180)continue;
+                  const key=[el.currentSrc||el.src||'',Math.round(r.width),Math.round(r.height)].join('|');
+                  if(baseline.has(key))continue;
+                  rows.push({
+                    x:r.left+window.scrollX,
+                    y:r.top+window.scrollY,
+                    width:r.width,
+                    height:r.height,
+                    key
+                  });
+                }
+              }
+              return rows.length?rows[rows.length-1]:null;
+            })()""")
+            if candidate and float(candidate.get("width",0))>=180 and float(candidate.get("height",0))>=180:
+                chosen=candidate
+                break
+            await asyncio.sleep(1.5)
+        if not chosen:
             raise TimeoutError("gemini_web_image_response_timeout")
 
-        chosen.scroll_into_view_if_needed()
-        chosen.screenshot(path=str(output), type="png")
-        if not output.is_file() or output.stat().st_size < 10000:
+        shot=await call("Page.captureScreenshot",{
+            "format":"png",
+            "captureBeyondViewport":True,
+            "clip":{
+                "x":max(0,float(chosen["x"])),
+                "y":max(0,float(chosen["y"])),
+                "width":float(chosen["width"]),
+                "height":float(chosen["height"]),
+                "scale":1,
+            }
+        })
+        data=base64.b64decode(str(shot.get("data") or ""))
+        if len(data)<10000:
             raise RuntimeError("gemini_web_image_capture_invalid")
-        print("character_fusion_gemini_web_render=PASS")
+        output.write_bytes(data)
+        print(f"character_fusion_gemini_web_raw_cdp_render=PASS port={selected_port}")
+
+with lock_path.open("a+") as lock:
+    fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
+    asyncio.run(run())
 '''
         proc = subprocess.run(
             [str(python_bin), "-c", helper, str(prompt_path), str(output_path)],
             env=os.environ.copy(),
             capture_output=True,
             text=True,
-            timeout=240,
+            timeout=270,
         )
         if proc.returncode != 0:
-            tail = (proc.stderr or proc.stdout or "")[-3000:]
+            tail=(proc.stderr or proc.stdout or "")[-3500:]
             raise RuntimeError(f"Gemini Web image fallback failed: {tail}")
-        data = output_path.read_bytes()
-        if len(data) < 10000:
+        data=output_path.read_bytes()
+        if len(data)<10000:
             raise RuntimeError("Gemini Web image fallback returned an unexpectedly small image")
         return data
 
