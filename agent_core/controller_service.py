@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from agent_core.realm_fabric import RealmFabricStore
+from agent_core.work_bindings import WorkBindingStore
 
 
 def _utc_now() -> str:
@@ -22,8 +23,9 @@ class ControllerService:
     REQUEST_SCHEMA = 'agentos.controller-dispatch/v0.1'
     RECEIPT_SCHEMA = 'agentos.controller-dispatch-receipt/v0.1'
 
-    def __init__(self, fabric: RealmFabricStore):
+    def __init__(self, fabric: RealmFabricStore, work_bindings: WorkBindingStore | None = None):
         self.fabric = fabric
+        self.work_bindings = work_bindings or WorkBindingStore()
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(request, dict):
@@ -93,6 +95,22 @@ class ControllerService:
             **passthrough,
         }
         queued = self.fabric.queue_task(node_id, task)
+        work_id = str(request.get('work_id') or '').strip()
+        if work_id:
+            self.work_bindings.upsert({
+                'work_id': work_id,
+                'project_id': request.get('project_id') or request.get('project'),
+                'node_id': node_id,
+                'executor_id': request.get('executor_id'),
+                'participant_id': request.get('participant_id'),
+                'session_id': request.get('session_id'),
+                'runner_id': request.get('runner_id'),
+                'state': str(request.get('work_state') or 'active'),
+                'node_assigned': bool(requested_node_id),
+                'global_assigned': not bool(requested_node_id),
+                'task_id': task_id,
+                'action': action,
+            })
         return {
             'schema': self.RECEIPT_SCHEMA,
             'ok': True,
