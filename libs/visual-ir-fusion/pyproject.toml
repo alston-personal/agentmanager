@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visual-ir-fusion"
+version = "0.1.0"
+description = "Provider-neutral Visual IR extraction, weighted fusion, rendering and preservation validation primitives"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
