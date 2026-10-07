@@ -8,7 +8,7 @@ fi
 
 PERSONA="${AGENTOS_DM_PERSONA:-}"
 case "$PERSONA" in
-  mio) ACCOUNT="mio.milkcat"; BASE="http://127.0.0.1:9222" ;;
+  mio) ACCOUNT="mio.milkcat"; BASE="http://127.0.0.1:9224" ;;
   oursong) ACCOUNT="oursong_alstonhuang"; BASE="http://127.0.0.1:9223" ;;
   *) echo "threads_persona_login_resume=INVALID_PERSONA" >&2; exit 2 ;;
 esac

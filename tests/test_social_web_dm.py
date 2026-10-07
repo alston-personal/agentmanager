@@ -49,3 +49,15 @@ def test_dm_read_stages_only_runtime_tree():
     text=(repo/"scripts"/"run_threads_web_dm_read_user.sh").read_text(encoding="utf-8")
     assert 'archive "$SOURCE_COMMIT" agentos_node scripts' in text
     assert 'archive "$SOURCE_COMMIT" | tar' not in text
+
+
+def test_mio_resume_uses_same_cdp_binding_as_dm_runtime():
+    general=(Path(__file__).resolve().parents[1]/"scripts"/"resume_threads_persona_login_user.sh").read_text(encoding="utf-8")
+    legacy=(Path(__file__).resolve().parents[1]/"scripts"/"resume_mio_threads_login_user.sh").read_text(encoding="utf-8")
+    assert 'mio) ACCOUNT="mio.milkcat"; BASE="http://127.0.0.1:9224"' in general
+    assert 'BASE="http://127.0.0.1:9224"' in legacy
+
+def test_dm_read_attempts_safe_resume_for_mio_too():
+    text=(Path(__file__).resolve().parents[1]/"scripts"/"run_threads_web_dm_read_user.sh").read_text(encoding="utf-8")
+    assert 'AGENTOS_DM_PERSONA="$PERSONA" bash "$STAGE/scripts/resume_threads_persona_login_user.sh"' in text
+    assert 'mio_autonomous_after_resume' in text
