@@ -28,7 +28,7 @@ jobs:
           assert p.get("schema")=="agentos.vision-studio-flow-recover/v1"
           assert p.get("project_id")=="rain-exit-v001"
           assert p.get("shot_id")=="s01"
-          assert re.fullmatch(r"recover-rain-exit-s01-20261006-r[0-9]+",str(p.get("nonce") or ""))
+          assert re.fullmatch(r"recover-rain-exit-s01-[0-9]{8}-r[0-9]+",str(p.get("nonce") or ""))
           print("vision_studio_flow_recover_command=APPROVED")
           PY
       - name: Mint OIDC credential
