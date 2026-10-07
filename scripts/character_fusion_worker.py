@@ -175,6 +175,32 @@ def _groq_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
     return _parse_loose_json_text(content)
 
 
+def _vision_fallback_json(prompt: str, image_path: Path) -> dict[str, Any]:
+    errors: list[str] = []
+
+    try:
+        return _groq_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"groq={type(exc).__name__}: {exc}")
+
+    try:
+        return _gemini_cli_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"gemini_cli={type(exc).__name__}: {exc}")
+
+    try:
+        return _hf_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"hf={type(exc).__name__}: {exc}")
+
+    try:
+        return _gemini_web_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"gemini_web={type(exc).__name__}: {exc}")
+
+    raise RuntimeError("all vision fallbacks failed; " + "; ".join(errors[-4:]))
+
+
 def _parse_loose_json_text(text: str) -> dict[str, Any]:
     value = text.strip()
     if value.startswith("```"):
@@ -873,46 +899,7 @@ Omit categories that are not visibly supported. Keep descriptions short and visu
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        cli_error = ""
-        try:
-            return _gemini_cli_vlm_json(prompt, path)
-        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
-            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
-        try:
-            try:
-            return _groq_vlm_json(prompt, path)
-        except Exception as groq_exc:
-            try:
-                return _hf_vlm_json(prompt, path)
-            except Exception as hf_exc:
-                try:
-                    return _gemini_web_vlm_json(prompt, path)
-                except Exception as web_exc:
-                    raise RuntimeError(
-                        "all vision fallbacks failed; "
-                        f"groq={type(groq_exc).__name__}: {groq_exc}; "
-                        f"hf={type(hf_exc).__name__}: {hf_exc}; "
-                        f"gemini_web={type(web_exc).__name__}: {web_exc}"
-                    ) from web_exc
-        except RuntimeError as hf_exc:
-            hf_message = str(hf_exc)
-            if not any(marker in hf_message for marker in (
-                "402 Payment Required",
-                "depleted your monthly included credits",
-                "model_not_supported",
-                "No HF VLM succeeded",
-                "timeout",
-                "unavailable",
-            )):
-                raise
-            try:
-                return _gemini_web_vlm_json(prompt, path)
-            except RuntimeError as web_exc:
-                raise RuntimeError(
-                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
-                ) from web_exc
-
-
+        return _vision_fallback_json(prompt, path)
 def extract_custom_main(path: Path) -> dict[str, Any]:
     prompt = """
 Analyze this image as a MAIN VISUAL / mascot species reference.
@@ -940,32 +927,7 @@ The body_plan must describe the dominant species/silhouette, not incidental clot
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        cli_error = ""
-        try:
-            return _gemini_cli_vlm_json(prompt, path)
-        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
-            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
-        try:
-            return _hf_vlm_json(prompt, path)
-        except RuntimeError as hf_exc:
-            hf_message = str(hf_exc)
-            if not any(marker in hf_message for marker in (
-                "402 Payment Required",
-                "depleted your monthly included credits",
-                "model_not_supported",
-                "No HF VLM succeeded",
-                "timeout",
-                "unavailable",
-            )):
-                raise
-            try:
-                return _gemini_web_vlm_json(prompt, path)
-            except RuntimeError as web_exc:
-                raise RuntimeError(
-                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
-                ) from web_exc
-
-
+        return _vision_fallback_json(prompt, path)
 def fuse(main_ir: dict[str, Any], person_ir: dict[str, Any]) -> dict[str, Any]:
     return weighted_reconcile_ir(
         [
@@ -1278,46 +1240,7 @@ Judge what is visibly present, not what the prompt intended.
     except RuntimeError as exc:
         if not _should_fallback_from_gemini(exc):
             raise
-        cli_error = ""
-        try:
-            return _gemini_cli_vlm_json(prompt, image_path)
-        except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
-            cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
-        try:
-            try:
-            return _groq_vlm_json(prompt, image_path)
-        except Exception as groq_exc:
-            try:
-                return _hf_vlm_json(prompt, image_path)
-            except Exception as hf_exc:
-                try:
-                    return _gemini_web_vlm_json(prompt, image_path)
-                except Exception as web_exc:
-                    raise RuntimeError(
-                        "all vision fallbacks failed; "
-                        f"groq={type(groq_exc).__name__}: {groq_exc}; "
-                        f"hf={type(hf_exc).__name__}: {hf_exc}; "
-                        f"gemini_web={type(web_exc).__name__}: {web_exc}"
-                    ) from web_exc
-        except RuntimeError as hf_exc:
-            hf_message = str(hf_exc)
-            if not any(marker in hf_message for marker in (
-                "402 Payment Required",
-                "depleted your monthly included credits",
-                "model_not_supported",
-                "No HF VLM succeeded",
-                "timeout",
-                "unavailable",
-            )):
-                raise
-            try:
-                return _gemini_web_vlm_json(prompt, image_path)
-            except RuntimeError as web_exc:
-                raise RuntimeError(
-                    f"all vision fallbacks failed; gemini_cli={cli_error}; gemini_web={web_exc}"
-                ) from web_exc
-
-
+        return _vision_fallback_json(prompt, image_path)
 def accept(preset: str, target: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
     expected = ((target.get("body_plan") or {}).get("kind") or "").strip()
     actual_kind = ((actual.get("body_plan") or {}).get("kind") or "").strip()
