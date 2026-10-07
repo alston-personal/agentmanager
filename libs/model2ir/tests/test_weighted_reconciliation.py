@@ -151,5 +151,6 @@ def test_main_visual_and_ip_genome_trait_fragments_can_share_one_character_ir():
         result["identity_traits"]["eyewear"]["primary"]["value"]
         == "round glasses"
     )
+    assert result["identity_traits"]["eyewear"]["primary"]["confidence"] == 0.99
     assert result["identity_traits"]["props"]["primary"]["value"] == "coffee cup"
     assert result["negative_constraints"] == ["no human torso transfer"]
