@@ -15,6 +15,7 @@ on:
       - 'scripts/resume_threads_persona_login_user.sh'
       - 'agentos_node/bootstrap_control.py'
       - 'agent_core/runner_window.py'
+      - 'agent_core/realm_server.py'
       - '.github/workflows/oursong-dm-read-acceptance.yml'
   workflow_dispatch:
 

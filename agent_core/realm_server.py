@@ -490,6 +490,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'threads_web_dm_observed_account=',
                     'threads_web_dm_identity_candidate_count=',
                     'threads_web_dm_read=',
+                    'threads_web_dm_resume=',
+                    'threads_web_dm_resume_reason=',
                     'threads_web_dm_bridge=',
                     'threads_web_dm_transport=',
                     'threads_web_dm_new_events=',
