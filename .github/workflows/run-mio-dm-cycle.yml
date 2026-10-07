@@ -27,11 +27,11 @@ jobs:
           cd "$HOME/agentmanager"
           GUI_PY="$HOME/.local/share/agentos/gui-worker/venv/bin/python"
           test -x "$GUI_PY"
-          export PYTHONPATH="$HOME/agentmanager"
+          unset PYTHONPATH
           echo '=== DM BRIDGE ==='
-          "$GUI_PY" scripts/threads_web_dm_bridge_user.py --persona mio
+          "$GUI_PY" -m scripts.threads_web_dm_bridge_user --persona mio
           echo '=== DM AUTONOMOUS ==='
-          "$GUI_PY" scripts/mio_threads_dm_autonomous_user.py
+          "$GUI_PY" -m scripts.mio_threads_dm_autonomous_user
           echo '=== DM EVENT TAIL ==='
           ROOT="$HOME/.local/share/agentos/social/threads-web-dm/mio"
           test -f "$ROOT/events.jsonl" && tail -n 8 "$ROOT/events.jsonl" | sed -E 's/("text"[[:space:]]*:[[:space:]]*")[^"]*"/\1[redacted]"/g' || true
