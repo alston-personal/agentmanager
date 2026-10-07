@@ -1,0 +1,107 @@
+name: Oracle Deploy Character Fusion Dashboard
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'dashboard/app/api/character-fusion/**'
+      - 'dashboard/lib/character-fusion-jobs.ts'
+      - 'scripts/character_fusion_worker.py'
+      - 'libs/model2ir/src/model2ir/reconciliation.py'
+      - 'scripts/deploy_dashboard_blue_green_user.sh'
+      - '.github/workflows/oracle-deploy-character-fusion-dashboard.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - 'dashboard/app/api/character-fusion/**'
+      - 'dashboard/lib/character-fusion-jobs.ts'
+      - 'scripts/character_fusion_worker.py'
+      - 'libs/model2ir/src/model2ir/reconciliation.py'
+      - 'scripts/deploy_dashboard_blue_green_user.sh'
+      - '.github/workflows/oracle-deploy-character-fusion-dashboard.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-dashboard-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Compile Character Fusion support
+        run: |
+          python3 -m py_compile scripts/character_fusion_worker.py libs/model2ir/src/model2ir/reconciliation.py
+          bash -n scripts/deploy_dashboard_blue_green_user.sh
+      - name: Build Dashboard
+        working-directory: dashboard
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Verify built Character Fusion routes
+        working-directory: dashboard
+        run: |
+          node - <<'NODE'
+          const p=require('./.next/server/app-paths-manifest.json');
+          for (const r of [
+            '/api/character-fusion/v1/jobs/route',
+            '/api/character-fusion/v1/jobs/[jobId]/route',
+            '/api/character-fusion/v1/assets/[jobId]/route',
+          ]) {
+            if (!p[r]) throw new Error('missing built route: '+r);
+          }
+          console.log('character_fusion_dashboard_routes=PASS');
+          NODE
+
+  deploy:
+    if: github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Stage blue-green deploy carrier
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_PORT:-22}" \
+            scripts/deploy_dashboard_blue_green_user.sh \
+            "${DEPLOY_USER}@${ORACLE_HOST}:/tmp/deploy_dashboard_blue_green_user.sh"
+
+      - name: Build inactive slot, verify, cut over and retire old slot
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            "chmod 700 /tmp/deploy_dashboard_blue_green_user.sh && /tmp/deploy_dashboard_blue_green_user.sh '$GITHUB_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
+
+      - name: Public Character Fusion acceptance
+        run: |
+          set -euo pipefail
+          session_code=$(curl -sS -o /tmp/character-fusion-session -w '%{http_code}' --max-time 10 \
+            https://studio.milkcat.org/dashboard/api/auth/session || true)
+          fusion_code=$(curl -sS -o /tmp/character-fusion-probe -w '%{http_code}' --max-time 10 \
+            https://studio.milkcat.org/dashboard/api/character-fusion/v1/jobs/__probe__ || true)
+          echo "dashboard_public_session_http=$session_code"
+          echo "character_fusion_public_unauth_http=$fusion_code"
+          test "$session_code" = 200
+          test "$fusion_code" = 401
+          grep -Fq 'Login required' /tmp/character-fusion-probe
+          echo "character_fusion_public_route=PASS"
