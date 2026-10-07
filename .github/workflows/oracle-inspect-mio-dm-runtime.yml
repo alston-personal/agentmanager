@@ -1,0 +1,35 @@
+name: Oracle Inspect Mio DM Runtime
+on:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-mio-dm-runtime.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect DM runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          echo '=== USER UNITS ==='
+          systemctl --user list-unit-files --no-pager | grep -Ei 'threads|dm|message|persona|gui' || true
+          echo '=== LOCAL SCRIPTS ==='
+          find "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/agentmanager/scripts" -maxdepth 3 -type f 2>/dev/null | grep -Ei 'threads|dm|message|social|gui' | sort | head -n 500
+          echo '=== DM REFERENCES ==='
+          grep -RInsE 'dm|direct.?message|inbox|message\.read|message\.send|threads.*message|oursong_alstonhuang' \
+            "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/.config/systemd/user" "$HOME/agentmanager/scripts" 2>/dev/null | head -n 1200 || true
+          echo '=== GUI/PLAYWRIGHT PROCESSES ==='
+          ps -eo pid,ppid,etime,args | grep -Ei '[p]laywright|[c]hromium|[g]ui.worker|threads' | head -n 300 || true
+          REMOTE
