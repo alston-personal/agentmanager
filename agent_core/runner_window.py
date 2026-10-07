@@ -48,6 +48,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("threads.dm", "login.start", bc.ACTION_START_THREADS_WEB_DM_LOGIN),
     RunnerWindowIntent("threads.session", "supervisor.install", bc.ACTION_INSTALL_MIO_THREADS_SESSION_SUPERVISOR),
     RunnerWindowIntent("threads.dm", "oursong.acceptance", bc.ACTION_ACCEPT_MIO_DM_OURSONG),
+    RunnerWindowIntent("persona.social.dm", "oursong.roundtrip.mio", bc.ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP),
     RunnerWindowIntent("chatgpt.web", "probe", bc.ACTION_PROBE_CHATGPT_WEB),
     RunnerWindowIntent("chatgpt.web", "bridge.install", bc.ACTION_INSTALL_CHATGPT_WEB_BRIDGE),
     RunnerWindowIntent("chatgpt.web", "session.accept", bc.ACTION_ACCEPT_CHATGPT_WEB_SESSION),
