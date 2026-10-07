@@ -123,9 +123,21 @@ export async function createCharacterFusionJob(args: {
 }
 
 export function launchCharacterFusionWorker(jobId: string) {
-  const child = spawn('python3', ['scripts/character_fusion_worker.py', '--job-id', safeId(jobId)], {
-    cwd: process.cwd(),
-    env: process.env,
+  const candidates = [
+    path.join(process.cwd(), 'scripts', 'character_fusion_worker.py'),
+    path.join(process.cwd(), '..', 'scripts', 'character_fusion_worker.py'),
+    '/home/ubuntu/agentmanager/scripts/character_fusion_worker.py',
+  ];
+  const worker = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!worker) throw new Error('character fusion worker not installed');
+
+  const repoRoot = path.dirname(path.dirname(worker));
+  const child = spawn('python3', [worker, '--job-id', safeId(jobId)], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      AGENTOS_REPO_ROOT: repoRoot,
+    },
     detached: true,
     stdio: 'ignore',
   });
