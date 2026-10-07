@@ -39,6 +39,43 @@ jobs:
               'nodes': picked,
           }, indent=2, sort_keys=True))
           PY
+      - name: Transport canary through ONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time, uuid
+          from agent_core.realm_fabric import RealmFabricStore
+
+          fabric = RealmFabricStore()
+          task_id = 'task-live-canary-' + uuid.uuid4().hex
+          queued = fabric.queue_task('vopc5750', {
+              'schema': 'agentos.node-task/v0.1',
+              'task_id': task_id,
+              'action': 'desktop.session.inspect',
+          })
+
+          receipt = None
+          deadline = time.time() + 30
+          while time.time() < deadline:
+              receipt = fabric.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(1)
+
+          print(json.dumps({
+              'task_id': task_id,
+              'queued_at': queued.get('queued_at'),
+              'receipt': receipt,
+          }, indent=2, sort_keys=True))
+
+          if not receipt:
+              raise SystemExit('transport canary receipt timeout')
+          if not receipt.get('ok'):
+              raise SystemExit('transport canary receipt not ok')
+          print('TRANSPORT_CANARY=PASS')
+          PY
+
       - name: Invoke semantic preview through ONE
         continue-on-error: true
         shell: bash
