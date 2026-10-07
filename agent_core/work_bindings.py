@@ -16,6 +16,16 @@ class WorkBindingStore:
 
     SCHEMA = "agentos.work-bindings/v1"
     TERMINAL_STATES = {"completed", "failed", "cancelled", "superseded"}
+    TRANSITIONS = {
+        "assigned": {"active", "blocked", "cancelled", "superseded"},
+        "active": {"suspended", "blocked", "completed", "failed", "cancelled", "superseded"},
+        "suspended": {"active", "blocked", "cancelled", "superseded"},
+        "blocked": {"active", "suspended", "failed", "cancelled", "superseded"},
+        "completed": set(),
+        "failed": {"active", "superseded"},
+        "cancelled": set(),
+        "superseded": set(),
+    }
 
     def __init__(self, path: str | Path | None = None):
         root = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
@@ -63,6 +73,35 @@ class WorkBindingStore:
         data["bindings"][work_id] = merged
         self.save(data)
         return dict(merged)
+
+    def transition(
+        self,
+        work_id: str,
+        *,
+        state: str,
+        reason: str | None = None,
+        receipt_id: str | None = None,
+    ) -> dict[str, Any]:
+        state = str(state or "").strip()
+        current = self.get(work_id)
+        if current is None:
+            raise KeyError(work_id)
+        previous = str(current.get("state") or "active")
+        allowed = self.TRANSITIONS.get(previous, set())
+        if state != previous and state not in allowed:
+            raise ValueError(f"invalid Work transition: {previous} -> {state}")
+        update: dict[str, Any] = {
+            "work_id": work_id,
+            "state": state,
+            "previous_state": previous,
+        }
+        if reason:
+            update["transition_reason"] = reason
+        if receipt_id:
+            update["transition_receipt_id"] = receipt_id
+        if state in self.TERMINAL_STATES:
+            update["terminal_at"] = _utc_now()
+        return self.upsert(update)
 
     def mark_terminal(self, work_id: str, *, state: str, receipt_id: str | None = None) -> dict[str, Any] | None:
         state = str(state or "").strip()
