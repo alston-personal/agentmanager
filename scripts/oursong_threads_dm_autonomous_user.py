@@ -109,7 +109,32 @@ Schema:
 def main()->int:
     if os.geteuid()!=1001:
         print("oursong_dm_autonomous=WRONG_USER"); return 2
+    state_exists=STATE.exists()
     state=load_json(STATE,{"schema":"agentos.persona-dm-loop-state/v1"})
+    if not state_exists:
+        processed=[]
+        fingerprints=[]
+        from agentos_node.social.dm_loop_guard import message_fingerprint
+        for event in events():
+            mid=str(event.get("message_id") or "")
+            user=str(event.get("actor_username") or "").lstrip("@")
+            text=str(event.get("text") or "").strip()
+            if mid: processed.append(mid)
+            if user and text:
+                fingerprints.append(message_fingerprint(sender=user,text=text))
+        state={
+            "schema":"agentos.persona-dm-loop-state/v1",
+            "processed_message_ids":processed[-5000:],
+            "processed_fingerprints":fingerprints[-5000:],
+            "auto_hops":0,
+            "last_auto_reply_epoch":0,
+        }
+        save_json(STATE,state)
+        print("oursong_dm_autonomous=PASS")
+        print("oursong_dm_autonomous_baseline_count="+str(len(processed)))
+        print("oursong_dm_autonomous_pending=0")
+        return 0
+
     pending=[]
     for event in events():
         user=str(event.get("actor_username") or "").lstrip("@")
