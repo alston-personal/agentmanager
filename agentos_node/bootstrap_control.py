@@ -60,6 +60,7 @@ ACTION_ACCEPT_MIO_DM_OURSONG = "agentos.social_threads_web_dm.oursong_acceptance
 ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP = "agentos.social_threads_web_dm.oursong_mio_roundtrip"
 ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
 ACTION_INSTALL_GUI_WORKER = "agentos.gui_worker.install"
+ACTION_INSTALL_BROWSER_IDENTITY_SESSIONS = "agentos.browser_identity_sessions.install"
 ACTION_SMOKE_GUI_WORKER = "agentos.gui_worker.smoke"
 ACTION_PROBE_CHATGPT_WEB = "agentos.chatgpt_web.probe"
 ACTION_INSTALL_CHATGPT_WEB_BRIDGE = "agentos.chatgpt_web.bridge.install"
@@ -124,6 +125,7 @@ ALLOWED_ACTIONS = {
     ACTION_ACCEPT_OURSONG_DM_MIO_ROUNDTRIP,
     ACTION_RUN_MIO_DM_DECISION,
     ACTION_INSTALL_GUI_WORKER,
+    ACTION_INSTALL_BROWSER_IDENTITY_SESSIONS,
     ACTION_SMOKE_GUI_WORKER,
     ACTION_PROBE_CHATGPT_WEB,
     ACTION_INSTALL_CHATGPT_WEB_BRIDGE,
@@ -335,6 +337,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_ACCEPT_MIO_DM_OURSONG,
         ACTION_RUN_MIO_DM_DECISION,
         ACTION_INSTALL_GUI_WORKER,
+        ACTION_INSTALL_BROWSER_IDENTITY_SESSIONS,
         ACTION_SMOKE_GUI_WORKER,
         ACTION_PROBE_CHATGPT_WEB,
         ACTION_INSTALL_CHATGPT_WEB_BRIDGE,
@@ -884,6 +887,12 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         result = _realm_executor_reconcile(str(params.get("node_id") or ""))
         result["source_commit"] = source_commit
         return result
+    if action == ACTION_INSTALL_BROWSER_IDENTITY_SESSIONS:
+        return _run_canonical_script(
+            "scripts/install_browser_identity_sessions_user.sh",
+            timeout=240,
+            source_commit=source_commit,
+        )
     if action == ACTION_GOOGLE_FLOW_GENERATE:
         params = params or {}
         return _run_canonical_script(
