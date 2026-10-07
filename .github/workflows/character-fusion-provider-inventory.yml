@@ -1,0 +1,65 @@
+name: Character Fusion Provider Inventory
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-provider-inventory.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-provider-inventory.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'provider_inventory=PASS' .github/workflows/character-fusion-provider-inventory.yml
+
+  inventory:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: List configured provider variable names only
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          files=(
+            "$HOME/.agentos.secrets"
+            "$HOME/.config/agentos/character-fusion.env"
+            "$HOME/.config/agentos/mio-tryon.env"
+            "$HOME/.config/milkcat/dashboard.env.local"
+            "/home/ubuntu/agentmanager/.env"
+            "/home/ubuntu/invoice-intake-service/vision.env"
+          )
+          {
+            for f in "${files[@]}"; do
+              [ -f "$f" ] || continue
+              awk -F= '
+                /^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ {
+                  line=$0
+                  sub(/^[[:space:]]*export[[:space:]]+/,"",line)
+                  split(line,a,"=")
+                  k=a[1]
+                  gsub(/[[:space:]]/,"",k)
+                  if (k ~ /(OPENAI|ANTHROPIC|CLAUDE|GROQ|MISTRAL|TOGETHER|FAL|REPLICATE|HF_|HUGGINGFACE|GEMINI|GOOGLE).*(_KEY|_TOKEN|API_KEY|TOKEN)$/) print k
+                }
+              ' "$f"
+            done
+          } | sort -u
+          echo 'provider_inventory=PASS'
+          REMOTE
