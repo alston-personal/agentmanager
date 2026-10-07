@@ -19,6 +19,8 @@ from agent_core.node_registry import NodeRegistry
 from agent_core.participant_registry import ParticipantRegistry
 from agent_core.realm_fabric import RealmFabricStore
 from agent_core.resolve_facade import resolve_continuation
+from agent_core.continuation import ContinuationOrigin, ContinuationResolver
+from agent_core.work_bindings import WorkBindingStore
 
 
 def _utc_now() -> str:
@@ -283,17 +285,83 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     raise ValueError('invalid resolve request schema')
                 if str(body.get('intent') or 'continue') != 'continue':
                     raise ValueError('only continue intent is supported in v1')
-                node_id = str(body.get('node_id') or '')
+                node_id = str(body.get('node_id') or '').strip()
                 if not node_id:
                     raise ValueError('node_id is required')
                 token = self._bearer()
                 self.fabric.authenticate(node_id, token)
                 node_context = bootstrap_snapshot(self.fabric, node_id, token)
+
                 project_query = str(body.get('project') or body.get('query') or '').strip()
-                if not project_query:
-                    raise ValueError('project query is required')
-                result = resolve_continuation(project_query, node_context=node_context)
-                self._send(200, {'ok': True, **result})
+                explicit_work_id = str(body.get('work_id') or '').strip() or None
+                use_scoped_resolution = explicit_work_id is not None or not project_query
+
+                if not use_scoped_resolution:
+                    result = resolve_continuation(project_query, node_context=node_context)
+                    self._send(200, {'ok': True, **result})
+                    return
+
+                origin = ContinuationOrigin(
+                    node_id=node_id,
+                    executor_id=str(body.get('executor_id') or '').strip() or None,
+                    participant_id=str(body.get('participant_id') or '').strip() or None,
+                    session_id=str(body.get('session_id') or '').strip() or None,
+                )
+                store = WorkBindingStore()
+                resolution = ContinuationResolver().resolve(
+                    store.list_bindings(),
+                    origin=origin,
+                    explicit_work_id=explicit_work_id,
+                )
+                if resolution.work_id is None:
+                    self._send(200, {
+                        'ok': True,
+                        'schema': 'agentos.resolve/v1',
+                        'intent': 'continue',
+                        'resolution': {
+                            'work_id': None,
+                            'source': resolution.source,
+                        },
+                        'node_context': node_context,
+                        'availability': {
+                            'work_binding': False,
+                            'continuation': False,
+                            'node_context': True,
+                        },
+                        'next_action': None,
+                    })
+                    return
+
+                binding = dict(resolution.binding or {})
+                bound_project = str(binding.get('project_id') or '').strip()
+                if bound_project:
+                    result = resolve_continuation(bound_project, node_context=node_context)
+                    result['resolution'] = {
+                        'work_id': resolution.work_id,
+                        'source': resolution.source,
+                        'binding': binding,
+                    }
+                    result['availability']['work_binding'] = True
+                    self._send(200, {'ok': True, **result})
+                    return
+
+                self._send(200, {
+                    'ok': True,
+                    'schema': 'agentos.resolve/v1',
+                    'intent': 'continue',
+                    'resolution': {
+                        'work_id': resolution.work_id,
+                        'source': resolution.source,
+                        'binding': binding,
+                    },
+                    'node_context': node_context,
+                    'availability': {
+                        'work_binding': True,
+                        'continuation': False,
+                        'node_context': True,
+                    },
+                    'next_action': None,
+                })
                 return
             self._send(404, {'ok': False, 'error': 'not found'})
         except Exception as exc:
