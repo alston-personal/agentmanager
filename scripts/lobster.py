@@ -208,7 +208,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
             if wait:
                 until, reason = wait
                 logger.info(f"  ⏳ external wait requested until {until}: {reason[:80]}")
-                return False, f"WAIT_EXTERNAL:{until}:{reason}"
+                return False, f"WAIT_EXTERNAL_UNTIL={until} REASON={reason}"
         if not success:
             logger.warning(f"  Lobster 執行失敗: {output[:100]}")
             # TIMEOUT 立刻 SKIP，不浪費時間重試
@@ -524,9 +524,8 @@ def completion_finish(work_id: Optional[str], success: bool, output: str) -> Non
                 COMPLETION_STATE, work_id=work_id, actor="role://lobster+inspector",
                 evidence=f"lobster_inspector_pass:{output[:240]}",
             )
-        elif output.startswith("WAIT_EXTERNAL:"):
-            _, rest = output.split("WAIT_EXTERNAL:", 1)
-            until, _, reason = rest.partition(":")
+        elif external_wait_directive(output):
+            until, reason = external_wait_directive(output) or ("", "")
             state = WorkCompletion.load(COMPLETION_STATE)
             item = state["items"][work_id]
             WorkCompletion.wait_external(
