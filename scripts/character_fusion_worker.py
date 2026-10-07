@@ -237,14 +237,18 @@ def _gemini_web_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
         output_path = Path(tmp) / "response.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
         browser_script = r'''
-import asyncio
+import base64
 import fcntl
+import hashlib
 import json
+import os
+import socket
+import struct
 import sys
 import time
 import urllib.request
 from pathlib import Path
-import websockets
+from urllib.parse import urlparse
 
 prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
 image_path = Path(sys.argv[2])
@@ -264,30 +268,122 @@ ws_url=str(target.get("webSocketDebuggerUrl") or "")
 if not ws_url:
     raise RuntimeError("gemini_web_missing_ws")
 
-async def main():
+class RawWebSocket:
+    def __init__(self, url):
+        parsed=urlparse(url)
+        if parsed.scheme != "ws":
+            raise RuntimeError("only localhost ws:// CDP is supported")
+        host=parsed.hostname or "127.0.0.1"
+        port=parsed.port or 80
+        self.sock=socket.create_connection((host,port),timeout=8)
+        self.sock.settimeout(20)
+        key=base64.b64encode(os.urandom(16)).decode("ascii")
+        path=parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+        request=(
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host}:{port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        ).encode("ascii")
+        self.sock.sendall(request)
+        response=b""
+        while b"\r\n\r\n" not in response:
+            chunk=self.sock.recv(4096)
+            if not chunk:
+                raise RuntimeError("cdp websocket handshake closed")
+            response += chunk
+            if len(response)>65536:
+                raise RuntimeError("cdp websocket handshake too large")
+        head=response.split(b"\r\n\r\n",1)[0]
+        if b" 101 " not in head.split(b"\r\n",1)[0]:
+            raise RuntimeError("cdp websocket handshake failed: "+head[:300].decode("latin1","replace"))
+        accept_expected=base64.b64encode(
+            hashlib.sha1((key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+        ).decode("ascii")
+        if accept_expected.lower() not in head.decode("latin1","replace").lower():
+            raise RuntimeError("cdp websocket accept mismatch")
+
+    def close(self):
+        try: self.sock.close()
+        except Exception: pass
+
+    def _read_exact(self,n):
+        out=b""
+        while len(out)<n:
+            part=self.sock.recv(n-len(out))
+            if not part:
+                raise RuntimeError("cdp websocket closed")
+            out+=part
+        return out
+
+    def send_text(self,text):
+        data=text.encode("utf-8")
+        mask=os.urandom(4)
+        n=len(data)
+        if n<126:
+            header=bytes([0x81,0x80|n])
+        elif n<65536:
+            header=bytes([0x81,0x80|126])+struct.pack("!H",n)
+        else:
+            header=bytes([0x81,0x80|127])+struct.pack("!Q",n)
+        masked=bytes(b ^ mask[i%4] for i,b in enumerate(data))
+        self.sock.sendall(header+mask+masked)
+
+    def recv_text(self):
+        chunks=[]
+        opcode0=None
+        while True:
+            first,second=self._read_exact(2)
+            fin=bool(first&0x80)
+            opcode=first&0x0F
+            masked=bool(second&0x80)
+            n=second&0x7F
+            if n==126: n=struct.unpack("!H",self._read_exact(2))[0]
+            elif n==127: n=struct.unpack("!Q",self._read_exact(8))[0]
+            mask=self._read_exact(4) if masked else None
+            payload=self._read_exact(n) if n else b""
+            if mask:
+                payload=bytes(b ^ mask[i%4] for i,b in enumerate(payload))
+            if opcode==0x8:
+                raise RuntimeError("cdp websocket close frame")
+            if opcode==0x9:
+                # Chrome should not require client pongs for this short-lived localhost session.
+                continue
+            if opcode in (0x1,0x0):
+                if opcode==0x1: opcode0=opcode
+                chunks.append(payload)
+                if fin:
+                    return b"".join(chunks).decode("utf-8","replace")
+
+def main():
     seq=0
-    async with websockets.connect(ws_url, open_timeout=5, close_timeout=2, max_size=8*1024*1024) as ws:
-        async def call(method, params=None):
+    ws=RawWebSocket(ws_url)
+    try:
+        def call(method, params=None):
             nonlocal seq
             seq += 1
             ident=seq
-            await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+            ws.send_text(json.dumps({"id":ident,"method":method,"params":params or {}}))
             while True:
-                msg=json.loads(await ws.recv())
+                msg=json.loads(ws.recv_text())
                 if msg.get("id")==ident:
                     if msg.get("error"):
                         raise RuntimeError(f"cdp {method}: {msg['error']}")
                     return msg.get("result") or {}
 
-        async def evaluate(expr):
-            r=await call("Runtime.evaluate",{
+        def evaluate(expr):
+            r=call("Runtime.evaluate",{
                 "expression":expr,
                 "returnByValue":True,
                 "awaitPromise":True,
             })
             return (r.get("result") or {}).get("value")
 
-        baseline=await evaluate("""(() => {
+        baseline=evaluate("""(() => {
           const sels=['model-response','[data-test-id*="model-response"]','.model-response-text','message-content'];
           const out=[]; const seen=new Set();
           for (const s of sels) for (const el of document.querySelectorAll(s)) {
@@ -297,8 +393,7 @@ async def main():
           return out.slice(-10);
         })()""") or []
 
-        # Try to reveal an upload control if Gemini keeps file inputs lazy.
-        await evaluate("""(() => {
+        evaluate("""(() => {
           const buttons=[...document.querySelectorAll('button,[role="button"]')];
           const b=buttons.find(x => /upload|file|add|attach|上傳|新增|附件/i.test(
             [x.getAttribute('aria-label'),x.getAttribute('title'),x.innerText].filter(Boolean).join(' ')
@@ -306,28 +401,25 @@ async def main():
           if(b) b.click();
           return true;
         })()""")
-        await asyncio.sleep(0.8)
+        time.sleep(0.8)
 
-        doc=await call("DOM.getDocument",{"depth":-1,"pierce":True})
+        doc=call("DOM.getDocument",{"depth":-1,"pierce":True})
         root=(doc.get("root") or {}).get("nodeId")
-        if not root:
-            raise RuntimeError("gemini_web_dom_root_missing")
-        q=await call("DOM.querySelector",{"nodeId":root,"selector":"input[type=file]"})
+        if not root: raise RuntimeError("gemini_web_dom_root_missing")
+        q=call("DOM.querySelector",{"nodeId":root,"selector":"input[type=file]"})
         node_id=q.get("nodeId")
-        if not node_id:
-            raise RuntimeError("gemini_web_image_upload_control_not_found")
-        await call("DOM.setFileInputFiles",{"nodeId":node_id,"files":[str(image_path)]})
-        await asyncio.sleep(1.2)
+        if not node_id: raise RuntimeError("gemini_web_image_upload_control_not_found")
+        call("DOM.setFileInputFiles",{"nodeId":node_id,"files":[str(image_path)]})
+        time.sleep(1.2)
 
         prompt_json=json.dumps(prompt)
-        ok=await evaluate("""(() => {
+        ok=evaluate("""(() => {
           const sels=[
             'rich-textarea div[contenteditable="true"]',
             'textarea[aria-label*="prompt" i]',
             '[contenteditable="true"][aria-label*="prompt" i]',
             'div.ql-editor[contenteditable="true"]',
-            'textarea',
-            '[contenteditable="true"]'
+            'textarea','[contenteditable="true"]'
           ];
           let el=null;
           for(const s of sels){el=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null); if(el)break;}
@@ -337,18 +429,15 @@ async def main():
           if('value' in el){
             const p=Object.getPrototypeOf(el); const d=Object.getOwnPropertyDescriptor(p,'value');
             if(d&&d.set)d.set.call(el,value); else el.value=value;
-          } else {
-            el.textContent=value;
-          }
+          } else { el.textContent=value; }
           el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
           el.dispatchEvent(new Event('change',{bubbles:true}));
           return true;
         })()""")
-        if not ok:
-            raise RuntimeError("gemini_web_composer_not_found")
-        await asyncio.sleep(0.5)
+        if not ok: raise RuntimeError("gemini_web_composer_not_found")
+        time.sleep(0.5)
 
-        sent=await evaluate("""(() => {
+        sent=evaluate("""(() => {
           const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(x=>x.offsetParent!==null);
           const b=buttons.find(x=>/send|submit|送出|傳送/i.test(
             [x.getAttribute('aria-label'),x.getAttribute('title'),x.innerText].filter(Boolean).join(' ')
@@ -362,13 +451,12 @@ async def main():
           }
           return false;
         })()""")
-        if not sent:
-            raise RuntimeError("gemini_web_submit_failed")
+        if not sent: raise RuntimeError("gemini_web_submit_failed")
 
         deadline=time.monotonic()+160
         response=""
         while time.monotonic()<deadline:
-            rows=await evaluate("""(() => {
+            rows=evaluate("""(() => {
               const sels=['model-response','[data-test-id*="model-response"]','.model-response-text','message-content'];
               const out=[]; const seen=new Set();
               for (const s of sels) for (const el of document.querySelectorAll(s)) {
@@ -381,15 +469,16 @@ async def main():
             if fresh and str(fresh[-1]).strip():
                 response=str(fresh[-1]).strip()
                 break
-            await asyncio.sleep(1.5)
-        if not response:
-            raise TimeoutError("gemini_web_vlm_response_timeout")
+            time.sleep(1.5)
+        if not response: raise TimeoutError("gemini_web_vlm_response_timeout")
         output_path.write_text(response,encoding="utf-8")
         print("character_fusion_gemini_web_raw_cdp=PASS")
+    finally:
+        ws.close()
 
 with lock_path.open("a+") as lock:
     fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    asyncio.run(main())
+    main()
 '''
         proc = subprocess.run(
             [str(python_bin), "-c", browser_script, str(prompt_path), str(image_path), str(output_path)],
