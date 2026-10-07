@@ -71,3 +71,18 @@ jobs:
           journalctl --user --since '20 minutes ago' --no-pager -o short-iso 2>/dev/null \
             | grep -Ei '/v1/(tasks|receipts|heartbeat)|vopc5750|realm.*error|agentos-client' \
             | tail -n 500 || true
+      - name: Inspect ONE process logging
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== ONE PROCESSES ==='
+          ps -eo pid,user,ppid,lstart,args | grep -E 'agent_core\.realm_server|realm_server|8780' | grep -v grep || true
+          echo '=== ONE PROCESS FDS ==='
+          for pid in $(pgrep -f 'agent_core\.realm_server|realm_server' || true); do
+            echo "--- pid=$pid ---"
+            cat "/proc/$pid/cgroup" 2>/dev/null || true
+            readlink "/proc/$pid/fd/1" 2>/dev/null || true
+            readlink "/proc/$pid/fd/2" 2>/dev/null || true
+            tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true
+            echo
+          done
