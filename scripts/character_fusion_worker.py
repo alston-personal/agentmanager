@@ -11,6 +11,7 @@ import sys
 import tempfile
 import importlib.util
 import time
+import subprocess
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -44,6 +45,12 @@ _ENV_SOURCES = [
     ("invoice-vision", Path("/home/ubuntu/invoice-intake-service/vision.env")),
     ("agentos-secrets", Path.home() / ".agentos.secrets"),
     ("dashboard", Path.home() / ".config" / "milkcat" / "dashboard.env.local"),
+]
+
+_HF_ENV_SOURCES = [
+    Path.home() / ".config" / "agentos" / "mio-tryon.env",
+    Path.home() / ".agentos.secrets",
+    Path("/home/ubuntu/agentmanager/.env"),
 ]
 
 for _label, _env in _ENV_SOURCES:
@@ -86,6 +93,18 @@ def _gemini_key_candidates() -> list[tuple[str, str]]:
             candidates.append((label, value))
             seen.add(value)
     return candidates
+
+
+def _resolve_hf_token() -> str:
+    direct = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN") or "").strip()
+    if direct:
+        return direct
+    for path in _HF_ENV_SOURCES:
+        for key in ("HF_TOKEN", "HUGGINGFACE_TOKEN"):
+            value = _read_env_value(path, key).strip()
+            if value:
+                return value
+    return ""
 
 _RECONCILIATION_PATH = REPO_ROOT / "libs" / "model2ir" / "src" / "model2ir" / "reconciliation.py"
 if not _RECONCILIATION_PATH.is_file():
@@ -359,6 +378,59 @@ TARGET CHARACTER IR:
 """
 
 
+def _render_image_hf(target_ir: dict[str, Any], strict: bool) -> bytes:
+    token = _resolve_hf_token()
+    if not token:
+        raise RuntimeError("HF_TOKEN is not configured for Character Fusion image fallback")
+
+    python_bin = Path("/home/ubuntu/.local/share/mio-tryon-venv/bin/python")
+    if not python_bin.is_file():
+        raise RuntimeError("Mio try-on inference venv is unavailable for Character Fusion fallback")
+
+    model = os.environ.get("HF_CHARACTER_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
+    prompt = render_prompt(target_ir, strict=strict) + """
+Render as a polished mascot illustration. The subject MUST be the non-human mascot species in the
+target body_plan. Human traits may appear only as stylized accessories or material-native motifs.
+No human body, no human inside costume, no literal human hair.
+"""
+    with tempfile.TemporaryDirectory(prefix="character-fusion-hf-") as tmp:
+        prompt_path = Path(tmp) / "prompt.txt"
+        output_path = Path(tmp) / "output.png"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        helper = r'''
+import os
+import sys
+from pathlib import Path
+from huggingface_hub import InferenceClient
+
+prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
+out = Path(sys.argv[2])
+model = sys.argv[3]
+client = InferenceClient(api_key=os.environ["HF_TOKEN"], provider="auto")
+image = client.text_to_image(
+    prompt,
+    model=model,
+    width=1024,
+    height=1024,
+)
+image.save(out, format="PNG")
+'''
+        proc = subprocess.run(
+            [str(python_bin), "-c", helper, str(prompt_path), str(output_path), model],
+            env={**os.environ, "HF_TOKEN": token},
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+        if proc.returncode != 0:
+            tail = (proc.stderr or proc.stdout or "")[-3000:]
+            raise RuntimeError(f"Hugging Face image fallback failed: {tail}")
+        data = output_path.read_bytes()
+        if len(data) < 10000:
+            raise RuntimeError("Hugging Face image fallback returned an unexpectedly small image")
+        return data
+
+
 def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | None, strict: bool) -> bytes:
     parts: list[dict[str, Any]] = [{"text": render_prompt(target_ir, strict=strict)}]
     if main_visual:
@@ -370,17 +442,32 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
         {"text": "PERSON identity-trait reference image. Do not preserve human anatomy:"},
         image_part(person),
     ])
-    result = gemini_generate(
-        IMAGE_MODEL,
-        parts,
-        {"responseModalities": ["IMAGE"]},
-    )
-    for part in response_parts(result):
-        inline = part.get("inlineData") or {}
-        data = inline.get("data")
-        if data:
-            return base64.b64decode(data)
-    raise RuntimeError("image model returned no image")
+    try:
+        result = gemini_generate(
+            IMAGE_MODEL,
+            parts,
+            {"responseModalities": ["IMAGE"]},
+        )
+        for part in response_parts(result):
+            inline = part.get("inlineData") or {}
+            data = inline.get("data")
+            if data:
+                return base64.b64decode(data)
+        raise RuntimeError("image model returned no image")
+    except RuntimeError as exc:
+        message = str(exc)
+        fallback_reasons = (
+            "Gemini HTTP 429",
+            "Gemini HTTP 500",
+            "Gemini HTTP 502",
+            "Gemini HTTP 503",
+            "Gemini HTTP 504",
+            "RESOURCE_EXHAUSTED",
+            "quota",
+        )
+        if not any(reason in message for reason in fallback_reasons):
+            raise
+        return _render_image_hf(target_ir, strict=strict)
 
 
 def inspect_output(image_path: Path) -> dict[str, Any]:
