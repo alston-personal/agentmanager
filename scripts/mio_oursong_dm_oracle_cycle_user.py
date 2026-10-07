@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import hashlib,json,os,re,subprocess,time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 TARGET="oursong_alstonhuang"
 OWN_ACCOUNT="mio.milkcat"
 STATE=Path("/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/oursong-dm-state.json")
+RECEIPT_DIR=Path("/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/dm-receipts")
 
 def load_json(path:Path,default):
     try:
@@ -20,6 +22,22 @@ def save_json(path:Path,payload:dict[str,Any]):
     tmp=path.with_suffix(path.suffix+".tmp")
     tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     os.chmod(tmp,0o600); tmp.replace(path); os.chmod(path,0o600)
+
+def write_receipt(status:str, **extra):
+    RECEIPT_DIR.mkdir(parents=True,exist_ok=True)
+    now=datetime.now(timezone.utc)
+    payload={
+        "schema":"agentos.mio-dm-cycle-receipt/v1",
+        "created_at":now.isoformat().replace("+00:00","Z"),
+        "peer":TARGET,
+        "status":status,
+        **extra,
+    }
+    path=RECEIPT_DIR/(now.strftime("%Y%m%dT%H%M%S%fZ")+".json")
+    tmp=path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    os.chmod(tmp,0o600); tmp.replace(path); os.chmod(path,0o600)
+    return path
 
 def relationship():
     p=subprocess.run(
@@ -51,24 +69,24 @@ def main()->int:
     tab=_json_new("https://www.threads.com/messages")
     wsurl=str(tab.get("webSocketDebuggerUrl") or "")
     if not wsurl:
-        print("mio_oursong_dm_cycle=NO_CDP_TARGET"); return 4
+        write_receipt("DEGRADED",reason="NO_CDP_TARGET"); print("mio_oursong_dm_cycle=NO_CDP_TARGET"); return 4
     time.sleep(7)
     ws=_WS(wsurl)
     try:
         browser_state=_eval(ws,'(()=>({url:location.href}))()',2) or {}
         low=str(browser_state.get("url") or "").lower()
         if "/login" in low or "accountscenter" in low:
-            print("mio_oursong_dm_cycle=LOGIN_REQUIRED"); return 4
+            write_receipt("AUTH_REQUIRED",reason="LOGIN_REQUIRED"); print("mio_oursong_dm_cycle=LOGIN_REQUIRED"); return 4
 
         info=_eval(ws,'''(()=>{const target='''+json.dumps(TARGET)+''';const els=[...document.querySelectorAll('a,button,[role="button"],[role="link"],div,span')];let e=els.find(x=>((x.innerText||"").trim())===target);if(!e)e=els.find(x=>((x.innerText||"").trim()).includes(target));if(!e)return null;let n=e,best=null;for(let i=0;i<8&&n;i++,n=n.parentElement){const t=(n.innerText||"").trim();if(t.includes(target)&&t.length<=800&&t.split(/\\n/).filter(Boolean).length>=2)best={text:t};}return best||{text:(e.innerText||"").trim()};})()''',3)
         if not isinstance(info,dict) or not str(info.get("text") or "").strip():
-            print("mio_oursong_dm_cycle=TARGET_NOT_FOUND"); return 0
+            write_receipt("ALIVE_IDLE",reason="TARGET_NOT_FOUND"); print("mio_oursong_dm_cycle=TARGET_NOT_FOUND"); return 0
 
         user,preview,direction=parse_row(str(info["text"]))
         if str(user or "").lstrip("@")!=TARGET or not preview:
-            print("mio_oursong_dm_cycle=PREVIEW_PARSE_FAILED"); return 5
+            write_receipt("DEGRADED",reason="PREVIEW_PARSE_FAILED"); print("mio_oursong_dm_cycle=PREVIEW_PARSE_FAILED"); return 5
         if direction!="inbound":
-            print("mio_oursong_dm_cycle=NO_NEW_INBOUND"); return 0
+            write_receipt("ALIVE_IDLE",reason="NO_NEW_INBOUND"); print("mio_oursong_dm_cycle=NO_NEW_INBOUND"); return 0
 
         mid=hashlib.sha256((TARGET+"\x1f"+preview).encode("utf-8")).hexdigest()[:32]
         event={
@@ -93,6 +111,7 @@ def main()->int:
             if guard.reason in {"semantic_duplicate","unexpected_peer","own_message","not_inbound","incomplete_event","cooldown","hop_budget_exhausted"}:
                 state=record_consumed(event=event,state=state,fingerprint=guard.fingerprint)
                 save_json(STATE,state)
+            write_receipt("PASS_NO_ACTION",reason=guard.reason,message_id=mid)
             print("mio_oursong_dm_cycle=PASS_NO_ACTION")
             return 0
 
@@ -119,29 +138,31 @@ def main()->int:
         if result=="no_reply":
             state=record_consumed(event=event,state=state,fingerprint=guard.fingerprint)
             save_json(STATE,state)
+            write_receipt("PASS_NO_REPLY",reason=str(decision.get("reason_category") or "unknown"),message_id=mid)
             print("mio_oursong_dm_cycle=PASS_NO_REPLY")
             return 0
         if result!="reply":
-            print("mio_oursong_dm_cycle=INVALID_DECISION"); return 6
+            write_receipt("DEGRADED",reason="INVALID_DECISION",message_id=mid); print("mio_oursong_dm_cycle=INVALID_DECISION"); return 6
 
         reply=str(decision.get("text") or "").strip()
         if not reply or len(reply)>500:
-            print("mio_oursong_dm_cycle=INVALID_REPLY"); return 6
+            write_receipt("DEGRADED",reason="INVALID_REPLY",message_id=mid); print("mio_oursong_dm_cycle=INVALID_REPLY"); return 6
 
         clicked=_eval(ws,'''(()=>{const target='''+json.dumps(TARGET)+''';const els=[...document.querySelectorAll('a,button,[role="button"],[role="link"],div,span')];const e=els.find(x=>((x.innerText||"").trim())===target)||els.find(x=>((x.innerText||"").trim()).includes(target));if(!e)return "NOT_FOUND";e.click();return "CLICKED";})()''',4)
         if clicked!="CLICKED":
-            print("mio_oursong_dm_cycle=CLICK_FAILED"); return 7
+            write_receipt("DEGRADED",reason="CLICK_FAILED",message_id=mid); print("mio_oursong_dm_cycle=CLICK_FAILED"); return 7
         time.sleep(1.5)
         sent=_eval(ws,'''(()=>{const text='''+json.dumps(reply)+''';const box=[...document.querySelectorAll('textarea,[contenteditable="true"]')].find(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0});if(!box)return "NO_COMPOSER";box.focus();if(box.tagName==="TEXTAREA"){const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set;set.call(box,text);box.dispatchEvent(new Event("input",{bubbles:true}));}else{document.execCommand("selectAll",false,null);document.execCommand("insertText",false,text);box.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}));}const buttons=[...document.querySelectorAll('button,[role="button"]')];const send=buttons.find(x=>/^(Send|傳送)$/i.test((x.innerText||x.getAttribute("aria-label")||"").trim()));if(send){send.click();return "SENT_BUTTON";}box.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true}));box.dispatchEvent(new KeyboardEvent("keyup",{key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true}));return "SENT_ENTER";})()''',5)
         if sent=="NO_COMPOSER":
-            print("mio_oursong_dm_cycle=NO_COMPOSER"); return 7
+            write_receipt("DEGRADED",reason="NO_COMPOSER",message_id=mid); print("mio_oursong_dm_cycle=NO_COMPOSER"); return 7
         time.sleep(2)
         verify=_eval(ws,'(()=>((document.querySelector("main")?.innerText||document.body.innerText||"").includes('+json.dumps(reply)+')?"FOUND":"MISSING"))()',6)
         if verify!="FOUND":
-            print("mio_oursong_dm_cycle=SEND_UNVERIFIED"); return 8
+            write_receipt("DEGRADED",reason="SEND_UNVERIFIED",message_id=mid); print("mio_oursong_dm_cycle=SEND_UNVERIFIED"); return 8
 
         state=record_auto_reply(event=event,state=state,fingerprint=guard.fingerprint,now_epoch=time.time())
         save_json(STATE,state)
+        write_receipt("PASS_REPLY",reason=str(decision.get("reason_category") or "unknown"),message_id=mid,readback="PASS")
         print("mio_oursong_dm_cycle=PASS_REPLY")
         print("mio_oursong_dm_readback=PASS")
         return 0
