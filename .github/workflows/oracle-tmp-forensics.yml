@@ -1,0 +1,50 @@
+name: Oracle Tmp Forensics
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-tmp-forensics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect tmp pressure without recursive du
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== disk ==='
+          df -h /
+          df -i /
+          echo '=== tmp top-level count/type ==='
+          find /tmp -mindepth 1 -maxdepth 1 -printf '%y\n' 2>/dev/null | sort | uniq -c | sort -nr
+          echo '=== tmp directory name prefixes ==='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null |
+            sed -E 's/[._-]?[0-9a-fA-F]{6,}.*$//' |
+            sed -E 's/[._-]?[0-9]{6,}.*$//' |
+            sort | uniq -c | sort -nr | head -n 80
+          echo '=== sample oldest user tmp dirs ==='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -n | head -n 80
+          echo '=== sample newest user tmp dirs ==='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -nr | head -n 80
+          echo '=== largest files on root fs >=256MiB ==='
+          timeout 90 find "$HOME" /tmp /var/tmp -xdev -type f -size +256M -printf '%s\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -nr | head -n 100 || true
+          echo '=== deleted but open files ==='
+          sudo -n lsof +L1 2>/dev/null | sort -k7 -nr | head -n 100 || true
+          echo '=== tmp dirs older than one day ==='
+          find /tmp -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -mtime +1 2>/dev/null | wc -l
+          REMOTE
