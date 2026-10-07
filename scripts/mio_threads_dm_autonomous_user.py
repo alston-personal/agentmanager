@@ -5,8 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from scripts.mio_persona_dm_decision_user import decide
+from agentos_node.social.dm_loop_guard import should_auto_reply, record_auto_reply, record_consumed
+from agentos_node.social.persona_dm import binding_for
 
-ROOT=Path(os.environ.get("AGENTOS_THREADS_WEB_DM_ROOT") or (Path.home()/".local"/"share"/"agentos"/"social"/"threads-web-dm"))
+BINDING=binding_for("mio")
+ROOT=Path(os.environ.get("AGENTOS_THREADS_WEB_DM_ROOT") or (Path.home()/".local"/"share"/"agentos"/"social"/"threads-web-dm"/BINDING.runtime_key))
 EVENTS=ROOT/"events.jsonl"
 STATE=ROOT/"autonomous-state.json"
 DATA_REPO=Path("/home/ubuntu/agent-data")
@@ -52,8 +55,18 @@ def events():
 def main()->int:
     if os.geteuid()!=1001:
         print("mio_dm_autonomous=WRONG_USER"); return 2
-    state=load_json(STATE,{"schema":"agentos.mio-dm-autonomous-state/v1","processed_ids":[]})
+    state_exists=STATE.exists()
+    state=load_json(STATE,{"schema":"agentos.mio-dm-autonomous-state/v2","processed_ids":[],"loop_by_peer":{}})
+    if not state_exists:
+        baseline=[str(e.get("message_id") or "") for e in events() if str(e.get("message_id") or "")]
+        state={"schema":"agentos.mio-dm-autonomous-state/v2","processed_ids":baseline[-5000:],"loop_by_peer":{}}
+        save_json(STATE,state)
+        print("mio_dm_autonomous=PASS")
+        print("mio_dm_autonomous_baseline_count="+str(len(baseline)))
+        print("mio_dm_autonomous_pending=0")
+        return 0
     processed=set(str(x) for x in state.get("processed_ids") or [])
+    loop_by_peer=state.get("loop_by_peer") if isinstance(state.get("loop_by_peer"),dict) else {}
     candidates=[]
     for e in events():
         mid=str(e.get("message_id") or "")
@@ -70,6 +83,27 @@ def main()->int:
         return 0
 
     e,user,text=candidates[-1]
+    peer_state=loop_by_peer.get(user) if isinstance(loop_by_peer.get(user),dict) else {}
+    guard=should_auto_reply(
+        event=e,
+        state=peer_state,
+        own_account=BINDING.account,
+        peer_account=user,
+        max_auto_hops=BINDING.max_auto_hops,
+        cooldown_seconds=BINDING.cooldown_seconds,
+        hop_window_seconds=600,
+    )
+    if not guard.allow:
+        peer_state=record_consumed(event=e,state=peer_state,fingerprint=guard.fingerprint)
+        loop_by_peer[user]=peer_state
+        processed.add(str(e.get("message_id") or ""))
+        state={"schema":"agentos.mio-dm-autonomous-state/v2","processed_ids":sorted(processed)[-5000:],"loop_by_peer":loop_by_peer}
+        save_json(STATE,state)
+        print("mio_dm_autonomous=PASS")
+        print("mio_dm_autonomous_guard="+guard.reason)
+        print("mio_dm_autonomous_pending=0")
+        return 0
+
     rel=relationship(user)
     dm={
         "platform":"threads","account":"mio.milkcat","sender":user,
@@ -89,31 +123,37 @@ def main()->int:
     decision=decide(dm)
     result=str(decision.get("decision") or "invalid")
     print("mio_dm_autonomous_target="+user)
+    print("mio_dm_autonomous_guard="+guard.reason)
     print("mio_dm_autonomous_decision="+result)
     if result=="reply":
         with tempfile.NamedTemporaryFile("w",encoding="utf-8",suffix=".json",delete=False) as fh:
             json.dump(decision,fh,ensure_ascii=False)
             path=fh.name
         env=dict(os.environ)
-        env["MIO_DM_DECISION_PATH"]=path
-        env["MIO_DM_TARGET"]=user
-        cp=subprocess.run([sys.executable,str(Path(__file__).with_name("send_mio_threads_dm_from_decision.py"))],
+        env["AGENTOS_DM_PERSONA"]="mio"
+        env["AGENTOS_DM_DECISION_PATH"]=path
+        env["AGENTOS_DM_TARGET"]=user
+        cp=subprocess.run([sys.executable,str(Path(__file__).with_name("send_threads_dm_from_decision_user.py"))],
                           env=env,text=True,capture_output=True,timeout=140,check=False)
         for line in (cp.stdout or "").splitlines():
-            if line.startswith(("mio_dm_send=","mio_dm_send_readback=","mio_dm_send_error_type=")):
+            if line.startswith(("persona_dm_send=","persona_dm_send_readback=")):
                 print(line)
         try: os.unlink(path)
         except OSError: pass
         if cp.returncode!=0:
             print("mio_dm_autonomous=SEND_FAILED")
             return 1
+        peer_state=record_auto_reply(event=e,state=peer_state,fingerprint=guard.fingerprint,now_epoch=__import__("time").time())
         print("mio_dm_autonomous_readback=PASS")
-    elif result!="no_reply":
+    elif result=="no_reply":
+        peer_state=record_consumed(event=e,state=peer_state,fingerprint=guard.fingerprint)
+    else:
         print("mio_dm_autonomous=INVALID_DECISION")
         return 1
 
+    loop_by_peer[user]=peer_state
     processed.add(str(e.get("message_id") or ""))
-    state={"schema":"agentos.mio-dm-autonomous-state/v1","processed_ids":sorted(processed)[-5000:]}
+    state={"schema":"agentos.mio-dm-autonomous-state/v2","processed_ids":sorted(processed)[-5000:],"loop_by_peer":loop_by_peer}
     save_json(STATE,state)
     print("mio_dm_autonomous=PASS")
     print("mio_dm_autonomous_pending=1")

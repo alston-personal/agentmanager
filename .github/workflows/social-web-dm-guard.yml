@@ -13,6 +13,7 @@ on:
       - 'scripts/threads_web_dm_bridge_user.py'
       - 'agentos_node/social/dm_loop_guard.py'
       - 'scripts/oursong_threads_dm_autonomous_user.py'
+      - 'scripts/mio_threads_dm_autonomous_user.py'
       - 'scripts/send_threads_dm_from_decision_user.py'
       - 'scripts/run_threads_web_dm_read_user.sh'
       - 'tests/test_dm_loop_guard.py'
@@ -32,13 +33,15 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile
-        run: python -m py_compile agentos_node/social/web_dm.py agentos_node/social/persona_dm.py agentos_node/social/dm_loop_guard.py scripts/threads_web_dm_bridge_user.py scripts/oursong_threads_dm_autonomous_user.py scripts/send_threads_dm_from_decision_user.py
+        run: python -m py_compile agentos_node/social/web_dm.py agentos_node/social/persona_dm.py agentos_node/social/dm_loop_guard.py scripts/threads_web_dm_bridge_user.py scripts/oursong_threads_dm_autonomous_user.py scripts/mio_threads_dm_autonomous_user.py scripts/send_threads_dm_from_decision_user.py
       - name: Verify DM shell contracts
         run: |
           bash -n scripts/run_mio_dm_oracle_oursong_acceptance_user.sh
           bash -n scripts/run_threads_web_dm_read_user.sh
           grep -Fq 'mio_dm_oracle_oursong_acceptance.cjs' scripts/run_mio_dm_oracle_oursong_acceptance_user.sh
           grep -Fq 'oursong_threads_dm_autonomous_user.py' scripts/run_threads_web_dm_read_user.sh
+          grep -Fq 'send_threads_dm_from_decision_user.py' scripts/mio_threads_dm_autonomous_user.py
+          ! grep -Fq 'send_mio_threads_dm_from_decision.py' scripts/mio_threads_dm_autonomous_user.py
       - name: Test DM contracts
         run: |
           python -m unittest -v tests.test_social_web_dm
