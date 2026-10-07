@@ -709,6 +709,7 @@ VISION_MODELS = tuple(dict.fromkeys([
     "gemini-3.7-flash",
     "gemini-3.6-flash",
     "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
 ]))
 IMAGE_MODEL = os.environ.get("GEMINI_CHARACTER_IMAGE_MODEL", "gemini-3.1-flash-image")
 IMAGE_MODELS = tuple(dict.fromkeys([
@@ -775,6 +776,7 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
         payload["generationConfig"] = generation_config
 
     invalid_sources: list[str] = []
+    transient_errors: list[str] = []
     transient_codes = {429, 500, 502, 503, 504}
     max_attempts = max(1, int(os.environ.get("GEMINI_CHARACTER_MAX_ATTEMPTS", "2")))
 
@@ -809,6 +811,11 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
                         delay = min(30.0, 2 ** attempt)
                     time.sleep(delay)
                     continue
+                if exc.code in transient_codes:
+                    transient_errors.append(
+                        f"Gemini HTTP {exc.code} using key source {source_label} after attempt {attempt}/{max_attempts}: {body}"
+                    )
+                    break
                 raise RuntimeError(
                     f"Gemini HTTP {exc.code} using key source {source_label} after attempt {attempt}/{max_attempts}: {body}"
                 ) from exc
@@ -816,12 +823,18 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
                 if attempt < max_attempts:
                     time.sleep(min(15.0, 2 ** attempt))
                     continue
-                raise RuntimeError(
+                transient_errors.append(
                     "Gemini transport timeout/unavailable "
                     f"using key source {source_label} after attempt "
                     f"{attempt}/{max_attempts}: {type(exc).__name__}: {exc}"
-                ) from exc
+                )
+                break
 
+    if transient_errors:
+        raise RuntimeError(
+            "all Gemini key candidates had transient provider failures: "
+            + " | ".join(transient_errors[-len(candidates):])
+        )
     raise RuntimeError(
         "GEMINI_API_KEY is invalid in all governed sources: " + ", ".join(invalid_sources)
     )
