@@ -333,7 +333,10 @@ class VisionTests(unittest.TestCase):
         self.assertNotIn('12345678',seller_region_text(text))
         self.assertIn('16908319',seller_region_text(text))
         self.assertEqual(seller_region_text('買受人\n12345678'),'')
-        with patch('rapidocr.RapidOCR'), patch('services.invoice_intake.template_ocr.ocr_page',return_value=(text,.95)):
+        with patch('rapidocr.RapidOCR'), patch(
+            'services.invoice_intake.template_ocr.ocr_page_evidence',
+            return_value=([],text,.95),
+        ):
             result=extract_template_invoice(b'fake')
         self.assertEqual(result['fields']['seller_tax_id'],'16908319')
 

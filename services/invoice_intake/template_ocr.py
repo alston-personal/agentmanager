@@ -4,7 +4,7 @@ import io
 import re
 from typing import Any
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageEnhance, ImageOps
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from rapidocr import RapidOCR
@@ -12,13 +12,19 @@ if TYPE_CHECKING:
 INV_RE = re.compile(r"([A-Z]{2})\s*[- ]?\s*(\d{8})")
 
 
-def _texts(result) -> tuple[str, float]:
-    txts, scores = [], []
+def _ocr_evidence(result) -> tuple[list[dict[str, Any]], str, float]:
+    """Preserve token text, confidence and geometry instead of flattening OCR immediately."""
+    txts: list[str] = []
+    scores: list[float] = []
+    boxes: list[Any] = []
     if hasattr(result, "txts") and result.txts is not None:
         txts = [str(x) for x in result.txts]
-        raw = getattr(result, "scores", None)
-        if raw is not None:
-            scores = [float(x) for x in raw]
+        raw_scores = getattr(result, "scores", None)
+        if raw_scores is not None:
+            scores = [float(x) for x in raw_scores]
+        raw_boxes = getattr(result, "boxes", None)
+        if raw_boxes is not None:
+            boxes = list(raw_boxes)
     elif hasattr(result, "to_json"):
         obj = result.to_json()
         if isinstance(obj, str):
@@ -27,13 +33,318 @@ def _texts(result) -> tuple[str, float]:
         obj = obj or {}
         txts = [str(x) for x in (obj.get("txts") or obj.get("texts") or obj.get("rec_texts") or [])]
         scores = [float(x) for x in (obj.get("scores") or obj.get("rec_scores") or [])]
+        boxes = list(obj.get("boxes") or obj.get("dt_polys") or [])
+
+    evidence: list[dict[str, Any]] = []
+    for idx, text in enumerate(txts):
+        score = scores[idx] if idx < len(scores) else None
+        box = boxes[idx] if idx < len(boxes) else None
+        if hasattr(box, "tolist"):
+            box = box.tolist()
+        evidence.append({
+            "index": idx,
+            "text": text,
+            "confidence": score,
+            "box": box,
+        })
     text = "\n".join(txts)
     confidence = sum(scores) / len(scores) if scores else (0.5 if text.strip() else 0.0)
-    return text, round(confidence, 4)
+    return evidence, text, round(confidence, 4)
+
+
+def _texts(result) -> tuple[str, float]:
+    _, text, confidence = _ocr_evidence(result)
+    return text, confidence
 
 
 def ocr_page(engine: RapidOCR, image_bytes: bytes) -> tuple[str, float]:
     return _texts(engine(image_bytes))
+
+
+def ocr_page_evidence(engine: RapidOCR, image_bytes: bytes) -> tuple[list[dict[str, Any]], str, float]:
+    return _ocr_evidence(engine(image_bytes))
+
+
+
+def _box_bounds(box: Any) -> tuple[float, float, float, float] | None:
+    if not box:
+        return None
+    try:
+        xs = [float(p[0]) for p in box]
+        ys = [float(p[1]) for p in box]
+    except Exception:
+        return None
+    if not xs or not ys:
+        return None
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _norm_label(text: str) -> str:
+    return (
+        re.sub(r"\s+", "", text or "")
+        .replace("销", "銷")
+        .replace("售额", "售額")
+        .replace("营业税", "營業稅")
+        .replace("总计", "總計")
+        .replace("合计", "合計")
+    )
+
+
+def layout_amount_candidates(evidence: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Rank numeric OCR tokens by geometric relation to amount labels.
+
+    This never derives or invents an amount. It only associates already-recognized
+    numeric evidence with subtotal/tax/total labels using the OCR boxes.
+    """
+    label_groups = {
+        "amount_before_tax": ("銷售額合計", "銷售額"),
+        "tax_amount": ("營業稅", "稅額"),
+        "total_amount": ("總計",),
+    }
+    anchors: dict[str, list[tuple[dict[str, Any], tuple[float, float, float, float]]]] = {
+        key: [] for key in label_groups
+    }
+    numeric: list[tuple[dict[str, Any], tuple[float, float, float, float], int]] = []
+
+    for token in evidence:
+        bounds = _box_bounds(token.get("box"))
+        if not bounds:
+            continue
+        label = _norm_label(str(token.get("text") or ""))
+        for field, names in label_groups.items():
+            if any(name in label for name in names):
+                anchors[field].append((token, bounds))
+        value = _amount_token(str(token.get("text") or ""))
+        if value is not None and 0 <= value <= 50_000_000:
+            numeric.append((token, bounds, value))
+
+    out: dict[str, list[dict[str, Any]]] = {key: [] for key in label_groups}
+    for field, field_anchors in anchors.items():
+        ranked: list[dict[str, Any]] = []
+        for anchor_token, (ax1, ay1, ax2, ay2) in field_anchors:
+            ah = max(1.0, ay2 - ay1)
+            acy = (ay1 + ay2) / 2.0
+            for token, (x1, y1, x2, y2), value in numeric:
+                if token is anchor_token:
+                    continue
+                cy = (y1 + y2) / 2.0
+                vertical = abs(cy - acy) / ah
+                horizontal_gap = x1 - ax2
+                # Typical invoice summary has the number to the right of the
+                # label on the same row. Allow a small overlap because OCR boxes
+                # can be noisy, but reject distant rows.
+                if vertical > 1.6 or horizontal_gap < -ah:
+                    continue
+                score = max(0.0, 1.0 - min(vertical / 1.6, 1.0))
+                if horizontal_gap >= 0:
+                    score += 0.4
+                conf = token.get("confidence")
+                if isinstance(conf, (int, float)):
+                    score += max(0.0, min(float(conf), 1.0)) * 0.3
+                ranked.append({
+                    "value": value,
+                    "score": round(score, 4),
+                    "text": token.get("text"),
+                    "confidence": conf,
+                    "box": token.get("box"),
+                    "anchor": anchor_token.get("text"),
+                })
+        ranked.sort(key=lambda item: item["score"], reverse=True)
+        dedup: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for item in ranked:
+            if item["value"] in seen:
+                continue
+            seen.add(item["value"])
+            dedup.append(item)
+        out[field] = dedup[:5]
+    return out
+
+
+def choose_layout_amounts(evidence: list[dict[str, Any]]) -> tuple[dict[str, int | None], dict[str, Any]]:
+    """Choose only geometrically-supported OCR amounts; arithmetic validates, never invents."""
+    candidates = layout_amount_candidates(evidence)
+    chosen: dict[str, int | None] = {
+        "amount_before_tax": None,
+        "tax_amount": None,
+        "total_amount": None,
+    }
+    evidence_used: dict[str, Any] = {}
+
+    # Prefer a complete triple that is independently present in OCR and
+    # arithmetically consistent. This is selection, not derivation.
+    for subtotal in candidates["amount_before_tax"][:4]:
+        for tax in candidates["tax_amount"][:4]:
+            for total in candidates["total_amount"][:4]:
+                if subtotal["value"] + tax["value"] != total["value"]:
+                    continue
+                chosen.update({
+                    "amount_before_tax": subtotal["value"],
+                    "tax_amount": tax["value"],
+                    "total_amount": total["value"],
+                })
+                evidence_used = {
+                    "amount_before_tax": subtotal,
+                    "tax_amount": tax,
+                    "total_amount": total,
+                    "validation": "subtotal_plus_tax_equals_total",
+                }
+                return chosen, evidence_used
+
+    # A high-scoring total next to an explicit total label is safe to retain
+    # independently even when the other two values were not recognized.
+    if candidates["total_amount"]:
+        top = candidates["total_amount"][0]
+        if top["score"] >= 0.9:
+            chosen["total_amount"] = top["value"]
+            evidence_used["total_amount"] = top
+
+    return chosen, evidence_used
+
+
+
+def _image_bytes(image: Image.Image, *, fmt: str = "PNG") -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format=fmt)
+    return buf.getvalue()
+
+
+def anchor_row_reocr(
+    engine: "RapidOCR",
+    image_bytes: bytes,
+    evidence: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Re-OCR only the numeric row beside explicit amount labels.
+
+    This is a local recovery layer for handwriting/detection misses. It does not
+    infer values from arithmetic and does not inspect unrelated page regions.
+    """
+    labels = {
+        "amount_before_tax": ("銷售額合計", "銷售額"),
+        "tax_amount": ("營業稅", "稅額"),
+        "total_amount": ("總計",),
+    }
+    anchors: dict[str, list[tuple[float, float, float, float]]] = {
+        key: [] for key in labels
+    }
+    for token in evidence:
+        bounds = _box_bounds(token.get("box"))
+        if not bounds:
+            continue
+        label = _norm_label(str(token.get("text") or ""))
+        for field, names in labels.items():
+            if any(name in label for name in names):
+                anchors[field].append(bounds)
+
+    out: dict[str, list[dict[str, Any]]] = {key: [] for key in labels}
+    if not any(anchors.values()):
+        return out
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as src:
+            page = ImageOps.exif_transpose(src).convert("RGB")
+            width, height = page.size
+            for field, boxes in anchors.items():
+                candidates: list[dict[str, Any]] = []
+                for ax1, ay1, ax2, ay2 in boxes:
+                    ah = max(4.0, ay2 - ay1)
+                    top = max(0, int(ay1 - ah * 0.9))
+                    bottom = min(height, int(ay2 + ah * 0.9))
+                    left = max(0, int(ax2 - ah * 0.5))
+                    right = min(width, int(width * 0.99))
+                    if right <= left or bottom <= top:
+                        continue
+                    crop = page.crop((left, top, right, bottom))
+                    scale = 3
+                    crop = crop.resize(
+                        (max(1, crop.width * scale), max(1, crop.height * scale)),
+                        Image.Resampling.LANCZOS,
+                    )
+                    gray = ImageOps.grayscale(crop)
+                    gray = ImageOps.autocontrast(gray)
+                    variants = [
+                        ("autocontrast", gray),
+                        ("high_contrast", ImageEnhance.Contrast(gray).enhance(1.8)),
+                    ]
+                    for variant_name, variant in variants:
+                        result = engine(_image_bytes(variant))
+                        sub_evidence, _, _ = _ocr_evidence(result)
+                        for token in sub_evidence:
+                            value = _amount_token(str(token.get("text") or ""))
+                            if value is None or not 0 <= value <= 50_000_000:
+                                continue
+                            conf = token.get("confidence")
+                            candidates.append({
+                                "value": value,
+                                "text": token.get("text"),
+                                "confidence": conf,
+                                "variant": variant_name,
+                                "source_crop": [left, top, right, bottom],
+                            })
+
+                # Prefer candidates seen across multiple preprocess variants,
+                # then OCR confidence. Repetition is evidence, not arithmetic.
+                grouped: dict[int, dict[str, Any]] = {}
+                for item in candidates:
+                    entry = grouped.setdefault(item["value"], {
+                        **item,
+                        "votes": 0,
+                        "best_confidence": 0.0,
+                    })
+                    entry["votes"] += 1
+                    conf = item.get("confidence")
+                    if isinstance(conf, (int, float)):
+                        entry["best_confidence"] = max(entry["best_confidence"], float(conf))
+                ranked = list(grouped.values())
+                ranked.sort(
+                    key=lambda item: (item["votes"], item["best_confidence"]),
+                    reverse=True,
+                )
+                out[field] = ranked[:5]
+    except Exception:
+        return out
+    return out
+
+
+def choose_reocr_amounts(
+    candidates: dict[str, list[dict[str, Any]]]
+) -> tuple[dict[str, int | None], dict[str, Any]]:
+    """Choose independently OCR-observed retry values; arithmetic only validates."""
+    chosen = {
+        "amount_before_tax": None,
+        "tax_amount": None,
+        "total_amount": None,
+    }
+    used: dict[str, Any] = {}
+
+    for subtotal in candidates.get("amount_before_tax", [])[:4]:
+        for tax in candidates.get("tax_amount", [])[:4]:
+            for total in candidates.get("total_amount", [])[:4]:
+                if subtotal["value"] + tax["value"] == total["value"]:
+                    chosen.update({
+                        "amount_before_tax": subtotal["value"],
+                        "tax_amount": tax["value"],
+                        "total_amount": total["value"],
+                    })
+                    used = {
+                        "amount_before_tax": subtotal,
+                        "tax_amount": tax,
+                        "total_amount": total,
+                        "validation": "subtotal_plus_tax_equals_total",
+                    }
+                    return chosen, used
+
+    for field in chosen:
+        items = candidates.get(field) or []
+        if not items:
+            continue
+        top = items[0]
+        # Without a complete triple, require repeated preprocess agreement or
+        # very high OCR confidence before keeping an isolated value.
+        if top.get("votes", 0) >= 2 or top.get("best_confidence", 0.0) >= 0.93:
+            chosen[field] = top["value"]
+            used[field] = top
+    return chosen, used
 
 
 def normalize_invoice_number(text: str) -> str | None:
@@ -181,6 +492,20 @@ def choose_three_part_amounts(text: str) -> tuple[int | None, int | None, int | 
     return None, None, total, False
 
 
+
+def choose_dual_model_amounts(
+    primary_text: str,
+    secondary_text: str,
+) -> tuple[int | None, int | None, int | None, bool]:
+    """Select an amount triple from evidence observed by either local OCR model.
+
+    Arithmetic only validates a triple whose three values are all present in
+    OCR output; it never synthesizes a missing amount.
+    """
+    combined = "\n".join(x for x in (primary_text, secondary_text) if x)
+    return choose_three_part_amounts(combined)
+
+
 def seller_region_text(text: str) -> str:
     """Only text after an explicit seller/stamp anchor; never the buyer header."""
     lines = (text or '').splitlines()
@@ -196,7 +521,7 @@ def seller_region_text(text: str) -> str:
 def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
     from rapidocr import RapidOCR
     engine = RapidOCR()
-    text, page_conf = ocr_page(engine, image_bytes)
+    evidence, text, page_conf = ocr_page_evidence(engine, image_bytes)
     doc_type, template_conf = classify(text)
     # Second-stage structural probe: some handwritten 3-part samples have a badly OCR'd
     # printed title, while invoice number + 5% subtotal/tax/total remain unambiguous.
@@ -239,17 +564,81 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
             confidence["seller_tax_id"] = 0.86
 
     visual_amounts = False
+    layout_values, layout_evidence = choose_layout_amounts(evidence)
+    amount_sources: dict[str, str] = {}
     if doc_type == "three_part_uniform_invoice":
         subtotal, tax, total, visual_amounts = choose_three_part_amounts(text)
         fields["amount_before_tax"] = subtotal
         fields["tax_amount"] = tax
         fields["total_amount"] = total
-        if total is not None:
+
+        # Spatial evidence is a conservative fill-only layer. It recovers values
+        # that the flattened-text parser missed but never overwrites an existing
+        # OCR value.
+        for key in ("amount_before_tax", "tax_amount", "total_amount"):
+            if fields[key] is None and layout_values.get(key) is not None:
+                fields[key] = layout_values[key]
+                amount_sources[key] = "layout_anchor"
+                confidence[key] = 0.90
+
+        # If the three-part amount block is still incomplete or internally
+        # inconsistent, locally re-OCR only the rows beside explicit amount
+        # labels. New values must be independently observed by OCR; arithmetic
+        # validates combinations but never synthesizes a missing digit/value.
+        amount_complete = all(
+            fields.get(key) is not None
+            for key in ("amount_before_tax", "tax_amount", "total_amount")
+        )
+        amount_consistent = bool(
+            amount_complete
+            and fields["amount_before_tax"] + fields["tax_amount"] == fields["total_amount"]
+        )
+        row_reocr_candidates = {}
+        row_reocr_evidence = {}
+        if not amount_consistent:
+            row_reocr_candidates = anchor_row_reocr(engine, image_bytes, evidence)
+            retry_values, row_reocr_evidence = choose_reocr_amounts(row_reocr_candidates)
+            for key in ("amount_before_tax", "tax_amount", "total_amount"):
+                if fields[key] is None and retry_values.get(key) is not None:
+                    fields[key] = retry_values[key]
+                    amount_sources[key] = "anchor_row_reocr"
+                    confidence[key] = 0.92
+
+            # If the original flattened OCR produced a conflicting triple but
+            # the row-specific retry independently observes a complete,
+            # arithmetic-consistent triple, prefer the row-specific evidence.
+            if all(retry_values.get(key) is not None for key in (
+                "amount_before_tax", "tax_amount", "total_amount"
+            )) and (
+                retry_values["amount_before_tax"] + retry_values["tax_amount"]
+                == retry_values["total_amount"]
+            ):
+                current_complete = all(
+                    fields.get(key) is not None
+                    for key in ("amount_before_tax", "tax_amount", "total_amount")
+                )
+                current_consistent = bool(
+                    current_complete
+                    and fields["amount_before_tax"] + fields["tax_amount"] == fields["total_amount"]
+                )
+                if not current_consistent:
+                    for key in ("amount_before_tax", "tax_amount", "total_amount"):
+                        fields[key] = retry_values[key]
+                        amount_sources[key] = "anchor_row_reocr"
+                        confidence[key] = 0.92
+
+        if fields["total_amount"] is not None:
             conf = 0.97 if visual_amounts else 0.82
-            confidence["amount_before_tax"] = conf if subtotal is not None else 0.0
-            confidence["tax_amount"] = conf if tax is not None else 0.0
-            confidence["total_amount"] = conf
+            if "amount_before_tax" not in amount_sources:
+                confidence["amount_before_tax"] = conf if fields["amount_before_tax"] is not None else 0.0
+            if "tax_amount" not in amount_sources:
+                confidence["tax_amount"] = conf if fields["tax_amount"] is not None else 0.0
+            if "total_amount" not in amount_sources:
+                confidence["total_amount"] = conf
     else:
+        # Keep the established two-part/receipt path unchanged. Spatial and
+        # row-reOCR rescue are intentionally scoped to three-part handwritten
+        # amount blocks until separately benchmarked for these layouts.
         nums = amount_candidates(text)
         total = total_from_lines(text)
         if total is None and nums:
@@ -263,7 +652,7 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
                 total = repeated[0][1]
         fields["total_amount"] = total
         if total is not None:
-            confidence["total_amount"] = 0.94
+            confidence["total_amount"] = 0.90 if amount_sources.get("total_amount") == "layout_anchor" else 0.94
 
     return {
         "matched": True,
@@ -275,4 +664,15 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
         "raw_text": text,
         "page_confidence": page_conf,
         "visual_amounts": visual_amounts,
+        "amount_sources": amount_sources,
+        "layout_amount_evidence": layout_evidence,
+        "row_reocr_candidates": row_reocr_candidates if doc_type == "three_part_uniform_invoice" else {},
+        "row_reocr_evidence": row_reocr_evidence if doc_type == "three_part_uniform_invoice" else {},
+        "amount_anchor_evidence": [
+            token for token in evidence
+            if any(
+                label in _norm_label(str(token.get("text") or ""))
+                for label in ("銷售額", "營業稅", "稅額", "總計")
+            )
+        ],
     }
