@@ -14,6 +14,9 @@ from model2ir import (
     audit_asset,
     diff_ir,
     reconcile_ir,
+    ReconciliationPolicy,
+    ReconciliationSource,
+    weighted_reconcile_ir,
     score_roundtrip,
     compile_reversible_gltf,
     save_reversible_gltf,
@@ -127,3 +130,36 @@ Multi-file glTF requires a separate bundle contract covering URI resolution, pat
 Repository-level scripts may provide renderers, benchmark harnesses, CI, downloads, and product integration. They should call the package API rather than reimplement extraction, truth policy, hashing, admission, manifest semantics, or container preservation.
 
 This boundary lets Image→IR, Character Blueprint, future training pipelines, and external repositories consume the same 3D→IR behavior without depending on AgentOS internals.
+
+
+## Weighted multi-source reconciliation
+
+Character Blueprint, Image-to-IR, Model2IR and future visual sources should converge on the existing Character IR contract instead of introducing a parallel visual-IR schema.
+
+Use weighted reconciliation when multiple compatible Character IR sources need to be combined:
+
+```python
+from model2ir import ReconciliationPolicy, ReconciliationSource, weighted_reconcile_ir
+
+target_ir = weighted_reconcile_ir(
+    [
+        ReconciliationSource("main_visual", main_visual_ir, 0.75),
+        ReconciliationSource("person", person_ir, 0.25),
+    ],
+    ReconciliationPolicy(
+        preserve_from={
+            "body_plan.kind": "main_visual",
+        },
+        per_field={
+            "accessories.eyewear": {
+                "main_visual": 0.2,
+                "person": 0.8,
+            },
+        },
+    ),
+)
+```
+
+The returned object keeps the original Character IR schema and adds reconciliation metadata. It does not create a competing IR family. This is intended for cases such as mascot generation, where the main visual must dominate body plan/silhouette while uploaded-person evidence may dominate accessories or identity cues.
+
+The web demo is only a consumer of this boundary. It must not own a separate fusion schema or duplicate reconciliation logic.
