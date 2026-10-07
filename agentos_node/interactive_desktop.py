@@ -219,3 +219,78 @@ def keyboard(task: dict[str, Any]) -> dict[str, Any]:
     if cp.returncode != 0:
         raise RuntimeError(f'keyboard input failed rc={cp.returncode}: {cp.stderr[-2000:]}')
     return {'operation': op, 'characters': len(text), 'mode': mode, 'session': info}
+
+
+def image_paste(task: dict[str, Any], *, workspace: Path) -> dict[str, Any]:
+    """Paste one governed workspace image into the active foreground app.
+
+    The caller may reference only a file inside the task workspace. The image
+    is decoded by System.Drawing and copied as an image object, not as an
+    arbitrary file path or clipboard text.
+    """
+    _require_windows()
+    info = session_info()
+    if not info['interactive']:
+        raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
+
+    workspace = workspace.expanduser().resolve()
+    raw_path = str(task.get('path') or '').strip()
+    if not raw_path:
+        raise ValueError('desktop.image_paste requires path')
+    candidate = Path(raw_path)
+    target = (candidate if candidate.is_absolute() else workspace / candidate).expanduser().resolve()
+    try:
+        target.relative_to(workspace)
+    except ValueError:
+        raise PermissionError('desktop.image_paste path must stay inside workspace')
+    if not target.is_file():
+        raise FileNotFoundError(str(target))
+
+    raw = target.read_bytes()
+    if not raw or len(raw) > 12 * 1024 * 1024:
+        raise ValueError('desktop.image_paste image must be 1..12582912 bytes')
+    expected_sha = str(task.get('sha256') or '').strip().lower()
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if expected_sha and expected_sha != actual_sha:
+        raise ValueError('desktop.image_paste sha256 mismatch')
+
+    suffix = target.suffix.lower()
+    if suffix not in {'.png', '.jpg', '.jpeg', '.webp'}:
+        raise ValueError('desktop.image_paste supports png/jpeg/webp only')
+
+    # PowerShell STA + System.Drawing provides a bounded native image clipboard
+    # surface. The path is passed through an environment variable rather than
+    # interpolated into script source.
+    script = r'''
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$img=[System.Drawing.Image]::FromFile($env:AGENTOS_IMAGE_PATH)
+try {
+  [System.Windows.Forms.Clipboard]::SetImage($img)
+  Start-Sleep -Milliseconds 100
+  [System.Windows.Forms.SendKeys]::SendWait('^v')
+} finally {
+  $img.Dispose()
+}
+'''
+    env = os.environ.copy()
+    env['AGENTOS_IMAGE_PATH'] = str(target)
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    cp = subprocess.run(
+        ['powershell.exe', '-STA', '-NoProfile', '-NonInteractive', '-Command', script],
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
+        creationflags=flags,
+        env=env,
+    )
+    if cp.returncode != 0:
+        raise RuntimeError(f'image paste failed rc={cp.returncode}: {cp.stderr[-2000:]}')
+    return {
+        'path': str(target),
+        'bytes': len(raw),
+        'sha256': actual_sha,
+        'operation': 'paste-image',
+        'session': info,
+    }
