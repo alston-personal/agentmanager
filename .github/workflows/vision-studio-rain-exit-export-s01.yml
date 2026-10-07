@@ -5,6 +5,7 @@ on:
     branches: [core/integration]
     paths:
       - '.agentos/commands/vision-studio-rain-exit-export-s01.json'
+      - '.github/workflows/vision-studio-rain-exit-export-s01.yml'
 
 permissions:
   contents: read
