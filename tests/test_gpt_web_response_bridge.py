@@ -70,3 +70,13 @@ if __name__ == "__main__":
         with patch("scripts.gpt_web_response_bridge._targets", return_value=targets):
             target = _chatgpt_target("http://127.0.0.1:9222")
         self.assertEqual(target["webSocketDebuggerUrl"], "ws://chat")
+
+
+    def test_missing_chatgpt_target_can_bootstrap(self):
+        from unittest.mock import patch
+        created = {"id":"p1","type":"page","url":"https://chatgpt.com/","webSocketDebuggerUrl":"ws://chat"}
+        with patch("scripts.gpt_web_response_bridge._targets", return_value=[]), \
+             patch("scripts.gpt_web_response_bridge._create_target", return_value=created):
+            from scripts.gpt_web_response_bridge import _chatgpt_target
+            target = _chatgpt_target("http://127.0.0.1:9222", create_if_missing=True)
+        self.assertEqual(target["id"], "p1")
