@@ -495,6 +495,12 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'threads_web_dm_new_events=',
                     'threads_web_dm_inbound_events=',
                     'threads_web_dm_autonomous=',
+                    'oursong_dm_autonomous=',
+                    'oursong_dm_autonomous_guard=',
+                    'oursong_dm_autonomous_decision=',
+                    'oursong_dm_autonomous_decision_source=',
+                    'persona_dm_send=',
+                    'persona_dm_send_readback=',
                     'threads_web_dm_python_rc=',
                 )
             elif action in {

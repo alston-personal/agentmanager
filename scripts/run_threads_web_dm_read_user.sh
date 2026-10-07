@@ -81,6 +81,20 @@ printf '%s\n' "$OUT" | grep -E '^threads_web_dm_' || true
 echo "threads_web_dm_python_rc=$RC"
 
 if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
+  if [ "$PERSONA" = "oursong" ]; then
+    set +e
+    AUTO_OUT="$(cd "$STAGE" && PYTHONPATH="$STAGE" python3 "$STAGE/scripts/oursong_threads_dm_autonomous_user.py" 2>&1)"
+    AUTO_RC=$?
+    set -e
+    printf '%s\n' "$AUTO_OUT" | grep -E '^(oursong_dm_autonomous|persona_dm_send)' || true
+    if [ "$AUTO_RC" -ne 0 ]; then
+      echo "threads_web_dm_autonomous=FAIL"
+      exit "$AUTO_RC"
+    fi
+    echo "threads_web_dm_autonomous=PASS"
+    echo "threads_web_dm_read=PASS"
+    exit 0
+  fi
   if [ "$PERSONA" != "mio" ]; then
     echo "threads_web_dm_autonomous=DISABLED_FOR_PERSONA"
     echo "threads_web_dm_read=PASS"

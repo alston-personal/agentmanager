@@ -1,6 +1,7 @@
 import unittest
 
-from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events\nfrom agentos_node.social.persona_dm import account_from_profile_hrefs
+from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events
+from agentos_node.social.persona_dm import account_from_profile_hrefs
 
 
 class DirectMessageEventTests(unittest.TestCase):
@@ -32,12 +33,12 @@ class PersonaIdentityTests(unittest.TestCase):
         )
 
 
+    def test_threads_bridge_identity_selector_covers_nested_profile_icon(self):
+        from pathlib import Path
+        text = Path("scripts/threads_web_dm_bridge_user.py").read_text(encoding="utf-8")
+        self.assertIn('a[href]:has(svg[aria-label*="profile" i])', text)
+        self.assertIn('[role="navigation"] a[href^="/@"]', text)
+
+
 if __name__=="__main__":
     unittest.main()
-
-
-def test_threads_bridge_identity_selector_covers_nested_profile_icon():
-    from pathlib import Path
-    text = Path("scripts/threads_web_dm_bridge_user.py").read_text(encoding="utf-8")
-    assert 'a[href]:has(svg[aria-label*="profile" i])' in text
-    assert '[role="navigation"] a[href^="/@"]' in text

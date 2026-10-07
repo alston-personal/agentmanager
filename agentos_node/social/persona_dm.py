@@ -16,7 +16,7 @@ class PersonaDMBinding:
 
 _BINDINGS = {
     "mio": PersonaDMBinding("mio", "mio.milkcat", "mio", "mio", True, 2, 120, "http://127.0.0.1:9222", "mio"),
-    "oursong": PersonaDMBinding("oursong", "oursong_alstonhuang", "oursong", "oursong", False, 2, 120, "http://127.0.0.1:9223", "oursong"),
+    "oursong": PersonaDMBinding("oursong", "oursong_alstonhuang", "oursong", "oursong", True, 2, 120, "http://127.0.0.1:9223", "oursong"),
 }
 
 def binding_for(persona_id: str) -> PersonaDMBinding:
