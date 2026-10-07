@@ -12,6 +12,11 @@ on:
       - 'scripts/deploy_invoice_intake_nginx.py'
       - 'tests/test_invoice_*.py'
       - 'tests/test_stamp_recognition_*.py'
+      - 'agentos_node/gpt_web_vision.py'
+      - 'scripts/gpt_web_response_bridge.py'
+      - 'ops/systemd/agentos-gpt-web-bridge.service'
+      - 'ops/systemd/agentos-gpt-web-bridge.timer'
+      - 'tests/test_gpt_web_response_bridge.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
   push:
     branches: [main]
@@ -23,6 +28,11 @@ on:
       - 'scripts/deploy_invoice_intake_nginx.py'
       - 'tests/test_invoice_*.py'
       - 'tests/test_stamp_recognition_*.py'
+      - 'agentos_node/gpt_web_vision.py'
+      - 'scripts/gpt_web_response_bridge.py'
+      - 'ops/systemd/agentos-gpt-web-bridge.service'
+      - 'ops/systemd/agentos-gpt-web-bridge.timer'
+      - 'tests/test_gpt_web_response_bridge.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
 
 permissions:
@@ -370,3 +380,117 @@ jobs:
             -X POST https://studio.milkcat.org/api/invoice-intake/v1/ingest || true)
           test "$code" = "422" -o "$code" = "401"
           echo "invoice_intake_unauthenticated_write_block=PASS code=$code"
+
+
+  deploy-gpt-web-bridge:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Deploy and probe read-only GPT Web bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" \
+            scripts/gpt_web_response_bridge.py \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/gpt_web_response_bridge.py"
+
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          GUI_ROOT=/home/ubuntu/.local/share/agentos/gui-worker
+          GUI_PY="$GUI_ROOT/venv/bin/python"
+          APP_ROOT=/home/ubuntu/.local/share/agentos/gpt-web-bridge
+          BRIDGE_ROOT=/home/ubuntu/agent-data/runtime/gpt-web-bridge
+          test -x "$GUI_PY"
+          "$GUI_PY" -c 'import playwright; print("gpt_web_playwright=PASS")'
+          curl -fsS --max-time 3 http://127.0.0.1:9222/json/version >/tmp/gpt-web-cdp.json
+          "$GUI_PY" - <<'PY'
+          import json
+          p=json.load(open('/tmp/gpt-web-cdp.json',encoding='utf-8'))
+          assert p.get('webSocketDebuggerUrl')
+          print('gpt_web_cdp=PASS')
+          PY
+
+          mkdir -p "$APP_ROOT" "$BRIDGE_ROOT" /home/ubuntu/.config/systemd/user
+          install -m 700 /tmp/gpt_web_response_bridge.py "$APP_ROOT/gpt_web_response_bridge.py"
+
+          cat > /home/ubuntu/.config/systemd/user/agentos-gpt-web-bridge.service <<UNIT
+          [Unit]
+          Description=AgentOS GPT Web response bridge
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          Environment=AGENTOS_GPT_WEB_BRIDGE=$BRIDGE_ROOT
+          Environment=AGENTOS_GPT_WEB_CDP_URL=http://127.0.0.1:9222
+          ExecStart=$GUI_PY $APP_ROOT/gpt_web_response_bridge.py
+          UNIT
+
+          cat > /home/ubuntu/.config/systemd/user/agentos-gpt-web-bridge.timer <<'UNIT'
+          [Unit]
+          Description=Poll GPT Web response bridge
+
+          [Timer]
+          OnBootSec=20s
+          OnUnitActiveSec=2s
+          AccuracySec=1s
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+          UNIT
+
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-gpt-web-bridge.timer
+
+          "$GUI_PY" - <<'PY'
+          import asyncio
+          from playwright.async_api import async_playwright
+          async def main():
+              async with async_playwright() as p:
+                  browser=await p.chromium.connect_over_cdp('http://127.0.0.1:9222')
+                  assert browser.contexts
+                  ctx=browser.contexts[0]
+                  pages=[x for x in ctx.pages if x.url.startswith('https://chatgpt.com/')]
+                  page=pages[-1] if pages else await ctx.new_page()
+                  if not pages:
+                      await page.goto('https://chatgpt.com/',wait_until='domcontentloaded',timeout=30000)
+                      await page.wait_for_timeout(2500)
+                  body=(await page.locator('body').inner_text(timeout=3000)).lower()
+                  login_required=('log in' in body or 'sign up' in body) and not await page.locator('[data-message-author-role]').count()
+                  print('gpt_web_session_url='+page.url)
+                  print('gpt_web_login_required='+('true' if login_required else 'false'))
+                  if login_required:
+                      raise SystemExit(42)
+                  await browser.close()
+          asyncio.run(main())
+          PY
+
+          "$GUI_PY" "$APP_ROOT/gpt_web_response_bridge.py" --bridge-root "$BRIDGE_ROOT" --cdp-url http://127.0.0.1:9222
+          "$GUI_PY" - "$BRIDGE_ROOT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          bridge=json.loads((root/'bridge.json').read_text())
+          sessions=json.loads((root/'sessions.json').read_text())
+          assert bridge.get('ready') is True, bridge
+          assert 'harvest' in (bridge.get('operations') or []), bridge
+          assert sessions.get('sessions'), sessions
+          print('gpt_web_response_bridge=READY')
+          print('gpt_web_session_count='+str(len(sessions['sessions'])))
+          PY
+          REMOTE
