@@ -20,7 +20,7 @@ def main() -> int:
     target=_create_target(args.cdp_url,"about:blank")
     endpoint=None
     try:
-        endpoint=_open_target_connection(args.cdp_url,target)
+        endpoint=_open_target_connection(args.cdp_url,target,expected_url_prefix="about:blank")
         value=endpoint.evaluate("1+1")
         payload={
             "schema":"agentos.gpt-web-cdp-renderer-health/v0.1",
