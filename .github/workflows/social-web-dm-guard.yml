@@ -40,6 +40,8 @@ jobs:
           bash -n scripts/run_threads_web_dm_read_user.sh
           grep -Fq 'mio_dm_oracle_oursong_acceptance.cjs' scripts/run_mio_dm_oracle_oursong_acceptance_user.sh
           grep -Fq 'oursong_threads_dm_autonomous_user.py' scripts/run_threads_web_dm_read_user.sh
+          grep -Fq 'DM_RUNTIME_PATHS=(' scripts/run_threads_web_dm_read_user.sh
+          ! grep -Fq 'archive "$SOURCE_COMMIT" | tar -x -C "$STAGE"' scripts/run_threads_web_dm_read_user.sh
           grep -Fq 'send_threads_dm_from_decision_user.py' scripts/mio_threads_dm_autonomous_user.py
           ! grep -Fq 'send_mio_threads_dm_from_decision.py' scripts/mio_threads_dm_autonomous_user.py
       - name: Test DM contracts
