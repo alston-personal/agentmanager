@@ -78,7 +78,7 @@ jobs:
           echo '=== ONE PROCESSES ==='
           ps -eo pid,user,ppid,lstart,args | grep -E 'agent_core\.realm_server|realm_server|8780' | grep -v grep || true
           echo '=== ONE PROCESS FDS ==='
-          for pid in $(pgrep -f 'agent_core\.realm_server|realm_server' || true); do
+          for pid in $(pgrep -f 'agent_core\.realm_cli serve' || true); do
             echo "--- pid=$pid ---"
             cat "/proc/$pid/cgroup" 2>/dev/null || true
             readlink "/proc/$pid/fd/1" 2>/dev/null || true
