@@ -114,7 +114,7 @@ class ThinClient:
         if platform.system() == 'Windows':
             caps.extend([
                 'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
-                'desktop.open_url', 'desktop.mouse', 'desktop.keyboard', 'desktop.plan.execute',
+                'desktop.open_url', 'desktop.mouse', 'desktop.keyboard', 'desktop.image_paste', 'desktop.plan.execute',
                 'desktop.semantic_preview',
             ])
         return {
@@ -219,6 +219,9 @@ class ThinClient:
                 result = interactive_desktop.mouse(task)
             elif action == 'desktop.keyboard':
                 result = interactive_desktop.keyboard(task)
+            elif action == 'desktop.image_paste':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
+                result = interactive_desktop.image_paste(task, workspace=workspace)
             elif action == 'desktop.plan.execute':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
                 result = execute_plan(task, workspace=workspace)

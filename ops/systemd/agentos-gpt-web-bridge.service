@@ -1,0 +1,10 @@
+[Unit]
+Description=AgentOS GPT Web response bridge
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=AGENTOS_GPT_WEB_BRIDGE=/home/ubuntu/agent-data/runtime/gpt-web-bridge
+Environment=AGENTOS_GPT_WEB_CDP_URL=http://127.0.0.1:9222
+WorkingDirectory=/home/ubuntu/agentmanager
+ExecStart=/usr/bin/python3 /home/ubuntu/agentmanager/scripts/gpt_web_response_bridge.py

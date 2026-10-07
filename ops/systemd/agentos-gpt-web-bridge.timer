@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll GPT Web response bridge
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=2s
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
