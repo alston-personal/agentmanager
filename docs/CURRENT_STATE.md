@@ -453,3 +453,8 @@ Scoped continuation now also has a persistent `runtime/work-bindings.json` store
 
 
 Nodes can also establish or refresh a scoped Work binding directly through authenticated `POST /v1/work/bind`. This covers execution paths that did not originate in Controller dispatch (for example a GUI/Web participant resuming existing work). The endpoint binds only the authenticated Node's identity and may attach Executor/Participant/Session IDs plus logical/physical checkpoint references; it does not grant permission to impersonate another Node.
+
+
+### Explicit Work lifecycle transitions
+
+A node task receipt is execution evidence, not authority to close a Work item. Scoped continuation now requires an explicit Work lifecycle transition through authenticated `POST /v1/work/transition`. The binding store validates transitions (for example active -> completed/failed/blocked, failed -> active for an explicit retry) and rejects reopening terminal completed/cancelled/superseded Work. A transition from a Node other than the Work's current bound Node is rejected. This prevents a successful low-level task receipt from silently terminating a larger logical goal.
