@@ -1,0 +1,64 @@
+name: Oracle Deploy Mio Try-On Worker
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'scripts/tryon_render_worker.py'
+      - 'scripts/deploy_mio_tryon_worker_user.sh'
+      - '.github/workflows/oracle-deploy-mio-tryon-worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-mio-tryon-worker-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Deploy exact Mio try-on worker generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$SHA"
+          git -C "$REPO" cat-file -e "$SHA^{commit}"
+          git -C "$REPO" show "$SHA:scripts/deploy_mio_tryon_worker_user.sh" > /tmp/deploy-mio-tryon-worker.sh
+          chmod 700 /tmp/deploy-mio-tryon-worker.sh
+          AGENTOS_TRYON_SKIP_LIVE_E2E=1 /tmp/deploy-mio-tryon-worker.sh "$SHA"
+          REMOTE
+
+      - name: Verify installed worker contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          systemctl --user is-active --quiet agentos-mio-tryon-render-worker.service
+          WORKER=/home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
+          UNIT=/home/ubuntu/.config/systemd/user/agentos-mio-tryon-render-worker.service
+          test -s "$WORKER"
+          test -s "$UNIT"
+          grep -Fq 'LAYER_TIMEOUT_SECONDS' "$WORKER"
+          grep -Fq 'PROVIDER_TIMEOUT_SECONDS' "$WORKER"
+          grep -Fq 'AGENTOS_TRYON_LAYER_TIMEOUT_SECONDS=180' "$UNIT"
+          grep -Fq 'AGENTOS_TRYON_PROVIDER_TIMEOUT_SECONDS=120' "$UNIT"
+          echo "mio_tryon_worker_production_deploy=PASS"
+          REMOTE

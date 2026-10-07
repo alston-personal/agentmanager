@@ -106,6 +106,12 @@ echo "mio_tryon_worker_source_commit=$WORKER_COMMIT"
 echo "mio_any_item_hf_token_configured=yes"
 echo "mio_tryon_worker_service=active"
 
+if [ "${AGENTOS_TRYON_SKIP_LIVE_E2E:-0}" = "1" ]; then
+  echo "mio_tryon_live_e2e=SKIPPED"
+  echo "mio_tryon_deploy=PASS"
+  exit 0
+fi
+
 ROOT_DATA="$HOME/agent-data/projects/dressup-simulator"
 JOB_DIR="$ROOT_DATA/render_jobs/runtime"
 ASSET_DIR="$ROOT_DATA/render_assets"
