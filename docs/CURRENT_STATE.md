@@ -430,3 +430,7 @@ A Windows repair run must never overwrite files in an already-running version di
 ### Realm task lease / receipt acknowledgement
 
 ONE task delivery is at-least-once rather than destructive-on-pull. Pulling a node task now places a bounded lease on the task instead of deleting it. A successful node receipt acknowledges and removes the task. If the client crashes, execution fails before receipt submission, or the receipt transport fails, the lease expires and the task becomes eligible for redelivery. This closes the pull-to-receipt loss window observed during live vopc5750 semantic-preview and desktop-session canaries.
+
+### Windows single hidden supervisor
+
+The canonical Windows runtime no longer uses a separate one-minute Scheduled Task watchdog. Managed endpoints can visibly flash a console when Task Scheduler creates a new PowerShell process every minute even when `-WindowStyle Hidden` is requested. The primary `AgentOS Thin Client` Scheduled Task is now a single long-running hidden PowerShell supervisor that launches the Python Thin Client, waits for exit, and restarts it after a short delay. Installer repair removes/disables legacy auxiliary task names including `AgentOS Thin Client Watchdog`, `AgentOS Thin Client Watchdog User`, `AgentOS Thin Client User`, and `AgentOS Thin Client Headless Switch`. This eliminates periodic process creation while preserving automatic Thin Client recovery.
