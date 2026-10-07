@@ -105,11 +105,14 @@ final class AgentOSMobileAPI {
         self.session = session
     }
 
-    private func post<T: Encodable>(_ base: URL, path: String, body: T) async throws -> [String: Any] {
+    private func post<T: Encodable>(_ base: URL, path: String, body: T, bearer: String? = nil) async throws -> [String: Any] {
         let url = base.appendingPathComponent(path)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let bearer {
+            request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        }
         request.httpBody = try JSONEncoder().encode(body)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -141,5 +144,56 @@ final class AgentOSMobileAPI {
 
     func claimJoin(oneURL: URL, requestID: String, claimSecret: String) async throws -> [String: Any] {
         try await post(oneURL, path: "v1/join/claim", body: JoinStatusBody(request_id: requestID, claim_secret: claimSecret))
+    }
+
+    struct NodeHeartbeat: Encodable {
+        let schema = "agentos.node-heartbeat/v0.1"
+        let realm_id: String
+        let node_id: String
+        let role = "client"
+        let status: String
+        let observed_at: String
+        let uptime_seconds: Int? = nil
+        let capability_count: Int
+        let surface_count = 0
+        let manifest: NodeManifest
+    }
+
+    func heartbeat(
+        oneURL: URL,
+        realmID: String,
+        nodeID: String,
+        nodeToken: String,
+        manifest: NodeManifest,
+        status: String
+    ) async throws -> [String: Any] {
+        let formatter = ISO8601DateFormatter()
+        let body = NodeHeartbeat(
+            realm_id: realmID,
+            node_id: nodeID,
+            status: status,
+            observed_at: formatter.string(from: Date()),
+            capability_count: manifest.capabilities.count,
+            manifest: manifest
+        )
+        return try await post(oneURL, path: "v1/heartbeat", body: body, bearer: nodeToken)
+    }
+
+    func completeClaim(
+        response: [String: Any],
+        credentialStore: AgentOSCredentialStore
+    ) throws -> (realmID: String, nodeID: String) {
+        guard
+            let status = response["status"] as? String,
+            status == "enrolled",
+            let realmID = response["realm_id"] as? String,
+            let nodeID = response["node_id"] as? String,
+            let token = response["node_token"] as? String,
+            !token.isEmpty
+        else {
+            throw MobileNodeError.invalidResponse
+        }
+        try credentialStore.saveNodeToken(token, nodeID: nodeID)
+        return (realmID, nodeID)
     }
 }
