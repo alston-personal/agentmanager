@@ -114,6 +114,67 @@ def _resolve_hf_token() -> str:
     return ""
 
 
+def _resolve_groq_key() -> str:
+    direct = os.environ.get("GROQ_API_KEY", "").strip()
+    if direct:
+        return direct
+    for _label, path in _ENV_SOURCES:
+        if path is None:
+            continue
+        value = _read_env_value(path, "GROQ_API_KEY").strip()
+        if value:
+            return value
+    return ""
+
+
+def _groq_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
+    api_key = _resolve_groq_key()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured for Character Fusion vision fallback")
+
+    mime = mimetypes.guess_type(image_path.name)[0] or "image/jpeg"
+    data_url = f"data:{mime};base64,{base64.b64encode(image_path.read_bytes()).decode('ascii')}"
+    model = os.environ.get("GROQ_CHARACTER_VISION_MODEL", "qwen/qwen3.8-27b")
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            }
+        ],
+        "temperature": 0.1,
+        "max_completion_tokens": 1400,
+        "response_format": {"type": "json_object"},
+        "stream": False,
+    }
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        method="POST",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=90) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Groq vision fallback failed: {type(exc).__name__}: {exc}") from exc
+
+    choices = body.get("choices") or []
+    if not choices:
+        raise RuntimeError("Groq vision fallback returned no choices")
+    content = (((choices[0].get("message") or {}).get("content")) or "").strip()
+    if not content:
+        raise RuntimeError("Groq vision fallback returned empty content")
+    return _parse_loose_json_text(content)
+
+
 def _parse_loose_json_text(text: str) -> dict[str, Any]:
     value = text.strip()
     if value.startswith("```"):
@@ -818,7 +879,21 @@ Omit categories that are not visibly supported. Keep descriptions short and visu
         except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
             cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
         try:
-            return _hf_vlm_json(prompt, path)
+            try:
+            return _groq_vlm_json(prompt, path)
+        except Exception as groq_exc:
+            try:
+                return _hf_vlm_json(prompt, path)
+            except Exception as hf_exc:
+                try:
+                    return _gemini_web_vlm_json(prompt, path)
+                except Exception as web_exc:
+                    raise RuntimeError(
+                        "all vision fallbacks failed; "
+                        f"groq={type(groq_exc).__name__}: {groq_exc}; "
+                        f"hf={type(hf_exc).__name__}: {hf_exc}; "
+                        f"gemini_web={type(web_exc).__name__}: {web_exc}"
+                    ) from web_exc
         except RuntimeError as hf_exc:
             hf_message = str(hf_exc)
             if not any(marker in hf_message for marker in (
@@ -1209,7 +1284,21 @@ Judge what is visibly present, not what the prompt intended.
         except (RuntimeError, subprocess.TimeoutExpired) as cli_exc:
             cli_error = f"{type(cli_exc).__name__}: {cli_exc}"[:1200]
         try:
-            return _hf_vlm_json(prompt, image_path)
+            try:
+            return _groq_vlm_json(prompt, image_path)
+        except Exception as groq_exc:
+            try:
+                return _hf_vlm_json(prompt, image_path)
+            except Exception as hf_exc:
+                try:
+                    return _gemini_web_vlm_json(prompt, image_path)
+                except Exception as web_exc:
+                    raise RuntimeError(
+                        "all vision fallbacks failed; "
+                        f"groq={type(groq_exc).__name__}: {groq_exc}; "
+                        f"hf={type(hf_exc).__name__}: {hf_exc}; "
+                        f"gemini_web={type(web_exc).__name__}: {web_exc}"
+                    ) from web_exc
         except RuntimeError as hf_exc:
             hf_message = str(hf_exc)
             if not any(marker in hf_message for marker in (
