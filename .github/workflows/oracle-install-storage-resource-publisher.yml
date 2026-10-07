@@ -35,12 +35,23 @@ jobs:
 
           health = Path("/home/ubuntu/.local/state/agentos/gdrive-health.state")
           registry = Path("/home/ubuntu/agent-data/resources/registry.json")
+          mountpoint = Path("/home/ubuntu/.local/share/agentos/gdrive-remote-v2")
+          compatibility = Path("/home/ubuntu/gdrive")
           state = "UNKNOWN"
           if health.exists():
               for line in health.read_text(encoding="utf-8").splitlines():
                   if line.startswith("state="):
                       state = line.split("=", 1)[1].strip()
                       break
+
+          compatibility_ok = compatibility.is_symlink()
+          compatibility_target = None
+          if compatibility_ok:
+              try:
+                  compatibility_target = str(compatibility.resolve(strict=False))
+                  compatibility_ok = compatibility_target == str(mountpoint)
+              except Exception:
+                  compatibility_ok = False
 
           try:
               data = json.loads(registry.read_text(encoding="utf-8")) if registry.exists() else {}
@@ -53,27 +64,38 @@ jobs:
               "id": "storage://google-drive",
               "kind": "storage",
               "declared": {
-                  "mountpoint": "/home/ubuntu/.local/share/agentos/gdrive-remote-v2",
-                  "compatibility_path": "/home/ubuntu/gdrive",
+                  "mountpoint": str(mountpoint),
+                  "compatibility_path": str(compatibility),
                   "service": "agentos-gdrive-mount.service",
                   "fstype": "fuse.rclone",
                   "failure_policy": "fail-closed"
               }
           })
-          ready = state in {"READY", "RECOVERED"}
-          resource["observed"] = {"mounted": ready, "state": state}
+          ready = state in {"READY", "RECOVERED"} and compatibility_ok
+          errors = []
+          if state not in {"READY", "RECOVERED"}:
+              errors.append(f"gdrive health state: {state}")
+          if not compatibility_ok:
+              errors.append(f"compatibility path invalid: {compatibility} -> {compatibility_target}")
+
+          resource["observed"] = {
+              "mounted": state in {"READY", "RECOVERED"},
+              "state": state,
+              "compatibility_path_ok": compatibility_ok,
+              "compatibility_target": compatibility_target,
+          }
           resource["verification"] = {
               "status": "verified" if ready else "degraded",
               "last_verified_at": datetime.now(timezone.utc).isoformat(),
               "ttl_seconds": 360,
-              "errors": [] if ready else [f"gdrive health state: {state}"]
+              "errors": errors
           }
           resources["storage://google-drive"] = resource
           data["updated_at"] = datetime.now(timezone.utc).isoformat()
           tmp = registry.with_name(f".{registry.name}.{os.getpid()}.tmp")
           tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           os.replace(tmp, registry)
-          print(f"storage_resource_publish=PASS state={state}")
+          print(f"storage_resource_publish=PASS state={state} compatibility_ok={compatibility_ok}")
           PY
 
           sudo -n install -d -o root -g root -m 0755 /usr/local/libexec
@@ -119,5 +141,8 @@ jobs:
           r=d['resources']['storage://google-drive']
           print('resource_status=' + r['verification']['status'])
           print('resource_state=' + r['observed']['state'])
+          print('compatibility_path_ok=' + str(r['observed']['compatibility_path_ok']))
           PY
           REMOTE
+
+# legacy-path-integrity 2026-10-07
