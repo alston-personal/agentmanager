@@ -180,4 +180,6 @@ if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PLAYWRIGHT_UNAVAILABLE
 fi
 
 echo "threads_web_dm_read=FAIL"
+echo "threads_web_dm_failure_stage=$CURRENT_STAGE"
+echo "threads_web_dm_failure_rc=${RC:-1}"
 exit "${RC:-1}"
