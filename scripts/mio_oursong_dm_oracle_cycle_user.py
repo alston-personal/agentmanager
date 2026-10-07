@@ -83,13 +83,37 @@ def main()->int:
         print("mio_oursong_dm_cycle=CDP_OPEN_FAILED")
         print("mio_oursong_dm_cycle_error_type="+reason)
         return 4
-    wsurl=str(tab.get("webSocketDebuggerUrl") or "")
-    if not wsurl:
-        write_receipt("DEGRADED",reason="NO_CDP_TARGET"); print("mio_oursong_dm_cycle=NO_CDP_TARGET"); return 4
-    time.sleep(7)
-    ws=_WS(wsurl)
+    ws=None
+    browser_state=None
+    last_session_error=None
+    for session_attempt in range(1,4):
+        try:
+            if session_attempt>1:
+                tab=_json_new("https://www.threads.com/messages")
+            wsurl=str((tab or {}).get("webSocketDebuggerUrl") or "")
+            if not wsurl:
+                raise RuntimeError("NO_CDP_TARGET")
+            time.sleep(4)
+            ws=_WS(wsurl)
+            browser_state=_eval(ws,'(()=>({url:location.href}))()',2) or {}
+            break
+        except Exception as exc:
+            last_session_error=exc
+            if ws is not None:
+                try: ws.close()
+                except Exception: pass
+            ws=None
+            browser_state=None
+            print(f"mio_oursong_dm_cycle_cdp_session_retry={session_attempt}")
+            if session_attempt<3:
+                time.sleep(session_attempt*2)
+    if ws is None or browser_state is None:
+        reason=type(last_session_error).__name__ if last_session_error is not None else "UNKNOWN"
+        write_receipt("DEGRADED",reason="CDP_SESSION_FAILED",error_type=reason)
+        print("mio_oursong_dm_cycle=CDP_SESSION_FAILED")
+        print("mio_oursong_dm_cycle_error_type="+reason)
+        return 4
     try:
-        browser_state=_eval(ws,'(()=>({url:location.href}))()',2) or {}
         low=str(browser_state.get("url") or "").lower()
         if "/login" in low or "accountscenter" in low:
             write_receipt("AUTH_REQUIRED",reason="LOGIN_REQUIRED"); print("mio_oursong_dm_cycle=LOGIN_REQUIRED"); return 4
