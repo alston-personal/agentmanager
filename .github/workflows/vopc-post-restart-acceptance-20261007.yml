@@ -1,0 +1,64 @@
+name: VOPC Post Restart Acceptance 20261007
+
+on:
+  push:
+    branches:
+      - ops/vopc-post-restart-acceptance-20261007
+    paths:
+      - '.github/workflows/vopc-post-restart-acceptance-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  accept:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Canary and semantic preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time, uuid
+          from agent_core.realm_fabric import RealmFabricStore
+
+          fabric = RealmFabricStore()
+
+          def invoke(action, extra=None, timeout=30):
+              task_id='task-post-restart-' + uuid.uuid4().hex
+              task={'schema':'agentos.node-task/v0.1','task_id':task_id,'action':action}
+              if extra: task.update(extra)
+              queued=fabric.queue_task('vopc5750', task)
+              deadline=time.time()+timeout
+              receipt=None
+              while time.time()<deadline:
+                  receipt=fabric.get_receipt(task_id)
+                  if receipt: break
+                  time.sleep(1)
+              print(json.dumps({'action':action,'queued_at':queued.get('queued_at'),'task_id':task_id,'receipt':receipt},indent=2,sort_keys=True))
+              return receipt
+
+          canary=invoke('desktop.session.inspect')
+          if not canary or not canary.get('ok'):
+              raise SystemExit('POST_RESTART_CANARY_FAIL')
+          print('POST_RESTART_CANARY=PASS')
+
+          semantic=invoke('desktop.semantic_preview', {'max_pixels':160000})
+          if not semantic or not semantic.get('ok'):
+              raise SystemExit('POST_RESTART_SEMANTIC_FAIL')
+          checks={
+              'read_only': semantic.get('read_only') is True,
+              'mode': bool(semantic.get('mode')),
+              'state_hash': bool(semantic.get('state_hash')),
+              'foreground': isinstance(semantic.get('foreground'),dict),
+              'preview': isinstance(semantic.get('preview'),dict),
+          }
+          print('POST_RESTART_SEMANTIC_CHECKS='+json.dumps(checks,sort_keys=True))
+          if not all(checks.values()):
+              raise SystemExit('POST_RESTART_SEMANTIC_SHAPE_FAIL')
+          print('POST_RESTART_SEMANTIC=PASS')
+          PY
