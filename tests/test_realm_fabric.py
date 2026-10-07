@@ -77,6 +77,54 @@ class TestRealmFabric(unittest.TestCase):
         self.assertEqual(node_map['nodes'][0]['status'], 'online')
         self.assertIn('filesystem.write', node_map['realm_capabilities'])
 
+    def test_task_pull_is_leased_until_receipt_ack(self):
+        invite = self.fabric.create_invite()
+        enrolled = self.fabric.enroll(
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            manifest={
+                'schema': 'agentos.node-manifest/v0.1',
+                'realm_id': 'realm-test',
+                'node_id': 'lease-node',
+                'role': 'client',
+                'hostname': 'lease-node',
+                'platform': 'Windows',
+                'capabilities': [],
+                'tool_presence': {},
+                'surface_inventory': {'surfaces': []},
+            },
+        )
+        task = {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': 'lease-task',
+            'action': 'desktop.session.inspect',
+        }
+        self.fabric.queue_task('lease-node', task)
+
+        first = self.fabric.pull_tasks('lease-node', enrolled['node_token'])
+        self.assertEqual([item['task_id'] for item in first], ['lease-task'])
+        queued = self.fabric.load()['tasks']['lease-node']
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0]['_lease_count'], 1)
+        self.assertTrue(queued[0]['_lease_until'])
+
+        second = self.fabric.pull_tasks('lease-node', enrolled['node_token'])
+        self.assertEqual(second, [])
+
+        self.fabric.record_receipt(
+            {
+                'schema': 'agentos.node-receipt/v0.1',
+                'realm_id': 'realm-test',
+                'node_id': 'lease-node',
+                'task_id': 'lease-task',
+                'action': 'desktop.session.inspect',
+                'ok': True,
+            },
+            enrolled['node_token'],
+        )
+        self.assertEqual(self.fabric.load()['tasks']['lease-node'], [])
+        self.assertTrue(self.fabric.get_receipt('lease-task')['ok'])
+
     def test_legacy_receipts_externalize_without_loss(self):
         hot = self.fabric.load()
         hot['receipts'] = {
