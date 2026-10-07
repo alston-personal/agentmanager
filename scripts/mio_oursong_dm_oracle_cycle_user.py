@@ -66,7 +66,23 @@ def main()->int:
         "last_auto_reply_epoch":0,
     })
 
-    tab=_json_new("https://www.threads.com/messages")
+    tab=None
+    last_open_error=None
+    for attempt in range(1,4):
+        try:
+            tab=_json_new("https://www.threads.com/messages")
+            break
+        except Exception as exc:
+            last_open_error=exc
+            print(f"mio_oursong_dm_cycle_cdp_open_retry={attempt}")
+            if attempt<3:
+                time.sleep(attempt*2)
+    if not isinstance(tab,dict):
+        reason=type(last_open_error).__name__ if last_open_error is not None else "UNKNOWN"
+        write_receipt("DEGRADED",reason="CDP_OPEN_FAILED",error_type=reason)
+        print("mio_oursong_dm_cycle=CDP_OPEN_FAILED")
+        print("mio_oursong_dm_cycle_error_type="+reason)
+        return 4
     wsurl=str(tab.get("webSocketDebuggerUrl") or "")
     if not wsurl:
         write_receipt("DEGRADED",reason="NO_CDP_TARGET"); print("mio_oursong_dm_cycle=NO_CDP_TARGET"); return 4
