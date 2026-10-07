@@ -30,3 +30,12 @@ def test_mio_oursong_dm_timer_is_five_minutes_and_does_not_force_reply():
     assert 'OnUnitActiveSec=5min' in installer
     assert 'mio-oursong-dm-autonomous.service' in installer
     assert 'max_hops_2_cooldown_120s' in installer
+
+
+def test_mio_oursong_dm_runtime_materializes_loop_guard():
+    cycle=Path('scripts/mio_oursong_dm_oracle_cycle_user.py').read_text(encoding='utf-8')
+    installer=Path('scripts/install_mio_oursong_dm_timer_user.sh').read_text(encoding='utf-8')
+    assert 'from dm_loop_guard_runtime import' in cycle
+    assert 'SOURCE_GUARD="${2:-}"' in installer
+    assert 'dm_loop_guard_runtime.py' in installer
+    assert 'agentos_node/social/dm_loop_guard.py' not in installer

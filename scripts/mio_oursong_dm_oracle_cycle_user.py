@@ -38,7 +38,7 @@ def main()->int:
     from scripts.mio_dm_oracle_oursong_acceptance import _json_new,_WS,_eval
     from scripts.threads_web_dm_bridge_user import parse_row
     from scripts.mio_persona_dm_decision_user import decide
-    from agentos_node.social.dm_loop_guard import should_auto_reply,record_auto_reply,record_consumed
+    from dm_loop_guard_runtime import should_auto_reply,record_auto_reply,record_consumed
 
     state=load_json(STATE,{
         "schema":"agentos.persona-dm-loop-state/v1",
