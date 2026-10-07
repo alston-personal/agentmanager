@@ -1,0 +1,42 @@
+name: Public ONE Route Probe 20261007
+
+on:
+  push:
+    branches:
+      - ops/public-one-route-probe-20261007
+    paths:
+      - '.github/workflows/public-one-route-probe-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe production ONE routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://studio.milkcat.org/dashboard/api/agentos'
+
+          probe() {
+            name="$1"; method="$2"; url="$3"; data="${4:-}"
+            body="/tmp/${name}.body"
+            hdr="/tmp/${name}.hdr"
+            args=(-sS -D "$hdr" -o "$body" -w '%{http_code}' --max-time 8 -X "$method")
+            if [ -n "$data" ]; then
+              args+=(-H 'Content-Type: application/json' --data "$data")
+            fi
+            code=$(curl "${args[@]}" "$url" || true)
+            echo "=== $name ==="
+            echo "http=$code"
+            grep -i '^x-agentos-realm-gateway:' "$hdr" || true
+            head -c 500 "$body" || true
+            echo
+          }
+
+          probe health GET "$BASE/v1/health"
+          probe tasks GET "$BASE/v1/tasks?node_id=vopc5750&wait_seconds=0"
+          probe receipts POST "$BASE/v1/receipts" '{"schema":"agentos.node-receipt/v0.1","node_id":"vopc5750","task_id":"probe","action":"probe","ok":false}'
