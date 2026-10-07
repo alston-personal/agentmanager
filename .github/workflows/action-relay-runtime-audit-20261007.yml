@@ -46,3 +46,26 @@ jobs:
 
           echo '=== service unit read-only ==='
           cat /home/ubuntu/.config/systemd/user/agentos-action-relay.service 2>/dev/null || true
+
+          echo '=== latest receipt envelopes ==='
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data/runtime/action-relay/receipts')
+          rows=[]
+          for p in sorted(root.glob('*.json'), key=lambda x:x.stat().st_mtime, reverse=True)[:12]:
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+              except Exception as exc:
+                  rows.append({'file':p.name,'error':str(exc)})
+                  continue
+              rows.append({
+                  'file':p.name,
+                  'schema':d.get('schema'),
+                  'action':d.get('action'),
+                  'ok':d.get('ok'),
+                  'keys':sorted(d.keys()),
+                  'error':d.get('error'),
+              })
+          print(json.dumps(rows,ensure_ascii=False,indent=2))
+          PY
