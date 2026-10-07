@@ -1,0 +1,110 @@
+name: Oracle Recover Legacy GDrive Underlay
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-recover-legacy-gdrive-underlay.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Quarantine local underlay, restore canonical path, sync and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
+          LEGACY="$HOME/gdrive"
+          STATE="$HOME/.local/state/agentos/gdrive-underlay-recovery.state"
+          TS="$(date +%Y%m%dT%H%M%S)"
+          HOLD="$HOME/.gdrive-underlay-quarantine-$TS"
+
+          mkdir -p "$(dirname "$STATE")"
+
+          fail() {
+            printf 'checked_at=%s\nstate=FAILED\nreason=%s\n' "$(date -Is)" "$1" > "$STATE"
+            echo "recovery_failed=$1"
+            exit 42
+          }
+
+          mountpoint -q "$MOUNT" || fail canonical_mount_missing
+          systemctl --user is-active --quiet agentos-gdrive-mount.service || fail canonical_mount_service_inactive
+          timeout 15 test -d "$MOUNT/backups" || fail canonical_mount_unreadable
+          timeout 20 rclone lsf gdrive: --dirs-only --max-depth 1 >/dev/null || fail remote_unreachable
+
+          if [ -L "$LEGACY" ]; then
+            target="$(readlink -f "$LEGACY" 2>/dev/null || true)"
+            if [ "$target" = "$MOUNT" ]; then
+              printf 'checked_at=%s\nstate=ALREADY_REPAIRED\ntarget=%s\n' "$(date -Is)" "$target" > "$STATE"
+              echo 'legacy_gdrive_recovery=ALREADY_REPAIRED'
+              df -h /
+              exit 0
+            fi
+            fail wrong_legacy_symlink
+          fi
+
+          if [ ! -e "$LEGACY" ]; then
+            ln -s "$MOUNT" "$LEGACY"
+            [ "$(readlink -f "$LEGACY")" = "$MOUNT" ] || fail symlink_create_failed
+            printf 'checked_at=%s\nstate=REPAIRED_EMPTY\n' "$(date -Is)" > "$STATE"
+            echo 'legacy_gdrive_recovery=REPAIRED_EMPTY'
+            df -h /
+            exit 0
+          fi
+
+          [ -d "$LEGACY" ] || fail legacy_path_not_directory
+          mountpoint -q "$LEGACY" && fail legacy_path_is_unexpected_mount
+
+          echo '=== local underlay before quarantine ==='
+          du -sh "$LEGACY" || true
+          find "$LEGACY" -xdev -type f | wc -l | sed 's/^/local_files=/'
+          df -h /
+
+          mv "$LEGACY" "$HOLD"
+          ln -s "$MOUNT" "$LEGACY"
+
+          [ -L "$LEGACY" ] || fail symlink_create_failed
+          [ "$(readlink -f "$LEGACY")" = "$MOUNT" ] || fail symlink_target_wrong
+          mountpoint -q "$MOUNT" || fail canonical_mount_lost_after_cutover
+
+          printf 'checked_at=%s\nstate=SYNCING\nquarantine=%s\n' "$(date -Is)" "$HOLD" > "$STATE"
+
+          # Non-destructive remote copy: existing remote-only files are never deleted.
+          rclone copy "$HOLD" gdrive:             --checksum             --transfers 4             --checkers 8             --retries 5             --low-level-retries 10             --log-level INFO
+
+          # Verify every quarantined local file is represented remotely before reclaiming root disk.
+          rclone check "$HOLD" gdrive:             --one-way             --checksum             --checkers 8             --retries 3
+
+          printf 'checked_at=%s\nstate=VERIFIED\nquarantine=%s\n' "$(date -Is)" "$HOLD" > "$STATE"
+
+          rm -rf --one-file-system "$HOLD"
+
+          timeout 15 test -d "$LEGACY/backups" || fail compatibility_path_unreadable
+          [ "$(readlink -f "$LEGACY")" = "$MOUNT" ] || fail compatibility_path_drifted
+
+          printf 'checked_at=%s\nstate=PASS\ntarget=%s\n' "$(date -Is)" "$MOUNT" > "$STATE"
+
+          echo '=== final storage state ==='
+          ls -ld "$LEGACY"
+          echo "legacy_target=$(readlink -f "$LEGACY")"
+          findmnt "$MOUNT"
+          systemctl --user is-active agentos-gdrive-mount.service
+          df -h /
+          echo 'legacy_gdrive_recovery=PASS'
+          REMOTE
