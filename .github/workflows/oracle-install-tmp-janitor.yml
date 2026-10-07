@@ -44,7 +44,7 @@ jobs:
 
           before_used="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
           before_avail="$(df -B1 --output=avail / | tail -n1 | tr -d ' ')"
-          old_before="$(find /tmp -mindepth 1 -maxdepth 1 -user "$(id -u)" -mtime +2 -printf '.\n' 2>/dev/null | wc -l)"
+          old_before="$(find /tmp -mindepth 1 -maxdepth 1 -user "$(id -u)" -mtime +2 -printf '.\n' 2>/dev/null | wc -l || true)"
 
           # Only remove this user's stale top-level temporary entries.
           # Never touch named AgentOS control/lock paths even if their mtimes are old.
@@ -52,7 +52,7 @@ jobs:
 
           after_used="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
           after_avail="$(df -B1 --output=avail / | tail -n1 | tr -d ' ')"
-          old_after="$(find /tmp -mindepth 1 -maxdepth 1 -user "$(id -u)" -mtime +2 -printf '.\n' 2>/dev/null | wc -l)"
+          old_after="$(find /tmp -mindepth 1 -maxdepth 1 -user "$(id -u)" -mtime +2 -printf '.\n' 2>/dev/null | wc -l || true)"
 
           if [ "$after_used" -ge 95 ]; then
             health="CRITICAL"
@@ -103,7 +103,11 @@ jobs:
 
           systemctl --user daemon-reload
           systemctl --user enable --now agentos-tmp-janitor.timer
-          systemctl --user start agentos-tmp-janitor.service
+          if ! systemctl --user start agentos-tmp-janitor.service; then
+            systemctl --user status agentos-tmp-janitor.service --no-pager -l || true
+            journalctl --user -u agentos-tmp-janitor.service -n 100 --no-pager || true
+            exit 1
+          fi
           systemctl --user is-active agentos-tmp-janitor.timer
           cat "$HOME/.local/state/agentos/root-disk-health.state"
           echo 'tmp_janitor_install=PASS'
