@@ -315,9 +315,41 @@ class RealmFabricStore:
             # Long-poll clients can ask repeatedly while idle. Never rewrite
             # canonical Realm state merely to prove that an empty queue is empty.
             return []
-        take = queue[:max(1, min(limit, 50))]
-        data['tasks'][node_id] = queue[len(take):]
-        self.save(data)
+
+        now = datetime.now(timezone.utc)
+        lease_seconds = 60
+        take: list[dict[str, Any]] = []
+        changed = False
+        for item in queue:
+            if len(take) >= max(1, min(limit, 50)):
+                break
+            if not isinstance(item, dict):
+                continue
+
+            lease_until_raw = str(item.get('_lease_until') or '')
+            lease_until = None
+            if lease_until_raw:
+                try:
+                    lease_until = _parse_utc(lease_until_raw)
+                except Exception:
+                    lease_until = None
+
+            if lease_until is not None and lease_until > now:
+                continue
+
+            leased = dict(item)
+            leased['_leased_at'] = _utc_now()
+            leased['_lease_until'] = (now + timedelta(seconds=lease_seconds)).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+            leased['_lease_count'] = int(item.get('_lease_count') or 0) + 1
+
+            idx = queue.index(item)
+            queue[idx] = leased
+            take.append({k: v for k, v in leased.items() if not str(k).startswith('_')})
+            changed = True
+
+        if changed:
+            data['tasks'][node_id] = queue
+            self.save(data)
         return take
 
     def record_receipt(self, receipt: dict[str, Any], token: str) -> dict[str, Any]:
@@ -333,6 +365,10 @@ class RealmFabricStore:
             **receipt,
             'received_at': _utc_now(),
         }
+        data['tasks'][node_id] = [
+            task for task in list(data['tasks'].get(node_id, []))
+            if not (isinstance(task, dict) and str(task.get('task_id') or '') == task_id)
+        ]
         data['nodes'][node_id]['last_seen_at'] = _utc_now()
         self.save(data)
         return data['receipts'][task_id]
