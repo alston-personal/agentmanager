@@ -1,0 +1,43 @@
+name: Chronos Parent Service Audit 20261007
+
+on:
+  push:
+    branches:
+      - ops/chronos-parent-service-audit-20261007
+    paths:
+      - '.github/workflows/chronos-parent-service-audit-20261007.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Inspect Chronos parent chain and cgroup
+        shell: bash
+        run: |
+          set -euo pipefail
+          pid=$(pgrep -f 'scripts/chronos.py' | head -n1)
+          echo "chronos_pid=$pid"
+          echo '=== chronos ==='
+          ps -p "$pid" -o user=,group=,pid=,ppid=,lstart=,args= || true
+          echo '=== cgroup ==='
+          cat "/proc/$pid/cgroup" 2>/dev/null || true
+          ppid=$(ps -p "$pid" -o ppid= | tr -d ' ')
+          echo "parent_pid=$ppid"
+          echo '=== parent ==='
+          ps -p "$ppid" -o user=,group=,pid=,ppid=,lstart=,args= || true
+          gppid=$(ps -p "$ppid" -o ppid= | tr -d ' ')
+          echo "grandparent_pid=$gppid"
+          echo '=== grandparent ==='
+          ps -p "$gppid" -o user=,group=,pid=,ppid=,lstart=,args= || true
+
+          echo '=== visible units mentioning chronos ==='
+          systemctl --no-pager --all --type=service 2>/dev/null | grep -i chronos || true
+          systemctl --user --no-pager --all --type=service 2>/dev/null | grep -i chronos || true
+
+          echo '=== candidate unit files ==='
+          grep -RIl 'scripts/chronos.py' /etc/systemd/system /lib/systemd/system /usr/lib/systemd/system 2>/dev/null | head -n 20 || true
+          grep -RIl 'scripts/chronos.py' /home/ubuntu/.config/systemd/user 2>/dev/null | head -n 20 || true
