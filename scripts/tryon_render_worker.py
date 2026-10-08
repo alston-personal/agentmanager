@@ -552,7 +552,21 @@ def inference_provider_reference_try_on(
                     validated = reject_gross_layer_mismatch(validated, object_path, layer)
                 return validated, f"{provider}:{model}"
             except Exception as exc:
-                errors.append(f"{provider}:{model}={type(exc).__name__}:{exc}"[:700])
+                message = f"{type(exc).__name__}:{exc}"
+                errors.append(f"{provider}:{model}={message}"[:700])
+                lowered = message.casefold()
+                # All routes are billed against the same Hugging Face account.
+                # A credit-exhausted response is account-wide, not a single
+                # provider's transient failure. Do not spend more calls here.
+                if (
+                    "402 payment required" in lowered
+                    or "no remaining credits" in lowered
+                    or "purchase pre-paid credits" in lowered
+                    or "depleted your monthly included credits" in lowered
+                ):
+                    raise RuntimeError(
+                        "INFERENCE_CREDITS_EXHAUSTED: Hugging Face account has no remaining credits"
+                    ) from exc
 
         raise RuntimeError("Inference Providers failed: " + " | ".join(errors))
     finally:
