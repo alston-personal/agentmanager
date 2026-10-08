@@ -291,3 +291,28 @@ class GptWebRouteCompatibilityTests(unittest.TestCase):
                 _confirm_submit(page, request_id="invoice:req:12345678",
                                 baseline_assistants=0, baseline_users=0,
                                 timeout_seconds=0.001)
+
+
+class GptWebTargetRoutingTests(unittest.TestCase):
+    def test_excludes_uc_target_and_reuses_normal_chat(self):
+        from scripts.gpt_web_response_bridge import _page
+        normal = {"type": "page", "url": "https://chatgpt.com/c/abc", "webSocketDebuggerUrl": "ws://normal"}
+        uc = {"type": "page", "url": "https://chatgpt.com/uc/temp", "webSocketDebuggerUrl": "ws://uc"}
+        endpoint = Mock()
+        endpoint.evaluate.return_value = normal["url"]
+        with patch("scripts.gpt_web_response_bridge._targets", return_value=[normal, uc]), \
+             patch("scripts.gpt_web_response_bridge._open_target_connection", return_value=endpoint) as opened:
+            self.assertIs(_page("http://127.0.0.1:9222"), endpoint)
+        opened.assert_called_once_with("http://127.0.0.1:9222", normal)
+
+    def test_fails_closed_when_fresh_target_redirects_to_uc(self):
+        from scripts.gpt_web_response_bridge import _page
+        endpoint = Mock()
+        endpoint.evaluate.return_value = "https://chatgpt.com/uc/temp"
+        fresh = {"type": "page", "url": "https://chatgpt.com/", "webSocketDebuggerUrl": "ws://fresh"}
+        with patch("scripts.gpt_web_response_bridge._targets", return_value=[]), \
+             patch("scripts.gpt_web_response_bridge._create_target", return_value=fresh), \
+             patch("scripts.gpt_web_response_bridge._open_target_connection", return_value=endpoint):
+            with self.assertRaisesRegex(RuntimeError, "GPT_WEB_UNSUPPORTED_CONVERSATION_ROUTE"):
+                _page("http://127.0.0.1:9222")
+        endpoint.close.assert_called_once()
