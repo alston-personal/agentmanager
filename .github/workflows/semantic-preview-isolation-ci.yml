@@ -1,0 +1,28 @@
+name: Semantic Preview Isolation CI
+
+on:
+  push:
+    branches:
+      - fix/semantic-preview-isolated-worker
+  pull_request:
+    paths:
+      - 'agentos_node/semantic_preview.py'
+      - 'tests/test_semantic_preview.py'
+      - '.github/workflows/semantic-preview-isolation-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and test isolation
+        run: |
+          python -m py_compile agentos_node/semantic_preview.py
+          python -m unittest tests.test_semantic_preview -v
