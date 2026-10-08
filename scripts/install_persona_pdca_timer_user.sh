@@ -109,7 +109,17 @@ WantedBy=timers.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now agentos-persona-pdca-heartbeat.timer agentos-persona-social-actions.timer >/dev/null
+systemctl --user enable agentos-persona-pdca-heartbeat.timer agentos-persona-social-actions.timer >/dev/null
+
+# Maintenance must not reset an already-running natural cadence. Start only
+# timers that are currently inactive; leave active timer scheduling untouched.
+if ! systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer; then
+  systemctl --user start agentos-persona-pdca-heartbeat.timer
+fi
+if ! systemctl --user is-active --quiet agentos-persona-social-actions.timer; then
+  systemctl --user start agentos-persona-social-actions.timer
+fi
+
 systemctl --user is-enabled --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-enabled --quiet agentos-persona-social-actions.timer
