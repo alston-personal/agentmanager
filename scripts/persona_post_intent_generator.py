@@ -68,6 +68,9 @@ def main():
     events=read_events(root/"events/events.jsonl")
 
     growth=cfg.get("growth_mode",{}) if isinstance(cfg.get("growth_mode"),dict) else {}
+    posting_liveness=growth.get("posting_liveness",{}) if isinstance(growth.get("posting_liveness"),dict) else {}
+    forced_consider_hours=float(posting_liveness.get("forced_consider_after_hours",30))
+    forced_no_publish_streak=int(posting_liveness.get("forced_consider_after_no_publish_streak",3))
     now_utc=datetime.now(timezone.utc)
     todays_posts=[]
     for e in events:
@@ -111,8 +114,23 @@ def main():
     pending=list(state.get("pending_external_actions") or [])
     consider=next((x for x in pending if isinstance(x,dict) and x.get("capability")=="social.post.consider" and x.get("status")=="candidate"),None)
     if not consider:
-        print(json.dumps({"status":"NO_CANDIDATE"},ensure_ascii=False))
-        return 0
+        energy_now=float(state.get("energy_current",0))
+        liveness_due=(silence_hours>=forced_consider_hours or no_publish_streak>=forced_no_publish_streak)
+        if energy_now>0 and liveness_due:
+            consider={
+              "action_id":f"mio-social-c{state.get('cycle')}-post-consider",
+              "cycle":state.get("cycle"),
+              "capability":"social.post.consider",
+              "status":"candidate",
+              "reason":"posting liveness safety net",
+              "policy":"routine_posts=autonomous_with_policy",
+              "requires_real_adapter_receipt":True,
+              "liveness_pressure":True
+            }
+            pending.append(consider)
+        else:
+            print(json.dumps({"status":"NO_CANDIDATE"},ensure_ascii=False))
+            return 0
     if any(x.get("capability")=="social.post.publish" and x.get("status") in ("candidate","in_progress") for x in pending if isinstance(x,dict)):
         print(json.dumps({"status":"SKIP","reason":"post_publish_already_pending"},ensure_ascii=False))
         return 0
@@ -156,7 +174,7 @@ def main():
         "voice":persona.get("voice"),
         "routine_posts_autonomy":autonomy.get("routine_posts"),
         "energy":{
-          "current":energy_state.get("current"),
+          "current":state.get("energy_current",energy_state.get("current")),
           "decision_thresholds":energy_state.get("decision_thresholds")
         }
       },
