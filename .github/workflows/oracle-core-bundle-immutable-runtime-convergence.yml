@@ -139,6 +139,10 @@ jobs:
           # Critical autonomous-control services must be live regardless of old state.
           systemctl --user is-active --quiet os-chronos.service
           systemctl --user is-active --quiet agentos-core-supervisor.service
+          # A pre-existing crash loop is not an active service preserved by the installer.
+          # Explicitly restart the bounded Lobster unit against the exact candidate release.
+          systemctl --user reset-failed os-lobster.service || true
+          systemctl --user restart os-lobster.service
           # Lobster must actually survive startup; a momentary active state is not acceptance.
           systemctl --user is-active --quiet os-lobster.service
           lobster_pid="$(systemctl --user show os-lobster.service -p MainPID --value)"
