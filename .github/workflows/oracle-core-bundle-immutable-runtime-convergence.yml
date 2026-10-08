@@ -117,6 +117,12 @@ jobs:
             git -C "$REPO" worktree add --detach "$RELEASE" "$SOURCE_COMMIT"
           fi
           test "$(git -C "$RELEASE" rev-parse HEAD)" = "$SOURCE_COMMIT"
+          # Fail closed if stale Lobster role-name references return in this release.
+          if grep -Fq '{role}' "$RELEASE/scripts/lobster.py"; then
+            echo "core_bundle_lobster_role_name_regression=FAIL"
+            exit 24
+          fi
+          echo "core_bundle_lobster_role_name_regression=PASS"
           [ -e "$RELEASE/.env" ] || ln -s "$REPO/.env" "$RELEASE/.env"
 
           set -a
