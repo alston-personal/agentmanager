@@ -200,6 +200,28 @@ jobs:
               print(f"lobster_file_{key}_last_30m={counts[key]}")
           print("lobster_file_latest_cycle=" + (last or "none"))
           LOBSTER_METRICS
+          # Read-only canonical Completion Ledger status; do not disclose work details.
+          /usr/bin/python3 - /home/ubuntu/agent-data/governance/work-items.json <<'LOBSTER_QUEUE'
+          import collections, json, pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          if not path.is_file():
+              print("lobster_ledger_present=false")
+          else:
+              try:
+                  data = json.loads(path.read_text(encoding="utf-8"))
+                  items = data.get("items") or {}
+                  if not isinstance(items, dict):
+                      raise ValueError("invalid_items")
+                  states = collections.Counter(str(x.get("status") or "unknown") for x in items.values() if isinstance(x, dict))
+                  owners = collections.Counter(str(x.get("owner") or "") for x in items.values() if isinstance(x, dict) and x.get("status") in {"accepted","in_progress","blocked","verifying"})
+                  print("lobster_ledger_present=true")
+                  print("lobster_ledger_generation=" + str(int(data.get("generation") or 0)))
+                  for key in ("accepted", "in_progress", "blocked", "verifying", "done"):
+                      print("lobster_ledger_" + key + "=" + str(states[key]))
+                  print("lobster_ledger_routable=" + str(owners["role://lobster"] + owners["role://completion.controller"]))
+              except (ValueError, json.JSONDecodeError):
+                  print("lobster_ledger_valid=false")
+          LOBSTER_QUEUE
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
