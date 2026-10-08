@@ -16,6 +16,11 @@ function Write-JsonAtomic([object]$Value,[string]$Path,[int]$Depth=8){
     }
   }
 }
+function Remove-OtaHelperTasks {
+  foreach($name in @('AgentOS Thin Client OTA Guard','AgentOS Thin Client OTA Activator')){
+    Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+  }
+}
 $currentFile=Join-Path $InstallRoot 'current.json'
 $lkgFile=Join-Path $InstallRoot 'last-known-good.json'
 $launcher=Join-Path $InstallRoot 'agentos-client.cmd'
@@ -28,6 +33,7 @@ if($Action -eq 'accept'){
   $current|Add-Member -NotePropertyName accepted_at -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) -Force
   Write-JsonAtomic $current $currentFile 8
   Write-JsonAtomic $current $lkgFile 8
+  Remove-OtaHelperTasks
   Write-Output 'agentos_ota_finalize=PASS'
   exit 0
 }
@@ -44,9 +50,12 @@ $rollbackLines=@(
 )
 $rollbackLines|Set-Content -Encoding ASCII $next
 Move-Item -Force $next $launcher
-Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-Start-ScheduledTask -TaskName $TaskName
 $lkg.status='rollback-restored'
 $lkg|Add-Member -NotePropertyName rolled_back_at -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) -Force
+# Publish the LKG state before restart. The one-click supervisor carrier reads
+# current.json on launch, so restart must never race ahead of rollback state.
 Write-JsonAtomic $lkg $currentFile 8
+Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+Start-ScheduledTask -TaskName $TaskName
+Remove-OtaHelperTasks
 Write-Output 'agentos_ota_rollback=PASS'
