@@ -132,6 +132,9 @@ jobs:
           # Local MVP-1 must use the independent validator in this exact release.
           grep -Fq 'def verify_local_port_check(' "$RELEASE/scripts/lobster.py"
           echo "core_bundle_lobster_local_port_validator=PASS"
+          test -f "$RELEASE/scripts/issue_work_intake.py"
+          grep -Fq 'def eligible(' "$RELEASE/scripts/issue_work_intake.py"
+          echo "core_bundle_issue_intake=PASS"
           # The validator must match real WorkItem port text, not escaped literals.
           if grep -Fq '檢查連接埠\\\\s' "$RELEASE/scripts/lobster.py"; then
             echo "core_bundle_local_port_regex=FAIL"
