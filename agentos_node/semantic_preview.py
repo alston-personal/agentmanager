@@ -4,13 +4,9 @@ import base64
 import ctypes
 import ctypes.wintypes
 import hashlib
-import json
 import os
 import platform
-import struct
 import subprocess
-import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -270,24 +266,107 @@ def _capture_bmp(region: dict[str, int], *, max_pixels: int) -> tuple[bytes, int
         user32.ReleaseDC(None, screen_dc)
 
 
-def _semantic_preview_impl(task: dict[str, Any], progress: Any | None = None) -> dict[str, Any]:
+def _capture_region_powershell(
+    region: dict[str, int],
+    *,
+    max_pixels: int,
+    quality: int = 55,
+) -> tuple[bytes, int, int]:
+    src_w, src_h = region["width"], region["height"]
+    out_w, out_h = _scaled_size(src_w, src_h, max_pixels)
+    quality = max(25, min(int(quality), 80))
+
+    script = r'''
+Add-Type -AssemblyName System.Drawing
+$srcW=[int]$env:AGENTOS_SRC_W
+$srcH=[int]$env:AGENTOS_SRC_H
+$outW=[int]$env:AGENTOS_OUT_W
+$outH=[int]$env:AGENTOS_OUT_H
+$left=[int]$env:AGENTOS_LEFT
+$top=[int]$env:AGENTOS_TOP
+$quality=[long]$env:AGENTOS_JPEG_QUALITY
+
+$src=New-Object System.Drawing.Bitmap $srcW,$srcH
+$g=[System.Drawing.Graphics]::FromImage($src)
+$g.CopyFromScreen($left,$top,0,0,$src.Size)
+$g.Dispose()
+
+if($srcW -eq $outW -and $srcH -eq $outH){
+  $out=$src
+}else{
+  $out=New-Object System.Drawing.Bitmap $outW,$outH
+  $go=[System.Drawing.Graphics]::FromImage($out)
+  $go.InterpolationMode=[System.Drawing.Drawing2D.InterpolationMode]::HighQualityBilinear
+  $go.DrawImage($src,0,0,$outW,$outH)
+  $go.Dispose()
+}
+
+$ms=New-Object System.IO.MemoryStream
+$enc=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
+$ep=New-Object System.Drawing.Imaging.EncoderParameters 1
+$ep.Param[0]=New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality,$quality)
+$out.Save($ms,$enc,$ep)
+[Convert]::ToBase64String($ms.ToArray())
+
+$ms.Dispose()
+if($out -ne $src){ $out.Dispose() }
+$src.Dispose()
+'''
+    env = os.environ.copy()
+    env.update({
+        "AGENTOS_SRC_W": str(src_w),
+        "AGENTOS_SRC_H": str(src_h),
+        "AGENTOS_OUT_W": str(out_w),
+        "AGENTOS_OUT_H": str(out_h),
+        "AGENTOS_LEFT": str(region["left"]),
+        "AGENTOS_TOP": str(region["top"]),
+        "AGENTOS_JPEG_QUALITY": str(quality),
+    })
+    flags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    cp = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        text=True,
+        capture_output=True,
+        timeout=15,
+        env=env,
+        check=False,
+        creationflags=flags,
+    )
+    if cp.returncode != 0:
+        raise RuntimeError(
+            "semantic preview PowerShell capture failed "
+            f"rc={cp.returncode}: {(cp.stderr or '')[-2000:]}"
+        )
+    encoded = (cp.stdout or "").strip().splitlines()
+    if not encoded:
+        raise RuntimeError("semantic preview PowerShell capture returned no image")
+    try:
+        raw = base64.b64decode(encoded[-1], validate=True)
+    except Exception as exc:
+        raise RuntimeError("semantic preview PowerShell capture returned invalid base64") from exc
+    if not raw:
+        raise RuntimeError("semantic preview PowerShell capture returned empty image")
+    return raw, out_w, out_h
+
+
+def semantic_preview(task: dict[str, Any]) -> dict[str, Any]:
+    """Return a bounded read-only preview of only the foreground window.
+
+    Foreground identity/bounds are read first. The image capture then uses the
+    same proven PowerShell/System.Drawing path as desktop.screenshot, but copies
+    only the foreground-window rectangle directly into memory.
+    """
     _require_windows()
-    if progress is not None:
-        progress("session_info")
     session = _session_info()
     if not session["interactive"]:
         raise RuntimeError(f"Thin Client is not in active interactive session: {session}")
 
-    if progress is not None:
-        progress("foreground_window")
     window = _foreground_window()
     region = _bounded_region(window, task)
-
-    if progress is not None:
-        progress("capture_bmp")
-    raw, width, height = _capture_bmp(
+    raw, width, height = _capture_region_powershell(
         region,
         max_pixels=int(task.get("max_pixels") or MAX_OUTPUT_PIXELS),
+        quality=int(task.get("quality") or 55),
     )
     digest = hashlib.sha256(raw).hexdigest()
     state_material = (
@@ -306,7 +385,7 @@ def _semantic_preview_impl(task: dict[str, Any], progress: Any | None = None) ->
             "bounds": window["bounds"],
         },
         "preview": {
-            "mime_type": "image/bmp",
+            "mime_type": "image/jpeg",
             "width": width,
             "height": height,
             "bytes": len(raw),
@@ -329,119 +408,13 @@ def _semantic_preview_impl(task: dict[str, Any], progress: Any | None = None) ->
         ],
         "state_hash": hashlib.sha256(state_material).hexdigest(),
         "session": session,
+        "capture_backend": "powershell-system-drawing",
         "denied_surfaces": [
             "shell",
-            "filesystem",
+            "filesystem-read",
             "clipboard",
             "full-window-enumeration",
             "uia-tree",
             "background-windows",
         ],
     }
-
-
-def _semantic_preview_worker_cli() -> int:
-    try:
-        raw = sys.stdin.read()
-        task = json.loads(raw)
-        if not isinstance(task, dict):
-            raise ValueError("worker task must be an object")
-
-        def progress(stage: str) -> None:
-            print(f"STAGE={stage}", file=sys.stderr, flush=True)
-
-        result = _semantic_preview_impl(task, progress=progress)
-        print(json.dumps({"ok": True, "result": result}), flush=True)
-        return 0
-    except BaseException as exc:
-        print(
-            json.dumps({
-                "ok": False,
-                "error_type": type(exc).__name__,
-                "error": str(exc),
-            }),
-            flush=True,
-        )
-        return 1
-
-
-def semantic_preview(task: dict[str, Any]) -> dict[str, Any]:
-    """Run foreground-window capture in a bounded subprocess.
-
-    Native GDI calls are isolated from the Thin Client transport process.
-    The subprocess is killed on timeout so heartbeat/task receipt transport
-    remains responsive even when a Windows capture call hangs.
-    """
-    _require_windows()
-    timeout_seconds = max(2.0, min(float(task.get("timeout_seconds") or 8.0), 15.0))
-    creationflags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "agentos_node.semantic_preview", "--worker"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        creationflags=creationflags,
-    )
-
-    try:
-        stdout, stderr = proc.communicate(
-            input=json.dumps(dict(task)),
-            timeout=timeout_seconds,
-        )
-    except subprocess.TimeoutExpired as exc:
-        proc.kill()
-        stdout, stderr = proc.communicate()
-        combined_stderr = (
-            ((exc.stderr or "") if isinstance(exc.stderr, str) else "")
-            + (stderr or "")
-        )
-        stages = [
-            line.split("=", 1)[1].strip()
-            for line in combined_stderr.splitlines()
-            if line.startswith("STAGE=")
-        ]
-        last_stage = stages[-1] if stages else "worker_start"
-        raise TimeoutError(
-            f"semantic preview worker timed out after {timeout_seconds:.1f}s "
-            f"at stage={last_stage}"
-        )
-
-    stages = [
-        line.split("=", 1)[1].strip()
-        for line in (stderr or "").splitlines()
-        if line.startswith("STAGE=")
-    ]
-    last_stage = stages[-1] if stages else "worker_start"
-
-    payload: dict[str, Any] | None = None
-    try:
-        candidate = json.loads((stdout or "").strip())
-        if isinstance(candidate, dict):
-            payload = candidate
-    except Exception:
-        payload = None
-
-    if proc.returncode != 0 or not payload or payload.get("ok") is not True:
-        detail = payload or {"error": (stdout or "").strip()}
-        raise RuntimeError(
-            f"semantic preview worker failed at {last_stage}: {detail}"
-        )
-
-    result = payload.get("result")
-    if not isinstance(result, dict):
-        raise RuntimeError(
-            f"semantic preview worker returned invalid result at {last_stage}"
-        )
-    result["worker"] = {
-        "isolated": True,
-        "transport": "subprocess",
-        "timeout_seconds": timeout_seconds,
-        "last_stage": last_stage,
-    }
-    return result
-
-
-if __name__ == "__main__":
-    if "--worker" in sys.argv:
-        raise SystemExit(_semantic_preview_worker_cli())
