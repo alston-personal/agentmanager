@@ -96,46 +96,7 @@ $record.rollback_deadline=(Get-Date).ToUniversalTime().AddMinutes(3).ToString('y
 # generations without changing the task's execution surface.
 $registeredTask=Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 $registeredAction=$registeredTask.Actions|Select-Object -First 1
-if([string]$registeredAction.Execute -notmatch '(?i)powershell\.exe$guardUrl="https://raw.githubusercontent.com/$Repo/$ToolCommit/scripts/windows/transactional_ota_guard.ps1"
-$finalizeUrl="https://raw.githubusercontent.com/$Repo/$ToolCommit/scripts/windows/transactional_ota_finalize.ps1"
-$guardPath=Join-Path $InstallRoot ("transactional_ota_guard-"+$SourceCommit+".ps1")
-$finalizePath=Join-Path $InstallRoot ("transactional_ota_finalize-"+$SourceCommit+".ps1")
-Invoke-WebRequest -UseBasicParsing -Uri $guardUrl -OutFile $guardPath
-Invoke-WebRequest -UseBasicParsing -Uri $finalizeUrl -OutFile $finalizePath
-$record|Add-Member -NotePropertyName guard_helper -NotePropertyValue $guardPath -Force
-$record|Add-Member -NotePropertyName finalize_helper -NotePropertyValue $finalizePath -Force
-$guardTask='AgentOS Thin Client OTA Guard'
-$helperPrincipal=New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
-$helperSettings=New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
-$guardAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$guardPath+'" -InstallRoot "'+$InstallRoot+'"')
-$guardTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4)
-Register-ScheduledTask -TaskName $guardTask -Action $guardAction -Trigger $guardTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
-Write-JsonAtomic $record $currentFile
-Move-Item -Force $next $launcher
-$activatorTask='AgentOS Thin Client OTA Activator'
-$activatorScript=Join-Path $InstallRoot ("transactional_ota_activate-"+$SourceCommit+".ps1")
-@(
-  "param([string]`$TaskName='AgentOS Thin Client')",
-  "`$ErrorActionPreference='Stop'",
-  "Stop-ScheduledTask -TaskName `$TaskName -ErrorAction SilentlyContinue",
-  "Start-Sleep -Seconds 2",
-  "`$clients=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\.exe$' -and `$_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' })",
-  "foreach(`$client in `$clients){ Stop-Process -Id `$client.ProcessId -Force -ErrorAction SilentlyContinue }",
-  "for(`$i=0;`$i -lt 20;`$i++){ `$remaining=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\.exe$' -and `$_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' }); if(`$remaining.Count -eq 0){break}; Start-Sleep -Milliseconds 500 }",
-  "Start-ScheduledTask -TaskName `$TaskName",
-  "Start-Sleep -Seconds 3",
-  "`$task=Get-ScheduledTask -TaskName `$TaskName -ErrorAction Stop",
-  "if([string]`$task.State -ne 'Running'){ throw 'Thin Client scheduled task did not enter Running state' }",
-  "Write-Output 'agentos_ota_activator=PASS'"
-)|Set-Content -Encoding ASCII $activatorScript
-$record|Add-Member -NotePropertyName activator_helper -NotePropertyValue $activatorScript -Force
-$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'"')
-$activatorTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(10)
-Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
-Write-Output 'agentos_ota_stage=ACTIVATING'
-Write-Output ('agentos_ota_candidate='+$SourceCommit)
-Write-Output 'agentos_ota_controller_acceptance=PENDING'
-){throw 'Thin Client task is not using the expected PowerShell supervisor'}
+if([string]$registeredAction.Execute -notmatch '(?i)powershell\\.exe$'){throw 'Thin Client task is not using the expected PowerShell supervisor'}
 $actionArgs=[string]$registeredAction.Arguments
 if($actionArgs -notmatch '(?i)-File\s+"([^"]+)"'){throw 'Thin Client supervisor path could not be resolved from task action'}
 $supervisorPath=[string]$Matches[1]
@@ -182,9 +143,11 @@ Invoke-WebRequest -UseBasicParsing -Uri $finalizeUrl -OutFile $finalizePath
 $record|Add-Member -NotePropertyName guard_helper -NotePropertyValue $guardPath -Force
 $record|Add-Member -NotePropertyName finalize_helper -NotePropertyValue $finalizePath -Force
 $guardTask='AgentOS Thin Client OTA Guard'
-$guardAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -File "'+$guardPath+'"')
+$helperPrincipal=New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
+$helperSettings=New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+$guardAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$guardPath+'" -InstallRoot "'+$InstallRoot+'"')
 $guardTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4)
-Register-ScheduledTask -TaskName $guardTask -Action $guardAction -Trigger $guardTrigger -Force | Out-Null
+Register-ScheduledTask -TaskName $guardTask -Action $guardAction -Trigger $guardTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
 Write-JsonAtomic $record $currentFile
 Move-Item -Force $next $launcher
 $activatorTask='AgentOS Thin Client OTA Activator'
@@ -204,9 +167,9 @@ $activatorScript=Join-Path $InstallRoot ("transactional_ota_activate-"+$SourceCo
   "Write-Output 'agentos_ota_activator=PASS'"
 )|Set-Content -Encoding ASCII $activatorScript
 $record|Add-Member -NotePropertyName activator_helper -NotePropertyValue $activatorScript -Force
-$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -File "'+$activatorScript+'" -TaskName "'+$TaskName+'"')
+$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'"')
 $activatorTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(10)
-Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Force | Out-Null
+Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
 Write-Output 'agentos_ota_stage=ACTIVATING'
 Write-Output ('agentos_ota_candidate='+$SourceCommit)
 Write-Output 'agentos_ota_controller_acceptance=PENDING'
