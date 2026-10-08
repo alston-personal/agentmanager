@@ -765,10 +765,16 @@ Write-Output ('node_ota_inspect_main_last_result='+$(TaskField 'AgentOS Thin Cli
 Write-Output ('node_ota_inspect_main_logon_type='+$(TaskField 'AgentOS Thin Client' 'logon_type'))
 Write-Output ('node_ota_inspect_main_run_level='+$(TaskField 'AgentOS Thin Client' 'run_level'))
 Write-Output ('node_ota_inspect_main_user_leaf='+$(TaskField 'AgentOS Thin Client' 'user_leaf'))
-Write-Output ('node_ota_inspect_activator_state='+$(TaskField 'AgentOS Thin Client OTA Activator' 'state'))
-Write-Output ('node_ota_inspect_activator_last_result='+$(TaskField 'AgentOS Thin Client OTA Activator' 'last_result'))
-Write-Output ('node_ota_inspect_guard_state='+$(TaskField 'AgentOS Thin Client OTA Guard' 'state'))
-Write-Output ('node_ota_inspect_guard_last_result='+$(TaskField 'AgentOS Thin Client OTA Guard' 'last_result'))
+$runtimeDoc=$null
+try{$runtimeDoc=Get-Content -Raw -LiteralPath (Join-Path $root 'current.json')|ConvertFrom-Json}catch{}
+$activatorName=[string]$runtimeDoc.activator_task_name
+$guardName=[string]$runtimeDoc.guard_task_name
+if([string]::IsNullOrWhiteSpace($activatorName)){$activatorName='AgentOS Thin Client OTA Activator'}
+if([string]::IsNullOrWhiteSpace($guardName)){$guardName='AgentOS Thin Client OTA Guard'}
+Write-Output ('node_ota_inspect_activator_state='+$(TaskField $activatorName 'state'))
+Write-Output ('node_ota_inspect_activator_last_result='+$(TaskField $activatorName 'last_result'))
+Write-Output ('node_ota_inspect_guard_state='+$(TaskField $guardName 'state'))
+Write-Output ('node_ota_inspect_guard_last_result='+$(TaskField $guardName 'last_result'))
 $statusPath=Join-Path $root 'ota-activator-status.json'
 if(Test-Path -LiteralPath $statusPath){
   try{
