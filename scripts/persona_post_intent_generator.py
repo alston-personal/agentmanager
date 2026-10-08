@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, glob, hashlib, json, os, random, re, subprocess
+import argparse, glob, hashlib, json, os, random, re, subprocess, tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -32,6 +32,10 @@ def discover_executor():
         if os.path.isfile(path) and os.access(path,os.X_OK):
             return [path,"--bare","--print","--output-format","text","--effort","low"]
     return None
+
+def discover_gemini_executor():
+    path="/home/ubuntu/.local/bin/gemini"
+    return path if os.path.isfile(path) and os.access(path,os.X_OK) else None
 
 def extract_json(text):
     text=text.strip()
@@ -159,8 +163,9 @@ def main():
           "source_object_id":e.get("source_object_id") or e.get("object_id")
         })
 
-    executor=discover_executor()
-    if not executor:
+    claude_executor=discover_executor()
+    gemini_executor=discover_gemini_executor()
+    if not claude_executor and not gemini_executor:
         print(json.dumps({"status":"DEFER","reason":"persona_reasoning_executor_unavailable"},ensure_ascii=False))
         return 0
 
@@ -222,18 +227,69 @@ Return ONLY one JSON object with exactly these keys:
 Context:
 """+json.dumps(contract,ensure_ascii=False)
 
-    try:
-        result=subprocess.run([*executor,prompt],cwd="/home/ubuntu/agentmanager",text=True,capture_output=True,timeout=180)
-    except subprocess.TimeoutExpired:
-        print(json.dumps({"status":"DEFER","reason":"persona_reasoning_timeout","timeout_seconds":180},ensure_ascii=False))
-        return 0
-    if result.returncode!=0:
-        print(json.dumps({"status":"DEFER","reason":"reasoning_executor_failed","returncode":result.returncode},ensure_ascii=False))
-        return 0
-    try:
-        decision=extract_json(result.stdout)
-    except Exception as e:
-        print(json.dumps({"status":"DEFER","reason":"invalid_reasoning_output","detail":type(e).__name__},ensure_ascii=False))
+    decision=None
+    attempts=[]
+    if claude_executor:
+        try:
+            result=subprocess.run([*claude_executor,prompt],cwd="/home/ubuntu/agentmanager",
+                                  text=True,capture_output=True,timeout=45)
+            if result.returncode==0:
+                try:
+                    decision=extract_json(result.stdout)
+                    attempts.append({"provider":"claude","status":"PASS"})
+                except Exception:
+                    attempts.append({"provider":"claude","status":"INVALID_OUTPUT"})
+            else:
+                attempts.append({"provider":"claude","status":"NONZERO","returncode":result.returncode})
+        except subprocess.TimeoutExpired:
+            attempts.append({"provider":"claude","status":"TIMEOUT"})
+        except OSError:
+            attempts.append({"provider":"claude","status":"UNAVAILABLE"})
+
+    if decision is None and gemini_executor:
+        try:
+            with tempfile.TemporaryDirectory(prefix="mio-post-gemini-") as td:
+                temp=Path(td)
+                cli_home=temp/"cli-home"
+                settings=cli_home/".gemini"
+                settings.mkdir(parents=True,exist_ok=True)
+                (settings/"settings.json").write_text(json.dumps({
+                    "security":{"auth":{"selectedType":"oauth-personal"}},
+                    "hooksConfig":{"enabled":False},
+                    "skills":{"enabled":False},
+                })+"\n",encoding="utf-8")
+                source=Path("/home/ubuntu/.gemini")
+                for name in ("oauth_creds.json","google_accounts.json"):
+                    src=source/name
+                    if src.exists():
+                        (settings/name).symlink_to(src)
+                env={**os.environ,
+                     "HOME":"/home/ubuntu",
+                     "USER":"ubuntu",
+                     "CI":"1",
+                     "GEMINI_CLI_HOME":str(cli_home),
+                     "PATH":"/home/ubuntu/.local/bin:/home/ubuntu/.local/share/agentos/npm-global/bin:"+os.environ.get("PATH","/usr/local/bin:/usr/bin:/bin")}
+                result=subprocess.run([
+                    gemini_executor,"-p",prompt,"--approval-mode","plan","--skip-trust",
+                    "--output-format","json"
+                ],cwd=str(temp),text=True,capture_output=True,timeout=60,env=env)
+                if result.returncode==0:
+                    try:
+                        envelope=json.loads(result.stdout or "{}")
+                        response=str(envelope.get("response") or "") if isinstance(envelope,dict) else ""
+                        decision=extract_json(response)
+                        attempts.append({"provider":"gemini","status":"PASS"})
+                    except Exception:
+                        attempts.append({"provider":"gemini","status":"INVALID_OUTPUT"})
+                else:
+                    attempts.append({"provider":"gemini","status":"NONZERO","returncode":result.returncode})
+        except subprocess.TimeoutExpired:
+            attempts.append({"provider":"gemini","status":"TIMEOUT"})
+        except OSError:
+            attempts.append({"provider":"gemini","status":"UNAVAILABLE"})
+
+    if decision is None:
+        print(json.dumps({"status":"DEFER","reason":"persona_reasoning_exhausted","attempts":attempts},ensure_ascii=False))
         return 0
 
     should=bool(decision.get("should_post"))
