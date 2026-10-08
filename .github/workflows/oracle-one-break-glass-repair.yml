@@ -2,11 +2,6 @@ name: Oracle ONE Break Glass Repair
 
 on:
   workflow_dispatch:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.agentos/commands/one-break-glass-repair.json'
-      - '.github/workflows/oracle-one-break-glass-repair.yml'
 
 permissions:
   contents: read
