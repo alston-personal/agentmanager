@@ -448,15 +448,15 @@ Context:
         }
         request_path=root/"pdca/media_requests"/f"{action_id}.json"
         request_path.parent.mkdir(parents=True,exist_ok=True)
-        request_path.write_text(json.dumps(request,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+        request_path.write_text(json.dumps(request,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         action["media_intent"]["request_ref"]=str(request_path.relative_to(root))
         state["pending_external_actions"]=pending[-12:]
         tmp=root/"pdca/state.json.tmp"
-        tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+        tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         os.replace(tmp,root/"pdca/state.json")
         out.write_text(json.dumps({"schema":"agentos.persona-post-intent/v1",
           "created_at":now.isoformat().replace("+00:00","Z"),**action},
-          ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+          ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     print(json.dumps({"status":"CANDIDATE_CREATED","action_id":action_id,"not_before":not_before},ensure_ascii=False))
     return 0
 
