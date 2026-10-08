@@ -1,0 +1,72 @@
+name: VOPC5750 Semantic Receipt Final 20261008
+
+on:
+  push:
+    branches:
+      - ops/vopc5750-semantic-receipt-final-20261008
+    paths:
+      - '.github/workflows/vopc5750-semantic-receipt-final-20261008.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  accept:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Accept canonical semantic preview receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time,uuid
+          from agent_core.realm_fabric import RealmFabricStore
+
+          fabric=RealmFabricStore()
+          task_id='task-semantic-final-'+uuid.uuid4().hex
+          fabric.queue_task('vopc5750',{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':task_id,
+              'action':'desktop.semantic_preview',
+              'max_pixels':160000,
+              'quality':45,
+          })
+
+          receipt=None
+          deadline=time.time()+35
+          while time.time()<deadline:
+              receipt=fabric.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(1)
+
+          printable=receipt
+          if receipt and isinstance(receipt.get('preview'),dict) and isinstance(receipt['preview'].get('image_base64'),str):
+              printable=dict(receipt)
+              preview=dict(receipt['preview'])
+              preview['image_base64']='<omitted:'+str(len(preview['image_base64']))+'>'
+              printable['preview']=preview
+
+          store=fabric.load()
+          queue=list((store.get('tasks') or {}).get('vopc5750') or [])
+          record=next((x for x in queue if isinstance(x,dict) and x.get('task_id')==task_id),None)
+          print(json.dumps({'receipt':printable,'queue_record':record},indent=2,sort_keys=True))
+
+          assert receipt,'SEMANTIC_RECEIPT_TIMEOUT'
+          assert receipt.get('schema')=='agentos.node-receipt/v0.1',receipt
+          assert receipt.get('result_schema')=='agentos.desktop-semantic-preview/v0.1',receipt
+          assert receipt.get('ok') is True,receipt
+          assert receipt.get('read_only') is True,receipt
+          assert receipt.get('mode')=='foreground-window-only',receipt
+          assert receipt.get('capture_backend')=='powershell-system-drawing',receipt
+          assert receipt.get('state_hash'),receipt
+          assert isinstance(receipt.get('foreground'),dict),receipt
+          assert isinstance(receipt.get('preview'),dict),receipt
+          assert receipt['preview'].get('mime_type')=='image/jpeg',receipt
+          assert record is None,(receipt,record)
+          print('SEMANTIC_PREVIEW_CANONICAL_RECEIPT=PASS')
+          PY
