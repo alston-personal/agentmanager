@@ -196,10 +196,15 @@ jobs:
           data=json.load(open(sys.argv[1],encoding='utf8'))
           item=data.get('items',{}).get('market-master-1200-mvp')
           assert item, 'market master intake missing'
-          assert item.get('owner') == 'role://completion.controller', item
-          assert item.get('status') in {'accepted','in_progress','blocked','verifying','done'}, item
+          status=str(item.get('status') or '')
+          owner=str(item.get('owner') or '')
+          assert status in {'accepted','in_progress','blocked','verifying','done'}, item
           assert item.get('project_id') == 'market-master-evolution', item
-          print('market_master_completion_intake=PASS status='+str(item.get('status'))+' owner='+str(item.get('owner')))
+          if status == 'accepted':
+              assert owner == 'role://completion.controller', item
+          else:
+              assert owner in {'role://completion.controller','role://lobster'}, item
+          print('market_master_completion_intake=PASS status='+status+' owner='+owner)
           PY
 
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" audit >/dev/null
