@@ -70,11 +70,14 @@ def test_one_click_supervisor_carrier_follows_current_runtime_state():
 
 def test_ota_helpers_are_noninteractive_and_cleaned_up():
     assert "-LogonType S4U" in s
+    assert "$helperSuffix=$SourceCommit.Substring(0,12)" in s
+    assert "guard_task_name" in s
+    assert "activator_task_name" in s
     assert "Register-ScheduledTask -TaskName $guardTask" in s
     assert "Register-ScheduledTask -TaskName $activatorTask" in s
-    assert "Remove-OtaHelperTasks" in finalize
-    assert "AgentOS Thin Client OTA Guard" in finalize
-    assert "AgentOS Thin Client OTA Activator" in finalize
+    assert "Remove-OtaHelperTasks $current" in finalize
+    assert "RuntimeRecord.guard_task_name" in finalize
+    assert "RuntimeRecord.activator_task_name" in finalize
 
 
 def test_rollback_publishes_lkg_before_supervisor_restart():

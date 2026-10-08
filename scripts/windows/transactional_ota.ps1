@@ -155,7 +155,11 @@ Invoke-WebRequest -UseBasicParsing -Uri $guardUrl -OutFile $guardPath
 Invoke-WebRequest -UseBasicParsing -Uri $finalizeUrl -OutFile $finalizePath
 $record|Add-Member -NotePropertyName guard_helper -NotePropertyValue $guardPath -Force
 $record|Add-Member -NotePropertyName finalize_helper -NotePropertyValue $finalizePath -Force
-$guardTask='AgentOS Thin Client OTA Guard'
+$helperSuffix=$SourceCommit.Substring(0,12)
+$guardTask='AgentOS Thin Client OTA Guard '+$helperSuffix
+$activatorTask='AgentOS Thin Client OTA Activator '+$helperSuffix
+$record|Add-Member -NotePropertyName guard_task_name -NotePropertyValue $guardTask -Force
+$record|Add-Member -NotePropertyName activator_task_name -NotePropertyValue $activatorTask -Force
 $helperPrincipal=New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
 $helperSettings=New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 $guardAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$guardPath+'" -InstallRoot "'+$InstallRoot+'"')
@@ -163,7 +167,6 @@ $guardTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4)
 Register-ScheduledTask -TaskName $guardTask -Action $guardAction -Trigger $guardTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
 Write-JsonAtomic $record $currentFile
 Move-Item -Force $next $launcher
-$activatorTask='AgentOS Thin Client OTA Activator'
 $activatorScript=Join-Path $InstallRoot ("transactional_ota_activate-"+$SourceCommit+".ps1")
 $activatorStatus=Join-Path $InstallRoot 'ota-activator-status.json'
 @{
