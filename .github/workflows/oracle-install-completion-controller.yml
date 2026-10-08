@@ -210,11 +210,12 @@ jobs:
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" audit >/dev/null
           echo 'completion_ledger=PASS issue_470=durable market_master_1200=durable'
 
-          # Prove the two watchdog commands work as the real user before touching units.
+          # Machine-recoverable blockers must not become permanent Human gates.
+          python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" defer-machine-blockers --lease-seconds 1800 >/tmp/completion-defer-preflight.json
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" wake-due --lease-seconds 1800 >/tmp/completion-wake-preflight.json
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" reclaim-stale --lease-seconds 1800 >/tmp/completion-reclaim-preflight.json
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" project-board --board "$BOARD" >/tmp/completion-board-preflight.json
-          echo 'completion_watchdog_commands_preflight=PASS'
+          echo 'completion_watchdog_commands_preflight=PASS machine_blocker_backoff=enabled'
 
           cat > "$USER_UNITS/agentos-completion-watchdog.service" <<EOF
           [Unit]
@@ -227,6 +228,7 @@ jobs:
           Environment=HOME=/home/ubuntu
           Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
           Environment=PYTHONDONTWRITEBYTECODE=1
+          ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE defer-machine-blockers --lease-seconds 1800
           ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE wake-due --lease-seconds 1800
           ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE reclaim-stale --lease-seconds 1800
           ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE project-board --board $BOARD
