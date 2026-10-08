@@ -96,7 +96,7 @@ $record.rollback_deadline=(Get-Date).ToUniversalTime().AddMinutes(3).ToString('y
 # generations without changing the task's execution surface.
 $registeredTask=Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 $registeredAction=$registeredTask.Actions|Select-Object -First 1
-if([string]$registeredAction.Execute -notmatch '(?i)powershell\\.exe$'){throw 'Thin Client task is not using the expected PowerShell supervisor'}
+if([string]$registeredAction.Execute -notmatch '(?i)powershell\.exe$'){throw 'Thin Client task is not using the expected PowerShell supervisor'}
 $actionArgs=[string]$registeredAction.Arguments
 if($actionArgs -notmatch '(?i)-File\s+"([^"]+)"'){throw 'Thin Client supervisor path could not be resolved from task action'}
 $supervisorPath=[string]$Matches[1]
