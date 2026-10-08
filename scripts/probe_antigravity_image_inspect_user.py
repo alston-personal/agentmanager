@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -99,6 +100,26 @@ def main() -> int:
         time.sleep(2)
 
     print("antigravity_image_inspect_probe=TIMEOUT")
+    relay_root = Path("/home/ubuntu/agent-data/runtime/antigravity-relay")
+    try:
+        state = subprocess.run(
+            ["systemctl", "--user", "is-active", "agentos-antigravity-relay.service"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        print("antigravity_relay_service_state=" + (state.stdout.strip() or "unknown"))
+    except Exception as exc:
+        print("antigravity_relay_service_state=inspect_error:" + type(exc).__name__)
+    for name in ("inbox", "processing", "receipts"):
+        directory = relay_root / name
+        try:
+            stat = directory.stat()
+            count = len(list(directory.glob("relay-*.json")))
+            print(f"antigravity_relay_{name}_count={count}")
+            print(f"antigravity_relay_{name}_mode={oct(stat.st_mode & 0o7777)}")
+            print(f"antigravity_relay_{name}_uid={stat.st_uid}")
+            print(f"antigravity_relay_{name}_gid={stat.st_gid}")
+        except Exception as exc:
+            print(f"antigravity_relay_{name}_inspect_error={type(exc).__name__}:{exc}")
     return 0
 
 
