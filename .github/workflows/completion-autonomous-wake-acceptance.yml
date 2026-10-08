@@ -1,0 +1,107 @@
+name: Completion Autonomous Wake Acceptance
+
+on:
+  push:
+    branches:
+      - accept/completion-autonomous-wake-20261008
+    paths:
+      - '.github/workflows/completion-autonomous-wake-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: completion-autonomous-wake-acceptance
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Observe autonomous wake and claim without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          STATE=/home/ubuntu/agent-data/governance/work-items.json
+          python3 - "$STATE" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          for wid,label in (
+              ('agentos-core-470-runtime-completion','core470'),
+              ('market-master-1200-mvp','market1200'),
+          ):
+              x=d.get('items',{}).get(wid) or {}
+              print(
+                  'completion_observe_initial'
+                  +' item='+label
+                  +' status='+str(x.get('status','missing'))
+                  +' owner='+str(x.get('owner','missing'))
+                  +' generation='+str(x.get('owner_generation','missing'))
+                  +' history_len='+str(len(x.get('history') or []))
+                  +' retry_count='+str(x.get('machine_retry_count',0))
+              )
+          PY
+
+          PASS=0
+          for attempt in $(seq 1 66); do
+            read -r CSTAT COWNER CHIST MSTAT MOWNER MHIST <<EOF
+          $(python3 - "$STATE" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          c=d.get('items',{}).get('agentos-core-470-runtime-completion') or {}
+          m=d.get('items',{}).get('market-master-1200-mvp') or {}
+          print(c.get('status','missing'),c.get('owner','missing'),len(c.get('history') or []),
+                m.get('status','missing'),m.get('owner','missing'),len(m.get('history') or []))
+          PY
+          )
+          EOF
+            echo "completion_observe attempt=$attempt core470=$CSTAT/$COWNER/$CHIST market1200=$MSTAT/$MOWNER/$MHIST"
+            if [ "$CSTAT" != "waiting_external" ] || [ "$MSTAT" != "waiting_external" ]; then
+              PASS=1
+              break
+            fi
+            sleep 10
+          done
+          test "$PASS" = 1
+
+          python3 - "$STATE" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=[]
+          for wid,label in (
+              ('agentos-core-470-runtime-completion','core470'),
+              ('market-master-1200-mvp','market1200'),
+          ):
+              x=d.get('items',{}).get(wid) or {}
+              history=x.get('history') or []
+              events=[str(h.get('event') or '') for h in history[-8:] if isinstance(h,dict)]
+              safe={
+                  'item':label,
+                  'status':x.get('status'),
+                  'owner':x.get('owner'),
+                  'owner_generation':x.get('owner_generation'),
+                  'history_len':len(history),
+                  'recent_events':events,
+                  'machine_retry_count':x.get('machine_retry_count',0),
+                  'last_blocker_kind':x.get('last_blocker_kind'),
+              }
+              print('completion_observe_final='+json.dumps(safe,sort_keys=True,separators=(',',':')))
+              rows.append(safe)
+          assert any(
+              r['status'] in {'accepted','in_progress','verifying','done','blocked'}
+              for r in rows
+          ), rows
+          print('completion_autonomous_wake_observed=PASS')
+          PY
+          REMOTE
