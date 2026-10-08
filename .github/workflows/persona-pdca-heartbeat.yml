@@ -222,7 +222,8 @@ jobs:
           test -f "$PUBLISHER"
           python3 "$PUBLISHER" \
             --persona-dir "$DATA_REPO/personas/sunlake-milkcat" \
-            --output /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json
+            --output /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json \
+            --html-output /home/ubuntu/zeus-writer/website/dist/personas/mio/index.html
           python3 -m json.tool /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json >/dev/null
           echo "mio_public_activity_snapshot=PASS"
           REMOTE
