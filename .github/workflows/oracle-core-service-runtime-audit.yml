@@ -137,6 +137,14 @@ jobs:
           if [ -d "$lobster_logdir" ] && [ -w "$lobster_logdir" ]; then echo "lobster_log_directory_write=PASS"; else echo "lobster_log_directory_write=FAIL"; fi
           if [ -f "$lobster_logdir/lobster.log" ]; then echo "lobster_log_file_present=true"; else echo "lobster_log_file_present=false"; fi
           if [ -f "$lobster_release/scripts/lobster.py" ]; then echo "lobster_release_entrypoint_present=true"; else echo "lobster_release_entrypoint_present=false"; fi
+          # Lobster also writes its own file log. Classify only error names, never log text.
+          lobster_local_exception=unknown
+          if [ -f "$lobster_logdir/lobster.log" ]; then
+            for candidate in ModuleNotFoundError ImportError SyntaxError IndentationError NameError AttributeError TypeError ValueError PermissionError FileNotFoundError RuntimeError KeyError TimeoutError AssertionError SystemExit; do
+              if tail -n 300 "$lobster_logdir/lobster.log" | grep -q "$candidate"; then lobster_local_exception="$candidate"; fi
+            done
+          fi
+          echo "lobster_local_log_exception_class=$lobster_local_exception"
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
