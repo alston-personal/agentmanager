@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  issues: read
+  issues: write
 
 concurrency:
   group: oracle-approved-issue-intake
@@ -90,3 +90,77 @@ jobs:
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
           echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
+
+      - name: Reconcile verified two-Issue MVP receipts back to GitHub
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          target="${DEPLOY_USER}@${ORACLE_HOST}"
+          port="${DEPLOY_PORT:-22}"
+          # Evaluate authoritative durable ledger AND a fresh independent localhost probe on Oracle.
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$port" "$target" 'python3 -' > "${RUNNER_TEMP}/verified-receipts.json" <<'PY'
+          import json, pathlib, socket
+          p = pathlib.Path("/home/ubuntu/agent-data/governance/work-items.json")
+          state = json.loads(p.read_text(encoding="utf-8"))
+          items = state.get("items", {})
+          result = []
+          for number, port in ((1655, 65532), (1656, 65533)):
+              item = items.get(f"gh-issue-{number}-readonly") or {}
+              verification = item.get("verification") or {}
+              evidence = item.get("evidence") or []
+              marker = f"local_port_{port}_closed_independent_socket_probe"
+              proof = any(marker in str(x) for x in evidence)
+              try:
+                  with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sk:
+                      sk.settimeout(2)
+                      closed = sk.connect_ex(("127.0.0.1", port)) != 0
+              except OSError:
+                  closed = False
+              passed = item.get("status") == "done" and verification.get("status") == "passed" and proof and closed
+              result.append({"issue":number, "verified":passed})
+          print(json.dumps(result, separators=(",",":")))
+          PY
+          # Only the two exact explicitly approved test Issues may be closed by this MVP.
+          # Validate the currently open GitHub issue's labels and immutable read-only Action before mutation.
+          python3 - "${RUNNER_TEMP}/verified-receipts.json" "${RUNNER_TEMP}/approved-issues.json" <<'PY' > "${RUNNER_TEMP}/close-issues.txt"
+          import json,re,sys
+          receipts = json.load(open(sys.argv[1],encoding="utf-8"))
+          issues = json.load(open(sys.argv[2],encoding="utf-8"))
+          by_number = {i.get("number"):i for i in issues if isinstance(i,dict) and "pull_request" not in i}
+          for row in receipts:
+              number=row["issue"]
+              port={1655:65532,1656:65533}.get(number)
+              issue=by_number.get(number,{})
+              labels={x.get("name") for x in issue.get("labels",[]) if isinstance(x,dict)}
+              body=issue.get("body") or ""
+              eligible=(row["verified"] is True and port is not None
+                 and issue.get("state")=="open"
+                 and {"agentos:approved","agentos:lobster","agentos:readonly"} <= labels
+                 and re.search(r"(?m)^Action:\s*檢查連接埠 "+str(port)+r"\s*$",body)
+                 and "Acceptance:" in body)
+              if eligible:
+                  print(number)
+          PY
+          while IFS= read -r issue; do
+            test -n "$issue" || continue
+            case "$issue" in 1655|1656) ;; *) exit 10 ;; esac
+            # Recheck server-side issue state immediately before closing. Safe on reruns.
+            data="$(curl -fsS --max-time 20 -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue")"
+            current="$(printf '%s' "$data" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
+            test "$current" = open || continue
+            body="$(printf 'Oracle independent live socket probe and durable Ledger receipt verified. Evidence: https://github.com/alston-personal/agentmanager/actions/runs/%s (job receipt reconciliation). Scope: read-only localhost port inspection.\n' "$GITHUB_RUN_ID")"
+            curl -fsS --max-time 20 -X POST -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
+              -d "$(python3 -c 'import json,sys; print(json.dumps({"body":sys.argv[1]}))' "$body")" \
+              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue/comments" >/dev/null
+            curl -fsS --max-time 20 -X PATCH -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
+              -d '{"state":"closed","state_reason":"completed"}' \
+              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue" >/dev/null
+            echo "receipt_github_issue_closed=$issue"
+          done < "${RUNNER_TEMP}/close-issues.txt"
