@@ -11,7 +11,10 @@ fi
 ROOT="/home/ubuntu/.local/share/agentos/gui-worker"
 PY="$ROOT/venv/bin/python"
 CDP_URL="http://127.0.0.1:9225"
-OUT_ROOT="/home/ubuntu/agent-data/artifacts/google-flow"
+SHARED_ROOT="${AGENTOS_SHARED_ARTIFACT_ROOT:-/tmp/agentos-shared-artifacts}"
+mkdir -p "$SHARED_ROOT"
+chmod 1777 "$SHARED_ROOT"
+OUT_ROOT="$SHARED_ROOT/google-flow"
 PROMPT="${AGENTOS_GOOGLE_MEDIA_PROMPT:-A cinematic 8-second shot of a quiet mountain trail at golden hour. A gentle breeze moves the grass and leaves, the camera slowly pushes forward, natural realistic lighting, subtle ambient sound, no text, no logos.}"
 if [ ! -x "$PY" ]; then
   echo "google_flow_generate=GUI_PYTHON_MISSING"
