@@ -1,0 +1,89 @@
+name: Oracle Mio Visual Review Live Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'capabilities/wardrobe_visual_review/**'
+      - 'scripts/deploy_mio_tryon_worker_user.sh'
+      - '.github/workflows/oracle-mio-visual-review-live-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Review latest existing candidate without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export PYTHONPATH=/home/ubuntu/.local/share/mio-tryon/runtime-lib
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          PY=/home/ubuntu/.local/share/mio-tryon-venv/bin/python
+          "$PY" - <<'PY'
+          import json
+          from pathlib import Path
+
+          from capabilities.wardrobe_visual_review import evaluate_review
+          from capabilities.wardrobe_visual_review.gemini_backend import review_with_gemini
+
+          root=Path('/home/ubuntu/agent-data/projects/dressup-simulator')
+          rows=[]
+          for p in (root/'render_jobs/runtime').glob('*.json'):
+              try:
+                  j=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              out=j.get('output') or {}
+              q=out.get('quality') or {}
+              asset=root/'render_assets'/f"{j.get('jobId')}.webp"
+              if j.get('status')!='ready' or not asset.is_file() or asset.stat().st_size<1000:
+                  continue
+              if not ((j.get('input') or {}).get('selectedLayers') or {}):
+                  continue
+              rows.append((j.get('completedAt') or j.get('requestedAt') or '',j,asset))
+          if not rows:
+              print('mio_visual_review_live=SKIP_NO_CANDIDATE')
+              raise SystemExit(0)
+
+          _,job,asset=sorted(rows,reverse=True)[0]
+          semantic=review_with_gemini(
+              job=job,
+              candidate_path=asset,
+              workspace_root=Path('/home/ubuntu/agent-data/runtime/wardrobe-visual-review-live'),
+              timeout_seconds=35,
+          )
+          request={
+              'schema':'agentos.wardrobe-visual-review-request/v1',
+              'selectedLayers':((job.get('input') or {}).get('selectedLayers') or {}),
+              'renderedLayers':((job.get('output') or {}).get('renderedLayers') or []),
+              'pendingLayers':((job.get('output') or {}).get('pendingLayers') or []),
+              'machineChecks':[],
+              'semanticReceipt':semantic,
+          }
+          receipt=evaluate_review(request)
+          classification=str(semantic.get('classification') or 'UNKNOWN')
+          print('mio_visual_review_live_job='+str(job.get('jobId')))
+          print('mio_visual_review_backend_classification='+classification)
+          print('mio_visual_review_state='+str(receipt.get('state')))
+          print('mio_visual_review_verified_layers='+','.join(receipt.get('verifiedLayers') or []))
+          if semantic.get('backendReady') is True:
+              print('mio_visual_review_live=READY')
+          else:
+              print('mio_visual_review_live='+classification)
+          PY
+          REMOTE
