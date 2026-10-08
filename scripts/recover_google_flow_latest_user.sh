@@ -141,51 +141,57 @@ with sync_playwright() as p:
         project_verified=all(m in low for m in EXPECTED_MARKERS)
         print("google_flow_recover_project_prompt_match="+("YES" if project_verified else "NO"))
         if not project_verified:
-            print("google_flow_recover=PROJECT_MISMATCH")
-            raise SystemExit(0)
-
-        deadline=time.monotonic()+900
-        while time.monotonic()<deadline:
-            vids_now=page.locator("video")
-            found=False
-            for i in range(min(vids_now.count(),20)):
-                item=vids_now.nth(i)
-                try:
-                    if not item.is_visible(timeout=300):
-                        continue
-                    context=""
+            # The previously pinned project URL can now resolve to an empty/new
+            # workspace after Flow UI/session changes. Do not fail here. Return
+            # to the authenticated project dashboard and discover the current
+            # generated project read-only.
+            print("google_flow_recover_stage=PINNED_PROJECT_MISMATCH_FALLBACK")
+            page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
+            page.wait_for_timeout(5000)
+            print("google_flow_recover_url="+str(page.url or "")[:500])
+        else:
+            deadline=time.monotonic()+900
+            while time.monotonic()<deadline:
+                vids_now=page.locator("video")
+                found=False
+                for i in range(min(vids_now.count(),20)):
+                    item=vids_now.nth(i)
                     try:
-                        context=str(item.evaluate("""el => {
-                          let n=el;
-                          for(let i=0;i<6 && n;i++,n=n.parentElement){
-                            const t=(n.innerText||'').trim();
-                            if(t) return t.slice(0,700);
-                          }
-                          return '';
-                        }""") or "")
+                        if not item.is_visible(timeout=300):
+                            continue
+                        context=""
+                        try:
+                            context=str(item.evaluate("""el => {
+                              let n=el;
+                              for(let i=0;i<6 && n;i++,n=n.parentElement){
+                                const t=(n.innerText||'').trim();
+                                if(t) return t.slice(0,700);
+                              }
+                              return '';
+                            }""") or "")
+                        except Exception:
+                            pass
+                        cl=context.lower()
+                        if any(x in cl for x in ("gemini omni flash","creative partner at every step","google flow agent")):
+                            continue
+                        found=True
+                        break
                     except Exception:
                         pass
-                    cl=context.lower()
-                    if any(x in cl for x in ("gemini omni flash","creative partner at every step","google flow agent")):
-                        continue
-                    found=True
+                if found:
+                    print("google_flow_recover_stage=PROJECT_VIDEO_READY",flush=True)
                     break
+                try:
+                    body=(page.locator("body").inner_text(timeout=2500) or "").lower()
                 except Exception:
-                    pass
-            if found:
-                print("google_flow_recover_stage=PROJECT_VIDEO_READY",flush=True)
-                break
-            try:
-                body=(page.locator("body").inner_text(timeout=2500) or "").lower()
-            except Exception:
-                body=""
-            if any(x in body for x in ("generation failed","couldn't generate","failed to generate","產生失敗","生成失敗","無法生成")):
-                print("google_flow_recover=GENERATION_FAILED")
+                    body=""
+                if any(x in body for x in ("generation failed","couldn't generate","failed to generate","產生失敗","生成失敗","無法生成")):
+                    print("google_flow_recover=GENERATION_FAILED")
+                    raise SystemExit(0)
+                page.wait_for_timeout(5000)
+            else:
+                print("google_flow_recover=GENERATION_PENDING_TIMEOUT")
                 raise SystemExit(0)
-            page.wait_for_timeout(5000)
-        else:
-            print("google_flow_recover=GENERATION_PENDING_TIMEOUT")
-            raise SystemExit(0)
 
     # Collect visible videos with bounded surrounding text so recovery can
     # distinguish a real project result from Flow's generic demo media.
