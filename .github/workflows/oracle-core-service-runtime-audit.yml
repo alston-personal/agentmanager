@@ -265,6 +265,30 @@ jobs:
           for key in ("executor_failure","inspector_fail","inspector_blocked","inspector_unavailable","timeout"):
               print("lobster_last_30m_"+key+"="+str(counts[key]))
           LOBSTER_PROVIDER
+          # Summarize Lobster backend exit classes; never publish stderr.
+          /usr/bin/python3 - "$lobster_logdir/lobster.log" <<'LOBSTER_EXIT_DIAG'
+          import collections,pathlib,re,sys
+          from datetime import datetime,timedelta
+          cutoff=datetime.now()-timedelta(minutes=30)
+          counts=collections.Counter()
+          path=pathlib.Path(sys.argv[1])
+          if path.exists():
+              with path.open(encoding="utf-8",errors="replace") as f:
+                  for line in f:
+                      try: when=datetime.strptime(line[:19],"%Y-%m-%d %H:%M:%S")
+                      except ValueError: continue
+                      if when<cutoff or "Lobster 執行失敗:" not in line: continue
+                      tail=line.split("Lobster 執行失敗:",1)[1]
+                      match=re.search(r"EXIT_(\d+)",tail)
+                      if match: category="exit_"+match.group(1) if int(match.group(1))<256 else "exit_other"
+                      elif "No such file" in tail or "Errno 2" in tail: category="executable_missing"
+                      elif "Permission denied" in tail or "Errno 13" in tail: category="permission_denied"
+                      elif "not found" in tail.lower(): category="not_found"
+                      elif "unauthorized" in tail.lower() or "login" in tail.lower(): category="auth"
+                      else: category="other"
+                      counts[category]+=1
+          for category in sorted(counts): print("lobster_provider_failure_"+category+"="+str(counts[category]))
+          LOBSTER_EXIT_DIAG
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
