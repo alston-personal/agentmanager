@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.ota-inspect",
   "node_id": "vopc5750",
-  "nonce": "during-ota-activator-evidence-20261008-1310"
+  "nonce": "post-ota-failure-check-20261008-1313"
 }
