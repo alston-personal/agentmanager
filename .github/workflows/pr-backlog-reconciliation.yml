@@ -47,7 +47,17 @@ jobs:
               req = urllib.request.Request(url, headers=headers)
               with urllib.request.urlopen(req, timeout=30) as r:
                   return json.load(r)
-          prs = get(f"https://api.github.com/repos/{repo}/pulls?state=open&per_page=100")
+          prs = []
+          for page in range(1, 101):
+              batch = get(
+                  f"https://api.github.com/repos/{repo}/pulls"
+                  f"?state=open&per_page=100&page={page}"
+              )
+              prs.extend(batch)
+              if len(batch) < 100:
+                  break
+          else:
+              raise RuntimeError("open PR pagination exceeded 100 pages; abort incomplete report")
           oldest_open = min((pr["number"] for pr in prs), default=0)
           closed = []
           for page in range(1, 21):
