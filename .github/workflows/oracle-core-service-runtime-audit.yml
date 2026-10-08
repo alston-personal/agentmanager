@@ -170,6 +170,36 @@ jobs:
               m = re.fullmatch(r"name '([A-Za-z_][A-Za-z_0-9]*)' is not defined", last[1])
               print("lobster_last_nameerror_identifier=" + (m.group(1) if m else "unknown"))
           PY
+          # os-lobster stdout/stderr are appended to lobster.log by systemd.
+          # Journal-only counters may show zero even while the worker is active.
+          /usr/bin/python3 - "$lobster_logdir/lobster.log" <<'LOBSTER_METRICS'
+          from collections import Counter
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          import sys
+          cutoff = datetime.now() - timedelta(minutes=30)
+          counts = Counter()
+          markers = {"cycles":"迭代 #","attempts":"任務嘗試","starts":"開始執行任務","done":"任務完成！","inspector_pass":"Inspector: PASS","failures":"任務失敗"}
+          path = Path(sys.argv[1])
+          last = None
+          if path.is_file():
+              with path.open("r", encoding="utf-8", errors="replace") as handle:
+                  for line in handle:
+                      try:
+                          when = datetime.strptime(line[:19], "%Y-%m-%d %H:%M:%S")
+                      except ValueError:
+                          continue
+                      if when < cutoff:
+                          continue
+                      for key, needle in markers.items():
+                          if needle in line:
+                              counts[key] += 1
+                              if key == "cycles":
+                                  last = when.isoformat(timespec="seconds")
+          for key in markers:
+              print(f"lobster_file_{key}_last_30m={counts[key]}")
+          print("lobster_file_latest_cycle=" + (last or "none"))
+          LOBSTER_METRICS
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
