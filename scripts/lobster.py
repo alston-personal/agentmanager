@@ -199,9 +199,10 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
             continue
 
         if Inspector is None:
-            # Inspector 未載入，信任輸出直接 PASS
-            logger.warning("  Inspector 未載入，預設信任輸出")
-            return True, "PASS: Inspector 未載入，預設信任"
+            # Never mark unverified AI output as success. Preserve durable
+            # ownership and require an actual verifier before closure.
+            logger.error("  Inspector 未載入；無法驗證任務結果")
+            return False, "BLOCKED: inspector_unavailable"
 
         result, reason = Inspector.inspect(proj_dir, task_text, output, failure_count)
         logger.info(f"  Inspector: {result} — {reason[:80]}")
