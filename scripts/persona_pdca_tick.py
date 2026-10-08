@@ -168,6 +168,10 @@ def main():
     wardrobe=counts.get("wardrobe.window_shopping",0)
 
     growth=cfg.get("growth_mode",{}) if isinstance(cfg.get("growth_mode"),dict) else {}
+    posting_liveness=growth.get("posting_liveness",{}) if isinstance(growth.get("posting_liveness"),dict) else {}
+    soft_silence_hours=float(posting_liveness.get("soft_pressure_after_hours",18))
+    forced_consider_hours=float(posting_liveness.get("forced_consider_after_hours",30))
+    forced_no_publish_streak=int(posting_liveness.get("forced_consider_after_no_publish_streak",3))
     today=now_local.date()
     todays_posts=[]
     for e in events:
@@ -224,9 +228,9 @@ def main():
             candidates += [("wardrobe_plan",1.15 if wardrobe==0 else 0.55),("reflect",1.0)]
         if phase in ("high_focus","afternoon","social","creative_social","late") and energy>=40:
             base_content=1.3 if posted==0 else 0.75
-            if silence_hours >= 18:
+            if silence_hours >= soft_silence_hours:
                 base_content += 0.8
-            if silence_hours >= 30:
+            if silence_hours >= forced_consider_hours:
                 base_content += 1.4
             base_content += min(1.4, post_no_publish_streak*0.35)
             if growth_enabled and under_max and gap_ok:
@@ -292,7 +296,7 @@ def main():
     has_post_lane=any(isinstance(x,dict) and x.get("capability") in ("social.post.consider","social.post.publish")
         and x.get("status") in ("candidate","in_progress") for x in pending)
     if (not has_post_lane and energy_after > 0 and growth_enabled and under_max and gap_ok
-            and (silence_hours >= 30 or post_no_publish_streak >= 3)):
+            and (silence_hours >= forced_consider_hours or post_no_publish_streak >= forced_no_publish_streak)):
         forced_consider={"action_id":f"mio-pdca-c{cycle}-social-post-consider","cycle":cycle,
             "capability":"social.post.consider","status":"candidate",
             "reason":f"posting liveness: {silence_hours:.1f}h silence, no-publish streak {post_no_publish_streak}",
