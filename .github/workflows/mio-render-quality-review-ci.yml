@@ -7,6 +7,9 @@ on:
       - 'dashboard/lib/tryon-jobs.ts'
       - 'dashboard/app/api/wardrobe/tryon/jobs/**'
       - 'scripts/tryon_render_worker.py'
+      - 'capabilities/wardrobe_visual_review/**'
+      - 'schemas/wardrobe-visual-review-*.schema.json'
+      - 'tests/test_wardrobe_visual_review.py'
       - '.github/workflows/mio-render-quality-review-ci.yml'
 
 permissions:
@@ -32,9 +35,16 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/tryon_render_worker.py
+          python3 -m pytest -q tests/test_wardrobe_visual_review.py
+          test -f 'capabilities/wardrobe_visual_review/capability-manifest.json'
+          grep -Fq '"capability_id": "wardrobe.visual-review"' capabilities/wardrobe_visual_review/capability-manifest.json
           test -f 'dashboard/app/api/wardrobe/tryon/jobs/[jobId]/quality/route.ts'
           grep -Fq 'manual_visual_review' dashboard/lib/tryon-jobs.ts
           grep -Fq 'qualityAccepted' dashboard/lib/tryon-jobs.ts
+          grep -Fq "state: 'pending'" dashboard/lib/tryon-jobs.ts
+          grep -Fq "state: args.accepted ? 'verified' : 'rejected'" dashboard/lib/tryon-jobs.ts
+          grep -Fq '"state": "candidate"' scripts/tryon_render_worker.py
+          grep -Fq '"state": "verified"' scripts/tryon_render_worker.py
           grep -Fq 'existing_meta.get("qualityAccepted") is not True' scripts/tryon_render_worker.py
           grep -Fq "request.cookies.getAll('auth_token')" 'dashboard/app/api/wardrobe/tryon/jobs/[jobId]/quality/route.ts'
           echo 'mio_render_quality_contract=PASS'
