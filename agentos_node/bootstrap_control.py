@@ -769,6 +769,20 @@ Write-Output ('node_ota_inspect_activator_state='+$(TaskField 'AgentOS Thin Clie
 Write-Output ('node_ota_inspect_activator_last_result='+$(TaskField 'AgentOS Thin Client OTA Activator' 'last_result'))
 Write-Output ('node_ota_inspect_guard_state='+$(TaskField 'AgentOS Thin Client OTA Guard' 'state'))
 Write-Output ('node_ota_inspect_guard_last_result='+$(TaskField 'AgentOS Thin Client OTA Guard' 'last_result'))
+$statusPath=Join-Path $root 'ota-activator-status.json'
+if(Test-Path -LiteralPath $statusPath){
+  try{
+    $st=Get-Content -Raw -LiteralPath $statusPath|ConvertFrom-Json
+    Write-Output ('node_ota_inspect_activator_status_state='+[string]$st.state)
+    Write-Output ('node_ota_inspect_activator_status_client_count='+[string]$st.client_count)
+    Write-Output ('node_ota_inspect_activator_status_remaining_count='+[string]$st.remaining_count)
+    Write-Output ('node_ota_inspect_activator_status_error_class='+[string]$st.error_class)
+  }catch{
+    Write-Output 'node_ota_inspect_activator_status_state=invalid'
+  }
+}else{
+  Write-Output 'node_ota_inspect_activator_status_state=missing'
+}
 Write-Output 'node_ota_inspect=PASS'
 """
     task_id = "runner-window-ota-inspect-" + node_id + "-" + str(int(time.time()))
