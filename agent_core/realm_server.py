@@ -343,7 +343,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             allowed_params |= {'studio_commit'}
         elif action == bootstrap_control.ACTION_NODE_TRANSACTIONAL_OTA:
             allowed_params |= {'node_id', 'candidate_commit'}
-        elif action in {bootstrap_control.ACTION_REALM_NODE_INSPECT, bootstrap_control.ACTION_REALM_DESKTOP_PROBE, bootstrap_control.ACTION_REALM_EXECUTOR_RECONCILE}:
+        elif action in {bootstrap_control.ACTION_REALM_NODE_INSPECT, bootstrap_control.ACTION_REALM_DESKTOP_PROBE, bootstrap_control.ACTION_REALM_EXECUTOR_RECONCILE, bootstrap_control.ACTION_NODE_OTA_INSPECT}:
             allowed_params |= {'node_id'}
         elif action in {bootstrap_control.ACTION_GOOGLE_FLOW_GENERATE, bootstrap_control.ACTION_GOOGLE_VIDS_GENERATE}:
             allowed_params |= {'prompt'}
@@ -446,6 +446,23 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'relay_status_action_source_commit=',
                     'relay_status_stale_processing=',
                     'relay_status=',
+                )
+            elif action == bootstrap_control.ACTION_NODE_OTA_INSPECT:
+                safe_prefixes = (
+                    'node_ota_inspect_node=',
+                    'node_ota_inspect_current_status=',
+                    'node_ota_inspect_current_commit=',
+                    'node_ota_inspect_current_path_leaf=',
+                    'node_ota_inspect_lkg_commit=',
+                    'node_ota_inspect_main_state=',
+                    'node_ota_inspect_main_execute=',
+                    'node_ota_inspect_main_uses_current_json=',
+                    'node_ota_inspect_main_last_result=',
+                    'node_ota_inspect_activator_state=',
+                    'node_ota_inspect_activator_last_result=',
+                    'node_ota_inspect_guard_state=',
+                    'node_ota_inspect_guard_last_result=',
+                    'node_ota_inspect=',
                 )
             elif action == bootstrap_control.ACTION_REALM_NODE_INSPECT:
                 safe_prefixes = (
