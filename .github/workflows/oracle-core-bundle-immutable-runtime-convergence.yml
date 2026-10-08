@@ -129,6 +129,9 @@ jobs:
             exit 25
           fi
           echo "core_bundle_lobster_headless_cli=PASS"
+          # Local MVP-1 must use the independent validator in this exact release.
+          grep -Fq 'def verify_local_port_check(' "$RELEASE/scripts/lobster.py"
+          echo "core_bundle_lobster_local_port_validator=PASS"
           [ -e "$RELEASE/.env" ] || ln -s "$REPO/.env" "$RELEASE/.env"
 
           set -a
