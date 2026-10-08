@@ -474,5 +474,13 @@ class ObservationContract(unittest.TestCase):
         self.assertEqual(receipt['plan']['selected_intent'],'rest')
 
 
+    def test_social_post_generator_has_liveness_safety_net(self):
+        text=(REPO/'scripts/persona_post_intent_generator.py').read_text()
+        self.assertIn('forced_consider_after_hours', text)
+        self.assertIn('posting liveness safety net', text)
+        self.assertIn('energy_now>0 and liveness_due', text)
+        self.assertIn('liveness_pressure', text)
+
+
 if __name__ == '__main__':
     unittest.main()
