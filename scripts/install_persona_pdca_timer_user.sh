@@ -125,6 +125,28 @@ systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-enabled --quiet agentos-persona-social-actions.timer
 systemctl --user is-active --quiet agentos-persona-social-actions.timer
 
+# One-time liveness recovery: deployment is not a heartbeat source, but an
+# objectively stale heartbeat must not remain dead merely because the timer
+# migration has no prior Persistent= timestamp yet.
+STALE_AFTER_SEC=5400
+LAST_EXIT="$(systemctl --user show -p ExecMainExitTimestamp --value agentos-persona-pdca-heartbeat.service 2>/dev/null || true)"
+RECOVER_STALE=0
+if [ -z "$LAST_EXIT" ] || [ "$LAST_EXIT" = "n/a" ]; then
+  RECOVER_STALE=1
+else
+  LAST_EPOCH="$(date -d "$LAST_EXIT" +%s 2>/dev/null || echo 0)"
+  NOW_EPOCH="$(date +%s)"
+  if [ "$LAST_EPOCH" -le 0 ] || [ $((NOW_EPOCH-LAST_EPOCH)) -gt "$STALE_AFTER_SEC" ]; then
+    RECOVER_STALE=1
+  fi
+fi
+if [ "$RECOVER_STALE" -eq 1 ]; then
+  systemctl --user start agentos-persona-pdca-heartbeat.service
+  echo "persona_pdca_stale_recovery=TRIGGERED"
+else
+  echo "persona_pdca_stale_recovery=SKIPPED_FRESH"
+fi
+
 # Installation acceptance is structural only.
 # Do not start the heartbeat here: deployments must not advance autonomous cycles
 # or reset the natural systemd timer cadence.
