@@ -572,5 +572,13 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('AGENTOS_MIO_IMAGE_EXECUTOR=',installer)
 
 
+    def test_media_worker_records_capability_experience(self):
+        worker=(REPO/'scripts/persona_media_request_worker.py').read_text()
+        installer=(REPO/'scripts/install_persona_pdca_timer_user.sh').read_text()
+        self.assertIn('record_media_experience(root,receipt_ref,load(root/receipt_ref))',worker)
+        self.assertIn('pdca/capability_experience.jsonl',worker)
+        self.assertIn('capability_experience_ledger.py',installer)
+
+
 if __name__ == '__main__':
     unittest.main()
