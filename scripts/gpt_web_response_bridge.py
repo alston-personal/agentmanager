@@ -397,6 +397,126 @@ def _focus_composer(page: Any, *, timeout_seconds: float = 12.0) -> dict[str, An
     )
 
 
+
+SEND_SELECTORS = [
+    '[data-testid="send-button"]',
+    'button[aria-label="Send prompt"]',
+    'button[aria-label*="Send"]',
+    'button[aria-label*="傳送"]',
+    'button[aria-label*="送出"]',
+    'form button[type="submit"]',
+]
+
+
+def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
+    composer_json = json.dumps(COMPOSER_SELECTORS)
+    send_json = json.dumps(SEND_SELECTORS)
+    expr = """(() => {
+      const composerSelectors = %s;
+      const sendSelectors = %s;
+      let composerText = '';
+      for (const selector of composerSelectors) {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        for (let i = nodes.length - 1; i >= 0; i--) {
+          const el = nodes[i];
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) {
+            composerText = (el.value || el.innerText || el.textContent || '');
+            break;
+          }
+        }
+        if (composerText) break;
+      }
+      const send = [];
+      for (const selector of sendSelectors) {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        let visible=0, enabled=0;
+        for (const node of nodes) {
+          const r=node.getBoundingClientRect();
+          const disabled=node.disabled === true || node.getAttribute('aria-disabled') === 'true';
+          if (r.width > 0 && r.height > 0) {
+            visible++;
+            if (!disabled) enabled++;
+          }
+        }
+        send.push({selector,count:nodes.length,visible,enabled});
+      }
+      const assistants = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
+      const lastAssistant = assistants.length ? (assistants[assistants.length - 1].innerText || assistants[assistants.length - 1].textContent || '') : '';
+      const stopSelectors = [
+        '[data-testid="stop-button"]',
+        'button[aria-label*="Stop"]',
+        'button[aria-label*="停止"]'
+      ];
+      let generating=false;
+      for (const selector of stopSelectors) {
+        for (const node of document.querySelectorAll(selector)) {
+          const r=node.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) generating=true;
+        }
+      }
+      return {
+        composerHasRequest: composerText.includes(%s),
+        composerChars: composerText.length,
+        send,
+        assistantCount: assistants.length,
+        lastAssistantChars: lastAssistant.length,
+        lastAssistantHasRequest: lastAssistant.includes(%s),
+        generating
+      };
+    })()""" % (composer_json, send_json, json.dumps(request_id), json.dumps(request_id))
+    value=page.evaluate(expr)
+    return value if isinstance(value, dict) else {"invalid_snapshot":True}
+
+
+def _click_send(page: Any, *, request_id: str, timeout_seconds: float = 12.0) -> dict[str, Any]:
+    selectors_json=json.dumps(SEND_SELECTORS)
+    deadline=time.monotonic()+timeout_seconds
+    last: dict[str, Any]={}
+    while time.monotonic() < deadline:
+        expr="""(() => {
+          const selectors=%s;
+          for (const selector of selectors) {
+            const nodes=Array.from(document.querySelectorAll(selector));
+            for (let i=nodes.length-1; i>=0; i--) {
+              const el=nodes[i];
+              const r=el.getBoundingClientRect();
+              const disabled=el.disabled === true || el.getAttribute('aria-disabled') === 'true';
+              if (r.width > 0 && r.height > 0 && !disabled) {
+                el.click();
+                return {ok:true,selector};
+              }
+            }
+          }
+          return {ok:false};
+        })()""" % selectors_json
+        value=page.evaluate(expr)
+        if isinstance(value, dict) and value.get("ok") is True:
+            return value
+        last=_submission_snapshot(page,request_id)
+        time.sleep(0.4)
+    raise RuntimeError(
+        "GPT_WEB_SEND_CONTROL_NOT_READY:" + json.dumps(last,ensure_ascii=False,sort_keys=True)
+    )
+
+
+def _confirm_submit(page: Any, *, request_id: str, baseline_assistants: int, timeout_seconds: float = 8.0) -> dict[str, Any]:
+    deadline=time.monotonic()+timeout_seconds
+    last: dict[str, Any]={}
+    while time.monotonic() < deadline:
+        last=_submission_snapshot(page,request_id)
+        if (
+            int(last.get("assistantCount") or 0) > baseline_assistants
+            or last.get("generating") is True
+            or (last.get("composerChars") == 0 and last.get("composerHasRequest") is False)
+        ):
+            return last
+        time.sleep(0.4)
+    raise RuntimeError(
+        "GPT_WEB_SUBMIT_NOT_CONFIRMED:" + json.dumps(last,ensure_ascii=False,sort_keys=True)
+    )
+
+
 def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, Any]) -> str:
     image = Path(str(inner["image_path"])).expanduser().resolve()
     allowed_raw = os.environ.get("AGENTOS_GPT_WEB_ALLOWED_ROOTS", "/home/ubuntu/agentmanager/benchmarks/invoice_handwriting/fixtures")
@@ -430,19 +550,48 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         # assuming the pre-upload DOM node is still active.
         _focus_composer(page, timeout_seconds=12.0)
         prompt = str(inner["prompt"])
+        baseline = _submission_snapshot(page, request_id)
+        baseline_assistants = int(baseline.get("assistantCount") or 0)
         page.call("Input.insertText", {"text": prompt})
-        page.call("Input.dispatchKeyEvent", {"type": "keyDown", "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13})
-        page.call("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13})
+
+        inserted = _submission_snapshot(page, request_id)
+        if inserted.get("composerHasRequest") is not True:
+            raise RuntimeError(
+                "GPT_WEB_PROMPT_INSERT_NOT_CONFIRMED:" +
+                json.dumps(inserted, ensure_ascii=False, sort_keys=True)
+            )
+
+        _click_send(page, request_id=request_id, timeout_seconds=12.0)
+        _confirm_submit(
+            page,
+            request_id=request_id,
+            baseline_assistants=baseline_assistants,
+            timeout_seconds=8.0,
+        )
 
         deadline = time.monotonic() + 45
+        last_snapshot: dict[str, Any] = {}
         while time.monotonic() < deadline:
             text = _assistant_text(page, request_id)
             if text:
                 if len(text) > MAX_TEXT:
                     raise RuntimeError("GPT_WEB_RESPONSE_TOO_LARGE")
                 return text
+            last_snapshot = _submission_snapshot(page, request_id)
+            if (
+                int(last_snapshot.get("assistantCount") or 0) > baseline_assistants
+                and last_snapshot.get("generating") is not True
+                and last_snapshot.get("lastAssistantHasRequest") is not True
+            ):
+                raise RuntimeError(
+                    "GPT_WEB_RESPONSE_UNCORRELATED:" +
+                    json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)
+                )
             time.sleep(0.5)
-        raise RuntimeError("GPT_WEB_RESPONSE_TIMEOUT")
+        raise RuntimeError(
+            "GPT_WEB_RESPONSE_TIMEOUT:" +
+            json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)
+        )
     finally:
         page.close()
 
