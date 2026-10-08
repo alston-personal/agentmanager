@@ -116,7 +116,7 @@ def main():
     if not consider:
         energy_now=float(state.get("energy_current",0))
         liveness_due=(silence_hours>=forced_consider_hours or no_publish_streak>=forced_no_publish_streak)
-        if energy_now>0 and liveness_due:
+        if energy_now>0 and liveness_due and growth.get("enabled") is True:
             consider={
               "action_id":f"mio-social-c{state.get('cycle')}-post-consider",
               "cycle":state.get("cycle"),
@@ -128,6 +128,11 @@ def main():
               "liveness_pressure":True
             }
             pending.append(consider)
+            state["pending_external_actions"]=pending[-12:]
+            state["last_post_consider_at"]=now_utc.isoformat().replace("+00:00","Z")
+            tmp=root/"pdca/state.json.tmp"
+            tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+            os.replace(tmp,root/"pdca/state.json")
         else:
             print(json.dumps({"status":"NO_CANDIDATE"},ensure_ascii=False))
             return 0
