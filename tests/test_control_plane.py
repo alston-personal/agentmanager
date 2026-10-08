@@ -126,3 +126,27 @@ def test_legacy_update_cannot_overwrite_worker_receipt_or_expired_state(tmp_path
     assert store.complete_leased_task(
         lease["taskId"], "node-test-01", lease["leaseUntil"], "succeeded"
     )["status"] == "succeeded"
+
+
+def test_supervisor_lease_reconcile_adapter_never_replays_side_effects(tmp_path: Path):
+    from scripts.control_plane_lease_reconcile import reconcile
+    import sqlite3
+
+    db = tmp_path / "control-plane.sqlite3"
+    store = ControlPlaneStore(db)
+    task = store.submit_task("ai.generate", {"prompt": "effect"}, "reconcile-once")
+    lease = store.lease_next_task("node-test-01", ["ai.generate"])
+    assert lease is not None
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            "UPDATE tasks SET lease_until='2000-01-01T00:00:00Z' WHERE task_id=?",
+            (task["taskId"],),
+        )
+    first = reconcile(db)
+    assert first["expired_count"] == 1
+    assert first["tasks"][0]["side_effect_state"] == "unknown"
+    assert first["tasks"][0]["recovery_required"] is True
+    assert first["auto_replayed"] is False
+    second = reconcile(db)
+    assert second["expired_count"] == 0
+    assert second["auto_replayed"] is False
