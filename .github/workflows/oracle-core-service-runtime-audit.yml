@@ -289,6 +289,37 @@ jobs:
                       counts[category]+=1
           for category in sorted(counts): print("lobster_provider_failure_"+category+"="+str(counts[category]))
           LOBSTER_EXIT_DIAG
+          # Read task-specific Claude stderr, emit only allowlisted error categories.
+          /usr/bin/python3 - /home/ubuntu/agent-data/logs/tasks <<'TASK_CLASSIFIER'
+          from collections import Counter
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          import re, sys
+          root=Path(sys.argv[1]); counts=Counter(); latest="none"
+          cutoff=datetime.now().timestamp()-3600
+          for path in sorted(root.glob("*.log")) if root.exists() else []:
+              try:
+                  if path.stat().st_mtime<cutoff: continue
+                  content=path.read_text(encoding="utf-8",errors="replace")
+              except OSError: continue
+              if "Exit Code:   0" in content: continue
+              if "--- STDERR ---" not in content: continue
+              stderr=content.split("--- STDERR ---",1)[1].split("Exit Code:",1)[0].lower()
+              if any(k in stderr for k in ("not authenticated","login required","authentication failed","unauthorized","please log in","invalid api key")): category="auth"
+              elif any(k in stderr for k in ("rate limit","too many requests","429","quota exceeded")): category="rate_limit"
+              elif any(k in stderr for k in ("unknown option","unrecognized option","invalid argument","unexpected argument")): category="invalid_cli_args"
+              elif any(k in stderr for k in ("permission denied","eacces","eperm")): category="filesystem_permission"
+              elif any(k in stderr for k in ("network error","connection refused","econnreset","enotfound","timeout")): category="network"
+              elif any(k in stderr for k in ("cannot run as root","root user")): category="root_denied"
+              elif any(k in stderr for k in ("not a tty","interactive terminal","stdin")): category="interactive_mode"
+              elif any(k in stderr for k in ("model not found","model unavailable")): category="model_unavailable"
+              elif any(k in stderr for k in ("error","failed","exception")): category="other_error"
+              else: category="unknown"
+              counts[category]+=1; latest=category
+          print("lobster_cli_task_logs_scanned="+str(sum(counts.values())))
+          for category in sorted(counts): print("lobster_cli_task_error_"+category+"="+str(counts[category]))
+          print("lobster_cli_last_error_category="+latest)
+          TASK_CLASSIFIER
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
