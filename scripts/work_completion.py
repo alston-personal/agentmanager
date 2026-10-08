@@ -399,6 +399,79 @@ def wait_external(
         return item
 
 
+MACHINE_RETRYABLE_BLOCKER_KINDS = {"VERIFICATION", "PROVIDER_CAPACITY", "RUNTIME_HEALTH"}
+MACHINE_RETRY_BASE_SECONDS = {
+    "VERIFICATION": 300,
+    "RUNTIME_HEALTH": 300,
+    "PROVIDER_CAPACITY": 900,
+}
+MACHINE_RETRY_MAX_SECONDS = 3600
+
+
+def defer_machine_blockers(
+    path: Path,
+    *,
+    actor: str = "role://completion.watchdog",
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    at: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Convert machine-recoverable blocked work into durable timed waits.
+
+    HUMAN_AUTH and UNKNOWN remain blocked. This prevents a transient verifier,
+    provider-capacity, or runtime-health failure from requiring a human
+    continuation message while also avoiding hot retry loops.
+    """
+    point = at or datetime.now(timezone.utc)
+    deferred: list[dict[str, Any]] = []
+    with locked(path):
+        state = load(path)
+        for work_id, item in sorted(state["items"].items()):
+            if item.get("status") != "blocked":
+                continue
+            kind = classify_blocker(item.get("blocker"))
+            if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
+                continue
+            retry_count = max(0, int(item.get("machine_retry_count") or 0)) + 1
+            base = MACHINE_RETRY_BASE_SECONDS[kind]
+            delay = min(MACHINE_RETRY_MAX_SECONDS, base * (2 ** min(retry_count - 1, 4)))
+            wake_at = point + timedelta(seconds=delay)
+            previous_owner = str(item.get("owner") or "")
+            item["status"] = "waiting_external"
+            item["owner"] = "role://completion.controller"
+            if previous_owner != item["owner"]:
+                item["owner_generation"] = int(item.get("owner_generation") or 0) + 1
+            item["lease_expires_at"] = lease_deadline(lease_seconds)
+            item["wake_condition"] = {
+                "kind": "time",
+                "not_before": wake_at.astimezone(timezone.utc).isoformat(),
+            }
+            item["machine_retry_count"] = retry_count
+            item["last_blocker_kind"] = kind
+            item["updated_at"] = now()
+            item.setdefault("history", []).append(
+                {
+                    "at": now(),
+                    "event": "machine_blocker_deferred",
+                    "actor": actor,
+                    "blocker_kind": kind,
+                    "retry_count": retry_count,
+                    "not_before": item["wake_condition"]["not_before"],
+                }
+            )
+            problems = validate_item(item)
+            if problems:
+                raise ValueError(",".join(problems))
+            deferred.append({
+                "work_id": work_id,
+                "blocker_kind": kind,
+                "retry_count": retry_count,
+                "delay_seconds": delay,
+            })
+        if deferred:
+            save(path, state)
+    return deferred
+
+
 def wake_due(
     path: Path,
     *,
@@ -696,6 +769,10 @@ def cli() -> int:
     p.add_argument("--actor", required=True)
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
+    p = sub.add_parser("defer-machine-blockers")
+    p.add_argument("--actor", default="role://completion.watchdog")
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
     p = sub.add_parser("reclaim-stale")
     p.add_argument("--actor", default="role://completion.watchdog")
     p.add_argument("--new-owner", default="role://completion.controller")
@@ -747,6 +824,12 @@ def cli() -> int:
         result = heartbeat(
             args.state, work_id=args.id, actor=args.actor, lease_seconds=args.lease_seconds,
         )
+    elif args.command == "defer-machine-blockers":
+        result = {
+            "deferred": defer_machine_blockers(
+                args.state, actor=args.actor, lease_seconds=args.lease_seconds,
+            )
+        }
     elif args.command == "reclaim-stale":
         reclaimed = reclaim_stale(
             args.state, actor=args.actor, new_owner=args.new_owner,

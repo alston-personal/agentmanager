@@ -242,6 +242,88 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertNotIn("[WI:wi-live]", mod.board_projection(path))
 
 
+    def test_machine_verification_blocker_is_deferred_with_backoff(self):
+        from datetime import datetime, timezone
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            mod.transition(
+                path, work_id="wi-1", target="blocked", actor="role://lobster",
+                next_action="retry verification", blocker="BLOCKED: 連續 3 次驗證失敗",
+            )
+            point = datetime(2026, 10, 8, 0, 0, tzinfo=timezone.utc)
+            result = mod.defer_machine_blockers(path, at=point)
+            self.assertEqual(result[0]["blocker_kind"], "VERIFICATION")
+            self.assertEqual(result[0]["retry_count"], 1)
+            self.assertEqual(result[0]["delay_seconds"], 300)
+            item = mod.load(path)["items"]["wi-1"]
+            self.assertEqual(item["status"], "waiting_external")
+            self.assertEqual(item["owner"], "role://completion.controller")
+            self.assertEqual(item["last_blocker_kind"], "VERIFICATION")
+            self.assertEqual(item["machine_retry_count"], 1)
+            self.assertEqual(
+                item["wake_condition"]["not_before"],
+                "2026-10-08T00:05:00+00:00",
+            )
+
+    def test_machine_blocker_backoff_increases_and_is_capped(self):
+        from datetime import datetime, timezone
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            state = mod.load(path)
+            item = state["items"]["wi-1"]
+            item["status"] = "blocked"
+            item["blocker"] = "BLOCKED: provider rate limit"
+            item["machine_retry_count"] = 4
+            mod.save(path, state)
+            result = mod.defer_machine_blockers(
+                path, at=datetime(2026, 10, 8, 0, 0, tzinfo=timezone.utc)
+            )
+            self.assertEqual(result[0]["blocker_kind"], "PROVIDER_CAPACITY")
+            self.assertEqual(result[0]["retry_count"], 5)
+            self.assertEqual(result[0]["delay_seconds"], 3600)
+
+    def test_human_and_unknown_blockers_stay_blocked(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            mod.transition(
+                path, work_id="wi-1", target="blocked", actor="role://lobster",
+                next_action="wait for login", blocker="BLOCKED: human login required",
+            )
+            self.assertEqual(mod.defer_machine_blockers(path), [])
+            self.assertEqual(mod.load(path)["items"]["wi-1"]["status"], "blocked")
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            mod.transition(
+                path, work_id="wi-1", target="blocked", actor="role://lobster",
+                next_action="inspect unknown", blocker="BLOCKED: opaque domain-specific blocker",
+            )
+            self.assertEqual(mod.defer_machine_blockers(path), [])
+            self.assertEqual(mod.load(path)["items"]["wi-1"]["status"], "blocked")
+
+    def test_deferred_machine_blocker_wakes_without_human_continue(self):
+        from datetime import datetime, timedelta, timezone
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            mod.transition(
+                path, work_id="wi-1", target="blocked", actor="role://lobster",
+                next_action="retry verification", blocker="BLOCKED: verification failed",
+            )
+            point = datetime(2026, 10, 8, 0, 0, tzinfo=timezone.utc)
+            mod.defer_machine_blockers(path, at=point)
+            self.assertIsNone(mod.next_item(path))
+            awakened = mod.wake_due(path, at=point + timedelta(minutes=6))
+            self.assertEqual(awakened, ["wi-1"])
+            item = mod.load(path)["items"]["wi-1"]
+            self.assertEqual(item["status"], "accepted")
+            self.assertEqual(item["owner"], "role://completion.controller")
+            self.assertEqual(mod.next_item(path)["work_id"], "wi-1")
+
     def test_wait_external_is_durable_but_not_executable_until_due(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)
