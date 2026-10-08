@@ -119,6 +119,14 @@ def _failure(classification: str, message: str) -> dict[str, Any]:
 
 def _classify_failure(text: str, *, timed_out: bool = False) -> str:
     lowered = str(text or "").casefold()
+    if any(token in lowered for token in (
+        "ineligibletiererror",
+        "this client is no longer supported",
+        "migrate to the antigravity",
+        "migrate to antigravity",
+        "unsupported_client",
+    )):
+        return "OAUTH_CLIENT_UNSUPPORTED"
     if any(token in lowered for token in ("sign in", "login", "auth required", "unauthorized")):
         return "AUTH_REQUIRED"
     if any(token in lowered for token in ("rate limit", "quota", "resource exhausted", "too many requests")):
