@@ -1014,7 +1014,7 @@ Use the final rendered frame as the answer. Do not add text, captions, labels, o
         prompt_path = Path(tmp) / "prompt.txt"
         output_path = Path(tmp) / "output.png"
         prompt_path.write_text(prompt, encoding="utf-8")
-        helper = r'''
+        helper = r"""
 import asyncio
 import base64
 import fcntl
@@ -1077,12 +1077,12 @@ async def main():
         baseline_src={x.get("src","") for x in baseline}
 
         prompt_json=json.dumps(prompt)
-        ok=await evaluate("""(() => {
+        ok=await evaluate(r'''(() => {
           const inputs=[...document.querySelectorAll('input[aria-label="可編輯的文字"], input[type="text"]')]
             .filter(x=>x.offsetParent!==null && x.getAttribute('aria-label')!=='搜尋');
           const el=inputs[0];
           if(!el) return false;
-          const value="""+prompt_json+""";
+          const value='''+prompt_json+''';
           el.focus();
           const proto=Object.getPrototypeOf(el);
           const desc=Object.getOwnPropertyDescriptor(proto,'value');
@@ -1090,7 +1090,7 @@ async def main():
           el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
           el.dispatchEvent(new Event('change',{bubbles:true}));
           return true;
-        })()""")
+        })()''')
         if not ok:
             raise RuntimeError("flow_prompt_input_not_found")
 
@@ -1136,7 +1136,7 @@ async def main():
             output.write_bytes(base64.b64decode(b64))
         elif src.startswith("blob:"):
             expr=json.dumps(src)
-            data_url=await evaluate("""(async()=>{const r=await fetch("""+expr+""");const b=await r.blob();return await new Promise((ok,fail)=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.onerror=fail;fr.readAsDataURL(b);});})()""")
+            data_url=await evaluate(r'''(async()=>{const r=await fetch('''+expr+''');const b=await r.blob();return await new Promise((ok,fail)=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.onerror=fail;fr.readAsDataURL(b);});})()''')
             if not isinstance(data_url,str) or "," not in data_url:
                 raise RuntimeError("flow_blob_export_failed")
             output.write_bytes(base64.b64decode(data_url.split(",",1)[1]))
@@ -1153,7 +1153,7 @@ async def main():
 with lock_path.open("a+") as lock:
     fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
     asyncio.run(main())
-'''
+"""
         proc = subprocess.run(
             [str(python_bin), "-c", helper, str(prompt_path), str(output_path)],
             env=os.environ.copy(),
