@@ -138,6 +138,22 @@ jobs:
               },sort_keys=True,separators=(',',':')))
           con.close()
           PY
+          echo '=== TARGET OTA STAGE FAILURE ==='
+          AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/.local/share/agentos/realm-fabric/current python3 - <<'PY' || true
+          import json
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id='ota-stage-vopc5750-1791432692'
+          r=RealmFabricStore().get_receipt(task_id) or {}
+          safe={
+              'task_id':task_id,
+              'ok':r.get('ok'),
+              'returncode':r.get('returncode'),
+              'error':r.get('error'),
+              'stdout_tail':str(r.get('stdout') or '')[-2400:],
+              'stderr_tail':str(r.get('stderr') or '')[-2400:],
+          }
+          print(json.dumps(safe,ensure_ascii=False,sort_keys=True))
+          PY
           echo '=== LIVE CHECKOUT ==='
           LIVE=/home/ubuntu/agentmanager
           test -d "$LIVE/.git" && git -C "$LIVE" rev-parse HEAD || true
@@ -171,3 +187,5 @@ jobs:
 
 # inspect-trigger: 2026-10-02T13:xxZ recurrent-html-502
 # inspect-trigger: 2026-10-08T0356Z vopc-post-ota-manifest
+
+# inspect-trigger: 2026-10-08T1213Z ota-stage-failure
