@@ -54,9 +54,16 @@ def isolate_uniform_background(source: pathlib.Path, dest: pathlib.Path):
     if coverage<0.08 or coverage>0.85:
         return {"state":"needs_target_segmentation","reason":"ambiguous_product_coverage","coverage":round(coverage,4)}
     dest.parent.mkdir(parents=True,exist_ok=True)
+    mask_path = dest.with_name(dest.stem + ".mask.png")
+    # Use the actual alpha channel as the reproducible isolation mask.
+    # Both files are candidates and require target-aware visual verification.
+    alpha = thumb.getchannel("A")
     thumb.save(dest,format="PNG")
+    alpha.save(mask_path,format="PNG")
     return {
         "state":"candidate", "isolatedImagePath":str(dest),
+        "maskPath":str(mask_path),
+        "maskSha256":hashlib.sha256(mask_path.read_bytes()).hexdigest(),
         "sha256":hashlib.sha256(dest.read_bytes()).hexdigest(),
         "coverage":round(coverage,4),
         "note":"Background removal is not object selection. Human/semantic QC required."
