@@ -145,6 +145,13 @@ jobs:
             done
           fi
           echo "lobster_local_log_exception_class=$lobster_local_exception"
+          # Extract only a safe Python identifier from the last NameError.
+          # Never print traceback lines, source text, paths or raw log data.
+          lobster_undefined_symbol="$(tail -n 300 "$lobster_logdir/lobster.log" 2>/dev/null | sed -n "s/.*NameError: name '\\([A-Za-z_][A-Za-z_0-9]*\\)' is not defined.*/\\1/p" | tail -n 1)"
+          case "$lobster_undefined_symbol" in
+            "" ) echo "lobster_undefined_symbol=unknown";;
+            * ) echo "lobster_undefined_symbol=$lobster_undefined_symbol";;
+          esac
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
