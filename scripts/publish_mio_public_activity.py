@@ -37,7 +37,14 @@ def public_item(r,a):
     title,summary,focus=LABELS.get(intent,("最近有新的活動","澪留下了一筆新的自主活動紀錄。","日常"))
     local=str(r.get("local_time") or "")
     hhmm=local[11:16] if len(local)>=16 else ""
-    item={"cycle":int(r.get("cycle") or 0),"intent":intent,"title":title,"summary":summary,"time_label":hhmm,"focus_label":focus}
+    check=r.get("check") or {}
+    item={"cycle":int(r.get("cycle") or 0),"intent":intent,"title":title,"summary":summary,"time_label":hhmm,"focus_label":focus,
+          "energy_before":check.get("energy_before"),"energy_after":check.get("energy_after"),
+          "external_action_completed":bool(check.get("external_action_completed")),
+          "activity_status":(a or {}).get("status") if isinstance(a,dict) else None,
+          "activity_result":(a or {}).get("result") if isinstance(a,dict) else None,
+          "cognitive_ir_status":((a or {}).get("cognitive_ir") or {}).get("projection_status") if isinstance(a,dict) else None,
+          "external_receipt_ref":(a or {}).get("external_receipt_ref") if isinstance(a,dict) else None}
     if intent=="wardrobe_plan" and isinstance(a,dict):
         items=a.get("items") or []
         labels=[str(x.get("label") or "") for x in items if isinstance(x,dict) and x.get("label")]
