@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.studio-web-mio-deploy/v1",
+  "studioCommit": "aa17b8b97da16e57fd793cd190a7e5ae0d8369c0",
+  "requestedAt": "2026-10-08T15:15:00+08:00",
+  "reason": "Deploy Mio wardrobe image-selection UX and live renderer progress to production"
+}
