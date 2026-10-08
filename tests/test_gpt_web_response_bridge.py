@@ -8,6 +8,8 @@ from unittest.mock import Mock, patch
 from scripts.gpt_web_response_bridge import (
     _chatgpt_target,
     _focus_composer,
+    _click_send,
+    _confirm_submit,
     _open_target_connection,
     _responsive_chatgpt_target,
     _validate_request,
@@ -180,3 +182,51 @@ class GptWebComposerDiscoveryTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(RuntimeError,"GPT_WEB_LOGIN_REQUIRED"):
             _focus_composer(page,timeout_seconds=0.2)
+
+
+class GptWebSubmitVerificationTests(unittest.TestCase):
+    def test_click_send_uses_ready_control(self):
+        page=Mock()
+        page.evaluate.return_value={"ok":True,"selector":"[data-testid=\"send-button\"]"}
+        result=_click_send(page,request_id="invoice:req:12345678",timeout_seconds=0.2)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["selector"],'[data-testid="send-button"]')
+
+    def test_confirm_submit_accepts_generation_start(self):
+        page=Mock()
+        page.evaluate.return_value={
+            "composerHasRequest":False,
+            "composerChars":0,
+            "send":[],
+            "assistantCount":0,
+            "lastAssistantChars":0,
+            "lastAssistantHasRequest":False,
+            "generating":True,
+        }
+        result=_confirm_submit(
+            page,
+            request_id="invoice:req:12345678",
+            baseline_assistants=0,
+            timeout_seconds=0.2,
+        )
+        self.assertTrue(result["generating"])
+
+    def test_confirm_submit_times_out_when_nothing_changes(self):
+        page=Mock()
+        page.evaluate.return_value={
+            "composerHasRequest":True,
+            "composerChars":42,
+            "send":[],
+            "assistantCount":0,
+            "lastAssistantChars":0,
+            "lastAssistantHasRequest":False,
+            "generating":False,
+        }
+        with patch("scripts.gpt_web_response_bridge.time.sleep"):
+            with self.assertRaisesRegex(RuntimeError,"GPT_WEB_SUBMIT_NOT_CONFIRMED"):
+                _confirm_submit(
+                    page,
+                    request_id="invoice:req:12345678",
+                    baseline_assistants=0,
+                    timeout_seconds=0.001,
+                )
