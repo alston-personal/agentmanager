@@ -35,9 +35,9 @@ jobs:
         run: |
           set -euo pipefail
           latest="$(
-            for root in /home/ubuntu/agent-data/artifacts/google-flow /home/ubuntu/agent-data/artifacts/google-flow-recovery; do
+            for root in /home/agentos-node /home/ubuntu /tmp; do
               [ -d "$root" ] || continue
-              find "$root" -type f -name '*.mp4' -newermt '2026-10-07 00:00:00' -printf '%T@ %p\n' 2>/dev/null || true
+              find "$root" -type f -name '*.mp4' -path '*google-flow*' -newermt '2026-10-07 00:00:00' -printf '%T@ %p\n' 2>/dev/null || true
             done | sort -nr | head -n1 | cut -d' ' -f2-
           )"
           if [ -z "$latest" ] || [ ! -f "$latest" ]; then
