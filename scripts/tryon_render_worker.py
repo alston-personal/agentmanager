@@ -856,8 +856,12 @@ def restore_cached_render(job: dict[str, Any], rendered_layers: list[str], targe
         "renderedLayers": rendered_layers,
         "pendingLayers": [],
         "quality": {
+            "state": "verified",
             "accepted": True,
             "checkedAt": meta.get("checkedAt"),
+            "reviewer": meta.get("reviewer"),
+            "receiptSchema": "agentos.wardrobe-visual-review-receipt/v1",
+            "verifiedLayers": rendered_layers,
             "checks": meta.get("checks", []),
         },
     }
@@ -885,6 +889,7 @@ def persist_render_cache(job: dict[str, Any], rendered_layers: list[str], source
             "cacheKey": key,
             "createdAt": utc_now(),
             "qualityAccepted": False,
+            "qualityState": "candidate",
             "checkedAt": None,
             "checks": [
                 {
@@ -1069,8 +1074,12 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         "cacheKey": cache_key,
         "prefixCacheKey": prefix_cache_key,
         "quality": {
+            "state": "candidate",
             "accepted": False,
             "checkedAt": None,
+            "reviewer": None,
+            "receiptSchema": "agentos.wardrobe-visual-review-receipt/v1",
+            "verifiedLayers": [],
             "checks": [
                 {
                     "code": "all_requested_layers_rendered",
@@ -1085,7 +1094,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
             ],
         },
     }
-    set_progress(path, job, "ready", "Render produced; visual QC still required for cache reuse")
+    set_progress(path, job, "ready", "Candidate render produced; visual review required before promotion")
 
 
 def mark_failed(path: Path, job: dict[str, Any], exc: Exception) -> None:
