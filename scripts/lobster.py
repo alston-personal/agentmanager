@@ -164,6 +164,33 @@ def send_telegram_alert(message: str):
         pass
 
 
+def verify_local_port_check(task_text: str, output: str) -> tuple[bool, str] | None:
+    """Independent observation for local port checks; output strings alone are never proof.
+
+    MVP-1 deliberately accepts only a *closed* loopback port.  If it is open,
+    unavailable, or output is inconsistent, the work remains unverified.
+    """
+    match = re.search(r"檢查連接埠\\s+(\\d+)\\b", task_text)
+    if not match:
+        return None
+    port = int(match.group(1))
+    if not (1 <= port <= 65535):
+        return False, "BLOCKED: invalid_port"
+    if not ("✅ 任務完成" in output and f"連接埠 {port} 未啟用監聽" in output):
+        return False, "BLOCKED: local_executor_did_not_report_closed"
+    try:
+        # Independent of the executor's ss parser: probe loopback with a socket.
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(2)
+            result = probe.connect_ex(("127.0.0.1", port))
+        if result != 0:
+            return True, f"PASS: local_port_{port}_closed_independent_socket_probe"
+        return False, "BLOCKED: port_is_open_on_loopback"
+    except OSError:
+        return False, "BLOCKED: independent_port_probe_error"
+
+
 def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
     """
     執行任務並用 Inspector 驗證。最多重試 3 次。
@@ -197,6 +224,12 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
                 return False, f"BLOCKED: {msg}"
             failure_count += 1
             continue
+
+        # Deterministic zero-model local executor gets an independent validator,
+        # not an AI-completion keyword or Git diff heuristic.
+        local_verdict = verify_local_port_check(task_text, output)
+        if local_verdict is not None:
+            return local_verdict
 
         if Inspector is None:
             # Never mark unverified AI output as success. Preserve durable
