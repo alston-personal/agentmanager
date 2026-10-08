@@ -32,3 +32,5 @@ jobs:
           scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_SSH_PORT:-22}" "$RUNNER_TEMP/probe.py" "${DEPLOY_USER}@${ORACLE_HOST}:/tmp/probe-antigravity-image.py"
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
             'chmod 700 /tmp/probe-antigravity-image.py && python3 /tmp/probe-antigravity-image.py'
+
+# diagnostic refresh: 2026-10-08
