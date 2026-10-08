@@ -441,6 +441,8 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
         }
         send.push({selector,count:nodes.length,visible,enabled});
       }
+      const users = Array.from(document.querySelectorAll('[data-message-author-role="user"]'));
+      const correlatedUsers = users.filter(node => (node.innerText || node.textContent || '').includes(%s));
       const assistants = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
       const lastAssistant = assistants.length ? (assistants[assistants.length - 1].innerText || assistants[assistants.length - 1].textContent || '') : '';
       const stopSelectors = [
@@ -459,12 +461,14 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
         composerHasRequest: composerText.includes(%s),
         composerChars: composerText.length,
         send,
+        userCount: users.length,
+        correlatedUserCount: correlatedUsers.length,
         assistantCount: assistants.length,
         lastAssistantChars: lastAssistant.length,
         lastAssistantHasRequest: lastAssistant.includes(%s),
         generating
       };
-    })()""" % (composer_json, send_json, json.dumps(request_id), json.dumps(request_id))
+    })()""" % (composer_json, send_json, json.dumps(request_id), json.dumps(request_id), json.dumps(request_id))
     value=page.evaluate(expr)
     return value if isinstance(value, dict) else {"invalid_snapshot":True}
 
@@ -500,7 +504,7 @@ def _click_send(page: Any, *, request_id: str, timeout_seconds: float = 12.0) ->
     )
 
 
-def _confirm_submit(page: Any, *, request_id: str, baseline_assistants: int, timeout_seconds: float = 8.0) -> dict[str, Any]:
+def _confirm_submit(page: Any, *, request_id: str, baseline_assistants: int, baseline_users: int = 0, timeout_seconds: float = 8.0) -> dict[str, Any]:
     deadline=time.monotonic()+timeout_seconds
     last: dict[str, Any]={}
     while time.monotonic() < deadline:
@@ -508,7 +512,7 @@ def _confirm_submit(page: Any, *, request_id: str, baseline_assistants: int, tim
         if (
             int(last.get("assistantCount") or 0) > baseline_assistants
             or last.get("generating") is True
-            or (last.get("composerChars") == 0 and last.get("composerHasRequest") is False)
+            or (int(last.get("userCount") or 0) > baseline_users and int(last.get("correlatedUserCount") or 0) > 0)
         ):
             return last
         time.sleep(0.4)
@@ -552,6 +556,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         prompt = str(inner["prompt"])
         baseline = _submission_snapshot(page, request_id)
         baseline_assistants = int(baseline.get("assistantCount") or 0)
+        baseline_users = int(baseline.get("userCount") or 0)
         page.call("Input.insertText", {"text": prompt})
 
         inserted = _submission_snapshot(page, request_id)
@@ -566,6 +571,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             page,
             request_id=request_id,
             baseline_assistants=baseline_assistants,
+            baseline_users=baseline_users,
             timeout_seconds=8.0,
         )
 

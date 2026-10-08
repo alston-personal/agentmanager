@@ -230,3 +230,30 @@ class GptWebSubmitVerificationTests(unittest.TestCase):
                     baseline_assistants=0,
                     timeout_seconds=0.001,
                 )
+
+    
+class GptWebFalseSubmitRegressionTests(unittest.TestCase):
+    def test_blank_composer_without_user_or_generation_is_not_submission(self):
+        page = Mock()
+        page.evaluate.return_value = {
+            "composerHasRequest": False, "composerChars": 0,
+            "assistantCount": 0, "userCount": 0, "correlatedUserCount": 0,
+            "generating": False, "send": [],
+        }
+        with patch("scripts.gpt_web_response_bridge.time.sleep"):
+            with self.assertRaisesRegex(RuntimeError, "GPT_WEB_SUBMIT_NOT_CONFIRMED"):
+                _confirm_submit(page, request_id="invoice:req:12345678",
+                                baseline_assistants=0, baseline_users=0,
+                                timeout_seconds=0.001)
+
+    def test_correlated_user_message_confirms_submission(self):
+        page = Mock()
+        page.evaluate.return_value = {
+            "composerHasRequest": False, "composerChars": 0,
+            "assistantCount": 0, "userCount": 1, "correlatedUserCount": 1,
+            "generating": False, "send": [],
+        }
+        result = _confirm_submit(page, request_id="invoice:req:12345678",
+                                 baseline_assistants=0, baseline_users=0,
+                                 timeout_seconds=0.2)
+        self.assertEqual(result["correlatedUserCount"], 1)
