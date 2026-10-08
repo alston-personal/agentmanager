@@ -49,20 +49,36 @@ def social_observation_plan(cfg, state, phase, energy, now):
     if not isinstance(policy,dict): policy={"enabled":False}
     interval=policy.get("max_age_minutes",cfg.get("heartbeat_minutes",60))
     heartbeat=cfg.get("heartbeat_minutes",60)
+    recovery_interval=policy.get("recovery_max_age_minutes",max(interval,180)
+        if isinstance(interval,(int,float)) and not isinstance(interval,bool) and math.isfinite(interval) else 180)
+    blocked_retry=policy.get("blocked_retry_minutes",30)
     valid=all(isinstance(x,(int,float)) and not isinstance(x,bool)
-              and math.isfinite(x) and x>0 for x in (interval,heartbeat))
-    plan={"due":False,"max_age_minutes":interval if valid else None,"age_minutes":None}
+              and math.isfinite(x) and x>0 for x in (interval,heartbeat,recovery_interval,blocked_retry))
+    recovery=phase in ("sleep","rest")
+    effective_interval=recovery_interval if recovery else interval
+    plan={"due":False,"max_age_minutes":effective_interval if valid else None,
+          "active_max_age_minutes":interval if valid else None,
+          "recovery_max_age_minutes":recovery_interval if valid else None,
+          "age_minutes":None,"recovery_window":recovery}
     if not valid: return {**plan,"reason":"invalid_observation_policy"}
     if policy.get("enabled",True) is not True:
         return {**plan,"reason":"periodic_observation_disabled"}
-    if phase in ("sleep","rest") or energy<15:
-        return {**plan,"reason":"recovery_window"}
+    if energy<15:
+        return {**plan,"reason":"energy_recovery_required"}
     reads=[x for x in state.get("pending_external_actions",[]) if isinstance(x,dict)
            and x.get("capability") in ("social.threads.observe","social.reply.review")]
-    if any(x.get("status")=="blocked" for x in reads):
-        return {**plan,"reason":"blocked_read_requires_repair"}
     if any(x.get("status") in ("candidate","in_progress") for x in reads):
         return {**plan,"reason":"read_already_pending"}
+    blocked=[x for x in reads if x.get("status")=="blocked"]
+    if blocked:
+        blocked_times=[parse_ts(str(x.get("blocked_at") or "")) for x in blocked]
+        blocked_times=[x.astimezone(timezone.utc) for x in blocked_times if x is not None and x.tzinfo is not None]
+        if blocked_times:
+            blocked_age=(now-max(blocked_times)).total_seconds()/60
+            if 0<=blocked_age<blocked_retry:
+                return {**plan,"reason":"blocked_read_retry_cooldown",
+                        "blocked_age_minutes":round(blocked_age,2),
+                        "blocked_retry_minutes":blocked_retry}
     last=state.get("last_social_observation") or {}
     verified=isinstance(last,dict) and last.get("read_status")=="PASS" and last.get("receipt_ref")
     ts=parse_ts(str(last.get("observed_at") or "")) if verified else None
@@ -71,8 +87,9 @@ def social_observation_plan(cfg, state, phase, energy, now):
         if age>=0:
             plan["age_minutes"]=round(age,2)
             # Schedule before the next heartbeat would pass the freshness goal.
-            if age+heartbeat<interval: return {**plan,"reason":"successful_read_fresh"}
-    return {**plan,"due":True,"reason":"successful_read_due"}
+            if age+heartbeat<effective_interval: return {**plan,"reason":"successful_read_fresh"}
+    reason="recovery_read_due" if recovery else ("retry_after_blocked_read" if blocked else "successful_read_due")
+    return {**plan,"due":True,"reason":reason}
 
 def read_events(path):
     events = []
