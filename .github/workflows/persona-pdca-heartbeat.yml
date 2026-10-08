@@ -188,6 +188,22 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_GROWTH_METRICS" "$REMOTE_INSTALLER"
 
+      - name: Inspect Persona timer runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "=== heartbeat timer ==="
+          systemctl --user show agentos-persona-pdca-heartbeat.timer             -p ActiveState -p SubState -p LastTriggerUSec -p NextElapseUSecRealtime
+          echo "=== social timer ==="
+          systemctl --user show agentos-persona-social-actions.timer             -p ActiveState -p SubState -p LastTriggerUSec -p NextElapseUSecRealtime
+          echo "=== social service ==="
+          systemctl --user show agentos-persona-social-actions.service             -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
+          echo "=== social journal tail ==="
+          journalctl --user -u agentos-persona-social-actions.service -n 40 --no-pager || true
+          REMOTE
+
       - name: Refresh current Mio public activity snapshot
         shell: bash
         run: |
