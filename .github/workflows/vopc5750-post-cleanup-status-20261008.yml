@@ -1,0 +1,35 @@
+name: VOPC5750 Post Cleanup Status 20261008
+
+on:
+  push:
+    branches:
+      - ops/vopc5750-post-cleanup-status-20261008
+    paths:
+      - '.github/workflows/vopc5750-post-cleanup-status-20261008.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect node only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          data=NodeRegistry().node_map()
+          node=next((n for n in data.get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
+          print(json.dumps(node,indent=2,sort_keys=True))
+          assert node, 'vopc5750 missing'
+          print('status='+str(node.get('status')))
+          print('heartbeat_age_seconds='+str(node.get('heartbeat_age_seconds')))
+          print('runtime='+json.dumps(node.get('runtime'),sort_keys=True))
+          PY
