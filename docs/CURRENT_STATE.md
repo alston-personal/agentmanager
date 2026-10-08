@@ -442,3 +442,7 @@ A successful readiness verification is authoritative. Each accepted immutable in
 ### Thin Client active runtime provenance
 
 Each immutable Windows runtime instance writes `runtime-provenance.json` with its exact source ref, source commit, instance path and installation timestamp. The Thin Client reads the provenance file adjacent to its own loaded package and includes it in every capability manifest/heartbeat. NodeRegistry therefore records the runtime that is actually sending the heartbeat instead of preserving stale provenance from an older instance.
+
+### Semantic preview native-call isolation
+
+Windows semantic preview capture runs inside a short-lived spawned worker process rather than inside the Thin Client transport process. Native GDI stages report progress (`session_info`, `foreground_window`, `capture_bmp`) to the parent. The parent enforces a bounded timeout and terminates a wedged worker, ensuring heartbeat/task receipt transport remains live even if a GDI call hangs. A timeout receipt identifies the last completed stage for diagnosis.
