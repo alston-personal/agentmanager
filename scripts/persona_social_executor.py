@@ -143,6 +143,18 @@ def observe(root, state, target, out, username, base, headers, now_dt):
                       ensure_ascii=False,separators=(",",":"))+"\n")
     target.update(status="completed",executed_at=observed_at,receipt_ref=ref,
                   read_status="PASS",fresh_replies=len(eligible))
+    activity_ref=str(state.get("last_activity_receipt") or "")
+    if activity_ref:
+        activity_path=root/activity_ref
+        if activity_path.exists():
+            activity=json.loads(activity_path.read_text(encoding="utf-8"))
+            if activity.get("action_id")==action_id and activity.get("status")=="pending_external":
+                activity["status"]="completed"
+                activity["result"]=result
+                activity["completed_at"]=observed_at
+                activity["external_receipt_ref"]=ref
+                activity["external_action_verified"]=True
+                save(activity_path,activity)
     state["social_observation_cursor"]={"observed_at":observed_at,
         "seen_reply_ids":sorted(seen|set(rows))[-2000:]}
     summary={k:receipt[k] for k in ("action_id","cycle","capability","observed_at",
