@@ -148,6 +148,8 @@ def main():
             rate=float(energy_cfg.get("recovery",{}).get("rest_points_per_hour",7))
         else:
             rate=float(energy_cfg.get("recovery",{}).get("awake_points_per_hour",3))
+        if energy < 0:
+            rate *= float(energy_cfg.get("recovery",{}).get("negative_energy_multiplier",1/3))
         energy=min(capacity,energy+elapsed_h*rate)
 
     events=read_events(events_path)
@@ -236,16 +238,14 @@ def main():
               "reflect":float(costs.get("reflect",1.5)),
               "wardrobe_plan":float(costs.get("wardrobe_plan",2.0)),
               "content_ideation":float(costs.get("content_ideation",3.0))}
-    # Energy is a real budget: actions that cannot be fully paid for are not
-    # eligible. Zero energy therefore leaves only zero-cost recovery actions.
-    affordable=[(n,w) for n,w in candidates if cost_map.get(n,1.0)<=energy]
-    if not affordable:
-        affordable=[("rest",1.0)]
-    candidates=affordable
+    # Overdraft model: any positive energy may fund one final action even if
+    # the action drives energy below zero. Once energy is non-positive, no new
+    # activity may start; only zero-cost recovery remains until energy is > 0.
+    if energy <= 0:
+        candidates=[("rest",1.0)]
     selected=rng.choices([x[0] for x in candidates],weights=[x[1] for x in candidates],k=1)[0]
     cost=cost_map.get(selected,1.0)
-    assert cost<=energy+1e-9,(selected,cost,energy)
-    energy_after=max(0.0,energy-cost)
+    energy_after=energy-cost
     do={"action":selected,"status":"completed_internal","energy_cost":cost}
     pending=list(state.get("pending_external_actions",[]))
     external=None
@@ -300,13 +300,13 @@ def main():
                 "reason":"PDCA successful social read is due",
                 "requires_real_adapter_receipt":True}
             read_cost=max(0.0,float(costs.get("observe_passive",0.2)))
-            if energy_after+1e-9 >= read_cost:
+            if energy_after > 0:
                 pending.append(observation_candidate)
                 energy_after-=read_cost
                 do["social_observation_energy_cost"]=read_cost
             else:
                 observation_candidate=None
-                observation_plan["reason"]="insufficient_energy_for_observation"
+                observation_plan["reason"]="energy_depleted_after_primary_action"
         else:
             observation_plan["reason"]="pending_capacity"
     observation_plan["queued"]=observation_candidate is not None
