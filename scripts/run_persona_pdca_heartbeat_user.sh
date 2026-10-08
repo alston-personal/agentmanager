@@ -82,7 +82,7 @@ assert activity.get("schema")=="agentos.persona-activity-receipt/v1", activity
 print(f"persona_pdca_cognitive_integrity=PASS cycle={cycle} activity={activity.get('activity')}")
 PY
 
-python3 "$PUBLIC_ACTIVITY_PUBLISHER" --persona-dir "$DATA_REPO/$PERSONA_PATH" --output "$PUBLIC_ACTIVITY_OUTPUT"
+python3 "$PUBLIC_ACTIVITY_PUBLISHER" --persona-dir "$DATA_REPO/$PERSONA_PATH" --output "$PUBLIC_ACTIVITY_OUTPUT" --html-output "$(dirname "$PUBLIC_ACTIVITY_OUTPUT")/index.html"
 
 cd "$DATA_REPO"
 git config user.name 'agentos-persona-pdca[bot]'
