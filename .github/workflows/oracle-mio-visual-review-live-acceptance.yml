@@ -79,6 +79,8 @@ jobs:
           classification=str(semantic.get('classification') or 'UNKNOWN')
           print('mio_visual_review_live_job='+str(job.get('jobId')))
           print('mio_visual_review_backend_classification='+classification)
+          message=str(semantic.get('message') or '').replace('\n',' ')[:800]
+          print('mio_visual_review_backend_message='+message)
           print('mio_visual_review_state='+str(receipt.get('state')))
           print('mio_visual_review_verified_layers='+','.join(receipt.get('verifiedLayers') or []))
           if semantic.get('backendReady') is True:
