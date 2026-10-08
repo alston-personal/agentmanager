@@ -264,6 +264,38 @@ def main():
         if not text or not action_id:
             raise SystemExit("social_write_intent_incomplete")
 
+        # Media is a separate, receipt-gated capability. Never silently send
+        # text-only when Mio explicitly chose an image that is not ready.
+        media=target.get("media_intent") or {}
+        if capability=="social.post.publish" and media.get("mode") in ("generate","existing_verified"):
+            if media.get("status")!="validated" or not media.get("asset_receipt_ref"):
+                receipt={"schema":"agentos.persona-social-executor-receipt/v1",
+                  "ok":False,"status":"BLOCKED","result":"MEDIA_NOT_VALIDATED",
+                  "timestamp":now,"action_id":action_id,"capability":capability,
+                  "write_performed":False,"media_mode":media.get("mode")}
+                out=Path(args.receipt_out)
+                out.parent.mkdir(parents=True,exist_ok=True)
+                out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+                target["media_blocked_reason"]="MEDIA_NOT_VALIDATED"
+                state["pending_external_actions"]=pending[-12:]
+                save(root/"pdca/state.json",state)
+                print(json.dumps(receipt,ensure_ascii=False))
+                return 0
+            # Media dispatch is not yet implemented; a validated asset still
+            # must never be misrepresented by a text-only Threads publish.
+            receipt={"schema":"agentos.persona-social-executor-receipt/v1",
+              "ok":False,"status":"BLOCKED","result":"MEDIA_PUBLISH_ADAPTER_REQUIRED",
+              "timestamp":now,"action_id":action_id,"capability":capability,
+              "write_performed":False,"media_mode":media.get("mode")}
+            out=Path(args.receipt_out)
+            out.parent.mkdir(parents=True,exist_ok=True)
+            out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+            target["media_blocked_reason"]="MEDIA_PUBLISH_ADAPTER_REQUIRED"
+            state["pending_external_actions"]=pending[-12:]
+            save(root/"pdca/state.json",state)
+            print(json.dumps(receipt,ensure_ascii=False))
+            return 0
+
         persona=json.loads((root/"persona_state.json").read_text(encoding="utf-8"))
         energy_cfg=persona.get("energy",{}) if isinstance(persona.get("energy"),dict) else {}
         action_costs=energy_cfg.get("action_costs",{}) if isinstance(energy_cfg.get("action_costs"),dict) else {}
