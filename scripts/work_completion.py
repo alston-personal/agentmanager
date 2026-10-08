@@ -324,10 +324,21 @@ def transition(
             combined_evidence = list(observation.get("evidence") or [])
             combined_evidence.extend(str(x) for x in item.get("evidence") or [])
             observation["evidence"] = sorted({x for x in combined_evidence if x})
-            emit_growth_observation(observation, data_root=path.parent.parent)
-            item.setdefault("history", []).append(
-                {"at": now(), "event": "growth_observation_emitted", "actor": actor}
-            )
+            data_root = path.parent.parent if path.parent.name == "governance" else path.parent
+            try:
+                emit_growth_observation(observation, data_root=data_root)
+                item.setdefault("history", []).append(
+                    {"at": now(), "event": "growth_observation_emitted", "actor": actor}
+                )
+            except Exception as exc:
+                item.setdefault("history", []).append(
+                    {
+                        "at": now(),
+                        "event": "growth_observation_failed",
+                        "actor": actor,
+                        "error": type(exc).__name__,
+                    }
+                )
             save(path, state)
         return item
 
