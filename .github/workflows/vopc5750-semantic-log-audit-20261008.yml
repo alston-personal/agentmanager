@@ -1,0 +1,94 @@
+name: VOPC5750 Semantic Log Audit 20261008
+
+on:
+  push:
+    branches:
+      - ops/vopc5750-semantic-log-audit-20261008
+    paths:
+      - '.github/workflows/vopc5750-semantic-log-audit-20261008.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clear semantic test leases and inspect node
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          fabric=RealmFabricStore()
+          data=fabric.load()
+          queue=list((data.get('tasks') or {}).get('vopc5750') or [])
+          removed=[
+              x for x in queue
+              if isinstance(x,dict)
+              and str(x.get('task_id') or '').startswith('task-semantic-powershell-')
+          ]
+          data['tasks']['vopc5750']=[
+              x for x in queue
+              if x not in removed
+          ]
+          fabric.save(data)
+
+          nodes=NodeRegistry().node_map()
+          node=next((n for n in nodes.get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
+          print(json.dumps({
+              'removed_semantic_tasks':[x.get('task_id') for x in removed],
+              'node_status':(node or {}).get('status'),
+              'heartbeat_age_seconds':(node or {}).get('heartbeat_age_seconds'),
+              'last_heartbeat_at':(node or {}).get('last_heartbeat_at'),
+          },indent=2,sort_keys=True))
+          PY
+
+      - name: Tail Thin Client log through ONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time,uuid
+          from agent_core.realm_fabric import RealmFabricStore
+
+          script=r'''
+          $log=Join-Path $env:LOCALAPPDATA 'AgentOS\thin-client.log'
+          if(Test-Path -LiteralPath $log){
+            Get-Content -LiteralPath $log -Tail 120
+          }else{
+            Write-Output 'THIN_CLIENT_LOG_MISSING'
+          }
+          '''
+
+          fabric=RealmFabricStore()
+          task_id='task-log-audit-'+uuid.uuid4().hex
+          fabric.queue_task('vopc5750',{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':task_id,
+              'action':'shell.exec',
+              'executable':'powershell',
+              'argv':['-NoProfile','-NonInteractive','-Command',script],
+              'cwd':r'C:\Users\alston.huang\AgentOS',
+              'timeout_seconds':30,
+          })
+          receipt=None
+          deadline=time.time()+45
+          while time.time()<deadline:
+              receipt=fabric.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(1)
+          print(json.dumps(receipt,indent=2,sort_keys=True))
+          assert receipt,'LOG_AUDIT_RECEIPT_TIMEOUT'
+          assert receipt.get('ok') is True,receipt
+          print('THIN_CLIENT_LOG_AUDIT=PASS')
+          PY
