@@ -70,8 +70,8 @@ cat > "$TIMER" <<EOF
 Description=AgentOS Persona PDCA Hourly Heartbeat
 
 [Timer]
-OnActiveSec=55min
-OnUnitActiveSec=60min
+OnCalendar=*-*-* *:25:00
+Persistent=true
 AccuracySec=2min
 Unit=agentos-persona-pdca-heartbeat.service
 
@@ -99,8 +99,8 @@ cat > "$SOCIAL_TIMER" <<EOF
 Description=AgentOS Persona Social Action Short-Cycle Timer
 
 [Timer]
-OnActiveSec=3min
-OnUnitActiveSec=5min
+OnCalendar=*-*-* *:0/5:00
+Persistent=true
 AccuracySec=45s
 Unit=agentos-persona-social-actions.service
 
@@ -139,6 +139,7 @@ systemctl --user show -p ExecStart --value agentos-persona-pdca-heartbeat.servic
 echo "persona_pdca_runtime_owner=$CANONICAL_HEARTBEAT"
 echo "persona_pdca_timer_install=PASS"
 echo "persona_pdca_timer_interval=60m"
-echo "persona_pdca_timer_first_due=55m"
+echo "persona_pdca_timer_schedule=calendar_:25_persistent"
 echo "persona_social_action_timer_install=PASS"
 echo "persona_social_action_timer_interval=5m"
+echo "persona_social_action_timer_schedule=calendar_5m_persistent"
