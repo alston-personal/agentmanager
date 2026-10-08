@@ -147,6 +147,10 @@ def main():
             return 0
 
     pending=list(state.get("pending_external_actions") or [])
+    if any(x.get("capability")=="social.post.publish" and x.get("status") in ("candidate","in_progress")
+           for x in pending if isinstance(x,dict)):
+        print(json.dumps({"status":"SKIP","reason":"post_publish_already_pending"},ensure_ascii=False))
+        return 0
     consider=next((x for x in pending if isinstance(x,dict) and x.get("capability")=="social.post.consider" and x.get("status")=="candidate"),None)
     if not consider:
         energy_now=float(state.get("energy_current",0))
@@ -171,10 +175,6 @@ def main():
         else:
             print(json.dumps({"status":"NO_CANDIDATE"},ensure_ascii=False))
             return 0
-    if any(x.get("capability")=="social.post.publish" and x.get("status") in ("candidate","in_progress") for x in pending if isinstance(x,dict)):
-        print(json.dumps({"status":"SKIP","reason":"post_publish_already_pending"},ensure_ascii=False))
-        return 0
-
     activity_ref=str(state.get("last_activity_receipt") or "")
     activity={}
     if activity_ref:
