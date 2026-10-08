@@ -34,3 +34,5 @@ jobs:
             'chmod 700 /tmp/probe-antigravity-image.py && python3 /tmp/probe-antigravity-image.py'
 
 # diagnostic refresh: 2026-10-08
+
+# receipt diagnostic refresh: 2026-10-08
