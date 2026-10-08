@@ -318,19 +318,25 @@ class ControlPlaneStore:
         status: str,
         result: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if status not in TASK_STATES:
-            raise ValueError(f"unsupported task state: {status}")
+        """Legacy administrative update; never bypass an active worker lease.
+
+        Worker completion must use complete_leased_task with its lease token.
+        This compatibility API can cancel a still-submitted task, but cannot
+        forge a terminal receipt or replace an expired/terminal state.
+        """
+        if status != "cancelled":
+            raise ValueError("legacy update_task only supports cancelling submitted tasks")
         now = _timestamp(_now())
         with self._connect() as connection:
             cursor = connection.execute(
                 """
-                UPDATE tasks SET status=?, result_json=?, updated_at=?
-                WHERE task_id=?
+                UPDATE tasks SET status='cancelled', result_json=?, updated_at=?
+                WHERE task_id=? AND status='submitted'
                 """,
-                (status, json.dumps(result or {}, sort_keys=True), now, task_id),
+                (json.dumps(result or {}, sort_keys=True), now, task_id),
             )
             if cursor.rowcount != 1:
-                raise KeyError(f"unknown task: {task_id}")
+                raise ValueError("task not submitted or does not exist")
             row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         return self._task_from_row(row)
 
