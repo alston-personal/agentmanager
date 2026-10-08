@@ -481,6 +481,16 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
         }
       }
       // Structural-only evidence: never export message text, prompt, or image data.
+      const frameSummary = Array.from(document.querySelectorAll('iframe')).slice(0, 12).map(el => ({
+        visible: el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0,
+        sameOrigin: (() => { try { return !!el.contentDocument; } catch (_) { return false; } })()
+      }));
+      const attachmentSummary = {
+        fileInputs: document.querySelectorAll('input[type="file"]').length,
+        imagePreviewCount: document.querySelectorAll('[data-testid*="attachment"], [data-testid*="upload"], [data-testid*="preview"]').length,
+        imageElements: document.querySelectorAll('img').length,
+        pendingIndicators: document.querySelectorAll('[aria-busy="true"], [role="progressbar"]').length
+      };
       const messageNodes = Array.from(document.querySelectorAll('[data-message-author-role]'));
       const roleCounts = {};
       for (const node of messageNodes) {
@@ -491,6 +501,8 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
         pagePath: location.pathname.slice(0, 160),
         readyState: document.readyState,
         roleCounts,
+        frameSummary,
+        attachmentSummary,
         messageNodes: messageNodes.length,
         composerHasRequest: composerText.includes(%s),
         composerChars: composerText.length,

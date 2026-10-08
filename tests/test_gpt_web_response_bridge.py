@@ -316,3 +316,20 @@ class GptWebTargetRoutingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "GPT_WEB_UNSUPPORTED_CONVERSATION_ROUTE"):
                 _page("http://127.0.0.1:9222")
         endpoint.close.assert_called_once()
+
+
+class GptWebAttachmentDiagnosticsTests(unittest.TestCase):
+    def test_snapshot_includes_attachment_and_frame_structure_without_contents(self):
+        from scripts.gpt_web_response_bridge import _submission_snapshot
+        page = Mock()
+        page.evaluate.return_value = {
+            "frameSummary": [{"visible": True, "sameOrigin": False}],
+            "attachmentSummary": {"fileInputs": 1, "imagePreviewCount": 1, "imageElements": 3, "pendingIndicators": 0},
+        }
+        result = _submission_snapshot(page, "invoice:req:12345678")
+        self.assertEqual(result["attachmentSummary"]["imagePreviewCount"], 1)
+        script = page.evaluate.call_args.args[0]
+        self.assertIn("frameSummary", script)
+        self.assertIn("attachmentSummary", script)
+        self.assertNotIn("outerHTML", script)
+        self.assertNotIn("img.src", script)
