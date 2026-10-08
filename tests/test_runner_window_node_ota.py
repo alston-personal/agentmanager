@@ -64,3 +64,11 @@ def test_break_glass_repair_is_manual_only():
     head = text.split("permissions:", 1)[0]
     assert "workflow_dispatch:" in head
     assert "\n  push:" not in head
+
+
+def test_realm_scheduler_admits_and_projects_ota_inspect():
+    text = Path("agent_core/realm_server.py").read_text(encoding="utf-8")
+    assert "bootstrap_control.ACTION_NODE_OTA_INSPECT" in text
+    assert "'node_ota_inspect_current_commit='" in text
+    assert "'node_ota_inspect_activator_last_result='" in text
+
