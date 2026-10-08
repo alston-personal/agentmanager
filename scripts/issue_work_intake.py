@@ -20,7 +20,7 @@ URL = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+)/issues/(\d+)$")
 
 
 def eligible(issue: dict, repo: str) -> tuple[bool, str]:
-    if not isinstance(issue, dict) or issue.get("pull_request"):
+    if not isinstance(issue, dict) or "pull_request" in issue:
         return False, "not_issue"
     if issue.get("state") != "open":
         return False, "not_open"
