@@ -333,3 +333,13 @@ class GptWebAttachmentDiagnosticsTests(unittest.TestCase):
         self.assertIn("attachmentSummary", script)
         self.assertNotIn("outerHTML", script)
         self.assertNotIn("img.src", script)
+
+
+class GptWebImageInputContractTests(unittest.TestCase):
+    def test_invoke_uses_image_accept_input_and_confirms_file_selection(self):
+        from scripts import gpt_web_response_bridge as bridge
+        import inspect
+        source = inspect.getsource(bridge.invoke)
+        self.assertIn("includes('image')", source)
+        self.assertIn("Runtime.callFunctionOn", source)
+        self.assertIn("GPT_WEB_FILE_SELECTION_NOT_CONFIRMED", source)

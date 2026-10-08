@@ -585,7 +585,12 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         _focus_composer(page, timeout_seconds=12.0)
 
         element = page.call("Runtime.evaluate", {
-            "expression": "document.querySelector('input[type=file]')",
+            "expression": """(() => {
+              const inputs = Array.from(document.querySelectorAll('input[type=file]'));
+              return inputs.find(el => (el.accept || '').toLowerCase().includes('image'))
+                || inputs.find(el => !(el.accept || '').trim())
+                || null;
+            })()""",
             "returnByValue": False,
         }).get("result") or {}
         object_id = element.get("objectId")
@@ -595,6 +600,22 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
                 json.dumps(_composer_snapshot(page), ensure_ascii=False, sort_keys=True)
             )
         page.call("DOM.setFileInputFiles", {"objectId": object_id, "files": [str(image)]})
+        # CDP acknowledgement only confirms a browser operation; verify the
+        # selected file on the exact input object before its DOM can rerender.
+        selected = page.call("Runtime.callFunctionOn", {
+            "objectId": object_id,
+            "functionDeclaration": """function() {
+              return Array.from(this.files || []).map(f => ({name:f.name,size:f.size,type:f.type}));
+            }""",
+            "returnByValue": True,
+        }).get("result") or {}
+        selected_files = selected.get("value") or []
+        if not any(
+            isinstance(f, dict) and f.get("name") == image.name
+            and f.get("size") == image.stat().st_size
+            for f in selected_files
+        ):
+            raise RuntimeError("GPT_WEB_FILE_SELECTION_NOT_CONFIRMED")
 
         # File upload may rerender the composer. Reacquire/focus it instead of
         # assuming the pre-upload DOM node is still active.
