@@ -170,26 +170,10 @@ $activatorStatus=Join-Path $InstallRoot 'ota-activator-status.json'
   "  Write-Status 'started'",
   "  Stop-ScheduledTask -TaskName `$TaskName -ErrorAction SilentlyContinue",
   "  Start-Sleep -Seconds 2",
-  "  `$clients=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\.exe)|Set-Content -Encoding ASCII $activatorScript
-$record|Add-Member -NotePropertyName activator_helper -NotePropertyValue $activatorScript -Force
-$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'" -StatusPath "'+$activatorStatus+'"')
-$activatorTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(10)
-Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
-Write-Output 'agentos_ota_stage=ACTIVATING'
-Write-Output ('agentos_ota_candidate='+$SourceCommit)
-Write-Output 'agentos_ota_controller_acceptance=PENDING'
- -and `$_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' })",
+  "  `$clients=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\\.exe$' -and `$_.CommandLine -match '(?i)-m\\s+agentos_node\\.client_cli\\s+run(?:\\s|$)' })",
   "  foreach(`$client in `$clients){ Stop-Process -Id `$client.ProcessId -Force -ErrorAction SilentlyContinue }",
   "  `$remaining=@()",
-  "  for(`$i=0;`$i -lt 20;`$i++){ `$remaining=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\.exe)|Set-Content -Encoding ASCII $activatorScript
-$record|Add-Member -NotePropertyName activator_helper -NotePropertyValue $activatorScript -Force
-$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'"')
-$activatorTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(10)
-Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
-Write-Output 'agentos_ota_stage=ACTIVATING'
-Write-Output ('agentos_ota_candidate='+$SourceCommit)
-Write-Output 'agentos_ota_controller_acceptance=PENDING'
- -and `$_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' }); if(`$remaining.Count -eq 0){break}; Start-Sleep -Milliseconds 500 }",
+  "  for(`$i=0;`$i -lt 20;`$i++){ `$remaining=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\\.exe$' -and `$_.CommandLine -match '(?i)-m\\s+agentos_node\\.client_cli\\s+run(?:\\s|$)' }); if(`$remaining.Count -eq 0){break}; Start-Sleep -Milliseconds 500 }",
   "  Write-Status 'clients-stopped' `$clients.Count `$remaining.Count",
   "  Start-ScheduledTask -TaskName `$TaskName",
   "  Start-Sleep -Seconds 3",
@@ -200,7 +184,8 @@ Write-Output 'agentos_ota_controller_acceptance=PENDING'
   "}catch{ Write-Status 'error' -1 -1 `$_.Exception.GetType().Name; throw }"
 )|Set-Content -Encoding ASCII $activatorScript
 $record|Add-Member -NotePropertyName activator_helper -NotePropertyValue $activatorScript -Force
-$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'"')
+$record|Add-Member -NotePropertyName activator_status -NotePropertyValue $activatorStatus -Force
+$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'" -StatusPath "'+$activatorStatus+'"')
 $activatorTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(10)
 Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
 Write-Output 'agentos_ota_stage=ACTIVATING'
