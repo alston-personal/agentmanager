@@ -292,6 +292,24 @@ class ObservationContract(unittest.TestCase):
         events = [json.loads(row) for row in (self.root / 'events/events.jsonl').read_text().splitlines()]
         self.assertEqual(events[-1]['type'], 'pdca.activity.delegated')
 
+    def test_successful_observation_closes_activity_ir(self):
+        activity=self.root/'pdca/activities/2026-10-08/cycle-10.json'
+        activity.parent.mkdir(parents=True,exist_ok=True)
+        activity.write_text(json.dumps({
+            'schema':'agentos.persona-activity-receipt/v1',
+            'cycle':10,'action_id':self.action['action_id'],
+            'status':'pending_external','result':'delegated_to_social_executor'
+        }))
+        state=self.read('pdca/state.json')
+        state['last_activity_receipt']='pdca/activities/2026-10-08/cycle-10.json'
+        self.write('pdca/state.json',state)
+        self.execute()
+        saved=json.loads(activity.read_text())
+        self.assertEqual(saved['status'],'completed')
+        self.assertTrue(saved['external_action_verified'])
+        self.assertEqual(saved['result'],'NO_NEW_REPLIES')
+        self.assertTrue(saved['external_receipt_ref'].endswith('test.json'))
+
     def test_no_reply_pass_requires_real_reads_including_false_indicator(self):
         receipt = self.execute()
         self.assertEqual([x['operation'] for x in self.calls], ['post.read', 'replies.read'])
