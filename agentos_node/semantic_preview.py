@@ -4,9 +4,12 @@ import base64
 import ctypes
 import ctypes.wintypes
 import hashlib
+import multiprocessing
 import os
 import platform
+import queue
 import struct
+import time
 from pathlib import Path
 from typing import Any
 
@@ -266,19 +269,21 @@ def _capture_bmp(region: dict[str, int], *, max_pixels: int) -> tuple[bytes, int
         user32.ReleaseDC(None, screen_dc)
 
 
-def semantic_preview(task: dict[str, Any]) -> dict[str, Any]:
-    """Return a bounded, read-only preview of only the foreground window.
-
-    This capability deliberately does not enumerate other windows, execute a
-    shell, inspect the filesystem, read the clipboard, or expose a UIA tree.
-    """
+def _semantic_preview_impl(task: dict[str, Any], progress: Any | None = None) -> dict[str, Any]:
     _require_windows()
+    if progress is not None:
+        progress("session_info")
     session = _session_info()
     if not session["interactive"]:
         raise RuntimeError(f"Thin Client is not in active interactive session: {session}")
 
+    if progress is not None:
+        progress("foreground_window")
     window = _foreground_window()
     region = _bounded_region(window, task)
+
+    if progress is not None:
+        progress("capture_bmp")
     raw, width, height = _capture_bmp(
         region,
         max_pixels=int(task.get("max_pixels") or MAX_OUTPUT_PIXELS),
@@ -332,3 +337,90 @@ def semantic_preview(task: dict[str, Any]) -> dict[str, Any]:
             "background-windows",
         ],
     }
+
+
+def _semantic_preview_worker(task: dict[str, Any], out_queue: Any) -> None:
+    def progress(stage: str) -> None:
+        out_queue.put({"kind": "stage", "stage": stage, "at": time.time()})
+
+    try:
+        result = _semantic_preview_impl(task, progress=progress)
+        out_queue.put({"kind": "result", "result": result})
+    except BaseException as exc:
+        out_queue.put({
+            "kind": "error",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        })
+
+
+def semantic_preview(task: dict[str, Any]) -> dict[str, Any]:
+    """Run bounded foreground-window capture in an isolated Windows worker.
+
+    Native GDI calls are intentionally isolated from the Thin Client transport
+    process. If the worker hangs, it is terminated and the caller receives a
+    bounded error rather than losing heartbeat/task-receipt progress.
+    """
+    _require_windows()
+    timeout_seconds = max(2.0, min(float(task.get("timeout_seconds") or 8.0), 15.0))
+    ctx = multiprocessing.get_context("spawn")
+    out_queue = ctx.Queue()
+    worker = ctx.Process(target=_semantic_preview_worker, args=(dict(task), out_queue))
+    worker.daemon = True
+    worker.start()
+
+    deadline = time.monotonic() + timeout_seconds
+    last_stage = "worker_start"
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+
+    try:
+        while time.monotonic() < deadline:
+            remaining = max(0.05, min(0.5, deadline - time.monotonic()))
+            try:
+                message = out_queue.get(timeout=remaining)
+            except queue.Empty:
+                if not worker.is_alive():
+                    break
+                continue
+
+            if not isinstance(message, dict):
+                continue
+            kind = message.get("kind")
+            if kind == "stage":
+                last_stage = str(message.get("stage") or last_stage)
+            elif kind == "result":
+                candidate = message.get("result")
+                if isinstance(candidate, dict):
+                    result = candidate
+                break
+            elif kind == "error":
+                error = message
+                break
+    finally:
+        worker.join(timeout=0.2)
+        if worker.is_alive():
+            worker.terminate()
+            worker.join(timeout=1.0)
+        if worker.is_alive() and hasattr(worker, "kill"):
+            worker.kill()
+            worker.join(timeout=1.0)
+
+    if result is not None:
+        result["worker"] = {
+            "isolated": True,
+            "timeout_seconds": timeout_seconds,
+            "last_stage": last_stage,
+        }
+        return result
+
+    if error is not None:
+        raise RuntimeError(
+            f"semantic preview worker failed at {last_stage}: "
+            f"{error.get('error_type')}: {error.get('error')}"
+        )
+
+    raise TimeoutError(
+        f"semantic preview worker timed out after {timeout_seconds:.1f}s "
+        f"at stage={last_stage}"
+    )
