@@ -57,3 +57,27 @@ def test_launchers_are_single_line_assignments():
     assert "candidate launcher validation failed: provenance" in s
     assert "$lines=@('@echo off','set \"PYTHONPATH='+$candidate" not in s
     assert "('set \"PYTHONPATH={0}\"' -f [string]$lkg.path)" in finalize
+
+def test_one_click_supervisor_carrier_follows_current_runtime_state():
+    assert "supervisor path could not be resolved from task action" in s
+    assert "$current=Get-Content -Raw -LiteralPath $currentFile|ConvertFrom-Json" in s
+    assert "$env:PYTHONPATH=$runtime" in s
+    assert "supervisor_carrier" in s
+    assert "Set-ScheduledTask -TaskName $TaskName -Action" not in s
+
+
+def test_ota_helpers_are_noninteractive_and_cleaned_up():
+    assert "-LogonType S4U" in s
+    assert "Register-ScheduledTask -TaskName $guardTask" in s
+    assert "Register-ScheduledTask -TaskName $activatorTask" in s
+    assert "Remove-OtaHelperTasks" in finalize
+    assert "AgentOS Thin Client OTA Guard" in finalize
+    assert "AgentOS Thin Client OTA Activator" in finalize
+
+
+def test_rollback_publishes_lkg_before_supervisor_restart():
+    write_idx = finalize.index("Write-JsonAtomic $lkg $currentFile 8")
+    stop_idx = finalize.index("Stop-ScheduledTask -TaskName $TaskName")
+    start_idx = finalize.index("Start-ScheduledTask -TaskName $TaskName")
+    assert write_idx < stop_idx < start_idx
+
