@@ -465,6 +465,10 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     'node_ota_inspect_activator_last_result=',
                     'node_ota_inspect_guard_state=',
                     'node_ota_inspect_guard_last_result=',
+                    'node_ota_inspect_activator_status_state=',
+                    'node_ota_inspect_activator_status_client_count=',
+                    'node_ota_inspect_activator_status_remaining_count=',
+                    'node_ota_inspect_activator_status_error_class=',
                     'node_ota_inspect=',
                 )
             elif action == bootstrap_control.ACTION_REALM_NODE_INSPECT:
