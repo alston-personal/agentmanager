@@ -251,6 +251,32 @@ def main():
         action_id=str(target.get("action_id") or "").strip()
         if not text or not action_id:
             raise SystemExit("social_write_intent_incomplete")
+
+        persona=json.loads((root/"persona_state.json").read_text(encoding="utf-8"))
+        energy_cfg=persona.get("energy",{}) if isinstance(persona.get("energy"),dict) else {}
+        action_costs=energy_cfg.get("action_costs",{}) if isinstance(energy_cfg.get("action_costs"),dict) else {}
+        energy=float(state.get("energy_current",energy_cfg.get("current",0)))
+        if capability=="social.post.publish":
+            energy_cost=float(action_costs.get("new_post",8))
+        else:
+            energy_cost=float(action_costs.get("short_reply",3) if len(text)<=160
+                              else action_costs.get("long_reply",5))
+        if energy+1e-9 < energy_cost:
+            retry_at=(now_dt+timedelta(minutes=30)).isoformat().replace("+00:00","Z")
+            target["not_before"]=retry_at
+            receipt={
+              "schema":"agentos.persona-social-executor-receipt/v1","ok":False,
+              "status":"BLOCKED","result":"INSUFFICIENT_ENERGY","timestamp":now,
+              "persona_username":args.username,"capability":capability,
+              "action_id":action_id,"write_performed":False,
+              "energy_before":round(energy,2),"energy_cost":energy_cost,
+              "energy_after":round(energy,2),"retry_not_before":retry_at
+            }
+            out=Path(args.receipt_out); out.parent.mkdir(parents=True,exist_ok=True)
+            out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+            state["pending_external_actions"]=pending[-12:]
+            save(root/"pdca/state.json",state)
+            print(json.dumps(receipt,ensure_ascii=False)); return 0
         request={
           **base,
           "operation":"reply" if capability=="social.reply.send" else "publish",
@@ -272,11 +298,15 @@ def main():
         wc,wr=post(endpoint,request,{**headers,"X-AgentOS-Acceptance-ID":acceptance_id})
         if wc!=200 or wr.get("ok") is False:
             raise SystemExit("social_write_failed:"+str(wr.get("error") or wc))
+        energy_after=max(0.0,energy-energy_cost)
+        state["energy_current"]=round(energy_after,2)
         receipt={
           "schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"EXECUTED",
           "timestamp":now,"persona_username":args.username,"capability":capability,
           "account_binding_id":binding_id,"action_id":action_id,
-          "write_performed":True,"provider_receipt":wr
+          "write_performed":True,"provider_receipt":wr,
+          "energy_before":round(energy,2),"energy_cost":energy_cost,
+          "energy_after":round(energy_after,2)
         }
         out=Path(args.receipt_out); out.parent.mkdir(parents=True,exist_ok=True)
         out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
