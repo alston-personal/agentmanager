@@ -122,6 +122,30 @@ class ObservationContract(unittest.TestCase):
         receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
         self.assertEqual(receipt['plan']['candidates'],[{'intent':'rest','weight':1.0}])
 
+
+    def test_energy_recovery_uses_previous_actual_mode(self):
+        old=(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat()
+        state={**self.state,'energy_current':20,'last_tick_at':old,'energy_mode':'awake',
+               'pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
+        self.assertAlmostEqual(receipt['plan']['energy'],23.0,places=1)
+        saved=self.read('pdca/state.json')
+        self.assertEqual(saved['energy_mode'],'rest')
+
+    def test_zero_energy_allows_only_recovery(self):
+        state={**self.state,'energy_current':0,'last_tick_at':datetime.now(timezone.utc).isoformat(),
+               'energy_mode':'awake','pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
+        self.assertEqual(receipt['plan']['candidates'],[{'intent':'rest','weight':1.0}])
+        self.assertEqual(receipt['do']['energy_cost'],0.0)
+
+    def test_unaffordable_observation_is_not_queued(self):
+        state={**self.state,'energy_current':0.1,'last_tick_at':datetime.now(timezone.utc).isoformat(),
+               'energy_mode':'awake','pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='afternoon',selected='rest')
+        self.assertFalse(receipt['plan']['social_observation']['queued'])
+        self.assertEqual(receipt['plan']['social_observation']['reason'],'energy_recovery_required')
+
     def test_due_read_keeps_creative_choice_and_both_intents(self):
         receipt=self.creative_tick()
         self.assertEqual(receipt['plan']['selected_intent'],'content_ideation')
