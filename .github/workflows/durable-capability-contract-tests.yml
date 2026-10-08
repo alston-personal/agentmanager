@@ -25,4 +25,5 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile agent_core/capability_manifest_adapter.py
-          python3 -m unittest tests.test_capability_manifest_adapter -v
+          python3 -m pip install 'pytest>=8,<9'
+          python3 -m pytest tests/test_capability_manifest_adapter.py -q
