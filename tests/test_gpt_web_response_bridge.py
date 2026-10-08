@@ -343,3 +343,12 @@ class GptWebImageInputContractTests(unittest.TestCase):
         self.assertIn("includes('image')", source)
         self.assertIn("Runtime.callFunctionOn", source)
         self.assertIn("GPT_WEB_FILE_SELECTION_NOT_CONFIRMED", source)
+
+
+class GptWebFileSelectionClassificationTests(unittest.TestCase):
+    def test_file_selection_distinguishes_unverified_from_confirmed(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import invoke
+        source = inspect.getsource(invoke)
+        self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
+        self.assertIn("imagePreviewCount", source)
