@@ -175,7 +175,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
     - 3 次 FAIL → BLOCKED（發 Telegram + 跳下一個任務）
     """
     if dry_run:
-        return True, "DRY_RUN — 跳過 Claude 呼叫"
+        return False, "SKIP: dry_run_not_verified"
 
     failure_count = 0
     for attempt in range(1, 4):
@@ -227,7 +227,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
             )
             return False, f"BLOCKED: {reason}"
         if result == "SKIP":
-            return True, f"SKIP: {reason}"
+            return False, f"SKIP: {reason}"
         # result == "FAIL" → 重試
         failure_count += 1
         logger.warning(f"  驗證失敗 ({attempt}/3): {reason[:80]}")
