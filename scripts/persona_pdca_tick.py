@@ -149,7 +149,7 @@ def main():
         else:
             rate=float(energy_cfg.get("recovery",{}).get("awake_points_per_hour",3))
         if energy < 0:
-            rate *= float(energy_cfg.get("recovery",{}).get("negative_energy_multiplier",1/3))
+            rate = math.floor(rate * float(energy_cfg.get("recovery",{}).get("negative_energy_multiplier",1/3)))
         energy=min(capacity,energy+elapsed_h*rate)
 
     events=read_events(events_path)
