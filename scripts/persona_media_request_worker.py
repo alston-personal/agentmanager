@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from capability_experience_ledger import record, classify
 
 def load(path):
     return json.loads(path.read_text(encoding="utf-8"))
@@ -14,6 +15,21 @@ def load(path):
 def save(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+
+def record_media_experience(root, receipt_ref, receipt):
+    outcome=classify(receipt)
+    record({
+        "capability":"image.edit.flux-kontext" if receipt.get("provider") else "persona.media.prepare",
+        "provider":receipt.get("provider") or "unresolved",
+        "evidence_kind":"runtime_receipt",
+        "source_ref":receipt_ref,
+        "outcome":outcome,
+        "action_id":receipt.get("action_id"),
+        "timestamp":receipt.get("timestamp"),
+        "failure_reason":receipt.get("reason"),
+        "image_sha256":receipt.get("image_sha256"),
+        "publication_allowed":False
+    },root/"pdca/capability_experience.jsonl")
 
 def process(root):
     requests=root/"pdca/media_requests"
@@ -56,6 +72,7 @@ def process(root):
                                 "reference_source":generation.get("reference_source"),
                                 "generated":True,"asset_verified":False,"uploaded":False,
                                 "publication_allowed":False})
+                            record_media_experience(root,receipt_ref,load(root/receipt_ref))
                             request["status"]="generated_unverified"
                             request["receipt_ref"]=receipt_ref
                             request["checked_at"]=now
@@ -84,6 +101,7 @@ def process(root):
             "status":"BLOCKED","reason":outcome,
             "generated":False,"asset_verified":False,"uploaded":False
         })
+        record_media_experience(root,receipt_ref,load(root/receipt_ref))
         request["status"]="blocked"
         request["blocked_reason"]=outcome
         request["receipt_ref"]=receipt_ref
@@ -100,7 +118,7 @@ def process(root):
                 action["media_intent"]=media
         save(state_path,state)
         count+=1
-    print(json.dumps({"media_requests_processed":count,"mode":"intake_only","generation_performed":False}))
+    print(json.dumps({"media_requests_processed":count,"mode":"media_request_worker","experience_ledger":"pdca/capability_experience.jsonl"}))
     return 0
 
 def main():
