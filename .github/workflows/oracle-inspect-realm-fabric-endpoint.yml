@@ -107,6 +107,37 @@ jobs:
           print('target_task_id='+task_id)
           print('target_receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True) if r else 'target_receipt=MISSING')
           PY
+          echo '=== RECENT VOPC OTA RECEIPTS ==='
+          python3 - <<'PY' || true
+          import json,sqlite3
+          p='/home/ubuntu/agent-data/realm/receipts.sqlite3'
+          con=sqlite3.connect(p)
+          rows=con.execute("""
+            select task_id, received_at, payload_json
+            from receipts
+            where task_id like 'ota-%vopc5750-%'
+            order by received_at desc
+            limit 12
+          """).fetchall()
+          for task_id,received_at,payload_json in rows:
+              try:
+                  d=json.loads(payload_json)
+              except Exception:
+                  d={}
+              print(json.dumps({
+                  'task_id':task_id,
+                  'received_at':received_at,
+                  'schema':d.get('schema'),
+                  'action':d.get('action'),
+                  'ok':d.get('ok'),
+                  'error':d.get('error'),
+                  'returncode':d.get('returncode'),
+                  'runtime':d.get('runtime'),
+                  'surface_count':((d.get('surface_inventory') or {}).get('surface_count')
+                                   if isinstance(d.get('surface_inventory'),dict) else None),
+              },sort_keys=True,separators=(',',':')))
+          con.close()
+          PY
           echo '=== LIVE CHECKOUT ==='
           LIVE=/home/ubuntu/agentmanager
           test -d "$LIVE/.git" && git -C "$LIVE" rev-parse HEAD || true
