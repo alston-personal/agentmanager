@@ -222,6 +222,24 @@ jobs:
               except (ValueError, json.JSONDecodeError):
                   print("lobster_ledger_valid=false")
           LOBSTER_QUEUE
+          # Classify exact first proof WorkItem blocker without disclosing its text.
+          /usr/bin/python3 - /home/ubuntu/agent-data/governance/work-items.json <<'PROOF_BLOCKER'
+          import json,pathlib,re,sys
+          try:
+              data=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+              item=data.get("items",{}).get("lobster-autonomous-first-20261008",{})
+              reason=str(item.get("blocker") or "")
+              print("lobster_first_proof_status="+str(item.get("status") or "missing"))
+              if "TIMEOUT" in reason or "逾時" in reason: category="timeout"
+              elif "inspector_unavailable" in reason: category="inspector_unavailable"
+              elif "連續 3 次" in reason: category="retry_exhausted"
+              elif "BLOCKED" in reason: category="model_blocked"
+              elif reason: category="other"
+              else: category="none"
+              print("lobster_first_proof_blocker_category="+category)
+          except (OSError,ValueError,TypeError):
+              print("lobster_first_proof_blocker_category=unavailable")
+          PROOF_BLOCKER
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
