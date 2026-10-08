@@ -313,6 +313,90 @@ def _assistant_text(page: CdpPage, request_id: str) -> str | None:
     return str(value) if isinstance(value, str) else None
 
 
+
+COMPOSER_SELECTORS = [
+    "#prompt-textarea",
+    '[data-testid="composer-text-input"]',
+    'textarea',
+    '[role="textbox"]',
+    '.ProseMirror[contenteditable="true"]',
+    '[contenteditable="true"]',
+]
+
+
+def _composer_snapshot(page: Any) -> dict[str, Any]:
+    selectors_json = json.dumps(COMPOSER_SELECTORS)
+    expr = """(() => {
+      const selectors = %s;
+      const result = {
+        href: location.href,
+        title: document.title,
+        readyState: document.readyState,
+        fileInputs: document.querySelectorAll('input[type="file"]').length,
+        loginRequired: false,
+        candidates: []
+      };
+      const authTexts = Array.from(document.querySelectorAll('a,button'))
+        .map(x => (x.innerText || x.textContent || '').trim().toLowerCase())
+        .filter(Boolean);
+      result.loginRequired = authTexts.some(t =>
+        t === 'log in' || t === 'sign up' || t === '登入' || t === '註冊'
+      );
+      for (const selector of selectors) {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        let visible = 0;
+        for (const node of nodes) {
+          const r = node.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) visible++;
+        }
+        result.candidates.push({selector, count:nodes.length, visible});
+      }
+      return result;
+    })()""" % selectors_json
+    value = page.evaluate(expr)
+    return value if isinstance(value, dict) else {"invalid_snapshot": True}
+
+
+def _focus_composer(page: Any, *, timeout_seconds: float = 12.0) -> dict[str, Any]:
+    selectors_json = json.dumps(COMPOSER_SELECTORS)
+    deadline = time.monotonic() + timeout_seconds
+    last_snapshot: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        expr = """(() => {
+          const selectors = %s;
+          for (const selector of selectors) {
+            const nodes = Array.from(document.querySelectorAll(selector));
+            for (let i = nodes.length - 1; i >= 0; i--) {
+              const el = nodes[i];
+              const r = el.getBoundingClientRect();
+              const disabled = el.disabled === true || el.getAttribute('aria-disabled') === 'true';
+              if (r.width > 0 && r.height > 0 && !disabled) {
+                el.focus();
+                return {
+                  ok: true,
+                  selector,
+                  tag: el.tagName,
+                  contenteditable: el.getAttribute('contenteditable'),
+                  role: el.getAttribute('role'),
+                  testid: el.getAttribute('data-testid')
+                };
+              }
+            }
+          }
+          return {ok:false};
+        })()""" % selectors_json
+        value = page.evaluate(expr)
+        if isinstance(value, dict) and value.get("ok") is True:
+            return value
+        last_snapshot = _composer_snapshot(page)
+        if last_snapshot.get("loginRequired") is True:
+            raise RuntimeError("GPT_WEB_LOGIN_REQUIRED")
+        time.sleep(0.4)
+    raise RuntimeError(
+        "GPT_WEB_COMPOSER_NOT_FOUND:" + json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)
+    )
+
+
 def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, Any]) -> str:
     image = Path(str(inner["image_path"])).expanduser().resolve()
     allowed_raw = os.environ.get("AGENTOS_GPT_WEB_ALLOWED_ROOTS", "/home/ubuntu/agentmanager/benchmarks/invoice_handwriting/fixtures")
@@ -326,25 +410,26 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
 
     page = _page(cdp_url)
     try:
+        # The composer must be present before upload; this also distinguishes a
+        # logged-out/login-only surface from a usable ChatGPT conversation page.
+        _focus_composer(page, timeout_seconds=12.0)
+
         element = page.call("Runtime.evaluate", {
             "expression": "document.querySelector('input[type=file]')",
             "returnByValue": False,
         }).get("result") or {}
         object_id = element.get("objectId")
         if not object_id:
-            raise RuntimeError("GPT_WEB_FILE_INPUT_NOT_FOUND")
+            raise RuntimeError(
+                "GPT_WEB_FILE_INPUT_NOT_FOUND:" +
+                json.dumps(_composer_snapshot(page), ensure_ascii=False, sort_keys=True)
+            )
         page.call("DOM.setFileInputFiles", {"objectId": object_id, "files": [str(image)]})
 
+        # File upload may rerender the composer. Reacquire/focus it instead of
+        # assuming the pre-upload DOM node is still active.
+        _focus_composer(page, timeout_seconds=12.0)
         prompt = str(inner["prompt"])
-        found = page.evaluate("""(() => {
-          const el = document.querySelector('#prompt-textarea') ||
-                     Array.from(document.querySelectorAll('[contenteditable="true"]')).pop();
-          if (!el) return false;
-          el.focus();
-          return true;
-        })()""")
-        if found is not True:
-            raise RuntimeError("GPT_WEB_COMPOSER_NOT_FOUND")
         page.call("Input.insertText", {"text": prompt})
         page.call("Input.dispatchKeyEvent", {"type": "keyDown", "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13})
         page.call("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13})
