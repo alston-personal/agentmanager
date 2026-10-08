@@ -86,8 +86,13 @@ def main() -> int:
         if receipt:
             print("antigravity_image_probe_provider=" + str(receipt.get("provider")))
             print("antigravity_image_probe_ok=" + str(receipt.get("ok")))
+            print("antigravity_image_probe_returncode=" + str(receipt.get("returncode")))
             output = str(receipt.get("stdout") or "").replace("\n", " ")[:3000]
+            stderr = str(receipt.get("stderr") or "").replace("\n", " ")[:3000]
+            error = str(receipt.get("error") or "").replace("\n", " ")[:1200]
             print("antigravity_image_probe_output=" + output)
+            print("antigravity_image_probe_stderr=" + stderr)
+            print("antigravity_image_probe_error=" + error)
             if receipt.get("ok") is not True:
                 print("antigravity_image_inspect_probe=BACKEND_ERROR")
                 return 0
