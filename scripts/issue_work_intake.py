@@ -10,7 +10,7 @@ import argparse
 import json
 import re
 from pathlib import Path
-from work_completion import register
+from work_completion import register, load, TERMINAL
 
 REQUIRED_LABELS = {"agentos:approved", "agentos:lobster"}
 SAFE_LABEL = "agentos:readonly"
@@ -59,6 +59,10 @@ def intake(issues: list[dict], *, repo: str, state: Path, workspace: Path) -> li
         acceptance = re.search(r"(?m)^Acceptance:\s*(.+?)\s*$", body).group(1).strip()
         number = int(issue["number"])
         work_id = f"gh-issue-{number}-readonly"
+        previous = load(state)["items"].get(work_id)
+        if previous and previous.get("status") in TERMINAL:
+            result.append({"number": number, "status": "already_terminal", "work_id": work_id})
+            continue
         item = register(
             state, work_id=work_id, project_id="agentos-core",
             title=str(issue.get("title") or work_id)[:160],
