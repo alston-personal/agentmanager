@@ -1,0 +1,28 @@
+name: Durable Capability Contract Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agent_core/capability_manifest_adapter.py'
+      - 'agent_core/governance_directory.py'
+      - 'tests/test_capability_manifest_adapter.py'
+      - 'docs/architecture/DURABLE_CAPABILITY_INVARIANT.md'
+      - '.github/workflows/durable-capability-contract-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify manifest contract without Oracle dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agent_core/capability_manifest_adapter.py
+          python3 -m unittest tests.test_capability_manifest_adapter -v
