@@ -591,6 +591,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         saw_generation = False
         saw_correlated_user = False
         saw_assistant = False
+        empty_message_ticks = 0
         while time.monotonic() < deadline:
             text = _assistant_text(page, request_id)
             if text:
@@ -601,6 +602,22 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             saw_generation |= last_snapshot.get("generating") is True
             saw_correlated_user |= int(last_snapshot.get("correlatedUserCount") or 0) > 0
             saw_assistant |= int(last_snapshot.get("assistantCount") or 0) > baseline_assistants
+            # A transient /uc/ route may use a different message renderer. If
+            # generation finished but no role-bearing messages ever appeared,
+            # return a precise incompatibility instead of a generic timeout.
+            if (last_snapshot.get("pagePath") or "").startswith("/uc/") and (
+                last_snapshot.get("generating") is not True
+                and int(last_snapshot.get("messageNodes") or 0) == 0
+                and saw_generation
+            ):
+                empty_message_ticks += 1
+                if empty_message_ticks >= 6:
+                    raise RuntimeError(
+                        "GPT_WEB_ROUTE_MESSAGE_SURFACE_UNSUPPORTED:" +
+                        json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)
+                    )
+            else:
+                empty_message_ticks = 0
             if (
                 int(last_snapshot.get("assistantCount") or 0) > baseline_assistants
                 and last_snapshot.get("generating") is not True
