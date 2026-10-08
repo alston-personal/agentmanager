@@ -228,7 +228,24 @@ class ThinClient:
                 result = execute_plan(task, workspace=workspace)
             else:
                 raise ValueError(f'unsupported action: {action}')
-            receipt.update(result)
+            reserved_receipt_fields = {
+                'schema',
+                'realm_id',
+                'node_id',
+                'task_id',
+                'action',
+                'started_at',
+                'completed_at',
+                'ok',
+                'cognition_ids_used',
+            }
+            for key, value in result.items():
+                if key == 'schema':
+                    receipt['result_schema'] = value
+                elif key in reserved_receipt_fields:
+                    receipt[f'result_{key}'] = value
+                else:
+                    receipt[key] = value
             receipt['ok'] = True
         except Exception as exc:
             receipt['error'] = f'{type(exc).__name__}: {exc}'
