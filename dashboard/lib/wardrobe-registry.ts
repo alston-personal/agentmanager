@@ -44,6 +44,22 @@ export type CanonicalGarmentRecord = {
     owned?: boolean;
     worn?: boolean;
   };
+  tryOnSource?: {
+    schema: 'agentos.wardrobe-isolated-product/v1';
+    state: 'pending' | 'extracting' | 'candidate' | 'approved' | 'rejected';
+    isolatedImageUrl?: string | null;
+    maskUrl?: string | null;
+    productIR?: {
+      schema: 'agentos.wardrobe-product-ir/v1';
+      category: string;
+      attributes: Record<string, string | number | boolean | null>;
+      mustKeep: string[];
+    } | null;
+    sourceFingerprint?: string | null;
+    approvedFingerprint?: string | null;
+    approvedAt?: string | null;
+    extractorVersion?: string | null;
+  };
   tryOn?: {
     state?: string;
     status?: string;
