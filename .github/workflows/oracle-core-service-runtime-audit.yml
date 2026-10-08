@@ -110,6 +110,14 @@ jobs:
           echo "lobster_task_starts_last_30m=$lobster_started"
           echo "lobster_task_done_last_30m=$lobster_done"
           echo "lobster_task_failed_last_30m=$lobster_failed"
+          # Privacy-safe error categories only; never reveal traceback text or paths.
+          lobster_error_kind=unknown
+          for candidate in ModuleNotFoundError ImportError SyntaxError IndentationError NameError AttributeError TypeError ValueError PermissionError FileNotFoundError RuntimeError KeyError TimeoutError AssertionError SystemExit; do
+            if printf "%s\n" "$lobster_journal" | grep -q "$candidate:"; then
+              lobster_error_kind="$candidate"
+            fi
+          done
+          echo "lobster_recent_exception_class=$lobster_error_kind"
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
