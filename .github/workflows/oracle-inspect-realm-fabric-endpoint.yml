@@ -139,3 +139,4 @@ jobs:
 # inspect-trigger: 2026-10-02T05:06Z vopc-task-queue-no-receipt
 
 # inspect-trigger: 2026-10-02T13:xxZ recurrent-html-502
+# inspect-trigger: 2026-10-08T0356Z vopc-post-ota-manifest
