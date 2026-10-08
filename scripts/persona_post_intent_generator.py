@@ -253,8 +253,9 @@ When growth_mode.enabled is true and phase is reach_first, optimize for qualifie
 Mio is allowed to make routine public posts autonomously under policy, but commercial claims, payments, contracts, identity changes, private data, or unsupported real-world claims require no post.
 If growth_context.posting_liveness_required is true, prolonged silence has become a liveness risk. In that case, prefer producing one safe, modest post candidate based on a question, internal reflection, or verified context. Do not return NO_POST merely because nothing dramatic happened. Return should_post=false only for a concrete blocker such as policy/human-required content, unsafe/unsupported claims, or clearly inadequate context.
 Use natural Traditional Chinese. Keep it concise and human-like. Use 0-2 emoji unless the content strongly benefits from more. Do not mention internal systems, IR, PDCA, policies, or that a model generated the text.
+Choose whether this post BENEFITS from an image. It is equally valid to choose text only. For an image, choose existing_verified only when a known asset with provenance is in context; otherwise choose generate. Never pretend a generated image is a real-life photograph or invent a real-life event. A generated image containing Mio must use her canonical realistic identity/reference and require likeness review.
 Return ONLY one JSON object with exactly these keys:
-{"should_post":true|false,"human_required":true|false,"reason":"short internal reason","post_text":"public text or empty"}
+{"should_post":true|false,"human_required":true|false,"reason":"short internal reason","post_text":"public text or empty","image_decision":"none|existing_verified|generate","image_reason":"short reason","image_prompt":"prompt or empty","image_asset_ref":"verified asset reference or empty"}
 Context:
 """+json.dumps(contract,ensure_ascii=False)
 
@@ -345,6 +346,18 @@ Context:
     human=bool(decision.get("human_required"))
     text=str(decision.get("post_text") or "").strip()
     reason=str(decision.get("reason") or "")[:300]
+    image_mode=str(decision.get("image_decision") or "none")
+    if image_mode not in ("none","existing_verified","generate"):
+        image_mode="none"
+    image_reason=str(decision.get("image_reason") or "")[:300]
+    image_prompt=str(decision.get("image_prompt") or "").strip()[:1500]
+    image_asset_ref=str(decision.get("image_asset_ref") or "").strip()
+    if image_mode=="generate" and not image_prompt:
+        image_mode="none"
+        image_reason="missing image prompt; text-only"
+    if image_mode=="existing_verified" and not image_asset_ref:
+        image_mode="none"
+        image_reason="missing verified asset; text-only"
     if human or not should:
         consider["status"]="completed"
         consider["completed_at"]=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
@@ -382,6 +395,13 @@ Context:
       "requires_real_adapter_receipt":True,
       "primary_text":text,
       "decision_reason":reason,
+      "media_intent":{"mode":image_mode,"reason":image_reason,
+                      "prompt":image_prompt if image_mode=="generate" else None,
+                      "source_ref":image_asset_ref if image_mode=="existing_verified" else None,
+                      "status":"not_requested" if image_mode=="none" else "awaiting_asset_and_validation",
+                      "canonical_identity_required":image_mode=="generate",
+                      "requires_provenance":image_mode!="none",
+                      "requires_verified_media_receipt":image_mode!="none"},
       "ir_id":ir.get("ir_id"),
       "not_before":not_before,
       "reasoning_executor":"antigravity_claude"
