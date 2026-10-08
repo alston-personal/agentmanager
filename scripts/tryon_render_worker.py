@@ -289,7 +289,64 @@ def reject_detached_reference(output: str, object_path: Path, object_class: str)
     return str(output_file)
 
 
-def idm_try_on(person_source: str, garment_url: str, description: str, seed: int) -> str:
+def _layer_crop_box(width: int, height: int, layer: str) -> tuple[int, int, int, int]:
+    boxes = {
+        "upper_inner": (0.24, 0.18, 0.76, 0.55),
+        "upper_main": (0.24, 0.18, 0.76, 0.58),
+        "upper_outer": (0.18, 0.15, 0.82, 0.62),
+        "lower_main": (0.22, 0.46, 0.78, 0.84),
+        "onepiece": (0.22, 0.22, 0.78, 0.84),
+        "shoes": (0.18, 0.76, 0.82, 1.00),
+    }
+    x1, y1, x2, y2 = boxes.get(layer, (0.20, 0.20, 0.80, 0.85))
+    return (
+        max(0, int(width * x1)),
+        max(0, int(height * y1)),
+        min(width, int(width * x2)),
+        min(height, int(height * y2)),
+    )
+
+
+def _median_rgb(path: Path, layer: str) -> tuple[int, int, int]:
+    image = Image.open(path).convert("RGB")
+    crop = image.crop(_layer_crop_box(image.width, image.height, layer))
+    crop = ImageOps.contain(crop, (96, 96), method=Image.Resampling.LANCZOS)
+    pixels = list(crop.getdata())
+    if not pixels:
+        return (0, 0, 0)
+    channels = list(zip(*pixels))
+    med = []
+    for channel in channels:
+        values = sorted(int(v) for v in channel)
+        med.append(values[len(values) // 2])
+    return tuple(med)  # type: ignore[return-value]
+
+
+def _rgb_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    return sum((float(x) - float(y)) ** 2 for x, y in zip(a, b)) ** 0.5
+
+
+def reject_gross_layer_mismatch(output: str, reference_path: Path, layer: str) -> str:
+    """Reject only obvious appearance drift; semantic QC remains a separate gate."""
+    if layer not in {"upper_inner", "upper_main", "upper_outer", "lower_main", "onepiece", "shoes"}:
+        return str(output_path(output))
+    output_file = output_path(output)
+    ref_rgb = _median_rgb(reference_path, layer)
+    out_rgb = _median_rgb(output_file, layer)
+    distance = _rgb_distance(ref_rgb, out_rgb)
+    ref_luma = sum(ref_rgb) / 3.0
+    out_luma = sum(out_rgb) / 3.0
+    luma_delta = abs(ref_luma - out_luma)
+    # Intentionally conservative: this is for egregious color/value drift such
+    # as black trousers becoming beige shorts or white shoes becoming bare feet.
+    if distance >= 125.0 and luma_delta >= 55.0:
+        raise RuntimeError(
+            f"gross_layer_appearance_mismatch:{layer}:rgb_distance={distance:.1f}:luma_delta={luma_delta:.1f}"
+        )
+    return str(output_file)
+
+
+def idm_try_on(person_source: str, garment_url: str, description: str, seed: int, layer: str) -> str:
     temp_inputs: list[Path] = []
     try:
         if person_source.startswith(("http://", "https://")):
@@ -317,7 +374,8 @@ def idm_try_on(person_source: str, garment_url: str, description: str, seed: int
             int(seed),
             api_name="/tryon",
         )
-        return str(output_path(result))
+        candidate = str(output_path(result))
+        return reject_gross_layer_mismatch(candidate, garment_path, layer)
     finally:
         for path in temp_inputs:
             try:
@@ -369,6 +427,7 @@ def inference_provider_reference_try_on(
     object_url: str,
     object_class: str,
     seed: int,
+    layer: str | None = None,
 ) -> tuple[str, str]:
     if not HF_TOKEN:
         raise RuntimeError("HF_TOKEN not configured for Inference Providers")
@@ -438,6 +497,8 @@ def inference_provider_reference_try_on(
                     output.unlink(missing_ok=True)
                     raise RuntimeError("Inference Provider output is unexpectedly small")
                 validated = reject_detached_reference(str(output), object_path, object_class)
+                if layer:
+                    validated = reject_gross_layer_mismatch(validated, object_path, layer)
                 return validated, f"{provider}:{model}"
             except Exception as exc:
                 errors.append(f"{provider}:{model}={type(exc).__name__}:{exc}"[:700])
@@ -456,6 +517,7 @@ def qwen_reference_try_on(
     object_url: str,
     object_class: str,
     seed: int,
+    layer: str | None = None,
 ) -> tuple[str, str]:
     temp_inputs: list[Path] = []
     global _QWEN_EDIT_CLIENT
@@ -500,6 +562,8 @@ def qwen_reference_try_on(
             raise RuntimeError(f"Qwen workflow returned unexpected result: {result!r}")
         edited = result[1]
         validated = reject_detached_reference(str(output_path(edited)), object_path, object_class)
+        if layer:
+            validated = reject_gross_layer_mismatch(validated, object_path, layer)
         return validated, QWEN_EDIT_SPACE_ID
     except Exception:
         _QWEN_EDIT_CLIENT = None
@@ -517,6 +581,7 @@ def omni_try_on(
     object_class: str,
     seed: int,
     progress_cb=None,
+    layer: str | None = None,
 ) -> tuple[str, str]:
     temp_inputs: list[Path] = []
     errors: list[str] = []
@@ -548,6 +613,8 @@ def omni_try_on(
                     )
                     candidate = str(output_path(result))
                     validated = reject_detached_reference(candidate, object_path, object_class)
+                    if layer:
+                        validated = reject_gross_layer_mismatch(validated, object_path, layer)
                     return validated, space_id
                 except Exception as exc:
                     message = f"{type(exc).__name__}:{exc}"
@@ -577,6 +644,7 @@ def omni_try_on(
                 str(object_path),
                 object_class,
                 int(seed),
+                layer=layer,
             )
         except Exception as exc:
             errors.append(f"{QWEN_EDIT_SPACE_ID}={type(exc).__name__}:{exc}"[:700])
@@ -589,6 +657,7 @@ def omni_try_on(
                 str(object_path),
                 object_class,
                 int(seed),
+                layer=layer,
             )
         except Exception as exc:
             errors.append(f"inference-providers={type(exc).__name__}:{exc}"[:1200])
@@ -862,7 +931,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                 description = f"{garment_name}; {CLOTHING_SUPPORTED[layer]}"
                 try:
                     set_progress(path, job, "rendering", f"Rendering {layer} with {SPACE_ID}")
-                    person_url = idm_try_on(person_url, source_url, description, seed_base + index)
+                    person_url = idm_try_on(person_url, source_url, description, seed_base + index, layer)
                     provider = "idm-vton-gradio-client"
                     provider_space = SPACE_ID
                 except Exception as primary_exc:
@@ -872,6 +941,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                         source_url,
                         CLOTHING_SUPPORTED[layer],
                         seed_base + index,
+                        layer=layer,
                     )
                     provider = "hf-inference-provider-reference-edit"
                     warnings.append(
@@ -890,6 +960,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                     ANY_ITEM_SUPPORTED[layer],
                     seed_base + index,
                     progress_cb=any_item_progress,
+                    layer=layer,
                 )
                 provider = (
                     "qwen-image-2.1-reference-edit"
