@@ -42,3 +42,15 @@ A passing unit test, existing GitHub issue, historical screenshot or queued disp
 
 ## Implementation order
 Inventory existing manifest schema -> add only missing contract validation -> test deterministic execution and recovery -> live Oracle GUI transport probe -> deployment regression fence -> record receipts and close #1672 only on evidence.
+
+## Control-plane completion API migration (candidate implementation)
+The legacy `ControlPlaneStore.update_task()` is limited to cancelling a **submitted** task. Executor-side terminal outcomes use `complete_leased_task(task_id, node_id, lease_until, status, result)` and must carry the original lease token from `lease_next_task()`.
+
+This branch currently uses the lease deadline as a compare-and-swap token; this protects the tested path against expired and stale acknowledgements but is **not** a dedicated generation/nonce and should be replaced by one before supporting renewals or same-node re-leases. No external executor migration is claimed until caller inventory and live transport receipt exist.
+
+`expire_overdue_leases()` is a callable reconciliation primitive only. It does not schedule itself and intentionally does not replay external effects. A separately accepted Supervisor integration must invoke it, examine authoritative external receipts, and choose a governed recovery action. Keep work in a non-replayable state while side effects are unknown.
+
+### Known caller coverage
+- Verified in this branch: `tests/test_control_plane.py` now uses the leased completion API.
+- Inspected: `agent_core/realm_server.py` showed no direct `ControlPlaneStore` reference in the reviewed file.
+- Unknown: any external/older deployed clients, scripts, or nodes not included in this limited repository path review. A green CI result is not a migration sign-off.
