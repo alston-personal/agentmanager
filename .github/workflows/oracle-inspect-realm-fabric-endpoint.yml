@@ -142,7 +142,7 @@ jobs:
           AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/.local/share/agentos/realm-fabric/current python3 - <<'PY' || true
           import json
           from agent_core.realm_fabric import RealmFabricStore
-          task_id='ota-stage-vopc5750-1791436182'
+          task_id='ota-stage-vopc5750-1791437197'
           r=RealmFabricStore().get_receipt(task_id) or {}
           safe={
               'task_id':task_id,
@@ -193,3 +193,5 @@ jobs:
 # inspect-trigger: 2026-10-08T1234Z vopc-live-ota-candidate-heartbeat
 
 # inspect-trigger: 2026-10-08T1314Z latest-stage-receipt
+
+# inspect-trigger: 2026-10-08T1329Z latest-unique-helper-stage
