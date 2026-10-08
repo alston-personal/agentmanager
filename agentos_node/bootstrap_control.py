@@ -738,6 +738,19 @@ function TaskField([string]$name,[string]$field){
   if($field -eq 'last_result'){
     try{return [string](Get-ScheduledTaskInfo -TaskName $name -ErrorAction Stop).LastTaskResult}catch{return 'unknown'}
   }
+  if($field -eq 'logon_type'){
+    try{return [string]$t.Principal.LogonType}catch{return 'unknown'}
+  }
+  if($field -eq 'run_level'){
+    try{return [string]$t.Principal.RunLevel}catch{return 'unknown'}
+  }
+  if($field -eq 'user_leaf'){
+    try{
+      $u=[string]$t.Principal.UserId
+      if([string]::IsNullOrWhiteSpace($u)){return 'empty'}
+      return ($u -split '\\')[-1]
+    }catch{return 'unknown'}
+  }
   return 'unknown'
 }
 Write-Output ('node_ota_inspect_node='+$env:COMPUTERNAME)
@@ -749,6 +762,9 @@ Write-Output ('node_ota_inspect_main_state='+$(TaskField 'AgentOS Thin Client' '
 Write-Output ('node_ota_inspect_main_execute='+$(TaskField 'AgentOS Thin Client' 'execute'))
 Write-Output ('node_ota_inspect_main_uses_current_json='+$(TaskField 'AgentOS Thin Client' 'uses_current_json'))
 Write-Output ('node_ota_inspect_main_last_result='+$(TaskField 'AgentOS Thin Client' 'last_result'))
+Write-Output ('node_ota_inspect_main_logon_type='+$(TaskField 'AgentOS Thin Client' 'logon_type'))
+Write-Output ('node_ota_inspect_main_run_level='+$(TaskField 'AgentOS Thin Client' 'run_level'))
+Write-Output ('node_ota_inspect_main_user_leaf='+$(TaskField 'AgentOS Thin Client' 'user_leaf'))
 Write-Output ('node_ota_inspect_activator_state='+$(TaskField 'AgentOS Thin Client OTA Activator' 'state'))
 Write-Output ('node_ota_inspect_activator_last_result='+$(TaskField 'AgentOS Thin Client OTA Activator' 'last_result'))
 Write-Output ('node_ota_inspect_guard_state='+$(TaskField 'AgentOS Thin Client OTA Guard' 'state'))
