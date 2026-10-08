@@ -234,6 +234,45 @@ class ControlPlaneStore:
             connection.commit()
         return self._task_from_row(row)
 
+    def expire_overdue_leases(self) -> list[dict[str, Any]]:
+        """Fence timed-out leases without replaying possibly completed effects.
+
+        An expired task is not eligible for lease_next_task until a governed
+        reconciler explicitly determines whether any external effect occurred.
+        """
+        now = _timestamp(_now())
+        expired: list[dict[str, Any]] = []
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """
+                SELECT * FROM tasks
+                WHERE status IN ('leased', 'running')
+                  AND lease_until IS NOT NULL AND lease_until <= ?
+                ORDER BY lease_until, task_id
+                """,
+                (now,),
+            ).fetchall()
+            for row in rows:
+                existing_result = json.loads(row["result_json"]) if row["result_json"] else {}
+                existing_result["sideEffectState"] = "unknown"
+                existing_result["recoveryRequired"] = True
+                existing_result["expirationReason"] = "lease_timeout"
+                connection.execute(
+                    """
+                    UPDATE tasks SET status='expired', lease_until=NULL,
+                        result_json=?, updated_at=?
+                    WHERE task_id=? AND status IN ('leased', 'running')
+                    """,
+                    (json.dumps(existing_result, sort_keys=True), now, row["task_id"]),
+                )
+                new_row = connection.execute(
+                    "SELECT * FROM tasks WHERE task_id=?", (row["task_id"],)
+                ).fetchone()
+                expired.append(self._task_from_row(new_row))
+            connection.commit()
+        return expired
+
     def update_task(
         self,
         task_id: str,
