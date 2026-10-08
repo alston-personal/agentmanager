@@ -100,7 +100,10 @@ if([string]$registeredAction.Execute -notmatch '(?i)powershell\.exe$'){throw 'Th
 $actionArgs=[string]$registeredAction.Arguments
 if($actionArgs -notmatch '(?i)-File\s+"([^"]+)"'){throw 'Thin Client supervisor path could not be resolved from task action'}
 $supervisorPath=[string]$Matches[1]
-$installPrefix=[System.IO.Path]::GetFullPath($InstallRoot).TrimEnd('\\')+'\\'
+$installFull=[System.IO.Path]::GetFullPath($InstallRoot)
+$trimChars=[char[]]@([System.IO.Path]::DirectorySeparatorChar,[System.IO.Path]::AltDirectorySeparatorChar)
+$installFull=$installFull.TrimEnd($trimChars)
+$installPrefix=$installFull+[System.IO.Path]::DirectorySeparatorChar
 $supervisorFull=[System.IO.Path]::GetFullPath($supervisorPath)
 if(-not $supervisorFull.StartsWith($installPrefix,[System.StringComparison]::OrdinalIgnoreCase)){throw 'Thin Client supervisor path is outside InstallRoot'}
 $pythonExe=(& python -c "import sys; print(sys.executable)"|Select-Object -Last 1).Trim()
