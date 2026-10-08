@@ -605,7 +605,6 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         last_snapshot["sawGenerationAfterSubmit"] = saw_generation
         last_snapshot["sawCorrelatedUserAfterSubmit"] = saw_correlated_user
         last_snapshot["sawAssistantAfterSubmit"] = saw_assistant
-        last_snapshot["pageHrefChanged"] = False
         raise RuntimeError(
             "GPT_WEB_RESPONSE_TIMEOUT:" +
             json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)
