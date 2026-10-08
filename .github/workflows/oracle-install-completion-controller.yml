@@ -368,6 +368,16 @@ jobs:
               ('market-master-1200-mvp','market1200'),
           ):
               item=data.get('items',{}).get(wid) or {}
+              blocker_kind='NONE'
+              if item.get('status') == 'blocked':
+                  import importlib.util
+                  from pathlib import Path
+                  runtime=Path('/home/ubuntu/agent-data/runtime/agentos-lobster/current/scripts/work_completion.py')
+                  spec=importlib.util.spec_from_file_location('completion_runtime', runtime)
+                  mod=importlib.util.module_from_spec(spec)
+                  assert spec.loader is not None
+                  spec.loader.exec_module(mod)
+                  blocker_kind=mod.classify_blocker(item.get('blocker'))
               print(
                   'completion_live_state'
                   +' attempt='+attempt
@@ -376,6 +386,7 @@ jobs:
                   +' owner='+str(item.get('owner','missing'))
                   +' generation='+str(item.get('owner_generation','missing'))
                   +' history_len='+str(len(item.get('history') or []))
+                  +' blocker_kind='+blocker_kind
               )
           PY
             read -r CORE_STATUS MARKET_STATUS <<EOF
