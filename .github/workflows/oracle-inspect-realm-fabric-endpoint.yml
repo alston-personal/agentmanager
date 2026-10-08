@@ -189,3 +189,5 @@ jobs:
 # inspect-trigger: 2026-10-08T0356Z vopc-post-ota-manifest
 
 # inspect-trigger: 2026-10-08T1213Z ota-stage-failure
+
+# inspect-trigger: 2026-10-08T1234Z vopc-live-ota-candidate-heartbeat
