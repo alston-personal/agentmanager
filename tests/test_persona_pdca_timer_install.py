@@ -57,7 +57,9 @@ def test_installer_recovers_only_stale_heartbeat():
     repo=Path(__file__).resolve().parents[1]
     text=(repo/"scripts"/"install_persona_pdca_timer_user.sh").read_text(encoding="utf-8")
     assert "STALE_AFTER_SEC=5400" in text
-    assert "ExecMainExitTimestamp" in text
+    assert "my-agent-data/contents/personas/sunlake-milkcat/pdca/state.json" in text
+    assert 'get("last_tick_at","")' in text
+    assert "ExecMainExitTimestamp" not in text
     assert 'persona_pdca_stale_recovery=TRIGGERED' in text
     assert 'persona_pdca_stale_recovery=SKIPPED_FRESH' in text
     assert "systemctl --user start agentos-persona-pdca-heartbeat.service" in text
