@@ -1002,9 +1002,9 @@ TARGET CHARACTER IR:
 
 
 def _render_image_flow(target_ir: dict[str, Any], strict: bool) -> bytes:
-    python_bin = Path.home() / ".local/share/agentos/gui-worker/venv/bin/python"
+    python_bin = Path("/usr/bin/python3")
     if not python_bin.is_file():
-        raise RuntimeError("Flow GUI worker venv is unavailable")
+        raise RuntimeError("system python is unavailable for Flow raw-CDP fallback")
 
     prompt = render_prompt(target_ir, strict=strict) + """
 Generate a single square still IMAGE, not a video.
