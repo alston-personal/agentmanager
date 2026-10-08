@@ -12,6 +12,7 @@ SOURCE_POST_INTENT_GENERATOR="${7:-}"
 SOURCE_SOCIAL_RUNNER="${8:-}"
 SOURCE_GROWTH_METRICS="${9:-}"
 SOURCE_MEDIA_WORKER="${10:-}"
+SOURCE_IMAGE_EXECUTOR="${11:-}"
 test -f "$SOURCE_TICK"
 test -f "$SOURCE_RUNNER"
 test -f "$SOURCE_SOCIAL_EXECUTOR"
@@ -22,6 +23,7 @@ test -f "$SOURCE_POST_INTENT_GENERATOR"
 test -f "$SOURCE_SOCIAL_RUNNER"
 test -f "$SOURCE_GROWTH_METRICS"
 test -f "$SOURCE_MEDIA_WORKER"
+test -f "$SOURCE_IMAGE_EXECUTOR"
 
 LIB="$HOME/.local/lib/agentos"
 BIN="$HOME/.local/bin"
@@ -35,6 +37,7 @@ install -m 0755 "$SOURCE_PUBLIC_ACTIVITY_PUBLISHER" "$LIB/publish_mio_public_act
 install -m 0755 "$SOURCE_POST_INTENT_GENERATOR" "$LIB/persona_post_intent_generator.py"
 install -m 0755 "$SOURCE_GROWTH_METRICS" "$LIB/persona_growth_metrics_collector.py"
 install -m 0755 "$SOURCE_MEDIA_WORKER" "$LIB/persona_media_request_worker.py"
+install -m 0755 "$SOURCE_IMAGE_EXECUTOR" "$LIB/persona_image_generate_flux.py"
 CANONICAL_HEARTBEAT="$BIN/agentos-persona-pdca-heartbeat-v2"
 install -m 0755 "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT"
 cmp -s "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT" || {
@@ -93,6 +96,9 @@ Type=oneshot
 Environment=PERSONA_PATH=personas/sunlake-milkcat
 Environment=AGENTOS_PERSONA_SOCIAL_EXECUTOR=$LIB/persona_social_executor.py
 Environment=AGENTOS_PERSONA_GROWTH_METRICS=$LIB/persona_growth_metrics_collector.py
+Environment=AGENTOS_MIO_IMAGE_EXECUTOR=$LIB/persona_image_generate_flux.py
+Environment=AGENTOS_MIO_IMAGE_EXECUTOR_PYTHON=/home/ubuntu/.local/share/mio-tryon-venv/bin/python
+Environment=AGENTOS_MIO_MEDIA_OUTPUT_DIR=/home/ubuntu/agent-data/media/mio/generated
 ExecStart=$BIN/agentos-persona-social-actions
 NoNewPrivileges=true
 EOF

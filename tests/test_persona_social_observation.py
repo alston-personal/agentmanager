@@ -561,5 +561,16 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('persona_media_request_worker.py',installer)
 
 
+    def test_media_generation_executor_is_draft_only_and_wired(self):
+        generator=(REPO/'scripts/persona_image_generate_flux.py').read_text()
+        worker=(REPO/'scripts/persona_media_request_worker.py').read_text()
+        installer=(REPO/'scripts/install_persona_pdca_timer_user.sh').read_text()
+        self.assertIn('FLUX.1-Kontext-Dev',generator)
+        self.assertIn('GENERATED_UNVERIFIED',generator)
+        self.assertIn('"publication_allowed":False',generator)
+        self.assertIn('asset_verified":False',worker)
+        self.assertIn('AGENTOS_MIO_IMAGE_EXECUTOR=',installer)
+
+
 if __name__ == '__main__':
     unittest.main()
