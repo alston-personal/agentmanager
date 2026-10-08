@@ -577,6 +577,9 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
 
         deadline = time.monotonic() + 45
         last_snapshot: dict[str, Any] = {}
+        saw_generation = False
+        saw_correlated_user = False
+        saw_assistant = False
         while time.monotonic() < deadline:
             text = _assistant_text(page, request_id)
             if text:
@@ -584,6 +587,9 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
                     raise RuntimeError("GPT_WEB_RESPONSE_TOO_LARGE")
                 return text
             last_snapshot = _submission_snapshot(page, request_id)
+            saw_generation |= last_snapshot.get("generating") is True
+            saw_correlated_user |= int(last_snapshot.get("correlatedUserCount") or 0) > 0
+            saw_assistant |= int(last_snapshot.get("assistantCount") or 0) > baseline_assistants
             if (
                 int(last_snapshot.get("assistantCount") or 0) > baseline_assistants
                 and last_snapshot.get("generating") is not True
@@ -594,6 +600,11 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
                     json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)
                 )
             time.sleep(0.5)
+        # Preserve transition evidence: the final DOM alone can be empty after
+        # ChatGPT navigates, rerenders, or discards a newly submitted message.
+        last_snapshot["sawGenerationAfterSubmit"] = saw_generation
+        last_snapshot["sawCorrelatedUserAfterSubmit"] = saw_correlated_user
+        last_snapshot["sawAssistantAfterSubmit"] = saw_assistant
         raise RuntimeError(
             "GPT_WEB_RESPONSE_TIMEOUT:" +
             json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)
