@@ -248,3 +248,4 @@ jobs:
 # recovery-trigger: 2026-10-02T03:50Z intermittent-8780-upstream
 
 # browser-session-rollout-trigger: 2026-10-07-r2
+# recovery-trigger: 2026-10-08T0353Z restore-controller-routes-for-vopc5750
