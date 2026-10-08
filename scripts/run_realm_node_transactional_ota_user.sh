@@ -22,7 +22,10 @@ node=os.environ["NODE_ID"]
 candidate=os.environ["CANDIDATE"]
 tool=os.environ["TOOL_COMMIT"]
 url=f"https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota.ps1"
-ps=f"$p=Join-Path $env:TEMP 'agentos-transactional-ota.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -SourceCommit '{candidate}' -ToolCommit '{tool}'"
+ps=("$p=Join-Path $env:TEMP ('agentos-transactional-ota-'+[guid]::NewGuid().ToString('N')+'.ps1'); "
+    "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; "
+    "& $p -SourceCommit '"+candidate+"' -ToolCommit '"+tool+"' } "
+    "finally { Remove-Item -Force $p -ErrorAction SilentlyContinue }")
 task_id=f"ota-stage-{node}-{int(time.time())}"
 store=RealmFabricStore()
 store.queue_task(node,{
@@ -80,7 +83,9 @@ import os,time
 from agent_core.realm_fabric import RealmFabricStore
 node=os.environ["NODE_ID"]; tool=os.environ["TOOL_COMMIT"]
 url=f"https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota_finalize.ps1"
-ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action accept"
+ps=("$p=Join-Path $env:TEMP ('agentos-ota-finalize-'+[guid]::NewGuid().ToString('N')+'.ps1'); "
+    "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; & $p -Action accept } "
+    "finally { Remove-Item -Force $p -ErrorAction SilentlyContinue }")
 tid=f"ota-finalize-{node}-{int(time.time())}"
 store=RealmFabricStore()
 store.queue_task(node,{"schema":"agentos.node-task/v0.1","task_id":tid,"action":"shell.exec","executable":"powershell","argv":["-NoProfile","-NonInteractive","-Command",ps],"cwd":r"C:\Users\alston.huang\AgentOS","timeout_seconds":30,"cognition_ids_used":[]})
@@ -103,7 +108,9 @@ import os,time
 from agent_core.realm_fabric import RealmFabricStore
 node=os.environ["NODE_ID"]; tool=os.environ["TOOL_COMMIT"]
 url=f"https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota_finalize.ps1"
-ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action rollback"
+ps=("$p=Join-Path $env:TEMP ('agentos-ota-finalize-'+[guid]::NewGuid().ToString('N')+'.ps1'); "
+    "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; & $p -Action rollback } "
+    "finally { Remove-Item -Force $p -ErrorAction SilentlyContinue }")
 tid=f"ota-rollback-{node}-{int(time.time())}"
 store=RealmFabricStore()
 store.queue_task(node,{"schema":"agentos.node-task/v0.1","task_id":tid,"action":"shell.exec","executable":"powershell","argv":["-NoProfile","-NonInteractive","-Command",ps],"cwd":r"C:\Users\alston.huang\AgentOS","timeout_seconds":30,"cognition_ids_used":[]})
