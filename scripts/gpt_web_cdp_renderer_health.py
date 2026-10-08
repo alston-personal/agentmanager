@@ -12,12 +12,8 @@ if str(APP) not in sys.path:
 
 from gpt_web_response_bridge import CdpPage, CdpTargetSession, _browser_ws_url, _create_target
 
-def main() -> int:
-    ap=argparse.ArgumentParser()
-    ap.add_argument("--cdp-url", default="http://127.0.0.1:9222")
-    args=ap.parse_args()
-
-    target=_create_target(args.cdp_url,"about:blank")
+def probe(cdp_url: str) -> dict:
+    target=_create_target(cdp_url,"about:blank")
     endpoint=None
     direct_error=None
     try:
@@ -30,7 +26,7 @@ def main() -> int:
             if endpoint is not None:
                 endpoint.close()
                 endpoint=None
-            browser=CdpPage(_browser_ws_url(args.cdp_url))
+            browser=CdpPage(_browser_ws_url(cdp_url))
             attached=browser.call("Target.attachToTarget", {
                 "targetId": str(target.get("id") or ""),
                 "flatten": True,
@@ -49,19 +45,28 @@ def main() -> int:
             "evaluate_result": value,
             "direct_error": direct_error,
         }
-        print(json.dumps(payload,ensure_ascii=False,sort_keys=True))
-        return 0 if value == 2 else 42
+        return payload
     except Exception as exc:
-        print(json.dumps({
+        return {
             "schema":"agentos.gpt-web-cdp-renderer-health/v0.1",
             "ok":False,
             "target_id":target.get("id"),
             "error":f"{type(exc).__name__}: {exc}",
-        },ensure_ascii=False,sort_keys=True))
-        return 42
+            "direct_error": direct_error,
+        }
     finally:
         if endpoint is not None:
             endpoint.close()
+
+
+def main() -> int:
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--cdp-url", default="http://127.0.0.1:9222")
+    args=ap.parse_args()
+    payload=probe(args.cdp_url)
+    print(json.dumps(payload,ensure_ascii=False,sort_keys=True))
+    return 0 if payload.get("ok") is True else 42
+
 
 if __name__=="__main__":
     raise SystemExit(main())
