@@ -1,0 +1,79 @@
+name: Oracle Approved Issue Intake
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-approved-issue-intake.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: oracle-approved-issue-intake
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Fetch bounded, labeled Issue snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.github.com/repos/alston-personal/agentmanager/issues?state=open&labels=agentos%3Aapproved&per_page=100"
+          curl --fail --silent --show-error --max-time 20 --retry 2 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "$url" > "${RUNNER_TEMP}/approved-issues.json"
+          python3 - "${RUNNER_TEMP}/approved-issues.json" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1]))
+          if not isinstance(data,list) or len(data)>=100:
+              raise SystemExit("intake_snapshot_not_exhaustive")
+          print("approved_issue_snapshot_count="+str(len(data)))
+          PY
+      - name: Register eligible, approved Issues against Oracle durable Ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          target="${DEPLOY_USER}@${ORACLE_HOST}"
+          port="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$port" "$target" \
+            'mkdir -p /home/ubuntu/agent-data/governance/issue-intake'
+          scp -q -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -P "$port" \
+            "${RUNNER_TEMP}/approved-issues.json" "$target:/home/ubuntu/agent-data/governance/issue-intake/latest-approved-issues.json"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$port" "$target" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          data=/home/ubuntu/agent-data
+          release="$(readlink -f "$data/runtime/core/current")"
+          test -f "$release/scripts/issue_work_intake.py"
+          test -f "$release/scripts/work_completion.py"
+          systemctl --user is-active --quiet os-lobster.service
+          /usr/bin/python3 "$release/scripts/issue_work_intake.py" \
+            --issues-json "$data/governance/issue-intake/latest-approved-issues.json" \
+            --state "$data/governance/work-items.json" \
+            --workspace "$data/proofs/lobster-mvp1-local-port" > "$data/governance/issue-intake/last-sync-result.json"
+          /usr/bin/python3 - "$data/governance/issue-intake/last-sync-result.json" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1]))
+          print("issue_intake_total="+str(len(data)))
+          print("issue_intake_accepted="+str(sum(x.get("status")=="accepted" for x in data)))
+          print("issue_intake_rejected="+str(sum(x.get("status")=="skipped" for x in data)))
+          print("issue_intake_already_terminal="+str(sum(x.get("status")=="already_terminal" for x in data)))
+          PY
+          echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
+          REMOTE
