@@ -274,6 +274,7 @@ def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
         )
         cmd = [
             str(get_claude_bin()),
+            "--print",
             "--output-format", "text",
             "--effort", "low",
             full_prompt,
