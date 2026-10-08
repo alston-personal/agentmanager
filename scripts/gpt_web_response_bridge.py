@@ -295,8 +295,31 @@ def refresh_sessions(root: Path, cdp_url: str) -> str:
 
 
 def _page(cdp_url: str) -> CdpTargetSession:
-    target = _chatgpt_target(cdp_url)
-    return _open_target_connection(cdp_url, target)
+    # /uc/ is known to expose no role-bearing messages in the invoice
+    # acceptance. Do not reuse that surface for another invoke.
+    candidates = [
+        item for item in _targets(cdp_url)
+        if item.get("type") == "page"
+        and str(item.get("url") or "").startswith("https://chatgpt.com/")
+        and not str(item.get("url") or "").startswith("https://chatgpt.com/uc/")
+        and item.get("webSocketDebuggerUrl")
+    ]
+    if candidates:
+        target = candidates[-1]
+    else:
+        # Stay in the existing Chromium profile; never create credentials or
+        # switch another account's profile. A fresh target may still redirect
+        # to /uc/ and must then fail closed before upload.
+        target = _create_target(cdp_url, "https://chatgpt.com/")
+    page = _open_target_connection(cdp_url, target)
+    try:
+        href = page.evaluate("location.href")
+        if str(href).startswith("https://chatgpt.com/uc/"):
+            raise RuntimeError("GPT_WEB_UNSUPPORTED_CONVERSATION_ROUTE:/uc/")
+        return page
+    except Exception:
+        page.close()
+        raise
 
 
 def _assistant_text(page: CdpPage, request_id: str) -> str | None:
