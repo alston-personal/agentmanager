@@ -21,7 +21,10 @@ class ProductCandidateTests(unittest.TestCase):
             result=m.isolate_uniform_background(src,out)
             self.assertEqual(result["state"],"candidate")
             self.assertTrue(out.is_file())
+            self.assertTrue(pathlib.Path(result["maskPath"]).is_file())
             self.assertEqual(Image.open(out).getpixel((0,0))[3],0)
+            self.assertEqual(Image.open(result["maskPath"]).getpixel((0,0)),0)
+            self.assertEqual(Image.open(result["maskPath"]).getpixel((120,120)),255)
             self.assertNotIn("approved",result)
     def test_busy_background_fails_closed(self):
         with tempfile.TemporaryDirectory() as d:
