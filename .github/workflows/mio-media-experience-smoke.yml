@@ -1,0 +1,26 @@
+name: Mio Media Experience Smoke
+on:
+  pull_request:
+    paths:
+      - 'scripts/persona_media_request_worker.py'
+      - 'scripts/capability_experience_ledger.py'
+      - 'tests/test_mio_media_ledger_smoke.py'
+      - '.github/workflows/mio-media-experience-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/persona_media_request_worker.py'
+      - 'scripts/capability_experience_ledger.py'
+      - 'tests/test_mio_media_ledger_smoke.py'
+      - '.github/workflows/mio-media-experience-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run no-network media/ledger integration smoke
+        run: python3 -m unittest discover -s tests -p 'test_mio_media_ledger_smoke.py' -v
