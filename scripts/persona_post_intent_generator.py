@@ -80,6 +80,19 @@ def main():
         if dt.astimezone().date()==now_utc.astimezone().date():
             todays_posts.append(dt.astimezone(timezone.utc))
     todays_posts.sort()
+    all_posts=[]
+    for e in events:
+        if e.get("type") not in ("post.sent","post.published"): continue
+        ts=str(e.get("timestamp") or "")
+        try:
+            dt=datetime.fromisoformat(ts.replace("Z","+00:00"))
+        except Exception:
+            continue
+        all_posts.append(dt.astimezone(timezone.utc))
+    all_posts.sort()
+    last_successful_post=all_posts[-1] if all_posts else None
+    silence_hours=((now_utc-last_successful_post).total_seconds()/3600.0) if last_successful_post else 999.0
+    no_publish_streak=int(state.get("post_no_publish_streak",0) or 0)
     target_raw=growth.get("daily_post_target")
     max_raw=growth.get("daily_post_max")
     gap_raw=growth.get("minimum_post_gap_minutes")
@@ -166,7 +179,10 @@ def main():
         "posts_today":len(todays_posts),
         "daily_target":daily_target,
         "daily_max":max_posts,
-        "minimum_gap_minutes":min_gap
+        "minimum_gap_minutes":min_gap,
+        "silence_hours":round(silence_hours,1),
+        "post_no_publish_streak":no_publish_streak,
+        "posting_liveness_required": bool(consider.get("liveness_pressure")) or silence_hours>=30 or no_publish_streak>=3
       },
       "recent_verified_events":recent
     }
@@ -176,6 +192,7 @@ The JSON context below is authoritative. Do not invent real-world experiences, l
 A post may be based on verified recent events, a clearly labeled internal reflection, a question, or a small thought. Avoid repetitive generic inspirational copy.
 When growth_mode.enabled is true and phase is reach_first, optimize for qualified discovery: the opening should contain a concrete hook, contrast, tension, surprising angle, or very easy-to-answer question. Prefer topic lanes that already have interaction evidence. Do not use clickbait that misrepresents the content. Do not write like a marketer. The post must still sound like Mio.
 Mio is allowed to make routine public posts autonomously under policy, but commercial claims, payments, contracts, identity changes, private data, or unsupported real-world claims require no post.
+If growth_context.posting_liveness_required is true, prolonged silence has become a liveness risk. In that case, prefer producing one safe, modest post candidate based on a question, internal reflection, or verified context. Do not return NO_POST merely because nothing dramatic happened. Return should_post=false only for a concrete blocker such as policy/human-required content, unsafe/unsupported claims, or clearly inadequate context.
 Use natural Traditional Chinese. Keep it concise and human-like. Use 0-2 emoji unless the content strongly benefits from more. Do not mention internal systems, IR, PDCA, policies, or that a model generated the text.
 Return ONLY one JSON object with exactly these keys:
 {"should_post":true|false,"human_required":true|false,"reason":"short internal reason","post_text":"public text or empty"}
@@ -205,6 +222,8 @@ Context:
         consider["completed_at"]=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
         consider["decision"]="no_post"
         consider["decision_reason"]=reason
+        state["post_no_publish_streak"]=no_publish_streak+1
+        state["last_post_consider_at"]=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
         state["pending_external_actions"]=pending[-12:]
         tmp=root/"pdca/state.json.tmp"
         tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
@@ -246,6 +265,8 @@ Context:
     pending.append(action)
     state["pending_external_actions"]=pending[-12:]
     state["last_post_intent"]=action_id
+    state["post_no_publish_streak"]=0
+    state["last_post_consider_at"]=now.isoformat().replace("+00:00","Z")
     tmp=root/"pdca/state.json.tmp"
     tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     os.replace(tmp,root/"pdca/state.json")

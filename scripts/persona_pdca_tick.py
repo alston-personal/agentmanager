@@ -168,6 +168,10 @@ def main():
     wardrobe=counts.get("wardrobe.window_shopping",0)
 
     growth=cfg.get("growth_mode",{}) if isinstance(cfg.get("growth_mode"),dict) else {}
+    posting_liveness=growth.get("posting_liveness",{}) if isinstance(growth.get("posting_liveness"),dict) else {}
+    soft_silence_hours=float(posting_liveness.get("soft_pressure_after_hours",18))
+    forced_consider_hours=float(posting_liveness.get("forced_consider_after_hours",30))
+    forced_no_publish_streak=int(posting_liveness.get("forced_consider_after_no_publish_streak",3))
     today=now_local.date()
     todays_posts=[]
     for e in events:
@@ -177,6 +181,15 @@ def main():
         if ts.astimezone(tz).date()==today:
             todays_posts.append(ts.astimezone(timezone.utc))
     todays_posts.sort()
+    all_posts=[]
+    for e in events:
+        if e.get("type") not in ("post.sent","post.published"): continue
+        ts=event_ts(e)
+        if ts: all_posts.append(ts.astimezone(timezone.utc))
+    all_posts.sort()
+    last_successful_post_ts=all_posts[-1] if all_posts else None
+    silence_hours=((now_utc-last_successful_post_ts).total_seconds()/3600.0) if last_successful_post_ts else 999.0
+    post_no_publish_streak=int(state.get("post_no_publish_streak",0) or 0)
     last_post_ts=todays_posts[-1] if todays_posts else None
     post_gap_min=((now_utc-last_post_ts).total_seconds()/60.0) if last_post_ts else None
     target_raw=growth.get("daily_post_target")
@@ -215,6 +228,11 @@ def main():
             candidates += [("wardrobe_plan",1.15 if wardrobe==0 else 0.55),("reflect",1.0)]
         if phase in ("high_focus","afternoon","social","creative_social","late") and energy>=40:
             base_content=1.3 if posted==0 else 0.75
+            if silence_hours >= soft_silence_hours:
+                base_content += 0.8
+            if silence_hours >= forced_consider_hours:
+                base_content += 1.4
+            base_content += min(1.4, post_no_publish_streak*0.35)
             if growth_enabled and under_max and gap_ok:
                 if target_unmet:
                     base_content=max(base_content,2.2 if phase=="creative_social" else 1.65)
@@ -272,6 +290,24 @@ def main():
                   "capability":"social.post.consider","status":"candidate",
                   "reason":post_reason,
                   "policy":"routine_posts=autonomous_with_policy","requires_real_adapter_receipt":True}
+    # Posting liveness: no daily quota, but healthy autonomous operation must
+    # not starve the publishing lane forever. Prolonged silence forces a
+    # consideration opportunity, not an unconditional publish.
+    has_post_lane=any(isinstance(x,dict) and x.get("capability") in ("social.post.consider","social.post.publish")
+        and x.get("status") in ("candidate","in_progress") for x in pending)
+    if (not has_post_lane and energy_after > 0 and growth_enabled and under_max and gap_ok
+            and (silence_hours >= forced_consider_hours or post_no_publish_streak >= forced_no_publish_streak)):
+        forced_consider={"action_id":f"mio-pdca-c{cycle}-social-post-consider","cycle":cycle,
+            "capability":"social.post.consider","status":"candidate",
+            "reason":f"posting liveness: {silence_hours:.1f}h silence, no-publish streak {post_no_publish_streak}",
+            "policy":"routine_posts=autonomous_with_policy",
+            "requires_real_adapter_receipt":True,
+            "liveness_pressure":True}
+        pending.append(forced_consider)
+        pending=pending[-12:]
+        if external is None:
+            external=forced_consider
+
     existing=next((x for x in reversed(pending) if isinstance(x,dict)
         and external and x.get("capability")==external["capability"]
         and x.get("status") in ("candidate","in_progress")),None)
@@ -321,7 +357,8 @@ def main():
              "cycle":cycle,"tick_at":now_utc.isoformat().replace("+00:00","Z"),
              "local_time":now_local.isoformat(),"phase":phase,"ir_id":ir.get("ir_id"),"seed":seed,"trigger":args.trigger,
              "plan":{"energy":round(energy,2),"unseen_events":len(unseen),"event_counts":counts,
-                     "growth":{"enabled":growth_enabled,"posts_today":len(todays_posts),"target":target,"max":max_posts,"gap_minutes":round(post_gap_min,1) if post_gap_min is not None else None,"gap_ok":gap_ok},
+                     "growth":{"enabled":growth_enabled,"posts_today":len(todays_posts),"target":target,"max":max_posts,"gap_minutes":round(post_gap_min,1) if post_gap_min is not None else None,"gap_ok":gap_ok,
+                               "silence_hours":round(silence_hours,1),"post_no_publish_streak":post_no_publish_streak},
                      "candidates":[{"intent":n,"weight":w} for n,w in candidates],"selected_intent":selected,
                      "social_observation":observation_plan},
              "do":do,
