@@ -23,6 +23,7 @@ ACTION_RELAY_STATUS = "agentos.relay.status"
 ACTION_SCHEDULER_STATUS = "agentos.scheduler.status"
 ACTION_RELAY_RESTART = "agentos.relay.restart"
 ACTION_NODE_TRANSACTIONAL_OTA = "agentos.node.transactional_ota"
+ACTION_NODE_OTA_INSPECT = "agentos.node.ota_inspect"
 ACTION_REALM_NODE_INSPECT = "agentos.realm_node.inspect"
 ACTION_REALM_DESKTOP_PROBE = "agentos.realm_desktop.probe"
 ACTION_REALM_EXECUTOR_RECONCILE = "agentos.realm_executor.reconcile"
@@ -88,6 +89,7 @@ ALLOWED_ACTIONS = {
     ACTION_SCHEDULER_STATUS,
     ACTION_RELAY_RESTART,
     ACTION_NODE_TRANSACTIONAL_OTA,
+    ACTION_NODE_OTA_INSPECT,
     ACTION_REALM_NODE_INSPECT,
     ACTION_REALM_DESKTOP_PROBE,
     ACTION_REALM_EXECUTOR_RECONCILE,
@@ -207,6 +209,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","account_ref"}
     elif action == ACTION_NODE_TRANSACTIONAL_OTA:
         allowed_params={"source_commit","node_id","candidate_commit"}
+    elif action == ACTION_NODE_OTA_INSPECT:
+        allowed_params={"source_commit","node_id"}
     elif action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE, ACTION_REALM_EXECUTOR_RECONCILE}:
         allowed_params={"source_commit","node_id"}
     elif action in {ACTION_GOOGLE_FLOW_GENERATE, ACTION_GOOGLE_VIDS_GENERATE}:
@@ -249,7 +253,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
             raise ValueError("invalid OTA node_id")
         if not COMMIT_RE.fullmatch(candidate_commit):
             raise ValueError("candidate_commit must be an exact lowercase 40-hex commit SHA")
-    if action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE, ACTION_REALM_EXECUTOR_RECONCILE}:
+    if action in {ACTION_REALM_NODE_INSPECT, ACTION_REALM_DESKTOP_PROBE, ACTION_REALM_EXECUTOR_RECONCILE, ACTION_NODE_OTA_INSPECT}:
         node_id=str(params.get("node_id") or "")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", node_id):
             raise ValueError("invalid Realm node_id")
@@ -315,6 +319,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         raise ValueError("source_commit must be an exact lowercase 40-hex commit SHA")
     exact_actions = {
         ACTION_NODE_TRANSACTIONAL_OTA,
+        ACTION_NODE_OTA_INSPECT,
         ACTION_DEPLOY_REALM_GATEWAY,
         ACTION_DEPLOY_SOCIAL_RUNTIME,
         ACTION_RECONCILE_CONTENT_SOCIAL,
@@ -679,6 +684,114 @@ def _relay_status() -> dict[str, Any]:
 
 
 
+def _node_ota_inspect(node_id: str) -> dict[str, Any]:
+    from agent_core.node_registry import NodeRegistry
+    from agent_core.realm_fabric import RealmFabricStore
+
+    nodes = NodeRegistry().node_map().get("nodes") or []
+    node = next((item for item in nodes if str(item.get("node_id") or "") == node_id), None)
+    if node is None:
+        return {
+            "ok": True,
+            "steps": [{"step": "node_ota_inspect", "returncode": 0,
+                       "stdout": f"node_ota_inspect_node={node_id}\nnode_ota_inspect=NOT_REGISTERED\n",
+                       "stderr": ""}],
+        }
+    if str(node.get("status") or "") != "online":
+        return {
+            "ok": True,
+            "steps": [{"step": "node_ota_inspect", "returncode": 0,
+                       "stdout": f"node_ota_inspect_node={node_id}\nnode_ota_inspect=OFFLINE\n",
+                       "stderr": ""}],
+        }
+
+    ps = r"""
+$ErrorActionPreference='Stop'
+$root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+function RuntimeField([string]$name,[string]$field){
+  $p=Join-Path $root $name
+  if(-not(Test-Path -LiteralPath $p)){return 'missing'}
+  try{
+    $j=Get-Content -Raw -LiteralPath $p|ConvertFrom-Json
+    $v=[string]$j.$field
+    if([string]::IsNullOrWhiteSpace($v)){return 'empty'}
+    if($field -eq 'path'){return (Split-Path -Leaf $v)}
+    return $v
+  }catch{return 'invalid'}
+}
+function TaskField([string]$name,[string]$field){
+  $t=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+  if(-not $t){return 'missing'}
+  if($field -eq 'state'){return [string]$t.State}
+  if($field -eq 'execute'){return [IO.Path]::GetFileName(([string](($t.Actions|Select-Object -First 1).Execute)))}
+  if($field -eq 'uses_current_json'){
+    $a=[string](($t.Actions|Select-Object -First 1).Arguments)
+    if($a -match '(?i)agentos-thin-client-hidden\.ps1'){ 
+      $m=[regex]::Match($a,'(?i)-File\s+"([^"]+)"')
+      if($m.Success -and (Test-Path -LiteralPath $m.Groups[1].Value)){
+        $txt=Get-Content -Raw -LiteralPath $m.Groups[1].Value -ErrorAction SilentlyContinue
+        return ([string]([bool]($txt -match 'current\.json'))).ToLowerInvariant()
+      }
+    }
+    return 'false'
+  }
+  if($field -eq 'last_result'){
+    try{return [string](Get-ScheduledTaskInfo -TaskName $name -ErrorAction Stop).LastTaskResult}catch{return 'unknown'}
+  }
+  return 'unknown'
+}
+Write-Output ('node_ota_inspect_node='+$env:COMPUTERNAME)
+Write-Output ('node_ota_inspect_current_status='+$(RuntimeField 'current.json' 'status'))
+Write-Output ('node_ota_inspect_current_commit='+$(RuntimeField 'current.json' 'source_commit'))
+Write-Output ('node_ota_inspect_current_path_leaf='+$(RuntimeField 'current.json' 'path'))
+Write-Output ('node_ota_inspect_lkg_commit='+$(RuntimeField 'last-known-good.json' 'source_commit'))
+Write-Output ('node_ota_inspect_main_state='+$(TaskField 'AgentOS Thin Client' 'state'))
+Write-Output ('node_ota_inspect_main_execute='+$(TaskField 'AgentOS Thin Client' 'execute'))
+Write-Output ('node_ota_inspect_main_uses_current_json='+$(TaskField 'AgentOS Thin Client' 'uses_current_json'))
+Write-Output ('node_ota_inspect_main_last_result='+$(TaskField 'AgentOS Thin Client' 'last_result'))
+Write-Output ('node_ota_inspect_activator_state='+$(TaskField 'AgentOS Thin Client OTA Activator' 'state'))
+Write-Output ('node_ota_inspect_activator_last_result='+$(TaskField 'AgentOS Thin Client OTA Activator' 'last_result'))
+Write-Output ('node_ota_inspect_guard_state='+$(TaskField 'AgentOS Thin Client OTA Guard' 'state'))
+Write-Output ('node_ota_inspect_guard_last_result='+$(TaskField 'AgentOS Thin Client OTA Guard' 'last_result'))
+Write-Output 'node_ota_inspect=PASS'
+"""
+    task_id = "runner-window-ota-inspect-" + node_id + "-" + str(int(time.time()))
+    fabric = RealmFabricStore()
+    fabric.queue_task(node_id, {
+        "schema": "agentos.node-task/v0.1",
+        "task_id": task_id,
+        "action": "shell.exec",
+        "executable": "powershell",
+        "argv": ["-NoProfile", "-NonInteractive", "-Command", ps],
+        "cwd": r"C:\Users\alston.huang\AgentOS",
+        "timeout_seconds": 30,
+        "cognition_ids_used": [],
+    })
+    deadline = time.monotonic() + 45
+    receipt = None
+    while time.monotonic() < deadline:
+        receipt = fabric.get_receipt(task_id)
+        if receipt is not None:
+            break
+        time.sleep(1)
+    if receipt is None:
+        stdout = f"node_ota_inspect_node={node_id}\nnode_ota_inspect=TIMEOUT\n"
+        rc = 1
+    elif receipt.get("ok") is not True or int(receipt.get("returncode") or 0) != 0:
+        stdout = f"node_ota_inspect_node={node_id}\nnode_ota_inspect=ERROR\n"
+        rc = 1
+    else:
+        allowed_prefix = "node_ota_inspect_"
+        lines = [line for line in str(receipt.get("stdout") or "").splitlines()
+                 if line.startswith(allowed_prefix)]
+        stdout = "\n".join(lines) + ("\n" if lines else "")
+        rc = 0
+    return {
+        "ok": rc == 0,
+        "steps": [{"step": "node_ota_inspect", "returncode": rc, "stdout": stdout, "stderr": ""}],
+    }
+
+
 def _realm_node_inspect(node_id: str) -> dict[str, Any]:
     from agent_core.node_registry import NodeRegistry
 
@@ -929,6 +1042,11 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             source_commit=source_commit,
             env_extra={"AGENTOS_VISION_STUDIO_PROJECT_ID": str(params.get("project_id") or "")},
         )
+    if action == ACTION_NODE_OTA_INSPECT:
+        params=params or {}
+        result = _node_ota_inspect(str(params.get("node_id") or ""))
+        result["source_commit"] = source_commit
+        return result
     if action == ACTION_NODE_TRANSACTIONAL_OTA:
         params=params or {}
         return _run_canonical_script(
