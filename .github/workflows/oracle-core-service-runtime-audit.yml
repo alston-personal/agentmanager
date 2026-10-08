@@ -152,6 +152,24 @@ jobs:
             "" ) echo "lobster_undefined_symbol=unknown";;
             * ) echo "lobster_undefined_symbol=$lobster_undefined_symbol";;
           esac
+          # Use the LAST Python exception in the systemd-appended file, not
+          # any old error in the tail. Report only an allowlisted class and safe name.
+          /usr/bin/python3 - "$lobster_logdir/lobster.log" <<'PY'
+          import collections, pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          allowed = {"NameError","ModuleNotFoundError","ImportError","SyntaxError","IndentationError","AttributeError","TypeError","ValueError","PermissionError","FileNotFoundError","RuntimeError","KeyError","TimeoutError","AssertionError","SystemExit","OSError"}
+          last = None
+          if path.is_file():
+              with path.open("r", encoding="utf-8", errors="replace") as f:
+                  for line in collections.deque(f, maxlen=2000):
+                      m = re.match(r"^([A-Za-z]+(?:Error|Exit)): (.*)$", line.strip())
+                      if m and m.group(1) in allowed:
+                          last = m.groups()
+          print("lobster_last_exception_class=" + (last[0] if last else "unknown"))
+          if last and last[0] == "NameError":
+              m = re.fullmatch(r"name '([A-Za-z_][A-Za-z_0-9]*)' is not defined", last[1])
+              print("lobster_last_nameerror_identifier=" + (m.group(1) if m else "unknown"))
+          PY
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
