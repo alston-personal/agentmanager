@@ -61,11 +61,13 @@ def classify_blocker(value: str | None) -> str:
         return "HUMAN_AUTH"
     if matches(
         "rate limit", "rate_limit", "quota", "capacity", "provider unavailable",
+        "timeout", "timed out", "任務逾時",
     ):
         return "PROVIDER_CAPACITY"
     if matches(
         "runtime", "converge", "controller", "runner window", "one", "one/", "transport",
         "bridge", "service", "daemon", "node", "receipt continuity",
+        "executor_exception", "executor exception",
     ):
         return "RUNTIME_HEALTH"
     if matches(
@@ -74,6 +76,7 @@ def classify_blocker(value: str | None) -> str:
         return "MARKET_DATA"
     if matches(
         "verify", "verification", "acceptance", "evidence", "test", "ci", "report",
+        "驗證失敗", "缺乏實體產出", "幻覺完成", "inspector",
     ):
         return "VERIFICATION"
     return "UNKNOWN"
