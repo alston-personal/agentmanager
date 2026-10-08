@@ -65,3 +65,44 @@ def test_unexpired_lease_not_reconciled(tmp_path: Path):
     store.submit_task("ai.generate", {}, "fresh-lease")
     assert store.lease_next_task("node-test-01", ["ai.generate"], lease_seconds=3600)
     assert store.expire_overdue_leases() == []
+
+
+def test_late_worker_receipt_cannot_override_expired_task(tmp_path: Path):
+    import sqlite3
+    import pytest
+
+    db = tmp_path / "control-plane.sqlite3"
+    store = ControlPlaneStore(db)
+    task = store.submit_task("ai.generate", {}, "stale-ack")
+    lease = store.lease_next_task("node-test-01", ["ai.generate"])
+    assert lease is not None
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            "UPDATE tasks SET lease_until='2000-01-01T00:00:00Z' WHERE task_id=?",
+            (task["taskId"],),
+        )
+    assert store.expire_overdue_leases()[0]["status"] == "expired"
+    with pytest.raises(ValueError, match="stale or unauthorized"):
+        store.complete_leased_task(
+            task["taskId"], "node-test-01", lease["leaseUntil"], "succeeded",
+            {"effect": "possibly happened"},
+        )
+    assert store.submit_task("ai.generate", {}, "stale-ack")["status"] == "expired"
+
+
+def test_current_worker_receipt_accepted_once_only(tmp_path: Path):
+    import pytest
+
+    store = ControlPlaneStore(tmp_path / "control-plane.sqlite3")
+    task = store.submit_task("ai.generate", {}, "fresh-ack")
+    lease = store.lease_next_task("node-test-01", ["ai.generate"])
+    assert lease is not None
+    with pytest.raises(ValueError, match="stale or unauthorized"):
+        store.complete_leased_task(task["taskId"], "other-node", lease["leaseUntil"], "succeeded")
+    done = store.complete_leased_task(
+        task["taskId"], "node-test-01", lease["leaseUntil"], "succeeded", {"ok": True}
+    )
+    assert done["status"] == "succeeded"
+    assert done["result"] == {"ok": True}
+    with pytest.raises(ValueError, match="stale or unauthorized"):
+        store.complete_leased_task(task["taskId"], "node-test-01", lease["leaseUntil"], "failed")
