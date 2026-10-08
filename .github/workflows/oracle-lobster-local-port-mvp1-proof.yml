@@ -39,9 +39,14 @@ jobs:
           grep -Fq 'Path(__file__).resolve().parent / "local_port_checker.py"' "$RELEASE/scripts/lobster.py"
           systemctl --user is-active --quiet os-lobster.service
           test "$(systemctl --user show os-lobster.service -p NRestarts --value)" = 0
+          if grep -Fq '檢查連接埠\\\\s' "$RELEASE/scripts/lobster.py"; then
+            echo "lobster_mvp1_correct_matcher=FAIL"
+            exit 22
+          fi
+          echo "lobster_mvp1_correct_matcher=PASS"
           echo "lobster_mvp1_immutable_validator=PASS"
-          WORK_ID=lobster-mvp1-local-port-20261008
-          WORKSPACE="$DATA/proofs/lobster-mvp1-local-port"
+          WORK_ID=lobster-mvp1-local-port-retake-20261008
+          WORKSPACE="$DATA/proofs/lobster-mvp1-local-port-retake"
           LEDGER="$DATA/governance/work-items.json"
           mkdir -p "$WORKSPACE"
           /usr/bin/python3 "$RELEASE/scripts/work_completion.py" --state "$LEDGER" register \
