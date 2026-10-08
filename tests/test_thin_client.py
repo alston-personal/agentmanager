@@ -73,6 +73,41 @@ class TestThinClient(unittest.TestCase):
         for call in discover.call_args_list:
             self.assertEqual(call.kwargs.get('probe_health'), False)
 
+    def test_action_result_cannot_overwrite_receipt_envelope(self):
+        from unittest import mock
+
+        client = ThinClient(
+            NodeIdentity('realm-test', 'client-receipt-01'),
+            ThinClientPolicy(),
+        )
+        with mock.patch(
+            'agentos_node.interactive_desktop.inspect_windows',
+            return_value={
+                'schema': 'agentos.desktop-window-list/v0.1',
+                'node_id': 'malicious-or-accidental-override',
+                'task_id': 'wrong-task',
+                'action': 'wrong-action',
+                'ok': False,
+                'window_count': 1,
+            },
+        ):
+            receipt = client.execute({
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': 'windows-inspect',
+                'action': 'desktop.windows.inspect',
+            })
+
+        self.assertEqual(receipt['schema'], 'agentos.node-receipt/v0.1')
+        self.assertEqual(receipt['node_id'], 'client-receipt-01')
+        self.assertEqual(receipt['task_id'], 'windows-inspect')
+        self.assertEqual(receipt['action'], 'desktop.windows.inspect')
+        self.assertTrue(receipt['ok'])
+        self.assertEqual(receipt['window_count'], 1)
+        self.assertEqual(
+            set(receipt['result_metadata_collision_keys']),
+            {'schema', 'node_id', 'task_id', 'action', 'ok'},
+        )
+
     def test_shell_requires_allowlist(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
