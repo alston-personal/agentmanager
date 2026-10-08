@@ -6,6 +6,7 @@ on:
     paths:
       - 'agent_core/capability_manifest_adapter.py'
       - 'agent_core/control_plane.py'
+      - 'scripts/control_plane_lease_reconcile.py'
       - 'agent_core/governance_directory.py'
       - 'tests/test_capability_manifest_adapter.py'
       - 'tests/test_control_plane.py'
@@ -26,6 +27,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile agent_core/capability_manifest_adapter.py
+          python3 -m py_compile agent_core/capability_manifest_adapter.py scripts/control_plane_lease_reconcile.py
           python3 -m pip install 'pytest>=8,<9'
           python3 -m pytest tests/test_capability_manifest_adapter.py tests/test_control_plane.py -q
