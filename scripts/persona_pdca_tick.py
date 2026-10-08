@@ -182,8 +182,24 @@ def main():
     under_max=(max_posts is None or len(todays_posts)<max_posts)
     target_unmet=(target is not None and len(todays_posts)<target)
 
-    if phase=="sleep": candidates=[("sleep",1.0)]
-    elif phase=="rest": candidates=[("rest",1.0)]
+    # Routine phase is a soft prior, not a hard activity lock. Clock time may
+    # strongly bias Mio toward sleep/rest, but context can keep her awake or
+    # wake her (new interaction, unseen events, repeated no-op cycles, etc.).
+    if phase=="sleep":
+        candidates=[("sleep",4.0),("observe",0.35),("reflect",0.25)]
+        if unseen:
+            candidates=[(n,(1.0 if n=="sleep" else w)) for n,w in candidates]
+            candidates.append(("observe",1.5))
+        if observed:
+            candidates.append(("review_social_feedback",min(4.0,2.0+observed*0.35)))
+        if state.get("consecutive_noops",0)>=3 and energy>=45:
+            candidates.append(("content_ideation",0.45))
+    elif phase=="rest":
+        candidates=[("rest",3.0),("observe",0.45),("reflect",0.35)]
+        if unseen:
+            candidates.append(("observe",1.25))
+        if observed:
+            candidates.append(("review_social_feedback",min(3.5,1.8+observed*0.3)))
     else:
         candidates=[("observe",0.8)]
         if observed: candidates.append(("review_social_feedback",min(3.0,1.2+observed*0.25)))
@@ -199,10 +215,10 @@ def main():
             candidates.append(("content_ideation",base_content))
         if state.get("consecutive_noops",0)>=2 and energy>=30:
             candidates.append(("reflect",1.4))
-    if energy<15 and phase not in ("sleep","rest"):
+    if energy<15:
         candidates=[("rest",1.0)]
-    elif energy<30 and phase not in ("sleep","rest"):
-        candidates=[(n,w) for n,w in candidates if n in ("observe","reflect","rest")] or [("rest",1.0)]
+    elif energy<30:
+        candidates=[(n,w) for n,w in candidates if n in ("sleep","observe","reflect","rest")] or [("rest",1.0)]
 
     cycle=int(state.get("cycle",0))+1
     seed_material=f"{cfg.get('persona_id')}|{ir.get('ir_id')}|{now_local:%Y-%m-%dT%H}|{cycle}|{state.get('consecutive_noops',0)}"
