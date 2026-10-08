@@ -446,3 +446,7 @@ Each immutable Windows runtime instance writes `runtime-provenance.json` with it
 ### Semantic preview native-call isolation
 
 Windows semantic preview capture runs inside a short-lived spawned worker process rather than inside the Thin Client transport process. Native GDI stages report progress (`session_info`, `foreground_window`, `capture_bmp`) to the parent. The parent enforces a bounded timeout and terminates a wedged worker, ensuring heartbeat/task receipt transport remains live even if a GDI call hangs. A timeout receipt identifies the last completed stage for diagnosis.
+
+### Semantic preview subprocess isolation
+
+The initial multiprocessing-spawn isolation still failed to produce a receipt in the managed Windows Scheduled Task environment. Semantic preview therefore uses a bounded child interpreter launched as `python -m agentos_node.semantic_preview --worker` with `CREATE_NO_WINDOW`. The parent uses `communicate(timeout=...)`, kills the child on timeout, and reports the last native stage emitted on stderr. This avoids Windows multiprocessing bootstrap/pickle behavior while retaining native-call isolation.

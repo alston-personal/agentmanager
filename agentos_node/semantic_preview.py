@@ -4,11 +4,12 @@ import base64
 import ctypes
 import ctypes.wintypes
 import hashlib
-import multiprocessing
+import json
 import os
 import platform
-import queue
 import struct
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -339,88 +340,108 @@ def _semantic_preview_impl(task: dict[str, Any], progress: Any | None = None) ->
     }
 
 
-def _semantic_preview_worker(task: dict[str, Any], out_queue: Any) -> None:
-    def progress(stage: str) -> None:
-        out_queue.put({"kind": "stage", "stage": stage, "at": time.time()})
-
+def _semantic_preview_worker_cli() -> int:
     try:
+        raw = sys.stdin.read()
+        task = json.loads(raw)
+        if not isinstance(task, dict):
+            raise ValueError("worker task must be an object")
+
+        def progress(stage: str) -> None:
+            print(f"STAGE={stage}", file=sys.stderr, flush=True)
+
         result = _semantic_preview_impl(task, progress=progress)
-        out_queue.put({"kind": "result", "result": result})
+        print(json.dumps({"ok": True, "result": result}), flush=True)
+        return 0
     except BaseException as exc:
-        out_queue.put({
-            "kind": "error",
-            "error_type": type(exc).__name__,
-            "error": str(exc),
-        })
+        print(
+            json.dumps({
+                "ok": False,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }),
+            flush=True,
+        )
+        return 1
 
 
 def semantic_preview(task: dict[str, Any]) -> dict[str, Any]:
-    """Run bounded foreground-window capture in an isolated Windows worker.
+    """Run foreground-window capture in a bounded subprocess.
 
-    Native GDI calls are intentionally isolated from the Thin Client transport
-    process. If the worker hangs, it is terminated and the caller receives a
-    bounded error rather than losing heartbeat/task-receipt progress.
+    Native GDI calls are isolated from the Thin Client transport process.
+    The subprocess is killed on timeout so heartbeat/task receipt transport
+    remains responsive even when a Windows capture call hangs.
     """
     _require_windows()
     timeout_seconds = max(2.0, min(float(task.get("timeout_seconds") or 8.0), 15.0))
-    ctx = multiprocessing.get_context("spawn")
-    out_queue = ctx.Queue()
-    worker = ctx.Process(target=_semantic_preview_worker, args=(dict(task), out_queue))
-    worker.daemon = True
-    worker.start()
-
-    deadline = time.monotonic() + timeout_seconds
-    last_stage = "worker_start"
-    result: dict[str, Any] | None = None
-    error: dict[str, Any] | None = None
+    creationflags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "agentos_node.semantic_preview", "--worker"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        creationflags=creationflags,
+    )
 
     try:
-        while time.monotonic() < deadline:
-            remaining = max(0.05, min(0.5, deadline - time.monotonic()))
-            try:
-                message = out_queue.get(timeout=remaining)
-            except queue.Empty:
-                if not worker.is_alive():
-                    break
-                continue
-
-            if not isinstance(message, dict):
-                continue
-            kind = message.get("kind")
-            if kind == "stage":
-                last_stage = str(message.get("stage") or last_stage)
-            elif kind == "result":
-                candidate = message.get("result")
-                if isinstance(candidate, dict):
-                    result = candidate
-                break
-            elif kind == "error":
-                error = message
-                break
-    finally:
-        worker.join(timeout=0.2)
-        if worker.is_alive():
-            worker.terminate()
-            worker.join(timeout=1.0)
-        if worker.is_alive() and hasattr(worker, "kill"):
-            worker.kill()
-            worker.join(timeout=1.0)
-
-    if result is not None:
-        result["worker"] = {
-            "isolated": True,
-            "timeout_seconds": timeout_seconds,
-            "last_stage": last_stage,
-        }
-        return result
-
-    if error is not None:
-        raise RuntimeError(
-            f"semantic preview worker failed at {last_stage}: "
-            f"{error.get('error_type')}: {error.get('error')}"
+        stdout, stderr = proc.communicate(
+            input=json.dumps(dict(task)),
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        combined_stderr = (
+            ((exc.stderr or "") if isinstance(exc.stderr, str) else "")
+            + (stderr or "")
+        )
+        stages = [
+            line.split("=", 1)[1].strip()
+            for line in combined_stderr.splitlines()
+            if line.startswith("STAGE=")
+        ]
+        last_stage = stages[-1] if stages else "worker_start"
+        raise TimeoutError(
+            f"semantic preview worker timed out after {timeout_seconds:.1f}s "
+            f"at stage={last_stage}"
         )
 
-    raise TimeoutError(
-        f"semantic preview worker timed out after {timeout_seconds:.1f}s "
-        f"at stage={last_stage}"
-    )
+    stages = [
+        line.split("=", 1)[1].strip()
+        for line in (stderr or "").splitlines()
+        if line.startswith("STAGE=")
+    ]
+    last_stage = stages[-1] if stages else "worker_start"
+
+    payload: dict[str, Any] | None = None
+    try:
+        candidate = json.loads((stdout or "").strip())
+        if isinstance(candidate, dict):
+            payload = candidate
+    except Exception:
+        payload = None
+
+    if proc.returncode != 0 or not payload or payload.get("ok") is not True:
+        detail = payload or {"error": (stdout or "").strip()}
+        raise RuntimeError(
+            f"semantic preview worker failed at {last_stage}: {detail}"
+        )
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise RuntimeError(
+            f"semantic preview worker returned invalid result at {last_stage}"
+        )
+    result["worker"] = {
+        "isolated": True,
+        "transport": "subprocess",
+        "timeout_seconds": timeout_seconds,
+        "last_stage": last_stage,
+    }
+    return result
+
+
+if __name__ == "__main__":
+    if "--worker" in sys.argv:
+        raise SystemExit(_semantic_preview_worker_cli())
