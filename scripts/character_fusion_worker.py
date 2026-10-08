@@ -1001,6 +1001,175 @@ TARGET CHARACTER IR:
 """
 
 
+def _render_image_flow(target_ir: dict[str, Any], strict: bool) -> bytes:
+    python_bin = Path.home() / ".local/share/agentos/gui-worker/venv/bin/python"
+    if not python_bin.is_file():
+        raise RuntimeError("Flow GUI worker venv is unavailable")
+
+    prompt = render_prompt(target_ir, strict=strict) + """
+Generate a single square still IMAGE, not a video.
+Use the final rendered frame as the answer. Do not add text, captions, labels, or watermarks.
+"""
+    with tempfile.TemporaryDirectory(prefix="character-fusion-flow-") as tmp:
+        prompt_path = Path(tmp) / "prompt.txt"
+        output_path = Path(tmp) / "output.png"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        helper = r'''
+import asyncio
+import base64
+import fcntl
+import json
+import sys
+import time
+import urllib.request
+from pathlib import Path
+import websockets
+
+prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
+output = Path(sys.argv[2])
+lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
+lock_path.parent.mkdir(parents=True, exist_ok=True)
+PORT = 9225
+
+def inventory():
+    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list", timeout=5) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+targets=[x for x in inventory() if x.get("type")=="page" and "flow.google.com/project/" in str(x.get("url") or "")]
+if not targets:
+    raise RuntimeError("flow_project_session_not_found")
+target=targets[0]
+ws_url=str(target.get("webSocketDebuggerUrl") or "")
+if not ws_url:
+    raise RuntimeError("flow_project_ws_missing")
+
+async def main():
+    seq=0
+    async with websockets.connect(ws_url,open_timeout=5,close_timeout=2,max_size=16*1024*1024) as ws:
+        async def call(method,params=None):
+            nonlocal seq
+            seq+=1; ident=seq
+            await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+            while True:
+                msg=json.loads(await ws.recv())
+                if msg.get("id")==ident:
+                    if msg.get("error"): raise RuntimeError(f"cdp {method}: {msg['error']}")
+                    return msg.get("result") or {}
+
+        async def evaluate(expr):
+            r=await call("Runtime.evaluate",{
+                "expression":expr,
+                "returnByValue":True,
+                "awaitPromise":True,
+            })
+            return (r.get("result") or {}).get("value")
+
+        baseline=await evaluate(r'''(() => {
+          const out=[];
+          for(const el of document.querySelectorAll('img')){
+            if(!(el.offsetWidth||el.offsetHeight||el.getClientRects().length)) continue;
+            const r=el.getBoundingClientRect();
+            if(r.width<180||r.height<180) continue;
+            out.push({src:el.currentSrc||el.src||'',w:r.width,h:r.height});
+          }
+          return out;
+        })()''') or []
+        baseline_src={x.get("src","") for x in baseline}
+
+        prompt_json=json.dumps(prompt)
+        ok=await evaluate("""(() => {
+          const inputs=[...document.querySelectorAll('input[aria-label="可編輯的文字"], input[type="text"]')]
+            .filter(x=>x.offsetParent!==null && x.getAttribute('aria-label')!=='搜尋');
+          const el=inputs[0];
+          if(!el) return false;
+          const value="""+prompt_json+""";
+          el.focus();
+          const proto=Object.getPrototypeOf(el);
+          const desc=Object.getOwnPropertyDescriptor(proto,'value');
+          if(desc&&desc.set) desc.set.call(el,value); else el.value=value;
+          el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));
+          return true;
+        })()""")
+        if not ok:
+            raise RuntimeError("flow_prompt_input_not_found")
+
+        await asyncio.sleep(0.8)
+        sent=await evaluate(r'''(() => {
+          const buttons=[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null);
+          const b=buttons.find(x => (x.getAttribute('aria-label')||'').includes('開始生成'));
+          if(!b) return false;
+          if(b.disabled) return 'disabled';
+          b.click();
+          return true;
+        })()''')
+        if sent is not True:
+            raise RuntimeError(f"flow_generate_button_unavailable:{sent}")
+
+        deadline=time.monotonic()+210
+        chosen=None
+        while time.monotonic()<deadline:
+            rows=await evaluate(r'''(() => {
+              const out=[];
+              for(const el of document.querySelectorAll('img')){
+                if(!(el.offsetWidth||el.offsetHeight||el.getClientRects().length)) continue;
+                const r=el.getBoundingClientRect();
+                const src=el.currentSrc||el.src||'';
+                if(r.width<256||r.height<256||!src) continue;
+                out.push({src,w:r.width,h:r.height,alt:(el.alt||'').slice(0,160)});
+              }
+              return out;
+            })()''') or []
+            fresh=[x for x in rows if x.get("src","") not in baseline_src]
+            if fresh:
+                fresh.sort(key=lambda x: x.get("w",0)*x.get("h",0),reverse=True)
+                chosen=fresh[0]
+                break
+            await asyncio.sleep(2.0)
+
+        if not chosen:
+            raise TimeoutError("flow_generated_image_timeout")
+
+        src=chosen.get("src","")
+        if src.startswith("data:image/"):
+            _,b64=src.split(",",1)
+            output.write_bytes(base64.b64decode(b64))
+        elif src.startswith("blob:"):
+            expr=json.dumps(src)
+            data_url=await evaluate("""(async()=>{const r=await fetch("""+expr+""");const b=await r.blob();return await new Promise((ok,fail)=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.onerror=fail;fr.readAsDataURL(b);});})()""")
+            if not isinstance(data_url,str) or "," not in data_url:
+                raise RuntimeError("flow_blob_export_failed")
+            output.write_bytes(base64.b64decode(data_url.split(",",1)[1]))
+        elif src.startswith("http"):
+            with urllib.request.urlopen(src,timeout=60) as r:
+                output.write_bytes(r.read())
+        else:
+            raise RuntimeError("flow_generated_image_src_unsupported:"+src[:80])
+
+        if output.stat().st_size < 10000:
+            raise RuntimeError("flow_generated_image_too_small")
+        print("character_fusion_flow_image=PASS")
+
+with lock_path.open("a+") as lock:
+    fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
+    asyncio.run(main())
+'''
+        proc = subprocess.run(
+            [str(python_bin), "-c", helper, str(prompt_path), str(output_path)],
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=260,
+        )
+        if proc.returncode != 0:
+            tail=(proc.stderr or proc.stdout or "")[-3000:]
+            raise RuntimeError(f"Google Flow image fallback failed: {tail}")
+        data=output_path.read_bytes()
+        if len(data)<10000:
+            raise RuntimeError("Google Flow image fallback returned an unexpectedly small image")
+        return data
+
+
 def _render_image_gemini_web(target_ir: dict[str, Any], strict: bool) -> bytes:
     python_bin = Path.home() / ".local/share/agentos/gui-worker/venv/bin/python"
     if not python_bin.is_file():
@@ -1242,7 +1411,15 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
                 "timeout",
             )):
                 raise
-            return _render_image_gemini_web(target_ir, strict=strict)
+            try:
+                return _render_image_flow(target_ir, strict=strict)
+            except RuntimeError as flow_exc:
+                try:
+                    return _render_image_gemini_web(target_ir, strict=strict)
+                except RuntimeError as web_exc:
+                    raise RuntimeError(
+                        f"all image fallbacks failed; flow={flow_exc}; gemini_web={web_exc}"
+                    ) from web_exc
 
 
 def inspect_output(image_path: Path) -> dict[str, Any]:
