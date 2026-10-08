@@ -1,0 +1,62 @@
+name: Completion Live Ledger Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/completion-live-ledger-20261008
+    paths:
+      - '.github/workflows/completion-live-ledger-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read bounded completion state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          state=Path('/home/ubuntu/agent-data/governance/work-items.json')
+          print('state_exists='+('YES' if state.is_file() else 'NO'))
+          if state.is_file():
+              try:
+                  d=json.loads(state.read_text(encoding='utf-8'))
+              except Exception as e:
+                  print('state_readable=NO')
+                  raise
+              print('state_readable=YES')
+              print('generation='+str(d.get('generation')))
+              items=d.get('items') if isinstance(d,dict) else {}
+              if not isinstance(items,dict):
+                  items={}
+              for wid in ('agentos-core-470-runtime-completion','market-master-1200-mvp'):
+                  it=items.get(wid)
+                  if not isinstance(it,dict):
+                      print(wid+'=MISSING')
+                      continue
+                  safe={k:it.get(k) for k in (
+                      'work_id','project_id','status','owner','owner_generation',
+                      'lease_expires_at','next_action','blocker','updated_at'
+                  )}
+                  hist=it.get('history') if isinstance(it.get('history'),list) else []
+                  safe['history_tail']=[
+                      {k:x.get(k) for k in ('at','event','actor','from','to','from_owner','to_owner','owner_generation') if k in x}
+                      for x in hist[-6:] if isinstance(x,dict)
+                  ]
+                  ev=it.get('evidence')
+                  safe['evidence_count']=len(ev) if isinstance(ev,list) else 0
+                  ver=it.get('verification')
+                  safe['verification_status']=ver.get('status') if isinstance(ver,dict) else None
+                  print(wid+'='+json.dumps(safe,sort_keys=True,separators=(',',':')))
+          cur=Path('/home/ubuntu/agent-data/runtime/core/current')
+          print('core_current='+str(cur.resolve()) if cur.exists() else 'core_current=MISSING')
+          lobster=Path('/home/ubuntu/agent-data/runtime/agentos-lobster/current')
+          print('lobster_current='+str(lobster.resolve()) if lobster.exists() else 'lobster_current=MISSING')
+          PY
