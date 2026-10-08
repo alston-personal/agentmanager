@@ -16,8 +16,15 @@ function Write-JsonAtomic([object]$Value,[string]$Path,[int]$Depth=8){
     }
   }
 }
-function Remove-OtaHelperTasks {
-  foreach($name in @('AgentOS Thin Client OTA Guard','AgentOS Thin Client OTA Activator')){
+function Remove-OtaHelperTasks([object]$RuntimeRecord) {
+  $names=@(
+    [string]$RuntimeRecord.guard_task_name,
+    [string]$RuntimeRecord.activator_task_name
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  if($names.Count -eq 0){
+    $names=@('AgentOS Thin Client OTA Guard','AgentOS Thin Client OTA Activator')
+  }
+  foreach($name in $names){
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
   }
 }
@@ -33,7 +40,7 @@ if($Action -eq 'accept'){
   $current|Add-Member -NotePropertyName accepted_at -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) -Force
   Write-JsonAtomic $current $currentFile 8
   Write-JsonAtomic $current $lkgFile 8
-  Remove-OtaHelperTasks
+  Remove-OtaHelperTasks $current
   Write-Output 'agentos_ota_finalize=PASS'
   exit 0
 }
@@ -57,5 +64,5 @@ $lkg|Add-Member -NotePropertyName rolled_back_at -NotePropertyValue ((Get-Date).
 Write-JsonAtomic $lkg $currentFile 8
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Start-ScheduledTask -TaskName $TaskName
-Remove-OtaHelperTasks
+Remove-OtaHelperTasks $current
 Write-Output 'agentos_ota_rollback=PASS'
