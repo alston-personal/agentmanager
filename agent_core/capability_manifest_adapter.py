@@ -57,7 +57,7 @@ def sync_discoverable_capability_manifests(
             kind = str(invocation.get("kind") or "").strip()
             entrypoint = str(invocation.get("entrypoint") or "").strip()
             required_cli = str(invocation.get("required_cli") or "").strip()
-            if not kind or not (entrypoint or required_cli):
+            if not kind or kind in {"llm", "llm-prompt", "chat", "manual"} or not (entrypoint or required_cli):
                 raise ValueError(
                     f"implemented capability requires machine invocation kind and entrypoint/required_cli: {path}"
                 )
