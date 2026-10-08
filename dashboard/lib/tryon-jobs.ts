@@ -87,9 +87,13 @@ export type TryOnJob = {
     warnings?: Array<{ layer?: string; code: string; message?: string }>;
     cacheKey?: string | null;
     quality?: {
+      state?: 'pending' | 'candidate' | 'verified' | 'rejected';
       accepted: boolean;
       checkedAt: string | null;
-      checks?: Array<{ code: string; passed: boolean; message?: string }>;
+      reviewer?: string | null;
+      receiptSchema?: string | null;
+      verifiedLayers?: string[];
+      checks?: Array<{ code: string; passed: boolean; message?: string; layer?: string | null; source?: string }>;
     };
   };
   error: null | { code: string; message: string };
@@ -268,8 +272,14 @@ export function setTryOnQuality(args: {
     }]);
 
   job.output.quality = {
+    state: args.accepted ? 'verified' : 'rejected',
     accepted: args.accepted,
     checkedAt: now,
+    reviewer: args.reviewer || null,
+    receiptSchema: 'agentos.wardrobe-visual-review-receipt/v1',
+    verifiedLayers: args.accepted
+      ? Object.keys(job.input?.selectedLayers || {})
+      : [],
     checks,
   };
   writeJob(job);
@@ -283,6 +293,7 @@ export function setTryOnQuality(args: {
       schema: 'agentos.tryon-cache-meta/v1',
       cacheKey,
       qualityAccepted: args.accepted,
+      qualityState: args.accepted ? 'verified' : 'rejected',
       checkedAt: now,
       reviewer: args.reviewer || null,
       issues,
@@ -396,8 +407,12 @@ export function createTryOnJob(args: {
       height: null,
       cacheKey: signature,
       quality: {
+        state: 'pending',
         accepted: false,
         checkedAt: null,
+        reviewer: null,
+        receiptSchema: 'agentos.wardrobe-visual-review-receipt/v1',
+        verifiedLayers: [],
         checks: [],
       },
     },
