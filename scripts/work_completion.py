@@ -16,6 +16,8 @@ from pathlib import Path
 import tempfile
 from typing import Any, Iterator
 
+from agent_core.growth_observation import emit_growth_observation, normalize_growth_context
+
 SCHEMA = "agentos.work-completion/v1"
 ACTIVE = {"accepted", "in_progress", "waiting_external", "blocked", "verifying"}
 TERMINAL = {"done", "cancelled"}
@@ -236,6 +238,30 @@ def register_intake_envelope(path: Path, payload: dict[str, Any]) -> dict[str, A
     )
 
 
+
+def attach_growth_context(
+    path: Path,
+    *,
+    work_id: str,
+    actor: str,
+    growth_context: dict[str, Any],
+) -> dict[str, Any]:
+    normalized = normalize_growth_context(growth_context)
+    with locked(path):
+        state = load(path)
+        item = state["items"].get(work_id)
+        if not item:
+            raise KeyError("work_item_not_found")
+        if item.get("status") in TERMINAL:
+            raise ValueError("terminal_work_cannot_attach_growth_context")
+        item["growth_context"] = normalized
+        item["updated_at"] = now()
+        item.setdefault("history", []).append(
+            {"at": now(), "event": "growth_context_attached", "actor": actor}
+        )
+        save(path, state)
+        return item
+
 def transition(
     path: Path,
     *,
@@ -292,6 +318,17 @@ def transition(
         if problems:
             raise ValueError(",".join(problems))
         save(path, state)
+        if target == "done" and item.get("growth_context"):
+            observation = dict(item["growth_context"])
+            observation.setdefault("new_task", item.get("title") or item.get("work_id"))
+            combined_evidence = list(observation.get("evidence") or [])
+            combined_evidence.extend(str(x) for x in item.get("evidence") or [])
+            observation["evidence"] = sorted({x for x in combined_evidence if x})
+            emit_growth_observation(observation, data_root=path.parent.parent)
+            item.setdefault("history", []).append(
+                {"at": now(), "event": "growth_observation_emitted", "actor": actor}
+            )
+            save(path, state)
         return item
 
 
@@ -618,6 +655,11 @@ def cli() -> int:
     p = sub.add_parser("register-intake")
     p.add_argument("--input", type=Path, required=True)
 
+    p = sub.add_parser("attach-growth")
+    p.add_argument("--id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--input", type=Path, required=True)
+
     p = sub.add_parser("transition")
     p.add_argument("--id", required=True)
     p.add_argument("--to", required=True, choices=sorted(ACTIVE | TERMINAL))
@@ -675,6 +717,11 @@ def cli() -> int:
     elif args.command == "register-intake":
         payload = json.loads(args.input.read_text(encoding="utf-8"))
         result = register_intake_envelope(args.state, payload)
+    elif args.command == "attach-growth":
+        payload = json.loads(args.input.read_text(encoding="utf-8"))
+        result = attach_growth_context(
+            args.state, work_id=args.id, actor=args.actor, growth_context=payload,
+        )
     elif args.command == "transition":
         result = transition(
             args.state, work_id=args.id, target=args.to, actor=args.actor,
