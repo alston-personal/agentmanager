@@ -21,6 +21,13 @@ from gradio_client import Client, handle_file
 from PIL import Image, ImageOps
 
 try:
+    from capabilities.wardrobe_visual_review import evaluate_review
+    from capabilities.wardrobe_visual_review.gemini_backend import review_with_gemini
+except Exception:
+    evaluate_review = None
+    review_with_gemini = None
+
+try:
     from huggingface_hub import InferenceClient
 except Exception:
     InferenceClient = None
@@ -41,6 +48,7 @@ JOB_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_jobs" / "runtim
 CURRENT_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "current_outfits"
 ASSET_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_assets"
 CACHE_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_cache"
+REVIEW_WORKSPACE = DATA_ROOT / "runtime" / "wardrobe-visual-review"
 BASE_BODY_URL = os.environ.get(
     "AGENTOS_MIO_BASE_BODY_URL",
     "https://studio.milkcat.org/personas/mio/mio-base-v2.webp",
@@ -747,11 +755,14 @@ def update_current(job: dict[str, Any]) -> None:
     if not current or current.get("tryOn", {}).get("jobId") != job.get("jobId"):
         return
     current["updatedAt"] = utc_now()
+    quality = job.get("output", {}).get("quality") or {}
+    verified = quality.get("accepted") is True and quality.get("state") == "verified"
     current["tryOn"] = {
         "jobId": job["jobId"],
         "status": job["status"],
-        "asset": job["output"].get("asset"),
-        "previewAsset": job["output"].get("previewAsset"),
+        "asset": job["output"].get("asset") if verified else None,
+        "previewAsset": job["output"].get("previewAsset") if verified else None,
+        "qualityState": quality.get("state") or "pending",
         "view": job.get("view", "front"),
     }
     atomic_write(path, current)
@@ -866,6 +877,68 @@ def restore_cached_render(job: dict[str, Any], rendered_layers: list[str], targe
         },
     }
     return True
+
+
+def persist_quality_receipt(cache_key: str | None, job: dict[str, Any]) -> None:
+    if not cache_key:
+        return
+    meta_path = cache_meta_path(cache_key)
+    meta = read_json(meta_path) or {}
+    quality = job.get("output", {}).get("quality") or {}
+    meta.update(
+        {
+            "qualityAccepted": quality.get("accepted") is True,
+            "qualityState": quality.get("state") or "candidate",
+            "checkedAt": quality.get("checkedAt"),
+            "reviewer": quality.get("reviewer"),
+            "verifiedLayers": quality.get("verifiedLayers") or [],
+            "checks": quality.get("checks") or [],
+        }
+    )
+    atomic_write(meta_path, meta)
+
+
+def run_visual_review(job: dict[str, Any], candidate_path: Path) -> dict[str, Any]:
+    machine_checks = list(((job.get("output") or {}).get("quality") or {}).get("checks") or [])
+    if evaluate_review is None or review_with_gemini is None:
+        semantic = {
+            "schema": "agentos.wardrobe-visual-semantic-receipt/v1",
+            "backendReady": False,
+            "backend": "gemini-cli",
+            "classification": "CAPABILITY_IMPORT_UNAVAILABLE",
+            "checks": [],
+        }
+    else:
+        semantic = review_with_gemini(
+            job=job,
+            candidate_path=candidate_path,
+            workspace_root=REVIEW_WORKSPACE,
+            timeout_seconds=float(os.environ.get("AGENTOS_TRYON_REVIEW_TIMEOUT_SECONDS", "35")),
+        )
+    request = {
+        "schema": "agentos.wardrobe-visual-review-request/v1",
+        "selectedLayers": ((job.get("input") or {}).get("selectedLayers") or {}),
+        "renderedLayers": ((job.get("output") or {}).get("renderedLayers") or []),
+        "pendingLayers": ((job.get("output") or {}).get("pendingLayers") or []),
+        "machineChecks": machine_checks,
+        "semanticReceipt": semantic,
+    }
+    if evaluate_review is None:
+        return {
+            "schema": "agentos.wardrobe-visual-review-receipt/v1",
+            "state": "candidate",
+            "accepted": False,
+            "reason": "visual_review_capability_unavailable",
+            "selectedLayers": sorted(request["selectedLayers"].keys()),
+            "verifiedLayers": [],
+            "checks": machine_checks,
+            "semanticBackendReady": False,
+            "backendClassification": semantic.get("classification"),
+        }
+    receipt = evaluate_review(request)
+    receipt["backendClassification"] = semantic.get("classification")
+    receipt["backend"] = semantic.get("backend")
+    return receipt
 
 
 def persist_render_cache(job: dict[str, Any], rendered_layers: list[str], source: Path) -> str:
@@ -1057,9 +1130,6 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
     if not pending_layers:
         cache_key = persist_render_cache(job, target_layers, target)
 
-    job["status"] = "ready"
-    job["completedAt"] = utc_now()
-    job["failedAt"] = None
     only_prefix_reused = bool(prefix_layers) and rendered_layers == prefix_layers
     job["output"] = {
         "asset": public_asset_path(job["jobId"]),
@@ -1085,16 +1155,42 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                     "code": "all_requested_layers_rendered",
                     "passed": len(pending_layers) == 0,
                     "message": None if not pending_layers else "Pending layers: " + ",".join(pending_layers),
-                },
-                {
-                    "code": "visual_qc_required",
-                    "passed": False,
-                    "message": "Must detect missing garment or stray product/reference objects before cache reuse.",
-                },
+                    "source": "renderer",
+                }
             ],
         },
     }
-    set_progress(path, job, "ready", "Candidate render produced; visual review required before promotion")
+    set_progress(path, job, "validating", "Running wardrobe.visual-review")
+
+    receipt = run_visual_review(job, target)
+    state = str(receipt.get("state") or "candidate")
+    checked_at = utc_now()
+    job["output"]["quality"] = {
+        "state": state,
+        "accepted": receipt.get("accepted") is True,
+        "checkedAt": checked_at,
+        "reviewer": "service://wardrobe.visual-review/backend/gemini-cli"
+            if receipt.get("semanticBackendReady") is True
+            else None,
+        "receiptSchema": receipt.get("schema") or "agentos.wardrobe-visual-review-receipt/v1",
+        "verifiedLayers": receipt.get("verifiedLayers") or [],
+        "checks": receipt.get("checks") or [],
+        "reason": receipt.get("reason"),
+        "backend": receipt.get("backend"),
+        "backendClassification": receipt.get("backendClassification"),
+    }
+    persist_quality_receipt(cache_key, job)
+
+    job["status"] = "ready"
+    job["completedAt"] = checked_at
+    job["failedAt"] = None
+    if state == "verified":
+        message = "Visual review verified; candidate promoted"
+    elif state == "rejected":
+        message = "Visual review rejected candidate; regenerate or inspect evidence"
+    else:
+        message = "Candidate render available; semantic visual review did not promote it"
+    set_progress(path, job, "ready", message)
 
 
 def mark_failed(path: Path, job: dict[str, Any], exc: Exception) -> None:
