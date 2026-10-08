@@ -1,0 +1,50 @@
+name: Clear Stuck VOPC5750 Semantic Task 20261008
+
+on:
+  push:
+    branches:
+      - ops/clear-stuck-semantic-task-20261008
+    paths:
+      - '.github/workflows/clear-stuck-vopc5750-semantic-task-20261008.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  clear:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove exact stuck acceptance task only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.realm_fabric import RealmFabricStore
+
+          target='task-semantic-03f88bf208f44dab87ca45b0a763f57c'
+          fabric=RealmFabricStore()
+          data=fabric.load()
+          queue=list((data.get('tasks') or {}).get('vopc5750') or [])
+          before=len(queue)
+          kept=[
+              item for item in queue
+              if not (isinstance(item,dict) and item.get('task_id')==target)
+          ]
+          removed=before-len(kept)
+          data['tasks']['vopc5750']=kept
+          if removed:
+              fabric.save(data)
+          print(json.dumps({
+              'target':target,
+              'removed':removed,
+              'before':before,
+              'after':len(kept),
+          },indent=2))
+          assert removed in (0,1)
+          print('STUCK_SEMANTIC_TASK_CLEANUP=PASS')
+          PY
