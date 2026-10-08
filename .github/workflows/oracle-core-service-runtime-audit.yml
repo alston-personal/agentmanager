@@ -346,6 +346,23 @@ jobs:
           print("lobster_failed_cli_shape_total="+str(sum(v for k,v in counts.items() if "_stderr" in k)))
           for k in sorted(counts): print("lobster_failed_cli_shape_"+k+"="+str(counts[k]))
           LOBSTER_SHAPE
+          /usr/bin/python3 - /home/ubuntu/agent-data/governance/work-items.json <<'MVP1_DIAG'
+          import json,pathlib,socket,sys
+          state=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          item=state.get("items",{}).get("lobster-mvp1-local-port-20261008",{})
+          evidence=item.get("evidence") or []
+          print("mvp1_status="+str(item.get("status") or "missing"))
+          print("mvp1_verification_passed="+str((item.get("verification") or {}).get("status")=="passed").lower())
+          print("mvp1_has_evidence="+str(bool(evidence)).lower())
+          print("mvp1_has_exact_socket_proof="+str(any("local_port_65534_closed_independent_socket_probe" in str(x) for x in evidence)).lower())
+          print("mvp1_verified_actor="+str((item.get("verification") or {}).get("verified_by") in ("role://lobster+inspector","role://lobster+local-port-validator")).lower())
+          try:
+              with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as sock:
+                  sock.settimeout(2)
+                  closed=sock.connect_ex(("127.0.0.1",65534))!=0
+              print("mvp1_live_loopback_closed="+str(closed).lower())
+          except OSError: print("mvp1_live_loopback_closed=unknown")
+          MVP1_DIAG
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
