@@ -1,7 +1,7 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "diagnose Mio try-on jobs stuck in AI generating: inspect recent job progress heartbeat, worker service, provider activity, recent errors, and run one bounded production probe",
-  "requested_at": "2026-10-07T15:49:00+08:00",
-  "nonce": "mio-tryon-stuck-20261007-154900"
+  "purpose": "Inspect latest Mio try-on job matching the current poor-quality production result. Report selectedLayers, renderedLayers, pendingLayers, providerOutputs, warnings, quality checks, timestamps, and worker logs. Do not create a new try-on probe.",
+  "requested_at": "2026-10-08T15:15:00+08:00",
+  "nonce": "mio-quality-latest-20261008-1515"
 }
