@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import fcntl
 from pathlib import Path
 from typing import Any
 
@@ -51,8 +52,14 @@ def emit_growth_observation(
     inbox = growth_inbox_path(data_root)
     inbox.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(observation, ensure_ascii=False, sort_keys=True) + "\n"
-    with inbox.open("a", encoding="utf-8") as fh:
-        fh.write(line)
-        fh.flush()
-        os.fsync(fh.fileno())
+    lock_path = inbox.with_suffix(inbox.suffix + ".lock")
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            with inbox.open("a", encoding="utf-8") as fh:
+                fh.write(line)
+                fh.flush()
+                os.fsync(fh.fileno())
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
     return inbox
