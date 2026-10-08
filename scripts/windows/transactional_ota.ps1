@@ -155,19 +155,49 @@ Write-JsonAtomic $record $currentFile
 Move-Item -Force $next $launcher
 $activatorTask='AgentOS Thin Client OTA Activator'
 $activatorScript=Join-Path $InstallRoot ("transactional_ota_activate-"+$SourceCommit+".ps1")
+$activatorStatus=Join-Path $InstallRoot 'ota-activator-status.json'
+@{
+  schema='agentos.ota-activator-status/v1'
+  source_commit=$SourceCommit
+  state='scheduled'
+  updated_at=[DateTimeOffset]::UtcNow.ToString('o')
+}|ConvertTo-Json -Compress|Set-Content -Encoding UTF8 -LiteralPath $activatorStatus
 @(
-  "param([string]`$TaskName='AgentOS Thin Client')",
+  "param([string]`$TaskName='AgentOS Thin Client',[string]`$StatusPath='$($activatorStatus.Replace("'","''"))')",
   "`$ErrorActionPreference='Stop'",
-  "Stop-ScheduledTask -TaskName `$TaskName -ErrorAction SilentlyContinue",
-  "Start-Sleep -Seconds 2",
-  "`$clients=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\.exe$' -and `$_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' })",
-  "foreach(`$client in `$clients){ Stop-Process -Id `$client.ProcessId -Force -ErrorAction SilentlyContinue }",
-  "for(`$i=0;`$i -lt 20;`$i++){ `$remaining=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\.exe$' -and `$_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' }); if(`$remaining.Count -eq 0){break}; Start-Sleep -Milliseconds 500 }",
-  "Start-ScheduledTask -TaskName `$TaskName",
-  "Start-Sleep -Seconds 3",
-  "`$task=Get-ScheduledTask -TaskName `$TaskName -ErrorAction Stop",
-  "if([string]`$task.State -ne 'Running'){ throw 'Thin Client scheduled task did not enter Running state' }",
-  "Write-Output 'agentos_ota_activator=PASS'"
+  "function Write-Status([string]`$State,[int]`$ClientCount=-1,[int]`$RemainingCount=-1,[string]`$ErrorClass=''){ @{schema='agentos.ota-activator-status/v1';state=`$State;client_count=`$ClientCount;remaining_count=`$RemainingCount;error_class=`$ErrorClass;updated_at=[DateTimeOffset]::UtcNow.ToString('o')}|ConvertTo-Json -Compress|Set-Content -Encoding UTF8 -LiteralPath `$StatusPath }",
+  "try{",
+  "  Write-Status 'started'",
+  "  Stop-ScheduledTask -TaskName `$TaskName -ErrorAction SilentlyContinue",
+  "  Start-Sleep -Seconds 2",
+  "  `$clients=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\.exe)|Set-Content -Encoding ASCII $activatorScript
+$record|Add-Member -NotePropertyName activator_helper -NotePropertyValue $activatorScript -Force
+$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'" -StatusPath "'+$activatorStatus+'"')
+$activatorTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(10)
+Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
+Write-Output 'agentos_ota_stage=ACTIVATING'
+Write-Output ('agentos_ota_candidate='+$SourceCommit)
+Write-Output 'agentos_ota_controller_acceptance=PENDING'
+ -and `$_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' })",
+  "  foreach(`$client in `$clients){ Stop-Process -Id `$client.ProcessId -Force -ErrorAction SilentlyContinue }",
+  "  `$remaining=@()",
+  "  for(`$i=0;`$i -lt 20;`$i++){ `$remaining=@(Get-CimInstance Win32_Process | Where-Object { `$_.Name -match '^pythonw?\.exe)|Set-Content -Encoding ASCII $activatorScript
+$record|Add-Member -NotePropertyName activator_helper -NotePropertyValue $activatorScript -Force
+$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'"')
+$activatorTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(10)
+Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Settings $helperSettings -Principal $helperPrincipal -Force | Out-Null
+Write-Output 'agentos_ota_stage=ACTIVATING'
+Write-Output ('agentos_ota_candidate='+$SourceCommit)
+Write-Output 'agentos_ota_controller_acceptance=PENDING'
+ -and `$_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)' }); if(`$remaining.Count -eq 0){break}; Start-Sleep -Milliseconds 500 }",
+  "  Write-Status 'clients-stopped' `$clients.Count `$remaining.Count",
+  "  Start-ScheduledTask -TaskName `$TaskName",
+  "  Start-Sleep -Seconds 3",
+  "  `$task=Get-ScheduledTask -TaskName `$TaskName -ErrorAction Stop",
+  "  if([string]`$task.State -ne 'Running'){ throw 'Thin Client scheduled task did not enter Running state' }",
+  "  Write-Status 'pass' `$clients.Count `$remaining.Count",
+  "  Write-Output 'agentos_ota_activator=PASS'",
+  "}catch{ Write-Status 'error' -1 -1 `$_.Exception.GetType().Name; throw }"
 )|Set-Content -Encoding ASCII $activatorScript
 $record|Add-Member -NotePropertyName activator_helper -NotePropertyValue $activatorScript -Force
 $activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$activatorScript+'" -TaskName "'+$TaskName+'"')
