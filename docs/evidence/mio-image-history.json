@@ -1,0 +1,18 @@
+[
+  {
+    "capability": "image.edit.flux-kontext",
+    "provider": "black-forest-labs/FLUX.1-Kontext-Dev",
+    "evidence_kind": "source_code",
+    "outcome": "DECLARED",
+    "source_ref": "https://github.com/alston-personal/agentmanager/blob/main/.github/workflows/generate-mio-neutral-base.yml",
+    "observation": "Workflow invokes FLUX through Gradio; execution and provenance not established."
+  },
+  {
+    "capability": "persona.mio.neutral-base.asset",
+    "provider": "unknown",
+    "evidence_kind": "git_artifact",
+    "outcome": "OUTPUT_OBSERVED",
+    "source_ref": "https://github.com/alston-personal/studio-web/commit/aa728fd41f98a85ae659acba0d55670768ca35b4",
+    "observation": "mio-base-v2.webp committed 2026-09-30; generator identity unknown; must not attribute to FLUX."
+  }
+]
