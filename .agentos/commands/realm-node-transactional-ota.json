@@ -2,6 +2,6 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.transactional_ota",
   "node_id": "vopc5750",
-  "source_commit": "0f989f08fa097dd836bc63501463a09492ec5bbb",
-  "nonce": "vopc5750-stable-supervisor-acceptance-20261008-1212"
+  "source_commit": "993b169b6f420f8038fba7769b798d63e7cb4501",
+  "nonce": "vopc5750-stable-supervisor-acceptance-20261008-1216"
 }
