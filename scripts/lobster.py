@@ -256,7 +256,7 @@ def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
 
     if port_match:
         port = port_match.group(1)
-        cmd = ["python3", "/home/ubuntu/agentmanager/scripts/local_port_checker.py", str(port)]
+        cmd = ["python3", str(Path(__file__).resolve().parent / "local_port_checker.py"), str(port)]
         logger.info(f"⚡ [Local Route] 偵測到連接埠 {port} 檢查任務，自動路由至本地執行器（0 Token 消耗）。")
     elif ACTIVE_ENGINE == "agy":
         cmd = [
