@@ -136,9 +136,15 @@ def main():
     last_tick=parse_ts(state.get("last_tick_at"))
     if last_tick:
         elapsed_h=max(0.0,min((now_utc-last_tick.astimezone(timezone.utc)).total_seconds()/3600.0,12.0))
-        if phase=="sleep":
+        # Recovery follows Mio's actual previous energy mode, not merely the
+        # wall-clock routine label. A late-night awake cycle must recover at
+        # the awake rate; choosing sleep/rest changes the next interval's rate.
+        previous_mode=str(state.get("energy_mode") or "")
+        if previous_mode not in ("sleep","rest","awake"):
+            previous_mode="sleep" if phase=="sleep" else ("rest" if phase=="rest" else "awake")
+        if previous_mode=="sleep":
             rate=float(energy_cfg.get("recovery",{}).get("sleep_points_per_hour",12))
-        elif phase=="rest":
+        elif previous_mode=="rest":
             rate=float(energy_cfg.get("recovery",{}).get("rest_points_per_hour",7))
         else:
             rate=float(energy_cfg.get("recovery",{}).get("awake_points_per_hour",3))
@@ -224,13 +230,21 @@ def main():
     seed_material=f"{cfg.get('persona_id')}|{ir.get('ir_id')}|{now_local:%Y-%m-%dT%H}|{cycle}|{state.get('consecutive_noops',0)}"
     seed=int(hashlib.sha256(seed_material.encode()).hexdigest()[:16],16)
     rng=random.Random(seed)
-    selected=rng.choices([x[0] for x in candidates],weights=[x[1] for x in candidates],k=1)[0]
-
     costs=energy_cfg.get("action_costs",{})
-    cost_map={"sleep":0,"rest":0,"observe":float(costs.get("observe_passive",0.2)),
+    cost_map={"sleep":0.0,"rest":0.0,"observe":float(costs.get("observe_passive",0.2)),
               "review_social_feedback":float(costs.get("read_thread",1)),
-              "reflect":1.5,"wardrobe_plan":2.0,"content_ideation":3.0}
-    cost=min(energy,cost_map.get(selected,1.0))
+              "reflect":float(costs.get("reflect",1.5)),
+              "wardrobe_plan":float(costs.get("wardrobe_plan",2.0)),
+              "content_ideation":float(costs.get("content_ideation",3.0))}
+    # Energy is a real budget: actions that cannot be fully paid for are not
+    # eligible. Zero energy therefore leaves only zero-cost recovery actions.
+    affordable=[(n,w) for n,w in candidates if cost_map.get(n,1.0)<=energy]
+    if not affordable:
+        affordable=[("rest",1.0)]
+    candidates=affordable
+    selected=rng.choices([x[0] for x in candidates],weights=[x[1] for x in candidates],k=1)[0]
+    cost=cost_map.get(selected,1.0)
+    assert cost<=energy+1e-9,(selected,cost,energy)
     energy_after=max(0.0,energy-cost)
     do={"action":selected,"status":"completed_internal","energy_cost":cost}
     pending=list(state.get("pending_external_actions",[]))
@@ -327,8 +341,10 @@ def main():
                             "source":"persona_pdca_runtime","trigger":args.trigger,"receipt_ref":str(receipts.relative_to(root)),
                             "external_action_completed":False},ensure_ascii=False,separators=(",",":"))+"\n")
 
+    energy_mode="sleep" if selected=="sleep" else ("rest" if selected=="rest" else "awake")
     state.update({"cycle":cycle,"last_tick_at":receipt["tick_at"],
                   "last_action_at":receipt["tick_at"] if not noop else state.get("last_action_at"),
+                  "energy_mode":energy_mode,
                   "last_ir_id":ir.get("ir_id"),"energy_current":round(energy_after,2),
                   "consecutive_noops":noops,
                   "last_event_timestamp":latest_event_ts.astimezone(timezone.utc).isoformat().replace("+00:00","Z") if latest_event_ts else state.get("last_event_timestamp"),
