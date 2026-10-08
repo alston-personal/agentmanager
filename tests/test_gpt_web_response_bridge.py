@@ -272,3 +272,22 @@ class GptWebStructuralDiagnosticsTests(unittest.TestCase):
         self.assertIn("data-message-author-role", script)
         self.assertIn("location.pathname", script)
         self.assertNotIn("console.log", script)
+
+
+class GptWebRouteCompatibilityTests(unittest.TestCase):
+    def test_uc_route_does_not_count_as_verified_reply(self):
+        # The bridge must not consider a temporary-chat route successful merely
+        # because the send control disappeared and a stop button was once shown.
+        from scripts.gpt_web_response_bridge import _confirm_submit
+        page = Mock()
+        page.evaluate.return_value = {
+            "pagePath": "/uc/temporary", "messageNodes": 0,
+            "composerChars": 0, "composerHasRequest": False,
+            "assistantCount": 0, "userCount": 0,
+            "correlatedUserCount": 0, "generating": False,
+        }
+        with patch("scripts.gpt_web_response_bridge.time.sleep"):
+            with self.assertRaisesRegex(RuntimeError, "GPT_WEB_SUBMIT_NOT_CONFIRMED"):
+                _confirm_submit(page, request_id="invoice:req:12345678",
+                                baseline_assistants=0, baseline_users=0,
+                                timeout_seconds=0.001)
