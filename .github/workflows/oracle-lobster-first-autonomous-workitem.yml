@@ -37,16 +37,18 @@ jobs:
           RELEASE="$(readlink -f "$DATA/runtime/core/current")"
           test -f "$RELEASE/scripts/work_completion.py"
           systemctl --user is-active --quiet os-lobster.service
+          grep -Fq '"--print",' "$RELEASE/scripts/lobster.py"
+          echo "lobster_proof_headless_release=PASS"
           # All report contents remain under a dedicated data-root directory.
-          WORKSPACE="$DATA/proofs/lobster-first-autonomous"
+          WORKSPACE="$DATA/proofs/lobster-headless-proof-2"
           REPORT="$WORKSPACE/report.md"
           LEDGER="$DATA/governance/work-items.json"
-          WORK_ID=lobster-autonomous-first-20261008
+          WORK_ID=lobster-autonomous-headless-second-20261008
           mkdir -p "$WORKSPACE"
           NEXT_ACTION="撰寫 AgentOS 龍蝦自主工作閉環的唯讀程式稽核報告。請閱讀 $RELEASE/scripts/lobster.py 與 $RELEASE/scripts/work_completion.py，只將發現、至少兩項程式依據及待改善項目寫入 $REPORT。只允許寫入此報告，不得修改原始碼、系統設定、發布內容、執行外部操作或讀取秘密。"
           /usr/bin/python3 "$RELEASE/scripts/work_completion.py" --state "$LEDGER" register \
             --id "$WORK_ID" --project agentos-core \
-            --title "Lobster first autonomous read-only audit" \
+            --title "Lobster first autonomous headless retry audit" \
             --owner role://lobster --source "issue://200" \
             --workspace "$WORKSPACE" --next-action "$NEXT_ACTION" \
             --accept "Report exists under dedicated AgentOS data root" \
