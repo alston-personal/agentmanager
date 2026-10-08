@@ -526,5 +526,12 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('cognitive_ir_status', text)
 
 
+    def test_post_generator_checks_pending_publish_before_liveness_consider(self):
+        text=(REPO/'scripts/persona_post_intent_generator.py').read_text()
+        publish_guard=text.index('post_publish_already_pending')
+        consider_lookup=text.index('social.post.consider')
+        self.assertLess(publish_guard, consider_lookup)
+
+
 if __name__ == '__main__':
     unittest.main()
