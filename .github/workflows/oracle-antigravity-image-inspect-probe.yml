@@ -1,0 +1,108 @@
+name: Oracle Antigravity Image Inspect Probe
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-antigravity-image-inspect-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Probe governed Antigravity relay image inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, shutil, time
+          from pathlib import Path
+          import sys
+
+          sys.path.insert(0, "/home/ubuntu/agentmanager")
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          root=Path("/home/ubuntu/agent-data/projects/dressup-simulator")
+          rows=[]
+          for p in (root/"render_jobs/runtime").glob("*.json"):
+              try:
+                  j=json.loads(p.read_text(encoding="utf-8"))
+              except Exception:
+                  continue
+              asset=root/"render_assets"/f"{j.get('jobId')}.webp"
+              selected=((j.get("input") or {}).get("selectedLayers") or {})
+              if j.get("status")=="ready" and asset.is_file() and selected:
+                  rows.append((j.get("completedAt") or j.get("requestedAt") or "",j,asset))
+          if not rows:
+              print("antigravity_image_inspect_probe=SKIP_NO_CANDIDATE")
+              raise SystemExit(0)
+
+          _,job,asset=sorted(rows,reverse=True)[0]
+          work=Path("/home/ubuntu/agent-data/runtime/agy-image-probe")
+          shutil.rmtree(work,ignore_errors=True)
+          work.mkdir(parents=True,exist_ok=True)
+          shutil.copy2(asset,work/"candidate.webp")
+
+          # One product reference image is enough to prove image semantics.
+          layer,item=next(iter(((job.get("input") or {}).get("selectedLayers") or {}).items()))
+          source=str((item or {}).get("sourceImageUrl") or "")
+          # Reuse already-installed wardrobe review helper for bounded download.
+          sys.path.insert(0,"/home/ubuntu/.local/share/mio-tryon/runtime-lib")
+          from capabilities.wardrobe_visual_review.gemini_backend import _download
+          _download(source,work/"reference.jpg")
+
+          client=AntigravityRelayClient("/home/ubuntu/agent-data/runtime/antigravity-relay")
+          instruction=f"""Read candidate.webp and reference.jpg as images. Do not modify any file.
+Determine whether the generated candidate visibly contains an item matching the reference image for wardrobe layer {layer}.
+Return exactly one JSON object and nothing else:
+{{"schema":"agentos.image-inspect-probe/v1","imageReadable":true,"layer":"{layer}","match":true_or_false,"evidence":"brief visual evidence"}}
+If you cannot actually inspect the image pixels, return imageReadable=false."""
+          capsule=client.submit(
+              project_id="agentos-core",
+              canonical_ir={
+                  "schema":"agentos.executor-provider-ir/v0.1",
+                  "goal":"Probe Antigravity image inspection only",
+                  "operation":"agent.chat",
+                  "constraints":["read-only","no file mutation","no credentials","return structured JSON"],
+              },
+              instruction=instruction,
+              workspace=str(work),
+              executor_hint="provider:agy",
+          )
+          cid=capsule["capsule_id"]
+          print("antigravity_image_probe_capsule="+cid)
+          for _ in range(60):
+              receipt=client.receipt(cid)
+              if receipt:
+                  print("antigravity_image_probe_provider="+str(receipt.get("provider")))
+                  print("antigravity_image_probe_ok="+str(receipt.get("ok")))
+                  out=str(receipt.get("stdout") or "").replace("\n"," ")[:3000]
+                  print("antigravity_image_probe_output="+out)
+                  if receipt.get("ok") is not True:
+                      print("antigravity_image_inspect_probe=BACKEND_ERROR")
+                      raise SystemExit(0)
+                  lowered=out.lower()
+                  if '"imagereadable":true' in lowered.replace(" ",""):
+                      print("antigravity_image_inspect_probe=READY")
+                  else:
+                      print("antigravity_image_inspect_probe=UNSUPPORTED")
+                  raise SystemExit(0)
+              time.sleep(2)
+          print("antigravity_image_inspect_probe=TIMEOUT")
+          PY
+          REMOTE

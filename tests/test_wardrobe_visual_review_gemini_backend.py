@@ -15,6 +15,10 @@ class WardrobeGeminiBackendTests(unittest.TestCase):
 
     def test_classifies_auth_and_rate_limit(self):
         self.assertEqual(_classify_failure("Please sign in"), "AUTH_REQUIRED")
+        self.assertEqual(
+            _classify_failure("IneligibleTierError: This client is no longer supported. Migrate to Antigravity"),
+            "OAUTH_CLIENT_UNSUPPORTED",
+        )
         self.assertEqual(_classify_failure("Resource exhausted: quota"), "RATE_LIMITED")
         self.assertEqual(_classify_failure("", timed_out=True), "TIMEOUT")
 
