@@ -295,6 +295,74 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertEqual(item["status"], "done")
             self.assertEqual(mod.audit(path), ([], []))
 
+    def test_verified_completion_emits_growth_observation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            mod.attach_growth_context(
+                path,
+                work_id="wi-1",
+                actor="agent",
+                growth_context={
+                    "source_experience": ["wardrobe-runtime:v1"],
+                    "candidate_id": "runtime-session-pattern",
+                    "independent_reuse": True,
+                    "reuse_boundary": "cross-executor",
+                    "metrics_before": {"human_interventions": 3},
+                    "metrics_after": {"human_interventions": 1},
+                },
+            )
+            done = mod.verified_done(
+                path,
+                work_id="wi-1",
+                actor="lobster+inspector",
+                evidence="receipt://runtime/1",
+            )
+            self.assertEqual(done["status"], "done")
+            inbox = Path(temp) / "growth-proof" / "inbox.jsonl"
+            self.assertTrue(inbox.exists())
+            rows = [line for line in inbox.read_text(encoding="utf-8").splitlines() if line]
+            self.assertEqual(len(rows), 1)
+            import json
+            event = json.loads(rows[0])
+            self.assertEqual(event["candidate_id"], "runtime-session-pattern")
+            self.assertIn("receipt://runtime/1", event["evidence"])
+            self.assertTrue(
+                any(h.get("event") == "growth_observation_emitted" for h in done["history"])
+            )
+
+    def test_growth_observer_failure_does_not_undo_completion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            mod.attach_growth_context(
+                path,
+                work_id="wi-1",
+                actor="agent",
+                growth_context={
+                    "source_experience": ["wardrobe-runtime:v1"],
+                    "candidate_id": "runtime-session-pattern",
+                    "independent_reuse": True,
+                },
+            )
+            original = mod.emit_growth_observation
+            try:
+                def fail(*args, **kwargs):
+                    raise OSError("observer unavailable")
+                mod.emit_growth_observation = fail
+                done = mod.verified_done(
+                    path,
+                    work_id="wi-1",
+                    actor="lobster+inspector",
+                    evidence="receipt://runtime/2",
+                )
+            finally:
+                mod.emit_growth_observation = original
+            self.assertEqual(done["status"], "done")
+            self.assertTrue(
+                any(h.get("event") == "growth_observation_failed" for h in done["history"])
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
