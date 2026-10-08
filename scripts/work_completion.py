@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 from typing import Any, Iterator
@@ -36,6 +37,46 @@ INTAKE_FIELDS = {
     "schema", "work_id", "project_id", "title", "next_action",
     "acceptance", "source", "workspace", "lease_seconds",
 }
+
+
+def classify_blocker(value: str | None) -> str:
+    text = str(value or "").strip().casefold()
+    if not text:
+        return "NONE"
+
+    def matches(*terms: str) -> bool:
+        for term in terms:
+            term = term.casefold()
+            if " " in term or "/" in term or "_" in term:
+                if term in text:
+                    return True
+            elif re.search(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", text):
+                return True
+        return False
+
+    if matches(
+        "auth", "login", "credential", "human approval", "manual approval",
+        "human intervention", "2fa", "mfa",
+    ):
+        return "HUMAN_AUTH"
+    if matches(
+        "rate limit", "rate_limit", "quota", "capacity", "provider unavailable",
+    ):
+        return "PROVIDER_CAPACITY"
+    if matches(
+        "runtime", "converge", "controller", "runner window", "one", "one/", "transport",
+        "bridge", "service", "daemon", "node", "receipt continuity",
+    ):
+        return "RUNTIME_HEALTH"
+    if matches(
+        "twse", "t86", "market data", "historical data", "dataset", "data source",
+    ):
+        return "MARKET_DATA"
+    if matches(
+        "verify", "verification", "acceptance", "evidence", "test", "ci", "report",
+    ):
+        return "VERIFICATION"
+    return "UNKNOWN"
 
 
 def now() -> str:

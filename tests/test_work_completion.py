@@ -101,6 +101,15 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertEqual(moved["owner_generation"], 2)
             self.assertEqual(mod.next_item(path)["work_id"], "wi-1")
 
+    def test_blocker_kind_is_bounded_and_safe(self):
+        self.assertEqual(mod.classify_blocker("GitHub workflow still running; verify receipt"), "VERIFICATION")
+        self.assertEqual(mod.classify_blocker("TWSE T86 historical data not yet available"), "MARKET_DATA")
+        self.assertEqual(mod.classify_blocker("provider rate limit quota"), "PROVIDER_CAPACITY")
+        self.assertEqual(mod.classify_blocker("ONE runtime converge receipt continuity"), "RUNTIME_HEALTH")
+        self.assertEqual(mod.classify_blocker("human login required"), "HUMAN_AUTH")
+        self.assertEqual(mod.classify_blocker("opaque domain-specific blocker"), "UNKNOWN")
+        self.assertEqual(mod.classify_blocker(""), "NONE")
+
     def test_blocked_work_cannot_lose_blocker(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)
