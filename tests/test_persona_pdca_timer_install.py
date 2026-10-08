@@ -37,3 +37,16 @@ def test_installer_preserves_active_timer_cadence():
     assert "if ! systemctl --user is-active --quiet agentos-persona-social-actions.timer; then" in text
     assert "systemctl --user start agentos-persona-pdca-heartbeat.timer" in text
     assert "systemctl --user start agentos-persona-social-actions.timer" in text
+
+
+
+def test_installer_uses_persistent_calendar_timers():
+    repo=Path(__file__).resolve().parents[1]
+    text=(repo/"scripts"/"install_persona_pdca_timer_user.sh").read_text(encoding="utf-8")
+    assert "OnCalendar=*-*-* *:25:00" in text
+    assert "OnCalendar=*-*-* *:0/5:00" in text
+    assert text.count("Persistent=true") >= 2
+    assert "OnActiveSec=55min" not in text
+    assert "OnUnitActiveSec=60min" not in text
+    assert "OnActiveSec=3min" not in text
+    assert "OnUnitActiveSec=5min" not in text
