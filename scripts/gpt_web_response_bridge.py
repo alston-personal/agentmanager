@@ -610,12 +610,22 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             "returnByValue": True,
         }).get("result") or {}
         selected_files = selected.get("value") or []
-        if not any(
+        # React may replace the input synchronously after the change event.
+        # In that case, the stale object can have an empty FileList even if
+        # the application received the image. Classify as inconclusive rather
+        # than asserting an upload failure; retain the later live reply gate.
+        selection_confirmed = any(
             isinstance(f, dict) and f.get("name") == image.name
             and f.get("size") == image.stat().st_size
             for f in selected_files
-        ):
-            raise RuntimeError("GPT_WEB_FILE_SELECTION_NOT_CONFIRMED")
+        )
+        if not selection_confirmed:
+            upload_observation = _submission_snapshot(page, request_id)
+            if int((upload_observation.get("attachmentSummary") or {}).get("imagePreviewCount") or 0) == 0:
+                raise RuntimeError(
+                    "GPT_WEB_FILE_SELECTION_UNVERIFIED:" +
+                    json.dumps(upload_observation, ensure_ascii=False, sort_keys=True)
+                )
 
         # File upload may rerender the composer. Reacquire/focus it instead of
         # assuming the pre-upload DOM node is still active.
