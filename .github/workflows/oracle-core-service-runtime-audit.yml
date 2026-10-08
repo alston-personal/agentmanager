@@ -240,6 +240,31 @@ jobs:
           except (OSError,ValueError,TypeError):
               print("lobster_first_proof_blocker_category=unavailable")
           PROOF_BLOCKER
+          # Provider availability and bounded failure classes only; never log output.
+          /usr/bin/python3 - "$lobster_logdir/lobster.log" <<'LOBSTER_PROVIDER'
+          import collections, pathlib, re, sys
+          from datetime import datetime, timedelta
+          root=pathlib.Path.home()
+          paths=sorted((root/".antigravity-ide-server/extensions").glob("anthropic.claude-code-*/resources/native-binary/claude"))
+          print("lobster_claude_binary_available="+str(bool(paths and paths[-1].is_file())).lower())
+          print("lobster_agy_binary_available="+str(any(pathlib.Path(p).is_file() for p in ("/usr/local/bin/agy","/usr/bin/agy",str(root/".local/bin/agy")))).lower())
+          cutoff=datetime.now()-timedelta(minutes=30)
+          counts=collections.Counter()
+          path=pathlib.Path(sys.argv[1])
+          if path.exists():
+              with path.open(encoding="utf-8",errors="replace") as stream:
+                  for line in stream:
+                      try: stamp=datetime.strptime(line[:19],"%Y-%m-%d %H:%M:%S")
+                      except ValueError: continue
+                      if stamp<cutoff: continue
+                      if "Lobster 執行失敗" in line: counts["executor_failure"]+=1
+                      if "Inspector: FAIL" in line: counts["inspector_fail"]+=1
+                      if "Inspector: BLOCKED" in line: counts["inspector_blocked"]+=1
+                      if "inspector_unavailable" in line: counts["inspector_unavailable"]+=1
+                      if "TIMEOUT" in line or "任務超時" in line: counts["timeout"]+=1
+          for key in ("executor_failure","inspector_fail","inspector_blocked","inspector_unavailable","timeout"):
+              print("lobster_last_30m_"+key+"="+str(counts[key]))
+          LOBSTER_PROVIDER
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
