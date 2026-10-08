@@ -123,6 +123,12 @@ jobs:
             exit 24
           fi
           echo "core_bundle_lobster_role_name_regression=PASS"
+          # Guard the noninteractive Claude CLI invocation of durable Lobster.
+          if ! grep -Fq '"--print",' "$RELEASE/scripts/lobster.py"; then
+            echo "core_bundle_lobster_headless_cli=FAIL"
+            exit 25
+          fi
+          echo "core_bundle_lobster_headless_cli=PASS"
           [ -e "$RELEASE/.env" ] || ln -s "$REPO/.env" "$RELEASE/.env"
 
           set -a
