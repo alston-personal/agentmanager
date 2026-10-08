@@ -90,6 +90,38 @@ class ObservationContract(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()): self.assertEqual(self.tick.main(),0)
         return self.read('tick.json')
 
+
+    def test_sleep_phase_is_soft_prior_not_hard_lock(self):
+        receipt=self.creative_tick(phase='sleep',selected='reflect')
+        intents=[x['intent'] for x in receipt['plan']['candidates']]
+        self.assertIn('sleep',intents)
+        self.assertIn('observe',intents)
+        self.assertIn('reflect',intents)
+        self.assertEqual(receipt['plan']['selected_intent'],'reflect')
+
+    def test_sleep_phase_new_feedback_can_wake_social_review(self):
+        now=datetime.now(timezone.utc).isoformat()
+        (self.root/'events/events.jsonl').write_text(json.dumps({
+            'type':'reply.observed','timestamp':now,'text':'hi'
+        })+'\n')
+        state={**self.state,'pending_external_actions':[],'last_event_timestamp':None}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='review_social_feedback')
+        weights={x['intent']:x['weight'] for x in receipt['plan']['candidates']}
+        self.assertIn('review_social_feedback',weights)
+        self.assertGreater(weights['review_social_feedback'],weights['sleep'])
+
+    def test_rest_phase_is_soft_prior(self):
+        receipt=self.creative_tick(phase='rest',selected='observe')
+        intents=[x['intent'] for x in receipt['plan']['candidates']]
+        self.assertIn('rest',intents)
+        self.assertIn('observe',intents)
+        self.assertEqual(receipt['plan']['selected_intent'],'observe')
+
+    def test_critical_low_energy_still_forces_recovery(self):
+        state={**self.state,'energy_current':10,'pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
+        self.assertEqual(receipt['plan']['candidates'],[{'intent':'rest','weight':1.0}])
+
     def test_due_read_keeps_creative_choice_and_both_intents(self):
         receipt=self.creative_tick()
         self.assertEqual(receipt['plan']['selected_intent'],'content_ideation')
