@@ -201,6 +201,14 @@ jobs:
 
           # Actual running processes, not merely unit text, must execute from the immutable release.
           for unit in os-chronos.service tg-commander.service cat-ink-syncer.service agentos-core-supervisor.service; do
+            if ! systemctl --user is-active --quiet "$unit"; then
+              if grep -Fxq "$unit" "$BACKUP/active-services"; then
+                echo "ERROR: previously active $unit is now unavailable" >&2
+                exit 20
+              fi
+              echo "core_bundle_runtime=$unit:preexisting_inactive"
+              continue
+            fi
             pid="$(systemctl --user show "$unit" -p MainPID --value)"
             test -n "$pid" && test "$pid" != 0
             cwd="$(readlink -f "/proc/$pid/cwd")"
