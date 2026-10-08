@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/tryon_render_worker.py
-          python3 -m pytest -q tests/test_wardrobe_visual_review.py
+          python3 -m unittest -q tests/test_wardrobe_visual_review.py
           test -f 'capabilities/wardrobe_visual_review/capability-manifest.json'
           grep -Fq '"capability_id": "wardrobe.visual-review"' capabilities/wardrobe_visual_review/capability-manifest.json
           test -f 'dashboard/app/api/wardrobe/tryon/jobs/[jobId]/quality/route.ts'
