@@ -518,5 +518,13 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('provider failover exhausted; safe liveness fallback', text)
 
 
+    def test_public_activity_publisher_can_render_html_timeline(self):
+        text=(REPO/'scripts/publish_mio_public_activity.py').read_text()
+        self.assertIn('--html-output', text)
+        self.assertIn('澪的活動紀錄', text)
+        self.assertIn('energy_before', text)
+        self.assertIn('cognitive_ir_status', text)
+
+
 if __name__ == '__main__':
     unittest.main()

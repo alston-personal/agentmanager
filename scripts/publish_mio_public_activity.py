@@ -131,6 +131,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
     ap.add_argument("--output",required=True)
+    ap.add_argument("--html-output")
     args=ap.parse_args()
     root=Path(args.persona_dir)
     ir=load(root/"ir/current.json")
@@ -179,7 +180,48 @@ def main():
     tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     os.chmod(tmp,0o644)
     os.replace(tmp,out)
-    print(json.dumps({"mio_public_activity_publish":"PASS","output":str(out),"activity_count":len(auto),"persona_revision":ir.get("revision")},ensure_ascii=False))
+
+    if args.html_output:
+        html_out=Path(args.html_output)
+        html_out.parent.mkdir(parents=True,exist_ok=True)
+        html="""<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>澪｜活動紀錄</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#171717;background:#fafafa}
+body{margin:0}.wrap{max-width:860px;margin:auto;padding:28px 18px 64px}
+h1{margin:0 0 6px;font-size:30px}.muted{color:#737373}.hero,.card{background:#fff;border:1px solid #e5e5e5;border-radius:18px}
+.hero{padding:20px;margin:20px 0}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+.stat{padding:12px;background:#fafafa;border-radius:12px}.stat b{display:block;font-size:20px;margin-top:3px}
+.timeline{display:grid;gap:12px}.card{padding:16px}.row{display:flex;justify-content:space-between;gap:12px}
+.tag{font-size:12px;padding:4px 8px;border-radius:999px;background:#f1f5f9}.meta{font-size:13px;color:#737373;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap}
+@media(max-width:620px){.grid{grid-template-columns:1fr}.row{display:block}.tag{display:inline-block;margin-top:8px}}
+</style>
+</head>
+<body><main class="wrap">
+<h1>澪的活動紀錄</h1><div id="updated" class="muted">讀取中…</div>
+<section id="hero" class="hero"><div class="muted">正在讀取 Activity IR…</div></section>
+<h2>最近活動</h2><section id="timeline" class="timeline"></section>
+</main>
+<script>
+const e=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const f=v=>v===null||v===undefined?"—":v;
+fetch("./activity.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(d=>{
+document.querySelector("#updated").textContent=d.updated_label||"";
+const h=d.autonomy_health||{},s=d.social_observation||{},c=d.current||{};
+document.querySelector("#hero").innerHTML='<div class="row"><div><div class="muted">現在</div><h2>'+e(c.title||"自主運作中")+'</h2><div>'+e(c.summary||"")+'</div></div><span class="tag">'+e(h.status||"UNKNOWN")+'</span></div><div class="grid"><div class="stat"><span class="muted">Cycle</span><b>'+f(h.cycle)+'</b></div><div class="stat"><span class="muted">活動總數</span><b>'+f(d.activity_count)+'</b></div><div class="stat"><span class="muted">Threads</span><b>'+e(s.read_status||"—")+'</b></div></div>';
+document.querySelector("#timeline").innerHTML=(d.recent||[]).map(x=>'<article class="card"><div class="row"><div><strong>'+e(x.time_label||"")+'　'+e(x.title||x.intent)+'</strong><div>'+e(x.summary||"")+'</div></div><span class="tag">'+e(x.focus_label||x.intent||"")+'</span></div><div class="meta"><span>cycle '+f(x.cycle)+'</span><span>energy '+f(x.energy_before)+' → '+f(x.energy_after)+'</span><span>activity '+e(x.activity_status||"—")+'</span><span>IR '+e(x.cognitive_ir_status||"—")+'</span></div></article>').join("");
+}).catch(()=>{document.querySelector("#hero").textContent="活動資料目前讀取失敗。"});
+</script></body></html>"""
+        tmp_html=html_out.with_suffix(html_out.suffix+".tmp")
+        tmp_html.write_text(html,encoding="utf-8")
+        os.chmod(tmp_html,0o644)
+        os.replace(tmp_html,html_out)
+
+    print(json.dumps({"mio_public_activity_publish":"PASS","output":str(out),"html_output":str(args.html_output or ""),"activity_count":len(auto),"persona_revision":ir.get("revision")},ensure_ascii=False))
     return 0
 
 if __name__=="__main__":raise SystemExit(main())
