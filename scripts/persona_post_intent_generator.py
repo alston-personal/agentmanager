@@ -48,6 +48,37 @@ def extract_json(text):
         raise ValueError("executor_json_missing")
     return json.loads(m.group(0))
 
+def safe_liveness_fallback(growth, state):
+    lanes=growth.get("current_topic_lanes") if isinstance(growth.get("current_topic_lanes"),list) else []
+    options=[]
+    joined=" ".join(str(x) for x in lanes)
+    if "穿搭" in joined:
+        options.append("二選一：一眼就覺得好看，還是穿一整天都舒服？如果只能留一個標準，你選哪個？")
+    if "日常" in joined or "週末" in joined:
+        options.append("你有沒有那種：明明想休息，真的空下來又開始想找事做的時候？")
+    if "貓" in joined or "小動物" in joined:
+        options.append("如果一隻貓一直盯著你看，你第一個念頭會是：牠喜歡我，還是牠在評分我？")
+    if not options:
+        options.append("最近有沒有一個很小、但莫名讓你改變想法的瞬間？")
+    cycle=int(state.get("cycle") or 0)
+    return options[cycle % len(options)]
+
+def persist_reasoning_receipt(root, state, attempts, status, now, *, fallback_used=False):
+    ref=f"pdca/post_reasoning/{now.strftime('%Y-%m-%d')}/{now.strftime('%H%M%S')}.json"
+    receipt={
+      "schema":"agentos.persona-post-reasoning-receipt/v1",
+      "timestamp":now.isoformat().replace("+00:00","Z"),
+      "cycle":state.get("cycle"),
+      "status":status,
+      "attempts":attempts,
+      "fallback_used":bool(fallback_used)
+    }
+    path=root/ref
+    path.parent.mkdir(parents=True,exist_ok=True)
+    path.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    state["last_post_reasoning_receipt"]=ref
+    return ref
+
 def safe_post_text(text):
     if not isinstance(text,str):
         return False
@@ -289,8 +320,26 @@ Context:
             attempts.append({"provider":"gemini","status":"UNAVAILABLE"})
 
     if decision is None:
-        print(json.dumps({"status":"DEFER","reason":"persona_reasoning_exhausted","attempts":attempts},ensure_ascii=False))
-        return 0
+        liveness_required=bool(consider.get("liveness_pressure")) or silence_hours>=forced_consider_hours or no_publish_streak>=forced_no_publish_streak
+        if liveness_required:
+            fallback_text=safe_liveness_fallback(growth,state)
+            decision={
+              "should_post":True,
+              "human_required":False,
+              "reason":"provider failover exhausted; safe liveness fallback",
+              "post_text":fallback_text
+            }
+            persist_reasoning_receipt(root,state,attempts,"FALLBACK",now_utc,fallback_used=True)
+        else:
+            persist_reasoning_receipt(root,state,attempts,"DEFER",now_utc)
+            state["pending_external_actions"]=pending[-12:]
+            tmp=root/"pdca/state.json.tmp"
+            tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+            os.replace(tmp,root/"pdca/state.json")
+            print(json.dumps({"status":"DEFER","reason":"persona_reasoning_exhausted","attempts":attempts},ensure_ascii=False))
+            return 0
+    else:
+        persist_reasoning_receipt(root,state,attempts,"PASS",now_utc)
 
     should=bool(decision.get("should_post"))
     human=bool(decision.get("human_required"))
