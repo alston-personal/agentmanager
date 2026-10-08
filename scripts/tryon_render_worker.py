@@ -909,12 +909,26 @@ def run_visual_review(job: dict[str, Any], candidate_path: Path) -> dict[str, An
             "checks": [],
         }
     else:
-        semantic = review_with_gemini(
-            job=job,
-            candidate_path=candidate_path,
-            workspace_root=REVIEW_WORKSPACE,
-            timeout_seconds=float(os.environ.get("AGENTOS_TRYON_REVIEW_TIMEOUT_SECONDS", "35")),
-        )
+        selected_layers = set(str(k) for k in ((job.get("input") or {}).get("selectedLayers") or {}))
+        rendered_layers = set(str(k) for k in ((job.get("output") or {}).get("renderedLayers") or []))
+        pending_layers = set(str(k) for k in ((job.get("output") or {}).get("pendingLayers") or []))
+        # Do not spend a vision request on an image already known to be
+        # incomplete. The evaluator records each missing layer deterministically.
+        if not selected_layers.issubset(rendered_layers) or selected_layers.intersection(pending_layers):
+            semantic = {
+                "schema": "agentos.wardrobe-visual-semantic-receipt/v1",
+                "backendReady": False,
+                "backend": "preflight",
+                "classification": "INCOMPLETE_RENDER",
+                "checks": [],
+            }
+        else:
+            semantic = review_with_gemini(
+                job=job,
+                candidate_path=candidate_path,
+                workspace_root=REVIEW_WORKSPACE,
+                timeout_seconds=float(os.environ.get("AGENTOS_TRYON_REVIEW_TIMEOUT_SECONDS", "35")),
+            )
     request = {
         "schema": "agentos.wardrobe-visual-review-request/v1",
         "selectedLayers": ((job.get("input") or {}).get("selectedLayers") or {}),
