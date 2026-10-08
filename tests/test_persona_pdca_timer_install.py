@@ -50,3 +50,14 @@ def test_installer_uses_persistent_calendar_timers():
     assert "OnUnitActiveSec=60min" not in text
     assert "OnActiveSec=3min" not in text
     assert "OnUnitActiveSec=5min" not in text
+
+
+
+def test_installer_recovers_only_stale_heartbeat():
+    repo=Path(__file__).resolve().parents[1]
+    text=(repo/"scripts"/"install_persona_pdca_timer_user.sh").read_text(encoding="utf-8")
+    assert "STALE_AFTER_SEC=5400" in text
+    assert "ExecMainExitTimestamp" in text
+    assert 'persona_pdca_stale_recovery=TRIGGERED' in text
+    assert 'persona_pdca_stale_recovery=SKIPPED_FRESH' in text
+    assert "systemctl --user start agentos-persona-pdca-heartbeat.service" in text
