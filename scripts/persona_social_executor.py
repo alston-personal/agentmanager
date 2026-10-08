@@ -289,7 +289,7 @@ def main():
               "write_performed":False,"media_mode":media.get("mode")}
             out=Path(args.receipt_out)
             out.parent.mkdir(parents=True,exist_ok=True)
-            out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+            out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
             target["media_blocked_reason"]="MEDIA_PUBLISH_ADAPTER_REQUIRED"
             state["pending_external_actions"]=pending[-12:]
             save(root/"pdca/state.json",state)
