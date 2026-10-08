@@ -1050,13 +1050,40 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
             if layer in CLOTHING_SUPPORTED:
                 garment_name = str(item.get("name") or "garment") if isinstance(item, dict) else "garment"
                 description = f"{garment_name}; {CLOTHING_SUPPORTED[layer]}"
-                try:
-                    set_progress(path, job, "rendering", f"Rendering {layer} with {SPACE_ID}")
-                    person_url = idm_try_on(person_url, source_url, description, seed_base + index, layer)
-                    provider = "idm-vton-gradio-client"
-                    provider_space = SPACE_ID
-                except Exception as primary_exc:
-                    set_progress(path, job, "rendering", f"{SPACE_ID} unavailable; trying Inference Provider fallback")
+                primary_errors: list[str] = []
+                primary_ok = False
+                for attempt in range(1, 3):
+                    try:
+                        set_progress(
+                            path,
+                            job,
+                            "rendering",
+                            f"Rendering {layer} with {SPACE_ID} attempt {attempt}/2",
+                        )
+                        person_url = idm_try_on(
+                            person_url,
+                            source_url,
+                            description,
+                            seed_base + index + (attempt - 1) * 7919,
+                            layer,
+                        )
+                        provider = "idm-vton-gradio-client"
+                        provider_space = SPACE_ID
+                        primary_ok = True
+                        break
+                    except Exception as primary_exc:
+                        message = f"{type(primary_exc).__name__}: {primary_exc}"
+                        primary_errors.append(message[:700])
+                        lowered = message.lower()
+                        if any(marker in lowered for marker in (
+                            "quota",
+                            "rate limit",
+                            "resource exhausted",
+                            "zerogpu runs limit",
+                        )):
+                            break
+                if not primary_ok:
+                    set_progress(path, job, "rendering", f"{SPACE_ID} did not pass; trying Inference Provider fallback")
                     person_url, provider_space = inference_provider_reference_try_on(
                         person_url,
                         source_url,
@@ -1069,7 +1096,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                         {
                             "layer": layer,
                             "code": "specialized_renderer_fallback",
-                            "message": f"{type(primary_exc).__name__}: {primary_exc}"[:700],
+                            "message": " | ".join(primary_errors)[-1200:],
                         }
                     )
             else:

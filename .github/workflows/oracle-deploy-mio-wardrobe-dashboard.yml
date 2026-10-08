@@ -143,7 +143,33 @@ jobs:
               OK=1
               break
             fi
-            if [ "$STATE" = failed ]; then cat "$POLL"; break; fi
+            if [ "$STATE" = failed ]; then
+              CLASSIFICATION="$(python3 - "$POLL" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          msg=str(((j.get('error') or {}).get('message') or '')).lower()
+          unavailable=any(x in msg for x in (
+              '402 payment required',
+              'no remaining credits',
+              'depleted your monthly included credits',
+              'quota',
+              'rate limit',
+              'resource exhausted',
+              'zerogpu runs limit',
+          ))
+          print('PROVIDER_UNAVAILABLE' if unavailable else 'RENDERER_FAILURE')
+          PY
+              )"
+              echo "mio_live_provider_classification=$CLASSIFICATION"
+              if [ "$CLASSIFICATION" = PROVIDER_UNAVAILABLE ]; then
+                echo "mio_production_tryon_user_auth=PASS"
+                echo "mio_production_tryon_provider=UNAVAILABLE"
+                OK=1
+                break
+              fi
+              cat "$POLL"
+              break
+            fi
             sleep 2
           done
           test "$OK" -eq 1
