@@ -125,6 +125,9 @@ jobs:
           set +a
           test "${AGENT_MODE:-CLIENT}" = CORE
 
+          # Track the candidate's own appended stderr, not old log errors.
+          LOBSTER_LOG="$DATA_ROOT/logs/lobster.log"
+          LOBSTER_LOG_OFFSET="$(stat -c %s "$LOBSTER_LOG" 2>/dev/null || echo 0)"
           INSTALL_JSON="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
           printf '%s\n' "$INSTALL_JSON"
           printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("mode")=="systemd", d'
@@ -151,7 +154,32 @@ jobs:
           test "$lobster_cwd" = "$RELEASE"
           lobster_restarts_before="$(systemctl --user show os-lobster.service -p NRestarts --value)"
           sleep 12
-          systemctl --user is-active --quiet os-lobster.service
+          # On startup regression, show only the newest safe exception class
+          # and an allowlisted identifier; keep full logs private on Oracle.
+          if ! systemctl --user is-active --quiet os-lobster.service; then
+            echo "core_bundle_lobster_stability=FAIL"
+            LOBSTER_LOG_OFFSET="$LOBSTER_LOG_OFFSET" /usr/bin/python3 - "$LOBSTER_LOG" <<'LOBSTER_DIAG'
+          import os, pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          offset = int(os.environ.get("LOBSTER_LOG_OFFSET", "0"))
+          raw = path.read_bytes() if path.is_file() else b""
+          if len(raw) < offset:
+              offset = 0
+          lines = raw[offset:].decode("utf-8", "replace").splitlines()
+          matches = []
+          allowed = {"NameError", "ModuleNotFoundError", "ImportError", "SyntaxError", "IndentationError", "AttributeError", "TypeError", "ValueError", "PermissionError", "FileNotFoundError", "RuntimeError", "KeyError", "TimeoutError", "AssertionError", "SystemExit", "OSError"}
+          for line in lines:
+              m = re.match(r"^([A-Za-z]+(?:Error|Exit)): (.*)$", line.strip())
+              if m and m.group(1) in allowed:
+                  matches.append(m.groups())
+          latest = matches[-1] if matches else None
+          print("core_bundle_lobster_candidate_exception=" + (latest[0] if latest else "unknown"))
+          if latest and latest[0] == "NameError":
+              m = re.fullmatch(r"name '([A-Za-z_][A-Za-z_0-9]*)' is not defined", latest[1])
+              print("core_bundle_lobster_candidate_undefined=" + (m.group(1) if m else "unknown"))
+          LOBSTER_DIAG
+            exit 23
+          fi
           lobster_restarts_after="$(systemctl --user show os-lobster.service -p NRestarts --value)"
           test "$lobster_restarts_before" = "$lobster_restarts_after"
           echo "core_bundle_lobster_stable=PASS"
