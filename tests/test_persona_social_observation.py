@@ -508,5 +508,15 @@ class ObservationContract(unittest.TestCase):
         self.assertNotIn("python3 - \"$METRICS_RECEIPT\" <<'PY'\nimport json,sys\nr=json.load(open(sys.argv[1]", text)
 
 
+    def test_post_reasoning_has_durable_safe_liveness_fallback(self):
+        text=(REPO/'scripts/persona_post_intent_generator.py').read_text()
+        self.assertIn('persist_reasoning_receipt', text)
+        self.assertIn('agentos.persona-post-reasoning-receipt/v1', text)
+        self.assertIn('safe_liveness_fallback', text)
+        self.assertIn('"FALLBACK"', text)
+        self.assertIn('fallback_used=True', text)
+        self.assertIn('provider failover exhausted; safe liveness fallback', text)
+
+
 if __name__ == '__main__':
     unittest.main()
