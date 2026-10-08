@@ -1,0 +1,31 @@
+name: Approved Issue Intake Unit Tests
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/issue_work_intake.py'
+      - 'scripts/work_completion.py'
+      - 'tests/test_issue_work_intake.py'
+      - '.github/workflows/approved-issue-intake-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/issue_work_intake.py'
+      - 'scripts/work_completion.py'
+      - 'tests/test_issue_work_intake.py'
+      - '.github/workflows/approved-issue-intake-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test approved-only Issue Intake and durable Ledger
+        run: python3 -m unittest -v tests.test_issue_work_intake tests.test_work_completion
