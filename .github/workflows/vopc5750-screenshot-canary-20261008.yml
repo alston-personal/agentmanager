@@ -1,0 +1,77 @@
+name: VOPC5750 Screenshot Canary 20261008
+
+on:
+  push:
+    branches:
+      - ops/vopc5750-screenshot-canary-20261008
+    paths:
+      - '.github/workflows/vopc5750-screenshot-canary-20261008.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Remove exact stuck subprocess semantic task
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from agent_core.realm_fabric import RealmFabricStore
+          target='task-semantic-subprocess-eca400f4efa54026bf239e28b4b1e8dc'
+          fabric=RealmFabricStore()
+          data=fabric.load()
+          queue=list((data.get('tasks') or {}).get('vopc5750') or [])
+          data['tasks']['vopc5750']=[
+              item for item in queue
+              if not (isinstance(item,dict) and item.get('task_id')==target)
+          ]
+          fabric.save(data)
+          print('stuck_subprocess_semantic_cleanup=PASS')
+          PY
+
+      - name: Desktop screenshot canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time,uuid
+          from agent_core.realm_fabric import RealmFabricStore
+
+          fabric=RealmFabricStore()
+          task_id='task-screenshot-canary-'+uuid.uuid4().hex
+          fabric.queue_task('vopc5750',{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':task_id,
+              'action':'desktop.screenshot',
+              'quality':35,
+          })
+
+          receipt=None
+          deadline=time.time()+35
+          while time.time()<deadline:
+              receipt=fabric.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(1)
+
+          store=fabric.load()
+          queue=list((store.get('tasks') or {}).get('vopc5750') or [])
+          record=next((x for x in queue if isinstance(x,dict) and x.get('task_id')==task_id),None)
+          if receipt and isinstance(receipt.get('image_base64'),str):
+              receipt=dict(receipt)
+              receipt['image_base64']='<omitted:'+str(len(receipt['image_base64']))+'>'
+          print(json.dumps({'receipt':receipt,'queue_record':record},indent=2,sort_keys=True))
+          assert receipt,'SCREENSHOT_RECEIPT_TIMEOUT'
+          assert receipt.get('ok') is True,receipt
+          assert receipt.get('sha256'),receipt
+          assert receipt.get('width') and receipt.get('height'),receipt
+          print('DESKTOP_SCREENSHOT_CANARY=PASS')
+          PY
