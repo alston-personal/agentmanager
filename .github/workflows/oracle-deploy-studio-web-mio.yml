@@ -1,0 +1,84 @@
+name: Oracle Deploy Studio Web Mio
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/deploy-studio-web-mio.json'
+      - 'scripts/deploy_studio_web_mio_user.sh'
+      - '.github/workflows/oracle-deploy-studio-web-mio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-studio-web-mio-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read exact Studio Web commit
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT="$(python3 - <<'PY'
+          import json
+          d=json.load(open('.agentos/commands/deploy-studio-web-mio.json'))
+          v=str(d.get('studioCommit') or '')
+          if len(v)!=40 or any(c not in '0123456789abcdef' for c in v):
+              raise SystemExit('invalid studioCommit')
+          print(v)
+          PY
+          )"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "studio_web_mio_requested_commit=$COMMIT"
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Deploy exact Mio static bundle with rollback
+        shell: bash
+        env:
+          STUDIO_COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" "$STUDIO_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          AGENT_SHA="$1"
+          STUDIO_COMMIT="$2"
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$AGENT_SHA"
+          git -C "$REPO" cat-file -e "$AGENT_SHA^{commit}"
+          git -C "$REPO" show "$AGENT_SHA:scripts/deploy_studio_web_mio_user.sh" > /tmp/deploy-studio-web-mio.sh
+          chmod 700 /tmp/deploy-studio-web-mio.sh
+          AGENTOS_STUDIO_COMMIT="$STUDIO_COMMIT" /tmp/deploy-studio-web-mio.sh
+          REMOTE
+
+      - name: Verify public wardrobe UX release
+        shell: bash
+        env:
+          STUDIO_COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          body="$(curl -L -fsS --retry 5 --retry-all-errors --max-time 20 https://studio.milkcat.org/personas/mio/wardrobe/)"
+          rel="$(curl -L -fsS --retry 5 --retry-all-errors --max-time 20 https://studio.milkcat.org/personas/mio/release.json)"
+          printf '%s' "$body" | grep -Fq 'data-select-visual'
+          printf '%s' "$body" | grep -Fq 'product-zoom-icon'
+          printf '%s' "$body" | grep -Fq 'rendererMessage'
+          printf '%s' "$rel" | grep -Fq "\"studio_commit\":\"$STUDIO_COMMIT\""
+          echo "studio_web_mio_public_image_select=PASS"
+          echo "studio_web_mio_public_zoom_control=PASS"
+          echo "studio_web_mio_public_renderer_progress=PASS"
+          echo "studio_web_mio_release_identity=PASS"
