@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.ota-inspect",
   "node_id": "vopc5750",
-  "nonce": "bootstrap"
+  "nonce": "post-realm-rollout-20261008-1240"
 }
