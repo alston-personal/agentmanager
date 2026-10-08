@@ -1,6 +1,10 @@
 name: Oracle Antigravity Image Inspect Probe
 
 on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-antigravity-image-inspect-probe.yml'
   workflow_dispatch:
 
 permissions:
