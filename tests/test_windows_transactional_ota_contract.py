@@ -62,8 +62,10 @@ def test_one_click_supervisor_carrier_follows_current_runtime_state():
     assert "supervisor path could not be resolved from task action" in s
     assert "$current=Get-Content -Raw -LiteralPath $currentFile|ConvertFrom-Json" in s
     assert "$env:PYTHONPATH=$runtime" in s
+    assert "$stableSupervisor=Join-Path $InstallRoot 'agentos-thin-client-supervisor.ps1'" in s
+    assert "Set-ScheduledTask -TaskName $TaskName -Action $newAction" in s
+    assert "Register-ScheduledTask -TaskName $TaskName" not in s
     assert "supervisor_carrier" in s
-    assert "Set-ScheduledTask -TaskName $TaskName -Action" not in s
 
 
 def test_ota_helpers_are_noninteractive_and_cleaned_up():
