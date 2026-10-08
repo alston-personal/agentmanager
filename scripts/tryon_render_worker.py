@@ -307,19 +307,47 @@ def _layer_crop_box(width: int, height: int, layer: str) -> tuple[int, int, int,
     )
 
 
-def _median_rgb(path: Path, layer: str) -> tuple[int, int, int]:
+def _appearance_stats(path: Path, layer: str) -> dict[str, Any]:
     image = Image.open(path).convert("RGB")
     crop = image.crop(_layer_crop_box(image.width, image.height, layer))
     crop = ImageOps.contain(crop, (96, 96), method=Image.Resampling.LANCZOS)
-    pixels = list(crop.getdata())
+    pixels = [tuple(map(int, rgb)) for rgb in crop.getdata()]
     if not pixels:
-        return (0, 0, 0)
-    channels = list(zip(*pixels))
+        return {"rgb": (0, 0, 0), "nearWhite": 0.0, "skinLike": 0.0}
+
+    def spread(p):
+        return max(p) - min(p)
+
+    # Product cards frequently use a white studio background. Exclude that
+    # background before estimating the garment's representative appearance.
+    foreground = [
+        p for p in pixels
+        if not ((sum(p) / 3.0) > 210.0 and spread(p) < 35)
+    ]
+    usable = foreground if len(foreground) >= max(24, len(pixels) // 20) else pixels
+
+    channels = list(zip(*usable))
     med = []
     for channel in channels:
-        values = sorted(int(v) for v in channel)
+        values = sorted(channel)
         med.append(values[len(values) // 2])
-    return tuple(med)  # type: ignore[return-value]
+
+    near_white = sum(
+        1 for p in pixels
+        if (sum(p) / 3.0) > 220.0 and spread(p) < 25
+    ) / len(pixels)
+    skin_like = sum(
+        1 for p in pixels
+        if p[0] > p[1] + 7
+        and p[1] >= p[2] - 5
+        and 120.0 < (sum(p) / 3.0) < 230.0
+    ) / len(pixels)
+
+    return {
+        "rgb": tuple(med),
+        "nearWhite": near_white,
+        "skinLike": skin_like,
+    }
 
 
 def _rgb_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
@@ -331,18 +359,33 @@ def reject_gross_layer_mismatch(output: str, reference_path: Path, layer: str) -
     if layer not in {"upper_inner", "upper_main", "upper_outer", "lower_main", "onepiece", "shoes"}:
         return str(output_path(output))
     output_file = output_path(output)
-    ref_rgb = _median_rgb(reference_path, layer)
-    out_rgb = _median_rgb(output_file, layer)
+    ref = _appearance_stats(reference_path, layer)
+    out = _appearance_stats(output_file, layer)
+    ref_rgb = ref["rgb"]
+    out_rgb = out["rgb"]
     distance = _rgb_distance(ref_rgb, out_rgb)
     ref_luma = sum(ref_rgb) / 3.0
     out_luma = sum(out_rgb) / 3.0
     luma_delta = abs(ref_luma - out_luma)
-    # Intentionally conservative: this is for egregious color/value drift such
-    # as black trousers becoming beige shorts or white shoes becoming bare feet.
-    if distance >= 125.0 and luma_delta >= 55.0:
+
+    if distance >= 95.0 and luma_delta >= 45.0:
         raise RuntimeError(
             f"gross_layer_appearance_mismatch:{layer}:rgb_distance={distance:.1f}:luma_delta={luma_delta:.1f}"
         )
+
+    # White/light neutral footwear becoming bare feet is a common failure mode.
+    # Require a large drop in white pixels plus a strong rise in skin-like pixels
+    # before rejecting, so ordinary lighting changes do not trigger this guard.
+    if (
+        layer == "shoes"
+        and ref["nearWhite"] >= 0.55
+        and out["nearWhite"] <= ref["nearWhite"] - 0.35
+        and out["skinLike"] >= 0.18
+    ):
+        raise RuntimeError(
+            "gross_layer_appearance_mismatch:shoes:white_footwear_missing_or_barefoot"
+        )
+
     return str(output_file)
 
 
