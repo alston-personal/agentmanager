@@ -1,3 +1,5 @@
+import unittest
+
 from capabilities.wardrobe_visual_review import evaluate_review
 
 
@@ -14,32 +16,35 @@ def base_request():
     }
 
 
-def test_candidate_without_semantic_backend():
-    receipt = evaluate_review(base_request())
-    assert receipt["state"] == "candidate"
-    assert receipt["accepted"] is False
+class WardrobeVisualReviewTests(unittest.TestCase):
+    def test_candidate_without_semantic_backend(self):
+        receipt = evaluate_review(base_request())
+        self.assertEqual(receipt["state"], "candidate")
+        self.assertFalse(receipt["accepted"])
+
+    def test_rejects_missing_selected_layer(self):
+        request = base_request()
+        request["renderedLayers"] = ["upper_main"]
+        receipt = evaluate_review(request)
+        self.assertEqual(receipt["state"], "rejected")
+        self.assertTrue(any(row["code"] == "missing_selected_layer" for row in receipt["checks"]))
+
+    def test_verifies_only_with_full_semantic_coverage(self):
+        request = base_request()
+        request["semanticReceipt"] = {
+            "schema": "agentos.wardrobe-visual-semantic-receipt/v1",
+            "backendReady": True,
+            "checks": [
+                {"code": "layer_match", "layer": "upper_main", "passed": True, "source": "vision"},
+                {"code": "layer_match", "layer": "lower_main", "passed": True, "source": "vision"},
+                {"code": "identity_preserved", "passed": True, "source": "vision"},
+                {"code": "no_detached_reference", "passed": True, "source": "vision"},
+            ],
+        }
+        receipt = evaluate_review(request)
+        self.assertEqual(receipt["state"], "verified")
+        self.assertTrue(receipt["accepted"])
 
 
-def test_rejects_missing_selected_layer():
-    request = base_request()
-    request["renderedLayers"] = ["upper_main"]
-    receipt = evaluate_review(request)
-    assert receipt["state"] == "rejected"
-    assert any(row["code"] == "missing_selected_layer" for row in receipt["checks"])
-
-
-def test_verifies_only_with_full_semantic_coverage():
-    request = base_request()
-    request["semanticReceipt"] = {
-        "schema": "agentos.wardrobe-visual-semantic-receipt/v1",
-        "backendReady": True,
-        "checks": [
-            {"code": "layer_match", "layer": "upper_main", "passed": True, "source": "vision"},
-            {"code": "layer_match", "layer": "lower_main", "passed": True, "source": "vision"},
-            {"code": "identity_preserved", "passed": True, "source": "vision"},
-            {"code": "no_detached_reference", "passed": True, "source": "vision"},
-        ],
-    }
-    receipt = evaluate_review(request)
-    assert receipt["state"] == "verified"
-    assert receipt["accepted"] is True
+if __name__ == "__main__":
+    unittest.main()
