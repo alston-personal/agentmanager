@@ -41,6 +41,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_EXECUTOR_JOB_INSPECT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
     bc.ACTION_GITHUB_ACTIONS_DISPATCH: ActionPolicy("control", 18, "high", ("github.actions.dispatch",), ("github-actions-dispatch",)),
     bc.ACTION_NODE_TRANSACTIONAL_OTA: ActionPolicy("maintenance", 16, "high", ("node.runtime.ota",), ("node-runtime-ota",)),
+    bc.ACTION_NODE_OTA_INSPECT: ActionPolicy("control", 9, "high", ("node.runtime.ota.inspect",), ()),
     bc.ACTION_REALM_NODE_INSPECT: ActionPolicy("control", 9, "high", ("node.realm.inspect",), ()),
     bc.ACTION_REALM_DESKTOP_PROBE: ActionPolicy("control", 10, "high", ("node.desktop.probe",), ()),
     bc.ACTION_REALM_EXECUTOR_RECONCILE: ActionPolicy("control", 10, "high", ("node.executor.reconcile",), ()),

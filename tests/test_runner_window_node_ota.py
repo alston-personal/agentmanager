@@ -27,6 +27,21 @@ def test_node_ota_scheduler_is_control_plane_routed():
     assert "node-runtime-ota" in set(policy.locks)
 
 
+def test_node_ota_inspect_public_intent_is_read_only_control():
+    intent, params = resolve_intent(
+        "node.runtime",
+        "ota.inspect",
+        source_commit="a" * 40,
+        payload={"node_id": "vopc5750"},
+    )
+    assert intent.action == bc.ACTION_NODE_OTA_INSPECT
+    assert params == {"source_commit": "a" * 40, "node_id": "vopc5750"}
+    policy = policy_for(bc.ACTION_NODE_OTA_INSPECT)
+    assert policy.role == "control"
+    assert "node.runtime.ota.inspect" in set(policy.capabilities)
+    assert not policy.locks
+
+
 def test_vopc_workflow_never_selects_self_hosted_runner():
     text = Path(".github/workflows/oracle-vopc5750-transactional-ota.yml").read_text(encoding="utf-8")
     assert "uses: ./.github/workflows/agentos-dispatch.yml" in text

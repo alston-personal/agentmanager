@@ -1,0 +1,49 @@
+name: VOPC5750 OTA Inspect
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/realm-node-ota-inspect.json'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: vopc5750-ota-inspect
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      payload_json: ${{ steps.payload.outputs.payload_json }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: payload
+        name: Validate bounded OTA inspect request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          p=Path(".agentos/commands/realm-node-ota-inspect.json")
+          data=json.loads(p.read_text(encoding="utf-8"))
+          assert data.get("schema")=="agentos.realm-command/v0.1",data
+          assert data.get("action")=="realm.node.ota-inspect",data
+          assert data.get("node_id")=="vopc5750",data
+          print("payload_json="+json.dumps({"node_id":"vopc5750"},separators=(",",":")))
+          PY
+          echo "vopc5750_ota_inspect_request=PASS"
+
+  dispatch:
+    needs: prepare
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.runtime
+      operation: ota.inspect
+      payload_json: ${{ needs.prepare.outputs.payload_json }}
