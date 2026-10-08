@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.gateway.repair-hosted",
   "reason": "restore Runner Window /v1/dispatch route required for governed vopc5750 transactional OTA",
-  "nonce": "runner-window-dispatch-repair-20261008-1114"
+  "nonce": "runner-window-dispatch-repair-20261008-1117"
 }
