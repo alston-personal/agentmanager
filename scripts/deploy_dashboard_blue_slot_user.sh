@@ -39,6 +39,14 @@ chmod 600 "$RELEASE/.env.local"
 cd "$RELEASE"
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build
+test -f .next/server/app-paths-manifest.json
+python3 - .next/server/app-paths-manifest.json <<'PY'
+import json,sys
+paths=json.load(open(sys.argv[1],encoding='utf8'))
+for route in ('/admin/usage/page','/api/admin/usage/route','/api/auth/session/route'):
+    assert route in paths, 'missing_dashboard_route:'+route
+print('dashboard_blue_usage_routes=PASS')
+PY
 echo "dashboard_blue_build=PASS"
 
 ln -sfn "$RELEASE" "$RUNTIME_ROOT/.blue-candidate-$RUN_ID"
@@ -59,6 +67,11 @@ for _ in $(seq 1 40); do
 done
 test "$ready" = 1
 grep -q 'agentos.one-health/v0.1' /tmp/dashboard-blue-health
+usage_page_code=$(curl -sS -o /tmp/dashboard-blue-usage -w '%{http_code}' --max-time 5 "http://127.0.0.1:$PORT/dashboard/admin/usage" || true)
+usage_api_code=$(curl -sS -o /tmp/dashboard-blue-usage-api -w '%{http_code}' --max-time 5 "http://127.0.0.1:$PORT/dashboard/api/admin/usage" || true)
+test "$usage_page_code" = 307
+test "$usage_api_code" = 401
+echo "dashboard_blue_usage_acceptance=PASS page=$usage_page_code api=$usage_api_code"
 echo "dashboard_blue_slot_ready=PASS"
 
 PID="$(ss -H -ltnp "sport = :$PORT" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)"
@@ -101,6 +114,12 @@ for _ in $(seq 1 20); do
 done
 test "$public_ready" = 1
 echo "dashboard_blue_public_session=PASS"
+
+public_usage_page=$(curl -sS -o /tmp/dashboard-public-usage -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/admin/usage || true)
+public_usage_api=$(curl -sS -o /tmp/dashboard-public-usage-api -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/admin/usage || true)
+test "$public_usage_page" = 307
+test "$public_usage_api" = 401
+echo "dashboard_blue_public_usage=PASS page=$public_usage_page api=$public_usage_api"
 
 public_health=$(curl -sS -o /tmp/dashboard-public-health -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true)
 test "$public_health" = 200
