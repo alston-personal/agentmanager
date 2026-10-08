@@ -261,12 +261,12 @@ def main():
         else:
             energy_cost=float(action_costs.get("short_reply",3) if len(text)<=160
                               else action_costs.get("long_reply",5))
-        if energy+1e-9 < energy_cost:
+        if energy <= 0:
             retry_at=(now_dt+timedelta(minutes=30)).isoformat().replace("+00:00","Z")
             target["not_before"]=retry_at
             receipt={
               "schema":"agentos.persona-social-executor-receipt/v1","ok":False,
-              "status":"BLOCKED","result":"INSUFFICIENT_ENERGY","timestamp":now,
+              "status":"BLOCKED","result":"ENERGY_DEPLETED","timestamp":now,
               "persona_username":args.username,"capability":capability,
               "action_id":action_id,"write_performed":False,
               "energy_before":round(energy,2),"energy_cost":energy_cost,
@@ -298,7 +298,7 @@ def main():
         wc,wr=post(endpoint,request,{**headers,"X-AgentOS-Acceptance-ID":acceptance_id})
         if wc!=200 or wr.get("ok") is False:
             raise SystemExit("social_write_failed:"+str(wr.get("error") or wc))
-        energy_after=max(0.0,energy-energy_cost)
+        energy_after=energy-energy_cost
         state["energy_current"]=round(energy_after,2)
         receipt={
           "schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"EXECUTED",
