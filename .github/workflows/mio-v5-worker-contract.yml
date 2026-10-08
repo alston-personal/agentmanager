@@ -26,6 +26,8 @@ jobs:
           grep -Fq 'visual_qc_required' scripts/tryon_render_worker.py
           grep -Fq 'preparing_assets' scripts/tryon_render_worker.py
           grep -Fq 'validating' scripts/tryon_render_worker.py
+          grep -Fq 'detached_reference_object_detected' scripts/tryon_render_worker.py
+          grep -Fq 'reject_detached_reference' scripts/tryon_render_worker.py
           grep -Fq 'git -C "$REPO" fetch --no-tags origin "$SOURCE_SHA"' scripts/deploy_mio_tryon_worker_user.sh
           python3 - <<'PY'
           from pathlib import Path

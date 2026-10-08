@@ -239,6 +239,56 @@ def output_path(result: Any) -> Path:
     return path
 
 
+def _dhash(path: Path, crop: tuple[int, int, int, int] | None = None) -> int:
+    image = Image.open(path).convert("L")
+    if crop is not None:
+        image = image.crop(crop)
+    image = ImageOps.autocontrast(image)
+    image = image.resize((9, 8), Image.Resampling.LANCZOS)
+    pixels = list(image.getdata())
+    value = 0
+    bit = 0
+    for y in range(8):
+        row = y * 9
+        for x in range(8):
+            if pixels[row + x] > pixels[row + x + 1]:
+                value |= 1 << bit
+            bit += 1
+    return value
+
+
+def _hamming(a: int, b: int) -> int:
+    return (a ^ b).bit_count()
+
+
+def stray_reference_score(output_path: Path, object_path: Path) -> int:
+    """Return lower-is-more-suspicious dHash distance for detached reference object."""
+    reference = _dhash(object_path)
+    with Image.open(output_path) as image:
+        w, h = image.size
+    crops = [
+        (w // 2, 0, w, h),
+        (w * 3 // 5, 0, w, h),
+        (w // 2, 0, w, h * 2 // 3),
+        (w // 2, h // 3, w, h),
+        (w * 3 // 5, h // 5, w, h * 4 // 5),
+    ]
+    return min(_hamming(reference, _dhash(output_path, crop)) for crop in crops)
+
+
+def reject_detached_reference(output: str, object_path: Path, object_class: str) -> str:
+    output_file = output_path(output)
+    # Bags and shoes are especially prone to reference-board leakage: a provider
+    # can copy the product beside the person while still returning a valid image.
+    if object_class in {"bag", "shoe"}:
+        score = stray_reference_score(output_file, object_path)
+        if score <= 10:
+            raise RuntimeError(
+                f"detached_reference_object_detected:{object_class}:dhash_distance={score}"
+            )
+    return str(output_file)
+
+
 def idm_try_on(person_source: str, garment_url: str, description: str, seed: int) -> str:
     temp_inputs: list[Path] = []
     try:
@@ -356,8 +406,9 @@ def inference_provider_reference_try_on(
             f"Create one final photorealistic full-body image of the left person naturally wearing the exact {target} "
             "from the right reference. Preserve the person's face, identity, hair, body proportions, pose, all other "
             "clothing, hands, background, framing, and lighting. Change only the requested wearable item. Preserve the "
-            "product's exact color, silhouette, material, and design. Remove the reference-board layout and output only "
-            "one full-body person."
+            "product's exact color, silhouette, material, and design. The product reference must be physically attached "
+            "to or worn by the person in its natural location. Never leave a second detached copy of the product anywhere "
+            "beside the person. Remove the reference-board layout and output only one full-body person."
         )
         board_bytes = board_path.read_bytes()
 
@@ -386,7 +437,8 @@ def inference_provider_reference_try_on(
                 if output.stat().st_size < 1000:
                     output.unlink(missing_ok=True)
                     raise RuntimeError("Inference Provider output is unexpectedly small")
-                return str(output), f"{provider}:{model}"
+                validated = reject_detached_reference(str(output), object_path, object_class)
+                return validated, f"{provider}:{model}"
             except Exception as exc:
                 errors.append(f"{provider}:{model}={type(exc).__name__}:{exc}"[:700])
 
@@ -434,7 +486,9 @@ def qwen_reference_try_on(
             f"Create one final full-body image of the left person naturally wearing the exact {target} from the right reference. "
             "Preserve the person's face, identity, hair, body proportions, pose, all other clothing, hands, background style, "
             "framing, and lighting. Change only the requested wearable item. Preserve the product's exact color, shape, material, "
-            "and design. Remove the reference-board layout and the separate product. Output only one photorealistic full-body person."
+            "and design. The requested item must be physically worn/carried by the person in its natural location. "
+            "A detached duplicate or separate product anywhere beside the person is invalid. Remove the reference-board "
+            "layout and the separate product. Output only one photorealistic full-body person."
         )
 
         result = qwen_edit_client().predict(
@@ -445,7 +499,8 @@ def qwen_reference_try_on(
         if not isinstance(result, (list, tuple)) or len(result) < 2:
             raise RuntimeError(f"Qwen workflow returned unexpected result: {result!r}")
         edited = result[1]
-        return str(output_path(edited)), QWEN_EDIT_SPACE_ID
+        validated = reject_detached_reference(str(output_path(edited)), object_path, object_class)
+        return validated, QWEN_EDIT_SPACE_ID
     except Exception:
         _QWEN_EDIT_CLIENT = None
         raise
@@ -491,7 +546,9 @@ def omni_try_on(
                         int(seed),
                         api_name="/generate",
                     )
-                    return str(output_path(result)), space_id
+                    candidate = str(output_path(result))
+                    validated = reject_detached_reference(candidate, object_path, object_class)
+                    return validated, space_id
                 except Exception as exc:
                     message = f"{type(exc).__name__}:{exc}"
                     transient = any(
