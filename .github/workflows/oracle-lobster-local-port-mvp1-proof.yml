@@ -1,0 +1,88 @@
+name: Oracle Lobster Zero-Model Port MVP1 Proof
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-lobster-local-port-mvp1-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-lobster-local-port-mvp1
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Register once and observe unattended local Executor proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          DATA=/home/ubuntu/agent-data
+          RELEASE="$(readlink -f "$DATA/runtime/core/current")"
+          test -f "$RELEASE/scripts/work_completion.py"
+          grep -Fq 'def verify_local_port_check(' "$RELEASE/scripts/lobster.py"
+          grep -Fq 'Path(__file__).resolve().parent / "local_port_checker.py"' "$RELEASE/scripts/lobster.py"
+          systemctl --user is-active --quiet os-lobster.service
+          test "$(systemctl --user show os-lobster.service -p NRestarts --value)" = 0
+          echo "lobster_mvp1_immutable_validator=PASS"
+          WORK_ID=lobster-mvp1-local-port-20261008
+          WORKSPACE="$DATA/proofs/lobster-mvp1-local-port"
+          LEDGER="$DATA/governance/work-items.json"
+          mkdir -p "$WORKSPACE"
+          /usr/bin/python3 "$RELEASE/scripts/work_completion.py" --state "$LEDGER" register \
+            --id "$WORK_ID" --project agentos-core --title "Lobster zero-model local port probe" \
+            --owner role://lobster --source "issue://470" --workspace "$WORKSPACE" \
+            --next-action "檢查連接埠 65534" \
+            --accept "Lobster autonomously claims and runs the local port Executor, without a model" \
+            --accept "Independent socket validator confirms closed loopback port, or records a blocker" \
+            --accept "Durable Ledger done with passed verification and evidence" >/dev/null
+          echo "lobster_mvp1_workitem_registered=PASS"
+          for i in $(seq 1 40); do
+            STATUS="$(/usr/bin/python3 - "$LEDGER" "$WORK_ID" <<'PY'
+          import json, pathlib, socket, sys
+          data=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          item=data.get("items",{}).get(sys.argv[2],{})
+          status=item.get("status","missing")
+          if status == "done":
+              v=(item.get("verification") or {}).get("status")
+              evidence=item.get("evidence") or []
+              good=(v=="passed" and any("local_port_65534_closed_independent_socket_probe" in str(x) for x in evidence))
+              try:
+                  with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as sock:
+                      sock.settimeout(2)
+                      closed=(sock.connect_ex(("127.0.0.1",65534))!=0)
+              except OSError:
+                  closed=False
+              status="VERIFIED_DONE" if good and closed else "INVALID_DONE"
+          print(status)
+          PY
+            )"
+            echo "lobster_mvp1_status=$STATUS"
+            if [ "$STATUS" = VERIFIED_DONE ]; then
+              echo "LOBSTER_MVP1_AUTONOMOUS_CLOSURE=PASS"
+              exit 0
+            fi
+            if [ "$STATUS" = INVALID_DONE ] || [ "$STATUS" = blocked ]; then
+              echo "LOBSTER_MVP1_AUTONOMOUS_CLOSURE=BLOCKED"
+              exit 1
+            fi
+            sleep 12
+          done
+          echo "LOBSTER_MVP1_AUTONOMOUS_CLOSURE=TIMEOUT"
+          exit 1
+          REMOTE
