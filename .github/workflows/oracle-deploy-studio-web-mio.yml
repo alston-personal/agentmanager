@@ -74,10 +74,10 @@ jobs:
           set -euo pipefail
           body="$(curl -L -fsS --retry 5 --retry-all-errors --max-time 20 https://studio.milkcat.org/personas/mio/wardrobe/)"
           rel="$(curl -L -fsS --retry 5 --retry-all-errors --max-time 20 https://studio.milkcat.org/personas/mio/release.json)"
-          printf '%s' "$body" | grep -Fq 'data-select-visual'
-          printf '%s' "$body" | grep -Fq 'product-zoom-icon'
-          printf '%s' "$body" | grep -Fq 'rendererMessage'
-          printf '%s' "$rel" | grep -Fq "\"studio_commit\":\"$STUDIO_COMMIT\""
+          grep -Fq 'data-select-visual' <<<"$body"
+          grep -Fq 'product-zoom-icon' <<<"$body"
+          grep -Fq 'rendererMessage' <<<"$body"
+          grep -Fq "\"studio_commit\":\"$STUDIO_COMMIT\"" <<<"$rel"
           echo "studio_web_mio_public_image_select=PASS"
           echo "studio_web_mio_public_zoom_control=PASS"
           echo "studio_web_mio_public_renderer_progress=PASS"
