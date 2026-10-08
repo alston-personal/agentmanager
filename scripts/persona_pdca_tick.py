@@ -299,10 +299,14 @@ def main():
                 "created_at":now_utc.isoformat().replace("+00:00","Z"),
                 "reason":"PDCA successful social read is due",
                 "requires_real_adapter_receipt":True}
-            pending.append(observation_candidate)
-            read_cost=min(energy_after,max(0.0,float(costs.get("observe_passive",0.2))))
-            energy_after-=read_cost
-            do["social_observation_energy_cost"]=read_cost
+            read_cost=max(0.0,float(costs.get("observe_passive",0.2)))
+            if energy_after+1e-9 >= read_cost:
+                pending.append(observation_candidate)
+                energy_after-=read_cost
+                do["social_observation_energy_cost"]=read_cost
+            else:
+                observation_candidate=None
+                observation_plan["reason"]="insufficient_energy_for_observation"
         else:
             observation_plan["reason"]="pending_capacity"
     observation_plan["queued"]=observation_candidate is not None
