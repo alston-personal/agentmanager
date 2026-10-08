@@ -25,6 +25,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("agentos.executor", "job.inspect", bc.ACTION_EXECUTOR_JOB_INSPECT, frozenset({"job_id"})),
     RunnerWindowIntent("github.actions", "workflow.dispatch", bc.ACTION_GITHUB_ACTIONS_DISPATCH, frozenset({"workflow", "ref", "inputs"})),
     RunnerWindowIntent("node.runtime", "transactional-ota", bc.ACTION_NODE_TRANSACTIONAL_OTA, frozenset({"node_id", "candidate_commit"})),
+    RunnerWindowIntent("node.runtime", "ota.inspect", bc.ACTION_NODE_OTA_INSPECT, frozenset({"node_id"})),
     RunnerWindowIntent("node.realm", "inspect", bc.ACTION_REALM_NODE_INSPECT, frozenset({"node_id"})),
     RunnerWindowIntent("node.desktop", "probe", bc.ACTION_REALM_DESKTOP_PROBE, frozenset({"node_id"})),
     RunnerWindowIntent("node.executor", "reconcile", bc.ACTION_REALM_EXECUTOR_RECONCILE, frozenset({"node_id"})),
