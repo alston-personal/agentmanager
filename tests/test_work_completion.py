@@ -107,6 +107,9 @@ class WorkCompletionTests(unittest.TestCase):
         self.assertEqual(mod.classify_blocker("provider rate limit quota"), "PROVIDER_CAPACITY")
         self.assertEqual(mod.classify_blocker("ONE runtime converge receipt continuity"), "RUNTIME_HEALTH")
         self.assertEqual(mod.classify_blocker("human login required"), "HUMAN_AUTH")
+        self.assertEqual(mod.classify_blocker("BLOCKED: executor_exception:RuntimeError"), "RUNTIME_HEALTH")
+        self.assertEqual(mod.classify_blocker("任務逾時（300s）"), "PROVIDER_CAPACITY")
+        self.assertEqual(mod.classify_blocker("連續 3 次驗證失敗"), "VERIFICATION")
         self.assertEqual(mod.classify_blocker("opaque domain-specific blocker"), "UNKNOWN")
         self.assertEqual(mod.classify_blocker(""), "NONE")
 
