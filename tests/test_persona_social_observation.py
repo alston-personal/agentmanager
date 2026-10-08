@@ -533,5 +533,15 @@ class ObservationContract(unittest.TestCase):
         self.assertLess(publish_guard, consider_lookup)
 
 
+    def test_visual_post_decision_has_explicit_media_ir(self):
+        gen=(REPO/'scripts/persona_post_intent_generator.py').read_text()
+        publish=(REPO/'scripts/persona_social_executor.py').read_text()
+        self.assertIn('"image_decision":"none|existing_verified|generate"',gen)
+        self.assertIn('"media_intent":',gen)
+        self.assertIn('"requires_verified_media_receipt"',gen)
+        self.assertIn('MEDIA_NOT_VALIDATED',publish)
+        self.assertIn('MEDIA_PUBLISH_ADAPTER_REQUIRED',publish)
+
+
 if __name__ == '__main__':
     unittest.main()
