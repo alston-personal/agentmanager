@@ -501,5 +501,12 @@ class ObservationContract(unittest.TestCase):
         self.assertNotIn('timeout=180', text)
 
 
+    def test_social_runner_does_not_read_suppressed_metrics_file(self):
+        text=(REPO/'scripts/run_persona_social_actions_user.sh').read_text()
+        self.assertIn('METRICS_STATUS="NO_CHANGE"', text)
+        self.assertIn('if [ -f "$METRICS_RECEIPT" ]; then', text)
+        self.assertNotIn("python3 - \"$METRICS_RECEIPT\" <<'PY'\nimport json,sys\nr=json.load(open(sys.argv[1]", text)
+
+
 if __name__ == '__main__':
     unittest.main()

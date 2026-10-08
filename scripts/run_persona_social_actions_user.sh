@@ -115,6 +115,13 @@ if [ "$STATUS" = "NO_ACTION" ]; then
   rm -f "$SOCIAL_RECEIPT"
 fi
 
+METRICS_STATUS="NO_CHANGE"
+METRICS_CHANGED="0"
+if [ -f "$METRICS_RECEIPT" ]; then
+  METRICS_STATUS="$(python3 -c "import json; print(json.load(open('$METRICS_RECEIPT')).get('status','unknown'))")"
+  METRICS_CHANGED="$(python3 -c "import json; print(json.load(open('$METRICS_RECEIPT')).get('changed',0))")"
+fi
+
 cd "$DATA_REPO"
 git config user.name 'agentos-persona-social[bot]'
 git config user.email 'agentos-persona-social[bot]@users.noreply.github.com'
@@ -128,23 +135,18 @@ git commit -m "persona(mio): persist autonomous social action" >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' push >/dev/null
 
 if [ "$STATUS" = "NO_ACTION" ]; then
-  python3 - "$METRICS_RECEIPT" <<'PY'
-import json,sys
-r=json.load(open(sys.argv[1],encoding="utf-8"))
-print("persona_social_action_runtime=METRICS_ONLY")
-print("persona_growth_metrics_status="+str(r.get("status") or "unknown"))
-print("persona_growth_metrics_changed="+str(r.get("changed") or 0))
-PY
+  echo "persona_social_action_runtime=METRICS_ONLY"
+  echo "persona_growth_metrics_status=$METRICS_STATUS"
+  echo "persona_growth_metrics_changed=$METRICS_CHANGED"
 else
-  python3 - "$SOCIAL_RECEIPT" "$METRICS_RECEIPT" <<'PY'
+  python3 - "$SOCIAL_RECEIPT" "$METRICS_STATUS" "$METRICS_CHANGED" <<'PY'
 import json,sys
 r=json.load(open(sys.argv[1],encoding="utf-8"))
-m=json.load(open(sys.argv[2],encoding="utf-8"))
 assert r.get("status") in ("EXECUTED","BLOCKED"),r
 print("persona_social_action_runtime="+("PASS" if r.get("ok") is True else "BLOCKED"))
 print("persona_social_action_capability="+str(r.get("capability") or "unknown"))
 print("persona_social_action_write="+str(bool(r.get("write_performed"))).lower())
-print("persona_growth_metrics_status="+str(m.get("status") or "unknown"))
-print("persona_growth_metrics_changed="+str(m.get("changed") or 0))
+print("persona_growth_metrics_status="+sys.argv[2])
+print("persona_growth_metrics_changed="+sys.argv[3])
 PY
 fi
