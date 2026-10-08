@@ -73,6 +73,20 @@ jobs:
           print("issue_intake_rejected="+str(sum(x.get("status")=="skipped" for x in data)))
           print("issue_intake_already_terminal="+str(sum(x.get("status")=="already_terminal" for x in data)))
           PY
+          # Read-only ledger summary: do not mistake admission for verified execution.
+          /usr/bin/python3 - "$data/governance/work-items.json" <<'PY'
+          import json,sys
+          with open(sys.argv[1],encoding="utf-8") as stream:
+              items=json.load(stream).get("items",{})
+          for number in (1655,1656):
+              work_id=f"gh-issue-{number}-readonly"
+              item=items.get(work_id) or {}
+              verification=item.get("verification") or {}
+              evidence=item.get("evidence") or []
+              verified=(item.get("status")=="done" and verification.get("status")=="passed" and len(evidence)>0)
+              print(f"lobster_issue_{number}_status={item.get('status','missing')}")
+              print(f"lobster_issue_{number}_verified_done={'true' if verified else 'false'}")
+          PY
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
           echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
