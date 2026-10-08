@@ -450,3 +450,7 @@ Windows semantic preview capture runs inside a short-lived spawned worker proces
 ### Semantic preview subprocess isolation
 
 The initial multiprocessing-spawn isolation still failed to produce a receipt in the managed Windows Scheduled Task environment. Semantic preview therefore uses a bounded child interpreter launched as `python -m agentos_node.semantic_preview --worker` with `CREATE_NO_WINDOW`. The parent uses `communicate(timeout=...)`, kills the child on timeout, and reports the last native stage emitted on stderr. This avoids Windows multiprocessing bootstrap/pickle behavior while retaining native-call isolation.
+
+### Semantic preview proven screenshot backend
+
+Live acceptance on vopc5750 showed the established `desktop.screenshot` PowerShell/System.Drawing path returns receipts reliably, while custom GDI and Python-worker isolation paths did not. Semantic preview therefore reads foreground-window identity/bounds first and calls `Graphics.CopyFromScreen` only for that rectangle, scales the result to the configured pixel cap in memory, and returns JPEG evidence. It never captures the full desktop and then crops it; background-window pixels outside the foreground bounds are not requested from the capture backend.
