@@ -170,7 +170,7 @@ def verify_local_port_check(task_text: str, output: str) -> tuple[bool, str] | N
     MVP-1 deliberately accepts only a *closed* loopback port.  If it is open,
     unavailable, or output is inconsistent, the work remains unverified.
     """
-    match = re.search(r"檢查連接埠\\s+(\\d+)\\b", task_text)
+    match = re.search(r"檢查連接埠\s+(\d+)\b", task_text)
     if not match:
         return None
     port = int(match.group(1))
