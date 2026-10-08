@@ -28,7 +28,7 @@ def test_registration_heartbeat_capability_and_idempotent_task(tmp_path: Path):
     leased = store.lease_next_task("node-test-01", ["ai.generate"])
     assert leased["status"] == "leased"
     assert leased["targetNodeId"] == "node-test-01"
-    assert store.update_task(leased["taskId"], "succeeded", {"text": "ok"})["status"] == "succeeded"
+    assert store.complete_leased_task(leased["taskId"], "node-test-01", leased["leaseUntil"], "succeeded", {"text": "ok"})["status"] == "succeeded"
 
 
 def test_overdue_leases_are_fenced_without_automatic_replay(tmp_path: Path):
@@ -106,3 +106,23 @@ def test_current_worker_receipt_accepted_once_only(tmp_path: Path):
     assert done["result"] == {"ok": True}
     with pytest.raises(ValueError, match="stale or unauthorized"):
         store.complete_leased_task(task["taskId"], "node-test-01", lease["leaseUntil"], "failed")
+
+
+def test_legacy_update_cannot_overwrite_worker_receipt_or_expired_state(tmp_path: Path):
+    import pytest
+    store = ControlPlaneStore(tmp_path / "control-plane.sqlite3")
+    pending = store.submit_task("ai.generate", {}, "administrative-cancel")
+    assert store.update_task(pending["taskId"], "cancelled")["status"] == "cancelled"
+    with pytest.raises(ValueError, match="only supports"):
+        store.update_task(pending["taskId"], "succeeded")
+
+    store.submit_task("ai.generate", {}, "active-worker")
+    lease = store.lease_next_task("node-test-01", ["ai.generate"])
+    assert lease is not None
+    with pytest.raises(ValueError, match="not submitted"):
+        store.update_task(lease["taskId"], "cancelled")
+    with pytest.raises(ValueError, match="only supports"):
+        store.update_task(lease["taskId"], "succeeded", {"fake": True})
+    assert store.complete_leased_task(
+        lease["taskId"], "node-test-01", lease["leaseUntil"], "succeeded"
+    )["status"] == "succeeded"
