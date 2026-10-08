@@ -315,9 +315,13 @@ def _layer_crop_box(width: int, height: int, layer: str) -> tuple[int, int, int,
     )
 
 
-def _appearance_stats(path: Path, layer: str) -> dict[str, Any]:
+def _appearance_stats(path: Path, layer: str, *, product_reference: bool = False) -> dict[str, Any]:
     image = Image.open(path).convert("RGB")
-    crop = image.crop(_layer_crop_box(image.width, image.height, layer))
+    # Garment photographs and full-body portraits have different composition.
+    # Body-region coordinates are meaningful only on the generated portrait.
+    crop = image if product_reference else image.crop(
+        _layer_crop_box(image.width, image.height, layer)
+    )
     crop = ImageOps.contain(crop, (96, 96), method=Image.Resampling.LANCZOS)
     pixels = [tuple(map(int, rgb)) for rgb in crop.getdata()]
     if not pixels:
@@ -367,7 +371,7 @@ def reject_gross_layer_mismatch(output: str, reference_path: Path, layer: str) -
     if layer not in {"upper_inner", "upper_main", "upper_outer", "lower_main", "onepiece", "shoes"}:
         return str(output_path(output))
     output_file = output_path(output)
-    ref = _appearance_stats(reference_path, layer)
+    ref = _appearance_stats(reference_path, layer, product_reference=True)
     out = _appearance_stats(output_file, layer)
     ref_rgb = ref["rgb"]
     out_rgb = out["rgb"]
