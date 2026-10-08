@@ -139,6 +139,18 @@ jobs:
           # Critical autonomous-control services must be live regardless of old state.
           systemctl --user is-active --quiet os-chronos.service
           systemctl --user is-active --quiet agentos-core-supervisor.service
+          # Lobster must actually survive startup; a momentary active state is not acceptance.
+          systemctl --user is-active --quiet os-lobster.service
+          lobster_pid="$(systemctl --user show os-lobster.service -p MainPID --value)"
+          test -n "$lobster_pid" && test "$lobster_pid" != 0
+          lobster_cwd="$(readlink -f "/proc/$lobster_pid/cwd")"
+          test "$lobster_cwd" = "$RELEASE"
+          lobster_restarts_before="$(systemctl --user show os-lobster.service -p NRestarts --value)"
+          sleep 12
+          systemctl --user is-active --quiet os-lobster.service
+          lobster_restarts_after="$(systemctl --user show os-lobster.service -p NRestarts --value)"
+          test "$lobster_restarts_before" = "$lobster_restarts_after"
+          echo "core_bundle_lobster_stable=PASS"
           if [ "${AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE:-0}" = 1 ]; then
             systemctl --user is-active --quiet agentos-employee-worker-host.service
           fi
