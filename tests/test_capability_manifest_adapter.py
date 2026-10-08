@@ -117,3 +117,29 @@ def test_declared_capability_may_await_machine_entrypoint(tmp_path):
     )
     assert len(mirrored) == 1
     assert mirrored[0].state == "declared"
+
+
+def test_model_chat_cannot_be_the_machine_entrypoint_even_if_named(tmp_path):
+    import pytest
+
+    root = tmp_path / "capabilities"
+    cap = root / "chat-only"
+    cap.mkdir(parents=True)
+    (cap / "capability-manifest.json").write_text(
+        json.dumps({
+            "schema": "agentos.capability-manifest/v1",
+            "capability_id": "demo.chat-only",
+            "lifecycle": "stable",
+            "invocation": {"kind": "llm-prompt", "entrypoint": "remember to do it"},
+            "discovery": {
+                "governance_directory": True,
+                "provider_id": "service://demo.chat-only",
+            },
+        }),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="machine invocation"):
+        sync_discoverable_capability_manifests(
+            capability_root=root,
+            directory_path=tmp_path / "directory.json",
+        )
