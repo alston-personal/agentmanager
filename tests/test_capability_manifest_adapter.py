@@ -4,7 +4,8 @@ from agent_core.capability_manifest_adapter import sync_discoverable_capability_
 from agent_core.governance_directory import load_directory
 
 
-def test_opt_in_capability_manifest_is_mirrored_without_hardcoded_provider(tmp_path):
+def test_opt_in_capability_manifest_is_mirrored_without_hardcoded_provider(tmp_path, monkeypatch):
+    monkeypatch.setattr('agent_core.capability_manifest_adapter.PROJECT_ROOT', tmp_path)
     root = tmp_path / "capabilities"
     cap = root / "demo"
     cap.mkdir(parents=True)
@@ -94,7 +95,8 @@ def test_implemented_manifest_without_machine_entrypoint_is_rejected(tmp_path):
         )
 
 
-def test_declared_capability_may_await_machine_entrypoint(tmp_path):
+def test_declared_capability_may_await_machine_entrypoint(tmp_path, monkeypatch):
+    monkeypatch.setattr('agent_core.capability_manifest_adapter.PROJECT_ROOT', tmp_path)
     root = tmp_path / "capabilities"
     cap = root / "planned"
     cap.mkdir(parents=True)
