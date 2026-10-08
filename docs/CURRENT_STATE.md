@@ -454,3 +454,7 @@ The initial multiprocessing-spawn isolation still failed to produce a receipt in
 ### Semantic preview proven screenshot backend
 
 Live acceptance on vopc5750 showed the established `desktop.screenshot` PowerShell/System.Drawing path returns receipts reliably, while custom GDI and Python-worker isolation paths did not. Semantic preview therefore reads foreground-window identity/bounds first and calls `Graphics.CopyFromScreen` only for that rectangle, scales the result to the configured pixel cap in memory, and returns JPEG evidence. It never captures the full desktop and then crops it; background-window pixels outside the foreground bounds are not requested from the capture backend.
+
+### Thin Client receipt envelope integrity
+
+Capability results may carry their own schema and metadata, but they must never overwrite the canonical `agentos.node-receipt/v0.1` envelope. Thin Client execution now preserves reserved receipt fields including schema, node/task identity, action, timestamps, cognition ids, and final ok status. A capability-level `schema` is projected as `result_schema`; other reserved result keys are projected with a `result_` prefix. This closes the live vopc5750 failure where semantic preview produced `agentos.desktop-semantic-preview/v0.1` and accidentally replaced the receipt schema, causing ONE to reject the receipt with `invalid receipt schema`.

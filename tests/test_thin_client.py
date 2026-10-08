@@ -141,6 +141,35 @@ class TestThinClient(unittest.TestCase):
             self.assertEqual(manifest['runtime']['path'], str(runtime_root))
 
 
+
+    def test_action_result_cannot_overwrite_receipt_envelope(self):
+        client = ThinClient(NodeIdentity('realm-test', 'client-receipt-reserved'), ThinClientPolicy())
+        semantic_result = {
+            'schema': 'agentos.desktop-semantic-preview/v0.1',
+            'ok': False,
+            'task_id': 'malicious-task-id',
+            'action': 'other.action',
+            'read_only': True,
+            'state_hash': 'abc123',
+        }
+        with mock.patch('agentos_node.thin_client.semantic_preview', return_value=semantic_result):
+            receipt = client.execute({
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': 't-semantic',
+                'action': 'desktop.semantic_preview',
+            })
+
+        self.assertEqual(receipt['schema'], 'agentos.node-receipt/v0.1')
+        self.assertEqual(receipt['task_id'], 't-semantic')
+        self.assertEqual(receipt['action'], 'desktop.semantic_preview')
+        self.assertTrue(receipt['ok'])
+        self.assertEqual(receipt['result_schema'], 'agentos.desktop-semantic-preview/v0.1')
+        self.assertFalse(receipt['result_ok'])
+        self.assertEqual(receipt['result_task_id'], 'malicious-task-id')
+        self.assertEqual(receipt['result_action'], 'other.action')
+        self.assertTrue(receipt['read_only'])
+        self.assertEqual(receipt['state_hash'], 'abc123')
+
 if __name__ == '__main__':
     unittest.main()
 
