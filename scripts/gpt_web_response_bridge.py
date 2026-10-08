@@ -457,7 +457,18 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
           if (r.width > 0 && r.height > 0) generating=true;
         }
       }
+      // Structural-only evidence: never export message text, prompt, or image data.
+      const messageNodes = Array.from(document.querySelectorAll('[data-message-author-role]'));
+      const roleCounts = {};
+      for (const node of messageNodes) {
+        const role = node.getAttribute('data-message-author-role') || 'unknown';
+        roleCounts[role] = (roleCounts[role] || 0) + 1;
+      }
       return {
+        pagePath: location.pathname.slice(0, 160),
+        readyState: document.readyState,
+        roleCounts,
+        messageNodes: messageNodes.length,
         composerHasRequest: composerText.includes(%s),
         composerChars: composerText.length,
         send,
@@ -605,6 +616,8 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         last_snapshot["sawGenerationAfterSubmit"] = saw_generation
         last_snapshot["sawCorrelatedUserAfterSubmit"] = saw_correlated_user
         last_snapshot["sawAssistantAfterSubmit"] = saw_assistant
+        # This final structural snapshot helps distinguish a changed page route
+        # from stale selectors; no user/assistant content is logged.
         raise RuntimeError(
             "GPT_WEB_RESPONSE_TIMEOUT:" +
             json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)

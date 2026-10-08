@@ -257,3 +257,18 @@ class GptWebFalseSubmitRegressionTests(unittest.TestCase):
                                  baseline_assistants=0, baseline_users=0,
                                  timeout_seconds=0.2)
         self.assertEqual(result["correlatedUserCount"], 1)
+
+class GptWebStructuralDiagnosticsTests(unittest.TestCase):
+    def test_submission_snapshot_queries_only_structural_dom(self):
+        from scripts.gpt_web_response_bridge import _submission_snapshot
+        page = Mock()
+        page.evaluate.return_value = {
+            "pagePath": "/c/test", "roleCounts": {"user": 1},
+            "messageNodes": 1, "userCount": 1,
+        }
+        result = _submission_snapshot(page, "invoice:req:12345678")
+        self.assertEqual(result["messageNodes"], 1)
+        script = page.evaluate.call_args.args[0]
+        self.assertIn("data-message-author-role", script)
+        self.assertIn("location.pathname", script)
+        self.assertNotIn("console.log", script)
