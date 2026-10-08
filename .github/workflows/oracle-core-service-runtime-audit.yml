@@ -118,6 +118,20 @@ jobs:
             fi
           done
           echo "lobster_recent_exception_class=$lobster_error_kind"
+          # Read-only checks executed with the same Python interpreter as the service.
+          # Import only third-party modules; do not import Lobster or run work.
+          for module in yaml requests; do
+            if /usr/bin/python3 -c "import $module" >/dev/null 2>&1; then
+              echo "lobster_python_dependency_${module}=available"
+            else
+              echo "lobster_python_dependency_${module}=missing"
+            fi
+          done
+          if [ -f "$lobster_release/scripts/lobster.py" ] && /usr/bin/python3 - "$lobster_release/scripts/lobster.py" >/dev/null 2>&1 <<'PY'
+          import ast, pathlib, sys
+          ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          PY
+          then echo "lobster_release_syntax=PASS"; else echo "lobster_release_syntax=FAIL"; fi
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
