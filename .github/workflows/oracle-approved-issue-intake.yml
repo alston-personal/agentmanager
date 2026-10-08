@@ -76,4 +76,5 @@ jobs:
           print("issue_intake_already_terminal="+str(sum(x.get("status")=="already_terminal" for x in data)))
           PY
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
+          echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
