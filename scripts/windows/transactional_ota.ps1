@@ -106,6 +106,7 @@ $installFull=$installFull.TrimEnd($trimChars)
 $installPrefix=$installFull+[System.IO.Path]::DirectorySeparatorChar
 $supervisorFull=[System.IO.Path]::GetFullPath($supervisorPath)
 if(-not $supervisorFull.StartsWith($installPrefix,[System.StringComparison]::OrdinalIgnoreCase)){throw 'Thin Client supervisor path is outside InstallRoot'}
+$stableSupervisor=Join-Path $InstallRoot 'agentos-thin-client-supervisor.ps1'
 $pythonExe=(& python -c "import sys; print(sys.executable)"|Select-Object -Last 1).Trim()
 if(-not $pythonExe -or -not(Test-Path -LiteralPath $pythonExe)){throw 'Thin Client Python executable could not be resolved'}
 $escapedCurrent=$currentFile.Replace("'","''")
@@ -133,10 +134,19 @@ $supervisorBody=@(
   '  Start-Sleep -Seconds 5'
   '}'
 )-join [Environment]::NewLine
-$supervisorBody|Set-Content -Encoding UTF8 -LiteralPath $supervisorFull
-$supervisorCheck=Get-Content -Raw -LiteralPath $supervisorFull
+$supervisorBody|Set-Content -Encoding UTF8 -LiteralPath $stableSupervisor
+$supervisorCheck=Get-Content -Raw -LiteralPath $stableSupervisor
 if($supervisorCheck -notmatch 'current\.json'){throw 'Thin Client supervisor migration validation failed'}
-$record|Add-Member -NotePropertyName supervisor_carrier -NotePropertyValue $supervisorFull -Force
+$stableEscaped=$stableSupervisor.Replace('"','\"')
+$newArgs=[regex]::Replace($actionArgs,'(?i)-File\s+"[^"]+"',('-File "'+$stableEscaped+'"'),1)
+if($newArgs -eq $actionArgs){throw 'Thin Client task action did not migrate to stable supervisor'}
+if([string]::IsNullOrWhiteSpace([string]$registeredAction.WorkingDirectory)){
+  $newAction=New-ScheduledTaskAction -Execute ([string]$registeredAction.Execute) -Argument $newArgs
+}else{
+  $newAction=New-ScheduledTaskAction -Execute ([string]$registeredAction.Execute) -Argument $newArgs -WorkingDirectory ([string]$registeredAction.WorkingDirectory)
+}
+Set-ScheduledTask -TaskName $TaskName -Action $newAction | Out-Null
+$record|Add-Member -NotePropertyName supervisor_carrier -NotePropertyValue $stableSupervisor -Force
 $guardUrl="https://raw.githubusercontent.com/$Repo/$ToolCommit/scripts/windows/transactional_ota_guard.ps1"
 $finalizeUrl="https://raw.githubusercontent.com/$Repo/$ToolCommit/scripts/windows/transactional_ota_finalize.ps1"
 $guardPath=Join-Path $InstallRoot ("transactional_ota_guard-"+$SourceCommit+".ps1")
