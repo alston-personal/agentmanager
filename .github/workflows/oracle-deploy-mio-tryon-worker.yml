@@ -60,5 +60,11 @@ jobs:
           grep -Fq 'PROVIDER_TIMEOUT_SECONDS' "$WORKER"
           grep -Fq 'AGENTOS_TRYON_LAYER_TIMEOUT_SECONDS=180' "$UNIT"
           grep -Fq 'AGENTOS_TRYON_PROVIDER_TIMEOUT_SECONDS=120' "$UNIT"
+          grep -Fq 'AGENTOS_TRYON_REVIEW_TIMEOUT_SECONDS=35' "$UNIT"
+          grep -Fq 'PYTHONPATH=/home/ubuntu/.local/share/mio-tryon/runtime-lib' "$UNIT"
+          test -s /home/ubuntu/.local/share/mio-tryon/runtime-lib/capabilities/wardrobe_visual_review/review.py
+          test -s /home/ubuntu/.local/share/mio-tryon/runtime-lib/capabilities/wardrobe_visual_review/gemini_backend.py
+          grep -Fq 'review_with_gemini' "$WORKER"
+          echo "mio_visual_review_backend_installed=PASS"
           echo "mio_tryon_worker_production_deploy=PASS"
           REMOTE
