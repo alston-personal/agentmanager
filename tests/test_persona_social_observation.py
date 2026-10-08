@@ -482,5 +482,13 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('liveness_pressure', text)
 
 
+    def test_social_liveness_consider_is_durable_before_reasoning(self):
+        text=(REPO/'scripts/persona_post_intent_generator.py').read_text()
+        self.assertIn('state["last_post_consider_at"]', text)
+        self.assertIn('state["pending_external_actions"]=pending[-12:]', text)
+        self.assertIn('os.replace(tmp,root/"pdca/state.json")', text)
+        self.assertIn('growth.get("enabled") is True', text)
+
+
 if __name__ == '__main__':
     unittest.main()
