@@ -10,6 +10,7 @@ SOURCE_SHA="${1:-}"
 REPO="/home/ubuntu/agentmanager"
 MAIN_ENV="$REPO/.env"
 ROOT="$HOME/.local/share/mio-tryon"
+RUNTIME_LIB="$ROOT/runtime-lib"
 VENV="$HOME/.local/share/mio-tryon-venv"
 BIN="$HOME/.local/bin"
 CFG="$HOME/.config/agentos"
@@ -41,7 +42,7 @@ PY
 )"
 test -n "$HF_TOKEN_VALUE" || { echo "mio_tryon_deploy=HF_TOKEN_EMPTY" >&2; exit 3; }
 
-mkdir -p "$ROOT" "$BIN" "$CFG" "$UNIT_DIR"
+mkdir -p "$ROOT" "$RUNTIME_LIB/capabilities/wardrobe_visual_review" "$BIN" "$CFG" "$UNIT_DIR"
 
 if [ -n "$SOURCE_SHA" ]; then
   [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "mio_tryon_deploy=INVALID_SOURCE_SHA" >&2; exit 4; }
@@ -55,6 +56,12 @@ fi
 git -C "$REPO" show "$WORKER_COMMIT:scripts/tryon_render_worker.py" > "$WORKER.tmp"
 install -m 755 "$WORKER.tmp" "$WORKER"
 rm -f "$WORKER.tmp"
+
+git -C "$REPO" show "$WORKER_COMMIT:capabilities/__init__.py" > "$RUNTIME_LIB/capabilities/__init__.py"
+git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/__init__.py" > "$RUNTIME_LIB/capabilities/wardrobe_visual_review/__init__.py"
+git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/review.py" > "$RUNTIME_LIB/capabilities/wardrobe_visual_review/review.py"
+git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/gemini_backend.py" > "$RUNTIME_LIB/capabilities/wardrobe_visual_review/gemini_backend.py"
+chmod 644 "$RUNTIME_LIB/capabilities/__init__.py" "$RUNTIME_LIB/capabilities/wardrobe_visual_review/"*.py
 
 if [ ! -x "$VENV/bin/python" ]; then
   python3 -m venv "$VENV"
@@ -81,6 +88,8 @@ Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
 Environment=AGENTOS_TRYON_POLL_SECONDS=2
 Environment=AGENTOS_TRYON_LAYER_TIMEOUT_SECONDS=180
 Environment=AGENTOS_TRYON_PROVIDER_TIMEOUT_SECONDS=120
+Environment=AGENTOS_TRYON_REVIEW_TIMEOUT_SECONDS=35
+Environment=PYTHONPATH=/home/ubuntu/.local/share/mio-tryon/runtime-lib
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/home/ubuntu/.config/agentos/mio-tryon.env
 ExecStart=/home/ubuntu/.local/share/mio-tryon-venv/bin/python /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
