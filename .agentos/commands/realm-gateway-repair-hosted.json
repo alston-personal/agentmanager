@@ -1,6 +1,6 @@
 {
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.gateway.repair-hosted",
-  "reason": "recover missing dashboard listener on port 3000 after recurrent nginx 502",
-  "nonce": "realm-gateway-3000-repair-20261002-1347"
+  "reason": "restore Runner Window /v1/dispatch route required for governed vopc5750 transactional OTA",
+  "nonce": "runner-window-dispatch-repair-20261008-1114"
 }
