@@ -7,7 +7,10 @@ if [ "$(id -un)" != "ubuntu" ]; then
 fi
 
 PY="$HOME/.local/share/agentos/gui-worker/venv/bin/python"
-OUT_ROOT="/home/ubuntu/agent-data/artifacts/vision-studio/rain-exit-v001/resume-s01"
+SHARED_ROOT="${AGENTOS_SHARED_ARTIFACT_ROOT:-/tmp/agentos-shared-artifacts}"
+mkdir -p "$SHARED_ROOT"
+chmod 1777 "$SHARED_ROOT"
+OUT_ROOT="$SHARED_ROOT/vision-studio/rain-exit-v001/resume-s01"
 test -x "$PY"
 mkdir -p "$OUT_ROOT"
 
