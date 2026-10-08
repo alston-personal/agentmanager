@@ -551,5 +551,15 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('milkcat.image-manifest/v2',source)
 
 
+    def test_media_worker_is_wired_into_oracle_social_lane(self):
+        worker=(REPO/'scripts/persona_media_request_worker.py').read_text()
+        runner=(REPO/'scripts/run_persona_social_actions_user.sh').read_text()
+        installer=(REPO/'scripts/install_persona_pdca_timer_user.sh').read_text()
+        self.assertIn('CAPABILITY_UNAVAILABLE_IMAGE_GENERATION',worker)
+        self.assertIn('asset_verified":False',worker)
+        self.assertIn('python3 "$MEDIA_WORKER" --persona-dir "$ROOT"',runner)
+        self.assertIn('persona_media_request_worker.py',installer)
+
+
 if __name__ == '__main__':
     unittest.main()

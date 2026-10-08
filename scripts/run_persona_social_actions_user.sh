@@ -7,6 +7,7 @@ SOCIAL_EXECUTOR="${AGENTOS_PERSONA_SOCIAL_EXECUTOR:-$HOME/.local/lib/agentos/per
 REPLY_INTENT_GENERATOR="${AGENTOS_PERSONA_REPLY_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_reply_intent_generator.py}"
 POST_INTENT_GENERATOR="${AGENTOS_PERSONA_POST_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_post_intent_generator.py}"
 GROWTH_METRICS="${AGENTOS_PERSONA_GROWTH_METRICS:-$HOME/.local/lib/agentos/persona_growth_metrics_collector.py}"
+MEDIA_WORKER="${AGENTOS_PERSONA_MEDIA_WORKER:-$HOME/.local/lib/agentos/persona_media_request_worker.py}"
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
 exec 9>"$LOCK"
@@ -19,6 +20,7 @@ test -f "$SOCIAL_EXECUTOR"
 test -f "$REPLY_INTENT_GENERATOR"
 test -f "$POST_INTENT_GENERATOR"
 test -f "$GROWTH_METRICS"
+test -f "$MEDIA_WORKER"
 command -v gh >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth status >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth setup-git >/dev/null
@@ -60,6 +62,10 @@ SOCIAL_RECEIPT="$ROOT/pdca/social_receipts/$STAMP.json"
 mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
 python3 "$SOCIAL_EXECUTOR" --persona-dir "$ROOT" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"
 python3 -m json.tool "$SOCIAL_RECEIPT" >/dev/null
+
+# Media request intake must leave a durable evidence trail even when image
+# generation is not yet configured on this node.
+python3 "$MEDIA_WORKER" --persona-dir "$ROOT"
 
 # Social lane owns bounded social cognition. A reasoning defer/failure is local
 # to this lane and never blocks the core PDCA/Observer heartbeat.
