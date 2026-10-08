@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/oracle-core-service-runtime-audit.yml'
       - 'scripts/install_systemd_user.sh'
+      - 'scripts/lobster.py'
+      - 'scripts/work_completion.py'
       - '.agent/governance/runtime_ownership.json'
       - '.agent/governance/oracle_identity_boundaries.json'
   workflow_dispatch:
@@ -80,6 +82,15 @@ jobs:
             printf 'core_service=%s active=%s runtime_class=%s\n' "$unit" "${active:-unknown}" "$class"
             printf 'core_service_runtime=%s cwd=%s\n' "$unit" "${observed:-none}"
           done
+          lobster_unit=os-lobster.service
+          lobster_active="$(systemctl --user show "$lobster_unit" -p ActiveState --value 2>/dev/null || true)"
+          lobster_pid="$(systemctl --user show "$lobster_unit" -p MainPID --value 2>/dev/null || true)"
+          lobster_wd="$(systemctl --user show "$lobster_unit" -p WorkingDirectory --value 2>/dev/null || true)"
+          lobster_release="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+          echo "lobster_active=${lobster_active:-unknown}"
+          echo "lobster_pid_present=$([ -n "$lobster_pid" ] && [ "$lobster_pid" != 0 ] && echo true || echo false)"
+          echo "lobster_working_directory=${lobster_wd:-unknown}"
+          echo "lobster_accepted_release=${lobster_release:-unknown}"
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
