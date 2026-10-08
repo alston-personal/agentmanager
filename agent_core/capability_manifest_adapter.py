@@ -51,6 +51,17 @@ def sync_discoverable_capability_manifests(
         lifecycle = str(data.get("lifecycle") or "declared")
         state = "implemented" if lifecycle in {"implemented", "stable"} else "declared"
         invocation = data.get("invocation") if isinstance(data.get("invocation"), dict) else {}
+        # An implemented capability must have a non-LLM machine entrypoint.
+        # Declared/research providers may be incomplete until implementation.
+        if lifecycle in {"implemented", "stable"}:
+            kind = str(invocation.get("kind") or "").strip()
+            entrypoint = str(invocation.get("entrypoint") or "").strip()
+            required_cli = str(invocation.get("required_cli") or "").strip()
+            if not kind or not (entrypoint or required_cli):
+                raise ValueError(
+                    f"implemented capability requires machine invocation kind and entrypoint/required_cli: {path}"
+                )
+
 
         entity = GovernanceEntity(
             id=provider_id,
