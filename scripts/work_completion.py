@@ -38,6 +38,35 @@ INTAKE_FIELDS = {
 }
 
 
+def classify_blocker(value: str | None) -> str:
+    text = str(value or "").strip().casefold()
+    if not text:
+        return "NONE"
+    if any(token in text for token in (
+        "auth", "login", "credential", "human approval", "manual approval",
+        "human intervention", "2fa", "mfa",
+    )):
+        return "HUMAN_AUTH"
+    if any(token in text for token in (
+        "rate limit", "rate_limit", "quota", "capacity", "provider unavailable",
+    )):
+        return "PROVIDER_CAPACITY"
+    if any(token in text for token in (
+        "runtime", "converge", "controller", "runner window", "one ", "one/", "transport",
+        "bridge", "service", "daemon", "node", "receipt continuity",
+    )):
+        return "RUNTIME_HEALTH"
+    if any(token in text for token in (
+        "twse", "t86", "market data", "historical data", "dataset", "data source",
+    )):
+        return "MARKET_DATA"
+    if any(token in text for token in (
+        "verify", "verification", "acceptance", "evidence", "test", "ci", "report",
+    )):
+        return "VERIFICATION"
+    return "UNKNOWN"
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
