@@ -543,5 +543,13 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('MEDIA_PUBLISH_ADAPTER_REQUIRED',publish)
 
 
+    def test_visual_request_is_persisted_as_media_ir(self):
+        source=(REPO/'scripts/persona_post_intent_generator.py').read_text()
+        self.assertIn('agentos.persona-media-request/v1',source)
+        self.assertIn('pdca/media_requests',source)
+        self.assertIn('awaiting_media_executor',source)
+        self.assertIn('milkcat.image-manifest/v2',source)
+
+
 if __name__ == '__main__':
     unittest.main()
