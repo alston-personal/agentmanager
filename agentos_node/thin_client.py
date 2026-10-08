@@ -348,6 +348,11 @@ class ThinClient:
                     raise TypeError(f'adapter result must be object: {adapter.adapter_id}')
                 result = dict(result)
                 result.setdefault('adapter_id', str(adapter.adapter_id))
+            reserved = {'schema', 'realm_id', 'node_id', 'task_id', 'action', 'started_at', 'completed_at', 'ok', 'error'}
+            collisions = reserved.intersection(result)
+            if collisions:
+                result = {key: value for key, value in result.items() if key not in reserved}
+                result['result_metadata_collision_keys'] = sorted(collisions)
             receipt.update(result)
             receipt['ok'] = True
         except Exception as exc:
