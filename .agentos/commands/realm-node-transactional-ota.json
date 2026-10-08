@@ -2,6 +2,6 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.transactional_ota",
   "node_id": "vopc5750",
-  "source_commit": "d706b9fa16d84ee16ac159f2ad6401253342036b",
-  "nonce": "receipt-envelope-recovery-20261008-1110"
+  "source_commit": "fdceb6084ff315cd87b923578a37d354a49a69d5",
+  "nonce": "vopc5750-full-acceptance-20261008-1159"
 }
