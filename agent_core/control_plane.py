@@ -273,6 +273,45 @@ class ControlPlaneStore:
             connection.commit()
         return expired
 
+    def complete_leased_task(
+        self,
+        task_id: str,
+        node_id: str,
+        lease_until: str,
+        status: str,
+        result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Accept a worker receipt only for its still-current, live lease.
+
+        The lease token is the issued lease deadline. A later lease or an
+        expired/fenced task cannot be overwritten by a delayed old worker.
+        Callers must supply the lease token returned by lease_next_task.
+        """
+        if status not in {"succeeded", "failed"}:
+            raise ValueError("worker completion must be succeeded or failed")
+        now = _timestamp(_now())
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                """
+                UPDATE tasks SET status=?, result_json=?, lease_until=NULL, updated_at=?
+                WHERE task_id=? AND target_node_id=? AND lease_until=?
+                  AND lease_until>? AND status IN ('leased', 'running')
+                """,
+                (
+                    status, json.dumps(result or {}, sort_keys=True), now,
+                    task_id, node_id, lease_until, now,
+                ),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                raise ValueError("stale or unauthorized task lease receipt")
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE task_id=?", (task_id,)
+            ).fetchone()
+            connection.commit()
+        return self._task_from_row(row)
+
     def update_task(
         self,
         task_id: str,
