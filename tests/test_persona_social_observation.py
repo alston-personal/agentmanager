@@ -90,6 +90,76 @@ class ObservationContract(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()): self.assertEqual(self.tick.main(),0)
         return self.read('tick.json')
 
+
+    def test_sleep_phase_is_soft_prior_not_hard_lock(self):
+        receipt=self.creative_tick(phase='sleep',selected='reflect')
+        intents=[x['intent'] for x in receipt['plan']['candidates']]
+        self.assertIn('sleep',intents)
+        self.assertIn('observe',intents)
+        self.assertIn('reflect',intents)
+        self.assertEqual(receipt['plan']['selected_intent'],'reflect')
+
+    def test_sleep_phase_new_feedback_can_wake_social_review(self):
+        now=datetime.now(timezone.utc).isoformat()
+        (self.root/'events/events.jsonl').write_text(json.dumps({
+            'type':'reply.observed','timestamp':now,'text':'hi'
+        })+'\n')
+        state={**self.state,'pending_external_actions':[],'last_event_timestamp':None}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='review_social_feedback')
+        weights={x['intent']:x['weight'] for x in receipt['plan']['candidates']}
+        self.assertIn('review_social_feedback',weights)
+        self.assertGreater(weights['review_social_feedback'],weights['sleep'])
+
+    def test_rest_phase_is_soft_prior(self):
+        receipt=self.creative_tick(phase='rest',selected='observe')
+        intents=[x['intent'] for x in receipt['plan']['candidates']]
+        self.assertIn('rest',intents)
+        self.assertIn('observe',intents)
+        self.assertEqual(receipt['plan']['selected_intent'],'observe')
+
+    def test_critical_low_energy_still_forces_recovery(self):
+        state={**self.state,'energy_current':10,'pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
+        self.assertEqual(receipt['plan']['candidates'],[{'intent':'rest','weight':1.0}])
+
+
+    def test_energy_recovery_uses_previous_actual_mode(self):
+        old=(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat()
+        state={**self.state,'energy_current':20,'last_tick_at':old,'energy_mode':'awake',
+               'pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
+        self.assertAlmostEqual(receipt['plan']['energy'],23.0,places=1)
+        saved=self.read('pdca/state.json')
+        self.assertEqual(saved['energy_mode'],'rest')
+
+    def test_zero_energy_allows_only_recovery(self):
+        state={**self.state,'energy_current':0,'last_tick_at':datetime.now(timezone.utc).isoformat(),
+               'energy_mode':'awake','pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
+        self.assertEqual(receipt['plan']['candidates'],[{'intent':'rest','weight':1.0}])
+        self.assertEqual(receipt['do']['energy_cost'],0.0)
+
+    def test_positive_energy_can_overdraw_on_final_action(self):
+        state={**self.state,'energy_current':1,'last_tick_at':datetime.now(timezone.utc).isoformat(),
+               'energy_mode':'awake','pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='afternoon',selected='reflect')
+        self.assertEqual(receipt['plan']['selected_intent'],'reflect')
+        self.assertLess(receipt['check']['energy_after'],0)
+
+    def test_negative_energy_recovers_at_penalized_rate(self):
+        old=(datetime.now(timezone.utc)-timedelta(hours=3)).isoformat()
+        state={**self.state,'energy_current':-6,'last_tick_at':old,'energy_mode':'sleep',
+               'pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
+        self.assertAlmostEqual(receipt['plan']['energy'],6.0,places=1)
+
+    def test_nonpositive_energy_blocks_new_activity(self):
+        state={**self.state,'energy_current':-0.1,'last_tick_at':datetime.now(timezone.utc).isoformat(),
+               'energy_mode':'awake','pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='afternoon',selected='rest')
+        self.assertEqual(receipt['plan']['candidates'],[{'intent':'rest','weight':1.0}])
+        self.assertFalse(receipt['plan']['social_observation']['queued'])
+
     def test_due_read_keeps_creative_choice_and_both_intents(self):
         receipt=self.creative_tick()
         self.assertEqual(receipt['plan']['selected_intent'],'content_ideation')

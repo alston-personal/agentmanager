@@ -136,12 +136,20 @@ def main():
     last_tick=parse_ts(state.get("last_tick_at"))
     if last_tick:
         elapsed_h=max(0.0,min((now_utc-last_tick.astimezone(timezone.utc)).total_seconds()/3600.0,12.0))
-        if phase=="sleep":
+        # Recovery follows Mio's actual previous energy mode, not merely the
+        # wall-clock routine label. A late-night awake cycle must recover at
+        # the awake rate; choosing sleep/rest changes the next interval's rate.
+        previous_mode=str(state.get("energy_mode") or "")
+        if previous_mode not in ("sleep","rest","awake"):
+            previous_mode="sleep" if phase=="sleep" else ("rest" if phase=="rest" else "awake")
+        if previous_mode=="sleep":
             rate=float(energy_cfg.get("recovery",{}).get("sleep_points_per_hour",12))
-        elif phase=="rest":
+        elif previous_mode=="rest":
             rate=float(energy_cfg.get("recovery",{}).get("rest_points_per_hour",7))
         else:
             rate=float(energy_cfg.get("recovery",{}).get("awake_points_per_hour",3))
+        if energy < 0:
+            rate = math.floor(rate * float(energy_cfg.get("recovery",{}).get("negative_energy_multiplier",1/3)))
         energy=min(capacity,energy+elapsed_h*rate)
 
     events=read_events(events_path)
@@ -182,8 +190,24 @@ def main():
     under_max=(max_posts is None or len(todays_posts)<max_posts)
     target_unmet=(target is not None and len(todays_posts)<target)
 
-    if phase=="sleep": candidates=[("sleep",1.0)]
-    elif phase=="rest": candidates=[("rest",1.0)]
+    # Routine phase is a soft prior, not a hard activity lock. Clock time may
+    # strongly bias Mio toward sleep/rest, but context can keep her awake or
+    # wake her (new interaction, unseen events, repeated no-op cycles, etc.).
+    if phase=="sleep":
+        candidates=[("sleep",4.0),("observe",0.35),("reflect",0.25)]
+        if unseen:
+            candidates=[(n,(1.0 if n=="sleep" else w)) for n,w in candidates]
+            candidates.append(("observe",1.5))
+        if observed:
+            candidates.append(("review_social_feedback",min(4.0,2.0+observed*0.35)))
+        if state.get("consecutive_noops",0)>=3 and energy>=45:
+            candidates.append(("content_ideation",0.45))
+    elif phase=="rest":
+        candidates=[("rest",3.0),("observe",0.45),("reflect",0.35)]
+        if unseen:
+            candidates.append(("observe",1.25))
+        if observed:
+            candidates.append(("review_social_feedback",min(3.5,1.8+observed*0.3)))
     else:
         candidates=[("observe",0.8)]
         if observed: candidates.append(("review_social_feedback",min(3.0,1.2+observed*0.25)))
@@ -199,23 +223,29 @@ def main():
             candidates.append(("content_ideation",base_content))
         if state.get("consecutive_noops",0)>=2 and energy>=30:
             candidates.append(("reflect",1.4))
-    if energy<15 and phase not in ("sleep","rest"):
+    if energy<15:
         candidates=[("rest",1.0)]
-    elif energy<30 and phase not in ("sleep","rest"):
-        candidates=[(n,w) for n,w in candidates if n in ("observe","reflect","rest")] or [("rest",1.0)]
+    elif energy<30:
+        candidates=[(n,w) for n,w in candidates if n in ("sleep","observe","reflect","rest")] or [("rest",1.0)]
 
     cycle=int(state.get("cycle",0))+1
     seed_material=f"{cfg.get('persona_id')}|{ir.get('ir_id')}|{now_local:%Y-%m-%dT%H}|{cycle}|{state.get('consecutive_noops',0)}"
     seed=int(hashlib.sha256(seed_material.encode()).hexdigest()[:16],16)
     rng=random.Random(seed)
-    selected=rng.choices([x[0] for x in candidates],weights=[x[1] for x in candidates],k=1)[0]
-
     costs=energy_cfg.get("action_costs",{})
-    cost_map={"sleep":0,"rest":0,"observe":float(costs.get("observe_passive",0.2)),
+    cost_map={"sleep":0.0,"rest":0.0,"observe":float(costs.get("observe_passive",0.2)),
               "review_social_feedback":float(costs.get("read_thread",1)),
-              "reflect":1.5,"wardrobe_plan":2.0,"content_ideation":3.0}
-    cost=min(energy,cost_map.get(selected,1.0))
-    energy_after=max(0.0,energy-cost)
+              "reflect":float(costs.get("reflect",1.5)),
+              "wardrobe_plan":float(costs.get("wardrobe_plan",2.0)),
+              "content_ideation":float(costs.get("content_ideation",3.0))}
+    # Overdraft model: any positive energy may fund one final action even if
+    # the action drives energy below zero. Once energy is non-positive, no new
+    # activity may start; only zero-cost recovery remains until energy is > 0.
+    if energy <= 0:
+        candidates=[("rest",1.0)]
+    selected=rng.choices([x[0] for x in candidates],weights=[x[1] for x in candidates],k=1)[0]
+    cost=cost_map.get(selected,1.0)
+    energy_after=energy-cost
     do={"action":selected,"status":"completed_internal","energy_cost":cost}
     pending=list(state.get("pending_external_actions",[]))
     external=None
@@ -269,10 +299,14 @@ def main():
                 "created_at":now_utc.isoformat().replace("+00:00","Z"),
                 "reason":"PDCA successful social read is due",
                 "requires_real_adapter_receipt":True}
-            pending.append(observation_candidate)
-            read_cost=min(energy_after,max(0.0,float(costs.get("observe_passive",0.2))))
-            energy_after-=read_cost
-            do["social_observation_energy_cost"]=read_cost
+            read_cost=max(0.0,float(costs.get("observe_passive",0.2)))
+            if energy_after > 0:
+                pending.append(observation_candidate)
+                energy_after-=read_cost
+                do["social_observation_energy_cost"]=read_cost
+            else:
+                observation_candidate=None
+                observation_plan["reason"]="energy_depleted_after_primary_action"
         else:
             observation_plan["reason"]="pending_capacity"
     observation_plan["queued"]=observation_candidate is not None
@@ -311,8 +345,10 @@ def main():
                             "source":"persona_pdca_runtime","trigger":args.trigger,"receipt_ref":str(receipts.relative_to(root)),
                             "external_action_completed":False},ensure_ascii=False,separators=(",",":"))+"\n")
 
+    energy_mode="sleep" if selected=="sleep" else ("rest" if selected=="rest" else "awake")
     state.update({"cycle":cycle,"last_tick_at":receipt["tick_at"],
                   "last_action_at":receipt["tick_at"] if not noop else state.get("last_action_at"),
+                  "energy_mode":energy_mode,
                   "last_ir_id":ir.get("ir_id"),"energy_current":round(energy_after,2),
                   "consecutive_noops":noops,
                   "last_event_timestamp":latest_event_ts.astimezone(timezone.utc).isoformat().replace("+00:00","Z") if latest_event_ts else state.get("last_event_timestamp"),
