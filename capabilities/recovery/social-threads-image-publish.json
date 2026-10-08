@@ -1,0 +1,62 @@
+{
+  "schema": "agentos.capability-recovery-manifest/v1",
+  "capability_id": "social.threads.publish.image",
+  "owner": "agentos.social_runtime",
+  "status": "historical_verified_not_currently_integrated",
+  "historical_source": {
+    "repository": "alston-personal/agentmanager",
+    "commit": "8a3272c06e154183cb3539149bde1fd8217e3e52",
+    "entrypoint": "scripts/publish_galaxy_threads_day1_user.sh",
+    "workflow": ".github/workflows/oracle-publish-mio-approved.yml",
+    "asset": "personas/mio/approved/assets/mio-evening-park-20260920.png",
+    "asset_manifest": "personas/mio/approved/mio-post-20260920-evening-park-image-v1.json",
+    "media_origin": "unknown; manifest describes an original illustration; do not attribute to any model"
+  },
+  "verified_evidence": {
+    "run_id": 35495831674,
+    "result": "success",
+    "object_id": "18356065492302036",
+    "permalink": "https://www.threads.com/@sunlake.milkcat/post/DdgAUKMlH-X",
+    "verified_checks": [
+      "galaxy_day1_publish=PASS",
+      "platform_image_readback_required_by_legacy_publisher"
+    ],
+    "evidence_url": "https://github.com/alston-personal/agentmanager/actions/runs/35495831674"
+  },
+  "legacy_contract": {
+    "request_fields": [
+      "image_url",
+      "image_alt_text",
+      "primary_text",
+      "target_account_id",
+      "write_intent_id"
+    ],
+    "governed_endpoints": [
+      "/internal/v1/social/acceptances",
+      "/v1/social/publish"
+    ],
+    "requires": [
+      "approved_source_image",
+      "source_image_content_check",
+      "readback_media_type_IMAGE",
+      "readback_image_visible_true",
+      "no_text_only_fallback",
+      "platform_object_id",
+      "provider_receipt"
+    ],
+    "minimum_image_source": "existing_approved_asset",
+    "unsupported_until_proven": [
+      "arbitrary_generated_image_source",
+      "carousel_media",
+      "commercial_production_license"
+    ]
+  },
+  "migration": {
+    "target": "scripts/persona_social_executor.py",
+    "source_intent": "pdca/media_requests/<action_id>.json",
+    "verified_asset": "pdca/media_receipts/<action_id>.json",
+    "status": "not_integrated",
+    "acceptance": "Independent end-to-end generated-or-approved IMAGE post with real platform media readback; protect existing text-only publishing.",
+    "safety": "Never automatically republish the historical image/post to demonstrate recovery."
+  }
+}
