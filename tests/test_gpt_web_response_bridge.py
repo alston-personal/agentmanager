@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 
 from scripts.gpt_web_response_bridge import (
     _chatgpt_target,
+    _focus_composer,
     _open_target_connection,
     _responsive_chatgpt_target,
     _validate_request,
@@ -147,3 +148,35 @@ class GptWebResponseBridgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GptWebComposerDiscoveryTests(unittest.TestCase):
+    def test_focus_composer_accepts_current_selector(self):
+        page=Mock()
+        page.evaluate.return_value={
+            "ok":True,
+            "selector":"[data-testid=\"composer-text-input\"]",
+            "tag":"DIV",
+            "contenteditable":"true",
+            "role":"textbox",
+            "testid":"composer-text-input",
+        }
+        found=_focus_composer(page,timeout_seconds=0.2)
+        self.assertTrue(found["ok"])
+        self.assertEqual(found["testid"],"composer-text-input")
+
+    def test_focus_composer_stops_on_login_required(self):
+        page=Mock()
+        page.evaluate.side_effect=[
+            {"ok":False},
+            {
+                "href":"https://chatgpt.com/",
+                "title":"ChatGPT",
+                "readyState":"complete",
+                "fileInputs":0,
+                "loginRequired":True,
+                "candidates":[],
+            },
+        ]
+        with self.assertRaisesRegex(RuntimeError,"GPT_WEB_LOGIN_REQUIRED"):
+            _focus_composer(page,timeout_seconds=0.2)
