@@ -125,19 +125,20 @@ systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-enabled --quiet agentos-persona-social-actions.timer
 systemctl --user is-active --quiet agentos-persona-social-actions.timer
 
-# One-time liveness recovery: deployment is not a heartbeat source, but an
-# objectively stale heartbeat must not remain dead merely because the timer
-# migration has no prior Persistent= timestamp yet.
+# One-time liveness recovery: deployment is not a heartbeat source. Canonical
+# persona state is the source of truth; systemd unit timestamps can be reset by
+# reload/reinstall and must not be used to infer persona liveness.
 STALE_AFTER_SEC=5400
-LAST_EXIT="$(systemctl --user show -p ExecMainExitTimestamp --value agentos-persona-pdca-heartbeat.service 2>/dev/null || true)"
-RECOVER_STALE=0
-if [ -z "$LAST_EXIT" ] || [ "$LAST_EXIT" = "n/a" ]; then
-  RECOVER_STALE=1
-else
-  LAST_EPOCH="$(date -d "$LAST_EXIT" +%s 2>/dev/null || echo 0)"
-  NOW_EPOCH="$(date +%s)"
-  if [ "$LAST_EPOCH" -le 0 ] || [ $((NOW_EPOCH-LAST_EPOCH)) -gt "$STALE_AFTER_SEC" ]; then
-    RECOVER_STALE=1
+RECOVER_STALE=1
+STATE_CONTENT="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api   "repos/alston-personal/my-agent-data/contents/personas/sunlake-milkcat/pdca/state.json"   --jq .content 2>/dev/null | tr -d '\n' | base64 -d 2>/dev/null || true)"
+if [ -n "$STATE_CONTENT" ]; then
+  LAST_TICK="$(printf '%s' "$STATE_CONTENT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("last_tick_at",""))' 2>/dev/null || true)"
+  if [ -n "$LAST_TICK" ]; then
+    LAST_EPOCH="$(date -d "$LAST_TICK" +%s 2>/dev/null || echo 0)"
+    NOW_EPOCH="$(date +%s)"
+    if [ "$LAST_EPOCH" -gt 0 ] && [ $((NOW_EPOCH-LAST_EPOCH)) -le "$STALE_AFTER_SEC" ]; then
+      RECOVER_STALE=0
+    fi
   fi
 fi
 if [ "$RECOVER_STALE" -eq 1 ]; then
