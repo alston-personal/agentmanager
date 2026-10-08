@@ -132,6 +132,11 @@ jobs:
           ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
           PY
           then echo "lobster_release_syntax=PASS"; else echo "lobster_release_syntax=FAIL"; fi
+          # Boot preflight: paths and write permission, no task execution.
+          lobster_logdir=/home/ubuntu/agent-data/logs
+          if [ -d "$lobster_logdir" ] && [ -w "$lobster_logdir" ]; then echo "lobster_log_directory_write=PASS"; else echo "lobster_log_directory_write=FAIL"; fi
+          if [ -f "$lobster_logdir/lobster.log" ]; then echo "lobster_log_file_present=true"; else echo "lobster_log_file_present=false"; fi
+          if [ -f "$lobster_release/scripts/lobster.py" ]; then echo "lobster_release_entrypoint_present=true"; else echo "lobster_release_entrypoint_present=false"; fi
           echo "core_runtime_immutable_count=$immutable"
           echo "core_runtime_mutable_count=$mutable"
           echo "core_runtime_inactive_count=$inactive"
