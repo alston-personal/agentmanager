@@ -1076,33 +1076,34 @@ async def main():
         })()''') or []
         baseline_src={x.get("src","") for x in baseline}
 
-        prompt_json=json.dumps(prompt)
-        ok=await evaluate(r'''(() => {
-          const inputs=[...document.querySelectorAll('input[aria-label="可編輯的文字"], input[type="text"]')]
-            .filter(x=>x.offsetParent!==null && x.getAttribute('aria-label')!=='搜尋');
-          const el=inputs[0];
-          if(!el) return false;
-          const value='''+prompt_json+''';
-          el.focus();
-          const proto=Object.getPrototypeOf(el);
-          const desc=Object.getOwnPropertyDescriptor(proto,'value');
-          if(desc&&desc.set) desc.set.call(el,value); else el.value=value;
-          el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
-          el.dispatchEvent(new Event('change',{bubbles:true}));
-          return true;
-        })()''')
-        if not ok:
+        doc=await call("DOM.getDocument",{"depth":-1,"pierce":True})
+        root=(doc.get("root") or {}).get("nodeId")
+        if not root:
+            raise RuntimeError("flow_dom_root_missing")
+        q=await call("DOM.querySelector",{"nodeId":root,"selector":'input[aria-label="可編輯的文字"]'})
+        node_id=q.get("nodeId")
+        if not node_id:
             raise RuntimeError("flow_prompt_input_not_found")
+        await call("DOM.focus",{"nodeId":node_id})
+        await call("Input.dispatchKeyEvent",{"type":"keyDown","modifiers":2,"key":"a","code":"KeyA","windowsVirtualKeyCode":65})
+        await call("Input.dispatchKeyEvent",{"type":"keyUp","modifiers":2,"key":"a","code":"KeyA","windowsVirtualKeyCode":65})
+        await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"Backspace","code":"Backspace","windowsVirtualKeyCode":8})
+        await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"Backspace","code":"Backspace","windowsVirtualKeyCode":8})
+        await call("Input.insertText",{"text":prompt})
 
-        await asyncio.sleep(0.8)
-        sent=await evaluate(r'''(() => {
-          const buttons=[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null);
-          const b=buttons.find(x => (x.getAttribute('aria-label')||'').includes('開始生成'));
-          if(!b) return false;
-          if(b.disabled) return 'disabled';
-          b.click();
-          return true;
-        })()''')
+        sent=False
+        for _ in range(20):
+            sent=await evaluate(r'''(() => {
+              const buttons=[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null);
+              const b=buttons.find(x => (x.getAttribute('aria-label')||'').includes('開始生成'));
+              if(!b) return false;
+              if(b.disabled) return 'disabled';
+              b.click();
+              return true;
+            })()''')
+            if sent is True:
+                break
+            await asyncio.sleep(0.25)
         if sent is not True:
             raise RuntimeError(f"flow_generate_button_unavailable:{sent}")
 
