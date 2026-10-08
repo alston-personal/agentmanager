@@ -1,0 +1,88 @@
+name: Oracle Lobster First Autonomous WorkItem Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-lobster-first-autonomous-workitem.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-lobster-first-autonomous-proof
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Register once, then observe Lobster's autonomous completion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          DATA=/home/ubuntu/agent-data
+          RELEASE="$(readlink -f "$DATA/runtime/core/current")"
+          test -f "$RELEASE/scripts/work_completion.py"
+          systemctl --user is-active --quiet os-lobster.service
+          # All report contents remain under a dedicated data-root directory.
+          WORKSPACE="$DATA/proofs/lobster-first-autonomous"
+          REPORT="$WORKSPACE/report.md"
+          LEDGER="$DATA/governance/work-items.json"
+          WORK_ID=lobster-autonomous-first-20261008
+          mkdir -p "$WORKSPACE"
+          NEXT_ACTION="撰寫 AgentOS 龍蝦自主工作閉環的唯讀程式稽核報告。請閱讀 $RELEASE/scripts/lobster.py 與 $RELEASE/scripts/work_completion.py，只將發現、至少兩項程式依據及待改善項目寫入 $REPORT。只允許寫入此報告，不得修改原始碼、系統設定、發布內容、執行外部操作或讀取秘密。"
+          /usr/bin/python3 "$RELEASE/scripts/work_completion.py" --state "$LEDGER" register \
+            --id "$WORK_ID" --project agentos-core \
+            --title "Lobster first autonomous read-only audit" \
+            --owner role://lobster --source "issue://200" \
+            --workspace "$WORKSPACE" --next-action "$NEXT_ACTION" \
+            --accept "Report exists under dedicated AgentOS data root" \
+            --accept "Inspector verifies actual Markdown output and reports outcome" \
+            --accept "A durable Completion Ledger receipt records success or a clear blocker" >/dev/null
+          echo "lobster_first_workitem_registration=ACCEPTED"
+          # Do not perform the task in Actions. Let the already-running Lobster
+          # discover this durable item on its own next scheduler cycle.
+          for iteration in $(seq 1 40); do
+            STATUS="$(/usr/bin/python3 - "$LEDGER" "$WORK_ID" "$REPORT" <<'PY'
+          import json,pathlib,sys
+          ledger=pathlib.Path(sys.argv[1]); item_id=sys.argv[2]; report=pathlib.Path(sys.argv[3])
+          state=json.loads(ledger.read_text(encoding="utf-8"))
+          item=state.get("items",{}).get(item_id,{})
+          status=str(item.get("status") or "missing")
+          if status == "done":
+              verification=(item.get("verification") or {}).get("status")
+              evidence=item.get("evidence") or []
+              if verification == "passed" and evidence and report.is_file() and report.stat().st_size >= 150:
+                  status="VERIFIED_DONE"
+              else:
+                  status="INVALID_DONE"
+          print(status)
+          PY
+            )"
+            echo "lobster_first_workitem_status=$STATUS"
+            if [ "$STATUS" = VERIFIED_DONE ]; then
+              echo "LOBSTER_FIRST_AUTONOMOUS_WORKITEM=VERIFIED"
+              exit 0
+            fi
+            if [ "$STATUS" = INVALID_DONE ] || [ "$STATUS" = blocked ]; then
+              echo "LOBSTER_FIRST_AUTONOMOUS_WORKITEM=BLOCKED"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "LOBSTER_FIRST_AUTONOMOUS_WORKITEM=TIMEOUT"
+          exit 1
+          REMOTE
