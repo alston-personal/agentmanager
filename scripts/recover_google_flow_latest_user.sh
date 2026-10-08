@@ -8,7 +8,10 @@ fi
 
 ROOT="$HOME/.local/share/agentos/gui-worker"
 PY="$ROOT/venv/bin/python"
-OUT_ROOT="/home/ubuntu/agent-data/artifacts/google-flow-recovery"
+SHARED_ROOT="${AGENTOS_SHARED_ARTIFACT_ROOT:-/tmp/agentos-shared-artifacts}"
+mkdir -p "$SHARED_ROOT"
+chmod 1777 "$SHARED_ROOT"
+OUT_ROOT="$SHARED_ROOT/google-flow-recovery"
 test -x "$PY"
 mkdir -p "$OUT_ROOT"
 
