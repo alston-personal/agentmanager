@@ -38,6 +38,14 @@ export type LayerItem = {
   name: string;
   layer: string;
   sourceImageUrl: string | null;
+  isolatedImageUrl: string;
+  productIR: {
+    schema: 'agentos.wardrobe-product-ir/v1';
+    category: string;
+    attributes: Record<string, string | number | boolean | null>;
+    mustKeep: string[];
+  };
+  sourceFingerprint: string;
 };
 
 export type TryOnProgressStage = 'queued' | 'preparing_assets' | 'rendering' | 'validating' | 'ready' | 'failed' | 'cancelled';
@@ -128,11 +136,35 @@ export function resolveGarment(garmentId: string): LayerItem | null {
     layer = 'upper_inner';
   }
   if (!ALLOWED_LAYERS.has(layer)) return null;
+  const isolation = row.tryOnSource;
+  const sourceImageUrl = garmentSourceImage(row);
+  const fingerprint = sourceImageUrl
+    ? createHash('sha256').update(sourceImageUrl).digest('hex')
+    : '';
+  // Fail closed: source photos may contain other garments/models. Never use
+  // them as render references, even when isolation artifacts are missing.
+  if (
+    isolation?.schema !== 'agentos.wardrobe-isolated-product/v1' ||
+    isolation.state !== 'approved' ||
+    !isolation.isolatedImageUrl ||
+    !/^https:\/\//.test(isolation.isolatedImageUrl) ||
+    !isolation.productIR ||
+    isolation.productIR.schema !== 'agentos.wardrobe-product-ir/v1' ||
+    isolation.productIR.category !== layer ||
+    !Array.isArray(isolation.productIR.mustKeep) ||
+    !isolation.approvedFingerprint ||
+    isolation.approvedFingerprint !== fingerprint
+  ) {
+    throw new Error('GARMENT_ISOLATION_REQUIRED: ' + id + ' needs approved isolated image and product IR');
+  }
   return {
     garmentId: id,
     name: garmentName,
     layer,
-    sourceImageUrl: garmentSourceImage(row),
+    sourceImageUrl,
+    isolatedImageUrl: isolation.isolatedImageUrl,
+    productIR: isolation.productIR,
+    sourceFingerprint: fingerprint,
   };
 }
 
@@ -182,6 +214,11 @@ export function makeOutfitSignature(args: {
     view: args.view || 'front',
     pose: args.pose || 'neutral_standing',
     selectedLayers,
+    tryOnSources: Object.fromEntries(Object.entries(args.selectedLayers).map(([layer, item]) => [layer, {
+      isolatedImageUrl: item.isolatedImageUrl,
+      sourceFingerprint: item.sourceFingerprint,
+      productIR: item.productIR,
+    }])),
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
