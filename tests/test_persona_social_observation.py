@@ -139,12 +139,26 @@ class ObservationContract(unittest.TestCase):
         self.assertEqual(receipt['plan']['candidates'],[{'intent':'rest','weight':1.0}])
         self.assertEqual(receipt['do']['energy_cost'],0.0)
 
-    def test_unaffordable_observation_is_not_queued(self):
-        state={**self.state,'energy_current':0.1,'last_tick_at':datetime.now(timezone.utc).isoformat(),
+    def test_positive_energy_can_overdraw_on_final_action(self):
+        state={**self.state,'energy_current':1,'last_tick_at':datetime.now(timezone.utc).isoformat(),
+               'energy_mode':'awake','pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='afternoon',selected='reflect')
+        self.assertEqual(receipt['plan']['selected_intent'],'reflect')
+        self.assertLess(receipt['check']['energy_after'],0)
+
+    def test_negative_energy_recovers_at_penalized_rate(self):
+        old=(datetime.now(timezone.utc)-timedelta(hours=3)).isoformat()
+        state={**self.state,'energy_current':-6,'last_tick_at':old,'energy_mode':'sleep',
+               'pending_external_actions':[]}
+        receipt=self.creative_tick(state=state,phase='sleep',selected='rest')
+        self.assertAlmostEqual(receipt['plan']['energy'],6.0,places=1)
+
+    def test_nonpositive_energy_blocks_new_activity(self):
+        state={**self.state,'energy_current':-0.1,'last_tick_at':datetime.now(timezone.utc).isoformat(),
                'energy_mode':'awake','pending_external_actions':[]}
         receipt=self.creative_tick(state=state,phase='afternoon',selected='rest')
+        self.assertEqual(receipt['plan']['candidates'],[{'intent':'rest','weight':1.0}])
         self.assertFalse(receipt['plan']['social_observation']['queued'])
-        self.assertEqual(receipt['plan']['social_observation']['reason'],'energy_recovery_required')
 
     def test_due_read_keeps_creative_choice_and_both_intents(self):
         receipt=self.creative_tick()
