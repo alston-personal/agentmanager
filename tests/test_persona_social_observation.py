@@ -490,5 +490,16 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('growth.get("enabled") is True', text)
 
 
+    def test_post_reasoning_has_bounded_claude_to_gemini_failover(self):
+        text=(REPO/'scripts/persona_post_intent_generator.py').read_text()
+        self.assertIn('timeout=45', text)
+        self.assertIn('discover_gemini_executor', text)
+        self.assertIn('timeout=60', text)
+        self.assertIn('"provider":"claude"', text)
+        self.assertIn('"provider":"gemini"', text)
+        self.assertIn('persona_reasoning_exhausted', text)
+        self.assertNotIn('timeout=180', text)
+
+
 if __name__ == '__main__':
     unittest.main()
