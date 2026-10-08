@@ -438,5 +438,23 @@ class ObservationContract(unittest.TestCase):
         self.assertNotIn('private-product-key', out.read_text())
 
 
+    def test_posting_liveness_forces_consideration_after_long_silence(self):
+        state={**self.state,'pending_external_actions':[],'energy_current':72}
+        receipt=self.creative_tick(state=state,phase='afternoon',selected='reflect')
+        pending=self.read('pdca/state.json')['pending_external_actions']
+        considers=[x for x in pending if x.get('capability')=='social.post.consider']
+        self.assertEqual(len(considers),1)
+        self.assertTrue(considers[0].get('liveness_pressure'))
+        self.assertGreaterEqual(receipt['plan']['growth']['silence_hours'],30)
+
+    def test_posting_liveness_does_not_override_depleted_energy(self):
+        state={**self.state,'pending_external_actions':[],'energy_current':0,
+               'last_tick_at':datetime.now(timezone.utc).isoformat(),'energy_mode':'awake'}
+        receipt=self.creative_tick(state=state,phase='afternoon',selected='rest')
+        pending=self.read('pdca/state.json')['pending_external_actions']
+        self.assertFalse(any(x.get('capability')=='social.post.consider' for x in pending))
+        self.assertEqual(receipt['plan']['selected_intent'],'rest')
+
+
 if __name__ == '__main__':
     unittest.main()
