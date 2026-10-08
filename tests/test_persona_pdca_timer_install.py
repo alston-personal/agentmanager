@@ -25,3 +25,15 @@ def test_installer_does_not_advance_autonomous_heartbeat():
     assert 'systemctl --user start agentos-persona-pdca-heartbeat.service' not in text
     assert 'persona_pdca_install_live_cycle=SKIPPED' in text
     assert 'installer_must_not_advance_autonomous_cycle' in text
+
+
+
+def test_installer_preserves_active_timer_cadence():
+    repo=Path(__file__).resolve().parents[1]
+    text=(repo/"scripts"/"install_persona_pdca_timer_user.sh").read_text(encoding="utf-8")
+    assert "enable --now agentos-persona-pdca-heartbeat.timer" not in text
+    assert "systemctl --user enable agentos-persona-pdca-heartbeat.timer agentos-persona-social-actions.timer" in text
+    assert "if ! systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer; then" in text
+    assert "if ! systemctl --user is-active --quiet agentos-persona-social-actions.timer; then" in text
+    assert "systemctl --user start agentos-persona-pdca-heartbeat.timer" in text
+    assert "systemctl --user start agentos-persona-social-actions.timer" in text
