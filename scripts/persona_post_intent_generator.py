@@ -426,6 +426,37 @@ Context:
       "created_at":now.isoformat().replace("+00:00","Z"),
       **action
     },ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    if image_mode != "none":
+        # Source-of-truth media task for a dedicated image executor. This is an
+        # intent, not evidence that any image was generated or uploaded.
+        request={
+          "schema":"agentos.persona-media-request/v1",
+          "action_id":action_id,
+          "persona_id":state.get("persona_id"),
+          "ir_id":ir.get("ir_id"),
+          "created_at":now.isoformat().replace("+00:00","Z"),
+          "status":"awaiting_media_executor",
+          "mode":image_mode,
+          "source_ref":image_asset_ref if image_mode=="existing_verified" else None,
+          "generation_prompt":image_prompt if image_mode=="generate" else None,
+          "canonical_visual_anchor":"visual_anchor_spec.json",
+          "visual_policy":"visual_content_policy.json",
+          "required_manifest_schema":"milkcat.image-manifest/v2",
+          "required_validation":"validate_mio_visual_manifest.py",
+          "required_media_publish_receipt":True,
+          "text":text
+        }
+        request_path=root/"pdca/media_requests"/f"{action_id}.json"
+        request_path.parent.mkdir(parents=True,exist_ok=True)
+        request_path.write_text(json.dumps(request,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+        action["media_intent"]["request_ref"]=str(request_path.relative_to(root))
+        state["pending_external_actions"]=pending[-12:]
+        tmp=root/"pdca/state.json.tmp"
+        tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+        os.replace(tmp,root/"pdca/state.json")
+        out.write_text(json.dumps({"schema":"agentos.persona-post-intent/v1",
+          "created_at":now.isoformat().replace("+00:00","Z"),**action},
+          ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     print(json.dumps({"status":"CANDIDATE_CREATED","action_id":action_id,"not_before":not_before},ensure_ascii=False))
     return 0
 
