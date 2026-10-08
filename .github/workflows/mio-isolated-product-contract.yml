@@ -10,6 +10,8 @@ on:
       - 'scripts/prepare_mio_product_isolation.py'
       - 'tests/test_mio_product_isolation.py'
       - 'tests/test_mio_product_candidate.py'
+      - 'tests/test_mio_isolation_candidate_receipt.py'
+      - 'scripts/mio_isolation_candidate_receipt.py'
       - 'scripts/isolate_mio_product_candidate.py'
       - '.github/workflows/mio-isolated-product-contract.yml'
 
@@ -26,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pip install --quiet Pillow
-          python3 -m unittest -q tests/test_mio_product_isolation.py tests/test_mio_product_candidate.py
+          python3 -m unittest -q tests/test_mio_product_isolation.py tests/test_mio_product_candidate.py tests/test_mio_isolation_candidate_receipt.py
           python3 -m py_compile scripts/tryon_render_worker.py scripts/prepare_mio_product_isolation.py
           grep -Fq 'GARMENT_ISOLATION_REQUIRED' dashboard/lib/tryon-jobs.ts
           grep -Fq 'item.get("isolatedImageUrl")' scripts/tryon_render_worker.py
