@@ -19,6 +19,27 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         self.assertEqual(row["risk"], "P0")
         self.assertEqual(row["classification"], "unbounded-cross-owner-mutation")
 
+    def test_incidental_agentos_node_reference_does_not_prove_p0_identity(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        row = audit._classify(
+            "agentos_node/example.py",
+            "REQUEST_OWNER='agentos-node'\nROOT='/home/ubuntu/agent-data'\nPath(ROOT).mkdir(parents=True)",
+            policy,
+        )
+        self.assertIsNotNone(row)
+        self.assertNotEqual(row["risk"], "P0")
+
+    def test_direct_oracle_runner_proves_node_execution_for_p0(self):
+        policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
+        row = audit._classify(
+            ".github/workflows/example.yml",
+            "runs-on: [self-hosted, Linux, ARM64, oracle]\nDATA=/home/ubuntu/agent-data\nmkdir -p $DATA/runtime/x",
+            policy,
+        )
+        self.assertIsNotNone(row)
+        self.assertEqual(row["risk"], "P0")
+        self.assertIn("direct-oracle-runner", row["tags"])
+
     def test_user_systemd_shared_mutation_without_node_identity_is_p1_review(self):
         policy = json.loads(audit.POLICY_PATH.read_text(encoding="utf-8"))
         row = audit._classify(
