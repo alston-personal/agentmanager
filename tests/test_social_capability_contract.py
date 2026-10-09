@@ -94,8 +94,15 @@ def test_oauth_return_never_contains_provider_code_or_token():
     assert "token" not in value
 
 
-def test_registry_declares_threads_facebook_instagram_and_no_write_is_runtime_accepted():
+def test_registry_declares_threads_facebook_instagram_x_and_no_write_is_runtime_accepted():
     specs = default_registry.list()
-    assert {item.platform for item in specs} == {"threads", "facebook", "instagram"}
+    assert {item.platform for item in specs} == {"threads", "facebook", "instagram", "x"}
     assert any(item.name == "social.threads.public_post.read" for item in specs)
     assert all(not item.runtime_accepted for item in specs if item.write)
+
+
+def test_x_request_is_contract_valid_but_write_still_requires_runtime_acceptance():
+    request = publish_request(platform="x", account_binding_id="zeus-writer:x:oursong", target_account_id="oursong")
+    request.validate()
+    with pytest.raises(PermissionError, match="social_write_not_runtime_accepted"):
+        SocialWriteGate().authorize(request)
