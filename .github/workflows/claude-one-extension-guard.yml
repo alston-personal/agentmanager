@@ -1,0 +1,47 @@
+name: Claude Extension ONE Guard
+
+on:
+  push:
+    branches:
+      - core/issue-185-claude-extension-one
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/claude_one_mcp_stdio.py'
+      - 'scripts/install_claude_one_oracle.py'
+      - 'scripts/advance_issue_185_to_claude_extension.py'
+      - 'scripts/prepare_issue_185_claude_extension_oracle.sh'
+      - 'scripts/inspect_issue_185_claude_extension.sh'
+      - 'tests/test_claude_one_mcp_stdio.py'
+      - 'tests/test_install_claude_one_oracle.py'
+      - '.github/workflows/claude-one-extension-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Claude ONE slice
+        run: |
+          python -m py_compile \
+            agentos_node/claude_one_mcp_stdio.py \
+            scripts/install_claude_one_oracle.py \
+            scripts/advance_issue_185_to_claude_extension.py \
+            tests/test_claude_one_mcp_stdio.py \
+            tests/test_install_claude_one_oracle.py
+      - name: Validate shell helpers
+        run: |
+          bash -n scripts/prepare_issue_185_claude_extension_oracle.sh
+          bash -n scripts/inspect_issue_185_claude_extension.sh
+      - name: Run Claude ONE contract tests
+        run: |
+          python -m unittest -v \
+            tests.test_claude_one_mcp_stdio \
+            tests.test_install_claude_one_oracle
