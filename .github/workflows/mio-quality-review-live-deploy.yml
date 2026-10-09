@@ -1,0 +1,129 @@
+name: Mio Quality Review Live Deploy
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths: ['.github/workflows/mio-quality-review-live-deploy.yml']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      TARGET_SHA: 47840eb6683d285f4722b69767e34198007fd0b9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy exact dashboard and worker, then verify review API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(mktemp)
+          set +e
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$TARGET_SHA" "${{ github.run_id }}" >"$out" 2>&1 <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RUN="$2"
+          cd /home/ubuntu/agentmanager
+          git fetch --no-tags origin "$SHA"
+
+          git show "$SHA:scripts/deploy_mio_wardrobe_dashboard_user.sh" >/tmp/deploy-mio-quality-dashboard.sh
+          chmod 700 /tmp/deploy-mio-quality-dashboard.sh
+          /tmp/deploy-mio-quality-dashboard.sh "$SHA" "$RUN"
+
+          git show "$SHA:scripts/deploy_mio_tryon_worker_user.sh" >/tmp/deploy-mio-quality-worker.sh
+          chmod 700 /tmp/deploy-mio-quality-worker.sh
+          /tmp/deploy-mio-quality-worker.sh "$SHA"
+
+          ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          JOB_DIR="$ROOT/render_jobs/runtime"
+          CACHE_DIR="$ROOT/render_cache"
+          JOB_ID="mio-quality-review-e2e-$RUN"
+          CACHE_KEY=$(printf 'a%.0s' $(seq 1 64))
+          JOB="$JOB_DIR/$JOB_ID.json"
+          META="$CACHE_DIR/$CACHE_KEY.json"
+          mkdir -p "$JOB_DIR" "$CACHE_DIR"
+          cleanup(){ rm -f "$JOB" "$META"; }
+          trap cleanup EXIT
+
+          python3 - "$JOB" "$JOB_ID" "$CACHE_KEY" <<'PY'
+          import json,sys
+          from datetime import datetime,timezone
+          p,jid,key=sys.argv[1:]
+          now=datetime.now(timezone.utc).isoformat()
+          j={
+            "schema":"agentos.tryon-render-job/v1",
+            "outfitIr":{"schema":"agentos.wardrobe-outfit-ir/v1","signature":"b"*64,"characterId":"sunlake-milkcat-ai-001","characterVersion":"mio-body-v1","rendererVersion":"mio-2d-tryon-v1","view":"front","pose":"neutral_standing","selectedLayers":{"lower_main":"net-32235-711"}},
+            "jobId":jid,"characterId":"sunlake-milkcat-ai-001","characterVersion":"mio-body-v1","view":"front","pose":"neutral_standing","status":"ready",
+            "requestedAt":now,"startedAt":now,"completedAt":now,"failedAt":None,"supersededBy":None,
+            "progress":{"stage":"ready","heartbeatAt":now,"message":"synthetic review acceptance"},
+            "input":{"baseBodyAsset":"/personas/mio/mio-base-v2.webp","layerOrder":["lower_main"],"selectedLayers":{"lower_main":{"garmentId":"net-32235-711","name":"綁帶後鬆緊打褶寬褲","layer":"lower_main","sourceImageUrl":"https://example.invalid/garment.jpg"}}},
+            "output":{"asset":"/dashboard/api/wardrobe/tryon/assets/"+jid,"previewAsset":"/dashboard/api/wardrobe/tryon/assets/"+jid,"width":None,"height":None,"renderedLayers":["lower_main"],"pendingLayers":[],"cacheKey":key,"quality":{"accepted":False,"checkedAt":None,"checks":[{"code":"visual_qc_required","passed":False}]}},
+            "error":None
+          }
+          open(p,'w',encoding='utf-8').write(json.dumps(j,ensure_ascii=False,indent=2)+"\n")
+          PY
+
+          LIVE=$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          ADMIN=/home/ubuntu/.config/milkcat/admin-identities
+          JWT_SECRET_VALUE=$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          for raw in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line: continue
+              k,v=line.split('=',1)
+              if k.strip()=='JWT_SECRET':
+                  print(v.strip().strip('"').strip("'")); break
+          PY
+          )
+          ADMIN_KEY=$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN" | head -n1 | tr -d '\r')
+          export JWT_SECRET_VALUE ADMIN_KEY
+          TOKEN=$(cd "$LIVE" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          const key=process.env.ADMIN_KEY||'', secret=process.env.JWT_SECRET_VALUE||'';
+          let provider='',subject='',username='e2e-admin';
+          const marker=':username:';
+          if(key.includes(marker)){ const i=key.indexOf(marker); provider=key.slice(0,i); username=key.slice(i+marker.length); subject='e2e-probe-subject'; }
+          else { const i=key.indexOf(':'); if(i<1) process.exit(3); provider=key.slice(0,i); subject=key.slice(i+1); }
+          process.stdout.write(jwt.sign({username,provider,subject,exp:Math.floor(Date.now()/1000)+600},secret));
+          NODE
+          )
+          unset JWT_SECRET_VALUE ADMIN_KEY
+
+          BASE=https://studio.milkcat.org
+          RESOLVE=(--noproxy '*' -k --resolve studio.milkcat.org:443:127.0.0.1)
+          BODY=/tmp/mio-quality-$RUN.json
+          code=$(curl "${RESOLVE[@]}" -sS -o "$BODY" -w '%{http_code}' --max-time 10 -X POST -H 'Content-Type: application/json' -H "Cookie: auth_token=$TOKEN" --data '{"accepted":true,"issues":[]}' "$BASE/dashboard/api/wardrobe/tryon/jobs/$JOB_ID/quality")
+          echo "quality_review_http=$code"
+          cat "$BODY"; echo
+          test "$code" = 200
+
+          python3 - "$JOB" "$META" <<'PY'
+          import json,sys
+          job=json.load(open(sys.argv[1],encoding='utf-8'))
+          meta=json.load(open(sys.argv[2],encoding='utf-8'))
+          assert (job.get('output') or {}).get('quality',{}).get('accepted') is True, job
+          assert meta.get('qualityAccepted') is True, meta
+          assert meta.get('cacheKey') and len(meta['cacheKey'])==64, meta
+          print('mio_quality_review_live=PASS')
+          PY
+          grep -Fq 'existing_meta.get("qualityAccepted") is not True' /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
+          echo "mio_quality_worker_overwrite_contract=PASS"
+          REMOTE
+          rc=$?
+          set -e
+          cat "$out"
+          { echo '### Mio quality review live acceptance'; echo; echo '~~~text'; cat "$out"; echo '~~~'; } >/tmp/live.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file /tmp/live.md
+          exit "$rc"
