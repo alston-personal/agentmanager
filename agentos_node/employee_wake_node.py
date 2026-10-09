@@ -19,6 +19,7 @@ from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport
 
 NODE_ID = "oracle-employee-wake-node"
 EMPLOYEE_IDS = ("zeus-writer", "youtube-ai-manager")
+PRESENCE_EMPLOYEE_IDS = EMPLOYEE_IDS + ("agentos-spec-steward",)
 NODE_RECEIPT_SCHEMA = "agentos.node-receipt/v0.1"
 
 
@@ -139,7 +140,7 @@ def bootstrap_local_enrollment(*, data_root: Path, config_path: Path, wake_root:
 
 def _bind_presences(*, runtime: EmployeeRuntime, registry: NodeRegistry, node_id: str, presence_id: str) -> EmployeePresenceRegistry:
     presence = EmployeePresenceRegistry(runtime, registry)
-    for employee_id in EMPLOYEE_IDS:
+    for employee_id in PRESENCE_EMPLOYEE_IDS:
         existing = presence.get(employee_id)
         presence.bind(
             employee_id,
@@ -158,7 +159,7 @@ def run_daemon(*, data_root: Path, config_path: Path, wake_root: Path, runtime_r
         raise RuntimeError("employee_wake_node_config_identity_mismatch")
     wake_root.mkdir(parents=True, exist_ok=True)
     runtime = EmployeeRuntime(Path(runtime_root).expanduser().resolve())
-    for employee_id in EMPLOYEE_IDS:
+    for employee_id in PRESENCE_EMPLOYEE_IDS:
         runtime.get_employee(employee_id)
     registry = NodeRegistry(data_root / "realm" / "nodes.json")
     transport = _build_transport(config, wake_root)
@@ -170,7 +171,7 @@ def run_daemon(*, data_root: Path, config_path: Path, wake_root: Path, runtime_r
 
     while True:
         transport.run_once()
-        for employee_id in EMPLOYEE_IDS:
+        for employee_id in PRESENCE_EMPLOYEE_IDS:
             presences.heartbeat(employee_id, presence_id, ttl_seconds=120)
         if once:
             return 0
