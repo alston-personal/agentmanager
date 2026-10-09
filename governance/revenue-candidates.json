@@ -1,0 +1,76 @@
+{
+  "schema": "agentos.revenue-candidates/v1",
+  "generated_at": "2026-10-05",
+  "rule": "Candidate status does not grant BUILD. BUILD remains empty until evidence and readiness gates are reviewed.",
+  "scoring_scale": "1=weak, 5=strong",
+  "candidates": [
+    {
+      "id": "invoice-ocr",
+      "scores": {
+        "pain": 5,
+        "willingness_to_pay": 5,
+        "product_readiness": 3,
+        "customer_access": 3,
+        "automation_potential": 4
+      },
+      "hard_gates": [
+        "duplicate capture controlled",
+        "critical-field errors fail safe to review",
+        "original image and corrected record are traceable",
+        "required Excel/payment workflow export works",
+        "measured workflow time is meaningfully lower than manual"
+      ],
+      "decision": "strongest commercial hypothesis; keep HOLD until readiness audit passes"
+    },
+    {
+      "id": "line-sticker",
+      "scores": {
+        "pain": 3,
+        "willingness_to_pay": 3,
+        "product_readiness": 4,
+        "customer_access": 4,
+        "automation_potential": 4
+      },
+      "hard_gates": [
+        "background removal reliable",
+        "output dimensions/files valid for Creator workflow",
+        "repeatable batch path or clear pricing proposition"
+      ],
+      "decision": "fastest small-product monetization candidate"
+    },
+    {
+      "id": "iftv",
+      "scores": {
+        "pain": 2,
+        "willingness_to_pay": 2,
+        "product_readiness": 3,
+        "customer_access": 2,
+        "automation_potential": 5
+      },
+      "hard_gates": [
+        "repeatable video quality",
+        "known production cost",
+        "distribution loop",
+        "monetization hypothesis with measurable signal"
+      ],
+      "decision": "keep RUN; do not promote solely because automation is interesting"
+    },
+    {
+      "id": "rootnexus",
+      "scores": {
+        "pain": 3,
+        "willingness_to_pay": 3,
+        "product_readiness": 3,
+        "customer_access": 2,
+        "automation_potential": 5
+      },
+      "hard_gates": [
+        "scalable content expansion",
+        "clear learner outcome",
+        "retention/usage evidence",
+        "pricing hypothesis"
+      ],
+      "decision": "important RUN asset; not first revenue BUILD without evidence"
+    }
+  ]
+}
