@@ -16,6 +16,8 @@ on:
       - 'agent_core/executor_job_contract.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/mio_dm_health_provider.py'
+      - 'scripts/probe_threads_web_dm_login_user.sh'
   workflow_dispatch:
 
 permissions:

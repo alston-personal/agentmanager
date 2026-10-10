@@ -107,11 +107,36 @@ async function evaluate(wsUrl, expression) {
     let state = 'UNKNOWN';
     let resumeCandidate = false;
     let mioHint = false;
+    let accountState = 'UNKNOWN';
 
     // Never read the body of an authenticated messages page: it may contain
     // private conversation snippets. Inspect DOM text only after a login redirect.
-    if (lowUrl.includes('/messages') && lowUrl.includes('threads.com')) {
+    const parsedUrl = new URL(finalUrl);
+    if (['threads.com', 'www.threads.com'].includes(parsedUrl.hostname)
+        && /^\/messages(?:\/|$)/.test(parsedUrl.pathname)) {
       state = 'AUTHENTICATED';
+      // Same profile-navigation selectors as the DM bridge, without messages.
+      const hrefs = await evaluate(wsUrl, `Array.from(document.querySelectorAll(
+        'a[href][aria-label*="profile" i], a[href][title*="profile" i], '
+        + 'a[href][aria-label*="個人檔案"], a[href][title*="個人檔案"], '
+        + 'a[href]:has(svg[aria-label*="profile" i]), '
+        + 'a[href]:has(svg[aria-label*="個人檔案"]), '
+        + '[role="navigation"] a[href^="/@"], nav a[href^="/@"]'
+      )).slice(0,20).map(a => a.getAttribute('href') || '')`);
+      const accounts = new Set();
+      for (const raw of Array.isArray(hrefs) ? hrefs : []) {
+        try {
+          const url = new URL(raw, 'https://www.threads.com');
+          if (!['threads.com','www.threads.com'].includes(url.hostname)) continue;
+          const match = /^\/@([A-Za-z0-9_.]+)(?:\/|$)/.exec(url.pathname);
+          if (match) accounts.add(match[1].toLowerCase());
+        } catch {}
+      }
+      if (accounts.size === 1) {
+        accountState = accounts.has('mio.milkcat') ? 'EXPECTED' : 'MISMATCH';
+      } else if (accounts.size > 1) {
+        accountState = 'AMBIGUOUS';
+      }
     } else {
       let body = '';
       for (let i=0; i<4; i++) {
@@ -153,6 +178,7 @@ async function evaluate(wsUrl, expression) {
       session_state:state,
       resume_candidate:resumeCandidate,
       mio_account_hint:mioHint,
+      account_state:accountState,
     },null,2)+'\n',{mode:0o600});
     fs.chmodSync(out,0o600);
 
@@ -160,6 +186,7 @@ async function evaluate(wsUrl, expression) {
     console.log('threads_web_dm_login_mode=oracle_gui_worker');
     console.log('threads_web_dm_login_transport=cdp_node_websocket');
     console.log('threads_web_dm_login_session_state='+state);
+    console.log('threads_web_dm_login_account_state='+accountState);
     console.log('threads_web_dm_login_resume_candidate='+String(resumeCandidate));
     console.log('threads_web_dm_login_mio_account_hint='+String(mioHint));
   } finally {

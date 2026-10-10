@@ -14,6 +14,9 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/mio_dm_health_provider.py'
+      - 'scripts/probe_threads_web_dm_login_user.sh'
+      - 'tests/test_mio_dm_health_provider.py'
       - 'agentos_node/issue117_experience_provider.py'
       - 'agentos_node/layoutlib_release_materialize_provider.py'
       - 'agentos_node/layoutlib_production_promote_provider.py'
@@ -127,6 +130,7 @@ jobs:
             tests/test_executor_job_controller_route.py \
             tests/test_executor_job_receipt_facade.py \
             tests/test_executor_job_runtime_installer.py \
+            tests/test_mio_dm_health_provider.py \
             tests/test_issue117_experience_provider.py \
             tests/test_issue117_regression_floor.py \
             tests/test_typesafe_skill_install_provider.py \

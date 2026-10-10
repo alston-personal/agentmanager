@@ -1,5 +1,25 @@
 # AgentOS Current Architecture & Reality
 
+## Mio DM health via the existing ONE executor-job route
+
+`persona.mio.dm.health` is a fixed read-only provider on the existing
+`agentos.executor.job` / Ubuntu Action Relay boundary. It reuses Mio's GUI
+login probe at the canonical separate profile (9224), verifies profile-navigation
+account metadata, and projects only bounded session/account states, timer state,
+and the age/status of the existing Mio/Oursong autonomous-cycle receipt.
+It never reads message bodies, sends DM/public replies, logs in, or restarts units.
+An authenticated session is independent of timer/cycle freshness and is not proof
+of autonomous decision/send success. Public PDCA own-post observation remains
+separate from legacy outbound keyword discovery; this change does not enable
+proactive public replies or add model failover to reply/DM reasoning.
+
+Both the Realm contract and Action Runtime must deploy this same accepted source
+before ChatGPT can submit the new job. Existing deployment workflows own their
+exact-generation rollout; no generic Actions control fallback is added. This is
+an implemented candidate until a fresh Oracle receipt verifies the session and
+cycle observations. Prior HTTP 400 from `desktop.session.inspect` on
+`oracle-core-node` did not establish a Threads logout.
+
 **Status date:** 2026-09-11  
 **Canonical development authority:** `core/integration`  
 **Observed integration head at this refresh:** `5093b59da5d45cdd016d606a7e2cb8abdb4cf22e`  

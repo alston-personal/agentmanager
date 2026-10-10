@@ -112,6 +112,40 @@ def _safe_scalar(value: Any) -> Any:
     return None
 
 
+def _project_mio_dm_health(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Public mailbox independently accepts only DM health enums/types."""
+    if receipt.get('job_type') != 'persona.mio.dm.health':
+        return {}
+    enums = {
+        'dm_session_state': {'AUTHENTICATED', 'LOGIN_REQUIRED', 'BLOCKED', 'UNKNOWN'},
+        'dm_account_state': {'EXPECTED', 'MISMATCH', 'AMBIGUOUS', 'UNKNOWN'},
+        'dm_oursong_cycle_status': {'DEGRADED', 'AUTH_REQUIRED', 'ALIVE_IDLE', 'PASS_NO_ACTION', 'PASS_NO_REPLY', 'PASS_REPLY', 'UNKNOWN'},
+        'dm_oursong_timer_state': {'active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading', 'unknown'},
+        'dm_supervisor_timer_state': {'active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading', 'unknown'},
+    }
+    result = {}
+    for key, allowed in enums.items():
+        value = receipt.get(key)
+        if isinstance(value, str) and value in allowed:
+            result[key] = value
+    for key in ('dm_oursong_timer_enabled', 'dm_oursong_cycle_fresh'):
+        value = receipt.get(key)
+        if isinstance(value, bool) or (key in receipt and value is None):
+            result[key] = value
+    age = receipt.get('dm_oursong_cycle_age_seconds')
+    if type(age) is int and 0 <= age <= 315360000:
+        result['dm_oursong_cycle_age_seconds'] = age
+    elif 'dm_oursong_cycle_age_seconds' in receipt and age is None:
+        result['dm_oursong_cycle_age_seconds'] = None
+    stamp = receipt.get('dm_checked_at')
+    if isinstance(stamp, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)', stamp):
+        try:
+            result['dm_checked_at'] = _iso(_parse_utc(stamp))
+        except ValueError:
+            pass
+    return result
+
+
 def _project_surface_inventory(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -261,6 +295,7 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
             safe = _safe_scalar(receipt.get(key))
             if safe is not None or receipt.get(key) is None:
                 projected[key] = safe
+        projected.update(_project_mio_dm_health(receipt))
     return projected
 
 

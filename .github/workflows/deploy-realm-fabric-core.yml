@@ -15,6 +15,7 @@ on:
       - '.github/workflows/deploy-realm-fabric-core.yml'
       - 'agent_core/controller_api.py'
       - 'agent_core/controller_service.py'
+      - 'agent_core/executor_job_contract.py'
       - 'agent_core/realm_fabric.py'
       - 'agent_core/realm_server.py'
       - 'agent_core/runner_window.py'

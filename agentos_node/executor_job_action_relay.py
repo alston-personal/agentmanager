@@ -29,6 +29,7 @@ from agentos_node.layoutlib_release_materialize_provider import register_layoutl
 from agentos_node.layoutlib_production_promote_provider import register_layoutlib_production_promote_provider
 from agentos_node.market_master_completion_provider import register_market_master_completion_provider
 from agentos_node.completion_next_inspect_provider import register_completion_next_inspect_provider
+from agentos_node.mio_dm_health_provider import register_mio_dm_health_provider
 
 
 ACTION = "agentos.executor.job"
@@ -45,6 +46,7 @@ LAYOUTLIB_PRODUCTION_PROMOTE_PROVIDER_REGISTERED = register_layoutlib_production
 LAYOUTLIB_PARITY_PROVIDER_REGISTERED = register_layoutlib_parity_provider()
 MARKET_MASTER_COMPLETION_PROVIDER_REGISTERED = register_market_master_completion_provider()
 COMPLETION_NEXT_INSPECT_PROVIDER_REGISTERED = register_completion_next_inspect_provider()
+MIO_DM_HEALTH_PROVIDER_REGISTERED = register_mio_dm_health_provider()
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
