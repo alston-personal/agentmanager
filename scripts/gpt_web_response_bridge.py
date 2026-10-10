@@ -487,6 +487,12 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
       }));
       const attachmentSummary = {
         fileInputs: document.querySelectorAll('input[type="file"]').length,
+        fileInputStates: Array.from(document.querySelectorAll('input[type="file"]')).slice(0, 8).map(el => ({
+          acceptsImage: (el.accept || '').toLowerCase().includes('image'),
+          acceptsAny: !(el.accept || '').trim(),
+          selectedCount: (el.files || []).length,
+          connected: el.isConnected
+        })),
         imagePreviewCount: document.querySelectorAll('[data-testid*="attachment"], [data-testid*="upload"], [data-testid*="preview"]').length,
         imageElements: document.querySelectorAll('img').length,
         pendingIndicators: document.querySelectorAll('[aria-busy="true"], [role="progressbar"]').length
@@ -620,8 +626,17 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             for f in selected_files
         )
         if not selection_confirmed:
-            upload_observation = _submission_snapshot(page, request_id)
-            if int((upload_observation.get("attachmentSummary") or {}).get("imagePreviewCount") or 0) == 0:
+            # Upload previews can be asynchronous; a single immediate DOM
+            # read is not evidence that the frontend rejected the image.
+            upload_deadline = time.monotonic() + 8.0
+            upload_observation: dict[str, Any] = {}
+            while time.monotonic() < upload_deadline:
+                upload_observation = _submission_snapshot(page, request_id)
+                if int((upload_observation.get("attachmentSummary") or {}).get("imagePreviewCount") or 0) > 0:
+                    selection_confirmed = True
+                    break
+                time.sleep(0.4)
+            if not selection_confirmed:
                 raise RuntimeError(
                     "GPT_WEB_FILE_SELECTION_UNVERIFIED:" +
                     json.dumps(upload_observation, ensure_ascii=False, sort_keys=True)
