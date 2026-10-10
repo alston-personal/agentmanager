@@ -1,0 +1,85 @@
+name: Oracle Inspect Persona Heartbeat Producers
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-persona-heartbeat-producers.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect persona heartbeat producers
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=.agentos/evidence/persona-heartbeat-producers.txt
+          mkdir -p .agentos/evidence
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo '=== IDENTITY ==='
+            id
+            echo "HOME=$HOME"
+
+            echo '=== USER TIMERS ==='
+            systemctl --user list-timers --all --no-pager 2>&1 || true
+
+            echo '=== USER UNITS MATCHING PERSONA/HEARTBEAT ==='
+            systemctl --user list-unit-files --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
+
+            echo '=== SYSTEM TIMERS MATCHING PERSONA/HEARTBEAT ==='
+            systemctl list-timers --all --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
+            systemctl list-unit-files --no-pager 2>&1 | grep -Ei 'persona|heartbeat|mio|oursong' || true
+
+            echo '=== USER CRONTAB ==='
+            crontab -l 2>&1 || true
+
+            echo '=== CRON FILES MATCHING PERSONA/HEARTBEAT ==='
+            grep -RInsE 'persona|heartbeat|sunlake-milkcat|oursong_alstonhuang|advance active persona heartbeats|agentos-persona-heartbeat'               /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /var/spool/cron /var/spool/cron/crontabs 2>/dev/null || true
+
+            echo '=== USER SYSTEMD UNIT CONTENTS ==='
+            for f in "$HOME"/.config/systemd/user/*persona* "$HOME"/.config/systemd/user/*heartbeat*; do
+              [ -e "$f" ] || continue
+              echo "--- $f"
+              sed -n '1,240p' "$f" 2>&1 || true
+            done
+
+            echo '=== LOCAL BIN/LIB MATCHES ==='
+            grep -RInsE 'advance active persona heartbeats|agentos-persona-heartbeat@users.noreply.github.com|sunlake-milkcat|oursong_alstonhuang'               "$HOME/.local/bin" "$HOME/.local/lib/agentos" "$HOME/bin" /home/ubuntu 2>/dev/null | head -n 500 || true
+
+            echo '=== RUNNING PROCESSES ==='
+            ps -eo user,pid,ppid,lstart,args | grep -Ei '[p]ersona|[h]eartbeat|sunlake-milkcat|oursong_alstonhuang' || true
+
+            echo '=== GIT CONFIG IDENTITY HINTS ==='
+            git config --global --get user.name 2>/dev/null || true
+            git config --global --get user.email 2>/dev/null || true
+            grep -RInsE 'AgentOS Persona Heartbeat|agentos-persona-heartbeat@users.noreply.github.com'               "$HOME/.gitconfig" /home/ubuntu/.gitconfig /root/.gitconfig 2>/dev/null || true
+
+            echo '=== KNOWN PERSONA UNIT STATUS ==='
+            systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.timer agentos-persona-pdca-heartbeat.service               agentos-persona-social-actions.timer agentos-persona-social-actions.service 2>&1 || true
+
+            echo 'mutation=NONE'
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .agentos/evidence/persona-heartbeat-producers.txt /tmp/persona-heartbeat-producers.txt 2>/dev/null || true
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/persona-heartbeat-producers.txt .agentos/evidence/persona-heartbeat-producers.txt 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/persona-heartbeat-producers.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(persona): inspect heartbeat producers'
+          git push origin HEAD:main
