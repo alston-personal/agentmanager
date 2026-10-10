@@ -234,25 +234,109 @@ class ControlPlaneStore:
             connection.commit()
         return self._task_from_row(row)
 
+    def expire_overdue_leases(self) -> list[dict[str, Any]]:
+        """Fence timed-out leases without replaying possibly completed effects.
+
+        An expired task is not eligible for lease_next_task until a governed
+        reconciler explicitly determines whether any external effect occurred.
+        """
+        now = _timestamp(_now())
+        expired: list[dict[str, Any]] = []
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """
+                SELECT * FROM tasks
+                WHERE status IN ('leased', 'running')
+                  AND lease_until IS NOT NULL AND lease_until <= ?
+                ORDER BY lease_until, task_id
+                """,
+                (now,),
+            ).fetchall()
+            for row in rows:
+                existing_result = json.loads(row["result_json"]) if row["result_json"] else {}
+                existing_result["sideEffectState"] = "unknown"
+                existing_result["recoveryRequired"] = True
+                existing_result["expirationReason"] = "lease_timeout"
+                connection.execute(
+                    """
+                    UPDATE tasks SET status='expired', lease_until=NULL,
+                        result_json=?, updated_at=?
+                    WHERE task_id=? AND status IN ('leased', 'running')
+                    """,
+                    (json.dumps(existing_result, sort_keys=True), now, row["task_id"]),
+                )
+                new_row = connection.execute(
+                    "SELECT * FROM tasks WHERE task_id=?", (row["task_id"],)
+                ).fetchone()
+                expired.append(self._task_from_row(new_row))
+            connection.commit()
+        return expired
+
+    def complete_leased_task(
+        self,
+        task_id: str,
+        node_id: str,
+        lease_until: str,
+        status: str,
+        result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Accept a worker receipt only for its still-current, live lease.
+
+        The lease token is the issued lease deadline. A later lease or an
+        expired/fenced task cannot be overwritten by a delayed old worker.
+        Callers must supply the lease token returned by lease_next_task.
+        """
+        if status not in {"succeeded", "failed"}:
+            raise ValueError("worker completion must be succeeded or failed")
+        now = _timestamp(_now())
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                """
+                UPDATE tasks SET status=?, result_json=?, lease_until=NULL, updated_at=?
+                WHERE task_id=? AND target_node_id=? AND lease_until=?
+                  AND lease_until>? AND status IN ('leased', 'running')
+                """,
+                (
+                    status, json.dumps(result or {}, sort_keys=True), now,
+                    task_id, node_id, lease_until, now,
+                ),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                raise ValueError("stale or unauthorized task lease receipt")
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE task_id=?", (task_id,)
+            ).fetchone()
+            connection.commit()
+        return self._task_from_row(row)
+
     def update_task(
         self,
         task_id: str,
         status: str,
         result: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if status not in TASK_STATES:
-            raise ValueError(f"unsupported task state: {status}")
+        """Legacy administrative update; never bypass an active worker lease.
+
+        Worker completion must use complete_leased_task with its lease token.
+        This compatibility API can cancel a still-submitted task, but cannot
+        forge a terminal receipt or replace an expired/terminal state.
+        """
+        if status != "cancelled":
+            raise ValueError("legacy update_task only supports cancelling submitted tasks")
         now = _timestamp(_now())
         with self._connect() as connection:
             cursor = connection.execute(
                 """
-                UPDATE tasks SET status=?, result_json=?, updated_at=?
-                WHERE task_id=?
+                UPDATE tasks SET status='cancelled', result_json=?, updated_at=?
+                WHERE task_id=? AND status='submitted'
                 """,
-                (status, json.dumps(result or {}, sort_keys=True), now, task_id),
+                (json.dumps(result or {}, sort_keys=True), now, task_id),
             )
             if cursor.rowcount != 1:
-                raise KeyError(f"unknown task: {task_id}")
+                raise ValueError("task not submitted or does not exist")
             row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         return self._task_from_row(row)
 

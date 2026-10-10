@@ -47,6 +47,10 @@ The Reuse Before Build and Credits entries above are intentionally marked **v0.1
 
 See **[Current Architecture & Reality](docs/CURRENT_STATE.md)** for the maintained implementation map and current research boundary.
 
+## Durable capability invariant (proposed)
+
+An accepted capability must have a model-independent service/script/workflow entrypoint and durable execution state. LLMs may participate as replaceable decision providers but cannot be the sole trigger, registry, state holder, or recovery mechanism. This invariant is **proposed**, not yet live accepted; see [Durable Capability Invariant](docs/architecture/DURABLE_CAPABILITY_INVARIANT.md) and [#1672](https://github.com/alston-personal/agentmanager/issues/1672).
+
 ## Current research frontier
 
 The next continuity problem is more ambitious than ordinary memory retrieval:
