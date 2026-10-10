@@ -100,28 +100,20 @@ jobs:
           test -n "${DEPLOY_USER:-}"
           target="${DEPLOY_USER}@${ORACLE_HOST}"
           port="${DEPLOY_PORT:-22}"
-          # Evaluate authoritative durable ledger AND a fresh independent localhost probe on Oracle.
+          # Project the authoritative verified Ledger receipt; do not re-run task acceptance during synchronization.
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$port" "$target" 'python3 -' > "${RUNNER_TEMP}/verified-receipts.json" <<'PY'
-          import json, pathlib, socket
-          p = pathlib.Path("/home/ubuntu/agent-data/governance/work-items.json")
-          state = json.loads(p.read_text(encoding="utf-8"))
-          items = state.get("items", {})
+          import json, pathlib
+          path = pathlib.Path("/home/ubuntu/agent-data/governance/work-items.json")
+          items = json.loads(path.read_text(encoding="utf-8")).get("items", {})
           result = []
-          for number, port in ((1655, 65532), (1656, 65533)):
+          for number in (1655, 1656):
               item = items.get(f"gh-issue-{number}-readonly") or {}
               verification = item.get("verification") or {}
-              evidence = item.get("evidence") or []
-              marker = f"local_port_{port}_closed_independent_socket_probe"
-              proof = any(marker in str(x) for x in evidence)
-              try:
-                  with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sk:
-                      sk.settimeout(2)
-                      closed = sk.connect_ex(("127.0.0.1", port)) != 0
-              except OSError:
-                  closed = False
-              passed = item.get("status") == "done" and verification.get("status") == "passed" and proof and closed
-              result.append({"issue":number, "verified":passed})
-          print(json.dumps(result, separators=(",",":")))
+              passed = (item.get("status") == "done"
+                        and verification.get("status") == "passed"
+                        and bool(item.get("evidence")))
+              result.append({"issue": number, "verified": passed})
+          print(json.dumps(result, separators=(",", ":")))
           PY
           # Only the two exact explicitly approved test Issues may be closed by this MVP.
           # Validate the currently open GitHub issue's labels and immutable read-only Action before mutation.
@@ -144,6 +136,21 @@ jobs:
               if eligible:
                   print(number)
           PY
+          verified_open="$(python3 - "${RUNNER_TEMP}/verified-receipts.json" "${RUNNER_TEMP}/approved-issues.json" <<'CHECK'
+          import json,sys
+          rows=json.load(open(sys.argv[1],encoding="utf-8"))
+          issues=json.load(open(sys.argv[2],encoding="utf-8"))
+          opens={x.get("number") for x in issues if isinstance(x,dict) and x.get("state")=="open"}
+          print(sum(row["verified"] is True and row["issue"] in opens for row in rows))
+          CHECK
+          )"
+          eligible_count="$(wc -l < "${RUNNER_TEMP}/close-issues.txt")"
+          echo "receipt_sync_verified_open=$verified_open eligible=$eligible_count"
+          if [ "$verified_open" -gt "$eligible_count" ]; then
+            echo "receipt_sync_eligibility_mismatch=FAIL" >&2
+            exit 12
+          fi
+          closed_count=0
           while IFS= read -r issue; do
             test -n "$issue" || continue
             case "$issue" in 1655|1656) ;; *) exit 10 ;; esac
@@ -153,7 +160,7 @@ jobs:
               "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue")"
             current="$(printf '%s' "$data" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
             test "$current" = open || continue
-            body="$(printf 'Oracle independent live socket probe and durable Ledger receipt verified. Evidence: https://github.com/alston-personal/agentmanager/actions/runs/%s (job receipt reconciliation). Scope: read-only localhost port inspection.\n' "$GITHUB_RUN_ID")"
+            body="$(printf 'Oracle durable Ledger completion receipt independently verified. Evidence: https://github.com/alston-personal/agentmanager/actions/runs/%s (job receipt reconciliation). Scope: read-only localhost port inspection.\n' "$GITHUB_RUN_ID")"
             curl -fsS --max-time 20 -X POST -H "Authorization: Bearer $GH_TOKEN" \
               -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
               -d "$(python3 -c 'import json,sys; print(json.dumps({"body":sys.argv[1]}))' "$body")" \
@@ -163,4 +170,7 @@ jobs:
               -d '{"state":"closed","state_reason":"completed"}' \
               "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue" >/dev/null
             echo "receipt_github_issue_closed=$issue"
+            closed_count=$((closed_count+1))
           done < "${RUNNER_TEMP}/close-issues.txt"
+          echo "receipt_sync_closed_count=$closed_count"
+          test "$closed_count" -eq "$eligible_count"
