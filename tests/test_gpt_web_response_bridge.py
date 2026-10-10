@@ -352,3 +352,17 @@ class GptWebFileSelectionClassificationTests(unittest.TestCase):
         source = inspect.getsource(invoke)
         self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
         self.assertIn("imagePreviewCount", source)
+
+
+class GptWebUploadSettlementTests(unittest.TestCase):
+    def test_upload_settle_has_bounded_poll_and_safe_file_state(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import invoke, _submission_snapshot
+        source = inspect.getsource(invoke)
+        self.assertIn("upload_deadline = time.monotonic() + 8.0", source)
+        self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
+        page = Mock()
+        page.evaluate.return_value = {"attachmentSummary": {"fileInputStates": [{"acceptsImage": True, "selectedCount": 1}]}}
+        state = _submission_snapshot(page, "invoice:req:12345678")
+        self.assertEqual(state["attachmentSummary"]["fileInputStates"][0]["selectedCount"], 1)
+        self.assertIn("fileInputStates", page.evaluate.call_args.args[0])
