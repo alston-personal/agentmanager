@@ -30,6 +30,8 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "classification",
     "dm_session_state",
     "dm_account_state",
+    "dm_resume_state",
+    "dm_resume_reason",
     "dm_checked_at",
     "dm_oursong_timer_state",
     "dm_oursong_timer_enabled",

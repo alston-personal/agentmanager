@@ -2,6 +2,16 @@
 
 ## Mio DM health via the existing ONE executor-job route
 
+After the health job confirms `LOGIN_REQUIRED`, the fixed
+`persona.mio.dm.resume` job can reuse the existing account-specific safe-resume
+script. It can click only a cached Continue-as control matching Mio on 9224,
+uses the already-installed GUI Worker Python runtime, and then requires a fresh
+health/identity probe before reporting `RECOVERED`. It never submits credentials,
+handles MFA/challenges, switches accounts, reads/sends DM, or restarts services.
+Unavailable/mismatched controls return a sanitized `HUMAN_REQUIRED` reason.
+This restoration is a separate mutating job with an exact bounded authority;
+the health job remains read-only. Source tests do not prove successful recovery.
+
 `persona.mio.dm.health` is a fixed read-only provider on the existing
 `agentos.executor.job` / Ubuntu Action Relay boundary. It reuses Mio's GUI
 login probe at the canonical separate profile (9224), verifies profile-navigation

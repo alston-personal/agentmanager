@@ -1,8 +1,8 @@
 """Read Mio's existing GUI session and autonomous-cycle health through ONE.
 
-The fixed login probe owns CDP/tab cleanup. Neither this job nor its public
-receipt reads messages, makes model decisions, sends replies, logs in, or
-changes services. The existing Mio/Oursong cycle is observed separately from
+The health job never logs in or changes services. The separate resume job
+reuses only the existing Mio-specific cached-account Continue-as control.
+Neither job reads messages, makes model decisions, or sends replies. The existing Mio/Oursong cycle is observed separately from
 session authentication; an authenticated browser does not prove autonomous DM.
 """
 from __future__ import annotations
@@ -20,7 +20,9 @@ from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS, ExecutorJobProv
 from agentos_node.social.persona_dm import binding_for
 
 JOB_TYPE = "persona.mio.dm.health"
+RESUME_JOB_TYPE = "persona.mio.dm.resume"
 PROVIDER_ID = "oracle-mio-dm-health-v1"
+RESUME_PROVIDER_ID = "oracle-mio-dm-safe-resume-v1"
 EXECUTOR_CLASS = "oracle-gui-worker"
 EXPECTED_HOME = Path("/home/ubuntu")
 CYCLE_RECEIPTS = EXPECTED_HOME / "agent-data/runtime/social/persona/sunlake-milkcat/dm-receipts"
@@ -178,11 +180,81 @@ def run_mio_dm_health(request: Mapping[str, Any], *, runtime_root: Path | None =
 
 
 def register_mio_dm_health_provider(*, registry: ExecutorJobProviderRegistry = DEFAULT_PROVIDERS) -> bool:
-    existing = registry.get(JOB_TYPE)
-    if existing is not None:
-        if existing.provider_id == PROVIDER_ID and existing.executor_class == EXECUTOR_CLASS:
-            return True
-        raise RuntimeError("Mio DM health provider already registered differently")
-    registry.register(job_type=JOB_TYPE, provider_id=PROVIDER_ID,
-                      executor_class=EXECUTOR_CLASS, handler=run_mio_dm_health)
+    for job, provider, handler in (
+        (JOB_TYPE, PROVIDER_ID, run_mio_dm_health),
+        (RESUME_JOB_TYPE, RESUME_PROVIDER_ID, run_mio_dm_resume),
+    ):
+        existing = registry.get(job)
+        if existing is not None:
+            if existing.provider_id != provider or existing.executor_class != EXECUTOR_CLASS:
+                raise RuntimeError("Mio DM provider already registered differently")
+        else:
+            registry.register(job_type=job, provider_id=provider,
+                              executor_class=EXECUTOR_CLASS, handler=handler)
     return True
+
+
+def run_mio_dm_resume(request: Mapping[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
+    """Use only an existing account-specific Continue-as control, then verify.
+
+    No credentials, MFA, human challenge, account switch, DM decision/send, or
+    service restart is performed. The existing resume script returns a bounded
+    HUMAN_REQUIRED reason if no matching cached-account control is available.
+    """
+    spec = validate_executor_job(request)
+    if spec.job_type != RESUME_JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
+        return _base("MIO_DM_RESUME_CONTRACT_MISMATCH", available=False, authorized=False)
+    if Path.home() != EXPECTED_HOME or os.environ.get("USER") not in (None, "", "ubuntu"):
+        return _base("MIO_DM_RESUME_IDENTITY_MISMATCH", available=False, authorized=False)
+    if binding_for("mio").cdp_url != "http://127.0.0.1:9224":
+        return _base("MIO_DM_RESUME_BINDING_MISMATCH", available=False, authorized=False)
+    root = runtime_root if runtime_root is not None else Path(__file__).resolve().parents[1]
+    script = root / "scripts/resume_threads_persona_login_user.sh"
+    gui_bin = EXPECTED_HOME / ".local/share/agentos/gui-worker/venv/bin"
+    if not script.is_file() or script.is_symlink() or not os.access(gui_bin / "python3", os.X_OK):
+        return _base("MIO_DM_RESUME_RUNTIME_UNAVAILABLE", available=False)
+    result = _base("MIO_DM_RESUME_FAILED")
+    result["dm_resume_state"] = "FAILED"
+    try:
+        p = subprocess.Popen(
+            ["/bin/bash", str(script)], cwd=str(root),
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, start_new_session=True,
+            env={**os.environ, "HOME":str(EXPECTED_HOME), "USER":"ubuntu",
+                 "AGENTOS_DM_PERSONA":"mio",
+                 "PATH":str(gui_bin) + ":" + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")},
+        )
+    except OSError:
+        result["classification"] = "MIO_DM_RESUME_LAUNCH_FAILED"
+        return result
+    try:
+        stdout, _ = p.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        p.communicate()
+        result["classification"] = "MIO_DM_RESUME_TIMEOUT"
+        return result
+    values: dict[str, list[str]] = {}
+    for line in (stdout or "").splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.startswith("threads_persona_login_resume"):
+            values.setdefault(key, []).append(value)
+    marker = values.get("threads_persona_login_resume")
+    if p.returncode == 0 and marker == ["HUMAN_REQUIRED"]:
+        reasons = values.get("threads_persona_login_resume_reason") or []
+        reason = reasons[0] if len(reasons) == 1 and reasons[0] in {
+            "ACCOUNT_HINT_MISSING", "RESUME_CONTROL_MISSING", "RESUME_DID_NOT_AUTHENTICATE"} else "UNKNOWN"
+        result.update(classification="MIO_DM_RESUME_HUMAN_REQUIRED",
+                      dm_resume_state="HUMAN_REQUIRED", dm_resume_reason=reason)
+        return result
+    if p.returncode != 0 or marker != ["PASS"]:
+        return result
+    # PASS from navigation alone is insufficient: recheck Mio identity and DM.
+    from agent_core.executor_job_contract import canonical_executor_job_request
+    verified = run_mio_dm_health(canonical_executor_job_request(JOB_TYPE), runtime_root=root)
+    recovered = verified.get("successful") is True
+    return {**verified, "classification":"MIO_DM_RESUME_RECOVERED" if recovered else "MIO_DM_RESUME_VERIFY_FAILED",
+            "dm_resume_state":"RECOVERED" if recovered else "FAILED"}

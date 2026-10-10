@@ -114,11 +114,13 @@ def _safe_scalar(value: Any) -> Any:
 
 def _project_mio_dm_health(receipt: dict[str, Any]) -> dict[str, Any]:
     """Public mailbox independently accepts only DM health enums/types."""
-    if receipt.get('job_type') != 'persona.mio.dm.health':
+    if receipt.get('job_type') not in {'persona.mio.dm.health', 'persona.mio.dm.resume'}:
         return {}
     enums = {
         'dm_session_state': {'AUTHENTICATED', 'LOGIN_REQUIRED', 'BLOCKED', 'UNKNOWN'},
         'dm_account_state': {'EXPECTED', 'MISMATCH', 'AMBIGUOUS', 'UNKNOWN'},
+        'dm_resume_state': {'RECOVERED', 'HUMAN_REQUIRED', 'FAILED', 'UNKNOWN'},
+        'dm_resume_reason': {'ACCOUNT_HINT_MISSING', 'RESUME_CONTROL_MISSING', 'RESUME_DID_NOT_AUTHENTICATE', 'UNKNOWN'},
         'dm_oursong_cycle_status': {'DEGRADED', 'AUTH_REQUIRED', 'ALIVE_IDLE', 'PASS_NO_ACTION', 'PASS_NO_REPLY', 'PASS_REPLY', 'UNKNOWN'},
         'dm_oursong_timer_state': {'active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading', 'unknown'},
         'dm_supervisor_timer_state': {'active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading', 'unknown'},
