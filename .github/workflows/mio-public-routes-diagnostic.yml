@@ -1,0 +1,42 @@
+name: Mio Public Routes Diagnostic
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/mio-public-routes-diagnostic.yml'
+      - 'scripts/mio_public_route_smoke.py'
+  schedule:
+    - cron: '23 */6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Check Mio public routes (non-mutating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe public endpoints
+        id: probe
+        shell: bash
+        run: |
+          set +e
+          python3 scripts/mio_public_route_smoke.py --base-url https://studio.milkcat.org > mio-public-routes.json
+          code=$?
+          cat mio-public-routes.json
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Save machine-readable result
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-public-routes-${{ github.run_id }}
+          path: mio-public-routes.json
+          retention-days: 14
+      - name: Mark diagnostic failure
+        if: steps.probe.outputs.exit_code != '0'
+        run: |
+          echo "::error title=Mio public route regression::Public Mio route smoke failed; inspect the attached JSON artifact and incident #1707."
+          exit 1
