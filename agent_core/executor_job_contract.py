@@ -62,6 +62,15 @@ class JobTypeSpec:
 
 
 JOB_TYPES: dict[str, JobTypeSpec] = {
+    "persona.mio.dm.resume": JobTypeSpec(
+        job_type="persona.mio.dm.resume",
+        capability="persona.social.dm.session.resume",
+        authority="bounded-persona-session-resume",
+        executor_class="oracle-gui-worker",
+        project_id="sunlake-milkcat-persona-dm",
+        workload_ref="persona://mio/threads-dm",
+        read_only=False,
+    ),
     "persona.mio.dm.health": JobTypeSpec(
         job_type="persona.mio.dm.health",
         capability="persona.social.dm.health",
@@ -399,6 +408,8 @@ def project_executor_job_receipt(
             "classification",
             "dm_session_state",
             "dm_account_state",
+            "dm_resume_state",
+            "dm_resume_reason",
             "dm_checked_at",
             "dm_oursong_timer_state",
             "dm_oursong_timer_enabled",

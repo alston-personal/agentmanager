@@ -171,6 +171,68 @@ class MioDMHealthTests(unittest.TestCase):
             self.assertNotIn(field, bad)
         self.assertNotIn("dm_session_state", _project_receipt({**base, "job_type":"codex.cli.health"}, "agentos.executor.job"))
 
+    def invoke_resume(self, stdout, returncode=0, verified=None):
+        proc = Mock(returncode=returncode, pid=54321)
+        proc.communicate.return_value = (stdout, "private error")
+        req = canonical_executor_job_request(health.RESUME_JOB_TYPE)
+        with patch.object(health.Path, "home", return_value=health.EXPECTED_HOME), \
+             patch.dict(health.os.environ, {"USER":"ubuntu"}), \
+             patch.object(health.os, "access", return_value=True), \
+             patch.object(health.subprocess, "Popen", return_value=proc) as launch, \
+             patch.object(health, "run_mio_dm_health", return_value=verified or {"successful":False}) as verify:
+            return health.run_mio_dm_resume(req, runtime_root=ROOT), launch, verify
+
+    def test_resume_contract_is_separate_mutating_bounded_authority(self):
+        req = canonical_executor_job_request(health.RESUME_JOB_TYPE)
+        self.assertFalse(validate_executor_job(req).read_only)
+        self.assertEqual(req["authority"], "bounded-persona-session-resume")
+        with self.assertRaises(ExecutorJobContractError):
+            validate_executor_job({**req, "authority":"bounded-read-only"})
+        with self.assertRaises(ExecutorJobContractError):
+            validate_executor_job({**req, "account":"oursong_alstonhuang"})
+
+    def test_resume_only_reports_recovered_after_fresh_mio_health(self):
+        result, launch, verify = self.invoke_resume("threads_persona_login_resume=PASS", verified={
+            "successful":True, "dm_session_state":"AUTHENTICATED", "dm_account_state":"EXPECTED"})
+        self.assertEqual(result["dm_resume_state"], "RECOVERED")
+        self.assertTrue(result["successful"])
+        verify.assert_called_once()
+        env = launch.call_args.kwargs["env"]
+        self.assertEqual(env["AGENTOS_DM_PERSONA"], "mio")
+        self.assertTrue(env["PATH"].startswith("/home/ubuntu/.local/share/agentos/gui-worker/venv/bin:"))
+        self.assertEqual(launch.call_args.args[0], ["/bin/bash", str(ROOT/"scripts/resume_threads_persona_login_user.sh")])
+
+    def test_resume_pass_navigation_with_failed_identity_is_not_recovery(self):
+        result, _, verify = self.invoke_resume("threads_persona_login_resume=PASS")
+        self.assertEqual(result["classification"], "MIO_DM_RESUME_VERIFY_FAILED")
+        self.assertFalse(result["successful"])
+        verify.assert_called_once()
+
+    def test_resume_human_required_is_explicit_and_no_further_action(self):
+        result, _, verify = self.invoke_resume("threads_persona_login_resume_reason=ACCOUNT_HINT_MISSING\nthreads_persona_login_resume=HUMAN_REQUIRED")
+        self.assertEqual(result["dm_resume_state"], "HUMAN_REQUIRED")
+        self.assertEqual(result["dm_resume_reason"], "ACCOUNT_HINT_MISSING")
+        self.assertFalse(result["successful"])
+        verify.assert_not_called()
+        self.assertNotIn("private", json.dumps(result))
+
+    def test_resume_unknown_or_duplicate_markers_do_not_pass(self):
+        for raw in ("threads_persona_login_resume=PASS\nthreads_persona_login_resume=HUMAN_REQUIRED", "private error"):
+            result, _, verify = self.invoke_resume(raw)
+            self.assertEqual(result["dm_resume_state"], "FAILED")
+            verify.assert_not_called()
+
+    def test_resume_nonzero_with_pass_marker_does_not_pass(self):
+        result, _, verify = self.invoke_resume("threads_persona_login_resume=PASS", returncode=8)
+        self.assertFalse(result["successful"])
+        verify.assert_not_called()
+
+    def test_existing_health_registration_can_add_resume_without_duplicate(self):
+        registry = ExecutorJobProviderRegistry()
+        registry.register(job_type=health.JOB_TYPE, provider_id=health.PROVIDER_ID, executor_class=health.EXECUTOR_CLASS, handler=health.run_mio_dm_health)
+        health.register_mio_dm_health_provider(registry=registry)
+        self.assertEqual(registry.get(health.RESUME_JOB_TYPE).provider_id, health.RESUME_PROVIDER_ID)
+
     def test_full_relay_submit_execute_restart_inspect_retains_health_only(self):
         from agentos_node import action_relay
         from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS
