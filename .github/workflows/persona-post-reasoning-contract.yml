@@ -1,0 +1,30 @@
+name: Persona Post Reasoning Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/persona_post_intent_generator.py'
+      - 'tests/test_persona_post_reasoning.py'
+      - '.github/workflows/persona-post-reasoning-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/persona_post_intent_generator.py'
+      - 'tests/test_persona_post_reasoning.py'
+      - '.github/workflows/persona-post-reasoning-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify reasoning failover without live providers or public writes
+        run: python3 -m unittest tests.test_persona_post_reasoning -v

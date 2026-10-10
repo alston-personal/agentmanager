@@ -495,8 +495,8 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('timeout=45', text)
         self.assertIn('discover_gemini_executor', text)
         self.assertIn('timeout=60', text)
-        self.assertIn('"provider":"claude"', text)
-        self.assertIn('"provider":"gemini"', text)
+        self.assertIn('reasoning_attempt("claude"', text)
+        self.assertIn('reasoning_attempt("gemini"', text)
         self.assertIn('persona_reasoning_exhausted', text)
         self.assertNotIn('timeout=180', text)
 

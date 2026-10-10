@@ -96,6 +96,37 @@ the source contract. Merge approval and exact-generation Oracle deployment
 must precede any live-restored claim.
 
 
+### Mio post reasoning Codex failover and diagnostics (candidate)
+
+`scripts/persona_post_intent_generator.py` records each provider attempt's elapsed
+time and a bounded failure classification, including unsupported OAuth clients,
+authentication, rate limits, CLI contracts and network failures. Raw CLI output,
+prompts and credentials are not persisted. Unmatched errors stay unknown; these
+classes are diagnostic hints, not a substitute for provider/node acceptance.
+Receipts identify the executing generator by SHA-256 and use completion time.
+Post candidates link the receipt and distinguish Claude, Gemini, Codex and deterministic
+liveness fallback. Model responses require boolean decision fields before they
+can be accepted; missing executors also leave a durable receipt. Noninteractive
+CLI invocations have closed stdin. Claude retains its 45-second timeout; Gemini
+and Codex each have a 60-second timeout (at most 165 seconds of model calls).
+Codex is tried after the existing providers fail, before deterministic fallback.
+It composes the existing Codex provider's executable discovery and read-only
+`exec` recipe with an ephemeral empty workspace/config home, no shell/apps/MCP
+configuration and a local reference to existing OAuth authentication. It cannot
+publish; its final answer only enters the existing delayed candidate lane.
+
+`tests/test_persona_post_reasoning.py` exercises failover, redaction, malformed
+output, no-post decisions and truthful fallback provenance without live posts.
+This candidate improves diagnosis; it does not claim restored model authoring.
+The 2026-10-10 Oracle `gemini.cli.health` receipt reported
+`GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED` in Control Inbox #50 (comment 6097605043;
+command `chatgpt-mio-gemini-health-20261010T124158678Z`). That provider rejection
+requires a supported, independently accepted provider/auth path; retrying or
+relabeling fallback text cannot establish recovery. The same Oracle returned
+`CODEX_CLI_HEALTH_READY` at 12:46:03Z in #50 comment 6097639114. That accepts the
+existing Codex health recipe, not this isolated Mio invocation. Exact-generation
+deployment and a new node-authoritative Mio reasoning receipt remain required.
+
 Project identity is explicitly separated from repository, checkout path, runtime path, deployment target, and state storage.
 
 The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.
