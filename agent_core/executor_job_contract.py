@@ -62,6 +62,15 @@ class JobTypeSpec:
 
 
 JOB_TYPES: dict[str, JobTypeSpec] = {
+    "persona.mio.dm.health": JobTypeSpec(
+        job_type="persona.mio.dm.health",
+        capability="persona.social.dm.health",
+        authority="bounded-read-only",
+        executor_class="oracle-gui-worker",
+        project_id="sunlake-milkcat-persona-dm",
+        workload_ref="persona://mio/threads-dm",
+        read_only=True,
+    ),
     "experience.regression": JobTypeSpec(
         job_type="experience.regression",
         capability="agentos.experience.regression",
@@ -388,6 +397,15 @@ def project_executor_job_receipt(
             "hydration_receipt_ok",
             "install_receipt_ok",
             "classification",
+            "dm_session_state",
+            "dm_account_state",
+            "dm_checked_at",
+            "dm_oursong_timer_state",
+            "dm_oursong_timer_enabled",
+            "dm_oursong_cycle_status",
+            "dm_oursong_cycle_age_seconds",
+            "dm_oursong_cycle_fresh",
+            "dm_supervisor_timer_state",
             "executor_returncode",
             "executor_timed_out",
             "executor_provider",

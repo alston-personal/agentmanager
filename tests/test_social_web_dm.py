@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import unittest
 
 from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events
