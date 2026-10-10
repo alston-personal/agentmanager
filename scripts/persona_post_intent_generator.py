@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, glob, hashlib, json, os, random, re, subprocess, tempfile
+import argparse, glob, hashlib, json, os, random, re, shutil, subprocess, tempfile, time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -37,6 +37,14 @@ def discover_gemini_executor():
     path="/home/ubuntu/.local/bin/gemini"
     return path if os.path.isfile(path) and os.access(path,os.X_OK) else None
 
+def discover_codex_executor():
+    # Same executable candidates as the existing Codex provider's discovery.
+    for path in ("/home/ubuntu/.local/bin/codex","/home/ubuntu/.npm-global/bin/codex",
+                 "/usr/local/bin/codex","/usr/bin/codex"):
+        if os.path.isfile(path) and os.access(path,os.X_OK):
+            return path
+    return shutil.which("codex")
+
 def extract_json(text):
     text=text.strip()
     try:
@@ -47,6 +55,58 @@ def extract_json(text):
     if not m:
         raise ValueError("executor_json_missing")
     return json.loads(m.group(0))
+
+def failure_class(stderr, stdout=""):
+    """Classify locally; never persist provider output, prompts or credentials."""
+    if isinstance(stderr, bytes):
+        stderr=stderr.decode("utf-8",errors="replace")
+    error_text=str(stderr or "")
+    # Gemini can report an error in JSON rather than stderr. Successful response
+    # text is intentionally excluded: its topics are not diagnostic evidence.
+    try:
+        envelope=json.loads(stdout or "{}")
+        if isinstance(envelope,dict) and isinstance(envelope.get("error"),(dict,str)):
+            error_text+="\n"+json.dumps(envelope["error"],ensure_ascii=False)
+    except (ValueError,TypeError):
+        pass
+    value=error_text.casefold()
+    signatures=(
+      ("OAUTH_CLIENT_UNSUPPORTED",("ineligibletiererror","unsupported_client","this client is no longer supported","migrate to antigravity")),
+      ("CLI_CONTRACT",("unknown argument","unknown option","unrecognized option","invalid option","invalid values for argument")),
+      ("RATE_LIMITED",("rate limit","too many requests","quota","resource_exhaust","resourceexhaust")),
+      ("AUTH_REQUIRED",("authentication required","not authenticated","unauthorized","invalid_grant","sign in","log in","reauth","credential")),
+      ("NETWORK",("network is unreachable","enotfound","eai_again","connection reset","socket hang up","etimedout","fetch failed")),
+      ("CONFIG_ERROR",("fatalconfigerror","invalid configuration","failed to load settings","config error")),
+      ("WORKSPACE_TRUST_REQUIRED",("workspace trust","folder trust","not trusted","trust this folder")),
+      ("NODE_INCOMPATIBLE",("unsupported engine","ebadengine","requires node","node version")),
+      ("HOOK_ERROR",("hook failed","hook error")),
+      ("MCP_ERROR",("mcp server","mcp connection")),
+    )
+    return next((name for name,tokens in signatures if any(x in value for x in tokens)),"UNKNOWN_NONZERO")
+
+def reasoning_attempt(provider, started, status, *, result=None, error=None):
+    attempt={"provider":provider,"status":status,
+             "elapsed_ms":max(0,round((time.monotonic()-started)*1000))}
+    if result is not None:
+        attempt["returncode"]=result.returncode
+    if status=="NONZERO":
+        attempt["failure_class"]=failure_class(result.stderr,result.stdout)
+    elif status=="TIMEOUT":
+        attempt["failure_class"]="TIMEOUT"
+        hint=failure_class(getattr(error,"stderr",None))
+        if hint!="UNKNOWN_NONZERO":
+            attempt["failure_hint"]=hint
+    elif status in ("INVALID_OUTPUT","UNAVAILABLE"):
+        attempt["failure_class"]=status
+    return attempt
+
+def extract_decision(text):
+    value=extract_json(text)
+    if not isinstance(value,dict) or type(value.get("should_post")) is not bool or type(value.get("human_required")) is not bool:
+        raise ValueError("executor_decision_invalid")
+    if not isinstance(value.get("post_text"),str) or not isinstance(value.get("reason"),str):
+        raise ValueError("executor_decision_invalid")
+    return value
 
 def safe_liveness_fallback(growth, state):
     lanes=growth.get("current_topic_lanes") if isinstance(growth.get("current_topic_lanes"),list) else []
@@ -71,7 +131,9 @@ def persist_reasoning_receipt(root, state, attempts, status, now, *, fallback_us
       "cycle":state.get("cycle"),
       "status":status,
       "attempts":attempts,
-      "fallback_used":bool(fallback_used)
+      "fallback_used":bool(fallback_used),
+      "generator_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+      "diagnostic_contract":"sanitized-failure-class/v1"
     }
     path=root/ref
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -196,7 +258,12 @@ def main():
 
     claude_executor=discover_executor()
     gemini_executor=discover_gemini_executor()
-    if not claude_executor and not gemini_executor:
+    codex_executor=discover_codex_executor()
+    if not claude_executor and not gemini_executor and not codex_executor:
+        persist_reasoning_receipt(root,state,[],"UNAVAILABLE",datetime.now(timezone.utc))
+        tmp=root/"pdca/state.json.tmp"
+        tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+        os.replace(tmp,root/"pdca/state.json")
         print(json.dumps({"status":"DEFER","reason":"persona_reasoning_executor_unavailable"},ensure_ascii=False))
         return 0
 
@@ -260,25 +327,29 @@ Context:
 """+json.dumps(contract,ensure_ascii=False)
 
     decision=None
+    reasoning_executor=None
     attempts=[]
     if claude_executor:
+        started=time.monotonic()
         try:
             result=subprocess.run([*claude_executor,prompt],cwd="/home/ubuntu/agentmanager",
-                                  text=True,capture_output=True,timeout=45)
+                                  stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=45)
             if result.returncode==0:
                 try:
-                    decision=extract_json(result.stdout)
-                    attempts.append({"provider":"claude","status":"PASS"})
+                    decision=extract_decision(result.stdout)
+                    reasoning_executor="antigravity_claude"
+                    attempts.append(reasoning_attempt("claude",started,"PASS",result=result))
                 except Exception:
-                    attempts.append({"provider":"claude","status":"INVALID_OUTPUT"})
+                    attempts.append(reasoning_attempt("claude",started,"INVALID_OUTPUT",result=result))
             else:
-                attempts.append({"provider":"claude","status":"NONZERO","returncode":result.returncode})
-        except subprocess.TimeoutExpired:
-            attempts.append({"provider":"claude","status":"TIMEOUT"})
+                attempts.append(reasoning_attempt("claude",started,"NONZERO",result=result))
+        except subprocess.TimeoutExpired as error:
+            attempts.append(reasoning_attempt("claude",started,"TIMEOUT",error=error))
         except OSError:
-            attempts.append({"provider":"claude","status":"UNAVAILABLE"})
+            attempts.append(reasoning_attempt("claude",started,"UNAVAILABLE"))
 
     if decision is None and gemini_executor:
+        started=time.monotonic()
         try:
             with tempfile.TemporaryDirectory(prefix="mio-post-gemini-") as td:
                 temp=Path(td)
@@ -304,21 +375,64 @@ Context:
                 result=subprocess.run([
                     gemini_executor,"-p",prompt,"--approval-mode","plan","--skip-trust",
                     "--output-format","json"
-                ],cwd=str(temp),text=True,capture_output=True,timeout=60,env=env)
+                ],cwd=str(temp),stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=60,env=env)
                 if result.returncode==0:
                     try:
                         envelope=json.loads(result.stdout or "{}")
                         response=str(envelope.get("response") or "") if isinstance(envelope,dict) else ""
-                        decision=extract_json(response)
-                        attempts.append({"provider":"gemini","status":"PASS"})
+                        decision=extract_decision(response)
+                        reasoning_executor="gemini_cli"
+                        attempts.append(reasoning_attempt("gemini",started,"PASS",result=result))
                     except Exception:
-                        attempts.append({"provider":"gemini","status":"INVALID_OUTPUT"})
+                        attempts.append(reasoning_attempt("gemini",started,"INVALID_OUTPUT",result=result))
                 else:
-                    attempts.append({"provider":"gemini","status":"NONZERO","returncode":result.returncode})
-        except subprocess.TimeoutExpired:
-            attempts.append({"provider":"gemini","status":"TIMEOUT"})
+                    attempts.append(reasoning_attempt("gemini",started,"NONZERO",result=result))
+        except subprocess.TimeoutExpired as error:
+            attempts.append(reasoning_attempt("gemini",started,"TIMEOUT",error=error))
         except OSError:
-            attempts.append({"provider":"gemini","status":"UNAVAILABLE"})
+            attempts.append(reasoning_attempt("gemini",started,"UNAVAILABLE"))
+
+    if decision is None and codex_executor:
+        started=time.monotonic()
+        try:
+            with tempfile.TemporaryDirectory(prefix="mio-post-codex-") as td:
+                temp=Path(td)
+                workspace=temp/"workspace"
+                workspace.mkdir()
+                cli_home=temp/"cli-home"
+                cli_home.mkdir(mode=0o700)
+                # Reuse OAuth without reading or serializing credential contents.
+                # Keep global hooks, MCP servers, plugins and repo instructions
+                # out of this text-only authoring task.
+                source=Path(os.environ.get("CODEX_HOME") or "/home/ubuntu/.codex")
+                auth=source/"auth.json"
+                if auth.is_file():
+                    (cli_home/"auth.json").symlink_to(auth)
+                (cli_home/"config.toml").write_text(
+                    'web_search = "disabled"\n[features]\nshell_tool = false\napps = false\n',
+                    encoding="utf-8")
+                answer=temp/"answer.json"
+                env={**os.environ,"CODEX_HOME":str(cli_home)}
+                result=subprocess.run([
+                    codex_executor,"-a","never","exec","--skip-git-repo-check",
+                    "--sandbox","read-only","--color","never","--ephemeral",
+                    "-C",str(workspace),"--output-last-message",str(answer),prompt
+                ],cwd=str(workspace),stdin=subprocess.DEVNULL,text=True,
+                  capture_output=True,timeout=60,env=env)
+                if result.returncode==0:
+                    try:
+                        response=answer.read_text(encoding="utf-8") if answer.is_file() else result.stdout
+                        decision=extract_decision(response)
+                        reasoning_executor="codex_cli"
+                        attempts.append(reasoning_attempt("codex",started,"PASS",result=result))
+                    except (OSError,ValueError,TypeError):
+                        attempts.append(reasoning_attempt("codex",started,"INVALID_OUTPUT",result=result))
+                else:
+                    attempts.append(reasoning_attempt("codex",started,"NONZERO",result=result))
+        except subprocess.TimeoutExpired as error:
+            attempts.append(reasoning_attempt("codex",started,"TIMEOUT",error=error))
+        except OSError:
+            attempts.append(reasoning_attempt("codex",started,"UNAVAILABLE"))
 
     if decision is None:
         liveness_required=bool(consider.get("liveness_pressure")) or silence_hours>=forced_consider_hours or no_publish_streak>=forced_no_publish_streak
@@ -330,9 +444,10 @@ Context:
               "reason":"provider failover exhausted; safe liveness fallback",
               "post_text":fallback_text
             }
-            persist_reasoning_receipt(root,state,attempts,"FALLBACK",now_utc,fallback_used=True)
+            reasoning_executor="safe_liveness_fallback"
+            persist_reasoning_receipt(root,state,attempts,"FALLBACK",datetime.now(timezone.utc),fallback_used=True)
         else:
-            persist_reasoning_receipt(root,state,attempts,"DEFER",now_utc)
+            persist_reasoning_receipt(root,state,attempts,"DEFER",datetime.now(timezone.utc))
             state["pending_external_actions"]=pending[-12:]
             tmp=root/"pdca/state.json.tmp"
             tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
@@ -340,7 +455,7 @@ Context:
             print(json.dumps({"status":"DEFER","reason":"persona_reasoning_exhausted","attempts":attempts},ensure_ascii=False))
             return 0
     else:
-        persist_reasoning_receipt(root,state,attempts,"PASS",now_utc)
+        persist_reasoning_receipt(root,state,attempts,"PASS",datetime.now(timezone.utc))
 
     should=bool(decision.get("should_post"))
     human=bool(decision.get("human_required"))
@@ -404,7 +519,8 @@ Context:
                       "requires_verified_media_receipt":image_mode!="none"},
       "ir_id":ir.get("ir_id"),
       "not_before":not_before,
-      "reasoning_executor":"antigravity_claude"
+      "reasoning_executor":reasoning_executor,
+      "reasoning_receipt_ref":state["last_post_reasoning_receipt"]
     }
     consider["status"]="completed"
     consider["completed_at"]=now.isoformat().replace("+00:00","Z")
