@@ -174,11 +174,14 @@ jobs:
           assert r.get('source_commit') == os.environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT'], r
           assert r.get('health',{}).get('status') == 200, r
           assert r.get('resolve_auth_probe',{}).get('status') == 401, r
+          assert r.get('participant_protocol_probe',{}).get('status') == 200, r
+          assert 'agentos.participant-protocol-discovery/v1' in str(r.get('participant_protocol_probe',{}).get('body') or ''), r
+          assert r.get('effective_unit',{}).get('returncode') == 0, r
           assert r.get('process_identity_attested') is True, r
           assert int(r.get('main_pid_after') or 0) > 0, r
           print(json.dumps({k:r.get(k) for k in (
               'source_commit','release','current','current_pointer_mode','service','endpoint','health',
-              'resolve_auth_probe','main_pid_before','main_pid_after','process_identity_attested'
+              'resolve_auth_probe','participant_protocol_probe','effective_unit','main_pid_before','main_pid_after','process_identity_attested'
           )},ensure_ascii=False,indent=2))
           PY
 

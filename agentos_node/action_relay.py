@@ -1102,6 +1102,62 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
             if not health or health.get('status') != 200:
                 return {'ok': False, 'stage': 'health', 'source_commit': source_commit, 'health': health, 'main_pid_before': main_pid_before, 'main_pid_after': main_pid_after, 'steps': steps}
 
+            effective_unit = _run([
+                'systemctl','--user','show','agentos-realm-fabric.service',
+                '--property=ExecStart','--property=WorkingDirectory',
+            ], cwd=Path.home(), timeout=10)
+            steps.append({'step': 'effective_unit_attestation', **effective_unit})
+            expected_launcher = str(launcher)
+            unit_text = str(effective_unit.get('stdout') or '')
+            if effective_unit.get('returncode') != 0 or expected_launcher not in unit_text or str(release) not in unit_text:
+                return {
+                    'ok': False,
+                    'stage': 'effective_unit_attestation',
+                    'source_commit': source_commit,
+                    'expected_launcher': expected_launcher,
+                    'release': str(release),
+                    'effective_unit': effective_unit,
+                    'main_pid_after': main_pid_after,
+                    'steps': steps,
+                }
+
+            participant_protocol_probe = None
+            try:
+                with _rf_urllib.urlopen('http://127.0.0.1:8780/v1/participants/protocol', timeout=3) as resp:
+                    body = resp.read().decode('utf-8', 'replace')
+                    participant_protocol_probe = {'status': resp.status, 'body': body[-4000:]}
+            except _rf_urllib.HTTPError as exc:
+                participant_protocol_probe = {'status': exc.code, 'body': exc.read().decode('utf-8','replace')[-4000:]}
+            except Exception as exc:
+                participant_protocol_probe = {'error': type(exc).__name__ + ': ' + str(exc)}
+            if not participant_protocol_probe or participant_protocol_probe.get('status') != 200:
+                return {
+                    'ok': False,
+                    'stage': 'participant_protocol_probe',
+                    'source_commit': source_commit,
+                    'participant_protocol_probe': participant_protocol_probe,
+                    'effective_unit': effective_unit,
+                    'main_pid_after': main_pid_after,
+                    'steps': steps,
+                }
+            try:
+                participant_protocol_body = json.loads(str(participant_protocol_probe.get('body') or '{}'))
+            except json.JSONDecodeError:
+                participant_protocol_body = {}
+            if (
+                participant_protocol_body.get('schema') != 'agentos.participant-protocol-discovery/v1'
+                or participant_protocol_body.get('protocol') != 'agentos-participant'
+                or '1.0' not in (participant_protocol_body.get('supported_versions') or [])
+            ):
+                return {
+                    'ok': False,
+                    'stage': 'participant_protocol_contract',
+                    'source_commit': source_commit,
+                    'participant_protocol_probe': participant_protocol_probe,
+                    'main_pid_after': main_pid_after,
+                    'steps': steps,
+                }
+
             resolve_auth_probe = None
             try:
                 req = _rf_urllib.Request(
@@ -1152,6 +1208,8 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
                 'endpoint': 'http://127.0.0.1:8780',
                 'health': health,
                 'resolve_auth_probe': resolve_auth_probe,
+                'participant_protocol_probe': participant_protocol_probe,
+                'effective_unit': effective_unit,
                 'main_pid_before': main_pid_before,
                 'main_pid_after': main_pid_after,
                 'process_identity_attested': True,
