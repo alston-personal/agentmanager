@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - 'libs/model2ir/**'
+      - 'scripts/model2ir_stabilized_import_regression.py'
       - 'scripts/model2ir_real_family_stability.py'
       - '.github/workflows/model2ir-real-family-stability-v05.yml'
   push:
     branches: [main]
     paths:
       - 'libs/model2ir/**'
+      - 'scripts/model2ir_stabilized_import_regression.py'
       - 'scripts/model2ir_real_family_stability.py'
       - '.github/workflows/model2ir-real-family-stability-v05.yml'
   workflow_dispatch:
@@ -41,7 +43,8 @@ jobs:
           assert p['gate']['status']=='PASS'
           assert p['gate']['two_independent_humanoids_consistent'] is True
           assert p['gate']['candidate_repeatability']==1.0
-          assert p['gate']['post_stabilization_reversibility']==1.0
+          assert p['gate']['candidate_json_roundtrip']==1.0
+          assert p['gate']['canonical_embedding_rejected'] is True
           assert p['gate']['unknown_when_evidence_removed'] is True
           print('model2ir_real_family_stability=PASS')
           PY
@@ -51,3 +54,4 @@ jobs:
           path: /tmp/model2ir-v05/
           if-no-files-found: error
           retention-days: 30
+

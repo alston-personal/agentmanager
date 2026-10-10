@@ -8,8 +8,8 @@ def project_candidate_ir(model_ir: dict[str, Any]) -> dict[str, Any]:
     """Project extracted 3D evidence into a stable, explicit candidate Character IR.
 
     This is not canonical truth. It is the deterministic import boundary: once
-    created, this candidate IR can be embedded in a carrier and round-tripped
-    losslessly even if the original external asset had no model2ir metadata.
+    created, this candidate can be saved as JSON. Canonical embedding requires
+    explicit confirmation first; deterministic import does not confer authority.
     """
     sem = model_ir.get('semantic_evidence_v03') or {}
     body = sem.get('body_plan') or {}

@@ -20,6 +20,7 @@ def extract_ir(asset_or_path) -> dict[str, Any]:
             'mode': 'external-import-candidate',
             'candidate_created': True,
             'future_roundtrip_can_be_lossless_if_embedded': True,
+            'canonical_embedding_requires_confirmation': True,
         }
     else:
         out['candidate_ir'] = None

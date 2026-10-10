@@ -10,6 +10,7 @@ on:
       - 'tests/test_model2ir_geometry_profile.py'
       - 'tests/fixtures/model2ir/**'
       - 'tests/test_model2ir_glb_reversible_v09.py'
+      - 'tests/test_model2ir_semantic_integrity.py'
       - '.github/workflows/model2ir-library-v08.yml'
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - 'tests/test_model2ir_geometry_profile.py'
       - 'tests/fixtures/model2ir/**'
       - 'tests/test_model2ir_glb_reversible_v09.py'
+      - 'tests/test_model2ir_semantic_integrity.py'
       - '.github/workflows/model2ir-library-v08.yml'
 
 permissions:
@@ -44,13 +46,14 @@ jobs:
           python -m unittest discover -s tests -p 'test_model2ir_cli.py' -q
           python -m unittest discover -s tests -p 'test_model2ir_geometry_profile.py' -q
           python -m unittest discover -s tests -p 'test_model2ir_glb_reversible_v09.py' -q
+          python -m unittest discover -s tests -p 'test_model2ir_semantic_integrity.py' -q
       - name: Verify public API and console entrypoint
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           import model2ir
-          assert model2ir.__version__ == '0.9.1'
+          assert model2ir.__version__ == '0.9.2'
           assert callable(model2ir.extract_ir)
           assert callable(model2ir.profile_asset_structure)
           assert callable(model2ir.build_teacher_dataset)
@@ -78,7 +81,7 @@ jobs:
           cd /tmp
           /tmp/model2ir-wheel-venv/bin/python - <<'PY'
           import model2ir
-          assert model2ir.__version__ == '0.9.1'
+          assert model2ir.__version__ == '0.9.2'
           assert callable(model2ir.profile_asset_structure)
           assert callable(model2ir.compile_reversible_glb)
           assert callable(model2ir.build_teacher_dataset)
