@@ -91,7 +91,7 @@ jobs:
           echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
 
-      - name: Reconcile approved verified WorkItem receipts back to GitHub
+      - name: Reconcile verified two-Issue MVP receipts back to GitHub
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,29 +103,20 @@ jobs:
           # Project the authoritative verified Ledger receipt; do not re-run task acceptance during synchronization.
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$port" "$target" 'python3 -' > "${RUNNER_TEMP}/verified-receipts.json" <<'PY'
           import json, pathlib
-          root = pathlib.Path("/home/ubuntu/agent-data/governance")
-          items = json.loads((root/"work-items.json").read_text(encoding="utf-8")).get("items", {})
-          intake = json.loads((root/"issue-intake/last-sync-result.json").read_text(encoding="utf-8"))
+          path = pathlib.Path("/home/ubuntu/agent-data/governance/work-items.json")
+          items = json.loads(path.read_text(encoding="utf-8")).get("items", {})
           result = []
-          for row in intake:
-              if row.get("status") not in ("accepted", "already_terminal"):
-                  continue
-              number = row.get("number")
-              if not isinstance(number,int) or number < 1:
-                  continue
-              work_id = f"gh-issue-{number}-readonly"
-              if row.get("work_id") != work_id:
-                  continue
-              item = items.get(work_id) or {}
+          for number in (1655, 1656):
+              item = items.get(f"gh-issue-{number}-readonly") or {}
               verification = item.get("verification") or {}
-              verified = (item.get("status") == "done"
-                          and verification.get("status") == "passed"
-                          and bool(item.get("evidence"))
-                          and item.get("source") == f"https://github.com/alston-personal/agentmanager/issues/{number}")
-              result.append({"issue":number, "verified":verified})
+              passed = (item.get("status") == "done"
+                        and verification.get("status") == "passed"
+                        and bool(item.get("evidence")))
+              result.append({"issue": number, "verified": passed})
           print(json.dumps(result, separators=(",", ":")))
           PY
-          # Validate approved Issue contracts; no arbitrary issue text or non-readonly actions.
+          # Only the two exact explicitly approved test Issues may be closed by this MVP.
+          # Validate the currently open GitHub issue's labels and immutable read-only Action before mutation.
           python3 - "${RUNNER_TEMP}/verified-receipts.json" "${RUNNER_TEMP}/approved-issues.json" <<'PY' > "${RUNNER_TEMP}/close-issues.txt"
           import json,re,sys
           receipts = json.load(open(sys.argv[1],encoding="utf-8"))
@@ -133,138 +124,7 @@ jobs:
           by_number = {i.get("number"):i for i in issues if isinstance(i,dict) and "pull_request" not in i}
           for row in receipts:
               number=row["issue"]
-              port_match=re.search(r'(?m)^Action:\s*檢查連接埠 ([0-9]{1,5})\s*
-              issue=by_number.get(number,{})
-              labels={x.get("name") for x in issue.get("labels",[]) if isinstance(x,dict)}
-              body=issue.get("body") or ""
-              eligible=(row["verified"] is True and 1 <= port <= 65535
-                 and issue.get("state")=="open"
-                 and {"agentos:approved","agentos:lobster","agentos:readonly"} <= labels
-                 and re.search(r"(?m)^Action:\s*檢查連接埠 "+str(port)+r"\s*$",body)
-                 and re.search(r"(?m)^Acceptance:\s*\S+",body)
-                 and not (labels & {"blocked","needs-decision","needs-approval","security","production-change"}))
-              if eligible:
-                  print(number)
-          PY
-          verified_open="$(python3 - "${RUNNER_TEMP}/verified-receipts.json" "${RUNNER_TEMP}/approved-issues.json" <<'CHECK'
-          import json,sys
-          rows=json.load(open(sys.argv[1],encoding="utf-8"))
-          issues=json.load(open(sys.argv[2],encoding="utf-8"))
-          opens={x.get("number") for x in issues if isinstance(x,dict) and x.get("state")=="open"}
-          print(sum(row["verified"] is True and row["issue"] in opens for row in rows))
-          CHECK
-          )"
-          eligible_count="$(wc -l < "${RUNNER_TEMP}/close-issues.txt")"
-          echo "receipt_sync_verified_open=$verified_open eligible=$eligible_count"
-          if [ "$verified_open" -gt "$eligible_count" ]; then
-            echo "receipt_sync_eligibility_mismatch=FAIL" >&2
-            exit 12
-          fi
-          closed_count=0
-          while IFS= read -r issue; do
-            test -n "$issue" || continue
-            [[ "$issue" =~ ^[1-9][0-9]*$ ]] || exit 10
-            # Recheck server-side issue state immediately before closing. Safe on reruns.
-            data="$(curl -fsS --max-time 20 -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' \
-              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue")"
-            # Guard against label/action revocation after snapshot.
-            python3 - "$issue" "$data" <<'VALIDATE'
-            import json,re,sys
-            n=int(sys.argv[1]); obj=json.loads(sys.argv[2])
-            labels={x.get("name") for x in obj.get("labels",[]) if isinstance(x,dict)}
-            action=re.search(r'(?m)^Action:\s*檢查連接埠 ([0-9]{1,5})\s* '%s' "$data" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
-            test "$current" = open || continue
-            body="$(printf 'Oracle durable Ledger completion receipt independently verified. Evidence: https://github.com/alston-personal/agentmanager/actions/runs/%s (job receipt reconciliation). Scope: read-only localhost port inspection.\n' "$GITHUB_RUN_ID")"
-            curl -fsS --max-time 20 -X POST -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
-              -d "$(python3 -c 'import json,sys; print(json.dumps({"body":sys.argv[1]}))' "$body")" \
-              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue/comments" >/dev/null
-            curl -fsS --max-time 20 -X PATCH -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
-              -d '{"state":"closed","state_reason":"completed"}' \
-              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue" >/dev/null
-            echo "receipt_github_issue_closed=$issue"
-            closed_count=$((closed_count+1))
-          done < "${RUNNER_TEMP}/close-issues.txt"
-          echo "receipt_sync_closed_count=$closed_count"
-          test "$closed_count" -eq "$eligible_count"
-, (by_number.get(number,{}) or {}).get('body') or '')
-              port=int(port_match.group(1)) if port_match else 0
-              issue=by_number.get(number,{})
-              labels={x.get("name") for x in issue.get("labels",[]) if isinstance(x,dict)}
-              body=issue.get("body") or ""
-              eligible=(row["verified"] is True and port is not None
-                 and issue.get("state")=="open"
-                 and {"agentos:approved","agentos:lobster","agentos:readonly"} <= labels
-                 and re.search(r"(?m)^Action:\s*檢查連接埠 "+str(port)+r"\s*$",body)
-                 and "Acceptance:" in body)
-              if eligible:
-                  print(number)
-          PY
-          verified_open="$(python3 - "${RUNNER_TEMP}/verified-receipts.json" "${RUNNER_TEMP}/approved-issues.json" <<'CHECK'
-          import json,sys
-          rows=json.load(open(sys.argv[1],encoding="utf-8"))
-          issues=json.load(open(sys.argv[2],encoding="utf-8"))
-          opens={x.get("number") for x in issues if isinstance(x,dict) and x.get("state")=="open"}
-          print(sum(row["verified"] is True and row["issue"] in opens for row in rows))
-          CHECK
-          )"
-          eligible_count="$(wc -l < "${RUNNER_TEMP}/close-issues.txt")"
-          echo "receipt_sync_verified_open=$verified_open eligible=$eligible_count"
-          if [ "$verified_open" -gt "$eligible_count" ]; then
-            echo "receipt_sync_eligibility_mismatch=FAIL" >&2
-            exit 12
-          fi
-          closed_count=0
-          while IFS= read -r issue; do
-            test -n "$issue" || continue
-            case "$issue" in 1655|1656) ;; *) exit 10 ;; esac
-            # Recheck server-side issue state immediately before closing. Safe on reruns.
-            data="$(curl -fsS --max-time 20 -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' \
-              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue")"
-            current="$(printf '%s' "$data" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
-            test "$current" = open || continue
-            body="$(printf 'Oracle durable Ledger completion receipt independently verified. Evidence: https://github.com/alston-personal/agentmanager/actions/runs/%s (job receipt reconciliation). Scope: read-only localhost port inspection.\n' "$GITHUB_RUN_ID")"
-            curl -fsS --max-time 20 -X POST -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
-              -d "$(python3 -c 'import json,sys; print(json.dumps({"body":sys.argv[1]}))' "$body")" \
-              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue/comments" >/dev/null
-            curl -fsS --max-time 20 -X PATCH -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
-              -d '{"state":"closed","state_reason":"completed"}' \
-              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue" >/dev/null
-            echo "receipt_github_issue_closed=$issue"
-            closed_count=$((closed_count+1))
-          done < "${RUNNER_TEMP}/close-issues.txt"
-          echo "receipt_sync_closed_count=$closed_count"
-          test "$closed_count" -eq "$eligible_count"
-,obj.get("body") or "")
-            assert obj.get("number")==n and obj.get("state")=="open"
-            assert {"agentos:approved","agentos:lobster","agentos:readonly"} <= labels
-            assert not (labels & {"blocked","needs-decision","needs-approval","security","production-change"})
-            assert action and 1 <= int(action.group(1)) <= 65535
-            assert re.search(r'(?m)^Acceptance:\s*\S+',obj.get("body") or "")
-            VALIDATE
-            current="$(printf '%s' "$data" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
-            test "$current" = open || continue
-            body="$(printf 'Oracle durable Ledger completion receipt independently verified. Evidence: https://github.com/alston-personal/agentmanager/actions/runs/%s (job receipt reconciliation). Scope: read-only localhost port inspection.\n' "$GITHUB_RUN_ID")"
-            curl -fsS --max-time 20 -X POST -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
-              -d "$(python3 -c 'import json,sys; print(json.dumps({"body":sys.argv[1]}))' "$body")" \
-              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue/comments" >/dev/null
-            curl -fsS --max-time 20 -X PATCH -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
-              -d '{"state":"closed","state_reason":"completed"}' \
-              "https://api.github.com/repos/alston-personal/agentmanager/issues/$issue" >/dev/null
-            echo "receipt_github_issue_closed=$issue"
-            closed_count=$((closed_count+1))
-          done < "${RUNNER_TEMP}/close-issues.txt"
-          echo "receipt_sync_closed_count=$closed_count"
-          test "$closed_count" -eq "$eligible_count"
-, (by_number.get(number,{}) or {}).get('body') or '')
-              port=int(port_match.group(1)) if port_match else 0
+              port={1655:65532,1656:65533}.get(number)
               issue=by_number.get(number,{})
               labels={x.get("name") for x in issue.get("labels",[]) if isinstance(x,dict)}
               body=issue.get("body") or ""
