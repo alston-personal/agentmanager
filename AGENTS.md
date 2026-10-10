@@ -7,9 +7,10 @@ This repository is the **AgentOS logic/runtime root**. Mutable project state bel
 Before architecture or system-level changes:
 
 1. `README.md` — current product goal and public architecture.
-2. `docs/CURRENT_STATE.md` — canonical map of **Implemented / Verified / Research** capabilities.
-3. `docs/AGENTOS_NODE.md` — responsibility/resource discovery contract for cross-project work.
-4. `.agent/CONSTITUTION.yaml` and relevant governance/role sources when authority or policy is involved.
+2. `docs/GROWTH_PROOF.md` — highest-principle contract for demonstrating measurable AgentOS self-growth.
+3. `docs/CURRENT_STATE.md` — canonical map of **Implemented / Verified / Research** capabilities.
+4. `docs/AGENTOS_NODE.md` — responsibility/resource discovery contract for cross-project work.
+5. `.agent/CONSTITUTION.yaml` and relevant governance/role sources when authority or policy is involved.
 
 Do not rely on older memory/pulse-era documents as current architecture if they disagree with `docs/CURRENT_STATE.md` and executable evidence.
 
@@ -28,8 +29,17 @@ AgentOS currently contains, among other components:
 
 The model-independent **Cognitive IR / zero-cost arbitrary model switching** layer is still research unless and until a repeatable benchmark proves it.
 
+## Highest principle: AgentOS Growth Proof
+
+AgentOS MUST continuously seek reproducible evidence that accumulated validated experience improves later independent execution. Architecture, memory, IR, runtime, recovery, benchmark, and product changes SHOULD preserve or strengthen the ability to measure this effect.
+
+**Memory, persistence, more context, or a successful one-off repair are not sufficient evidence of growth.** A growth claim requires a reusable validated delta, later independent reuse, and measurable uplift against an appropriate baseline while relevant confounders are controlled.
+
+The canonical proof contract, evidence ladder, metrics, and current proof inventory live in `docs/GROWTH_PROOF.md`.
+
 ## Critical constraints
 
+- **Growth Proof is a first-class architectural acceptance criterion.** When a change creates reusable experience, capture enough evidence to determine whether a later execution became better because of that accumulated experience.
 - Preserve Logic/Data separation: mutable user/project state must not be accidentally committed into the logic repository.
 - Discover/resolve existing capability ownership before creating parallel infrastructure.
 - Newer user intent must never be rolled back by stale snapshots, replay, or tool results.
