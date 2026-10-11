@@ -127,6 +127,57 @@ relabeling fallback text cannot establish recovery. The same Oracle returned
 existing Codex health recipe, not this isolated Mio invocation. Exact-generation
 deployment and a new node-authoritative Mio reasoning receipt remain required.
 
+### Mio reviewed single-image delivery (source candidate)
+
+The existing PDCA media worker, draft-only FLUX executor, identity-manifest
+validator and `agentos.social_runtime` image publisher remain the owners. This
+candidate connects independently reviewed drafts to that publisher; it creates
+no second image API, patrol timer, account session or nginx serving root.
+
+`scripts/persona_media_asset.py` binds a `milkcat.image-manifest/v2` review to
+the action, caption SHA-256, exact image bytes, current reference pack/visual
+policy and world/wardrobe catalog digests. Required content checks cover scene
+provenance, wardrobe rights, season, caption facts, final image/caption, world
+selection and assembly. Catalog candidates and unverified retail image rights
+cannot be upgraded by a model's pass label. Identity validation reuses
+`validate_mio_visual_manifest.py`; this initial lane requires the existing
+photo-like-face identity checks. A review lives at
+`pdca/media_reviews/<action_id>.json`; it is evidence input, not a generated
+approval. Generated drafts remain unverified until this review exists.
+
+The existing worker hosts reviewed JPEG/PNG bytes by content hash in the
+existing Mio static subtree, verifies the exact public bytes, and records an
+action-bound asset receipt. `persona_social_executor.py` rechecks the receipt,
+review and public digest before requesting the existing IMAGE acceptance/write.
+It completes only after the exact returned platform ID reads back with the
+same caption, `media_type=IMAGE`, visible image and permalink. Deferred readback
+is read-only and charges the write's energy once, even when the write leaves
+energy negative. Missing image prompts/assets defer rather than downgrade to
+text. Text and public-reply receipts now retain the provider's top-level object
+ID, and public-reply events retain their parent/root IDs.
+
+A private, node-local write journal survives disposable data clones and failed
+Git pushes. Once image dispatch starts, subsequent cycles may only reconcile;
+timeouts/unknown results cannot trigger another publish. Missing platform ID
+requires separate bounded reconciliation/repair, never a blind retry. Image
+readback does not prove the visible picture matches Mio's identity; that remains
+the independent review's responsibility.
+
+The FLUX executor now requires `AGENTOS_MIO_REFERENCE_IMAGE` to identify bytes
+matching the canonical approved reference pack; the public avatar is no longer
+a substitute. Node-private optional configuration lives in
+`~/.config/agentos/mio-media.env`. The existing deployment installs both shared
+asset resolver and visual validator. It does not populate reference bytes,
+approve catalog rights, invent reviews or force an image post. Automatic visual
+review generation is still not integrated/verified. Current catalog eligibility,
+reference availability, provider execution, hosting and real autonomous IMAGE
+delivery require independent Oracle receipts after approved merge/deployment.
+
+Offline verification: `tests/test_persona_media_publish.py`,
+`tests/test_mio_media_ledger_smoke.py`, `tests/test_persona_post_reasoning.py`,
+and `Persona Reviewed Media Contract`. No public test posts or historical asset
+reuse are performed. Carousel and media replies remain outside this candidate.
+
 Project identity is explicitly separated from repository, checkout path, runtime path, deployment target, and state storage.
 
 The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.

@@ -13,6 +13,8 @@ on:
       - 'scripts/persona_pdca_tick.py'
       - 'scripts/persona_social_executor.py'
       - 'scripts/persona_media_request_worker.py'
+      - 'scripts/persona_media_asset.py'
+      - 'scripts/validate_mio_visual_manifest.py'
       - 'scripts/persona_image_generate_flux.py'
       - 'scripts/capability_experience_ledger.py'
       - 'scripts/persona_internal_activity_executor.py'
@@ -167,6 +169,10 @@ jobs:
           REMOTE_IMAGE_EXECUTOR="/tmp/persona_image_generate_flux-$GITHUB_RUN_ID.py"
           REMOTE_EXPERIENCE_LEDGER="/tmp/capability_experience_ledger-$GITHUB_RUN_ID.py"
           REMOTE_INSTALLER="/tmp/install_persona_pdca_timer-$GITHUB_RUN_ID.sh"
+          REMOTE_MEDIA_ASSET="/tmp/persona_media_asset-$GITHUB_RUN_ID.py"
+          REMOTE_VISUAL_VALIDATOR="/tmp/validate_mio_visual_manifest-$GITHUB_RUN_ID.py"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/persona_media_asset.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_MEDIA_ASSET"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/validate_mio_visual_manifest.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_VISUAL_VALIDATOR"
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/persona_media_request_worker.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_MEDIA_WORKER"
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/persona_image_generate_flux.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_IMAGE_EXECUTOR"
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/capability_experience_ledger.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_EXPERIENCE_LEDGER"
@@ -192,10 +198,10 @@ jobs:
             scripts/install_persona_pdca_timer_user.sh "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_INSTALLER"
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash "$REMOTE_INSTALLER" "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_GROWTH_METRICS" "$REMOTE_MEDIA_WORKER" "$REMOTE_IMAGE_EXECUTOR" "$REMOTE_EXPERIENCE_LEDGER"
+            bash "$REMOTE_INSTALLER" "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_GROWTH_METRICS" "$REMOTE_MEDIA_WORKER" "$REMOTE_IMAGE_EXECUTOR" "$REMOTE_EXPERIENCE_LEDGER" "$REMOTE_MEDIA_ASSET" "$REMOTE_VISUAL_VALIDATOR"
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_GROWTH_METRICS" "$REMOTE_MEDIA_WORKER" "$REMOTE_IMAGE_EXECUTOR" "$REMOTE_EXPERIENCE_LEDGER" "$REMOTE_INSTALLER"
+            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_GROWTH_METRICS" "$REMOTE_MEDIA_WORKER" "$REMOTE_IMAGE_EXECUTOR" "$REMOTE_EXPERIENCE_LEDGER" "$REMOTE_MEDIA_ASSET" "$REMOTE_VISUAL_VALIDATOR" "$REMOTE_INSTALLER"
 
       - name: Inspect Persona timer runtime
         shell: bash

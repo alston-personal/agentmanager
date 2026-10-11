@@ -2,7 +2,7 @@
   "schema": "agentos.capability-recovery-manifest/v1",
   "capability_id": "social.threads.publish.image",
   "owner": "agentos.social_runtime",
-  "status": "historical_verified_not_currently_integrated",
+  "status": "historical_verified_reviewed_single_image_source_candidate",
   "historical_source": {
     "repository": "alston-personal/agentmanager",
     "commit": "8a3272c06e154183cb3539149bde1fd8217e3e52",
@@ -55,8 +55,16 @@
     "target": "scripts/persona_social_executor.py",
     "source_intent": "pdca/media_requests/<action_id>.json",
     "verified_asset": "pdca/media_receipts/<action_id>.json",
-    "status": "not_integrated",
+    "status": "source_candidate_requires_deployment_and_live_acceptance",
     "acceptance": "Independent end-to-end generated-or-approved IMAGE post with real platform media readback; protect existing text-only publishing.",
-    "safety": "Never automatically republish the historical image/post to demonstrate recovery."
+    "safety": "Never automatically republish the historical image/post to demonstrate recovery.",
+    "review_manifest": "pdca/media_reviews/<action_id>.json",
+    "asset_resolver": "scripts/persona_media_asset.py",
+    "known_limits": [
+      "independent_visual_review_required",
+      "canonical_reference_bytes_required",
+      "world_and_wardrobe_eligibility_required",
+      "single_image_face_identity_gate_only"
+    ]
   }
 }

@@ -3,35 +3,41 @@
 import argparse, hashlib, json, os, shutil, tempfile
 from pathlib import Path
 
-CANONICAL_SOURCE="https://studio.milkcat.org/personas/mio/mio-avatar.webp"
 PROVIDERS=("black-forest-labs/FLUX.1-Kontext-Dev","mcp-tools/FLUX.1-Kontext-Dev")
 
+def canonical_reference(request):
+    pack=request.get("canonical_reference_pack") or {}
+    reference_path=os.environ.get("AGENTOS_MIO_REFERENCE_IMAGE","")
+    if not reference_path or pack.get("status")!="approved":
+        raise ValueError("canonical_reference_unavailable")
+    asset=pack.get("canonical_asset") or {}
+    if asset.get("reference_id") not in (pack.get("approved_reference_ids") or []):
+        raise ValueError("canonical_reference_not_approved")
+    data=Path(reference_path).read_bytes()
+    if len(data)>15_000_000 or hashlib.sha256(data).hexdigest()!=asset.get("sha256"):
+        raise ValueError("canonical_reference_digest_mismatch")
+    return data
+
 def generate(request, destination):
-    from gradio_client import Client, handle_file
-    from PIL import Image
-    from urllib.request import urlopen
     prompt=str(request.get("generation_prompt") or "").strip()
     if not prompt or request.get("mode")!="generate":
         raise ValueError("image_generation_prompt_required")
     action_id=str(request.get("action_id") or "")
     if not action_id or len(action_id)>128 or not all(c.isalnum() or c in "-_" for c in action_id):
         raise ValueError("unsafe_action_id")
+    data=canonical_reference(request)
+    from gradio_client import Client, handle_file
+    from PIL import Image
     destination=Path(destination)
     destination.mkdir(parents=True,exist_ok=True)
-    output=destination/(action_id+".webp")
+    output=destination/(action_id+".jpg")
     if output.exists():
         raise FileExistsError("draft_output_exists_requires_review")
     with tempfile.TemporaryDirectory(prefix="mio-kontext-") as td:
-        source=Path(td)/"canonical.webp"
-        with urlopen(CANONICAL_SOURCE,timeout=20) as response:
-            with source.open("wb") as writer:
-                size=0
-                while True:
-                    chunk=response.read(65536)
-                    if not chunk: break
-                    size+=len(chunk)
-                    if size>15_000_000: raise ValueError("canonical_reference_too_large")
-                    writer.write(chunk)
+        # Reference availability is configuration, approval/digest is persona
+        # data authority. A public avatar is not interchangeable with the pack.
+        source=Path(td)/"canonical.jpg"
+        source.write_bytes(data)
         with Image.open(source) as img:
             img.verify()
         instructions=(
@@ -55,11 +61,11 @@ def generate(request, destination):
                 with Image.open(candidate) as img:
                     img.verify()
                 with Image.open(candidate) as img:
-                    img.convert("RGB").save(output,format="WEBP",quality=94)
+                    img.convert("RGB").save(output,format="JPEG",quality=94)
                 digest=hashlib.sha256(output.read_bytes()).hexdigest()
                 return {"status":"GENERATED_UNVERIFIED","provider":provider,
                     "image_path":str(output),"image_sha256":digest,
-                    "reference_source":CANONICAL_SOURCE,
+                    "reference_image_sha256":hashlib.sha256(data).hexdigest(),
                     "identity_verified":False,"publication_allowed":False}
             except Exception as exc:
                 errors.append({"provider":provider,"failure_class":type(exc).__name__})
@@ -73,9 +79,17 @@ def main():
     ap.add_argument("--receipt",required=True)
     args=ap.parse_args()
     try:
-        result=generate(json.loads(Path(args.request).read_text(encoding="utf-8")),args.output_dir)
+        request_path=Path(args.request)
+        request=json.loads(request_path.read_text(encoding="utf-8"))
+        persona=request_path.parent.parent.parent
+        request["canonical_reference_pack"]=json.loads((persona/"reference_pack.json").read_text(encoding="utf-8"))
+        result=generate(request,args.output_dir)
     except (OSError,ValueError,ImportError,RuntimeError) as exc:
-        result={"status":"BLOCKED","reason":type(exc).__name__,"publication_allowed":False}
+        known={"canonical_reference_unavailable","canonical_reference_not_approved",
+               "canonical_reference_digest_mismatch","image_generation_prompt_required",
+               "unsafe_action_id","draft_output_exists_requires_review"}
+        reason=str(exc) if str(exc) in known else type(exc).__name__
+        result={"status":"BLOCKED","reason":reason,"publication_allowed":False}
     receipt=Path(args.receipt)
     receipt.parent.mkdir(parents=True,exist_ok=True)
     receipt.write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")

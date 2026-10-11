@@ -14,6 +14,8 @@ SOURCE_GROWTH_METRICS="${9:-}"
 SOURCE_MEDIA_WORKER="${10:-}"
 SOURCE_IMAGE_EXECUTOR="${11:-}"
 SOURCE_EXPERIENCE_LEDGER="${12:-}"
+SOURCE_MEDIA_ASSET="${13:-}"
+SOURCE_VISUAL_VALIDATOR="${14:-}"
 test -f "$SOURCE_TICK"
 test -f "$SOURCE_RUNNER"
 test -f "$SOURCE_SOCIAL_EXECUTOR"
@@ -26,6 +28,8 @@ test -f "$SOURCE_GROWTH_METRICS"
 test -f "$SOURCE_MEDIA_WORKER"
 test -f "$SOURCE_IMAGE_EXECUTOR"
 test -f "$SOURCE_EXPERIENCE_LEDGER"
+test -f "$SOURCE_MEDIA_ASSET"
+test -f "$SOURCE_VISUAL_VALIDATOR"
 
 LIB="$HOME/.local/lib/agentos"
 BIN="$HOME/.local/bin"
@@ -41,6 +45,8 @@ install -m 0755 "$SOURCE_GROWTH_METRICS" "$LIB/persona_growth_metrics_collector.
 install -m 0755 "$SOURCE_MEDIA_WORKER" "$LIB/persona_media_request_worker.py"
 install -m 0755 "$SOURCE_IMAGE_EXECUTOR" "$LIB/persona_image_generate_flux.py"
 install -m 0755 "$SOURCE_EXPERIENCE_LEDGER" "$LIB/capability_experience_ledger.py"
+install -m 0755 "$SOURCE_MEDIA_ASSET" "$LIB/persona_media_asset.py"
+install -m 0755 "$SOURCE_VISUAL_VALIDATOR" "$LIB/validate_mio_visual_manifest.py"
 CANONICAL_HEARTBEAT="$BIN/agentos-persona-pdca-heartbeat-v2"
 install -m 0755 "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT"
 cmp -s "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT" || {
@@ -102,6 +108,9 @@ Environment=AGENTOS_PERSONA_GROWTH_METRICS=$LIB/persona_growth_metrics_collector
 Environment=AGENTOS_MIO_IMAGE_EXECUTOR=$LIB/persona_image_generate_flux.py
 Environment=AGENTOS_MIO_IMAGE_EXECUTOR_PYTHON=/home/ubuntu/.local/share/mio-tryon-venv/bin/python
 Environment=AGENTOS_MIO_MEDIA_OUTPUT_DIR=/home/ubuntu/agent-data/media/mio/generated
+Environment=AGENTOS_MIO_PUBLIC_MEDIA_DIR=/home/ubuntu/zeus-writer/website/dist/personas/mio/media
+Environment=AGENTOS_PERSONA_WRITE_JOURNAL_DIR=/home/ubuntu/agent-data/runtime/persona-social-writes
+EnvironmentFile=-/home/ubuntu/.config/agentos/mio-media.env
 ExecStart=$BIN/agentos-persona-social-actions
 NoNewPrivileges=true
 EOF
