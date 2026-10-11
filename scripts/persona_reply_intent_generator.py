@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-import argparse, glob, hashlib, json, os, random, re, subprocess
+import argparse, hashlib, json, random, re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import persona_post_intent_generator as reasoning
+from persona_social_executor import save, timestamp
 
 def load(p):
     with open(p,"r",encoding="utf-8") as f: return json.load(f)
@@ -16,36 +18,80 @@ def read_events(path):
         except Exception: pass
     return out
 
-def discover_executor():
-    patterns=[
-      "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-*-linux-arm64/resources/native-binary/claude",
-      "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-*/resources/native-binary/claude",
-    ]
-    found=[]
-    for p in patterns: found += glob.glob(p)
-    for p in sorted(set(found),reverse=True):
-        if os.path.isfile(p) and os.access(p,os.X_OK):
-            return [p,"--bare","--print","--output-format","text","--effort","low"]
-    return None
-
 def normalize_ts(v):
-    if not v: return None
-    try: return datetime.fromisoformat(str(v).replace("Z","+00:00"))
-    except Exception: return None
+    return timestamp(v)
+
+def terminal_action(action):
+    return isinstance(action,dict) and action.get("status") in {"completed","cancelled","superseded","skipped"}
 
 def already_replied(events, reply):
     rid=str(reply.get("object_id") or reply.get("source_object_id") or "")
-    root=str(reply.get("root_post_id") or reply.get("root_id") or "")
-    ts=normalize_ts(reply.get("timestamp"))
     for e in events:
         if e.get("type")!="reply.sent": continue
-        ets=normalize_ts(e.get("timestamp"))
-        if ts and ets and ets <= ts: continue
         parent=str(e.get("parent_object_id") or e.get("reply_to_id") or "")
-        eroot=str(e.get("root_post_id") or "")
         if rid and parent==rid: return True
-        if root and eroot==root and ets and ts and ets>ts: return True
     return False
+
+def reply_candidates(events,state,ir_binding):
+    """Routeable comments only; a historical screenshot cannot starve the queue."""
+    skipped={}
+    candidates={}
+    decisions=state.get("reply_decisions") or {}
+    for event in events:
+        if event.get("type")!="reply.observed": continue
+        author=str(event.get("author_handle") or event.get("username") or "").lstrip("@").casefold()
+        if str(event.get("actor") or "")==str(state.get("persona_id")) or author=="mio.milkcat": continue
+        if event.get("is_reply_owned_by_me") is True or already_replied(events,event): continue
+        text=str(event.get("text") or event.get("summary") or "").strip()
+        if not text: continue
+        rid=str(event.get("object_id") or event.get("source_object_id") or "")
+        root_id=str(event.get("root_post_id") or event.get("root_id") or "")
+        root_post=root_text(events,root_id)
+        stamp=normalize_ts(event.get("timestamp"))
+        reason=("missing_route_ids" if not rid.isdigit() or not root_id.isdigit() else
+                "missing_root_post" if not root_post else "invalid_timestamp" if stamp is None else None)
+        if reason:
+            skipped[reason]=skipped.get(reason,0)+1
+            continue
+        key=hashlib.sha256(json.dumps({"reply_id":rid,"root_id":root_id,"text":text,
+            "root_post":root_post,"ir_source_sha256":ir_binding["source_sha256"]},
+            ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+        previous=decisions.get(rid,{})
+        if previous.get("context_sha256")==key and previous.get("status") in ("NO_REPLY","HUMAN_REQUIRED"):
+            skipped["already_reviewed"]=skipped.get("already_reviewed",0)+1
+            continue
+        candidates[rid]={"event":event,"reply_id":rid,"root_id":root_id,"root_post":root_post,
+                         "timestamp":stamp,"context_sha256":key}
+    return sorted(candidates.values(),key=lambda x:x["timestamp"],reverse=True),skipped
+
+def persist_reply_receipt(root,state,status,reason,now,**evidence):
+    report={"schema":"agentos.persona-reply-reasoning-receipt/v1","cycle":state.get("cycle"),
+        "status":status,"reason":reason,"generator_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "reasoning_runtime_sha256":hashlib.sha256(Path(reasoning.__file__).read_bytes()).hexdigest(),
+        "diagnostic_contract":"sanitized-failure-class/v1","publication_acceptance":"NOT_OBSERVED",**evidence}
+    # Unchanged non-provider defers do not create a receipt every five minutes.
+    old_ref=state.get("last_reply_reasoning_receipt")
+    if old_ref and not report.get("attempts"):
+        try:
+            old=load(root/old_ref)
+            if {k:v for k,v in old.items() if k!="timestamp"}==report: return old_ref
+        except (OSError,ValueError): pass
+    ref=f"pdca/reply_reasoning/{now.strftime('%Y-%m-%d')}/{now.strftime('%H%M%S%f')}.json"
+    save(root/ref,{**report,"timestamp":now.isoformat().replace("+00:00","Z")})
+    state["last_reply_reasoning_receipt"]=ref
+    save(root/"pdca/state.json",state)
+    return ref
+
+def extract_decision(text):
+    decision=reasoning.extract_json(text)
+    if not isinstance(decision,dict) or decision.get("position") not in {
+        "agree","partly_agree","disagree","uncertain","playful_only","no_reply"}:
+        raise ValueError("invalid_position")
+    if type(decision.get("should_reply")) is not bool or type(decision.get("human_required")) is not bool:
+        raise ValueError("invalid_reply_decision")
+    if not isinstance(decision.get("reply_text"),str) or not isinstance(decision.get("reason"),str):
+        raise ValueError("invalid_reply_decision")
+    return decision
 
 def root_text(events,root_id):
     for e in reversed(events):
@@ -75,14 +121,6 @@ def relationship_context(events,handle,limit=8):
         rows.append({"type":e.get("type"),"text":str(e.get("text") or e.get("summary") or "")[:400],"timestamp":e.get("timestamp")})
     return rows[-limit:]
 
-def extract_json(text):
-    text=text.strip()
-    try: return json.loads(text)
-    except Exception: pass
-    m=re.search(r'\{.*\}',text,re.S)
-    if not m: raise ValueError("executor_json_missing")
-    return json.loads(m.group(0))
-
 def safe_reply_text(text):
     if not isinstance(text,str): return False
     s=text.strip()
@@ -97,49 +135,41 @@ def main():
     args=ap.parse_args()
     root=Path(args.persona_dir)
     state=load(root/"pdca/state.json")
-    ir=load(root/"ir/current.json")
+    now=datetime.now(timezone.utc)
+    try:
+        ir,ir_context,ir_binding=reasoning.read_ir_authoring_context(root/"ir/current.json")
+    except (OSError,ValueError,TypeError):
+        persist_reply_receipt(root,state,"DEFER","current_ir_unavailable",now)
+        print(json.dumps({"status":"DEFER","reason":"current_ir_unavailable"})); return 0
     policy=load(root/"reply_policy.json")
     stances=load(root/"social_stances.json")
     persona=load(root/"persona_state.json")
     events=read_events(root/"events/events.jsonl")
-    now=datetime.now(timezone.utc)
-
-    # Only consider externally authored observed replies, newest first.
-    observed=[]
-    for e in events:
-        if e.get("type")!="reply.observed": continue
-        if str(e.get("actor") or "")==str(state.get("persona_id")): continue
-        txt=str(e.get("text") or e.get("summary") or "").strip()
-        if not txt: continue
-        if already_replied(events,e): continue
-        observed.append(e)
-    observed.sort(key=lambda e: normalize_ts(e.get("timestamp")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
-
     pending=list(state.get("pending_external_actions") or [])
     if any(x.get("status") in ("candidate","in_progress") and x.get("capability")=="social.reply.send" for x in pending if isinstance(x,dict)):
         print(json.dumps({"status":"SKIP","reason":"reply_send_already_pending"},ensure_ascii=False)); return 0
+    observed,skipped=reply_candidates(events,state,ir_binding)
     if not observed:
-        print(json.dumps({"status":"NO_CANDIDATE"},ensure_ascii=False)); return 0
+        status="DEFER" if any(k!="already_reviewed" for k in skipped) else "NO_CANDIDATE"
+        reason="no_routeable_comment" if status=="DEFER" else "no_unreviewed_comment"
+        persist_reply_receipt(root,state,status,reason,now,selection_skipped=skipped,ir_authoring_context=ir_binding)
+        print(json.dumps({"status":status,"reason":reason},ensure_ascii=False)); return 0
+    if sum(not terminal_action(x) for x in pending)>=12:
+        persist_reply_receipt(root,state,"DEFER","pending_capacity",now,selection_skipped=skipped)
+        print(json.dumps({"status":"DEFER","reason":"pending_capacity"})); return 0
 
-    candidate=observed[0]
-    reply_id=str(candidate.get("object_id") or candidate.get("source_object_id") or "")
-    root_id=str(candidate.get("root_post_id") or candidate.get("root_id") or "")
+    selected=observed[0]
+    candidate=selected["event"]
+    reply_id=selected["reply_id"]
+    root_id=selected["root_id"]
     handle=str(candidate.get("author_handle") or candidate.get("username") or "unknown")
     text=str(candidate.get("text") or candidate.get("summary") or "").strip()
-    root_post=root_text(events,root_id)
+    root_post=selected["root_post"]
     thread=prior_thread(events,root_id)
     relationship=relationship_context(events,handle)
 
-    # Fail closed if required conversation context is unavailable.
-    if not reply_id or not root_id or not root_post:
-        print(json.dumps({"status":"DEFER","reason":"missing_required_thread_context","reply_id":reply_id},ensure_ascii=False)); return 0
-
-    executor=discover_executor()
-    if not executor:
-        print(json.dumps({"status":"DEFER","reason":"persona_reasoning_executor_unavailable"},ensure_ascii=False)); return 0
-
     contract={
-      "current_ir":{"ir_id":ir.get("ir_id"),"current_self":ir.get("current_self"),"reply_contract":ir.get("reply_contract"),"promoted_growth":ir.get("promoted_growth")},
+      "current_ir":ir_context,
       "reply_policy":policy,
       "social_stances":stances,
       "voice":persona.get("voice"),
@@ -157,27 +187,35 @@ Return ONLY one JSON object with exactly these keys:
 Context:
 """+json.dumps(contract,ensure_ascii=False)
 
+    decision,executor,attempts=reasoning.reason_with_providers(prompt,extract_decision,
+        reasoning.discover_executor(),reasoning.discover_gemini_executor(),reasoning.discover_codex_executor())
+    evidence={"reply_id":reply_id,"root_post_id":root_id,"context_sha256":selected["context_sha256"],
+              "selection_skipped":skipped,"attempts":attempts,"ir_authoring_context":ir_binding}
+    if decision is None:
+        persist_reply_receipt(root,state,"DEFER","persona_reasoning_exhausted",datetime.now(timezone.utc),**evidence)
+        print(json.dumps({"status":"DEFER","reason":"persona_reasoning_exhausted"})); return 0
     try:
-        p=subprocess.run([*executor,prompt],cwd="/home/ubuntu/agentmanager",text=True,capture_output=True,timeout=90)
-    except subprocess.TimeoutExpired:
-        print(json.dumps({"status":"DEFER","reason":"persona_reasoning_timeout","timeout_seconds":90},ensure_ascii=False))
-        return 0
-    if p.returncode!=0:
-        print(json.dumps({"status":"DEFER","reason":"reasoning_executor_failed","returncode":p.returncode},ensure_ascii=False)); return 0
-    try: decision=extract_json(p.stdout)
-    except Exception as e:
-        print(json.dumps({"status":"DEFER","reason":"invalid_reasoning_output","detail":type(e).__name__},ensure_ascii=False)); return 0
+        unchanged=hashlib.sha256((root/"ir/current.json").read_bytes()).hexdigest()==ir_binding["source_sha256"]
+    except OSError: unchanged=False
+    if not unchanged:
+        persist_reply_receipt(root,state,"DEFER","current_ir_changed",datetime.now(timezone.utc),**evidence)
+        print(json.dumps({"status":"DEFER","reason":"current_ir_changed"})); return 0
 
-    allowed_positions={"agree","partly_agree","disagree","uncertain","playful_only","no_reply"}
-    position=str(decision.get("position") or "")
-    should=bool(decision.get("should_reply"))
-    human=bool(decision.get("human_required"))
+    position=decision["position"]
+    should=decision["should_reply"]
+    human=decision["human_required"]
     reply_text=str(decision.get("reply_text") or "").strip()
-    if position not in allowed_positions:
-        print(json.dumps({"status":"DEFER","reason":"invalid_position"},ensure_ascii=False)); return 0
     if human or position=="no_reply" or not should:
-        print(json.dumps({"status":"NO_REPLY","position":position,"human_required":human,"reason":str(decision.get("reason") or "")[:300]},ensure_ascii=False)); return 0
+        status="HUMAN_REQUIRED" if human else "NO_REPLY"
+        decisions=dict(state.get("reply_decisions") or {})
+        decisions[reply_id]={"status":status,"context_sha256":selected["context_sha256"],
+            "position":position,"reason":decision["reason"][:300]}
+        state["reply_decisions"]=dict(list(decisions.items())[-2000:])
+        persist_reply_receipt(root,state,status,"review_completed_without_send",datetime.now(timezone.utc),
+                              position=position,**evidence)
+        print(json.dumps({"status":status,"position":position,"human_required":human},ensure_ascii=False)); return 0
     if not safe_reply_text(reply_text):
+        persist_reply_receipt(root,state,"DEFER","reply_text_guard_failed",datetime.now(timezone.utc),**evidence)
         print(json.dumps({"status":"DEFER","reason":"reply_text_guard_failed"},ensure_ascii=False)); return 0
 
     # Respect Mio's configured reply latency instead of replying instantly by default.
@@ -193,17 +231,21 @@ Context:
       "policy":"public_conversation=autonomous_with_policy","requires_real_adapter_receipt":True,
       "reply_to_id":reply_id,"root_post_id":root_id,"target_handle":handle,"primary_text":reply_text,
       "position":position,"decision_reason":str(decision.get("reason") or "")[:300],
-      "ir_id":ir.get("ir_id"),"not_before":not_before,"reasoning_executor":"antigravity_claude"
+      "ir_id":ir.get("ir_id"),"ir_source_sha256":ir_binding["source_sha256"],
+      "ir_authoring_context_sha256":ir_binding["context_sha256"],
+      "not_before":not_before,"reasoning_executor":executor
     }
+    while len(pending)>=12:
+        terminal=next(i for i,x in enumerate(pending) if terminal_action(x))
+        pending.pop(terminal)
+    action["reasoning_receipt_ref"]=persist_reply_receipt(root,state,"CANDIDATE_CREATED","reply_intent_created",
+        datetime.now(timezone.utc),action_id=action_id,position=position,**evidence)
     pending.append(action)
-    state["pending_external_actions"]=pending[-12:]
+    state["pending_external_actions"]=pending
     state["last_reply_intent"]=action_id
-    tmp=root/"pdca/state.json.tmp"
-    tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-    os.replace(tmp,root/"pdca/state.json")
+    save(root/"pdca/state.json",state)
     out=root/"pdca/reply_intents"/f"{action_id}.json"
-    out.parent.mkdir(parents=True,exist_ok=True)
-    out.write_text(json.dumps({"schema":"agentos.persona-reply-intent/v1","created_at":now.isoformat().replace("+00:00","Z"),**action},ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    save(out,{"schema":"agentos.persona-reply-intent/v1","created_at":now.isoformat().replace("+00:00","Z"),**action})
     print(json.dumps({"status":"CANDIDATE_CREATED","action_id":action_id,"position":position,"not_before":not_before},ensure_ascii=False))
     return 0
 

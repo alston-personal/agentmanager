@@ -27,6 +27,22 @@ DECISION = {"should_post": True, "human_required": False,
 
 
 class PostReasoningTests(unittest.TestCase):
+    def test_recent_compact_platform_post_does_not_trigger_false_liveness(self):
+        out,_,_,actions,calls=self.run_generator([],consider=False,events=[{
+            'type':'post.sent','object_id':'recent','text':'今天的新觀察',
+            'timestamp':datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S%z')}])
+        self.assertEqual(out['status'],'NO_CANDIDATE')
+        self.assertEqual(actions,[])
+        self.assertEqual(calls,[])
+
+    def test_compact_platform_times_preserve_chronological_post_history(self):
+        events=[{'type':'post.sent','object_id':'old','timestamp':'2026-09-18T17:00:00+08:00','text':'old'},
+                {'type':'post.sent','object_id':'new','timestamp':'2026-10-11T16:00:00+0000','text':'new'},
+                {'type':'post.sent','object_id':'middle','timestamp':'2026-10-11T15:00:00Z','text':'middle'}]
+        _,history,binding=generator.post_history_context(events)
+        self.assertEqual([x['text'] for x in history],['old','middle','new'])
+        self.assertEqual(binding['post_object_ids'],['old','middle','new'])
+
     def test_incomplete_image_decision_never_becomes_text_candidate(self):
         for fields,reason in (({"image_decision":"generate"},"image_prompt_required"),
                               ({"image_decision":"existing_verified"},"verified_image_asset_required"),

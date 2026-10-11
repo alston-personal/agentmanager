@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, hashlib, json, os, urllib.request, urllib.error
+import argparse, hashlib, json, os, re, urllib.request, urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -65,7 +65,10 @@ def save_private(path,value):
 
 def timestamp(value):
     try:
-        dt=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+        # Platform exports use +0000; Python 3.10 requires +00:00.
+        text=str(value).strip().replace("Z","+00:00")
+        text=re.sub(r"([+-]\d{2})(\d{2})$",r"\1:\2",text)
+        dt=datetime.fromisoformat(text)
         return dt.astimezone(timezone.utc) if dt.tzinfo else None
     except (ValueError,TypeError):
         return None

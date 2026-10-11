@@ -2,6 +2,7 @@
 import argparse, glob, hashlib, json, os, random, re, shutil, subprocess, tempfile, time, unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from persona_social_executor import timestamp
 
 def load(path):
     with open(path,"r",encoding="utf-8") as f:
@@ -38,8 +39,8 @@ def unique_post_events(events):
         posts[key]=event
     def order(event):
         try:
-            stamp=datetime.fromisoformat(str(event.get("timestamp") or "").replace("Z","+00:00"))
-            return stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp.astimezone(timezone.utc)
+            stamp=timestamp(event.get("timestamp"))
+            return stamp or datetime.min.replace(tzinfo=timezone.utc)
         except ValueError:
             return datetime.min.replace(tzinfo=timezone.utc)
     return sorted(posts.values(),key=order)
@@ -269,6 +270,118 @@ def safe_post_text(text):
         return False
     return True
 
+def reason_with_providers(prompt, validator, claude_executor, gemini_executor, codex_executor):
+    """Existing bounded persona authoring chain, shared by posts and replies."""
+    decision=None
+    reasoning_executor=None
+    attempts=[]
+    if claude_executor:
+        started=time.monotonic()
+        try:
+            result=subprocess.run([*claude_executor,prompt],cwd="/home/ubuntu/agentmanager",
+                                  stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=45)
+            if result.returncode==0:
+                try:
+                    decision=validator(result.stdout)
+                    reasoning_executor="antigravity_claude"
+                    attempts.append(reasoning_attempt("claude",started,"PASS",result=result))
+                except Exception:
+                    attempts.append(reasoning_attempt("claude",started,"INVALID_OUTPUT",result=result))
+            else:
+                attempts.append(reasoning_attempt("claude",started,"NONZERO",result=result))
+        except subprocess.TimeoutExpired as error:
+            attempts.append(reasoning_attempt("claude",started,"TIMEOUT",error=error))
+        except OSError:
+            attempts.append(reasoning_attempt("claude",started,"UNAVAILABLE"))
+
+    if decision is None and gemini_executor:
+        started=time.monotonic()
+        try:
+            with tempfile.TemporaryDirectory(prefix="mio-reasoning-gemini-") as td:
+                temp=Path(td)
+                cli_home=temp/"cli-home"
+                settings=cli_home/".gemini"
+                settings.mkdir(parents=True,exist_ok=True)
+                (settings/"settings.json").write_text(json.dumps({
+                    "security":{"auth":{"selectedType":"oauth-personal"}},
+                    "hooksConfig":{"enabled":False},
+                    "skills":{"enabled":False},
+                })+"\n",encoding="utf-8")
+                source=Path("/home/ubuntu/.gemini")
+                for name in ("oauth_creds.json","google_accounts.json"):
+                    src=source/name
+                    if src.exists():
+                        (settings/name).symlink_to(src)
+                env={**os.environ,
+                     "HOME":"/home/ubuntu",
+                     "USER":"ubuntu",
+                     "CI":"1",
+                     "GEMINI_CLI_HOME":str(cli_home),
+                     "PATH":"/home/ubuntu/.local/bin:/home/ubuntu/.local/share/agentos/npm-global/bin:"+os.environ.get("PATH","/usr/local/bin:/usr/bin:/bin")}
+                result=subprocess.run([
+                    gemini_executor,"-p",prompt,"--approval-mode","plan","--skip-trust",
+                    "--output-format","json"
+                ],cwd=str(temp),stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=60,env=env)
+                if result.returncode==0:
+                    try:
+                        envelope=json.loads(result.stdout or "{}")
+                        response=str(envelope.get("response") or "") if isinstance(envelope,dict) else ""
+                        decision=validator(response)
+                        reasoning_executor="gemini_cli"
+                        attempts.append(reasoning_attempt("gemini",started,"PASS",result=result))
+                    except Exception:
+                        attempts.append(reasoning_attempt("gemini",started,"INVALID_OUTPUT",result=result))
+                else:
+                    attempts.append(reasoning_attempt("gemini",started,"NONZERO",result=result))
+        except subprocess.TimeoutExpired as error:
+            attempts.append(reasoning_attempt("gemini",started,"TIMEOUT",error=error))
+        except OSError:
+            attempts.append(reasoning_attempt("gemini",started,"UNAVAILABLE"))
+
+    if decision is None and codex_executor:
+        started=time.monotonic()
+        try:
+            with tempfile.TemporaryDirectory(prefix="mio-reasoning-codex-") as td:
+                temp=Path(td)
+                workspace=temp/"workspace"
+                workspace.mkdir()
+                cli_home=temp/"cli-home"
+                cli_home.mkdir(mode=0o700)
+                # Reuse OAuth without reading or serializing credential contents.
+                # Keep global hooks, MCP servers, plugins and repo instructions
+                # out of this text-only authoring task.
+                source=Path(os.environ.get("CODEX_HOME") or "/home/ubuntu/.codex")
+                auth=source/"auth.json"
+                if auth.is_file():
+                    (cli_home/"auth.json").symlink_to(auth)
+                (cli_home/"config.toml").write_text(
+                    'web_search = "disabled"\n[features]\nshell_tool = false\napps = false\n',
+                    encoding="utf-8")
+                answer=temp/"answer.json"
+                env={**os.environ,"CODEX_HOME":str(cli_home)}
+                result=subprocess.run([
+                    codex_executor,"-a","never","exec","--skip-git-repo-check",
+                    "--sandbox","read-only","--color","never","--ephemeral",
+                    "-C",str(workspace),"--output-last-message",str(answer),prompt
+                ],cwd=str(workspace),stdin=subprocess.DEVNULL,text=True,
+                  capture_output=True,timeout=60,env=env)
+                if result.returncode==0:
+                    try:
+                        response=answer.read_text(encoding="utf-8") if answer.is_file() else result.stdout
+                        decision=validator(response)
+                        reasoning_executor="codex_cli"
+                        attempts.append(reasoning_attempt("codex",started,"PASS",result=result))
+                    except (OSError,ValueError,TypeError):
+                        attempts.append(reasoning_attempt("codex",started,"INVALID_OUTPUT",result=result))
+                else:
+                    attempts.append(reasoning_attempt("codex",started,"NONZERO",result=result))
+        except subprocess.TimeoutExpired as error:
+            attempts.append(reasoning_attempt("codex",started,"TIMEOUT",error=error))
+        except OSError:
+            attempts.append(reasoning_attempt("codex",started,"UNAVAILABLE"))
+
+    return decision,reasoning_executor,attempts
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
@@ -298,7 +411,8 @@ def main():
         if e.get("type") not in ("post.sent","post.published"): continue
         ts=str(e.get("timestamp") or "")
         try:
-            dt=datetime.fromisoformat(ts.replace("Z","+00:00"))
+            dt=timestamp(ts)
+            if dt is None: continue
         except Exception:
             continue
         if dt.astimezone().date()==now_utc.astimezone().date():
@@ -309,7 +423,8 @@ def main():
         if e.get("type") not in ("post.sent","post.published"): continue
         ts=str(e.get("timestamp") or "")
         try:
-            dt=datetime.fromisoformat(ts.replace("Z","+00:00"))
+            dt=timestamp(ts)
+            if dt is None: continue
         except Exception:
             continue
         all_posts.append(dt.astimezone(timezone.utc))
@@ -462,113 +577,8 @@ Return ONLY one JSON object with exactly these keys:
 Context:
 """+json.dumps(contract,ensure_ascii=False)
 
-    decision=None
-    reasoning_executor=None
-    attempts=[]
-    if claude_executor:
-        started=time.monotonic()
-        try:
-            result=subprocess.run([*claude_executor,prompt],cwd="/home/ubuntu/agentmanager",
-                                  stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=45)
-            if result.returncode==0:
-                try:
-                    decision=extract_decision(result.stdout)
-                    reasoning_executor="antigravity_claude"
-                    attempts.append(reasoning_attempt("claude",started,"PASS",result=result))
-                except Exception:
-                    attempts.append(reasoning_attempt("claude",started,"INVALID_OUTPUT",result=result))
-            else:
-                attempts.append(reasoning_attempt("claude",started,"NONZERO",result=result))
-        except subprocess.TimeoutExpired as error:
-            attempts.append(reasoning_attempt("claude",started,"TIMEOUT",error=error))
-        except OSError:
-            attempts.append(reasoning_attempt("claude",started,"UNAVAILABLE"))
-
-    if decision is None and gemini_executor:
-        started=time.monotonic()
-        try:
-            with tempfile.TemporaryDirectory(prefix="mio-post-gemini-") as td:
-                temp=Path(td)
-                cli_home=temp/"cli-home"
-                settings=cli_home/".gemini"
-                settings.mkdir(parents=True,exist_ok=True)
-                (settings/"settings.json").write_text(json.dumps({
-                    "security":{"auth":{"selectedType":"oauth-personal"}},
-                    "hooksConfig":{"enabled":False},
-                    "skills":{"enabled":False},
-                })+"\n",encoding="utf-8")
-                source=Path("/home/ubuntu/.gemini")
-                for name in ("oauth_creds.json","google_accounts.json"):
-                    src=source/name
-                    if src.exists():
-                        (settings/name).symlink_to(src)
-                env={**os.environ,
-                     "HOME":"/home/ubuntu",
-                     "USER":"ubuntu",
-                     "CI":"1",
-                     "GEMINI_CLI_HOME":str(cli_home),
-                     "PATH":"/home/ubuntu/.local/bin:/home/ubuntu/.local/share/agentos/npm-global/bin:"+os.environ.get("PATH","/usr/local/bin:/usr/bin:/bin")}
-                result=subprocess.run([
-                    gemini_executor,"-p",prompt,"--approval-mode","plan","--skip-trust",
-                    "--output-format","json"
-                ],cwd=str(temp),stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=60,env=env)
-                if result.returncode==0:
-                    try:
-                        envelope=json.loads(result.stdout or "{}")
-                        response=str(envelope.get("response") or "") if isinstance(envelope,dict) else ""
-                        decision=extract_decision(response)
-                        reasoning_executor="gemini_cli"
-                        attempts.append(reasoning_attempt("gemini",started,"PASS",result=result))
-                    except Exception:
-                        attempts.append(reasoning_attempt("gemini",started,"INVALID_OUTPUT",result=result))
-                else:
-                    attempts.append(reasoning_attempt("gemini",started,"NONZERO",result=result))
-        except subprocess.TimeoutExpired as error:
-            attempts.append(reasoning_attempt("gemini",started,"TIMEOUT",error=error))
-        except OSError:
-            attempts.append(reasoning_attempt("gemini",started,"UNAVAILABLE"))
-
-    if decision is None and codex_executor:
-        started=time.monotonic()
-        try:
-            with tempfile.TemporaryDirectory(prefix="mio-post-codex-") as td:
-                temp=Path(td)
-                workspace=temp/"workspace"
-                workspace.mkdir()
-                cli_home=temp/"cli-home"
-                cli_home.mkdir(mode=0o700)
-                # Reuse OAuth without reading or serializing credential contents.
-                # Keep global hooks, MCP servers, plugins and repo instructions
-                # out of this text-only authoring task.
-                source=Path(os.environ.get("CODEX_HOME") or "/home/ubuntu/.codex")
-                auth=source/"auth.json"
-                if auth.is_file():
-                    (cli_home/"auth.json").symlink_to(auth)
-                (cli_home/"config.toml").write_text(
-                    'web_search = "disabled"\n[features]\nshell_tool = false\napps = false\n',
-                    encoding="utf-8")
-                answer=temp/"answer.json"
-                env={**os.environ,"CODEX_HOME":str(cli_home)}
-                result=subprocess.run([
-                    codex_executor,"-a","never","exec","--skip-git-repo-check",
-                    "--sandbox","read-only","--color","never","--ephemeral",
-                    "-C",str(workspace),"--output-last-message",str(answer),prompt
-                ],cwd=str(workspace),stdin=subprocess.DEVNULL,text=True,
-                  capture_output=True,timeout=60,env=env)
-                if result.returncode==0:
-                    try:
-                        response=answer.read_text(encoding="utf-8") if answer.is_file() else result.stdout
-                        decision=extract_decision(response)
-                        reasoning_executor="codex_cli"
-                        attempts.append(reasoning_attempt("codex",started,"PASS",result=result))
-                    except (OSError,ValueError,TypeError):
-                        attempts.append(reasoning_attempt("codex",started,"INVALID_OUTPUT",result=result))
-                else:
-                    attempts.append(reasoning_attempt("codex",started,"NONZERO",result=result))
-        except subprocess.TimeoutExpired as error:
-            attempts.append(reasoning_attempt("codex",started,"TIMEOUT",error=error))
-        except OSError:
-            attempts.append(reasoning_attempt("codex",started,"UNAVAILABLE"))
+    decision,reasoning_executor,attempts=reason_with_providers(
+        prompt,extract_decision,claude_executor,gemini_executor,codex_executor)
 
     if decision is None:
         liveness_required=bool(consider.get("liveness_pressure")) or silence_hours>=forced_consider_hours or no_publish_streak>=forced_no_publish_streak
