@@ -366,3 +366,12 @@ class GptWebUploadSettlementTests(unittest.TestCase):
         state = _submission_snapshot(page, "invoice:req:12345678")
         self.assertEqual(state["attachmentSummary"]["fileInputStates"][0]["selectedCount"], 1)
         self.assertIn("fileInputStates", page.evaluate.call_args.args[0])
+
+
+class GptWebActiveImageInputTests(unittest.TestCase):
+    def test_image_input_prefers_last_connected_matching_candidate(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import invoke
+        source = inspect.getsource(invoke)
+        self.assertIn("el.isConnected", source)
+        self.assertIn(".at(-1)", source)

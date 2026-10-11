@@ -593,8 +593,8 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         element = page.call("Runtime.evaluate", {
             "expression": """(() => {
               const inputs = Array.from(document.querySelectorAll('input[type=file]'));
-              return inputs.find(el => (el.accept || '').toLowerCase().includes('image'))
-                || inputs.find(el => !(el.accept || '').trim())
+              return inputs.filter(el => el.isConnected && (el.accept || '').toLowerCase().includes('image')).at(-1)
+                || inputs.filter(el => el.isConnected && !(el.accept || '').trim()).at(-1)
                 || null;
             })()""",
             "returnByValue": False,
