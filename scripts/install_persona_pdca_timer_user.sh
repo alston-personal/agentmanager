@@ -18,6 +18,7 @@ SOURCE_MEDIA_ASSET="${13:-}"
 SOURCE_VISUAL_VALIDATOR="${14:-}"
 SOURCE_MEDIA_REVIEW="${15:-}"
 SOURCE_REFERENCE_INSTALLER="${16:-}"
+SOURCE_WARDROBE_SOURCES="${17:-}"
 test -f "$SOURCE_TICK"
 test -f "$SOURCE_RUNNER"
 test -f "$SOURCE_SOCIAL_EXECUTOR"
@@ -34,6 +35,7 @@ test -f "$SOURCE_MEDIA_ASSET"
 test -f "$SOURCE_VISUAL_VALIDATOR"
 test -f "$SOURCE_MEDIA_REVIEW"
 test -f "$SOURCE_REFERENCE_INSTALLER"
+test -f "$SOURCE_WARDROBE_SOURCES"
 
 LIB="$HOME/.local/lib/agentos"
 BIN="$HOME/.local/bin"
@@ -53,6 +55,7 @@ install -m 0755 "$SOURCE_MEDIA_ASSET" "$LIB/persona_media_asset.py"
 install -m 0755 "$SOURCE_VISUAL_VALIDATOR" "$LIB/validate_mio_visual_manifest.py"
 install -m 0755 "$SOURCE_MEDIA_REVIEW" "$LIB/persona_media_review.py"
 install -m 0755 "$SOURCE_REFERENCE_INSTALLER" "$LIB/persona_reference_install.py"
+install -m 0755 "$SOURCE_WARDROBE_SOURCES" "$LIB/persona_wardrobe_sources.py"
 CANONICAL_HEARTBEAT="$BIN/agentos-persona-pdca-heartbeat-v2"
 install -m 0755 "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT"
 cmp -s "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT" || {
@@ -75,6 +78,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 Environment=PERSONA_PATH=personas/sunlake-milkcat
+Environment=AGENTOS_MIO_GARMENT_DATA_ROOT=/home/ubuntu/agent-data
 Environment=AGENTOS_PERSONA_PDCA_TICK=$LIB/persona_pdca_tick.py
 Environment=AGENTOS_PERSONA_SOCIAL_EXECUTOR=$LIB/persona_social_executor.py
 Environment=AGENTOS_PERSONA_INTERNAL_EXECUTOR=$LIB/persona_internal_activity_executor.py

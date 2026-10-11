@@ -4,13 +4,13 @@ import json
 import os
 import re
 import socket
-import stat
 import subprocess
 import tempfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import persona_media_asset as assets
+from persona_wardrobe_sources import read_registry, planning_sources
 from persona_image_generate_flux import canonical_reference
 from persona_post_intent_generator import discover_codex_executor, failure_class
 
@@ -235,76 +235,10 @@ def wardrobe_source_audit(root, catalog):
     root = Path(root)
     configured = os.environ.get("AGENTOS_MIO_GARMENT_DATA_ROOT")
     data_root = Path(configured) if configured else None
-    source = data_root / "projects/dressup-simulator/garments" if data_root else None
-    rows, fingerprints, issues = {}, [], set()
-    counts = {"unscoped_records": 0, "other_persona_records": 0}
-    directories = 0
-
-    def no_symlinks(path):
-        if any(part.is_symlink() for part in (path, *path.parents)):
-            raise ValueError("SYMLINK_SOURCE")
-
-    def read_record(path):
-        no_symlinks(path)
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as stream:
-            info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_size > 131072:
-                raise ValueError("INVALID_RECORD")
-            data = stream.read(131073)
-        if len(data) > 131072:
-            raise ValueError("INVALID_RECORD")
-        row = json.loads(data)
-        if not isinstance(row, dict):
-            raise ValueError("INVALID_RECORD")
-        return row, assets.digest(data)
-
-    try:
-        if source is None:
-            raise ValueError("SOURCE_NOT_CONFIGURED")
-        no_symlinks(source)
-        for folder in ("seeded", "imported"):
-            directory = source / folder
-            no_symlinks(directory)
-            if not directory.exists():
-                continue
-            if not directory.is_dir():
-                issues.add("INVALID_DIRECTORY")
-                continue
-            directories += 1
-            # Bound both enumeration and file reads, including non-JSON entries.
-            with os.scandir(directory) as entries:
-                selected = []
-                for entry in entries:
-                    if len(selected) == 128:
-                        issues.add("SOURCE_LIMIT")
-                        break
-                    selected.append(Path(entry.path))
-            seen = set()
-            for path in sorted(selected):
-                if path.suffix != ".json":
-                    continue
-                try:
-                    row, sha = read_record(path)
-                    fingerprints.append((folder, path.name, sha))
-                    key = row.get("garmentId") or row.get("garment_id")
-                    if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,160}", key):
-                        raise ValueError("INVALID_RECORD")
-                    character = row.get("characterId") or row.get("character_id")
-                    if not character:
-                        counts["unscoped_records"] += 1
-                        continue
-                    if character != "sunlake-milkcat-ai-001":
-                        counts["other_persona_records"] += 1
-                        continue
-                    if key in seen:
-                        issues.add("DUPLICATE_GARMENT_ID")
-                    seen.add(key)
-                    rows[key] = row  # Imported overrides the seeded baseline.
-                except (OSError, ValueError, TypeError):
-                    issues.add("INVALID_RECORD")
-    except (OSError, ValueError):
-        issues.add("SOURCE_NOT_CONFIGURED" if source is None else "SOURCE_UNREADABLE")
+    snapshot = read_registry()
+    rows = snapshot["records"]
+    issues = snapshot["issues"]
+    planning = planning_sources(root,snapshot)
 
     items = catalog.get("items")
     if not isinstance(items, list) or any(not isinstance(x, dict) for x in items):
@@ -349,13 +283,14 @@ def wardrobe_source_audit(root, catalog):
                               "isolated_asset_locator_declared": isinstance(isolation.get("isolatedImageUrl"), str)
                                   and bool(isolation["isolatedImageUrl"])})
     registry = {"locator": "projects/dressup-simulator/garments/{seeded,imported}",
-                "status": "NOT_CONFIGURED" if source is None else "PARTIAL" if issues else "OBSERVED" if directories else "DIRECTORIES_ABSENT",
-                "issues": sorted(issues), "active_persona_records_observed": len(rows), **counts,
+                "status": snapshot["status"],
+                "issues": sorted(issues), "active_persona_records_observed": len(rows),
+                "unscoped_records": snapshot["unscoped_records"], "other_persona_records": snapshot["other_persona_records"],
                 "linked_garments_observed": len(linked), "unlinked_garments_observed": len(rows) - len(linked),
                 "declared_isolation_approved_count": declared_isolation,
                 "records": record_report, "records_truncated": len(rows) > 24,
                 "isolation_asset_verification": "NOT_PERFORMED",
-                "snapshot_sha256": assets.digest(json.dumps(sorted(fingerprints), separators=(",", ":")).encode())}
+                "snapshot_sha256": snapshot["snapshot_sha256"]}
     # A sandbox fixture must never identify itself as runtime-node acceptance.
     runtime_node = (os.getuid() == 1001 and socket.gethostname() == "instance-20260129-0852"
                     and root.parts[-2:] == ("personas", "sunlake-milkcat")
@@ -372,7 +307,8 @@ def wardrobe_source_audit(root, catalog):
                          "reviewer_sha256": assets.digest(Path(__file__).read_bytes())},
             "observed": {"catalog_items": item_report, "catalog_item_count": len(items),
                          "catalog_projection_sha256": assets.digest(json.dumps(catalog, sort_keys=True, separators=(",", ":")).encode()),
-                         "catalog_items_truncated": len(items) > 24, "canonical_registry": registry}}
+                         "catalog_items_truncated": len(items) > 24, "canonical_registry": registry,
+                         "planning_sources": planning}}
 
 
 def persist_readiness(root):
