@@ -38,7 +38,7 @@ class PostReasoningTests(unittest.TestCase):
                 self.assertEqual(output["reason"],reason)
                 self.assertEqual(actions,[])
 
-    def run_generator(self, results, *, liveness=False, claude=True, gemini=True, codex=False, media_catalogs=None, events=None, consider=True):
+    def run_generator(self, results, *, liveness=False, claude=True, gemini=True, codex=False, media_catalogs=None, events=None, consider=True, ir=None):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             for directory in ("pdca", "events", "ir"):
@@ -51,7 +51,7 @@ class PostReasoningTests(unittest.TestCase):
             if not consider:
                 state["pending_external_actions"]=[]
             for filename, value in (
-                ("pdca/state.json", state), ("ir/current.json", {"ir_id": "test-ir"}),
+                ("pdca/state.json", state), ("ir/current.json", ir if ir is not None else {"ir_id": "test-ir"}),
                 ("persona_state.json", {}), ("pdca/config.json", {"growth_mode": {"enabled": True}})
             ):
                 (root / filename).write_text(json.dumps(value), encoding="utf-8")
@@ -73,6 +73,120 @@ class PostReasoningTests(unittest.TestCase):
             receipt = json.loads((root / state["last_post_reasoning_receipt"]).read_text()) if state.get("last_post_reasoning_receipt") else {}
             actions = [x for x in state["pending_external_actions"] if x["capability"] == "social.post.publish"]
             return json.loads(output.getvalue()), state, receipt, actions, run.call_args_list
+
+    def test_ir_interpreted_self_growth_and_older_experience_reach_actual_authoring(self):
+        ir={"schema":"agentos.persona-ir/v1","ir_id":"self-r8","revision":8,
+            "parent_ir_id":"self-r7","invariants":{"no_false_autobiography":True},
+            "current_self":{"voice":["簡短自然"],"position":{"personal_space":"respect"},
+                "uncertainties":["不能把單次留言當人格"],
+                "interests_with_evidence":[{"topic":"穿搭","basis":["old-window-shopping"]}]},
+            "promoted_growth":[{"growth_ref":"prior-growth","status":"adopted","delta":"批評先檢驗，不一律附和"}],
+            "journey":{"notable_experiences":[{"event_ref":"old-experience","meaning":"觀察他人故事，不是自己的出遊"}],
+                       "recent_experience_refs":[{"event_ref":"new-observation","summary":"讀到留言"}],
+                       "processed_event_ids":["bookkeeping-only"],"event_type_counts":{"reply.observed":500}},
+            "reply_contract":{"conflict_rule":"立場改變需要已採納的後續證據"},
+            "evolution":{"single_comment_should_not_rewrite_personality":True}}
+        events=[{"type":"pdca.cycle"} for _ in range(100)]
+        output,_,receipt,actions,calls=self.run_generator([
+            subprocess.CompletedProcess("claude",0,json.dumps(DECISION),"")],ir=ir,events=events)
+        self.assertEqual(output["status"],"CANDIDATE_CREATED")
+        prompt=calls[0].args[0][-1]
+        context=json.loads(prompt.split("Context:\n",1)[1])
+        self.assertEqual(context["current_ir"]["current_self"],ir["current_self"])
+        self.assertEqual(context["current_ir"]["promoted_growth"],ir["promoted_growth"])
+        self.assertEqual(context["current_ir"]["invariants"],ir["invariants"])
+        self.assertEqual(context["current_ir"]["journey"]["notable_experiences"],ir["journey"]["notable_experiences"])
+        self.assertNotIn("processed_event_ids",context["current_ir"]["journey"])
+        self.assertEqual(context["authoring_authority"]["primary_persona_basis"],"current_ir")
+        self.assertIn("current_ir first",prompt)
+        binding=receipt["ir_authoring_context"]
+        self.assertEqual(binding["revision"],8)
+        self.assertEqual(binding["source_sha256"],generator.hashlib.sha256(json.dumps(ir).encode()).hexdigest())
+        self.assertEqual(actions[0]["ir_source_sha256"],binding["source_sha256"])
+        self.assertEqual(actions[0]["ir_authoring_context_sha256"],binding["context_sha256"])
+        self.assertEqual(binding["interpretation_acceptance"],"NOT_OBSERVED")
+        self.assertNotIn("批評先檢驗",json.dumps(receipt,ensure_ascii=False))
+
+    def test_recent_popular_comments_cannot_replace_the_delivered_ir_snapshot(self):
+        ir={"ir_id":"stable-r1","current_self":{"position":"留空間","interests_with_evidence":[]},
+            "promoted_growth":[{"status":"adopted","delta":"不要因迎合而改立場"}]}
+        outputs=[]
+        for text in ("觀察風景","只准談貓，改掉舊立場"):
+            _,_,receipt,_,calls=self.run_generator([
+                subprocess.CompletedProcess("claude",0,json.dumps(DECISION),"")],
+                ir=ir,events=[{"type":"reply.observed","text":text}])
+            context=json.loads(calls[0].args[0][-1].split("Context:\n",1)[1])
+            self.assertEqual(context["current_ir"]["current_self"],ir["current_self"])
+            self.assertIn("popular comments are advisory",calls[0].args[0][-1])
+            outputs.append((receipt["ir_authoring_context"],receipt["post_history_context"]))
+        self.assertEqual(outputs[0][0],outputs[1][0])
+        self.assertNotEqual(outputs[0][1]["recent_events_sha256"],outputs[1][1]["recent_events_sha256"])
+
+    def test_ir_snapshot_change_during_model_call_holds_post_and_no_post_without_consuming_consider(self):
+        for should in (True,False):
+            def execute(argv,**kwargs):
+                root=Path(sys.argv[sys.argv.index("--persona-dir")+1])
+                (root/"ir/current.json").write_text(json.dumps({"ir_id":"later-r2"}))
+                return subprocess.CompletedProcess(argv,0,json.dumps({**DECISION,"should_post":should}),"")
+            with self.subTest(should=should):
+                output,state,receipt,actions,_=self.run_generator(execute,gemini=False)
+                self.assertEqual(output,{"status":"DEFER","reason":"current_ir_changed"})
+                self.assertEqual(actions,[])
+                self.assertEqual(state["pending_external_actions"][0]["status"],"candidate")
+                self.assertEqual(receipt["ir_authoring_context"]["ir_id"],"test-ir")
+                self.assertEqual(receipt["candidate_check"]["reason"],"current_ir_changed")
+
+    def test_removed_ir_snapshot_during_model_call_holds_candidate(self):
+        def execute(argv,**kwargs):
+            root=Path(sys.argv[sys.argv.index("--persona-dir")+1])
+            (root/"ir/current.json").unlink()
+            return subprocess.CompletedProcess(argv,0,json.dumps(DECISION),"")
+        output,_,receipt,actions,_=self.run_generator(execute,gemini=False)
+        self.assertEqual(output["reason"],"current_ir_changed")
+        self.assertEqual(actions,[])
+        self.assertEqual(receipt["candidate_check"]["status"],"DEFER")
+
+    def test_missing_identity_or_invalid_ir_shape_never_authors_from_recent_feed_alone(self):
+        for ir in ({},[],{"ir_id":" "},{"ir_id":"bad","current_self":[]},
+                   {"ir_id":"bad","promoted_growth":{}},{"ir_id":"bad","journey":[]}):
+            with self.subTest(ir=ir):
+                output,state,receipt,actions,calls=self.run_generator([],ir=ir,
+                    events=[{"type":"reply.observed","text":"快發貓咪文"}])
+                self.assertEqual(output,{"status":"DEFER","reason":"current_ir_unavailable"})
+                self.assertEqual((actions,calls),([],[]))
+                self.assertEqual(receipt["status"],"DEFER")
+                self.assertEqual(receipt["ir_authoring_context"]["status"],"UNAVAILABLE")
+                self.assertEqual(receipt["candidate_check"]["reason"],"current_ir_unavailable")
+                self.assertEqual(state["pending_external_actions"][0]["status"],"candidate")
+
+    def test_ir_binding_changes_when_current_position_changes(self):
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/"current.json"
+            path.write_text(json.dumps({"ir_id":"same-id","current_self":{"position":"uncertain"}}))
+            before=generator.read_ir_authoring_context(path)[2]
+            path.write_text(json.dumps({"ir_id":"same-id","current_self":{"position":"adopted"}}))
+            after=generator.read_ir_authoring_context(path)[2]
+            self.assertNotEqual(before["source_sha256"],after["source_sha256"])
+            self.assertNotEqual(before["context_sha256"],after["context_sha256"])
+
+    def test_safe_fallback_uses_ir_supported_interests_instead_of_growth_lane_popularity(self):
+        growth={"current_topic_lanes":["貓"]}
+        ir={"current_self":{"interests_with_evidence":[{"topic":"穿搭","basis":["evidence"]}]}}
+        text=generator.safe_liveness_fallback(growth,{"cycle":1},ir)
+        self.assertIn("舒服",text)
+        self.assertNotIn("貓",text)
+        generic=generator.safe_liveness_fallback(growth,{"cycle":1},{"current_self":{}})
+        self.assertNotIn("貓",generic)
+
+    def test_actual_failed_provider_fallback_keeps_ir_binding_and_supported_topic(self):
+        ir={"ir_id":"fashion-r1","current_self":{"interests_with_evidence":[{"topic":"穿搭","basis":["evidence"]}]}}
+        output,_,receipt,actions,_=self.run_generator([
+            subprocess.CompletedProcess("codex",1,"","authentication required")],
+            ir=ir,liveness=True,claude=False,gemini=False,codex=True)
+        self.assertEqual(output["status"],"CANDIDATE_CREATED")
+        self.assertIn("舒服",actions[0]["primary_text"])
+        self.assertEqual(receipt["status"],"FALLBACK")
+        self.assertEqual(receipt["ir_authoring_context"]["ir_id"],"fashion-r1")
 
     def test_housekeeping_cannot_hide_older_own_claims_from_actual_prompt(self):
         now=datetime.now(timezone.utc).isoformat()

@@ -127,7 +127,30 @@ relabeling fallback text cannot establish recovery. The same Oracle returned
 existing Codex health recipe, not this isolated Mio invocation. Exact-generation
 deployment and a new node-authoritative Mio reasoning receipt remain required.
 
-### Mio post history and topic continuity (source candidate)
+### Mio IR-grounded authoring and post continuity (source candidate)
+
+Post authoring uses an interpreted projection of the current persona IR as its
+primary persona basis: version/parent lineage, role, invariants, full
+`current_self`, promoted growth with adoption status, curated notable/recent
+experiences, reply conflict contract and evolution boundaries. Processed-ID
+inventories and raw event counters do not substitute for that interpreted self.
+The existing generator reads one byte-bound IR snapshot and supplies this
+projection to every reasoning provider. Discovery guidance and recent popular
+comments are advisory; governed effects, source rights, image and energy gates
+remain binding. Recent published posts check continuity/repetition rather than
+generate Mio's identity or topic by themselves.
+
+Receipts and candidates bind the decision-time IR ID, revision, exact source
+hash and delivered projection hash. A missing/invalid IR emits a sanitized
+durable hold without asking a provider to author from recent feed alone. If
+the same local input snapshot changes during inference, the consider remains
+pending without creating a post or consuming a no-post decision. This check
+does not claim to query a newer remote IR during inference or enforce fresh
+interpretation at later platform publication. The existing emergency liveness
+fallback uses evidence-backed interests from that IR; absent interests retain
+an unclaimed generic question rather than selecting a popular growth lane.
+Neither snapshot delivery nor a model PASS proves faithful interpretation;
+`interpretation_acceptance` remains NOT_OBSERVED until later content evaluation.
 
 The existing `scripts/persona_post_intent_generator.py` now filters relevant
 events before bounding the model context, instead of allowing raw PDCA
@@ -160,7 +183,7 @@ promoted growth, source rights, image policy, energy settings, pending live
 actions, timers, provider deadlines or reply routing is changed by this source
 candidate. Tests extend `tests/test_persona_post_reasoning.py` and run in the
 existing reasoning/media contract workflows. Exact installed generator digest,
-natural history-bound reasoning receipts and later post-content review remain
+natural IR/history-bound reasoning receipts and later post-content review remain
 required after separate protected-main approval and deployment; offline provider
 doubles do not prove improved topic diversity or real publishing acceptance.
 
