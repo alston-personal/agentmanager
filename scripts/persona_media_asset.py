@@ -38,8 +38,42 @@ def caption_digest(action):
 
 def selection_digest(action):
     media=action.get("media_intent") or {}
-    return digest(json.dumps({k:media.get(k) for k in ("mode","prompt","source_ref")},
+    keys=["mode","prompt","source_ref"]
+    keys += [k for k in ("world_ids","wardrobe_ids") if k in media]
+    return digest(json.dumps({k:media.get(k) for k in keys},
                             sort_keys=True,ensure_ascii=False).encode())
+
+
+def eligible_world(item):
+    return item.get("lifecycle")=="usable" and (item.get("source") or {}).get("rights") in (
+        "original_description_only","owner_authorized","licensed","public_domain")
+
+
+def eligible_wardrobe(item):
+    rights=item.get("rights") or {}
+    return item.get("state") not in (None,"candidate","archived") and rights.get("product_image_use") in (
+        "approved","licensed","owner_authorized") and bool(rights.get("evidence_ref"))
+
+
+def validate_sources(root, provenance):
+    world_ids=provenance.get("world_ids")
+    wardrobe_ids=provenance.get("wardrobe_ids")
+    if not isinstance(world_ids,list) or not world_ids or not isinstance(wardrobe_ids,list):
+        raise ValueError("MEDIA_ASSEMBLY_IDS_REQUIRED")
+    for ids in (world_ids,wardrobe_ids):
+        if len(ids)>24 or any(not isinstance(key,str) or not key or len(key)>200 for key in ids) or len(set(ids))!=len(ids):
+            raise ValueError("MEDIA_ASSEMBLY_IDS_REQUIRED")
+    world=load(within(root,"world_library/catalog.json"))
+    wardrobe=load(within(root,"wardrobe/catalog.json"))
+    by_world={x.get("id"):x for x in world.get("entries",[])}
+    by_wardrobe={x.get("item_id"):x for x in wardrobe.get("items",[])}
+    for key in world_ids:
+        if not eligible_world(by_world.get(key) or {}):
+            raise ValueError("MEDIA_WORLD_SOURCE_NOT_USABLE")
+    for key in wardrobe_ids:
+        if not eligible_wardrobe(by_wardrobe.get(key) or {}):
+            raise ValueError("MEDIA_WARDROBE_RIGHTS_UNVERIFIED")
+    return [by_world[k] for k in world_ids], [by_wardrobe[k] for k in wardrobe_ids]
 
 
 def read_public_image(url, expected):
@@ -71,6 +105,8 @@ def review_manifest(root, action, manifest):
                         ("reference_pack_sha256", references)):
         if manifest.get(field) != digest(path.read_bytes()):
             raise ValueError("MEDIA_REVIEW_POLICY_STALE")
+    if "world_policy_sha256" in manifest and manifest["world_policy_sha256"]!=digest(within(root,"world_library/policy.json").read_bytes()):
+        raise ValueError("MEDIA_REVIEW_POLICY_STALE")
     pack = load(references)
     if pack.get("status") != "approved":
         raise ValueError("MEDIA_REFERENCE_PACK_NOT_APPROVED")
@@ -94,27 +130,11 @@ def review_manifest(root, action, manifest):
         raise ValueError("MEDIA_COMMERCIAL_REVIEW_REQUIRED")
     # Content selection remains data-owned. Do not upgrade catalog candidates
     # or unverified retail rights because a model wrote "pass" in a manifest.
-    world_ids = provenance.get("world_ids")
-    wardrobe_ids = provenance.get("wardrobe_ids")
-    if not isinstance(world_ids, list) or not world_ids or not isinstance(wardrobe_ids, list):
-        raise ValueError("MEDIA_ASSEMBLY_IDS_REQUIRED")
-    world = load(within(root, "world_library/catalog.json"))
-    wardrobe = load(within(root, "wardrobe/catalog.json"))
+    validate_sources(root,provenance)
     for field, path in (("world_catalog_sha256", within(root, "world_library/catalog.json")),
                         ("wardrobe_catalog_sha256", within(root, "wardrobe/catalog.json"))):
         if manifest.get(field) != digest(path.read_bytes()):
             raise ValueError("MEDIA_REVIEW_POLICY_STALE")
-    by_world = {x.get("id"): x for x in world.get("entries", [])}
-    by_wardrobe = {x.get("item_id"): x for x in wardrobe.get("items", [])}
-    for key in world_ids:
-        item = by_world.get(key) or {}
-        if item.get("lifecycle") != "usable" or (item.get("source") or {}).get("rights") not in ("original_description_only","owner_authorized","licensed","public_domain"):
-            raise ValueError("MEDIA_WORLD_SOURCE_NOT_USABLE")
-    for key in wardrobe_ids:
-        item = by_wardrobe.get(key) or {}
-        rights = item.get("rights") or {}
-        if item.get("state") in (None, "candidate", "archived") or rights.get("product_image_use") not in ("approved", "licensed", "owner_authorized") or not rights.get("evidence_ref"):
-            raise ValueError("MEDIA_WARDROBE_RIGHTS_UNVERIFIED")
     alt = manifest.get("image_alt_text")
     if not isinstance(alt, str) or not 1 <= len(alt.strip()) <= 1000:
         raise ValueError("MEDIA_ALT_TEXT_REQUIRED")

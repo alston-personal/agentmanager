@@ -313,6 +313,13 @@ def main():
       "recent_verified_events":recent
     }
 
+    from persona_media_asset import eligible_world, eligible_wardrobe
+    try:
+        worlds=[x for x in load(root/"world_library/catalog.json").get("entries",[]) if eligible_world(x)]
+        wardrobe=[x for x in load(root/"wardrobe/catalog.json").get("items",[]) if eligible_wardrobe(x)]
+        contract["eligible_media_sources"]={"world":worlds[:24],"wardrobe":wardrobe[:24]}
+    except (OSError,ValueError,TypeError):
+        contract["eligible_media_sources"]={"world":[],"wardrobe":[],"status":"unavailable"}
     prompt="""You are deciding whether Mio should publish one routine Threads post now.
 The JSON context below is authoritative. Do not invent real-world experiences, locations, purchases, photos, meetings, weather, feelings caused by events, or relationship history that are not supported by the context.
 A post may be based on verified recent events, a clearly labeled internal reflection, a question, or a small thought. Avoid repetitive generic inspirational copy.
@@ -321,8 +328,9 @@ Mio is allowed to make routine public posts autonomously under policy, but comme
 If growth_context.posting_liveness_required is true, prolonged silence has become a liveness risk. In that case, prefer producing one safe, modest post candidate based on a question, internal reflection, or verified context. Do not return NO_POST merely because nothing dramatic happened. Return should_post=false only for a concrete blocker such as policy/human-required content, unsafe/unsupported claims, or clearly inadequate context.
 Use natural Traditional Chinese. Keep it concise and human-like. Use 0-2 emoji unless the content strongly benefits from more. Do not mention internal systems, IR, PDCA, policies, or that a model generated the text.
 Choose whether this post BENEFITS from an image. It is equally valid to choose text only. For an image, choose existing_verified only when a known asset with provenance is in context; otherwise choose generate. Never pretend a generated image is a real-life photograph or invent a real-life event. A generated image containing Mio must use her canonical realistic identity/reference and require likeness review.
+For generate, select image_world_ids and image_wardrobe_ids only from eligible_media_sources in context. No eligible source means image generation is blocked. Every visible wearable (including accessories) needs a selected wardrobe ID; do not invent clothing. The current image review lane requires a visible realistic Mio face. Choose media based on its contribution to this post, never to satisfy an image quota.
 Return ONLY one JSON object with exactly these keys:
-{"should_post":true|false,"human_required":true|false,"reason":"short internal reason","post_text":"public text or empty","image_decision":"none|existing_verified|generate","image_reason":"short reason","image_prompt":"prompt or empty","image_asset_ref":"verified asset reference or empty"}
+{"should_post":true|false,"human_required":true|false,"reason":"short internal reason","post_text":"public text or empty","image_decision":"none|existing_verified|generate","image_reason":"short reason","image_prompt":"prompt or empty","image_asset_ref":"verified asset reference or empty","image_world_ids":[],"image_wardrobe_ids":[]}
 Context:
 """+json.dumps(contract,ensure_ascii=False)
 
@@ -465,6 +473,8 @@ Context:
     image_reason=str(decision.get("image_reason") or "")[:300]
     image_prompt=str(decision.get("image_prompt") or "").strip()[:1500]
     image_asset_ref=str(decision.get("image_asset_ref") or "").strip()
+    image_world_ids=decision.get("image_world_ids")
+    image_wardrobe_ids=decision.get("image_wardrobe_ids")
     if human or not should:
         consider["status"]="completed"
         consider["completed_at"]=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
@@ -486,6 +496,13 @@ Context:
         state["pending_external_actions"]=pending[-12:]
         (root/"pdca/state.json").write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         print(json.dumps({"status":"DEFER","reason":image_error})); return 0
+    if image_mode=="generate":
+        from persona_media_asset import validate_sources
+        try:
+            validate_sources(root,{"world_ids":image_world_ids,"wardrobe_ids":image_wardrobe_ids})
+        except (OSError,ValueError,TypeError,KeyError):
+            (root/"pdca/state.json").write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+            print(json.dumps({"status":"DEFER","reason":"image_sources_not_eligible"})); return 0
     if not safe_post_text(text):
         print(json.dumps({"status":"DEFER","reason":"post_text_guard_failed"},ensure_ascii=False))
         return 0
@@ -523,6 +540,8 @@ Context:
       "reasoning_receipt_ref":state["last_post_reasoning_receipt"]
     }
     consider["status"]="completed"
+    if image_mode=="generate":
+        action["media_intent"].update(world_ids=image_world_ids,wardrobe_ids=image_wardrobe_ids)
     consider["completed_at"]=now.isoformat().replace("+00:00","Z")
     consider["decision"]="publish_candidate_created"
     consider["publish_action_id"]=action_id

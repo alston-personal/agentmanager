@@ -48,6 +48,10 @@ def generate(request, destination):
             "never add fake brand logos, real-world visit proof, or unrelated people. "
             "Requested visual: "+prompt
         )
+        if request.get("content_assembly"):
+            instructions+=" Use only these selected source-backed world and wardrobe items; do not add other wearables or props: "+json.dumps(request["content_assembly"],ensure_ascii=False)
+            if len(instructions)>30000:
+                raise ValueError("image_generation_context_too_large")
         errors=[]
         for provider in PROVIDERS:
             try:

@@ -35,7 +35,7 @@ class PostReasoningTests(unittest.TestCase):
                 self.assertEqual(output["reason"],reason)
                 self.assertEqual(actions,[])
 
-    def run_generator(self, results, *, liveness=False, claude=True, gemini=True, codex=False):
+    def run_generator(self, results, *, liveness=False, claude=True, gemini=True, codex=False, media_catalogs=None):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             for directory in ("pdca", "events", "ir"):
@@ -53,6 +53,9 @@ class PostReasoningTests(unittest.TestCase):
             (root / "events/events.jsonl").write_text(
                 json.dumps({"type": "post.sent", "timestamp": now}) + "\n", encoding="utf-8"
             )
+            for ref,value in (media_catalogs or {}).items():
+                path=root/ref; path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text(json.dumps(value),encoding="utf-8")
             with patch.object(sys, "argv", ["generator", "--persona-dir", str(root)]), \
                  patch.object(generator, "discover_executor", return_value=["claude"] if claude else None), \
                  patch.object(generator, "discover_gemini_executor", return_value="gemini" if gemini else None), \
@@ -64,6 +67,22 @@ class PostReasoningTests(unittest.TestCase):
             receipt = json.loads((root / state["last_post_reasoning_receipt"]).read_text())
             actions = [x for x in state["pending_external_actions"] if x["capability"] == "social.post.publish"]
             return json.loads(output.getvalue()), state, receipt, actions, run.call_args_list
+
+    def test_image_sources_missing_stay_deferred_without_text_downgrade(self):
+        decision={**DECISION,"image_decision":"generate","image_prompt":"portrait by a window"}
+        output,_,_,actions,_=self.run_generator([subprocess.CompletedProcess("claude",0,json.dumps(decision),"")])
+        self.assertEqual(output["reason"],"image_sources_not_eligible"); self.assertEqual(actions,[])
+
+    def test_eligible_image_selection_ids_survive_authoring_and_prompt_context(self):
+        catalogs={"world_library/catalog.json":{"entries":[{"id":"window","lifecycle":"usable","source":{"rights":"original_description_only"}}]},
+                  "wardrobe/catalog.json":{"items":[{"item_id":"top","state":"approved","rights":{"product_image_use":"owner_authorized","evidence_ref":"owner-receipt"}}]}}
+        decision={**DECISION,"image_decision":"generate","image_prompt":"portrait by a window",
+                  "image_world_ids":["window"],"image_wardrobe_ids":["top"]}
+        output,_,_,actions,calls=self.run_generator([subprocess.CompletedProcess("claude",0,json.dumps(decision),"")],media_catalogs=catalogs)
+        self.assertEqual(output["status"],"CANDIDATE_CREATED")
+        self.assertEqual(actions[0]["media_intent"]["world_ids"],["window"])
+        self.assertEqual(actions[0]["media_intent"]["wardrobe_ids"],["top"])
+        self.assertIn('"eligible_media_sources"',calls[0].args[0][-1])
 
     def test_gemini_success_is_linked_to_actual_provider_after_claude_timeout(self):
         output, state, receipt, actions, calls = self.run_generator([
