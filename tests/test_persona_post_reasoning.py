@@ -13,6 +13,9 @@ from unittest.mock import patch
 
 
 REPO = Path(__file__).resolve().parents[1]
+# Match direct CLI invocation's sibling-module path, including when this suite
+# runs alone rather than after the media tests in the combined contract.
+sys.path.insert(0,str(REPO/"scripts"))
 spec = importlib.util.spec_from_file_location(
     "persona_post_reasoning", REPO / "scripts/persona_post_intent_generator.py"
 )
