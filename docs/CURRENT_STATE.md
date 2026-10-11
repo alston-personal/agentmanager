@@ -180,6 +180,58 @@ reuse are performed. Carousel and media replies remain outside this candidate.
 
 Project identity is explicitly separated from repository, checkout path, runtime path, deployment target, and state storage.
 
+### Mio independent draft review and readiness follow-up (source candidate)
+
+`scripts/persona_media_review.py` extends the existing PDCA media worker; no new
+timer, publishing adapter or account session is introduced. Post authoring now
+receives only eligible world/wardrobe catalog entries and preserves selected IDs
+in media intent. Missing/unusable sources defer the image decision without a
+text downgrade. These IDs become part of the media-selection digest, and new
+generation receipts bind the caption and selection. Catalog candidates and
+unverified rights remain blocked before generation/review; no rights are granted
+by inference. Existing generated receipts lacking the new binding require repair,
+not automatic retrospective approval.
+
+The reviewer composes the existing isolated Codex CLI recipe with two exact image
+attachments: generated draft first, approved canonical reference second. An empty
+ephemeral workspace/config disables shell, apps, MCP configuration and web search;
+existing OAuth authentication is referenced without reading/printing credentials.
+Each tick can make at most one 60-second review call. The current lane requires a
+visible realistic Mio face, resolved mirroring, specific identity/content evidence,
+natural anatomy/garments and all visible wearables matched to selected IDs.
+Unseen input, ambiguity, missing features, unseen/unlisted clothing or failed gates
+leave a hold. The model cannot change caption, catalog state, licenses or provenance.
+Exact action, image, canonical reference, policy and authority are rechecked after
+review. The existing manifest guard and reviewed-asset publisher still decide
+hosting/delivery; review success is not publication success.
+
+`pdca/media_review_receipts/` records sanitized outcomes and source/image bindings.
+Unchanged failed/successful inputs do not invoke the provider again; policy, image,
+reviewer/executor or authentication-file revision changes permit a new review.
+Externally supplied reviews are preserved. This bounded mechanism does not claim
+that policy edits repair a provider failure or establish visual accuracy.
+`pdca/media_readiness.json` reports reference digest match, executable presence,
+eligible catalog counts, reviewer/worker source digests and observation time.
+It refreshes on changes or after an hour, and distinguishes configuration from
+provider/hosting/autonomous-publication acceptance. Optional malformed review
+inputs remain local holds rather than discarding a completed social observation.
+
+The existing installer installs the reviewer and enables `codex_cli` review mode
+in the social unit; private `mio-media.env` can override it. It does not copy the
+canonical reference to Oracle, read another service's API key, promote catalogs,
+force image frequency or make a public test post. Workflow-dispatch dependencies
+are installed before the one-cycle path and resolved from that installed bundle.
+The social runner now reports pending image readback and unknown write outcome
+without falsely reporting a definite non-write or failing its receipt assertion.
+
+Offline verification: `tests/test_persona_media_review.py`,
+`tests/test_persona_media_publish.py`, `tests/test_persona_post_reasoning.py`, and
+`tests/test_mio_media_ledger_smoke.py`. Deployment, node reference configuration,
+image-input provider acceptance, real review quality and a natural autonomous IMAGE
+delivery remain unverified. The 2026-10-11 source investigation found the existing
+reference Library bytes match the approved reference-pack SHA-256; that proves
+source availability only, not the Oracle file/environment configuration.
+
 The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.
 
 ## Project release-lane authority

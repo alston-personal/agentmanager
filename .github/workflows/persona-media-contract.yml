@@ -12,6 +12,7 @@ on:
       - 'scripts/install_persona_pdca_timer_user.sh'
       - '.github/workflows/persona-pdca-heartbeat.yml'
       - 'tests/test_persona_media_publish.py'
+      - 'tests/test_persona_media_review.py'
       - '.github/workflows/persona-media-contract.yml'
   push:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - 'scripts/persona_image_generate_flux.py'
       - 'scripts/persona_social_executor.py'
       - 'tests/test_persona_media_publish.py'
+      - 'tests/test_persona_media_review.py'
       - '.github/workflows/persona-media-contract.yml'
 
 permissions:
@@ -35,6 +37,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test reviewed image delivery without live providers or public writes
-        run: python3 -m unittest tests.test_persona_media_publish tests.test_mio_media_ledger_smoke tests.test_persona_post_reasoning -v
+        run: python3 -m unittest tests.test_persona_media_publish tests.test_persona_media_review tests.test_mio_media_ledger_smoke tests.test_persona_post_reasoning -v
       - name: Check existing deployment scripts
         run: bash -n scripts/install_persona_pdca_timer_user.sh scripts/run_persona_social_actions_user.sh

@@ -37,6 +37,16 @@ def process(root):
     root=root.resolve()
     requests=root/"pdca/media_requests"
     count=0
+    from persona_media_review import persist_readiness, process_reviews
+    try:
+        persist_readiness(root)
+        count+=process_reviews(root)
+    except (OSError,ValueError,TypeError,KeyError,AttributeError):
+        # Review/readiness is local to this lane; malformed optional input must
+        # not discard another independently completed social observation.
+        error_path=root/"pdca/media_review_runtime.json"
+        if not error_path.is_file():
+            save(error_path,{"status":"BLOCKED","reason":"MEDIA_REVIEW_RUNTIME_INVALID","publication_allowed":False})
     # The existing validator consumes independently produced review evidence.
     # A generator never fills identity/rights checks or approves its own output.
     for path in sorted(requests.glob("*.json")) if requests.exists() else []:
@@ -104,6 +114,15 @@ def process(root):
                 with tempfile.TemporaryDirectory(prefix="mio-media-receipt-") as temp:
                     result_path=Path(temp)/"generation.json"
                     try:
+                        from persona_media_asset import validate_sources, caption_digest, selection_digest
+                        state=load(root/"pdca/state.json")
+                        action=next((x for x in state.get("pending_external_actions",[]) if x.get("action_id")==action_id and x.get("status")=="candidate" and x.get("capability")=="social.post.publish"),None)
+                        if not action:
+                            continue
+                        if os.environ.get("AGENTOS_MIO_VISUAL_REVIEW")=="codex_cli":
+                            world,wardrobe=validate_sources(root,action.get("media_intent") or {})
+                            request["content_assembly"]={"world":world,"wardrobe":wardrobe,"event_kind":"virtual_fictional"}
+                            save(path,request)
                         result=subprocess.run([image_python,image_script,"--request",str(path),
                             "--output-dir",image_dir,"--receipt",str(result_path)],
                             capture_output=True,text=True,timeout=180)
@@ -119,6 +138,8 @@ def process(root):
                                 "action_id":action_id,"timestamp":now,"status":"GENERATED_UNVERIFIED",
                                 "provider":generation.get("provider"),"image_path":generation.get("image_path"),
                                 "image_sha256":generation.get("image_sha256"),
+                                "caption_sha256":caption_digest(action),
+                                "media_selection_sha256":selection_digest(action),
                                 "reference_image_sha256":generation.get("reference_image_sha256"),
                                 "generated":True,"asset_verified":False,"uploaded":False,
                                 "publication_allowed":False})
@@ -139,7 +160,10 @@ def process(root):
                             count+=1
                             continue
                         outcome="IMAGE_GENERATION_FAILED_"+str(generation.get("reason") or "unknown")[:80]
-                    except (OSError,ValueError,subprocess.TimeoutExpired):
+                    except ValueError as exc:
+                        reason=str(exc)
+                        outcome=reason if reason.startswith("MEDIA_") and re.fullmatch(r"[A-Z_]{1,100}",reason) else "IMAGE_GENERATION_RUNTIME_FAILURE"
+                    except (OSError,subprocess.TimeoutExpired):
                         outcome="IMAGE_GENERATION_RUNTIME_FAILURE"
         else:
             outcome="CAPABILITY_UNAVAILABLE_ASSET_RESOLVER"

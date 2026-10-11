@@ -148,10 +148,13 @@ else
   python3 - "$SOCIAL_RECEIPT" "$METRICS_STATUS" "$METRICS_CHANGED" <<'PY'
 import json,sys
 r=json.load(open(sys.argv[1],encoding="utf-8"))
-assert r.get("status") in ("EXECUTED","BLOCKED"),r
-print("persona_social_action_runtime="+("PASS" if r.get("ok") is True else "BLOCKED"))
+assert r.get("status") in ("EXECUTED","BLOCKED","AWAITING_READBACK","WRITE_OUTCOME_UNKNOWN"),r
+classification=("PENDING_READBACK" if r.get("status")=="AWAITING_READBACK" else
+                "WRITE_OUTCOME_UNKNOWN" if r.get("status")=="WRITE_OUTCOME_UNKNOWN" else
+                "PASS" if r.get("ok") is True else "BLOCKED")
+print("persona_social_action_runtime="+classification)
 print("persona_social_action_capability="+str(r.get("capability") or "unknown"))
-print("persona_social_action_write="+str(bool(r.get("write_performed"))).lower())
+print("persona_social_action_write="+("unknown" if r.get("write_performed") is None else str(bool(r.get("write_performed"))).lower()))
 print("persona_growth_metrics_status="+sys.argv[2])
 print("persona_growth_metrics_changed="+sys.argv[3])
 PY
