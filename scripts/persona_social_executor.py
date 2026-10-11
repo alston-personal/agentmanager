@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, json, os, urllib.request, urllib.error
+import argparse, hashlib, json, os, urllib.request, urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,11 +17,11 @@ def parse_env(path):
         out[k]=v
     return out
 
-def post(path,payload,headers):
+def post(path,payload,headers,timeout=20):
     body=json.dumps(payload,ensure_ascii=False).encode()
     req=urllib.request.Request(RUNTIME+path,data=body,headers={"content-type":"application/json","accept":"application/json",**headers},method="POST")
     try:
-        with urllib.request.urlopen(req,timeout=20) as r:
+        with urllib.request.urlopen(req,timeout=timeout) as r:
             return r.status,json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         raw=e.read().decode("utf-8","replace")
@@ -49,6 +49,17 @@ def save(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp=path.with_suffix(path.suffix+".tmp")
     tmp.write_text(json.dumps(value,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    os.replace(tmp,path)
+
+
+def save_private(path,value):
+    path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+    path.parent.chmod(0o700)
+    tmp=path.with_suffix(path.suffix+".tmp")
+    fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+    with os.fdopen(fd,"w",encoding="utf-8") as fh:
+        os.fchmod(fh.fileno(),0o600)
+        fh.write(json.dumps(value,ensure_ascii=False,indent=2)+"\n")
     os.replace(tmp,path)
 
 
@@ -203,6 +214,116 @@ def blocked_observation(root,state,target,out,now):
     save(root/"pdca/state.json",state)
     return receipt
 
+
+def image_write(root,state,target,out,username,base,headers,control,now,energy_cost):
+    """One IMAGE write, then read-only reconciliation across subsequent ticks.
+
+    The local journal survives disposable data clones and failed Git pushes.
+    Once dispatch starts, no retry is permitted to create a second container.
+    """
+    from persona_media_asset import resolve_asset,selection_digest
+    action_id=target["action_id"]
+    text=str(target["primary_text"]).strip()
+    key=hashlib.sha256(action_id.encode()).hexdigest()
+    journal_dir=Path(os.environ.get("AGENTOS_PERSONA_WRITE_JOURNAL_DIR") or
+                     "/home/ubuntu/agent-data/runtime/persona-social-writes")
+    journal_path=journal_dir/(key+".json")
+    intent_digest=hashlib.sha256(json.dumps({"action_id":action_id,"text":text,
+            "account":base["target_account_id"],"binding":base["account_binding_id"],
+            "media_selection":selection_digest(target),
+            "media_receipt":(target.get("media_intent") or {}).get("asset_receipt_ref")},
+            sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    journal=json.loads(journal_path.read_text()) if journal_path.exists() else {}
+    def finish(status,reason,*,ok=False,write_performed=False):
+        receipt={"schema":"agentos.persona-social-executor-receipt/v1","ok":ok,
+            "status":status,"result":reason,"timestamp":now,"action_id":action_id,
+            "capability":"social.post.publish","write_performed":write_performed,
+            "media_type":"IMAGE","platform_object_id":journal.get("platform_object_id"),
+            "media_asset_receipt_ref":(target.get("media_intent") or {}).get("asset_receipt_ref")}
+        if journal.get("provider_receipt"):
+            receipt["provider_receipt"]=journal["provider_receipt"]
+        save(out,receipt)
+        target["receipt_ref"]=str(out.relative_to(root))
+        target["media_blocked_reason"]=reason if not ok else None
+        save(root/"pdca/state.json",state)
+        return receipt
+    if journal and journal.get("intent_sha256")!=intent_digest:
+        target["status"]="blocked"
+        return finish("BLOCKED","IMAGE_WRITE_INTENT_CHANGED")
+    if not journal:
+        if not control:
+            return finish("BLOCKED","IMAGE_CONTROL_AUTHORITY_MISSING")
+        try:
+            persona=json.loads((root/"persona_state.json").read_text())
+            cfg=json.loads((root/"pdca/config.json").read_text())
+            if cfg.get("enabled") is not True or state.get("status")!="RUNNING" or (persona.get("autonomy") or {}).get("routine_posts")!="autonomous_with_policy":
+                raise ValueError("MEDIA_POST_NOT_AUTHORIZED")
+            asset=resolve_asset(root,target)
+        except (OSError,ValueError,TypeError,KeyError):
+            return finish("BLOCKED","MEDIA_NOT_VALIDATED_OR_AUTHORIZED")
+        request={**base,"operation":"publish","primary_text":text,"write_intent_id":action_id,
+            "image_url":asset["image_url"],"image_alt_text":asset["image_alt_text"]}
+        ac,accepted=post("/internal/v1/social/acceptances",request,{"X-AgentOS-Control-Token":control})
+        acceptance_id=str(accepted.get("acceptance_id") or "")
+        if ac not in (200,201) or not acceptance_id:
+            return finish("BLOCKED","IMAGE_ACCEPTANCE_FAILED")
+        journal={"schema":"agentos.persona-image-write-journal/v1","intent_sha256":intent_digest,
+                 "action_id":action_id,"phase":"dispatching","started_at":now,
+                 "image_sha256":asset["image_sha256"]}
+        save_private(journal_path,journal)
+        target["status"]="in_progress"
+        save(root/"pdca/state.json",state)
+        try:
+            wc,wr=post("/v1/social/publish",request,
+                       {**headers,"X-AgentOS-Acceptance-ID":acceptance_id},timeout=100)
+        except (OSError,ValueError,TypeError):
+            target["status"]="blocked"
+            return finish("WRITE_OUTCOME_UNKNOWN","IMAGE_WRITE_REQUIRES_RECONCILIATION",write_performed=None)
+        object_id=str(wr.get("platform_object_id") or "")
+        if wc!=200 or wr.get("ok") is not True or not object_id.isdigit() or wr.get("operation")!="publish" or wr.get("target_account_id")!=base["target_account_id"] or wr.get("account_binding_id")!=base["account_binding_id"]:
+            target["status"]="blocked"
+            return finish("WRITE_OUTCOME_UNKNOWN","IMAGE_PROVIDER_RECEIPT_UNCONFIRMED",write_performed=None)
+        journal.update(phase="awaiting_readback",platform_object_id=object_id,provider_receipt=wr)
+        save_private(journal_path,journal)
+    object_id=str(journal.get("platform_object_id") or "")
+    if not object_id.isdigit():
+        target["status"]="blocked"
+        return finish("WRITE_OUTCOME_UNKNOWN","IMAGE_WRITE_REQUIRES_RECONCILIATION",write_performed=None)
+    # Debit once per durable action, including during an eventual readback hold.
+    # If data push failed, the next clone still needs this same debit applied.
+    if target.get("energy_debited") is not True:
+        state["energy_current"]=round(float(state.get("energy_current",0))-energy_cost,2)
+        target["energy_debited"]=True
+    target.update(status="in_progress",provider_object_id=object_id)
+    try:
+        rows,adapter=read_items({**{k:v for k,v in base.items() if k!="target_account_id"},"operation":"post.read"},headers)
+        row=next((x for x in rows if str(x.get("id") or "")==object_id),None)
+        if not row or str(row.get("text") or "").strip()!=text or str(row.get("media_type") or "").upper()!="IMAGE" or row.get("image_visible") is not True or not str(row.get("permalink") or "").startswith("https://"):
+            raise ValueError("IMAGE_READBACK_PENDING")
+    except (OSError,ValueError,TypeError,KeyError,RuntimeError):
+        return finish("AWAITING_READBACK","IMAGE_READBACK_PENDING",write_performed=True)
+    target.update(status="completed",executed_at=journal["provider_receipt"].get("completed_at") or now,
+                  media_readback_status="PASS")
+    receipt=finish("EXECUTED","IMAGE_READBACK_PASS",ok=True,write_performed=True)
+    receipt.update(permalink=row["permalink"],media_readback_status="PASS",readback_receipt=adapter,
+                   image_sha256=journal["image_sha256"],energy_cost=energy_cost)
+    save(out,receipt)
+    state["last_social_receipt"]=str(out.relative_to(root))
+    events_path=root/"events/events.jsonl"
+    existing=[json.loads(line) for line in events_path.read_text().splitlines() if line.strip()]
+    if not any(e.get("pdca_action_id")==action_id for e in existing):
+        with events_path.open("a",encoding="utf-8") as fh:
+            fh.write(json.dumps({"id":"threads:post:"+object_id,"type":"post.sent",
+                "timestamp":target["executed_at"],"source":"agentos_shared_social_capability",
+                "source_object_id":object_id,"actor":state.get("persona_id"),"text":text,
+                "media_type":"IMAGE","permalink":row["permalink"],"parent_object_id":None,
+                "pdca_action_id":action_id,"pdca_external_receipt":str(out.relative_to(root))},
+                ensure_ascii=False,separators=(",",":"))+"\n")
+    save(root/"pdca/state.json",state)
+    journal["phase"]="completed"
+    save_private(journal_path,journal)
+    return receipt
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
@@ -218,7 +339,9 @@ def main():
         if not nb: return True
         try: return datetime.fromisoformat(nb.replace("Z","+00:00")) <= now_dt
         except Exception: return False
-    ready=[x for x in pending if isinstance(x,dict) and x.get("status")=="candidate" and due(x) and x.get("capability") in (
+    ready=[x for x in pending if isinstance(x,dict) and (x.get("status")=="candidate" or
+        (x.get("status")=="in_progress" and x.get("capability")=="social.post.publish" and
+         (x.get("media_intent") or {}).get("mode") in ("generate","existing_verified"))) and due(x) and x.get("capability") in (
         "social.threads.observe","social.reply.review","social.reply.send","social.post.publish"
     )]
     # Due environmental reads precede existing write candidates; cognition still
@@ -267,34 +390,26 @@ def main():
         # Media is a separate, receipt-gated capability. Never silently send
         # text-only when Mio explicitly chose an image that is not ready.
         media=target.get("media_intent") or {}
+        if not isinstance(media,dict) or (media and media.get("mode") not in ("none","generate","existing_verified")):
+            receipt={"schema":"agentos.persona-social-executor-receipt/v1","ok":False,
+                "status":"BLOCKED","result":"MEDIA_INTENT_INVALID","action_id":action_id,
+                "timestamp":now,"write_performed":False}
+            save(Path(args.receipt_out),receipt)
+            print(json.dumps(receipt)); return 0
         if capability=="social.post.publish" and media.get("mode") in ("generate","existing_verified"):
-            if media.get("status")!="validated" or not media.get("asset_receipt_ref"):
-                receipt={"schema":"agentos.persona-social-executor-receipt/v1",
-                  "ok":False,"status":"BLOCKED","result":"MEDIA_NOT_VALIDATED",
-                  "timestamp":now,"action_id":action_id,"capability":capability,
-                  "write_performed":False,"media_mode":media.get("mode")}
-                out=Path(args.receipt_out)
-                out.parent.mkdir(parents=True,exist_ok=True)
-                out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-                target["media_blocked_reason"]="MEDIA_NOT_VALIDATED"
-                state["pending_external_actions"]=pending[-12:]
-                save(root/"pdca/state.json",state)
-                print(json.dumps(receipt,ensure_ascii=False))
-                return 0
-            # Media dispatch is not yet implemented; a validated asset still
-            # must never be misrepresented by a text-only Threads publish.
-            receipt={"schema":"agentos.persona-social-executor-receipt/v1",
-              "ok":False,"status":"BLOCKED","result":"MEDIA_PUBLISH_ADAPTER_REQUIRED",
-              "timestamp":now,"action_id":action_id,"capability":capability,
-              "write_performed":False,"media_mode":media.get("mode")}
-            out=Path(args.receipt_out)
-            out.parent.mkdir(parents=True,exist_ok=True)
-            out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-            target["media_blocked_reason"]="MEDIA_PUBLISH_ADAPTER_REQUIRED"
-            state["pending_external_actions"]=pending[-12:]
-            save(root/"pdca/state.json",state)
-            print(json.dumps(receipt,ensure_ascii=False))
-            return 0
+            cost=float((json.loads((root/"persona_state.json").read_text()).get("energy") or {}).get("action_costs",{}).get("new_post",8))
+            # Reconciliation is read-only and remains possible at zero energy.
+            if float(state.get("energy_current",0))<=0 and target.get("status")!="in_progress":
+                key=hashlib.sha256(action_id.encode()).hexdigest()+".json"
+                journal_dir=Path(os.environ.get("AGENTOS_PERSONA_WRITE_JOURNAL_DIR") or "/home/ubuntu/agent-data/runtime/persona-social-writes")
+                if not (journal_dir/key).exists():
+                    receipt={"ok":False,"status":"BLOCKED","result":"ENERGY_DEPLETED","write_performed":False}
+                    save(Path(args.receipt_out),receipt)
+                    print(json.dumps(receipt)); return 0
+            result=image_write(root,state,target,Path(args.receipt_out),args.username,
+                {**base,"target_account_id":str(binding.get("provider_account_id") or "")},headers,
+                str(env.get("AGENTOS_SOCIAL_CONTROL_TOKEN") or ""),now,cost)
+            print(json.dumps(result,ensure_ascii=False)); return 0
 
         persona=json.loads((root/"persona_state.json").read_text(encoding="utf-8"))
         energy_cfg=persona.get("energy",{}) if isinstance(persona.get("energy"),dict) else {}
@@ -356,13 +471,15 @@ def main():
         out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         events_path=root/"events/events.jsonl"
         result=wr.get("result") or {}
-        object_id=str(result.get("id") or result.get("object_id") or "")
+        object_id=str(wr.get("platform_object_id") or result.get("id") or result.get("object_id") or "")
         with open(events_path,"a",encoding="utf-8") as fh:
             fh.write(json.dumps({
               "id":("threads:reply:" if capability=="social.reply.send" else "threads:post:")+(object_id or action_id),
               "type":"reply.sent" if capability=="social.reply.send" else "post.sent",
               "timestamp":now,"source":"agentos_shared_social_capability",
               "source_object_id":object_id or None,"actor":state.get("persona_id"),
+              "parent_object_id":target.get("reply_to_id") if capability=="social.reply.send" else None,
+              "root_post_id":target.get("root_post_id") if capability=="social.reply.send" else object_id or None,
               "text":text,"pdca_action_id":action_id,"pdca_external_receipt":str(out.relative_to(root))
             },ensure_ascii=False,separators=(",",":"))+"\n")
         for x in pending:

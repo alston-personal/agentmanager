@@ -462,17 +462,9 @@ Context:
     text=str(decision.get("post_text") or "").strip()
     reason=str(decision.get("reason") or "")[:300]
     image_mode=str(decision.get("image_decision") or "none")
-    if image_mode not in ("none","existing_verified","generate"):
-        image_mode="none"
     image_reason=str(decision.get("image_reason") or "")[:300]
     image_prompt=str(decision.get("image_prompt") or "").strip()[:1500]
     image_asset_ref=str(decision.get("image_asset_ref") or "").strip()
-    if image_mode=="generate" and not image_prompt:
-        image_mode="none"
-        image_reason="missing image prompt; text-only"
-    if image_mode=="existing_verified" and not image_asset_ref:
-        image_mode="none"
-        image_reason="missing verified asset; text-only"
     if human or not should:
         consider["status"]="completed"
         consider["completed_at"]=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
@@ -486,6 +478,14 @@ Context:
         os.replace(tmp,root/"pdca/state.json")
         print(json.dumps({"status":"NO_POST","human_required":human,"reason":reason},ensure_ascii=False))
         return 0
+    image_error=("image_decision_invalid" if image_mode not in ("none","existing_verified","generate")
+                 else "image_prompt_required" if image_mode=="generate" and not image_prompt
+                 else "verified_image_asset_required" if image_mode=="existing_verified" and not image_asset_ref
+                 else None)
+    if image_error:
+        state["pending_external_actions"]=pending[-12:]
+        (root/"pdca/state.json").write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+        print(json.dumps({"status":"DEFER","reason":image_error})); return 0
     if not safe_post_text(text):
         print(json.dumps({"status":"DEFER","reason":"post_text_guard_failed"},ensure_ascii=False))
         return 0

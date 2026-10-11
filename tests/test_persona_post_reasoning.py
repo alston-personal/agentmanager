@@ -24,6 +24,17 @@ DECISION = {"should_post": True, "human_required": False,
 
 
 class PostReasoningTests(unittest.TestCase):
+    def test_incomplete_image_decision_never_becomes_text_candidate(self):
+        for fields,reason in (({"image_decision":"generate"},"image_prompt_required"),
+                              ({"image_decision":"existing_verified"},"verified_image_asset_required"),
+                              ({"image_decision":"invalid"},"image_decision_invalid")):
+            with self.subTest(fields=fields):
+                output,_,_,actions,_=self.run_generator([
+                    subprocess.CompletedProcess("claude",0,json.dumps({**DECISION,**fields}),"")])
+                self.assertEqual(output["status"],"DEFER")
+                self.assertEqual(output["reason"],reason)
+                self.assertEqual(actions,[])
+
     def run_generator(self, results, *, liveness=False, claude=True, gemini=True, codex=False):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

@@ -540,7 +540,6 @@ class ObservationContract(unittest.TestCase):
         self.assertIn('"media_intent":',gen)
         self.assertIn('"requires_verified_media_receipt"',gen)
         self.assertIn('MEDIA_NOT_VALIDATED',publish)
-        self.assertIn('MEDIA_PUBLISH_ADAPTER_REQUIRED',publish)
 
 
     def test_visual_request_is_persisted_as_media_ir(self):
