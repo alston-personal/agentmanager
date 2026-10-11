@@ -264,6 +264,47 @@ Oracle installation/readiness evidence remain required. Even a matched reference
 does not establish source eligibility, image-provider acceptance, visual-review
 quality, hosting or autonomous IMAGE publication/readback.
 
+### Mio wardrobe source inspection (source candidate)
+
+The existing media reviewer now adds a bounded, read-only `wardrobe.source.inspect`
+execution receipt to `pdca/media_readiness.json`. The deployment sets
+`AGENTOS_MIO_GARMENT_DATA_ROOT=/home/ubuntu/agent-data` so the reader inspects the
+existing garment owner's `projects/dressup-simulator/garments/{seeded,imported}`
+store, not the disposable social-data clone. Imported records override seeded
+records by exact garment ID. Missing configuration does not scan any fallback
+directory; it reports `NOT_CONFIGURED`. Unscoped/other-character records are counted
+separately. Legacy flat garment fixtures are not active registry inputs.
+Catalog joins require explicit `items[].garment_id`; names, prices, retail URLs,
+ownership or a try-on result never create that binding or publication authority.
+
+The receipt distinguishes catalog state, unverified product-image rights,
+missing rights evidence and a garment link not observed in this bounded scan.
+It reports registry absence, unreadable/invalid records, duplicate IDs and scan
+limits separately from observed counts. Each directory permits at most 128
+enumerated entries, each JSON at most 128 KiB, and at most 24 catalog diagnostics
+and 24 safe garment projections are emitted. Symlink/nonregular inputs are rejected. Source snapshot and reviewer
+digests bind the observation; raw images, paths, URLs, notes and credentials are
+not returned. Declared isolation approvals are explicitly not asset verification.
+Only the installed Oracle reviewer under the expected user/node and configured
+live store marks runtime-node provenance; offline fixtures remain offline.
+
+This candidate is diagnostic: it does not import products, rewrite the catalog,
+grant rights, extract assets, force try-on/review/posting or add a scheduler.
+The existing #1704 isolation work remains separate and staged pending a working
+extractor/backfill; it cannot be merged to solve social catalog eligibility.
+Tests extend `tests/test_persona_media_review.py`. Protected-main approval,
+deployment and an actual node receipt are required before claiming this audit
+is live or identifying the live registry's contents.
+
+Accepted configuration evidence as of 2026-10-11: #1719 deployed exact source
+`3f6e3f9fbd25cf6fe0cc94bf4c3a9184faf61ddf` via Persona PDCA run
+`38111271580`; `canonical_reference.install` returned runtime-node `completed`,
+`parity=matched` at 12:21:42 Asia/Taipei. The natural 12:30:57 readiness report
+after private data PR #38 returned `reference_status=MATCHED`, eligible world
+count 5, wardrobe count 0 and `CONFIGURED_NOT_ACCEPTED`. This supersedes the
+earlier missing-reference/zero-world observations, but does not establish image
+provider, independent review, hosting or autonomous IMAGE publication acceptance.
+
 The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.
 
 ## Project release-lane authority
