@@ -127,6 +127,66 @@ relabeling fallback text cannot establish recovery. The same Oracle returned
 existing Codex health recipe, not this isolated Mio invocation. Exact-generation
 deployment and a new node-authoritative Mio reasoning receipt remain required.
 
+### Mio IR-grounded authoring and post continuity (source candidate)
+
+Post authoring uses an interpreted projection of the current persona IR as its
+primary persona basis: version/parent lineage, role, invariants, full
+`current_self`, promoted growth with adoption status, curated notable/recent
+experiences, reply conflict contract and evolution boundaries. Processed-ID
+inventories and raw event counters do not substitute for that interpreted self.
+The existing generator reads one byte-bound IR snapshot and supplies this
+projection to every reasoning provider. Discovery guidance and recent popular
+comments are advisory; governed effects, source rights, image and energy gates
+remain binding. Recent published posts check continuity/repetition rather than
+generate Mio's identity or topic by themselves.
+
+Receipts and candidates bind the decision-time IR ID, revision, exact source
+hash and delivered projection hash. A missing/invalid IR emits a sanitized
+durable hold without asking a provider to author from recent feed alone. If
+the same local input snapshot changes during inference, the consider remains
+pending without creating a post or consuming a no-post decision. This check
+does not claim to query a newer remote IR during inference or enforce fresh
+interpretation at later platform publication. The existing emergency liveness
+fallback uses evidence-backed interests from that IR; absent interests retain
+an unclaimed generic question rather than selecting a popular growth lane.
+Neither snapshot delivery nor a model PASS proves faithful interpretation;
+`interpretation_acceptance` remains NOT_OBSERVED until later content evaluation.
+
+The existing `scripts/persona_post_intent_generator.py` now filters relevant
+events before bounding the model context, instead of allowing raw PDCA
+housekeeping to displace earlier published claims. It separately supplies the
+last 12 public post objects, with up to 500 characters per post, and the last 20
+relevant events with up to 240 characters each. Execution and platform-observed
+post records sharing the same object ID are one post; distinct or missing IDs
+are not merged merely because their text matches. Own post history is ordered
+by publication timestamp, so late ingestion of an older post cannot make it
+the newest claim. Post count, gap and liveness calculations use the full parsed,
+deduplicated post ledger rather than its last 80 raw entries. These history
+bounds are context budgets, not posting or topic quotas.
+
+The authoring instructions ask for a new underlying observation, question or
+interpretation when returning to a topic, and preserve evidence-backed interest
+exploration without forced rotation. Agreeing comments do not automatically
+justify restating a claim in another standalone post. Literal repeats within
+the own-post window, ignoring Unicode punctuation, spacing and case, defer
+without creating a publish action; the consider stays pending for a later
+natural attempt. This guard also applies to the existing safe liveness fallback.
+It does not detect arbitrary semantic paraphrases. If every model is unavailable
+and the fallback repeats a recent post, publishing remains held rather than
+being reported as a successful new post.
+
+Reasoning receipts bind the delivered history with counts, source object IDs
+and SHA-256 hashes rather than raw prompt/provider content. Provider PASS or a
+delivered history digest does not establish novelty or self-growth; the receipt
+explicitly records semantic novelty acceptance as NOT_OBSERVED. No persona IR,
+promoted growth, source rights, image policy, energy settings, pending live
+actions, timers, provider deadlines or reply routing is changed by this source
+candidate. Tests extend `tests/test_persona_post_reasoning.py` and run in the
+existing reasoning/media contract workflows. Exact installed generator digest,
+natural IR/history-bound reasoning receipts and later post-content review remain
+required after separate protected-main approval and deployment; offline provider
+doubles do not prove improved topic diversity or real publishing acceptance.
+
 ### Mio reviewed single-image delivery (source candidate)
 
 The existing PDCA media worker, draft-only FLUX executor, identity-manifest
