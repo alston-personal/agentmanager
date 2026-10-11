@@ -48,6 +48,45 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 
 ## Canonical Project Identity contract
 
+### Mio public reply continuity (2026-10-12 candidate)
+
+The existing reply owner `persona_reply_intent_generator.py` validates public
+comment/root IDs, a verified root-post text and an aware timestamp before
+selection. An old screenshot or malformed comment is counted as unrouteable;
+it cannot hide a later valid comment. Reply completion is matched to the exact
+parent comment ID, never inferred from a later reply to somebody else under
+the same root post. A successful observation with zero *new* replies does not
+mean the already-observed reply backlog is empty.
+
+The shared social timestamp parser normalizes platform compact offsets such as
+`+0000` to `+00:00` before parsing, including on Python 3.10. Posts use that same
+parser for chronological continuity and posting-liveness calculations. Naive
+or invalid times cannot become current platform evidence. This addresses a
+reproduced 3.10 parsing incompatibility and the production journal's repeated
+`missing_required_thread_context` / empty-reply-ID defer; it does not itself
+prove which Python generation was live on the runtime node.
+
+Replies reuse the bounded Claude/Gemini/Codex chain in the existing post owner,
+with a reply-specific strict decision validator. Provider failure never creates
+a canned reply. A valid `no_reply` or human-required decision is terminal for
+that comment/IR-context snapshot, so subsequent ticks can review other comments;
+a changed IR or comment/root text permits fresh review. This is not a mandate
+to answer every comment. Existing delays, public-write authorization, adapter
+receipts, energy accounting and timers remain in force. Reply capacity evicts
+only a terminal entry and holds when every slot is unfinished.
+
+Sanitized `pdca/reply_reasoning/` receipts bind selection IDs, skip counts,
+provider attempts, source hashes and the exact decision-time IR snapshot. They
+distinguish policy `NO_REPLY` / `HUMAN_REQUIRED`, reasoning `DEFER` and
+`CANDIDATE_CREATED`; none means a public reply was sent. IR changes during
+inference hold both reply and no-reply results. Unchanged non-provider defers
+are deduplicated. Private decisions/receipts remain in the data layer, with
+`publication_acceptance=NOT_OBSERVED` until the existing social executor and
+platform readback supply real delivery evidence. Tests live in
+`tests/test_persona_reply_reasoning.py`, plus post and observation regressions;
+reasoning CI covers Python 3.10 and 3.12. Merge, production source binding and a
+natural exact-parent reply receipt remain required for live acceptance.
+
 ### Mio PDCA social observation (#814 candidate)
 
 The currently deployed Persona PDCA sources are on `main`, separately from

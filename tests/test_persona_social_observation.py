@@ -23,6 +23,17 @@ def module(name):
 
 
 class ObservationContract(unittest.TestCase):
+    def test_compact_platform_time_is_eligible_and_readback_keeps_exact_parent(self):
+        self.posts=[{'id':'101','has_replies':True}]
+        self.replies=[self.reply(timestamp=(self.now-timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M:%S%z'),
+                                 replied_to={'id':'102'})]
+        receipt=self.execute()
+        self.assertEqual(receipt['fresh_replies'],1)
+        event=json.loads((self.root/'events/events.jsonl').read_text().splitlines()[0])
+        self.assertEqual(event['source_object_id'],'201')
+        self.assertEqual(event['root_id'],'101')
+        self.assertEqual(event['replied_to_id'],'102')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

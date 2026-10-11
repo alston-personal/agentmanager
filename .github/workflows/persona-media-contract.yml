@@ -10,6 +10,7 @@ on:
       - 'scripts/run_persona_social_actions_user.sh'
       - 'scripts/persona_internal_activity_executor.py'
       - 'scripts/persona_post_intent_generator.py'
+      - 'scripts/persona_reply_intent_generator.py'
       - 'scripts/persona_image_generate_flux.py'
       - 'scripts/persona_social_executor.py'
       - 'scripts/validate_mio_visual_manifest.py'
@@ -24,6 +25,7 @@ on:
       - 'tests/test_persona_social_selection.py'
       - 'tests/test_persona_social_observation.py'
       - 'tests/test_persona_post_reasoning.py'
+      - 'tests/test_persona_reply_reasoning.py'
       - '.github/workflows/persona-media-contract.yml'
   push:
     branches: [main]
@@ -34,6 +36,7 @@ on:
       - 'scripts/run_persona_social_actions_user.sh'
       - 'scripts/persona_internal_activity_executor.py'
       - 'scripts/persona_post_intent_generator.py'
+      - 'scripts/persona_reply_intent_generator.py'
       - 'scripts/persona_image_generate_flux.py'
       - 'scripts/persona_social_executor.py'
       - 'scripts/validate_mio_visual_manifest.py'
@@ -46,6 +49,7 @@ on:
       - 'tests/test_persona_social_selection.py'
       - 'tests/test_persona_social_observation.py'
       - 'tests/test_persona_post_reasoning.py'
+      - 'tests/test_persona_reply_reasoning.py'
       - '.github/workflows/persona-media-contract.yml'
 
 permissions:
@@ -61,6 +65,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test reviewed image delivery without live providers or public writes
-        run: python3 -m unittest tests.test_persona_reference_install tests.test_persona_media_publish tests.test_persona_media_review tests.test_persona_scene_media tests.test_mio_media_ledger_smoke tests.test_persona_post_reasoning tests.test_persona_wardrobe_sources tests.test_persona_media_fault_isolation tests.test_persona_social_selection tests.test_persona_social_observation -v
+        run: python3 -m unittest tests.test_persona_reference_install tests.test_persona_media_publish tests.test_persona_media_review tests.test_persona_scene_media tests.test_mio_media_ledger_smoke tests.test_persona_post_reasoning tests.test_persona_reply_reasoning tests.test_persona_wardrobe_sources tests.test_persona_media_fault_isolation tests.test_persona_social_selection tests.test_persona_social_observation -v
       - name: Check existing deployment scripts
         run: bash -n scripts/install_persona_pdca_timer_user.sh scripts/run_persona_social_actions_user.sh
