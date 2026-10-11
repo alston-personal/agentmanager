@@ -3,6 +3,8 @@
 import json
 import os
 import re
+import socket
+import stat
 import subprocess
 import tempfile
 from datetime import datetime, timezone, timedelta
@@ -224,6 +226,155 @@ def process_reviews(root):
     return 0
 
 
+def wardrobe_source_audit(root, catalog):
+    """Read the existing garment owner's records; never import or approve them.
+
+    Catalog-to-garment joins require an explicit garment_id. Similar names,
+    retail URLs, ownership and successful try-on are not publication authority.
+    """
+    root = Path(root)
+    configured = os.environ.get("AGENTOS_MIO_GARMENT_DATA_ROOT")
+    data_root = Path(configured) if configured else None
+    source = data_root / "projects/dressup-simulator/garments" if data_root else None
+    rows, fingerprints, issues = {}, [], set()
+    counts = {"unscoped_records": 0, "other_persona_records": 0}
+    directories = 0
+
+    def no_symlinks(path):
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            raise ValueError("SYMLINK_SOURCE")
+
+    def read_record(path):
+        no_symlinks(path)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 131072:
+                raise ValueError("INVALID_RECORD")
+            data = stream.read(131073)
+        if len(data) > 131072:
+            raise ValueError("INVALID_RECORD")
+        row = json.loads(data)
+        if not isinstance(row, dict):
+            raise ValueError("INVALID_RECORD")
+        return row, assets.digest(data)
+
+    try:
+        if source is None:
+            raise ValueError("SOURCE_NOT_CONFIGURED")
+        no_symlinks(source)
+        for folder in ("seeded", "imported"):
+            directory = source / folder
+            no_symlinks(directory)
+            if not directory.exists():
+                continue
+            if not directory.is_dir():
+                issues.add("INVALID_DIRECTORY")
+                continue
+            directories += 1
+            # Bound both enumeration and file reads, including non-JSON entries.
+            with os.scandir(directory) as entries:
+                selected = []
+                for entry in entries:
+                    if len(selected) == 128:
+                        issues.add("SOURCE_LIMIT")
+                        break
+                    selected.append(Path(entry.path))
+            seen = set()
+            for path in sorted(selected):
+                if path.suffix != ".json":
+                    continue
+                try:
+                    row, sha = read_record(path)
+                    fingerprints.append((folder, path.name, sha))
+                    key = row.get("garmentId") or row.get("garment_id")
+                    if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,160}", key):
+                        raise ValueError("INVALID_RECORD")
+                    character = row.get("characterId") or row.get("character_id")
+                    if not character:
+                        counts["unscoped_records"] += 1
+                        continue
+                    if character != "sunlake-milkcat-ai-001":
+                        counts["other_persona_records"] += 1
+                        continue
+                    if key in seen:
+                        issues.add("DUPLICATE_GARMENT_ID")
+                    seen.add(key)
+                    rows[key] = row  # Imported overrides the seeded baseline.
+                except (OSError, ValueError, TypeError):
+                    issues.add("INVALID_RECORD")
+    except (OSError, ValueError):
+        issues.add("SOURCE_NOT_CONFIGURED" if source is None else "SOURCE_UNREADABLE")
+
+    items = catalog.get("items")
+    if not isinstance(items, list) or any(not isinstance(x, dict) for x in items):
+        raise ValueError("MEDIA_WARDROBE_CATALOG_INVALID")
+    item_report, linked = [], set()
+    for item in items:
+        key = item.get("item_id")
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,200}", key):
+            raise ValueError("MEDIA_WARDROBE_CATALOG_INVALID")
+        rights = item.get("rights") or {}
+        if not isinstance(rights, dict):
+            raise ValueError("MEDIA_WARDROBE_CATALOG_INVALID")
+        reasons = []
+        if item.get("state") in (None, "candidate", "archived"):
+            reasons.append("CATALOG_STATE_NOT_USABLE")
+        if rights.get("product_image_use") not in ("approved", "licensed", "owner_authorized"):
+            reasons.append("PRODUCT_IMAGE_RIGHTS_UNVERIFIED")
+        if not rights.get("evidence_ref"):
+            reasons.append("RIGHTS_EVIDENCE_MISSING")
+        garment_id = item.get("garment_id")
+        garment = rows.get(garment_id) if isinstance(garment_id, str) else None
+        if garment is None:
+            reasons.append("CANONICAL_GARMENT_LINK_NOT_OBSERVED")
+        else:
+            linked.add(garment_id)
+        if len(item_report) < 24:
+            item_report.append({"item_id": key, "publication_source_eligible": bool(assets.eligible_wardrobe(item)),
+                                "canonical_garment_observed": garment is not None, "diagnostics": reasons})
+
+    declared_isolation = sum(isinstance(row.get("tryOnSource"), dict)
+                             and row["tryOnSource"].get("state") == "approved" for row in rows.values())
+    record_report = []
+    for key in sorted(rows)[:24]:
+        isolation = rows[key].get("tryOnSource")
+        isolation = isolation if isinstance(isolation, dict) else {}
+        state = isolation.get("state")
+        state = state if state in ("pending", "extracting", "candidate", "approved", "rejected") else "UNKNOWN"
+        ir = isolation.get("productIR")
+        record_report.append({"garment_id": key, "catalog_link_observed": key in linked,
+                              "isolation_declared_state": state,
+                              "product_ir_declared": isinstance(ir, dict) and ir.get("schema") == "agentos.wardrobe-product-ir/v1",
+                              "isolated_asset_locator_declared": isinstance(isolation.get("isolatedImageUrl"), str)
+                                  and bool(isolation["isolatedImageUrl"])})
+    registry = {"locator": "projects/dressup-simulator/garments/{seeded,imported}",
+                "status": "NOT_CONFIGURED" if source is None else "PARTIAL" if issues else "OBSERVED" if directories else "DIRECTORIES_ABSENT",
+                "issues": sorted(issues), "active_persona_records_observed": len(rows), **counts,
+                "linked_garments_observed": len(linked), "unlinked_garments_observed": len(rows) - len(linked),
+                "declared_isolation_approved_count": declared_isolation,
+                "records": record_report, "records_truncated": len(rows) > 24,
+                "isolation_asset_verification": "NOT_PERFORMED",
+                "snapshot_sha256": assets.digest(json.dumps(sorted(fingerprints), separators=(",", ":")).encode())}
+    # A sandbox fixture must never identify itself as runtime-node acceptance.
+    runtime_node = (os.getuid() == 1001 and socket.gethostname() == "instance-20260129-0852"
+                    and root.parts[-2:] == ("personas", "sunlake-milkcat")
+                    and data_root == Path("/home/ubuntu/agent-data")
+                    and Path(__file__).parent == Path("/home/ubuntu/.local/lib/agentos"))
+    return {"schema": "agentos.execution-receipt/v1", "operation": "wardrobe.source.inspect",
+            "capability": "social.threads.publish.image", "node": socket.gethostname(),
+            "authority": {"kind": "runtime_node" if runtime_node else "offline_fixture",
+                          "sandbox_fallback_allowed": False},
+            "environment": "production" if runtime_node else "offline",
+            "status": "partial" if issues else "completed", "publication_allowed": False,
+            "expected": {"persona_id": "sunlake-milkcat-ai-001", "registry_locator": registry["locator"],
+                         "store_configuration": "EXPLICIT" if configured else "MISSING",
+                         "reviewer_sha256": assets.digest(Path(__file__).read_bytes())},
+            "observed": {"catalog_items": item_report, "catalog_item_count": len(items),
+                         "catalog_projection_sha256": assets.digest(json.dumps(catalog, sort_keys=True, separators=(",", ":")).encode()),
+                         "catalog_items_truncated": len(items) > 24, "canonical_registry": registry}}
+
+
 def persist_readiness(root):
     report={"schema":"agentos.persona-media-readiness/v1","observed_at":now(),
             "provider_acceptance":"NOT_OBSERVED","hosting_acceptance":"NOT_OBSERVED",
@@ -242,13 +393,17 @@ def persist_readiness(root):
         report["reference_status"]="UNAVAILABLE_OR_MISMATCHED"
     try:
         report["eligible_world_count"]=sum(bool(assets.eligible_world(x)) for x in assets.load(root/"world_library/catalog.json").get("entries",[]))
-        report["eligible_wardrobe_count"]=sum(bool(assets.eligible_wardrobe(x)) for x in assets.load(root/"wardrobe/catalog.json").get("items",[]))
+        wardrobe=assets.load(root/"wardrobe/catalog.json")
+        report["eligible_wardrobe_count"]=sum(bool(assets.eligible_wardrobe(x)) for x in wardrobe.get("items",[]))
+        report["wardrobe_source_audit"]=wardrobe_source_audit(root,wardrobe)
     except (OSError,ValueError,TypeError):
         report["catalog_status"]="INVALID"
     report["status"]="BLOCKED" if report["reference_status"]!="MATCHED" or not report.get("eligible_world_count") or report.get("catalog_status")=="INVALID" or report["review_mode"]!="codex_cli" or not all(report[k] for k in ("codex_executable_present","image_executor_present","image_python_present")) else "CONFIGURED_NOT_ACCEPTED"
     path=root/"pdca/media_readiness.json"
     if path.is_file():
         previous=assets.load(path)
+        if isinstance(previous.get("wardrobe_source_audit"),dict):
+            previous["wardrobe_source_audit"].pop("checked_at",None)
         same={k:v for k,v in previous.items() if k!="observed_at"}=={k:v for k,v in report.items() if k!="observed_at"}
         try:
             fresh=datetime.now(timezone.utc)-datetime.fromisoformat(previous["observed_at"].replace("Z","+00:00"))<timedelta(hours=1)
@@ -256,4 +411,6 @@ def persist_readiness(root):
             fresh=False
         if same and fresh:
             return
+    if "wardrobe_source_audit" in report:
+        report["wardrobe_source_audit"]["checked_at"]=report["observed_at"]
     save(path,report)

@@ -114,6 +114,7 @@ Environment=AGENTOS_PERSONA_GROWTH_METRICS=$LIB/persona_growth_metrics_collector
 Environment=AGENTOS_MIO_IMAGE_EXECUTOR=$LIB/persona_image_generate_flux.py
 Environment=AGENTOS_MIO_IMAGE_EXECUTOR_PYTHON=/home/ubuntu/.local/share/mio-tryon-venv/bin/python
 Environment=AGENTOS_MIO_VISUAL_REVIEW=codex_cli
+Environment=AGENTOS_MIO_GARMENT_DATA_ROOT=/home/ubuntu/agent-data
 Environment=AGENTOS_MIO_MEDIA_OUTPUT_DIR=/home/ubuntu/agent-data/media/mio/generated
 Environment=AGENTOS_MIO_PUBLIC_MEDIA_DIR=/home/ubuntu/zeus-writer/website/dist/personas/mio/media
 Environment=AGENTOS_PERSONA_WRITE_JOURNAL_DIR=/home/ubuntu/agent-data/runtime/persona-social-writes
