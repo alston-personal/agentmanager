@@ -305,6 +305,49 @@ count 5, wardrobe count 0 and `CONFIGURED_NOT_ACCEPTED`. This supersedes the
 earlier missing-reference/zero-world observations, but does not establish image
 provider, independent review, hosting or autonomous IMAGE publication acceptance.
 
+Accepted wardrobe inspection evidence as of 2026-10-11: #1720 deployed exact
+source `013c1678c8b90af52c0111e3bc4a545777b9c8dd` via Persona PDCA run
+`38113027203`. The natural 12:55:48 Asia/Taipei readiness receipt returned
+runtime-node `completed`, canonical registry `OBSERVED`, eight explicitly scoped
+active garments, no scan issues and zero catalog links. All eight isolation
+declarations were `UNKNOWN`; no asset verification was performed. The five
+legacy social wardrobe candidates still had unverified rights and no explicit
+canonical links. Eligible wardrobe count remained zero. Source snapshot SHA-256
+was `867047f2e2244f6ada6e499a6a481487e714e6942af87bd754abdf3edcf816b3`.
+This accepts the diagnostic reader, not isolation, try-on or IMAGE publication.
+
+### Mio canonical wardrobe planning (source candidate)
+
+`scripts/persona_wardrobe_sources.py` reuses the bounded reader above for internal
+outfit planning, post ideation and media readiness. It projects the existing
+garment owner's exact IDs and normalized layers into at most 24 safe planning
+candidates, including clothing, shoes, bags and accessories. Imported records
+override seeded IDs. No catalog is copied, joined by retail URL or rewritten.
+Canonical candidates are always planning-only and publication-ineligible,
+irrespective of declared ownership, wear, rights, successful try-on or isolation.
+Internal proposals do not infer real ownership, wear or purchase.
+
+Explicit live-store configuration wins over the legacy persona catalog, including
+when the configured store is empty. Absent directories or a partial/unreadable
+scan hold planning without falling back to old ZARA/DIANA entries. Legacy persona
+catalog compatibility applies only when no live-store configuration exists.
+Source snapshot, active record and adapter digests bind the internal proposal;
+post reasoning receipts record only safe source provenance/counts. The authoring
+prompt treats labels as untrusted hypothetical styling data. Planning IDs never
+extend `eligible_media_sources`; the existing rights and media checks still
+reject planning-only image selections.
+
+The existing Persona PDCA installer/carrier ships the shared helper and sets
+the same explicit garment data root for both heartbeat and social units. Timer
+cadence and authoring frequency are unchanged. Readiness exposes the safe
+planning projection to verify installed source and owner bindings without forcing
+a cycle, provider call, try-on or public post. Tests in
+`tests/test_persona_wardrobe_sources.py` cover source precedence, held inputs,
+read-only provenance, internal proposals and authoring's image boundary.
+This consumer integration remains a source candidate until separate protected-main
+approval, deployment and an exact node receipt. #1704 still needs operational
+extraction and verified backfill; this integration does not satisfy that gate.
+
 The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.
 
 ## Project release-lane authority

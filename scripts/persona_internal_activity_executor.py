@@ -2,6 +2,7 @@
 import argparse, json, os, random, hashlib
 from datetime import datetime, timezone
 from pathlib import Path
+from persona_wardrobe_sources import planning_sources, source_binding
 
 def load(p):
     with open(p,"r",encoding="utf-8") as f:return json.load(f)
@@ -19,8 +20,8 @@ def latest_pdca(root):
     return state,json.loads(lines[-1])
 
 def wardrobe_plan(root,cycle,now):
-    catalog=load(root/"wardrobe/catalog.json")
-    items=[x for x in catalog.get("items",[]) if x.get("state") in ("candidate","approved","owned")]
+    sources=planning_sources(root)
+    items=sources["items"]
     by={}
     for x in items: by.setdefault(x.get("category","other"),[]).append(x)
     seed=int(hashlib.sha256(f"wardrobe|{cycle}|{now[:10]}".encode()).hexdigest()[:16],16)
@@ -34,11 +35,14 @@ def wardrobe_plan(root,cycle,now):
         if by.get("bottom"): chosen.append(rng.choice(by["bottom"]))
     if by.get("outerwear") and rng.random()<0.35: chosen.append(rng.choice(by["outerwear"]))
     if by.get("shoes") and rng.random()<0.5: chosen.append(rng.choice(by["shoes"]))
+    if by.get("bag") and rng.random()<0.35: chosen.append(rng.choice(by["bag"]))
     return {
       "activity":"wardrobe_plan",
-      "result":"virtual_outfit_proposal",
+      "result":"virtual_outfit_proposal" if chosen else "wardrobe_source_held" if sources["status"]=="HELD" else "no_plannable_items",
+      "wardrobe_source":source_binding(sources),
+      "publication_allowed":False,
       "item_ids":[x.get("item_id") for x in chosen],
-      "items":[{"item_id":x.get("item_id"),"category":x.get("category"),"label":x.get("label"),"state":x.get("state")} for x in chosen],
+      "items":[dict(x) for x in chosen],
       "truth_boundary":{
         "claims_owned":all(x.get("state")=="owned" for x in chosen) if chosen else False,
         "claims_real_wear":False,
