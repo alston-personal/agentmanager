@@ -388,6 +388,47 @@ installation status; no autonomous wardrobe selection or IMAGE publication was
 claimed from that configuration acceptance. #1704 extraction/backfill remains
 unaccepted and must not be enabled merely to bypass social media eligibility.
 
+Accepted #1724 evidence: source `af084328d68f4f38146aa201afa4a8a9b8f46a9c`
+deployed through the existing main-push Persona PDCA run `38118238636`.
+Both timers remained active; stale recovery and an installer live cycle were
+skipped. The natural social lane persisted a `persona.media.worker.tick` receipt
+at 14:35:52.163832 Asia/Taipei on `instance-20260129-0852`, with runtime-node
+authority, production environment, worker exit zero and exact installed runner
+and worker hashes. Cycle 196 remained `RUNNING`; its natural 14:30:53 observation
+read 13 posts and 66 replies successfully, without a public write. This accepts
+the installed optional-worker guard. Its failure behavior is proven offline;
+image generation/publication and #1704 extraction/backfill remain unaccepted.
+
+### Mio image holds and independent social actions (source candidate)
+
+An offline executor regression reproduced a second failure boundary: a due,
+unvalidated image post at the front of the queue repeatedly consumed the action
+turn, leaving an already-due public reply untouched. This is a reproducible queue
+condition, not evidence that production currently contains a pending image or
+that today's posting cadence was caused by this defect.
+
+The existing `persona_social_executor.py` now selects an independent due action
+ahead of an image candidate waiting for media validation. Environmental reads
+retain priority, and other due actions retain their queue order. If there is no
+independent action, the original image hold is still reported; selection does not
+convert it into text, discard it, mark its review complete or bypass publication
+checks. Validated images and in-progress writes keep their existing turns. A
+node-local image write journal also preserves reconciliation when a failed Git
+push leaves a stale candidate in the data repository. Journal resolution is
+shared with image dispatch and the depleted-energy recovery check, so changing
+selection cannot accidentally create another publish or miss a prior write.
+The existing worker runtime receipt also binds the social executor's SHA-256
+captured before invocation, alongside worker and runner hashes. This enables
+natural installed-source acceptance without injecting a pending image into
+production or forcing a public test reply.
+
+`tests/test_persona_social_selection.py` runs the actual executor with offline
+adapters, including exact image review/readback and the private write journal.
+It covers reply progress behind both image modes and review failures, preserving
+the original hold, future due times, read priority, ordinary write order, energy
+gates, validated images and read-only recovery at negative energy. Separate main
+approval, deployment and a natural installed-node receipt remain required.
+
 ## Project release-lane authority
 
 Project identity alone does not authorize a branch mutation or deployment. AgentOS Core models project development, promotion, POC deployment, and production deployment as separate authorities.

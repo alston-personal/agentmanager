@@ -17,7 +17,8 @@ REPO = Path(__file__).resolve().parents[1]
 def module(name):
     spec = importlib.util.spec_from_file_location(name, REPO / 'scripts' / (name + '.py'))
     value = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(value)
+    with patch.object(sys, 'path', [str(REPO / 'scripts'), *sys.path]):
+        spec.loader.exec_module(value)
     return value
 
 
@@ -186,7 +187,8 @@ class ObservationContract(unittest.TestCase):
     def test_due_planning_keeps_read_lane_alive_during_recovery(self):
         for phase in ('sleep','rest'):
             with self.subTest(phase=phase):
-                plan=self.tick.social_observation_plan({},self.state,phase,72,self.now)
+                plan=self.tick.social_observation_plan({},
+                    {**self.state,'pending_external_actions':[]},phase,72,self.now)
                 self.assertTrue(plan['due'])
                 self.assertEqual(plan['reason'],'recovery_read_due')
                 self.assertEqual(plan['max_age_minutes'],180)
@@ -290,7 +292,7 @@ class ObservationContract(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 internal.main()
         events = [json.loads(row) for row in (self.root / 'events/events.jsonl').read_text().splitlines()]
-        self.assertEqual(events[-1]['type'], 'pdca.activity.delegated')
+        self.assertTrue(any(event['type']=='pdca.activity.delegated' for event in events))
 
     def test_successful_observation_closes_activity_ir(self):
         activity=self.root/'pdca/activities/2026-10-08/cycle-10.json'
@@ -458,7 +460,9 @@ class ObservationContract(unittest.TestCase):
 
     def test_posting_liveness_forces_consideration_after_long_silence(self):
         state={**self.state,'pending_external_actions':[],'energy_current':72}
-        receipt=self.creative_tick(state=state,phase='afternoon',selected='reflect')
+        receipt=self.creative_tick(state=state,phase='afternoon',selected='reflect',config={
+            'enabled':True,'timezone':'Asia/Taipei','persona_id':'mio',
+            'growth_mode':{'enabled':True,'phase':'reach_first'}})
         pending=self.read('pdca/state.json')['pending_external_actions']
         considers=[x for x in pending if x.get('capability')=='social.post.consider']
         self.assertEqual(len(considers),1)

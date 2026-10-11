@@ -215,6 +215,35 @@ def blocked_observation(root,state,target,out,now):
     return receipt
 
 
+def image_journal_path(action_id):
+    directory=Path(os.environ.get("AGENTOS_PERSONA_WRITE_JOURNAL_DIR") or
+                   "/home/ubuntu/agent-data/runtime/persona-social-writes")
+    return directory/(hashlib.sha256(action_id.encode()).hexdigest()+".json")
+
+
+def select_action(ready):
+    """Keep reads first; let independent actions pass an unready image.
+
+    A started image write must retain its reconciliation turn, including when
+    a failed data push left a candidate in Git but a journal on the node.
+    Selection never validates media or changes the deferred image intent.
+    """
+    observation=next((x for x in ready if x.get("capability")=="social.threads.observe"),None)
+    if observation is not None:
+        return observation
+
+    def waiting_for_media(action):
+        media=action.get("media_intent")
+        key=action.get("action_id")
+        return (action.get("status")=="candidate"
+                and action.get("capability")=="social.post.publish"
+                and isinstance(media,dict) and media.get("mode") in ("generate","existing_verified")
+                and media.get("status")!="validated" and isinstance(key,str) and bool(key)
+                and not image_journal_path(key).exists())
+
+    return next((x for x in ready if not waiting_for_media(x)),ready[0] if ready else None)
+
+
 def image_write(root,state,target,out,username,base,headers,control,now,energy_cost):
     """One IMAGE write, then read-only reconciliation across subsequent ticks.
 
@@ -224,10 +253,7 @@ def image_write(root,state,target,out,username,base,headers,control,now,energy_c
     from persona_media_asset import resolve_asset,selection_digest
     action_id=target["action_id"]
     text=str(target["primary_text"]).strip()
-    key=hashlib.sha256(action_id.encode()).hexdigest()
-    journal_dir=Path(os.environ.get("AGENTOS_PERSONA_WRITE_JOURNAL_DIR") or
-                     "/home/ubuntu/agent-data/runtime/persona-social-writes")
-    journal_path=journal_dir/(key+".json")
+    journal_path=image_journal_path(action_id)
     intent_digest=hashlib.sha256(json.dumps({"action_id":action_id,"text":text,
             "account":base["target_account_id"],"binding":base["account_binding_id"],
             "media_selection":selection_digest(target),
@@ -344,10 +370,9 @@ def main():
          (x.get("media_intent") or {}).get("mode") in ("generate","existing_verified"))) and due(x) and x.get("capability") in (
         "social.threads.observe","social.reply.review","social.reply.send","social.post.publish"
     )]
-    # Due environmental reads precede existing write candidates; cognition still
-    # decides whether any public reply or post is appropriate.
-    target=next((x for x in ready if x.get("capability")=="social.threads.observe"),
-                ready[0] if ready else None)
+    # Due reads retain priority; an optional image hold must not consume every
+    # execution turn while an independently authorized reply is already due.
+    target=select_action(ready)
     now=now_dt.isoformat().replace("+00:00","Z")
     if not target:
         result={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"NO_ACTION","timestamp":now}
@@ -400,9 +425,7 @@ def main():
             cost=float((json.loads((root/"persona_state.json").read_text()).get("energy") or {}).get("action_costs",{}).get("new_post",8))
             # Reconciliation is read-only and remains possible at zero energy.
             if float(state.get("energy_current",0))<=0 and target.get("status")!="in_progress":
-                key=hashlib.sha256(action_id.encode()).hexdigest()+".json"
-                journal_dir=Path(os.environ.get("AGENTOS_PERSONA_WRITE_JOURNAL_DIR") or "/home/ubuntu/agent-data/runtime/persona-social-writes")
-                if not (journal_dir/key).exists():
+                if not image_journal_path(action_id).exists():
                     receipt={"ok":False,"status":"BLOCKED","result":"ENERGY_DEPLETED","write_performed":False}
                     save(Path(args.receipt_out),receipt)
                     print(json.dumps(receipt)); return 0
