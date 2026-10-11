@@ -7,6 +7,7 @@ on:
       - 'scripts/persona_media*.py'
       - 'scripts/persona_reference_install.py'
       - 'scripts/persona_wardrobe_sources.py'
+      - 'scripts/run_persona_social_actions_user.sh'
       - 'scripts/persona_internal_activity_executor.py'
       - 'scripts/persona_post_intent_generator.py'
       - 'scripts/persona_image_generate_flux.py'
@@ -18,6 +19,7 @@ on:
       - 'tests/test_persona_media_review.py'
       - 'tests/test_persona_reference_install.py'
       - 'tests/test_persona_wardrobe_sources.py'
+      - 'tests/test_persona_media_fault_isolation.py'
       - 'tests/test_persona_post_reasoning.py'
       - '.github/workflows/persona-media-contract.yml'
   push:
@@ -26,6 +28,7 @@ on:
       - 'scripts/persona_media*.py'
       - 'scripts/persona_reference_install.py'
       - 'scripts/persona_wardrobe_sources.py'
+      - 'scripts/run_persona_social_actions_user.sh'
       - 'scripts/persona_internal_activity_executor.py'
       - 'scripts/persona_post_intent_generator.py'
       - 'scripts/persona_image_generate_flux.py'
@@ -34,6 +37,7 @@ on:
       - 'tests/test_persona_media_review.py'
       - 'tests/test_persona_reference_install.py'
       - 'tests/test_persona_wardrobe_sources.py'
+      - 'tests/test_persona_media_fault_isolation.py'
       - 'tests/test_persona_post_reasoning.py'
       - '.github/workflows/persona-media-contract.yml'
 
@@ -50,6 +54,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test reviewed image delivery without live providers or public writes
-        run: python3 -m unittest tests.test_persona_reference_install tests.test_persona_media_publish tests.test_persona_media_review tests.test_mio_media_ledger_smoke tests.test_persona_post_reasoning tests.test_persona_wardrobe_sources -v
+        run: python3 -m unittest tests.test_persona_reference_install tests.test_persona_media_publish tests.test_persona_media_review tests.test_mio_media_ledger_smoke tests.test_persona_post_reasoning tests.test_persona_wardrobe_sources tests.test_persona_media_fault_isolation -v
       - name: Check existing deployment scripts
         run: bash -n scripts/install_persona_pdca_timer_user.sh scripts/run_persona_social_actions_user.sh
