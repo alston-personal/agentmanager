@@ -311,14 +311,17 @@ with sync_playwright() as p:
         if project_dom:
             print("google_flow_recover_project_dom="+json.dumps(project_dom,ensure_ascii=False,separators=(",",":")))
 
-        # Rain Exit s01 was triggered around 2026-10-06 13:42 local time.
-        # Prefer that exact recent project card; opening an existing project is
-        # read-only and does not trigger generation.
+        # The 13:42 card currently resolves to an empty/new workspace. Prefer
+        # the adjacent 13:32 project first; if absent, fall back to 13:42.
+        # Opening either existing project is read-only and never regenerates.
         target_label=None
-        for meta in projects:
-            txt=str(meta.get("text") or "")
-            if txt.startswith("10月 06 - 13:42") or txt.startswith("Oct 06 - 13:42"):
-                target_label=txt.replace(" edit","").replace(" Edit","").strip()
+        for preferred in ("10月 06 - 13:32","Oct 06 - 13:32","10月 06 - 13:42","Oct 06 - 13:42"):
+            for meta in projects:
+                txt=str(meta.get("text") or "")
+                if txt.startswith(preferred):
+                    target_label=txt.replace(" edit","").replace(" Edit","").strip()
+                    break
+            if target_label:
                 break
         if target_label:
             print("google_flow_recover_stage=OPEN_MATCHED_PROJECT")
