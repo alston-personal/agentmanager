@@ -375,3 +375,14 @@ class GptWebActiveImageInputTests(unittest.TestCase):
         source = inspect.getsource(invoke)
         self.assertIn("el.isConnected", source)
         self.assertIn(".at(-1)", source)
+
+
+class GptWebNativeFileEventEvidenceTests(unittest.TestCase):
+    def test_native_file_event_probe_is_installed_before_cdp_selection(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import invoke
+        body = inspect.getsource(invoke)
+        self.assertLess(body.index("__agentosUploadProbe ="), body.index('DOM.setFileInputFiles'))
+        self.assertIn("selectedCountAtEvent", body)
+        self.assertIn("event.isTrusted", body)
+        self.assertNotIn("FileReader", body)
