@@ -350,6 +350,44 @@ extraction and verified backfill; this integration does not satisfy that gate.
 
 The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.
 
+### Mio optional media fault isolation (source candidate)
+
+On 2026-10-11, an offline malformed media-request fixture reproduced an uncaught
+worker exit. The social runner's prior unconditional media invocation under
+`set -e` then stopped reply/post cognition and persistence of an already completed
+observation. This is a reproduced failure condition, not evidence that production
+currently contains a malformed request or that today's silence has this cause.
+
+The existing social runner now treats a missing or nonzero-exit media worker as
+an optional media failure. It records a sanitized `persona.media.worker.tick`
+execution receipt in `pdca/media_worker_runtime.json`, then continues existing
+reply/post cognition and observation persistence. The receipt binds worker/runner
+digests and distinguishes installed Oracle runtime-node provenance from offline
+fixtures. Repeated unchanged outcomes do not rewrite timestamps. Raw worker
+stdout/stderr stay in the disposable clone and are not committed or echoed.
+A successful worker tick does not prove image acceptance or grant publication.
+
+Durable persona state must still be a valid JSON object before any adapter call
+and after the media worker. Corrupt state stops the lane before cognition or
+persistence, including if the failed worker produced that corruption. This guard
+does not turn image failures into text posts, bypass visual/rights checks, remove
+the global lock, change provider deadlines or alter scheduler/posting frequency.
+Tests in `tests/test_persona_media_fault_isolation.py` execute the real shell lane
+with offline adapters and Git/gh doubles, including the real media worker against
+a malformed request. Separate main approval, deployment and an installed-node
+receipt remain required; no bad request is injected into production for testing.
+
+Accepted #1722 evidence: exact source
+`1e42503a1080ff0c6f6f85a968764500a2981b58` deployed via Persona PDCA run
+`38114235724`. The natural 13:20:51 Asia/Taipei node receipt bound eight canonical
+planning candidates and exact adapter/reviewer digests, with eligible world and
+wardrobe counts 5/0. At 13:26:50 the natural `oracle_local_timer` advanced cycle
+194 to 195 with `reflect / reflection_note`, a matching cognitive IR projection,
+and `RUNNING` state. This supersedes the preceding planning source-candidate
+installation status; no autonomous wardrobe selection or IMAGE publication was
+claimed from that configuration acceptance. #1704 extraction/backfill remains
+unaccepted and must not be enabled merely to bypass social media eligibility.
+
 ## Project release-lane authority
 
 Project identity alone does not authorize a branch mutation or deployment. AgentOS Core models project development, promotion, POC deployment, and production deployment as separate authorities.
