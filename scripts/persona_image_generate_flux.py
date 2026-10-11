@@ -26,6 +26,17 @@ def generate(request, destination):
     if not action_id or len(action_id)>128 or not all(c.isalnum() or c in "-_" for c in action_id):
         raise ValueError("unsafe_action_id")
     data=canonical_reference(request)
+    from persona_media_asset import subject_mode
+    subject=subject_mode(request)
+    scene=subject=="scene_only"
+    if scene:
+        policy=request.get("visual_content_policy")
+        scene_policy=policy.get("scene_only_images") if isinstance(policy,dict) else None
+        if not isinstance(scene_policy,dict) or scene_policy.get("enabled") is not True:
+            raise ValueError("MEDIA_SCENE_POLICY_NOT_ENABLED")
+        assembly=request.get("content_assembly") or {}
+        if not assembly.get("world") or assembly.get("wardrobe")!=[]:
+            raise ValueError("MEDIA_SCENE_WARDROBE_NOT_ALLOWED")
     from gradio_client import Client, handle_file
     from PIL import Image
     destination=Path(destination)
@@ -36,8 +47,12 @@ def generate(request, destination):
     with tempfile.TemporaryDirectory(prefix="mio-kontext-") as td:
         # Reference availability is configuration, approval/digest is persona
         # data authority. A public avatar is not interchangeable with the pack.
-        source=Path(td)/"canonical.jpg"
-        source.write_bytes(data)
+        source=Path(td)/("neutral.png" if scene else "canonical.jpg")
+        if scene:
+            # The identity reference is never sent to a scene-only generator.
+            Image.new("RGB",(512,512),(240,240,240)).save(source,format="PNG")
+        else:
+            source.write_bytes(data)
         with Image.open(source) as img:
             img.verify()
         instructions=(
@@ -48,6 +63,11 @@ def generate(request, destination):
             "never add fake brand logos, real-world visit proof, or unrelated people. "
             "Requested visual: "+prompt
         )
+        if scene:
+            instructions=("Replace the neutral canvas with a photorealistic fictional scene or objects using only the selected source descriptions. "
+                "No people, faces, human body parts, silhouettes, reflections, mannequins or depictions of people. "
+                "No clothing, shoes, bags, jewelry, wearables or animal-worn accessories. No invented animals, food, brands, signage, logos or readable text. "
+                "Never represent a real visit, purchase or photograph. Requested visual: "+prompt)
         if request.get("content_assembly"):
             instructions+=" Use only these selected source-backed world and wardrobe items; do not add other wearables or props: "+json.dumps(request["content_assembly"],ensure_ascii=False)
             if len(instructions)>30000:
@@ -70,6 +90,8 @@ def generate(request, destination):
                 return {"status":"GENERATED_UNVERIFIED","provider":provider,
                     "image_path":str(output),"image_sha256":digest,
                     "reference_image_sha256":hashlib.sha256(data).hexdigest(),
+                    "subject_mode":subject,"identity_reference_used":not scene,
+                    "generation_input_sha256":hashlib.sha256(source.read_bytes()).hexdigest(),
                     "identity_verified":False,"publication_allowed":False}
             except Exception as exc:
                 errors.append({"provider":provider,"failure_class":type(exc).__name__})
@@ -87,6 +109,7 @@ def main():
         request=json.loads(request_path.read_text(encoding="utf-8"))
         persona=request_path.parent.parent.parent
         request["canonical_reference_pack"]=json.loads((persona/"reference_pack.json").read_text(encoding="utf-8"))
+        request["visual_content_policy"]=json.loads((persona/"visual_content_policy.json").read_text(encoding="utf-8"))
         result=generate(request,args.output_dir)
     except (OSError,ValueError,ImportError,RuntimeError) as exc:
         known={"canonical_reference_unavailable","canonical_reference_not_approved",

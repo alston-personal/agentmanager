@@ -18,7 +18,9 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--manifest",required=True)
     ap.add_argument("--visual-anchor",required=True)
-    ap.add_argument("--photo-like-face",action="store_true")
+    group=ap.add_mutually_exclusive_group()
+    group.add_argument("--photo-like-face",action="store_true")
+    group.add_argument("--scene-only",action="store_true")
     args=ap.parse_args()
 
     manifest=load(args.manifest)
@@ -26,6 +28,22 @@ def main():
 
     if manifest.get("schema")!="milkcat.image-manifest/v2":
         return fail("manifest_schema_not_v2")
+    from persona_media_asset import subject_mode, validate_scene_review
+    try:
+        mode=subject_mode(manifest)
+        if args.scene_only:
+            if mode!="scene_only":
+                return fail("scene_subject_mode_required")
+            validate_scene_review(manifest)
+            if (manifest.get("publication") or {}).get("allowed") is not True:
+                return fail("publication_not_allowed")
+            print(json.dumps({"ok":True,"status":"PASS","subject_mode":"scene_only",
+                              "identity_verified":False,"people_visible":False}))
+            return 0
+        if mode!="mio_portrait":
+            return fail("scene_review_flag_required")
+    except ValueError:
+        return fail("scene_review_gate_failed")
     bp=manifest.get("identity_blueprint")
     if not isinstance(bp,dict):
         return fail("identity_blueprint_missing")

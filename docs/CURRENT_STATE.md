@@ -232,6 +232,51 @@ delivery remain unverified. The 2026-10-11 source investigation found the existi
 reference Library bytes match the approved reference-pack SHA-256; that proves
 source availability only, not the Oracle file/environment configuration.
 
+### Mio scene/object image review (source candidate, policy opt-in)
+
+The existing authoring, FLUX draft generator, independent Codex reviewer,
+manifest guard and reviewed-image publisher now share an explicit
+`subject_mode`: omitted means the unchanged `mio_portrait` lane; `scene_only`
+requires `visual_content_policy.json.scene_only_images.enabled` to be the
+boolean `true`. Unknown modes, absent/disabled policy and nonempty wardrobe
+selections hold the image decision. This is a source candidate, not live policy
+activation. The existing production v3 policy has no opt-in; a separately
+reviewed data-policy change is required before authoring advertises scene mode.
+
+Scene generation uses a neutral canvas through the existing FLUX Kontext
+provider, never the private identity reference as provider input. Its receipt
+records subject mode, generation-input hash and `identity_reference_used=false`;
+the approved canonical pack remains a bound policy/reference revision. Portrait
+generation continues to use exact approved reference bytes. The scene reviewer
+receives only the draft and must establish absence of people, human parts,
+reflections, silhouettes, mannequins/human depictions and any wearables,
+including detached or animal-worn items. A hidden face cannot qualify. All
+seven existing content/source/rights checks plus `no_people` and photorealistic
+quality require independent evidence; selected usable world IDs remain required.
+No unapproved food, animals, props, clothing, logos, real-visit/ownership claims
+or commercial assertions are authorized by the scene label.
+
+Scene manifests remain `milkcat.image-manifest/v2` with explicit scene evidence,
+without an identity blueprint or a claim that Mio likeness was verified. The
+existing validator requires its mutually exclusive `--scene-only` flag; all
+portrait checks remain on `--photo-like-face`. Subject choice is bound into the
+selection hash only when explicitly present, preserving old portrait receipt
+digests. Changed caption, mode, source selection, draft, policy or authority
+invalidates review. Hosting, public-byte verification, exact IMAGE readback,
+node-local dispatch journal and one-time energy debit reuse the existing lane.
+No image intent is converted into text and no timer/post quota is changed.
+
+Readiness separates supported vs policy-enabled modes and binds installed
+generator/resolver/validator hashes alongside the existing worker/reviewer
+hashes. These configuration receipts remain `NOT_OBSERVED` for provider,
+hosting and autonomous publication until real natural requests supply evidence.
+Offline `tests/test_persona_scene_media.py` verifies authoring, neutral input,
+one-image review, strict absence evidence, stale/revoked policy, subject tampering,
+existing host/write/readback/journal/energy behavior and portrait regressions.
+No live provider call or public acceptance post is made. Wardrobe extraction
+and verified backfill in #1704 remain separate; removing a uniform background
+does not identify/extract a target garment from a complete outfit.
+
 ### Mio private canonical reference installation (source candidate)
 
 `scripts/persona_reference_install.py` completes the missing reference transfer

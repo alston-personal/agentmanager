@@ -114,14 +114,21 @@ def process(root):
                 with tempfile.TemporaryDirectory(prefix="mio-media-receipt-") as temp:
                     result_path=Path(temp)/"generation.json"
                     try:
-                        from persona_media_asset import validate_sources, caption_digest, selection_digest
+                        from persona_media_asset import validate_sources, caption_digest, selection_digest, authorize_subject, subject_mode
                         state=load(root/"pdca/state.json")
                         action=next((x for x in state.get("pending_external_actions",[]) if x.get("action_id")==action_id and x.get("status")=="candidate" and x.get("capability")=="social.post.publish"),None)
                         if not action:
                             continue
+                        if (action.get("media_intent") or {}).get("mode")!=mode:
+                            raise ValueError("MEDIA_GENERATION_INTENT_CHANGED")
+                        subject=authorize_subject(root,action.get("media_intent") or {})
+                        if subject_mode(request)!=subject:
+                            raise ValueError("MEDIA_GENERATION_INTENT_CHANGED")
+                        if subject=="scene_only" and os.environ.get("AGENTOS_MIO_VISUAL_REVIEW")!="codex_cli":
+                            raise ValueError("MEDIA_SCENE_REVIEW_REQUIRED")
                         if os.environ.get("AGENTOS_MIO_VISUAL_REVIEW")=="codex_cli":
                             world,wardrobe=validate_sources(root,action.get("media_intent") or {})
-                            request["content_assembly"]={"world":world,"wardrobe":wardrobe,"event_kind":"virtual_fictional"}
+                            request["content_assembly"]={"world":world,"wardrobe":wardrobe,"event_kind":"virtual_fictional","subject_mode":subject}
                             save(path,request)
                         result=subprocess.run([image_python,image_script,"--request",str(path),
                             "--output-dir",image_dir,"--receipt",str(result_path)],
@@ -141,6 +148,9 @@ def process(root):
                                 "caption_sha256":caption_digest(action),
                                 "media_selection_sha256":selection_digest(action),
                                 "reference_image_sha256":generation.get("reference_image_sha256"),
+                                "subject_mode":generation.get("subject_mode","mio_portrait"),
+                                "identity_reference_used":generation.get("identity_reference_used"),
+                                "generation_input_sha256":generation.get("generation_input_sha256"),
                                 "generated":True,"asset_verified":False,"uploaded":False,
                                 "publication_allowed":False})
                             record_media_experience(root,receipt_ref,load(root/receipt_ref))
