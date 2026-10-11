@@ -15,6 +15,27 @@ REVIEW_GATES = ("scene_provenance", "wardrobe_rights", "season_match", "caption_
                 "final_image_caption", "world_library", "content_assembly")
 
 
+def subject_mode(media):
+    mode = media.get("subject_mode", "mio_portrait")
+    if mode not in ("mio_portrait", "scene_only"):
+        raise ValueError("MEDIA_SUBJECT_MODE_INVALID")
+    return mode
+
+
+def authorize_subject(root, media):
+    mode = subject_mode(media)
+    if mode == "scene_only":
+        policy = load(within(root, "visual_content_policy.json"))
+        if not isinstance(policy,dict):
+            raise ValueError("MEDIA_SCENE_POLICY_NOT_ENABLED")
+        scene_policy=policy.get("scene_only_images")
+        if not isinstance(scene_policy,dict) or scene_policy.get("enabled") is not True:
+            raise ValueError("MEDIA_SCENE_POLICY_NOT_ENABLED")
+        if media.get("wardrobe_ids") != []:
+            raise ValueError("MEDIA_SCENE_WARDROBE_NOT_ALLOWED")
+    return mode
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -39,7 +60,7 @@ def caption_digest(action):
 def selection_digest(action):
     media=action.get("media_intent") or {}
     keys=["mode","prompt","source_ref"]
-    keys += [k for k in ("world_ids","wardrobe_ids") if k in media]
+    keys += [k for k in ("world_ids","wardrobe_ids","subject_mode") if k in media]
     return digest(json.dumps({k:media.get(k) for k in keys},
                             sort_keys=True,ensure_ascii=False).encode())
 
@@ -124,6 +145,13 @@ def review_manifest(root, action, manifest):
     if not provenance.get("source_ref") or not provenance.get("rights_evidence_ref"):
         raise ValueError("MEDIA_PROVENANCE_REQUIRED")
     media=action.get("media_intent") or {}
+    mode = authorize_subject(root, media)
+    if subject_mode(manifest) != mode:
+        raise ValueError("MEDIA_REVIEW_INTENT_MISMATCH")
+    if mode == "scene_only":
+        if provenance.get("wardrobe_ids") != []:
+            raise ValueError("MEDIA_SCENE_WARDROBE_NOT_ALLOWED")
+        validate_scene_review(manifest)
     if media.get("mode")=="existing_verified" and provenance.get("source_ref")!=media.get("source_ref"):
         raise ValueError("MEDIA_REVIEW_INTENT_MISMATCH")
     if provenance.get("commercial_state") != "organic_no_brand":
@@ -141,15 +169,37 @@ def review_manifest(root, action, manifest):
     return sha, alt.strip()
 
 
+def validate_scene_review(manifest):
+    """Scene evidence must establish absence of people, not a hidden Mio face."""
+    scene = manifest.get("scene_only_review")
+    if not isinstance(scene, dict) or scene.get("image_seen") is not True:
+        raise ValueError("MEDIA_SCENE_REVIEW_REQUIRED")
+    for field in ("people_visible", "face_visible", "unlisted_wearables"):
+        if scene.get(field) is not False:
+            raise ValueError("MEDIA_SCENE_PERSON_OR_WEARABLE_PRESENT")
+    if scene.get("visible_wardrobe_ids") != [] or manifest.get("identity_blueprint") is not None:
+        raise ValueError("MEDIA_SCENE_REVIEW_REQUIRED")
+    for name in ("no_people", "visual_quality"):
+        check = (manifest.get("checks") or {}).get(name)
+        if not isinstance(check, dict) or check.get("status") != "pass":
+            raise ValueError("MEDIA_SCENE_REVIEW_REQUIRED")
+        evidence = check.get("evidence")
+        if not isinstance(evidence, list) or not 1 <= len(evidence) <= 8 or any(
+            not isinstance(x, str) or not x.strip() or len(x) > 800 for x in evidence
+        ):
+            raise ValueError("MEDIA_SCENE_REVIEW_REQUIRED")
+
+
 def validate_review(root, action, manifest_path):
     manifest = load(manifest_path)
     sha, alt = review_manifest(root, action, manifest)
     validator = Path(__file__).with_name("validate_mio_visual_manifest.py")
+    flag = "--scene-only" if subject_mode(action.get("media_intent") or {}) == "scene_only" else "--photo-like-face"
     result = subprocess.run([sys.executable, str(validator), "--manifest", str(manifest_path),
                              "--visual-anchor", str(within(root, "visual_anchor_spec.json")),
-                             "--photo-like-face"], capture_output=True, text=True, timeout=15)
+                             flag], capture_output=True, text=True, timeout=15)
     if result.returncode != 0 or json.loads(result.stdout or "{} ").get("ok") is not True:
-        raise ValueError("MEDIA_IDENTITY_REVIEW_REQUIRED")
+        raise ValueError("MEDIA_SCENE_REVIEW_REQUIRED" if flag=="--scene-only" else "MEDIA_IDENTITY_REVIEW_REQUIRED")
     return manifest, sha, alt
 
 
