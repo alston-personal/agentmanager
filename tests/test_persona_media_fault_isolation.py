@@ -121,6 +121,8 @@ Path(sys.argv[sys.argv.index('--receipt-out')+1]).write_text(json.dumps({'status
         import hashlib
         self.assertEqual(receipt["expected"]["worker_sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual(receipt["expected"]["runner_sha256"], hashlib.sha256(RUNNER.read_bytes()).hexdigest())
+        self.assertEqual(receipt["expected"]["social_executor_sha256"],
+                         hashlib.sha256(Path(self.env["AGENTOS_PERSONA_SOCIAL_EXECUTOR"]).read_bytes()).hexdigest())
         for value in ("private-provider-output", "private-error-input"):
             self.assertNotIn(value, result.stdout + result.stderr + json.dumps(receipt))
         self.assertFalse(list(self.capture.rglob("*output.log")))

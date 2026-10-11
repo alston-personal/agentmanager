@@ -63,6 +63,7 @@ fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 SOCIAL_RECEIPT="$ROOT/pdca/social_receipts/$STAMP.json"
 mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
+SOCIAL_EXECUTOR_SHA="$(sha256sum "$SOCIAL_EXECUTOR" | cut -d ' ' -f 1)"
 python3 "$SOCIAL_EXECUTOR" --persona-dir "$ROOT" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"
 python3 -m json.tool "$SOCIAL_RECEIPT" >/dev/null
 
@@ -79,7 +80,7 @@ else
     MEDIA_RC=$?
   fi
 fi
-python3 - "$ROOT" "$MEDIA_RC" "$MEDIA_WORKER_SHA" "$0" "$MEDIA_WORKER" <<'PY'
+python3 - "$ROOT" "$MEDIA_RC" "$MEDIA_WORKER_SHA" "$0" "$MEDIA_WORKER" "$SOCIAL_EXECUTOR" "$SOCIAL_EXECUTOR_SHA" <<'PY'
 import hashlib,json,os,socket,sys
 from datetime import datetime,timezone
 from pathlib import Path
@@ -87,7 +88,8 @@ root=Path(sys.argv[1]); code=int(sys.argv[2]); runner=Path(sys.argv[4])
 runtime=(os.getuid()==1001 and socket.gethostname()=="instance-20260129-0852"
          and root.parts[-2:]==("personas","sunlake-milkcat")
          and runner==Path("/home/ubuntu/.local/bin/agentos-persona-social-actions")
-         and Path(sys.argv[5])==Path("/home/ubuntu/.local/lib/agentos/persona_media_request_worker.py"))
+         and Path(sys.argv[5])==Path("/home/ubuntu/.local/lib/agentos/persona_media_request_worker.py")
+         and Path(sys.argv[6])==Path("/home/ubuntu/.local/lib/agentos/persona_social_executor.py"))
 report={"schema":"agentos.execution-receipt/v1","operation":"persona.media.worker.tick",
         "capability":"persona.media.prepare","node":socket.gethostname(),
         "authority":{"kind":"runtime_node" if runtime else "offline_fixture","sandbox_fallback_allowed":False},
@@ -95,7 +97,8 @@ report={"schema":"agentos.execution-receipt/v1","operation":"persona.media.worke
         "status":"completed" if code==0 else "failed","exit_code":code,
         "reason":None if code==0 else "MEDIA_WORKER_NOT_INSTALLED" if code==127 else "MEDIA_WORKER_FAILED",
         "expected":{"worker_sha256":sys.argv[3] or None,
-                    "runner_sha256":hashlib.sha256(runner.read_bytes()).hexdigest()},
+                    "runner_sha256":hashlib.sha256(runner.read_bytes()).hexdigest(),
+                    "social_executor_sha256":sys.argv[7]},
         "publication_allowed":False,"image_acceptance":"NOT_OBSERVED",
         "media_failure_blocks_social_lane":False}
 path=root/"pdca/media_worker_runtime.json"
