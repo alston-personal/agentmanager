@@ -605,6 +605,23 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
                 "GPT_WEB_FILE_INPUT_NOT_FOUND:" +
                 json.dumps(_composer_snapshot(page), ensure_ascii=False, sort_keys=True)
             )
+        # Capture the trusted native input/change signal before CDP file
+        # selection. No filenames, file bytes or prompt contents are retained.
+        page.evaluate("""(() => {
+          window.__agentosUploadProbe = {events: [], installed: true};
+          for (const kind of ['input', 'change']) {
+            document.addEventListener(kind, function(event) {
+              const el = event.target;
+              if (!el || el.tagName !== 'INPUT' || el.type !== 'file') return;
+              const p = window.__agentosUploadProbe;
+              if (p && p.events.length < 12) p.events.push({
+                kind, trusted: event.isTrusted,
+                selectedCountAtEvent: (el.files || []).length,
+                connectedAtEvent: el.isConnected
+              });
+            }, true);
+          }
+        })()""")
         page.call("DOM.setFileInputFiles", {"objectId": object_id, "files": [str(image)]})
         # CDP acknowledgement only confirms a browser operation; verify the
         # selected file on the exact input object before its DOM can rerender.
@@ -615,6 +632,9 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             }""",
             "returnByValue": True,
         }).get("result") or {}
+        upload_event_probe = page.evaluate(
+            "window.__agentosUploadProbe || {installed:false,events:[]}"
+        )
         selected_files = selected.get("value") or []
         # React may replace the input synchronously after the change event.
         # In that case, the stale object can have an empty FileList even if
@@ -639,7 +659,8 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             if not selection_confirmed:
                 raise RuntimeError(
                     "GPT_WEB_FILE_SELECTION_UNVERIFIED:" +
-                    json.dumps(upload_observation, ensure_ascii=False, sort_keys=True)
+                    json.dumps({"dom": upload_observation, "fileEvents": upload_event_probe},
+                               ensure_ascii=False, sort_keys=True)
                 )
 
         # File upload may rerender the composer. Reacquire/focus it instead of
