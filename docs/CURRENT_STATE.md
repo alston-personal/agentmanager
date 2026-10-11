@@ -232,6 +232,38 @@ delivery remain unverified. The 2026-10-11 source investigation found the existi
 reference Library bytes match the approved reference-pack SHA-256; that proves
 source availability only, not the Oracle file/environment configuration.
 
+### Mio private canonical reference installation (source candidate)
+
+`scripts/persona_reference_install.py` completes the missing reference transfer
+on the existing Persona PDCA deployment carrier. Exact Library bytes have been
+replicated in the private data repository on `assets/mio-reference-v2.1`, commit
+`87320a45ad554ed61453eb8e0acef5b32552d5a6`; SHA-256 remains
+`0725379743f3a908babaa711c8fc016daf7161aa1a3d912c3d15ecaf2bd9aa64`.
+The installer fetches only this pinned reference/transfer record, verifies the
+repository is private and the current main reference pack approves the exact ID
+and bytes, then rechecks approval after downloading. It uses the existing node's
+GitHub authentication without reading or printing credentials. The reference
+is not copied into the public logic repository or public static media subtree.
+
+Only UID 1001 may install into the fixed private Mio reference directory. Atomic
+0600 files and a separate `mio-reference.env` configure the existing social unit;
+the existing `mio-media.env` is preserved. Identical installs leave asset/config
+timestamps unchanged. Symlink paths, digest changes, revoked approval, invalid
+source data or a public source repository block installation. A sanitized
+node-authoritative `agentos.execution-receipt/v1` is persisted at
+`/home/ubuntu/agent-data/runtime/persona-media/reference-install.json` and returned
+through the existing carrier. Installation does not call a generation provider,
+review an image, publish a post, change catalog eligibility or create a timer.
+
+The #1718 deployment was observed on Oracle at 2026-10-11 11:35 Asia/Taipei.
+Its first new-setting readiness report at 11:40:55 confirmed exact worker/reviewer
+digests and `codex_cli` mode, but reference availability remained blocked and
+eligible world/wardrobe counts were both zero. This follow-up's offline tests
+are `tests/test_persona_reference_install.py`; protected-main merge and exact
+Oracle installation/readiness evidence remain required. Even a matched reference
+does not establish source eligibility, image-provider acceptance, visual-review
+quality, hosting or autonomous IMAGE publication/readback.
+
 The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.
 
 ## Project release-lane authority
