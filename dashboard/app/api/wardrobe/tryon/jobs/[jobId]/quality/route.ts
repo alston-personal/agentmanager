@@ -48,37 +48,44 @@ export async function POST(
     if (accepted && (!selected.length || pending.length || selected.some((layer) => !rendered.has(layer)))) {
       return NextResponse.json({ error: 'Incomplete render cannot be approved' }, { status: 409 });
     }
-    job.output = {
-      ...job.output,
-      quality: {
-        accepted,
-        checkedAt: new Date().toISOString(),
-        checks: [{ code: 'admin_visual_review', passed: accepted }],
-        issues: review.issues as string[],
-      },
+    const root = path.join(AGENT_DATA_ROOT, 'projects', 'dressup-simulator');
+    const assetPath = path.join(root, 'render_assets', jobId + '.webp');
+    if (!fs.existsSync(assetPath) || fs.statSync(assetPath).size <= 1000) {
+      return NextResponse.json({ error: 'Rendered image is missing; cannot approve a placeholder' }, { status: 409 });
+    }
+    const quality = {
+      accepted,
+      checkedAt: new Date().toISOString(),
+      checks: [{ code: 'admin_visual_review', passed: accepted }],
+      issues: review.issues as string[],
     };
-    writeJob(job);
-    // Review decisions also govern cache eligibility. Never approve a cache
-    // using an untrusted client-supplied path or key.
+    // Persist cache eligibility first. A failed cache-write must not leave the
+    // job reporting an accepted result while the worker rejects its cache.
     const cacheKey = job.output.cacheKey;
     if (typeof cacheKey === 'string' && /^[0-9a-f]{64}$/.test(cacheKey)) {
-      const dir = path.join(AGENT_DATA_ROOT, 'projects', 'dressup-simulator', 'render_cache');
-      const asset = path.join(dir, cacheKey + '.webp');
-      if (fs.existsSync(asset) && fs.statSync(asset).size > 1000) {
+      const dir = path.join(root, 'render_cache');
+      const cacheAsset = path.join(dir, cacheKey + '.webp');
+      if (fs.existsSync(cacheAsset) && fs.statSync(cacheAsset).size > 1000) {
         const sidecar = path.join(dir, cacheKey + '.json');
-        const temporary = sidecar + '.' + process.pid + '.tmp';
+        const temporary = sidecar + '.' + process.pid + '.' + Date.now() + '.tmp';
         const receipt = {
           schema: 'agentos.tryon-cache-review/v1',
           cacheKey,
           qualityAccepted: accepted,
-          reviewedAt: job.output.quality.checkedAt,
+          reviewedAt: quality.checkedAt,
           reviewJobId: jobId,
           issues: review.issues,
         };
-        fs.writeFileSync(temporary, JSON.stringify(receipt) + '\\n', { mode: 0o600 });
-        fs.renameSync(temporary, sidecar);
+        try {
+          fs.writeFileSync(temporary, JSON.stringify(receipt) + '\n', { mode: 0o600 });
+          fs.renameSync(temporary, sidecar);
+        } finally {
+          try { fs.unlinkSync(temporary); } catch { /* already renamed or missing */ }
+        }
       }
     }
+    job.output = { ...job.output, quality };
+    writeJob(job);
     return NextResponse.json({ ok: true, jobId, quality: job.output.quality });
   } catch {
     return NextResponse.json({ error: 'Invalid review or job ID' }, { status: 400 });
