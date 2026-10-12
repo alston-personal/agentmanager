@@ -116,6 +116,7 @@ class CdpPage:
             raise RuntimeError(f"CDP_WS_CONNECT_FAILED:{type(exc).__name__}:{exc}") from exc
         self.ws.settimeout(5)
         self.seq = 0
+        self.file_chooser_events: list[dict[str, Any]] = []
         self.upload_network_probe: dict[str, Any] | None = None
         self._upload_request_ids: set[str] = set()
         self._upload_request_classes: dict[str, str] = {}
@@ -185,6 +186,9 @@ class CdpPage:
                     raise TimeoutError(f"CDP_COMMAND_RECV_TIMEOUT:{method}") from exc
                 raise RuntimeError(f"CDP_COMMAND_RECV_FAILED:{method}:{type(exc).__name__}:{exc}") from exc
             message = json.loads(raw)
+            if message.get("method") == "Page.fileChooserOpened" and (not session_id or message.get("sessionId") == session_id):
+                params = message.get("params") or {}
+                self.file_chooser_events.append({"backendNodeId":params.get("backendNodeId")})
             if message.get("method") and (not session_id or message.get("sessionId") == session_id):
                 self.observe_upload_event(message)
             if message.get("id") != call_id:

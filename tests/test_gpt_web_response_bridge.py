@@ -433,3 +433,22 @@ class UploadCorrelationTests(unittest.TestCase):
         self.assertEqual(page.upload_network_probe["categories"]["file"]["statuses"]["2xx"], 1)
         self.assertEqual(page.upload_network_probe["categories"]["file"]["failures"], 1)
         self.assertNotIn("secret", str(page.upload_network_probe))
+
+
+class NativeGuiUploadProbeContractTests(unittest.TestCase):
+    def test_probe_never_sends_user_message(self):
+        from pathlib import Path
+        src=Path("scripts/gpt_web_gui_upload_probe.py").read_text(encoding="utf-8")
+        self.assertIn("Page.setInterceptFileChooserDialog",src)
+        self.assertIn("DOM.setFileInputFiles",src)
+        self.assertIn("Input.dispatchMouseEvent",src)
+        self.assertNotIn("Input.insertText",src)
+        self.assertNotIn("_click_send(",src)
+        self.assertNotIn("conversation.submit",src)
+
+    def test_native_chooser_event_handled_structurally(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import CdpPage
+        src=inspect.getsource(CdpPage.call)
+        self.assertIn("Page.fileChooserOpened",src)
+        self.assertIn("backendNodeId",src)

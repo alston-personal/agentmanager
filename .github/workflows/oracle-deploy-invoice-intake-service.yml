@@ -628,3 +628,22 @@ jobs:
             --image /home/ubuntu/agent-data/runtime/gpt-web-fixtures/tw-2part-my04200253.jpg \
             --cdp-url http://127.0.0.1:9222
           REMOTE
+
+      - name: Probe native GPT Web file chooser without submitting
+        if: ${{ always() && github.event_name != 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" \
+            scripts/gpt_web_gui_upload_probe.py \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/gpt_web_gui_upload_probe.py"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          GUI_PY=/home/ubuntu/.local/share/agentos/gui-worker/venv/bin/python
+          FIXTURE=/home/ubuntu/agent-data/runtime/gpt-web-fixtures/tw-2part-my04200253.jpg
+          test -f "$FIXTURE"
+          export PYTHONPATH=/home/ubuntu/.local/share/agentos/gpt-web-bridge
+          "$GUI_PY" /tmp/gpt_web_gui_upload_probe.py --image "$FIXTURE"
+          REMOTE
