@@ -1,0 +1,12 @@
+{
+  "schema": "agentos.oracle-maintenance-command/v1",
+  "operation": "system_worker_boundary_test",
+  "runtime_only": true,
+  "workload": "/usr/bin/sleep 45",
+  "resource_contract": {
+    "CPUQuota": "50%",
+    "CPUWeight": 20,
+    "IOWeight": 20,
+    "MemoryMax": "1G"
+  }
+}
