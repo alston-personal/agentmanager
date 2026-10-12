@@ -15,6 +15,10 @@ const safeSource = (v: unknown) =>
   typeof v === 'string' && /^https:\/\/github\.com\/alston-personal\/[a-zA-Z0-9_.-]+\/issues\/[0-9]+$/.test(v) ? v : null;
 
 export async function GET(request: NextRequest) {
+  // The shared auth module permits a development fallback; private Atlas must fail closed.
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'your-secret-key-change-in-production') {
+    return NextResponse.json({ error: 'atlas_auth_not_configured' }, { status: 503, headers });
+  }
   const tokens = request.cookies.getAll('auth_token').map(c => c.value);
   const identity = tokens.map(t => verifyToken(t)).find(x => x?.username);
   if (!identity) return NextResponse.json({ error: 'authentication_required' }, { status: 401, headers });
