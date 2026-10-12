@@ -1293,7 +1293,7 @@ with lock_path.open("a+") as lock:
             env=os.environ.copy(),
             capture_output=True,
             text=True,
-            timeout=260,
+            timeout=420,
         )
         if proc.returncode != 0:
             tail=(proc.stderr or proc.stdout or "")[-3000:]
