@@ -1,0 +1,58 @@
+name: Core Runner Window Catalog Audit 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-runner-window-catalog-audit-20261012.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - name: Mint trusted scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Print runner-related catalog intents
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20 \
+            -H "Authorization: Bearer $TOKEN" \
+            "$BASE/v1/dispatch" > "$RUNNER_TEMP/catalog.json"
+          python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=d.get('intents') or d.get('catalog') or []
+          selected=[]
+          for row in rows:
+              if not isinstance(row,dict):
+                  continue
+              text=' '.join(str(row.get(k) or '') for k in ('capability','operation','description','role','runner'))
+              if any(word in text.lower() for word in ('runner','repair','restart','runtime','maintenance','executor')):
+                  selected.append(row)
+          print(json.dumps(selected,indent=2,ensure_ascii=False))
+          print('selected_count='+str(len(selected)))
+          PY
