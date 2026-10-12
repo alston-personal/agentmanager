@@ -77,3 +77,5 @@ jobs:
           echo "giant_pack_absent=PASS"
           echo "oracle_post_reclaim_health=PASS"
           REMOTE
+
+# retrigger-20261012-closure
