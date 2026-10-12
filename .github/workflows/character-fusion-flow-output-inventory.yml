@@ -1,5 +1,7 @@
 name: Character Fusion Flow Output Inventory
 
+# probe: after smoke 2026-10-12 06:20Z
+
 on:
   pull_request:
     branches: [core/integration]
