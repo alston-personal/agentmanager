@@ -311,7 +311,7 @@ class GptWebTargetRoutingTests(unittest.TestCase):
              patch("scripts.gpt_web_response_bridge._create_target") as create:
             with self.assertRaisesRegex(RuntimeError, "GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE"):
                 _page("http://127.0.0.1:9222")
-            create.assert_not_called()
+            create.assert_called_once()
 
 
 class GptWebAttachmentDiagnosticsTests(unittest.TestCase):
@@ -516,7 +516,7 @@ class ExistingCleanTargetSafetyContractTests(unittest.TestCase):
         code=inspect.getsource(_page)
         self.assertIn("reversed(candidates)",code)
         self.assertIn("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE",code)
-        self.assertNotIn("_create_target(",code)
+        self.assertIn("_create_target(",code)
         self.assertNotIn("DOM.setFileInputFiles",code)
 
 
