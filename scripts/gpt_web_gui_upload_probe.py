@@ -46,12 +46,12 @@ def run(cdp_url: str, image: Path) -> dict:
                 # click to a visible menu option explicitly labelled for files.
                 option = page.evaluate("""(() => {
                   const nodes = Array.from(document.querySelectorAll(
-                    '[role="menuitem"],[role="option"],[data-radix-menu-content] button,[role="menu"] button'
+                    '[role="menuitem"],[role="option"],[data-radix-menu-content] button,[role="menu"] button,button,[role="button"]'
                   ));
                   for (const el of nodes) {
                     const title = ((el.getAttribute('aria-label') || '') + ' ' +
                       (el.textContent || '')).trim().toLowerCase();
-                    const allowed = ['upload file','upload from computer','add photos','上傳檔案','從電腦上傳','照片與檔案'];
+                    const allowed = ['upload file','upload files','upload from computer','add photos','add files','上傳檔案','上傳檔案或照片','從電腦上傳','照片與檔案'];
                     if (!allowed.some(x => title.includes(x))) continue;
                     const r = el.getBoundingClientRect();
                     if (r.width > 0 && r.height > 0) return {x:r.left+r.width/2,y:r.top+r.height/2};
