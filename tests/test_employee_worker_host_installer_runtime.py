@@ -92,6 +92,29 @@ class EmployeeWorkerHostInstallerRuntimeTests(unittest.TestCase):
         self.assertIn("configured wake root does not already exist", result.stderr)
         self.assertFalse(wake_root.exists())
 
+
+    def test_system_boundary_marker_keeps_user_worker_disabled(self):
+        td, root, env, wake_root = self._fixture(enable=True)
+        self.addCleanup(td.cleanup)
+        marker = Path(env["HOME"]) / ".config" / "agentos" / "employee-worker-host-system-boundary"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("system\n", encoding="utf-8")
+
+        result = self._run(root, env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        home = Path(env["HOME"])
+        unit = home / ".config" / "systemd" / "user" / "agentos-employee-worker-host.service"
+        worker_env = home / ".config" / "agentos" / "employee-worker-host.env"
+        self.assertTrue(unit.is_file())
+        self.assertTrue(worker_env.is_file())
+        self.assertIn(f"AGENTOS_EMPLOYEE_WAKE_ROOT={wake_root}", worker_env.read_text(encoding="utf-8"))
+
+        log = Path(env["SYSTEMCTL_LOG"]).read_text(encoding="utf-8")
+        self.assertIn("--user disable --now agentos-employee-worker-host.service", log)
+        self.assertNotIn("--user enable agentos-employee-worker-host.service", log)
+        self.assertNotIn("--user restart agentos-employee-worker-host.service", log)
+
     def test_enabled_install_renders_shared_service_and_env(self):
         td, root, env, wake_root = self._fixture(enable=True)
         self.addCleanup(td.cleanup)
