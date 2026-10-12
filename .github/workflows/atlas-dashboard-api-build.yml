@@ -60,5 +60,5 @@ jobs:
           ok=$(curl -s -D /tmp/atlas-headers -o /tmp/atlas-200 -w '%{http_code}' -H "Cookie: auth_token=$ADMIN_TOKEN" "$endpoint")
           test "$ok" = 200
           grep -qi 'cache-control: private, no-store' /tmp/atlas-headers
-          node -e 'const j=require("/tmp/atlas-200");if(j.portfolio.work_items[0].status!=="unknown" || j.portfolio.supervisor_status!=="unknown" || j.portfolio.node_status!=="unknown")process.exit(1)'
+          node -e 'const j=JSON.parse(require("node:fs").readFileSync("/tmp/atlas-200","utf8"));if(j.portfolio.work_items[0].status!=="unknown" || j.portfolio.supervisor_status!=="unknown" || j.portfolio.node_status!=="unknown")process.exit(1)'
           echo "atlas_smoke_auth_401_403_missing_503_admin_200_unknown=PASS"
