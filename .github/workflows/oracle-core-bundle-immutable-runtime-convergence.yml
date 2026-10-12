@@ -153,7 +153,9 @@ jobs:
           # Track the candidate's own appended stderr, not old log errors.
           LOBSTER_LOG="$DATA_ROOT/logs/lobster.log"
           LOBSTER_LOG_OFFSET="$(stat -c %s "$LOBSTER_LOG" 2>/dev/null || echo 0)"
+          echo "core_bundle_install_services=START"
           INSTALL_JSON="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          echo "core_bundle_install_services=DONE"
           printf '%s\n' "$INSTALL_JSON"
           printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("mode")=="systemd", d'
 
@@ -170,7 +172,9 @@ jobs:
           # A pre-existing crash loop is not an active service preserved by the installer.
           # Explicitly restart the bounded Lobster unit against the exact candidate release.
           systemctl --user reset-failed os-lobster.service || true
+          echo "core_bundle_lobster_restart=START"
           systemctl --user restart os-lobster.service
+          echo "core_bundle_lobster_restart=DONE"
           # Lobster must actually survive startup; a momentary active state is not acceptance.
           systemctl --user is-active --quiet os-lobster.service
           lobster_pid="$(systemctl --user show os-lobster.service -p MainPID --value)"
