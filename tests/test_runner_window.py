@@ -44,6 +44,21 @@ def test_executor_job_submit_and_inspect_are_bounded_public_intents():
     }
 
 
+def test_runtime_converge_is_bounded_public_intent():
+    intent, params = resolve_intent(
+        "node.runtime",
+        "converge",
+        source_commit="c" * 40,
+        payload={},
+    )
+    assert intent.action == bc.ACTION_RUNTIME_CONVERGE
+    assert params == {"source_commit": "c" * 40}
+    assert public_intent_for_action(bc.ACTION_RUNTIME_CONVERGE) == {
+        "capability": "node.runtime",
+        "operation": "converge",
+    }
+
+
 def test_runtime_repair_cleanup_preserves_failure_stage_trap():
     text = Path("scripts/repair_antigravity_relay_user.sh").read_text(encoding="utf-8")
     assert "cleanup()" in text
@@ -165,6 +180,7 @@ def test_runner_window_catalog_contains_stable_public_intents():
     items = {(x["capability"], x["operation"]) for x in catalog()}
     assert ("agentos.dispatch", "probe") in items
     assert ("agentos.runtime", "repair") in items
+    assert ("node.runtime", "converge") in items
     assert ("agentos.control-inbox", "reconcile") in items
     assert ("browser.gui", "smoke") in items
     assert ("social.runtime", "deploy") in items
