@@ -48,6 +48,31 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 
 ## Canonical Project Identity contract
 
+### Mio runtime inspection evidence (2026-10-12 candidate, #1730)
+
+The existing Persona PDCA Heartbeat carrier's `Inspect Persona timer runtime`
+step reports a node-bound `agentos.execution-receipt/v1` for
+`persona.runtime.inspect`. It reads the two existing core/social services and
+timers, seven installed source hashes, and bounded journals. The fixed core
+incident window is 2026-10-11 22:15-22:40 UTC (06:15-06:40 Asia/Taipei on
+October 12); separate recent core/social windows cover two hours, at most 200
+rows per query. Only fixed status markers and their UTC timestamps cross the
+receipt boundary; raw journal messages, provider output, prompts, commands,
+unknown properties and stderr do not. The previous raw social-journal dump is
+replaced by this projection.
+
+Read failures/timeouts, malformed rows, invalid properties or absent source
+files produce partial evidence. Empty/truncated journals cannot prove absence
+of contention. Process `Result=success` and a completed inspection cannot prove
+that an autonomous cycle persisted: functional acceptance remains
+`NOT_EVALUATED`. The probe performs no timer/service mutation, model inference,
+social write or persona-state edit. It is part of the existing deployment
+carrier, not a new scheduler or persistent monitor. The existing installer and
+its stale-recovery rules are unchanged. Tests in
+`tests/test_persona_runtime_inspection.py` execute the actual inline collector
+with isolated command fixtures on Python 3.10/3.12 CI. Source tests do not prove
+the historical lock hypothesis; that requires the post-merge Oracle receipt.
+
 ### Mio public reply continuity (2026-10-12 candidate)
 
 The existing reply owner `persona_reply_intent_generator.py` validates public
