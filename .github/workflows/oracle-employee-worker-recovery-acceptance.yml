@@ -40,7 +40,7 @@ jobs:
           deployed_sha="$(basename "$current")"
           echo "recovery_current_release=$current"
           echo "recovery_deployed_sha=$deployed_sha"
-          test -d "$current/.git"
+          test -e "$current/.git"
           test "$(git -C "$current" rev-parse HEAD)" = "$deployed_sha"
           git -C "$current" merge-base --is-ancestor "$REQUIRED_WORKER_FIX" "$deployed_sha"
           git -C "$current" merge-base --is-ancestor "$REQUIRED_SHUTDOWN_FIX" "$deployed_sha"
