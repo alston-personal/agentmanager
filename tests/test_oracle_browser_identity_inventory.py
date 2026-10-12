@@ -76,6 +76,21 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(result["classification"], "UNVERIFIED")
 
 
+    def test_socket_owner_profile_is_opaque_and_specific_to_owner(self):
+        with TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            owner = root / "1234"
+            owner.mkdir()
+            owner.joinpath("cmdline").write_bytes(
+                b"/usr/bin/chromium\0--user-data-dir=/private/oursong-profile\0")
+            result = module.socket_owner_profile_evidence(owner)
+            self.assertEqual(result["state"], "EXPLICIT_PROFILE")
+            self.assertEqual(len(result["profile_id"]), 16)
+            self.assertNotIn("/private", str(result))
+            owner.joinpath("cmdline").write_bytes(b"/usr/bin/chromium\0")
+            self.assertEqual(module.socket_owner_profile_evidence(owner)["state"],
+                             "PROFILE_ARG_ABSENT")
+
     def test_listener_owner_classification_is_sanitized(self):
         with TemporaryDirectory() as dirname:
             root = Path(dirname)

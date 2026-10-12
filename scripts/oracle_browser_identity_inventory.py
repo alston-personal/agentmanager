@@ -163,10 +163,31 @@ def socket_owner_category(pid_dir):
     return "OTHER"
 
 
+
+def socket_owner_profile_evidence(pid_dir):
+    """Read only the socket owner's own argv; expose opaque profile evidence."""
+    try:
+        argv = [v.decode("utf-8", "replace") for v in
+                (pid_dir / "cmdline").read_bytes().split(b"\0") if v]
+    except OSError:
+        return {"state": "ARGV_UNAVAILABLE", "profile_id": None}
+    if not argv:
+        return {"state": "ARGV_EMPTY", "profile_id": None}
+    profile = next((arg.split("=", 1)[1] for arg in argv
+                    if arg.startswith("--user-data-dir=")), None)
+    if profile is None and "--user-data-dir" in argv:
+        i = argv.index("--user-data-dir")
+        profile = argv[i + 1] if i + 1 < len(argv) else None
+    if profile:
+        return {"state": "EXPLICIT_PROFILE", "profile_id": profile_id(profile)}
+    return {"state": "PROFILE_ARG_ABSENT", "profile_id": None}
+
+
 def socket_ownership(root=Path("/proc"), ports=PORTS):
     """Associate TCP LISTEN socket inodes with process FDs, without leaking names."""
     inodes, available = listening_socket_inodes(root, ports)
     owners = {port: set() for port in ports}
+    profile_evidence = {port: {} for port in ports}
     unreadable = 0
     target_inodes = set().union(*inodes.values())
     if target_inodes:
@@ -194,12 +215,18 @@ def socket_ownership(root=Path("/proc"), ports=PORTS):
                     for port in ports:
                         if inode in inodes[port]:
                             owners[port].add((proc.name, socket_owner_category(proc)))
+                            profile_evidence[port][proc.name] = socket_owner_profile_evidence(proc)
             except OSError:
                 unreadable += 1
     records = {}
     for port in ports:
         categories = sorted({cat for _, cat in owners[port]})
+        profiles = profile_evidence[port]
+        states = sorted({item["state"] for item in profiles.values()})
+        ids = sorted({item["profile_id"] for item in profiles.values() if item["profile_id"]})
         records[port] = {
+            "owner_profile_states": states,
+            "owner_profile_ids": ids,
             "listening_sockets": len(inodes[port]),
             "owner_process_count": len(owners[port]),
             "owner_categories": categories,
