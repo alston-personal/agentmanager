@@ -77,3 +77,11 @@ class KeywordProbeTests(unittest.TestCase):
 
     def test_scope_whitespace_is_normalized(self):
         self.assertEqual(self.run_probe(allowed_scopes=[" threads_keyword_search "])["status"], "UNVERIFIED")
+
+    def test_own_only_search_does_not_prove_external_discovery(self):
+        response = {"data": [{"id": "123", "username": "mio.milkcat", "text": "self"}]}
+        result = self.run_probe(opener=lambda req, timeout: Response(response))
+        self.assertEqual(result["reason"], "OWN_POSTS_ONLY")
+        self.assertEqual(result["status"], "UNVERIFIED")
+        self.assertEqual(result["items"], [])
+        self.assertFalse(result["write_performed"])
