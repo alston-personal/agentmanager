@@ -511,3 +511,14 @@ class PendingAttachmentSafetyTests(unittest.TestCase):
         self.assertIn("GPT_WEB_COMPOSER_HAS_PENDING_ATTACHMENTS",code)
         self.assertIn("baselineAttachmentSummary",code)
         self.assertIn("before upload",code) if False else None
+
+
+class ExistingCleanTargetSafetyContractTests(unittest.TestCase):
+    def test_page_prefers_clean_open_tabs_and_never_clears_drafts(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import _page
+        code=inspect.getsource(_page)
+        self.assertIn("reversed(candidates)",code)
+        self.assertIn("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE",code)
+        self.assertNotIn("_create_target(",code)
+        self.assertNotIn("DOM.setFileInputFiles",code)
