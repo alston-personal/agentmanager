@@ -775,10 +775,19 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     continue
                 returncode = step.get('returncode')
                 if isinstance(returncode, int) and returncode != 0:
-                    failed_steps.append({
+                    failed = {
                         'step': str(step.get('step') or 'unknown')[:80],
                         'returncode': returncode,
-                    })
+                    }
+                    if action == bootstrap_control.ACTION_SMOKE_CHARACTER_FUSION:
+                        def _safe_tail(value: object, limit: int = 2400) -> str:
+                            text = str(value or '')
+                            text = re.sub(r'(?i)(authorization:\\s*bearer\\s+)[^\\s]+', r'\\1[REDACTED]', text)
+                            text = re.sub(r'(?i)(api[_-]?key|token|secret)(\\s*[=:]\\s*)[^\\s,;]+', r'\\1\\2[REDACTED]', text)
+                            return text[-limit:]
+                        failed['stderr_tail'] = _safe_tail(step.get('stderr'))
+                        failed['stdout_tail'] = _safe_tail(step.get('stdout'))
+                    failed_steps.append(failed)
             if safe_prefixes:
                 for step in raw.get('steps') or []:
                     if not isinstance(step, dict):
