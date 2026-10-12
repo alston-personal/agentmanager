@@ -386,6 +386,21 @@ def _page(cdp_url: str) -> CdpTargetSession:
     page = None
     try:
         fresh = _create_target(cdp_url, "https://chatgpt.com/")
+        # CDP newTarget often returns while Chromium is still navigating.
+        # Wait for the target to expose a ChatGPT URL before opening its WS.
+        deadline = time.monotonic() + 12.0
+        last_url = ""
+        while time.monotonic() < deadline:
+            matches = [item for item in _targets(cdp_url)
+                       if str(item.get("id") or "") == str(fresh.get("id") or "")]
+            if matches:
+                fresh = matches[0]
+                last_url = str(fresh.get("url") or "")
+                if last_url.startswith("https://chatgpt.com/") and fresh.get("webSocketDebuggerUrl"):
+                    break
+            time.sleep(0.3)
+        else:
+            raise RuntimeError("GPT_WEB_FRESH_TARGET_NAVIGATION_TIMEOUT")
         page = _open_target_connection(cdp_url, fresh)
         _focus_composer(page, timeout_seconds=12.0)
         snapshot = _submission_snapshot(page, "agentos-clean-fresh-target-check")
@@ -398,8 +413,11 @@ def _page(cdp_url: str) -> CdpTargetSession:
         selected = page
         page = None
         return selected
-    except Exception:
-        raise RuntimeError("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE") from None
+    except Exception as exc:
+        # Error classes only: never log paths, page URLs, credentials or DOM.
+        category = str(exc)
+        safe = category if category.startswith("GPT_WEB_") and ":" not in category else type(exc).__name__
+        raise RuntimeError("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE:" + safe) from None
     finally:
         if page is not None:
             page.close()
