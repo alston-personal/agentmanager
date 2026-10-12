@@ -1,5 +1,7 @@
 name: Oracle Bootstrap Transport Control Plane
 
+# Emergency transport repair marker: Character Fusion 2026-10-12
+
 on:
   workflow_dispatch:
   push:
