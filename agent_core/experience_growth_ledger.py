@@ -305,6 +305,8 @@ def growth_status(
         and x.get("after_digest")
     ]
     last_success = accepted[-1] if accepted else None
+    material_changes = [x for x in accepted if x["classification"] in {"accepted_new", "accepted_update"}]
+    duplicate_count = sum(x["classification"] == "duplicate_noop" for x in attempts)
     return {
         "schema": "agentos.experience-growth-status/v1",
         "project_id": project_id,
@@ -312,6 +314,8 @@ def growth_status(
         "source_node": source_node,
         "attempt_count": len(attempts),
         "accepted_attempt_count": len(accepted),
+        "material_change_count": len(material_changes),
+        "duplicate_noop_count": duplicate_count,
         "last_attempt": last_attempt,
         "last_success": last_success,
         "growth_proof_status": (
