@@ -333,6 +333,7 @@ class GptWebAttachmentDiagnosticsTests(unittest.TestCase):
         self.assertIn("attachmentSummary", script)
         self.assertIn("inputContext", script)
         self.assertIn("errorIndicators", script)
+        self.assertIn("baselineAlertCounts", inspect.getsource(invoke))
         self.assertNotIn("outerHTML", script)
         self.assertNotIn("img.src", script)
 
