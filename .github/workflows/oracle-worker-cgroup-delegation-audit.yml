@@ -1,0 +1,60 @@
+name: Oracle Worker Cgroup Delegation Audit
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-worker-cgroup-delegation-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect cgroup controller delegation chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          UNIT=agentos-employee-worker-host.service
+          cg="$(systemctl --user show "$UNIT" -p ControlGroup --value)"
+          echo "worker_control_group=$cg"
+
+          paths=(
+            "/sys/fs/cgroup"
+            "/sys/fs/cgroup/user.slice"
+            "/sys/fs/cgroup/user.slice/user-1001.slice"
+            "/sys/fs/cgroup/user.slice/user-1001.slice/user@1001.service"
+            "/sys/fs/cgroup/user.slice/user-1001.slice/user@1001.service/app.slice"
+            "/sys/fs/cgroup$cg"
+          )
+          i=0
+          for p in "${paths[@]}"; do
+            i=$((i+1))
+            echo "level_${i}_path_exists=$([ -d "$p" ] && echo true || echo false)"
+            if [ -d "$p" ]; then
+              echo "level_${i}_controllers=$(cat "$p/cgroup.controllers" 2>/dev/null || echo none)"
+              echo "level_${i}_subtree_control=$(cat "$p/cgroup.subtree_control" 2>/dev/null || echo none)"
+              echo "level_${i}_type=$(cat "$p/cgroup.type" 2>/dev/null || echo none)"
+            fi
+          done
+
+          echo "user_manager_delegate=$(systemctl show user@1001.service -p Delegate --value 2>/dev/null || true)"
+          echo "user_manager_cpu_accounting=$(systemctl show user@1001.service -p CPUAccounting --value 2>/dev/null || true)"
+          echo "user_manager_io_accounting=$(systemctl show user@1001.service -p IOAccounting --value 2>/dev/null || true)"
+          echo "user_slice_cpu_accounting=$(systemctl show user-1001.slice -p CPUAccounting --value 2>/dev/null || true)"
+          echo "user_slice_io_accounting=$(systemctl show user-1001.slice -p IOAccounting --value 2>/dev/null || true)"
+          echo "worker_cgroup_delegation_audit=PASS"
+          REMOTE
