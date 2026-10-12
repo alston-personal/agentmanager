@@ -1,0 +1,67 @@
+name: Oracle User Manager Delegate Refresh Test
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-user-manager-delegate-refresh-test.json'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Refresh user-manager delegation without restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          UNIT=agentos-employee-worker-host.service
+          UM=/sys/fs/cgroup/user.slice/user-1001.slice/user@1001.service
+          APP="$UM/app.slice"
+
+          echo "before_delegate=$(systemctl show user@1001.service -p Delegate --value)"
+          echo "before_user_manager_controllers=$(cat "$UM/cgroup.controllers")"
+          echo "before_user_manager_subtree=$(cat "$UM/cgroup.subtree_control")"
+
+          set +e
+          output="$(sudo -n systemctl set-property --runtime user@1001.service 'Delegate=cpu io memory pids' 2>&1)"
+          rc=$?
+          set -e
+          echo "delegate_refresh_returncode=$rc"
+          printf 'delegate_refresh_output=%s\n' "$(printf '%s' "$output" | tail -c 500 | tr '\n' ' ')"
+          if [ "$rc" -ne 0 ]; then
+            echo "delegate_refresh_supported=false"
+            exit 0
+          fi
+          echo "delegate_refresh_supported=true"
+
+          echo "after_delegate=$(systemctl show user@1001.service -p Delegate --value)"
+          echo "after_user_manager_controllers=$(cat "$UM/cgroup.controllers")"
+          echo "after_user_manager_subtree=$(cat "$UM/cgroup.subtree_control")"
+          echo "after_app_controllers=$(cat "$APP/cgroup.controllers" 2>/dev/null || echo missing)"
+          echo "after_app_subtree=$(cat "$APP/cgroup.subtree_control" 2>/dev/null || echo missing)"
+
+          systemctl --user daemon-reload
+          systemctl --user restart "$UNIT"
+          sleep 2
+          cg="$(systemctl --user show "$UNIT" -p ControlGroup --value)"
+          root="/sys/fs/cgroup$cg"
+          echo "worker_cpu_max=$(cat "$root/cpu.max" 2>/dev/null || echo missing)"
+          echo "worker_cpu_weight_kernel=$(cat "$root/cpu.weight" 2>/dev/null || echo missing)"
+          echo "worker_io_weight_kernel=$(cat "$root/io.weight" 2>/dev/null || echo missing)"
+          echo "worker_memory_max_kernel=$(cat "$root/memory.max" 2>/dev/null || echo missing)"
+          echo "user_manager_delegate_refresh_test=PASS"
+          REMOTE
