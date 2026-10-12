@@ -447,29 +447,23 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             )
 
 
-    def test_process_error_persists_terminal_reason(self):
+    def test_local_ocr_error_preserves_reviewable_invoice(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = InvoiceStore(Path(tmp), data_scope="test")
             created = store.ingest(
-                jpeg_bytes(),
-                "error.jpg",
-                "image/jpeg",
-                source_type="upload",
-                batch_id="batch-error",
+                jpeg_bytes(), "error.jpg", "image/jpeg",
+                source_type="upload", batch_id="batch-error",
             )
             with patch(
                 "services.invoice_intake.invoice_core.extract_legacy_invoice",
                 side_effect=RuntimeError("synthetic provider/parser failure"),
             ):
-                with self.assertRaises(RuntimeError):
-                    store.process(created["invoice_id"])
-
+                processed = store.process(created["invoice_id"])
             item = store.get_invoice(created["invoice_id"])
-            self.assertEqual(item["status"], "error")
+            self.assertEqual(processed["status"], "recognition_insufficient")
+            self.assertEqual(item["status"], "recognition_insufficient")
             recognition = item.get("recognition") or {}
-            self.assertEqual(recognition.get("status"), "error")
-            self.assertEqual((recognition.get("error") or {}).get("stage"), "process")
-            self.assertEqual((recognition.get("error") or {}).get("type"), "RuntimeError")
+            self.assertEqual(recognition.get("status"), "recognition_insufficient")
             self.assertFalse(item["background_enrichment_pending"])
 
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
