@@ -710,6 +710,12 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         # Compare pre-existing alerts with post-selection alerts. Existing
         # page alerts alone cannot be attributed to this upload.
         upload_baseline = _submission_snapshot(page, request_id)
+        # A reused conversation with pending images cannot safely accept an
+        # unrelated invoice. Refuse instead of combining old and new images.
+        baseline_attachment = upload_baseline.get("attachmentSummary") or {}
+        baseline_images = baseline_attachment.get("imageStructure") or {}
+        if int(baseline_images.get("inFormBlob") or 0) > 0 and int(baseline_attachment.get("attachmentControlCount") or 0) > 0:
+            raise RuntimeError("GPT_WEB_COMPOSER_HAS_PENDING_ATTACHMENTS")
         # Capture the trusted native input/change signal before CDP file
         # selection. No filenames, file bytes or prompt contents are retained.
         page.evaluate("""(() => {
@@ -764,7 +770,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             if not selection_confirmed:
                 raise RuntimeError(
                     "GPT_WEB_FILE_SELECTION_UNVERIFIED:" +
-                    json.dumps({"baselineAlertCounts": (upload_baseline.get("attachmentSummary") or {}).get("errorIndicators", {}), "dom": upload_observation, "fileEvents": upload_event_probe,
+                    json.dumps({"baselineAttachmentSummary": upload_baseline.get("attachmentSummary", {}), "dom": upload_observation, "fileEvents": upload_event_probe,
                                 "network": page.connection.upload_network_probe},
                                ensure_ascii=False, sort_keys=True)
                 )

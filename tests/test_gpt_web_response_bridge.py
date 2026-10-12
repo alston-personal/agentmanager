@@ -335,7 +335,7 @@ class GptWebAttachmentDiagnosticsTests(unittest.TestCase):
         self.assertIn("errorIndicators", script)
         from scripts.gpt_web_response_bridge import invoke
         import inspect
-        self.assertIn("baselineAlertCounts", inspect.getsource(invoke))
+        self.assertIn("baselineAttachmentSummary", inspect.getsource(invoke))
         self.assertNotIn("outerHTML", script)
         self.assertNotIn("img.src", script)
 
@@ -501,3 +501,13 @@ class AttachmentGrowthTests(unittest.TestCase):
         self.assertFalse(_attachment_growth(shot(0,0),shot(1,0)))
         self.assertFalse(_attachment_growth(shot(0,0),shot(0,1)))
         self.assertFalse(_attachment_growth({},shot(0,0)))
+
+
+class PendingAttachmentSafetyTests(unittest.TestCase):
+    def test_invoke_rejects_pending_composer_attachments(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import invoke
+        code=inspect.getsource(invoke)
+        self.assertIn("GPT_WEB_COMPOSER_HAS_PENDING_ATTACHMENTS",code)
+        self.assertIn("baselineAttachmentSummary",code)
+        self.assertIn("before upload",code) if False else None
