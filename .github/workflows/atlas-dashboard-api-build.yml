@@ -31,3 +31,34 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Smoke test Atlas access and source failure boundaries
+        shell: bash
+        env:
+          JWT_SECRET: ci-atlas-readonly-nonproduction-only
+          MILKCAT_ADMIN_IDENTITIES: "github:username:atlas-admin"
+          AGENT_DATA_ROOT: /tmp/atlas-ci-test-data
+        run: |
+          set -euo pipefail
+          PORT=33171 npm run start -- --port 33171 > /tmp/atlas-next.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:33171/dashboard/api/auth/session >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          endpoint=http://127.0.0.1:33171/dashboard/api/atlas/snapshot
+          unauth=$(curl -s -o /tmp/atlas-401 -w '%{http_code}' "$endpoint")
+          test "$unauth" = 401
+          export REGULAR_TOKEN="$(node -e 'console.log(require("jsonwebtoken").sign({username:"visitor",provider:"github",exp:Math.floor(Date.now()/1000)+600},process.env.JWT_SECRET))')"
+          regular=$(curl -s -o /tmp/atlas-403 -w '%{http_code}' -H "Cookie: auth_token=$REGULAR_TOKEN" "$endpoint")
+          test "$regular" = 403
+          export ADMIN_TOKEN="$(node -e 'console.log(require("jsonwebtoken").sign({username:"atlas-admin",provider:"github",exp:Math.floor(Date.now()/1000)+600},process.env.JWT_SECRET))')"
+          missing=$(curl -s -o /tmp/atlas-503 -w '%{http_code}' -H "Cookie: auth_token=$ADMIN_TOKEN" "$endpoint")
+          test "$missing" = 503
+          mkdir -p "$AGENT_DATA_ROOT/governance"
+          printf '%s' '{"schema":"agentos.work-completion/v1","items":{"smoke":{"work_id":"smoke","title":"CI bounded example","status":"in_progress","owner":"role://lobster"}}}' > "$AGENT_DATA_ROOT/governance/work-items.json"
+          ok=$(curl -s -D /tmp/atlas-headers -o /tmp/atlas-200 -w '%{http_code}' -H "Cookie: auth_token=$ADMIN_TOKEN" "$endpoint")
+          test "$ok" = 200
+          grep -qi 'cache-control: private, no-store' /tmp/atlas-headers
+          node -e 'const j=require("/tmp/atlas-200");if(j.portfolio.work_items[0].status!=="unknown" || j.portfolio.supervisor_status!=="unknown" || j.portfolio.node_status!=="unknown")process.exit(1)'
+          echo "atlas_smoke_auth_401_403_missing_503_admin_200_unknown=PASS"
