@@ -45,6 +45,8 @@ def run(cdp_url: str, image: Path) -> dict:
                 # ChatGPT may open an attachment menu first. Restrict the next
                 # click to a visible menu option explicitly labelled for files.
                 option = page.evaluate("""(() => {
+                  const triggerX = %s;
+                  const triggerY = %s;
                   const nodes = Array.from(document.querySelectorAll(
                     '[role="menuitem"],[role="option"],[data-radix-menu-content] button,[role="menu"] button,button,[role="button"]'
                   ));
@@ -54,10 +56,15 @@ def run(cdp_url: str, image: Path) -> dict:
                     const allowed = ['upload file','upload files','upload from computer','add photos','add files','上傳檔案','上傳檔案或照片','從電腦上傳','照片與檔案'];
                     if (!allowed.some(x => title.includes(x))) continue;
                     const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0) return {x:r.left+r.width/2,y:r.top+r.height/2};
+                    if (r.width <= 0 || r.height <= 0) continue;
+                    const centerX = r.left+r.width/2, centerY = r.top+r.height/2;
+                    // The initial attachment trigger can itself say 'Add files'.
+                    // Never click that same control again and close its popup.
+                    if (Math.abs(centerX-triggerX) < 4 && Math.abs(centerY-triggerY) < 4) continue;
+                    return {x:centerX,y:centerY};
                   }
                   return null;
-                })()""")
+                })()""" % (json.dumps(x), json.dumps(y)))
                 if not isinstance(option, dict):
                     menu_state = page.evaluate("""(() => {
                       const selectors = ['[role="menu"]','[role="menuitem"]','[role="dialog"]',
