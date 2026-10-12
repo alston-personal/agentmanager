@@ -66,13 +66,20 @@ jobs:
                       s=await ev(r'''(() => {
                         const inp=[...document.querySelectorAll('input[aria-label="可編輯的文字"]')].find(x=>x.offsetParent!==null);
                         const btn=[...document.querySelectorAll('button')].find(x=>x.offsetParent!==null && (x.getAttribute('aria-label')||'').includes('開始生成'));
-                        const form=btn?.closest('form');
-                        const root=inp?.closest('form') || inp?.parentElement?.parentElement?.parentElement;
+                        const chain=[];
+                        let p=inp;
+                        for(let i=0;i<7&&p;i++,p=p.parentElement){
+                          const buttons=[...p.querySelectorAll(':scope button,:scope [role="button"]')].map(b=>({
+                            text:(b.innerText||b.textContent||'').replace(/\s+/g,' ').trim().slice(0,120),
+                            aria:(b.getAttribute('aria-label')||'').slice(0,120),
+                            cls:(b.className||'').toString().slice(0,220)
+                          }));
+                          chain.push({level:i,tag:p.tagName,cls:(p.className||'').toString().slice(0,220),text:(p.innerText||'').replace(/\s+/g,' ').trim().slice(0,500),buttons});
+                        }
                         return {
                           input:{value:inp?.value||'',disabled:!!inp?.disabled,readOnly:!!inp?.readOnly,classes:inp?.className||'',outer:(inp?.outerHTML||'').slice(0,1200)},
                           button:{disabled:!!btn?.disabled,ariaDisabled:btn?.getAttribute('aria-disabled'),classes:btn?.className||'',outer:(btn?.outerHTML||'').slice(0,1200)},
-                          form:(form?.outerHTML||'').slice(0,3500),
-                          nearby:(root?.innerText||'').replace(/\s+/g,' ').trim().slice(0,1800)
+                          chain
                         };
                       })()''')
                       print(json.dumps({"label":label,"state":s},ensure_ascii=False))
@@ -95,6 +102,24 @@ jobs:
                   await call("Input.dispatchKeyEvent",{"type":"keyUp","key":" ","code":"Space","windowsVirtualKeyCode":32})
                   await asyncio.sleep(0.8)
                   await state("after_key_event")
+
+                  local_done=await ev(r'''(() => {
+                    const inp=[...document.querySelectorAll('input[aria-label="可編輯的文字"]')].find(x=>x.offsetParent!==null);
+                    if(!inp) return {ok:false,reason:'no-input'};
+                    let p=inp.parentElement;
+                    for(let i=0;i<7&&p;i++,p=p.parentElement){
+                      const buttons=[...p.querySelectorAll('button,[role="button"]')].filter(x=>x.offsetParent!==null);
+                      const b=buttons.find(x=>{
+                        const t=(x.innerText||x.textContent||'').replace(/\s+/g,' ').trim();
+                        return /^(done|完成)$/i.test(t);
+                      });
+                      if(b){ b.click(); return {ok:true,level:i,text:(b.innerText||b.textContent||'').trim()}; }
+                    }
+                    return {ok:false,reason:'no-local-done'};
+                  })()''')
+                  print(json.dumps({"local_done":local_done},ensure_ascii=False))
+                  await asyncio.sleep(0.8)
+                  await state("after_local_done")
 
                   # Leave a harmless short prompt in the field; do NOT click Generate.
                   print("flow_state_probe=PASS")
