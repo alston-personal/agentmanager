@@ -22,7 +22,6 @@ PrivateTmp=true
 PrivateNetwork=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadOnlyPaths=/home/ubuntu/agent-data/employee-wake-inbox
 ReadWritePaths=/home/ubuntu/agent-data/employee-runtime /home/ubuntu/agent-data/employee-worker-host /home/ubuntu/agent-data/employee-worker-state
 
 [Install]
