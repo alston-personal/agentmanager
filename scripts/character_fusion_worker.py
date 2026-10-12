@@ -1064,6 +1064,20 @@ async def main():
             })
             return (r.get("result") or {}).get("value")
 
+        # Flow project zero-state must explicitly enter the still-image
+        # "Generate concept art" tool before the prompt's Generate button can
+        # produce an image asset. If already inside a creation tool, this is a no-op.
+        concept_mode=await evaluate(r'''(() => {
+          const buttons=[...document.querySelectorAll('button,[role="button"]')]
+            .filter(x=>x.offsetParent!==null);
+          const b=buttons.find(x => (x.innerText||x.textContent||'').trim()==='生成概念藝術');
+          if(!b) return 'already_in_tool';
+          b.click();
+          return 'clicked';
+        })()''')
+        if concept_mode == 'clicked':
+            await asyncio.sleep(1.2)
+
         baseline=await evaluate(r'''(() => {
           const out=[];
           for(const el of document.querySelectorAll('img')){
