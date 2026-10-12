@@ -525,6 +525,7 @@ class UcReplyRendererContractTests(unittest.TestCase):
         import inspect
         from scripts.gpt_web_response_bridge import _assistant_text
         src=inspect.getsource(_assistant_text)
-        self.assertIn('conversation-turn',src)
+        self.assertIn('message-assistant',src)
+        self.assertNotIn('[data-testid*="conversation-turn"]',src)
         self.assertIn("node.closest('form')",src)
         self.assertIn("data-message-author-role') === 'user'",src)
