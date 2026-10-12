@@ -122,6 +122,112 @@ class TestRealmFabric(unittest.TestCase):
         self.assertEqual(self.fabric.load()['tasks']['lease-node'], [])
         self.assertTrue(self.fabric.get_receipt('task-lease')['ok'])
 
+
+    def test_concurrent_transport_mutations_preserve_receipt(self):
+        import threading
+
+        invite = self.fabric.create_invite(expires_minutes=5, label='concurrency-node')
+        policy = ThinClientPolicy(readable_roots=(self.workspace,))
+        config = ThinClientTransport.enroll(
+            one_url=self.base_url,
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            node_id='concurrency-node',
+            policy=policy,
+            config_path=self.config_path,
+        )
+
+        task = {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': 'task-concurrent-receipt',
+            'action': 'desktop.session.inspect',
+        }
+        self.fabric.queue_task('concurrency-node', task)
+        pulled = self.fabric.pull_tasks('concurrency-node', config.node_token)
+        self.assertEqual([x['task_id'] for x in pulled], ['task-concurrent-receipt'])
+
+        receipt = {
+            'schema': 'agentos.node-receipt/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'concurrency-node',
+            'task_id': 'task-concurrent-receipt',
+            'action': 'desktop.session.inspect',
+            'ok': True,
+        }
+        heartbeat = {
+            'schema': 'agentos.node-heartbeat/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'concurrency-node',
+            'observed_at': '2026-10-12T00:00:00Z',
+            'status': 'online',
+            'capabilities': [],
+        }
+
+        errors = []
+        def write_receipt():
+            try:
+                RealmFabricStore(self.fabric.path, node_registry=self.fabric.node_registry).record_receipt(receipt, config.node_token)
+            except Exception as exc:
+                errors.append(exc)
+
+        def write_heartbeats():
+            try:
+                other = RealmFabricStore(self.fabric.path, node_registry=self.fabric.node_registry)
+                for _ in range(25):
+                    other.record_heartbeat(heartbeat, config.node_token)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=write_receipt), threading.Thread(target=write_heartbeats)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        stored = self.fabric.load()
+        self.assertTrue(stored['receipts']['task-concurrent-receipt']['ok'])
+        self.assertEqual(stored['tasks']['concurrency-node'], [])
+
+    def test_concurrent_queue_mutations_do_not_drop_tasks(self):
+        import threading
+
+        invite = self.fabric.create_invite(expires_minutes=5, label='queue-node')
+        policy = ThinClientPolicy(readable_roots=(self.workspace,))
+        ThinClientTransport.enroll(
+            one_url=self.base_url,
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            node_id='queue-node',
+            policy=policy,
+            config_path=self.config_path,
+        )
+
+        errors = []
+        def enqueue(index):
+            try:
+                RealmFabricStore(self.fabric.path, node_registry=self.fabric.node_registry).queue_task(
+                    'queue-node',
+                    {
+                        'schema': 'agentos.node-task/v0.1',
+                        'task_id': f'task-concurrent-{index}',
+                        'action': 'desktop.session.inspect',
+                    },
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=enqueue, args=(i,)) for i in range(20)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        queued = self.fabric.load()['tasks']['queue-node']
+        self.assertEqual(len(queued), 20)
+        self.assertEqual({x['task_id'] for x in queued}, {f'task-concurrent-{i}' for i in range(20)})
+
     def test_invite_is_one_time(self):
         invite = self.fabric.create_invite()
         policy = ThinClientPolicy(readable_roots=(self.workspace,))

@@ -4,6 +4,13 @@ import hashlib
 import json
 import os
 import secrets
+import threading
+from contextlib import contextmanager
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Realm fabric server is Linux in production.
+    fcntl = None
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -29,6 +36,9 @@ def _user_code() -> str:
     return raw[:4] + '-' + raw[4:]
 
 
+_REALM_MUTATION_LOCK = threading.RLock()
+
+
 class RealmFabricStore:
     """Persistent ONE-side state for Thin Client enrollment and task transport.
 
@@ -41,6 +51,21 @@ class RealmFabricStore:
         data_root = Path(os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
         self.path = Path(path) if path else data_root / 'realm' / 'fabric.json'
         self.node_registry = node_registry or NodeRegistry()
+
+    @contextmanager
+    def _mutation_lock(self):
+        """Serialize read-modify-write mutations across threads and processes."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.path.with_suffix(self.path.suffix + '.lock')
+        with _REALM_MUTATION_LOCK:
+            with lock_path.open('a+', encoding='utf-8') as handle:
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    if fcntl is not None:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _empty(self) -> dict[str, Any]:
         return {
@@ -288,9 +313,10 @@ class RealmFabricStore:
         node_id = str(heartbeat.get('node_id') or '')
         self.authenticate(node_id, token)
         entry = self.node_registry.record_heartbeat(heartbeat)
-        data = self.load()
-        data['nodes'][node_id]['last_seen_at'] = heartbeat.get('observed_at') or _utc_now()
-        self.save(data)
+        with self._mutation_lock():
+            data = self.load()
+            data['nodes'][node_id]['last_seen_at'] = heartbeat.get('observed_at') or _utc_now()
+            self.save(data)
         return entry
 
     def queue_task(self, node_id: str, task: dict[str, Any]) -> dict[str, Any]:
@@ -298,59 +324,60 @@ class RealmFabricStore:
             raise ValueError('invalid task schema')
         if not task.get('task_id'):
             raise ValueError('task_id is required')
-        data = self.load()
-        if node_id not in data['nodes']:
-            raise KeyError(node_id)
         queued = dict(task)
         queued['queued_at'] = _utc_now()
-        data['tasks'].setdefault(node_id, []).append(queued)
-        self.save(data)
+        with self._mutation_lock():
+            data = self.load()
+            if node_id not in data['nodes']:
+                raise KeyError(node_id)
+            data['tasks'].setdefault(node_id, []).append(queued)
+            self.save(data)
         return queued
 
     def pull_tasks(self, node_id: str, token: str, *, limit: int = 10) -> list[dict[str, Any]]:
         self.authenticate(node_id, token)
-        data = self.load()
-        queue = list(data['tasks'].get(node_id, []))
-        if not queue:
-            # Long-poll clients can ask repeatedly while idle. Never rewrite
-            # canonical Realm state merely to prove that an empty queue is empty.
-            return []
+        with self._mutation_lock():
+            data = self.load()
+            queue = list(data['tasks'].get(node_id, []))
+            if not queue:
+                # Long-poll clients can ask repeatedly while idle. Never rewrite
+                # canonical Realm state merely to prove that an empty queue is empty.
+                return []
 
-        now = datetime.now(timezone.utc)
-        lease_seconds = 60
-        take: list[dict[str, Any]] = []
-        changed = False
-        for item in queue:
-            if len(take) >= max(1, min(limit, 50)):
-                break
-            if not isinstance(item, dict):
-                continue
+            now = datetime.now(timezone.utc)
+            lease_seconds = 60
+            take: list[dict[str, Any]] = []
+            changed = False
+            for index, item in enumerate(queue):
+                if len(take) >= max(1, min(limit, 50)):
+                    break
+                if not isinstance(item, dict):
+                    continue
 
-            lease_until_raw = str(item.get('_lease_until') or '')
-            lease_until = None
-            if lease_until_raw:
-                try:
-                    lease_until = _parse_utc(lease_until_raw)
-                except Exception:
-                    lease_until = None
+                lease_until_raw = str(item.get('_lease_until') or '')
+                lease_until = None
+                if lease_until_raw:
+                    try:
+                        lease_until = _parse_utc(lease_until_raw)
+                    except Exception:
+                        lease_until = None
 
-            if lease_until is not None and lease_until > now:
-                continue
+                if lease_until is not None and lease_until > now:
+                    continue
 
-            leased = dict(item)
-            leased['_leased_at'] = _utc_now()
-            leased['_lease_until'] = (now + timedelta(seconds=lease_seconds)).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
-            leased['_lease_count'] = int(item.get('_lease_count') or 0) + 1
+                leased = dict(item)
+                leased['_leased_at'] = _utc_now()
+                leased['_lease_until'] = (now + timedelta(seconds=lease_seconds)).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+                leased['_lease_count'] = int(item.get('_lease_count') or 0) + 1
 
-            idx = queue.index(item)
-            queue[idx] = leased
-            take.append({k: v for k, v in leased.items() if not str(k).startswith('_')})
-            changed = True
+                queue[index] = leased
+                take.append({k: v for k, v in leased.items() if not str(k).startswith('_')})
+                changed = True
 
-        if changed:
-            data['tasks'][node_id] = queue
-            self.save(data)
-        return take
+            if changed:
+                data['tasks'][node_id] = queue
+                self.save(data)
+            return take
 
     def record_receipt(self, receipt: dict[str, Any], token: str) -> dict[str, Any]:
         if receipt.get('schema') != 'agentos.node-receipt/v0.1':
@@ -360,18 +387,20 @@ class RealmFabricStore:
         task_id = str(receipt.get('task_id') or '')
         if not task_id:
             raise ValueError('receipt task_id is required')
-        data = self.load()
-        data['receipts'][task_id] = {
-            **receipt,
-            'received_at': _utc_now(),
-        }
-        data['tasks'][node_id] = [
-            task for task in list(data['tasks'].get(node_id, []))
-            if not (isinstance(task, dict) and str(task.get('task_id') or '') == task_id)
-        ]
-        data['nodes'][node_id]['last_seen_at'] = _utc_now()
-        self.save(data)
-        return data['receipts'][task_id]
+        with self._mutation_lock():
+            data = self.load()
+            data['receipts'][task_id] = {
+                **receipt,
+                'received_at': _utc_now(),
+            }
+            data['tasks'][node_id] = [
+                task for task in list(data['tasks'].get(node_id, []))
+                if not (isinstance(task, dict) and str(task.get('task_id') or '') == task_id)
+            ]
+            data['nodes'][node_id]['last_seen_at'] = _utc_now()
+            self.save(data)
+            stored = dict(data['receipts'][task_id])
+        return stored
 
     def get_receipt(self, task_id: str) -> dict[str, Any] | None:
         return self.load()['receipts'].get(task_id)
