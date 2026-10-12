@@ -65,10 +65,29 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _runtime_user_argv(argv: list[str]) -> list[str]:
+    """Drop a root Action Relay child into the canonical ubuntu user boundary."""
+    if os.geteuid() != 0:
+        return list(argv)
+    return [
+        "/usr/sbin/runuser",
+        "-u",
+        "ubuntu",
+        "--",
+        "/usr/bin/env",
+        "HOME=/home/ubuntu",
+        "USER=ubuntu",
+        "LOGNAME=ubuntu",
+        "XDG_RUNTIME_DIR=/run/user/1001",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus",
+        *argv,
+    ]
+
+
 def _run(argv: list[str], *, cwd: Path, timeout: int = 180) -> subprocess.CompletedProcess[str]:
-    """Run one trusted, source-owned command. Caller data never supplies argv."""
+    """Run one trusted command as the canonical ubuntu runtime user."""
     return subprocess.run(
-        argv,
+        _runtime_user_argv(argv),
         cwd=str(cwd),
         text=True,
         capture_output=True,
