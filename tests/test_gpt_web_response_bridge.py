@@ -529,3 +529,14 @@ class UcReplyRendererContractTests(unittest.TestCase):
         self.assertNotIn('[data-testid*="conversation-turn"]',src)
         self.assertIn("node.closest('form')",src)
         self.assertIn("data-message-author-role') === 'user'",src)
+
+
+class FreshTargetReadinessContractTests(unittest.TestCase):
+    def test_fresh_tab_navigation_is_polled_and_errors_are_classified(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import _page
+        source=inspect.getsource(_page)
+        self.assertIn('GPT_WEB_FRESH_TARGET_NAVIGATION_TIMEOUT',source)
+        self.assertIn('time.monotonic() + 12.0',source)
+        self.assertIn('GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE:',source)
+        self.assertIn('Target.closeTarget',source)
