@@ -1,0 +1,29 @@
+name: Mio Persona IR Revision Gate
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/persona_ir_revision_gate.py'
+      - 'tests/test_persona_ir_revision_gate.py'
+      - '.github/workflows/mio-persona-ir-revision-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/persona_ir_revision_gate.py'
+      - 'tests/test_persona_ir_revision_gate.py'
+      - '.github/workflows/mio-persona-ir-revision-gate.yml'
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python3 -m unittest tests.test_persona_ir_revision_gate -v

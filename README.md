@@ -133,3 +133,7 @@ AgentOS is an active research and engineering project. Some subsystems are produ
 ---
 
 *Models are replaceable executors. Durable work should not be trapped inside one session.*
+
+## Persona IR revision gate (candidate #1872)
+
+`scripts/persona_ir_revision_gate.py` is a **pure validation helper** to distinguish ordinary Experience Ledger append from adoption of an independently verified, durable growth delta. No ordinary activity should require a new Persona IR version. Only a governance-approved, source-backed, single new promoted growth unit with a durable `current_self` change and exact parent/revision lineage may pass. The existing Mio IR producer in the mutable data/runtime lane is **not yet wired to this helper**. Until a node-authoritative deployment and test prove that integration, this is a candidate contract, **not** a claim that live r84 auto-incrementing has been fixed. Never rewrite historical IR or stop Mio's active activity.
