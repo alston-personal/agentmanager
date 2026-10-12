@@ -438,8 +438,129 @@ with sync_playwright() as p:
                 video=vids.nth(chosen)
                 print("google_flow_recover_stage=VIDEO_VISIBLE",flush=True)
             else:
-                print("google_flow_recover=PROJECT_OPENED_NO_MATCHING_VIDEO")
-                raise SystemExit(0)
+                print("google_flow_recover_stage=PROJECT_NO_VIDEO_FALLBACK_MEDIA_LIBRARY")
+                # The project workspaces can be empty while generated outputs remain
+                # in Flow's media library. Inspect the existing Video library read-only.
+                try:
+                    page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
+                    page.wait_for_timeout(4000)
+                    opened_library=False
+                    for label in ("影片","Videos","Video"):
+                        try:
+                            loc=page.get_by_text(label,exact=True)
+                            if loc.count() and loc.first.is_visible(timeout=500):
+                                loc.first.click(timeout=3000)
+                                opened_library=True
+                                break
+                        except Exception:
+                            pass
+                    if not opened_library:
+                        for label in ("影片","Videos","Video"):
+                            try:
+                                loc=page.get_by_role("link",name=label,exact=False)
+                                if loc.count():
+                                    loc.first.click(timeout=3000)
+                                    opened_library=True
+                                    break
+                            except Exception:
+                                pass
+                    page.wait_for_timeout(5000)
+                    print("google_flow_recover_stage=MEDIA_LIBRARY_OPEN")
+                    print("google_flow_recover_url="+str(page.url or "")[:500])
+
+                    body=(page.locator("body").inner_text(timeout=3000) or "")
+                    print("google_flow_recover_media_library_text="+" ".join(body.split())[:1200])
+                    counts={
+                        "video":page.locator("video").count(),
+                        "img":page.locator("img").count(),
+                        "button":page.locator("button").count(),
+                    }
+                    print("google_flow_recover_media_library_counts="+json.dumps(counts,separators=(",",":")))
+
+                    media_controls=[]
+                    for sel in ("button","a","[role=button]"):
+                        loc=page.locator(sel)
+                        for i in range(min(loc.count(),80)):
+                            item=loc.nth(i)
+                            try:
+                                if not item.is_visible(timeout=100):
+                                    continue
+                                label=(item.get_attribute("aria-label") or item.inner_text(timeout=250) or "").strip()
+                                href=(item.get_attribute("href") or "").strip()
+                                if label or href:
+                                    media_controls.append((sel+":"+label+("|href="+href if href else ""))[:180])
+                            except Exception:
+                                pass
+                    if media_controls:
+                        print("google_flow_recover_media_library_controls="+json.dumps(media_controls[:80],ensure_ascii=False,separators=(",",":")))
+
+                    # Prefer an already-rendered video element if present.
+                    vids=page.locator("video")
+                    chosen=None
+                    for i in range(min(vids.count(),30)):
+                        item=vids.nth(i)
+                        try:
+                            if item.is_visible(timeout=300):
+                                chosen=i
+                                break
+                        except Exception:
+                            pass
+                    if chosen is not None:
+                        video=vids.nth(chosen)
+                        print("google_flow_recover_stage=VIDEO_VISIBLE",flush=True)
+                    else:
+                        # Media libraries often render thumbnail cards. Open the
+                        # newest visible card without modifying content, then inspect.
+                        card_selectors=(
+                            "flow-media-card",
+                            "[class*='media-card']",
+                            "[class*='asset-card']",
+                            "[class*='grid-item']",
+                        )
+                        opened=False
+                        for selector in card_selectors:
+                            try:
+                                cards=page.locator(selector)
+                                for i in range(min(cards.count(),30)):
+                                    card=cards.nth(i)
+                                    try:
+                                        if not card.is_visible(timeout=200):
+                                            continue
+                                        txt=(card.inner_text(timeout=400) or "").strip()
+                                        if any(x in txt.lower() for x in ("add","新增","new project","新增專案")):
+                                            continue
+                                        card.click(timeout=3000)
+                                        opened=True
+                                        break
+                                    except Exception:
+                                        pass
+                                if opened:
+                                    break
+                            except Exception:
+                                pass
+                        if opened:
+                            page.wait_for_timeout(5000)
+                            print("google_flow_recover_stage=MEDIA_CARD_OPENED")
+                            print("google_flow_recover_url="+str(page.url or "")[:500])
+                            vids=page.locator("video")
+                            for i in range(min(vids.count(),30)):
+                                item=vids.nth(i)
+                                try:
+                                    if item.is_visible(timeout=300):
+                                        video=item
+                                        print("google_flow_recover_stage=VIDEO_VISIBLE",flush=True)
+                                        break
+                                except Exception:
+                                    pass
+                        if 'video' not in locals():
+                            print("google_flow_recover=MEDIA_LIBRARY_NO_VIDEO")
+                            raise SystemExit(0)
+                except SystemExit:
+                    raise
+                except Exception as exc:
+                    print("google_flow_recover=MEDIA_LIBRARY_SCAN_ERROR")
+                    print("google_flow_recover_media_library_error="+type(exc).__name__)
+                    raise SystemExit(0)
         else:
             print("google_flow_recover=NO_MATCHING_PROJECT_VIDEO")
             raise SystemExit(0)
