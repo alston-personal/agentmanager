@@ -518,3 +518,14 @@ class ExistingCleanTargetSafetyContractTests(unittest.TestCase):
         self.assertIn("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE",code)
         self.assertNotIn("_create_target(",code)
         self.assertNotIn("DOM.setFileInputFiles",code)
+
+
+class UcReplyRendererContractTests(unittest.TestCase):
+    def test_harvest_can_search_alternate_turns_but_not_user_form(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import _assistant_text
+        src=inspect.getsource(_assistant_text)
+        self.assertIn('message-assistant',src)
+        self.assertNotIn('[data-testid*="conversation-turn"]',src)
+        self.assertIn("node.closest('form')",src)
+        self.assertIn("data-message-author-role') === 'user'",src)
