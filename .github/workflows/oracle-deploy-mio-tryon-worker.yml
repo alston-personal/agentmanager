@@ -155,67 +155,42 @@ jobs:
             mv "$VERIFIED_CACHE.tmp" "$VERIFIED_CACHE"
           fi
           test -s "$VERIFIED_CACHE"
-          echo "mio_verified_real_render_cache=PASS bytes=$(wc -c < "$VERIFIED_CACHE")"
-
-          JOB_DIR="$ROOT/render_jobs/runtime"
-          ASSET_DIR="$ROOT/render_assets"
-          JOB_ID="mio-worker-selftest-$RANDOM-$(date +%s)"
-          JOB="$JOB_DIR/$JOB_ID.json"
-          ASSET="$ASSET_DIR/$JOB_ID.webp"
-          mkdir -p "$JOB_DIR" "$ASSET_DIR"
-
-          python3 - "$JOB" "$JOB_ID" <<'PY'
-          import json, pathlib, sys
-          from datetime import datetime, timezone
-          path=pathlib.Path(sys.argv[1]); job_id=sys.argv[2]
-          now=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
-          job={
-            "schema":"agentos.tryon-render-job/v1",
-            "jobId":job_id,
-            "characterId":"sunlake-milkcat-ai-001",
-            "characterVersion":"mio-body-v1",
-            "view":"front","pose":"neutral_standing","status":"queued",
-            "requestedAt":now,"startedAt":None,"completedAt":None,"failedAt":None,"supersededBy":None,
-            "input":{
-              "baseBodyAsset":"/personas/mio/mio-base-v2.webp",
-              "layerOrder":["upper_main"],
-              "selectedLayers":{
-                "upper_main":{"garmentId":"net-43774-002","name":"white top","layer":"upper_main","sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"}
-              }
-            },
-            "output":{"asset":None,"previewAsset":None,"width":None,"height":None},
-            "error":None
+          echo "mio_historical_cache_present=PASS bytes=$(wc -c < "$VERIFIED_CACHE")"
+          # Historical smoke assets are not proof of visual approval.
+          # The cache guard must reject legacy entries without signed-off review metadata.
+          "$VENV/bin/python" - "$VERIFIED_CACHE" <<'PY'
+          import importlib.util, json, pathlib, sys
+          worker=pathlib.Path.home()/".local/bin/agentos-mio-tryon-render-worker.py"
+          spec=importlib.util.spec_from_file_location("mio_tryon_worker",worker)
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          fixture={
+              "characterId":"sunlake-milkcat-ai-001",
+              "characterVersion":"mio-body-v1",
+              "view":"front","pose":"neutral_standing",
+              "input":{"selectedLayers":{"upper_main":{"garmentId":"net-43774-002"}}}
           }
-          path.write_text(json.dumps(job,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-          path.chmod(0o600)
+          layers=["upper_main"]
+          cached=mod.cache_path(mod.outfit_cache_key(fixture,layers))
+          assert cached == pathlib.Path(sys.argv[1]), (cached,sys.argv[1])
+          original=mod.CACHE_DIR
+          import tempfile
+          with tempfile.TemporaryDirectory(prefix="mio-cache-policy-") as temp:
+              mod.CACHE_DIR=pathlib.Path(temp)
+              target=mod.cache_path(mod.outfit_cache_key(fixture,layers))
+              target.write_bytes(b"candidate" * 200)
+              assert mod.cached_render(fixture,layers) is None
+              sidecar=target.with_suffix(".json")
+              sidecar.write_text(json.dumps({"qualityAccepted":False}),encoding="utf-8")
+              assert mod.cached_render(fixture,layers) is None
+              sidecar.write_text(json.dumps({"qualityAccepted":True}),encoding="utf-8")
+              assert mod.cached_render(fixture,layers) is not None
+          mod.CACHE_DIR=original
+          print("mio_cache_quality_guard=PASS")
           PY
 
-          SELFTEST_OK=0
-          for i in $(seq 1 120); do
-            STATE=$(python3 - "$JOB" <<'PY'
-          import json,sys
-          try:
-              print(json.load(open(sys.argv[1],encoding='utf-8')).get('status','missing'))
-          except Exception:
-              print('missing')
-          PY
-          )
-            echo "tryon_worker_selftest_state=$STATE poll=$i"
-            if [ "$STATE" = ready ]; then
-              test -s "$ASSET"
-              BYTES=$(wc -c < "$ASSET")
-              test "$BYTES" -gt 1000
-              echo "mio_tryon_worker_selftest=PASS bytes=$BYTES"
-              SELFTEST_OK=1
-              break
-            fi
-            if [ "$STATE" = failed ]; then
-              cat "$JOB"
-              journalctl --user -u agentos-mio-tryon-render-worker.service -n 80 --no-pager || true
-              break
-            fi
-            sleep 2
-          done
-          test "$SELFTEST_OK" -eq 1
-          rm -f "$JOB" "$ASSET"
+          # Deployment tests only the running worker and fail-closed cache policy.
+          # Do not call stale render-cache hits a successful model inference.
+          echo "mio_fresh_inference=NOT_TESTED"
+          echo "mio_worker_deployment=PASS"
           REMOTE

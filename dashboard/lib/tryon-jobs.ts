@@ -67,6 +67,7 @@ export type TryOnJob = {
     pendingLayers?: string[];
     warnings?: Array<{ layer?: string; code: string; message?: string }>;
     cacheKey?: string | null;
+    quality?: { accepted: boolean; checkedAt: string; checks: Array<{ code: string; passed: boolean }>; issues?: string[] };
   };
   error: null | { code: string; message: string };
 };

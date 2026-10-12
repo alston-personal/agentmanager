@@ -160,6 +160,7 @@ def test_cached_prefix_is_reused_when_new_bag_provider_fails(monkeypatch, tmp_pa
     prefix_path = worker.cache_path(prefix_key)
     prefix_path.parent.mkdir(parents=True, exist_ok=True)
     prefix_path.write_bytes(cached.read_bytes())
+    prefix_path.with_suffix('.json').write_text(json.dumps({'qualityAccepted': True}), encoding='utf-8')
 
     def should_not_rerender_clothing(*args, **kwargs):
         raise AssertionError("cached lower_main must not be re-rendered")
@@ -427,3 +428,36 @@ def test_build_reference_board_is_valid_image(monkeypatch, tmp_path):
         assert image.mode == "RGB"
     finally:
         board.unlink(missing_ok=True)
+
+
+def test_unapproved_cache_never_restores_candidate(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    job = {
+        "jobId": "unapproved-cache-job",
+        "characterId": "sunlake-milkcat-ai-001",
+        "characterVersion": "mio-body-v1",
+        "view": "front",
+        "pose": "neutral_standing",
+        "input": {"selectedLayers": {"upper_main": {"garmentId": "top-1"}}},
+        "output": {},
+    }
+    layers = ["upper_main"]
+    cache = worker.cache_path(worker.outfit_cache_key(job, layers))
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_bytes(b"visually-wrong-candidate" * 150)
+    output = tmp_path / "restored.webp"
+
+    assert worker.cached_render(job, layers) is None
+    assert worker.restore_cached_render(job, layers, output) is False
+    assert not output.exists()
+
+    sidecar = cache.with_suffix(".json")
+    sidecar.write_text(json.dumps({"qualityAccepted": False}), encoding="utf-8")
+    assert worker.cached_render(job, layers) is None
+    assert worker.restore_cached_render(job, layers, output) is False
+
+    sidecar.write_text(json.dumps({"qualityAccepted": True, "reviewedAt": "2026-10-12T00:00:00Z"}), encoding="utf-8")
+    assert worker.restore_cached_render(job, layers, output) is True
+    assert output.read_bytes() == cache.read_bytes()
+    assert job["output"]["quality"]["accepted"] is True
+    assert job["output"]["provider"] == "real-render-cache"
