@@ -47,7 +47,7 @@ class KeywordProbeTests(unittest.TestCase):
 
     def test_unexpected_response_blocks(self):
         self.assertEqual(self.run_probe(opener=lambda req, timeout: Response({"error":"leak"}))["reason"],
-                         "INVALID_SOURCE_RESPONSE")
+                         "PROVIDER_ERROR")
 
     def test_exact_bounded_request(self):
         captured=[]
