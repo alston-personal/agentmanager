@@ -121,7 +121,44 @@ jobs:
                   await asyncio.sleep(0.8)
                   await state("after_local_done")
 
-                  # Leave a harmless short prompt in the field; do NOT click Generate.
+                  composer=await ev(r'''(() => {
+                    const btn=[...document.querySelectorAll('button')].find(x=>x.offsetParent!==null && (x.getAttribute('aria-label')||'').includes('開始生成'));
+                    if(!btn) return {error:'no-generate'};
+                    const chain=[];
+                    let p=btn;
+                    for(let i=0;i<9&&p;i++,p=p.parentElement){
+                      const fields=[...p.querySelectorAll('textarea,input,[contenteditable="true"],[role="textbox"]')]
+                        .filter(x=>x.offsetParent!==null)
+                        .map(x=>({
+                          tag:x.tagName,
+                          type:x.getAttribute('type')||'',
+                          role:x.getAttribute('role')||'',
+                          aria:x.getAttribute('aria-label')||'',
+                          placeholder:x.getAttribute('placeholder')||'',
+                          contenteditable:x.getAttribute('contenteditable')||'',
+                          value:('value' in x ? x.value : (x.innerText||x.textContent||'')).slice(0,300),
+                          cls:(x.className||'').toString().slice(0,240),
+                          outer:(x.outerHTML||'').slice(0,900)
+                        }));
+                      const buttons=[...p.querySelectorAll('button,[role="button"]')]
+                        .filter(x=>x.offsetParent!==null)
+                        .map(x=>({
+                          text:(x.innerText||x.textContent||'').replace(/\s+/g,' ').trim().slice(0,120),
+                          aria:(x.getAttribute('aria-label')||'').slice(0,120),
+                          disabled:!!x.disabled,
+                          cls:(x.className||'').toString().slice(0,220)
+                        }));
+                      chain.push({
+                        level:i,tag:p.tagName,cls:(p.className||'').toString().slice(0,240),
+                        text:(p.innerText||'').replace(/\s+/g,' ').trim().slice(0,700),
+                        fields,buttons
+                      });
+                    }
+                    return {chain};
+                  })()''')
+                  print(json.dumps({"generate_composer":composer},ensure_ascii=False))
+
+                  # Leave a harmless short project title from this diagnostic; do NOT click Generate.
                   print("flow_state_probe=PASS")
           asyncio.run(main())
           PY
