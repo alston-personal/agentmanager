@@ -61,6 +61,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("gemini.web", "login.start", bc.ACTION_START_GEMINI_WEB_LOGIN),
     RunnerWindowIntent("gemini.web", "roundtrip.accept", bc.ACTION_ACCEPT_GEMINI_WEB_ROUNDTRIP),
     RunnerWindowIntent("studio.mio", "deploy", bc.ACTION_DEPLOY_STUDIO_WEB_MIO, frozenset({"studio_commit"})),
+    RunnerWindowIntent("studio.character-fusion", "deploy", bc.ACTION_DEPLOY_CHARACTER_FUSION_DASHBOARD),
     RunnerWindowIntent("mio.dm", "decide", bc.ACTION_RUN_MIO_DM_DECISION, frozenset({"source_run_id", "username"})),
     RunnerWindowIntent("persona.runtime", "oursong.activate", bc.ACTION_ACTIVATE_OURSONG_PERSONA),
     RunnerWindowIntent("persona.runtime", "oursong.status", bc.ACTION_PROBE_OURSONG_PERSONA),
