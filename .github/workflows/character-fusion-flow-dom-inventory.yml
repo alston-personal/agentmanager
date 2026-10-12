@@ -1,6 +1,6 @@
 name: Character Fusion Flow DOM Inventory
 
-# probe zero-state controls 0621
+# probe concept-art controls after smoke 0630Z
 
 on:
   pull_request:
