@@ -808,6 +808,36 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 'evidence': evidence[:32],
                 'failed_steps': failed_steps[:8],
             }
+            if action == bootstrap_control.ACTION_RUNTIME_CONVERGE:
+                runtime = raw.get('runtime_converge')
+                if isinstance(runtime, dict):
+                    allowed_runtime_fields = (
+                        'schema',
+                        'ok',
+                        'action',
+                        'task_id',
+                        'request_id',
+                        'node_id',
+                        'repository',
+                        'source_ref',
+                        'source_commit',
+                        'previous_commit',
+                        'resulting_commit',
+                        'health',
+                        'rollback',
+                        'status',
+                        'state',
+                        'classification',
+                        'idempotent',
+                        'credential_exposed',
+                        'observed_at',
+                        'failure_stage',
+                    )
+                    public_receipt['runtime_converge'] = {
+                        key: runtime.get(key)
+                        for key in allowed_runtime_fields
+                        if key in runtime
+                    }
             if action == bootstrap_control.ACTION_EXECUTOR_JOB_SUBMIT:
                 submission = raw.get('executor_job')
                 if isinstance(submission, dict):
