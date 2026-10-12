@@ -77,7 +77,7 @@ def process_visibility():
                 continue
             result["cmdline_readable"] += 1
             # Inspect executable basename only in memory; never output its value.
-            first = raw.split(b"\\0", 1)[0].rsplit(b"/", 1)[-1].lower()
+            first = raw.split(b"\0", 1)[0].rsplit(b"/", 1)[-1].lower()
             if any(tag in first for tag in (b"chrom", b"brave", b"edge")):
                 result["chromium_like_processes"] += 1
     except OSError:
