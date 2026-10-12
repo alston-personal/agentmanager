@@ -466,6 +466,43 @@ with sync_playwright() as p:
                                 pass
                     page.wait_for_timeout(5000)
                     print("google_flow_recover_stage=MEDIA_LIBRARY_OPEN")
+                    # Inventory the exact Video navigation target and loaded media
+                    # resources before opening any card. This avoids confusing
+                    # project cards with generated-media cards.
+                    nav_meta=[]
+                    try:
+                        loc=page.get_by_text("影片",exact=True)
+                        for i in range(min(loc.count(),10)):
+                            item=loc.nth(i)
+                            try:
+                                nav_meta.append(item.evaluate("""el => {
+                                  const p=el.closest('a,button,[role=button],[role=link]') || el;
+                                  return {
+                                    tag:(p.tagName||'').toLowerCase(),
+                                    text:(p.innerText||'').trim().slice(0,120),
+                                    href:p.getAttribute ? (p.getAttribute('href')||'') : '',
+                                    aria:p.getAttribute ? (p.getAttribute('aria-label')||'') : '',
+                                    cls:((p.className||'')+'').slice(0,180)
+                                  };
+                                }"""))
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    if nav_meta:
+                        print("google_flow_recover_video_nav_meta="+json.dumps(nav_meta,ensure_ascii=False,separators=(",",":")))
+
+                    resources=[]
+                    try:
+                        resources=page.evaluate("""() => performance.getEntriesByType('resource')
+                          .map(x => x.name || '')
+                          .filter(Boolean)
+                          .filter(u => /video|mp4|webm|googlevideo|videoplayback|blob/i.test(u))
+                          .slice(-80)""") or []
+                    except Exception:
+                        resources=[]
+                    if resources:
+                        print("google_flow_recover_media_resources="+json.dumps(resources[-80:],ensure_ascii=False,separators=(",",":")))
                     print("google_flow_recover_url="+str(page.url or "")[:500])
 
                     body=(page.locator("body").inner_text(timeout=3000) or "")
