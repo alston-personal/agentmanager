@@ -416,7 +416,16 @@ def _page(cdp_url: str) -> CdpTargetSession:
     except Exception as exc:
         # Error classes only: never log paths, page URLs, credentials or DOM.
         category = str(exc)
-        safe = category if category.startswith("GPT_WEB_") and ":" not in category else type(exc).__name__
+        if category.startswith("GPT_WEB_") and ":" not in category:
+            safe = category
+        elif category.startswith("CDP_TARGET_OPEN_FAILED"):
+            safe = "CDP_TARGET_OPEN_FAILED"
+        elif category.startswith("CDP_"):
+            safe = "CDP_ERROR"
+        elif category.startswith("CHATGPT_"):
+            safe = category.split(":", 1)[0]
+        else:
+            safe = type(exc).__name__
         raise RuntimeError("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE:" + safe) from None
     finally:
         if page is not None:
