@@ -1,0 +1,59 @@
+name: Oracle System Worker Boundary Test
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-system-worker-boundary-test.json'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify system.slice kernel resource enforcement
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          TEST_UNIT=agentos-worker-boundary-test.service
+
+          sudo -n systemctl stop "$TEST_UNIT" 2>/dev/null || true
+          sudo -n systemctl reset-failed "$TEST_UNIT" 2>/dev/null || true
+
+          sudo -n systemd-run             --unit="$TEST_UNIT"             --property=Type=simple             --property=User=ubuntu             --property=Group=agentos             --property=CPUQuota=50%             --property=CPUWeight=20             --property=IOWeight=20             --property=MemoryMax=1G             --property=NoNewPrivileges=yes             /usr/bin/sleep 45 >/dev/null
+
+          sleep 1
+          active="$(sudo -n systemctl show "$TEST_UNIT" -p ActiveState --value)"
+          cg="$(sudo -n systemctl show "$TEST_UNIT" -p ControlGroup --value)"
+          root="/sys/fs/cgroup$cg"
+          echo "test_unit_active=$active"
+          echo "test_control_group=$cg"
+          echo "test_cpu_max=$(cat "$root/cpu.max" 2>/dev/null || echo missing)"
+          echo "test_cpu_weight=$(cat "$root/cpu.weight" 2>/dev/null || echo missing)"
+          echo "test_io_weight=$(cat "$root/io.weight" 2>/dev/null || echo missing)"
+          echo "test_memory_max=$(cat "$root/memory.max" 2>/dev/null || echo missing)"
+          echo "system_slice_controllers=$(cat /sys/fs/cgroup/system.slice/cgroup.controllers 2>/dev/null || echo missing)"
+          echo "system_slice_subtree=$(cat /sys/fs/cgroup/system.slice/cgroup.subtree_control 2>/dev/null || echo missing)"
+
+          test "$active" = active
+          test "$(cat "$root/cpu.max")" = "50000 100000"
+          test "$(cat "$root/cpu.weight")" = 20
+          test "$(cat "$root/memory.max")" = 1073741824
+          test -f "$root/io.weight"
+
+          sudo -n systemctl stop "$TEST_UNIT"
+          echo "system_worker_boundary_test=PASS"
+          REMOTE
