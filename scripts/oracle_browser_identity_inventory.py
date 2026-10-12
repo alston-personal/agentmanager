@@ -125,6 +125,94 @@ def cdp_launch_hints():
     return counts
 
 
+
+def listening_socket_inodes(root=Path("/proc"), ports=PORTS):
+    """Read kernel TCP LISTEN records; never expose addresses or socket inodes."""
+    wanted = set(ports)
+    matches = {port: set() for port in ports}
+    scan_available = False
+    for table in ("net/tcp", "net/tcp6"):
+        try:
+            lines = (root / table).read_text(encoding="ascii").splitlines()[1:]
+        except OSError:
+            continue
+        scan_available = True
+        for line in lines:
+            cols = line.split()
+            if len(cols) < 10 or cols[3] != "0A":
+                continue
+            try:
+                port = int(cols[1].rsplit(":", 1)[1], 16)
+            except (ValueError, IndexError):
+                continue
+            if port in wanted and cols[9].isdigit():
+                matches[port].add(cols[9])
+    return matches, scan_available
+
+
+def socket_owner_category(pid_dir):
+    """Classify executable by kernel comm; never return free-form process names."""
+    try:
+        name = (pid_dir / "comm").read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return "UNKNOWN"
+    if any(t in name for t in ("chrom", "brave", "edge")):
+        return "BROWSER"
+    if name in ("ssh", "sshd", "socat", "nginx", "haproxy", "websockify"):
+        return "PROXY_CANDIDATE"
+    return "OTHER"
+
+
+def socket_ownership(root=Path("/proc"), ports=PORTS):
+    """Associate TCP LISTEN socket inodes with process FDs, without leaking names."""
+    inodes, available = listening_socket_inodes(root, ports)
+    owners = {port: set() for port in ports}
+    unreadable = 0
+    target_inodes = set().union(*inodes.values())
+    if target_inodes:
+        try:
+            processes = list(root.iterdir())
+        except OSError:
+            processes = []
+            unreadable += 1
+        for proc in processes:
+            if not proc.name.isdigit():
+                continue
+            try:
+                descriptors = (proc / "fd").iterdir()
+                for descriptor in descriptors:
+                    try:
+                        link = descriptor.readlink().as_posix()
+                    except OSError:
+                        unreadable += 1
+                        continue
+                    if not link.startswith("socket:[") or not link.endswith("]"):
+                        continue
+                    inode = link[8:-1]
+                    if inode not in target_inodes:
+                        continue
+                    for port in ports:
+                        if inode in inodes[port]:
+                            owners[port].add((proc.name, socket_owner_category(proc)))
+            except OSError:
+                unreadable += 1
+    records = {}
+    for port in ports:
+        categories = sorted({cat for _, cat in owners[port]})
+        records[port] = {
+            "listening_sockets": len(inodes[port]),
+            "owner_process_count": len(owners[port]),
+            "owner_categories": categories,
+            "state": ("SOCKET_TABLE_UNAVAILABLE" if not available else
+                      "NO_LISTENER_FOUND" if not inodes[port] else
+                      "LISTENER_OWNER_UNRESOLVED" if not owners[port] else
+                      "LISTENER_OWNER_OBSERVED"),
+        }
+    return {"records": records, "fd_scan_errors": unreadable,
+            "socket_table_available": available}
+
+
+
 def visibility_classification(records, stats):
     """Hints only: no heuristic verifies an account, profile, or namespace."""
     if stats.get("proc_scan_error"):
@@ -148,10 +236,12 @@ def inventory():
     shared = sorted({p for _, p in identities if len({port for port, q in identities if q == p}) > 1})
     visibility = process_visibility()
     launch_hints = cdp_launch_hints()
+    sockets = socket_ownership()
     return {"schema": "agentos.browser_inventory/1", "issue": 1735,
             "read_only": True, "records": records, "shared_profile_ids": shared,
             "process_visibility": visibility,
             "cdp_launch_hints": launch_hints,
+            "socket_ownership": sockets,
             "process_visibility_classification": visibility_classification(records, visibility),
             "classification": "REVIEW_REQUIRED" if shared else "UNVERIFIED",
             "account_identity_verified": False}

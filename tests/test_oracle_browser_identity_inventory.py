@@ -1,6 +1,7 @@
 """Contract tests for read-only browser inventory (#1735)."""
 import importlib.util
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
 
@@ -73,6 +74,39 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(result["cdp_launch_hints"], fake)
         self.assertFalse(result["account_identity_verified"])
         self.assertEqual(result["classification"], "UNVERIFIED")
+
+
+    def test_listener_owner_classification_is_sanitized(self):
+        with TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            (root / "net").mkdir()
+            (root / "net/tcp").write_text(
+                "sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n"
+                "0: 0100007F:2407 00000000:0000 0A 0:0 00:0 0 1000 0 98765\n"
+            )
+            pid = root / "1234"
+            (pid / "fd").mkdir(parents=True)
+            (pid / "comm").write_text("chromium\n")
+            (pid / "fd/3").symlink_to("socket:[98765]")
+            result = module.socket_ownership(root, (9223, 9224))
+        record = result["records"][9223]
+        self.assertEqual(record["state"], "LISTENER_OWNER_OBSERVED")
+        self.assertEqual(record["owner_categories"], ["BROWSER"])
+        self.assertEqual(record["owner_process_count"], 1)
+        self.assertNotIn("98765", str(result))
+        self.assertNotIn("1234", str(result))
+        self.assertEqual(result["records"][9224]["state"], "NO_LISTENER_FOUND")
+
+    def test_unmapped_listener_does_not_claim_account(self):
+        with TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            (root / "net").mkdir()
+            (root / "net/tcp").write_text(
+                "header\n0: 0100007F:2406 00000000:0000 0A 0:0 00:0 0 1000 0 99\n"
+            )
+            result = module.socket_ownership(root, (9222,))
+        self.assertEqual(result["records"][9222]["state"], "LISTENER_OWNER_UNRESOLVED")
+        self.assertNotIn("account_identity_verified", result)
 
     def test_distinct_profiles_still_do_not_prove_login(self):
         with patch.object(module, "browser_processes", side_effect=lambda port: [
