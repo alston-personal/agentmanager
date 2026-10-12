@@ -23,7 +23,7 @@ def probe(*, binding_account, expected_account, allowed_scopes, token, query, op
               "result_count": 0, "items": []}
     if binding_account != expected_account or expected_account != "mio.milkcat":
         return {**report, "status": "BLOCKED", "reason": "ACCOUNT_MISMATCH"}
-    if "threads_keyword_search" not in set(allowed_scopes):
+    if not isinstance(allowed_scopes, (tuple, list, set, frozenset)) or "threads_keyword_search" not in {str(scope).strip() for scope in allowed_scopes}:
         return {**report, "status": "BLOCKED", "reason": "AUTH_SCOPE_REQUIRED"}
     if not isinstance(token, str) or not token:
         return {**report, "status": "BLOCKED", "reason": "TOKEN_UNAVAILABLE"}
@@ -40,15 +40,21 @@ def probe(*, binding_account, expected_account, allowed_scopes, token, query, op
         with handler(req, timeout=15) as resp:
             payload = json.loads(resp.read(262144).decode("utf-8"))
     except urllib.error.HTTPError as err:
-        category = "AUTH_OR_SCOPE_DENIED" if err.code in (401, 403) else "HTTP_ERROR"
+        category = ("AUTH_OR_SCOPE_DENIED" if err.code in (401, 403) else
+                    "RATE_LIMITED" if err.code == 429 else
+                    "BAD_REQUEST" if err.code == 400 else "HTTP_ERROR")
         return {**report, "status": "BLOCKED", "reason": category, "http_status": err.code}
     except (OSError, ValueError, TypeError, UnicodeError):
         return {**report, "status": "BLOCKED", "reason": "ADAPTER_UNAVAILABLE"}
+    if isinstance(payload, dict) and "error" in payload:
+        return {**report, "status": "BLOCKED", "reason": "PROVIDER_ERROR"}
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         return {**report, "status": "BLOCKED", "reason": "INVALID_SOURCE_RESPONSE"}
     # A keyword-search response alone does not attest a root id, visibility,
     # or verified account binding. Keep raw content OUT of the receipt.
-    entries = payload["data"][:5]
+    entries = payload["data"]
+    if len(entries) > 5 or any(not isinstance(entry, dict) for entry in entries):
+        return {**report, "status": "BLOCKED", "reason": "RESULT_SCHEMA_UNEXPECTED"}
     return {**report, "status": "UNVERIFIED", "reason": "POST_PROVENANCE_INCOMPLETE",
             "result_count": len(entries),
             "fields_observed": sorted(set(FIELDS.split(",")).intersection(
