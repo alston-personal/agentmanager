@@ -1,0 +1,14 @@
+{
+  "schema": "agentos.oracle-maintenance-command/v1",
+  "operation": "cutover_employee_worker_to_system_resource_boundary",
+  "source_support_commit": "3b4705bc05bebebbbb69a3819668ce1d4a4640c0",
+  "old_owner": "systemd-user",
+  "new_owner": "systemd-system",
+  "rollback_on_failure": true,
+  "required_kernel_contract": {
+    "cpu.max": "50000 100000",
+    "cpu.weight": "20",
+    "io.weight_default": "20",
+    "memory.max": "1073741824"
+  }
+}
