@@ -1,0 +1,43 @@
+name: Core Realm Fabric Real Supervisor Audit 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-realm-fabric-real-supervisor-audit-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - name: Trace actual Realm Fabric supervisor
+        shell: bash
+        run: |
+          set -u
+          echo '=== PROCESS TREE ==='
+          ps -eo user:20,pid,ppid,lstart,args | grep -E '(^| )1009667 |(^| )1009666 |(^| )1009665 |(^| )1087 ' || true
+          pstree -aps 1009667 2>/dev/null || true
+
+          echo '=== PROC LINKS ==='
+          for pid in 1009667 1009666 1009665 1087; do
+            echo "--- PID $pid"
+            ps -p "$pid" -o user=,pid=,ppid=,lstart=,args= 2>/dev/null || true
+            readlink -f "/proc/$pid/cwd" 2>/dev/null || true
+            readlink -f "/proc/$pid/exe" 2>/dev/null || true
+            tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true
+            echo
+            if [ -r "/proc/$pid/cgroup" ]; then cat "/proc/$pid/cgroup"; fi
+          done
+
+          echo '=== SYSTEMD UNITS CONTAINING REALM FABRIC / SG AGENTOS ==='
+          grep -RIlE 'agent_core\.realm_cli.*serve|sg agentos|realm-fabric|port 8780|--port 8780'             /etc/systemd/system /usr/lib/systemd/system /lib/systemd/system             /home/ubuntu/.config/systemd /home/agentos-node/.config/systemd             2>/dev/null | while read -r f; do
+              echo "--- $f"
+              sed -n '1,220p' "$f" 2>/dev/null || true
+            done
+
+          echo '=== CRON / SUPERVISOR REFERENCES ==='
+          grep -RInE 'agent_core\.realm_cli.*serve|sg agentos|realm-fabric|--port 8780'             /etc/cron* /etc/supervisor /home/ubuntu /home/agentos-node             --exclude-dir=.git --exclude='*.log' 2>/dev/null | head -n 200 || true
