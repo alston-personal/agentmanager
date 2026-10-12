@@ -1127,14 +1127,31 @@ async def main():
                 if(!(el.offsetWidth||el.offsetHeight||el.getClientRects().length)) continue;
                 const r=el.getBoundingClientRect();
                 const src=el.currentSrc||el.src||'';
-                if(r.width<256||r.height<256||!src) continue;
-                out.push({src,w:r.width,h:r.height,alt:(el.alt||'').slice(0,160)});
+                if(!src) continue;
+                const isFlowAsset = src.includes('flow.google.com/asb/');
+                const isThumbnail = el.classList.contains('thumbnail');
+                if(!isFlowAsset && !isThumbnail && (r.width<256 || r.height<256)) continue;
+                out.push({
+                  src,
+                  w:r.width,
+                  h:r.height,
+                  alt:(el.alt||'').slice(0,160),
+                  isFlowAsset,
+                  isThumbnail
+                });
               }
               return out;
             })()''') or []
             fresh=[x for x in rows if x.get("src","") not in baseline_src]
             if fresh:
-                fresh.sort(key=lambda x: x.get("w",0)*x.get("h",0),reverse=True)
+                fresh.sort(
+                    key=lambda x: (
+                        1 if x.get("isFlowAsset") else 0,
+                        1 if x.get("isThumbnail") else 0,
+                        x.get("w",0)*x.get("h",0),
+                    ),
+                    reverse=True,
+                )
                 chosen=fresh[0]
                 break
             await asyncio.sleep(2.0)
@@ -1153,8 +1170,21 @@ async def main():
                 raise RuntimeError("flow_blob_export_failed")
             output.write_bytes(base64.b64decode(data_url.split(",",1)[1]))
         elif src.startswith("http"):
-            with urllib.request.urlopen(src,timeout=60) as r:
-                output.write_bytes(r.read())
+            expr=json.dumps(src)
+            data_url=await evaluate(r'''(async(src)=>{
+              const r=await fetch(src,{credentials:'include'});
+              if(!r.ok) throw new Error('flow_asset_fetch_http_'+r.status);
+              const b=await r.blob();
+              return await new Promise((ok,fail)=>{
+                const fr=new FileReader();
+                fr.onload=()=>ok(fr.result);
+                fr.onerror=fail;
+                fr.readAsDataURL(b);
+              });
+            })('''+expr+''')''')
+            if not isinstance(data_url,str) or "," not in data_url:
+                raise RuntimeError("flow_http_asset_export_failed")
+            output.write_bytes(base64.b64decode(data_url.split(",",1)[1]))
         else:
             raise RuntimeError("flow_generated_image_src_unsupported:"+src[:80])
 
