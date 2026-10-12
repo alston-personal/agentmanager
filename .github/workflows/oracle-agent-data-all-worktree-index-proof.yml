@@ -41,10 +41,17 @@ jobs:
           test "${#WORKTREES[@]}" -ge 1
 
           total_hits=0
+          stale=0
+          checked=0
           idx=0
           for wt in "${WORKTREES[@]}"; do
             idx=$((idx+1))
-            test -d "$wt"
+            if [ ! -d "$wt" ]; then
+              stale=$((stale+1))
+              echo "worktree_${idx}_state=stale_missing_path"
+              continue
+            fi
+            checked=$((checked+1))
             tmp="$(mktemp)"
             git -C "$wt" ls-files -s > "$tmp"
             wt_hits=0
@@ -53,10 +60,13 @@ jobs:
               wt_hits=$((wt_hits+hits))
             done
             rm -f "$tmp"
+            echo "worktree_${idx}_state=present"
             echo "worktree_${idx}_index_hits=$wt_hits"
             total_hits=$((total_hits+wt_hits))
           done
 
+          echo "worktree_present_count=$checked"
+          echo "worktree_stale_count=$stale"
           echo "all_worktree_index_hits=$total_hits"
           test "$total_hits" -eq 0
           echo "agent_data_all_worktree_index_proof=PASS"
