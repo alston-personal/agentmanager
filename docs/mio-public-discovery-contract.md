@@ -115,3 +115,7 @@ reply to every candidate, no automatic DM, and no guaranteed growth.
 
 This component is not yet integrated with the actual Oracle social runtime,
 and no real third-party Threads post or author has been read by this change.
+
+### IR-grounded exploration topic policy
+
+The read-only triage now optionally accepts a current persona IR and derives candidate matching lanes from `current_self.interests_with_evidence` when at least one source basis is present. Only bounded known-topic synonyms are expanded. No source evidence, malformed IR or no evidenced interests yields a BLOCKED decision; this prevents nearby trends or a single stranger's post from silently becoming Mio's own enduring interest. The static topic vocabulary remains a legacy fallback **only when the caller does not supply an IR**, so runtime integration must supply the authoritative IR to enforce grounded interests. This is currently a tested contract, not a deployed social feed reader.
