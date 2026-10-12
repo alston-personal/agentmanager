@@ -1,0 +1,10 @@
+{
+  "schema": "agentos.oracle-maintenance-command/v1",
+  "operation": "runtime_cgroup_controller_propagation_test",
+  "scope": "user-1001.slice",
+  "runtime_only": true,
+  "properties": {
+    "CPUWeight": 100,
+    "IOWeight": 100
+  }
+}

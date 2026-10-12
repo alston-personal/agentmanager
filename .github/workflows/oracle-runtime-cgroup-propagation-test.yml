@@ -1,0 +1,55 @@
+name: Oracle Runtime Cgroup Propagation Test
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-runtime-cgroup-propagation-test.json'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Apply runtime-only parent slice weights and inspect propagation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          UNIT=agentos-employee-worker-host.service
+          echo "before_user_slice_subtree=$(cat /sys/fs/cgroup/user.slice/cgroup.subtree_control)"
+          echo "before_user1001_controllers=$(cat /sys/fs/cgroup/user.slice/user-1001.slice/cgroup.controllers)"
+          echo "before_user1001_subtree=$(cat /sys/fs/cgroup/user.slice/user-1001.slice/cgroup.subtree_control)"
+
+          sudo -n systemctl set-property --runtime user-1001.slice CPUWeight=100 IOWeight=100
+          echo "runtime_parent_slice_property=APPLIED"
+
+          echo "after_user_slice_subtree=$(cat /sys/fs/cgroup/user.slice/cgroup.subtree_control)"
+          echo "after_user1001_controllers=$(cat /sys/fs/cgroup/user.slice/user-1001.slice/cgroup.controllers)"
+          echo "after_user1001_subtree=$(cat /sys/fs/cgroup/user.slice/user-1001.slice/cgroup.subtree_control)"
+          echo "after_user_manager_controllers=$(cat /sys/fs/cgroup/user.slice/user-1001.slice/user@1001.service/cgroup.controllers)"
+          echo "after_user_manager_subtree=$(cat /sys/fs/cgroup/user.slice/user-1001.slice/user@1001.service/cgroup.subtree_control)"
+
+          systemctl --user restart "$UNIT"
+          sleep 2
+          cg="$(systemctl --user show "$UNIT" -p ControlGroup --value)"
+          root="/sys/fs/cgroup$cg"
+          echo "worker_control_group=$cg"
+          echo "worker_cpu_max=$(cat "$root/cpu.max" 2>/dev/null || echo missing)"
+          echo "worker_cpu_weight_kernel=$(cat "$root/cpu.weight" 2>/dev/null || echo missing)"
+          echo "worker_io_weight_kernel=$(cat "$root/io.weight" 2>/dev/null || echo missing)"
+          echo "worker_memory_max_kernel=$(cat "$root/memory.max" 2>/dev/null || echo missing)"
+          echo "runtime_cgroup_propagation_test=PASS"
+          REMOTE
