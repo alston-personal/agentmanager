@@ -335,7 +335,7 @@ class GptWebAttachmentDiagnosticsTests(unittest.TestCase):
         self.assertIn("errorIndicators", script)
         from scripts.gpt_web_response_bridge import invoke
         import inspect
-        self.assertIn("baselineAlertCounts", inspect.getsource(invoke))
+        self.assertIn("baselineAttachmentSummary", inspect.getsource(invoke))
         self.assertNotIn("outerHTML", script)
         self.assertNotIn("img.src", script)
 
