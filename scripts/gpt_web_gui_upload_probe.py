@@ -5,12 +5,13 @@ import argparse
 import json
 import time
 from pathlib import Path
-from gpt_web_response_bridge import _page, _focus_composer, _submission_snapshot
+from gpt_web_response_bridge import CdpPage, _browser_ws_url, _create_target, _open_target_connection, _focus_composer, _submission_snapshot
 
 def run(cdp_url: str, image: Path) -> dict:
     if not image.is_file() or image.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
         raise ValueError("invalid_fixture")
-    page = _page(cdp_url)
+    target = _create_target(cdp_url, 'https://chatgpt.com/')
+    page = _open_target_connection(cdp_url, target)
     try:
         _focus_composer(page)
         before = _submission_snapshot(page, "gui-probe-no-send")
@@ -60,6 +61,12 @@ def run(cdp_url: str, image: Path) -> dict:
             page.call("Page.setInterceptFileChooserDialog", {"enabled":False})
     finally:
         page.close()
+        # The unsent test attachment must never survive into another invoke.
+        browser = CdpPage(_browser_ws_url(cdp_url))
+        try:
+            browser.call('Target.closeTarget', {'targetId': target['id']})
+        finally:
+            browser.close()
 
 def main()->int:
     p=argparse.ArgumentParser()

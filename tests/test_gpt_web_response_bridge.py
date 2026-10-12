@@ -445,6 +445,8 @@ class NativeGuiUploadProbeContractTests(unittest.TestCase):
         self.assertNotIn("Input.insertText",src)
         self.assertNotIn("_click_send(",src)
         self.assertNotIn("conversation.submit",src)
+        self.assertIn("Target.closeTarget",src)
+        self.assertIn("_create_target(",src)
 
     def test_native_chooser_event_handled_structurally(self):
         import inspect
