@@ -1,5 +1,7 @@
 name: Character Fusion Runner Window Rollout
 
+# trigger: 2026-10-12 character-fusion production rollout
+
 on:
   pull_request:
     branches: [core/integration]
