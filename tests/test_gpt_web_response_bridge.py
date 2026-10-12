@@ -356,7 +356,7 @@ class GptWebFileSelectionClassificationTests(unittest.TestCase):
         from scripts.gpt_web_response_bridge import invoke
         source = inspect.getsource(invoke)
         self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
-        self.assertIn("imagePreviewCount", source)
+        self.assertIn("_attachment_growth(upload_baseline, upload_observation)", source)
 
 
 class GptWebUploadSettlementTests(unittest.TestCase):
