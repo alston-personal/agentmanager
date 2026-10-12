@@ -1,0 +1,27 @@
+name: Realm Fabric Transaction Lock CI
+
+on:
+  push:
+    branches:
+      - fix/realm-fabric-transaction-lock
+  pull_request:
+    paths:
+      - 'agent_core/realm_fabric.py'
+      - 'tests/test_realm_fabric.py'
+      - '.github/workflows/realm-fabric-transaction-lock-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          python -m py_compile agent_core/realm_fabric.py
+          python -m unittest tests.test_realm_fabric -v
