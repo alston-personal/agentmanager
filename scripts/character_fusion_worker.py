@@ -1076,20 +1076,30 @@ async def main():
         })()''') or []
         baseline_src={x.get("src","") for x in baseline}
 
-        doc=await call("DOM.getDocument",{"depth":-1,"pierce":True})
-        root=(doc.get("root") or {}).get("nodeId")
-        if not root:
-            raise RuntimeError("flow_dom_root_missing")
-        q=await call("DOM.querySelector",{"nodeId":root,"selector":'input[aria-label="可編輯的文字"]'})
-        node_id=q.get("nodeId")
-        if not node_id:
-            raise RuntimeError("flow_prompt_input_not_found")
-        await call("DOM.focus",{"nodeId":node_id})
+        focused=await evaluate(r'''(() => {
+          const inputs=[...document.querySelectorAll('input[aria-label="可編輯的文字"]')]
+            .filter(x=>x.offsetParent!==null && !x.disabled);
+          const el=inputs[0];
+          if(!el) return false;
+          el.focus();
+          return document.activeElement===el;
+        })()''')
+        if not focused:
+            raise RuntimeError("flow_visible_prompt_input_not_found")
+
         await call("Input.dispatchKeyEvent",{"type":"keyDown","modifiers":2,"key":"a","code":"KeyA","windowsVirtualKeyCode":65})
         await call("Input.dispatchKeyEvent",{"type":"keyUp","modifiers":2,"key":"a","code":"KeyA","windowsVirtualKeyCode":65})
         await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"Backspace","code":"Backspace","windowsVirtualKeyCode":8})
         await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"Backspace","code":"Backspace","windowsVirtualKeyCode":8})
         await call("Input.insertText",{"text":prompt})
+
+        typed=await evaluate(r'''(() => {
+          const el=[...document.querySelectorAll('input[aria-label="可編輯的文字"]')]
+            .find(x=>x.offsetParent!==null && !x.disabled);
+          return el ? {value:(el.value||''),length:(el.value||'').length} : null;
+        })()''')
+        if not typed or int(typed.get("length") or 0) < 20:
+            raise RuntimeError(f"flow_prompt_not_committed:{typed}")
 
         sent=False
         for _ in range(20):
