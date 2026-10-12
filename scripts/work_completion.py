@@ -14,7 +14,12 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import sys
 from typing import Any, Iterator
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from agent_core.growth_observation import emit_growth_observation, normalize_growth_context
 
