@@ -1,5 +1,7 @@
 name: Character Fusion Flow DOM Inventory
 
+# probe zero-state controls 0621
+
 on:
   pull_request:
     branches: [core/integration]
