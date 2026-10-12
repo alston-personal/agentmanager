@@ -542,6 +542,25 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
           connected: el.isConnected
         })),
         imagePreviewCount: document.querySelectorAll('[data-testid*="attachment"], [data-testid*="upload"], [data-testid*="preview"]').length,
+        // Structural hints only: avoid text, labels, image URLs and filenames.
+        inputContext: Array.from(document.querySelectorAll('input[type="file"]')).slice(0, 8).map(el => {
+          const parent = el.parentElement;
+          const host = el.closest('form') || el.closest('[role="dialog"]');
+          return {
+            insideForm: !!el.closest('form'),
+            insideDialog: !!el.closest('[role="dialog"]'),
+            parentTag: parent ? parent.tagName : null,
+            parentHidden: parent ? (parent.getBoundingClientRect().width === 0) : null,
+            inputDisabled: el.disabled,
+            multiple: el.multiple,
+            sameAsActive: document.activeElement === el,
+            hostVisible: host ? (host.getBoundingClientRect().width > 0) : null
+          };
+        }),
+        errorIndicators: {
+          alertNodes: document.querySelectorAll('[role="alert"],[data-state="error"],[aria-invalid="true"]').length,
+          toastNodes: document.querySelectorAll('[data-sonner-toast],[data-testid*="toast"]').length
+        },
         imageElements: document.querySelectorAll('img').length,
         pendingIndicators: document.querySelectorAll('[aria-busy="true"], [role="progressbar"]').length
       };

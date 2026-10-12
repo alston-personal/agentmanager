@@ -331,6 +331,8 @@ class GptWebAttachmentDiagnosticsTests(unittest.TestCase):
         script = page.evaluate.call_args.args[0]
         self.assertIn("frameSummary", script)
         self.assertIn("attachmentSummary", script)
+        self.assertIn("inputContext", script)
+        self.assertIn("errorIndicators", script)
         self.assertNotIn("outerHTML", script)
         self.assertNotIn("img.src", script)
 
