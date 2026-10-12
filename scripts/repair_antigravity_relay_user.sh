@@ -94,6 +94,50 @@ HEAD_MATCH=0
 [ "$CURRENT_HEAD" = "$SOURCE_COMMIT" ] && HEAD_MATCH=1
 echo "antigravity_repair_stage=runtime_preflight:head_match=$HEAD_MATCH:tracked_dirty_count=$TRACKED_DIRTY_COUNT"
 
+if [ "$TRACKED_DIRTY_COUNT" -gt 0 ]; then
+  REPAIR_STAGE="quarantine_tracked_checkout"
+  BACKUP_BASE="$DATA_ROOT/runtime/backups/checkout-drift"
+  BACKUP_ID="runtime-repair-${SOURCE_COMMIT:0:12}-$(date -u +%Y%m%dT%H%M%SZ)"
+  BACKUP_DIR="$BACKUP_BASE/$BACKUP_ID"
+  mkdir -p "$BACKUP_DIR"
+  chmod 700 "$BACKUP_DIR"
+
+  git -C "$REPO" status --porcelain=v1 -z --untracked-files=no > "$BACKUP_DIR/status.porcelain.z"
+  git -C "$REPO" diff --binary --no-ext-diff HEAD -- > "$BACKUP_DIR/working-tree.patch"
+  test -s "$BACKUP_DIR/status.porcelain.z"
+  test -s "$BACKUP_DIR/working-tree.patch"
+
+  PATCH_SHA256="$(sha256sum "$BACKUP_DIR/working-tree.patch" | awk '{print $1}')"
+  python3 - "$BACKUP_DIR/metadata.json" "$CURRENT_HEAD" "$SOURCE_COMMIT" "$TRACKED_DIRTY_COUNT" "$PATCH_SHA256" <<'PY'
+import json,sys
+from datetime import datetime,timezone
+from pathlib import Path
+path,current,target,count,digest=sys.argv[1:]
+payload={
+    "schema":"agentos.runtime-checkout-drift-backup/v1",
+    "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
+    "current_head":current,
+    "target_source_commit":target,
+    "tracked_dirty_count":int(count),
+    "patch_sha256":digest,
+    "content_exposed":False,
+    "credential_exposed":False,
+    "restore_command_documented":True,
+}
+Path(path).write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+PY
+  chmod 600 "$BACKUP_DIR/status.porcelain.z" "$BACKUP_DIR/working-tree.patch" "$BACKUP_DIR/metadata.json"
+
+  # Verify durable evidence before mutating the shared checkout. The patch is
+  # binary-safe and represents the full tracked delta from current HEAD.
+  test "$(sha256sum "$BACKUP_DIR/working-tree.patch" | awk '{print $1}')" = "$PATCH_SHA256"
+  git -C "$REPO" reset --hard HEAD >/dev/null
+  POST_DIRTY_COUNT="$(git -C "$REPO" status --porcelain=v1 --untracked-files=no | wc -l | tr -d ' ')"
+  test "$POST_DIRTY_COUNT" = 0
+  echo "antigravity_repair_stage=checkout_quarantine:count=$TRACKED_DIRTY_COUNT:post_dirty_count=$POST_DIRTY_COUNT"
+  echo "antigravity_repair=CHECKOUT_QUARANTINED"
+fi
+
 REPAIR_STAGE="materialize_relay_runtime"
 show_source agentos_node/__init__.py > "$TMPDIR/__init__.py"
 show_source agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"

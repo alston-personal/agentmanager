@@ -532,3 +532,14 @@ def test_character_fusion_dashboard_deploy_is_bounded_public_intent():
         "capability": "studio.character-fusion",
         "operation": "deploy",
     }
+
+
+def test_runtime_repair_quarantines_tracked_checkout_before_reset():
+    text = Path("scripts/repair_antigravity_relay_user.sh").read_text(encoding="utf-8")
+    assert "agentos.runtime-checkout-drift-backup/v1" in text
+    assert "git -C \"$REPO\" diff --binary --no-ext-diff HEAD" in text
+    assert 'test -s "$BACKUP_DIR/working-tree.patch"' in text
+    assert 'patch_sha256' in text
+    assert 'git -C "$REPO" reset --hard HEAD' in text
+    assert 'test "$POST_DIRTY_COUNT" = 0' in text
+    assert "antigravity_repair=CHECKOUT_QUARANTINED" in text
