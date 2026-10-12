@@ -114,7 +114,22 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         text = _text(BOOTSTRAP)
         self.assertIn('env_extra["AGENTOS_REF"] = "core/integration"', text)
         self.assertIn('env["AGENTOS_SOURCE_COMMIT"] = source_commit', text)
-        self.assertNotIn('source_ref', text.split('unknown = set(params) - {"source_commit"}', 1)[0])
+
+        # Caller-facing bootstrap params must never select a source ref.  Full
+        # runtime convergence may mention source_ref internally only because its
+        # canonical request fixes that authority value to core/integration.
+        validate_block = text.split("def _validate_request", 1)[1].split(
+            "def _run_canonical_script", 1
+        )[0]
+        self.assertNotIn('"source_ref"', validate_block)
+        self.assertNotIn("'source_ref'", validate_block)
+
+        converge_block = text.split("if action == ACTION_RUNTIME_CONVERGE:", 1)[1].split(
+            "if action == ACTION_REPAIR_TRANSPORT:", 1
+        )[0]
+        self.assertIn('"source_ref": "core/integration"', converge_block)
+        self.assertNotIn('params.get("source_ref")', converge_block)
+        self.assertNotIn("params.get('source_ref')", converge_block)
 
     def test_rollout_is_integration_only_and_never_writes_main(self):
         text = _text(WORKFLOW)
