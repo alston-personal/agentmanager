@@ -62,3 +62,17 @@ jobs:
           grep -qi 'cache-control: private, no-store' /tmp/atlas-headers
           node -e 'const j=JSON.parse(require("node:fs").readFileSync("/tmp/atlas-200","utf8"));if(j.portfolio.work_items[0].status!=="unknown" || j.portfolio.supervisor_status!=="unknown" || j.portfolio.node_status!=="unknown")process.exit(1)'
           echo "atlas_smoke_auth_401_403_missing_503_admin_200_unknown=PASS"
+          # Independent process: no JWT_SECRET, but a syntactically valid token signed
+          # with the shared auth module's known dev fallback must never grant Atlas access.
+          env -u JWT_SECRET PORT=33172 npm run start -- --port 33172 > /tmp/atlas-next-no-secret.log 2>&1 &
+          insecure_pid=$!
+          trap 'kill "$insecure_pid" "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:33172/dashboard/api/auth/session >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          fallback_token="$(node -e 'console.log(require("jsonwebtoken").sign({username:"atlas-admin",provider:"github",exp:Math.floor(Date.now()/1000)+600},"your-secret-key-change-in-production"))')"
+          disabled=$(curl -s -o /tmp/atlas-no-secret -w '%{http_code}' -H "Cookie: auth_token=$fallback_token" http://127.0.0.1:33172/dashboard/api/atlas/snapshot)
+          test "$disabled" = 503
+          node -e 'const j=JSON.parse(require("node:fs").readFileSync("/tmp/atlas-no-secret","utf8"));if(j.error!=="atlas_auth_not_configured")process.exit(1)'
+          echo "atlas_smoke_unconfigured_jwt_fail_closed=PASS"
