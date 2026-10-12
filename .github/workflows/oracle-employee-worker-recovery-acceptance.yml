@@ -1,0 +1,111 @@
+name: Oracle Employee Worker Recovery Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-employee-worker-recovery-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify post-recovery Oracle worker and host pressure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          EXPECTED="$1"
+          UNIT=agentos-employee-worker-host.service
+          CURRENT=/home/ubuntu/agent-data/runtime/core/current
+
+          current="$(readlink -f "$CURRENT")"
+          expected="/home/ubuntu/agent-data/releases/core/$EXPECTED"
+          echo "recovery_current_release=$current"
+          test "$current" = "$expected"
+
+          active="$(systemctl --user show "$UNIT" -p ActiveState --value)"
+          sub="$(systemctl --user show "$UNIT" -p SubState --value)"
+          pid="$(systemctl --user show "$UNIT" -p MainPID --value)"
+          wd="$(systemctl --user show "$UNIT" -p WorkingDirectory --value)"
+          restarts="$(systemctl --user show "$UNIT" -p NRestarts --value)"
+          quota="$(systemctl --user show "$UNIT" -p CPUQuotaPerSecUSec --value)"
+          cpu_weight="$(systemctl --user show "$UNIT" -p CPUWeight --value)"
+          io_weight="$(systemctl --user show "$UNIT" -p IOWeight --value)"
+          memory_max="$(systemctl --user show "$UNIT" -p MemoryMax --value)"
+
+          echo "worker_active=$active"
+          echo "worker_substate=$sub"
+          echo "worker_pid_present=$([ -n "$pid" ] && [ "$pid" != 0 ] && echo true || echo false)"
+          echo "worker_working_directory=$wd"
+          echo "worker_restart_count=$restarts"
+          echo "worker_cpu_quota=$quota"
+          echo "worker_cpu_weight=$cpu_weight"
+          echo "worker_io_weight=$io_weight"
+          echo "worker_memory_max=$memory_max"
+
+          test "$active" = active
+          test "$wd" = "$expected"
+          test -n "$pid"
+          test "$pid" != 0
+          test "$cpu_weight" = 20
+          test "$io_weight" = 20
+          test "$memory_max" = 1073741824
+          case "$quota" in 500ms|500000us) ;; *) echo "worker_cpu_quota_contract=FAIL:$quota"; exit 31;; esac
+          echo "worker_resource_contract=PASS"
+
+          cpu0="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
+          sleep 5
+          cpu1="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
+          /usr/bin/python3 - "$cpu0" "$cpu1" <<'PY'
+          import sys
+          a=int(sys.argv[1] or 0); b=int(sys.argv[2] or 0)
+          pct=max(0.0,(b-a)/5_000_000_000*100.0)
+          print(f"worker_cpu_percent_5s={pct:.2f}")
+          if pct > 55.0:
+              raise SystemExit("worker_cpu_above_bounded_ceiling")
+          PY
+
+          /usr/bin/python3 - /proc/pressure/io <<'PY'
+          import re,sys
+          rows=open(sys.argv[1],encoding="utf-8").read().splitlines()
+          vals={}
+          for line in rows:
+              name=line.split()[0]
+              vals[name]={k:float(v) for k,v in re.findall(r"(avg10|avg60|avg300)=([0-9.]+)",line)}
+          for name in ("some","full"):
+              for key in ("avg10","avg60","avg300"):
+                  print(f"io_psi_{name}_{key}={vals.get(name,{}).get(key,0.0):.2f}")
+          PY
+
+          runner_count="$(ps -eo args | grep -Ec '[R]unner\.(Listener|Worker)|[r]unsvc\.sh|[r]un\.sh' || true)"
+          echo "oracle_runner_process_count=$runner_count"
+
+          echo "oracle_ssh_post_recovery=PASS"
+          REMOTE
+
+      - name: Verify public AgentOS HTTP transport responds
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 15 \
+            https://studio.milkcat.org/dashboard/api/agentos || true)"
+          echo "agentos_http_status=$code"
+          test "$code" != 000
+          echo "agentos_http_transport=PASS"
