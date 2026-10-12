@@ -125,6 +125,15 @@ def test_activation_installs_periodic_product_work_intent_reconciler():
     assert "OnUnitActiveSec=60s" in timer
 
 
+def test_activation_accepts_system_worker_boundary_without_restarting_user_singleton():
+    shell = ACTIVATE.read_text(encoding="utf-8")
+    assert 'WORKER_SYSTEM_BOUNDARY_MARKER=' in shell
+    assert 'sudo -n systemctl is-active --quiet agentos-employee-worker-host.service' in shell
+    assert '! systemctl --user is-active --quiet agentos-employee-worker-host.service' in shell
+    assert 'product_employee_worker_owner=system' in shell
+    assert 'product_employee_worker_owner=user' in shell
+
+
 def test_worker_host_enters_fixed_shared_agentos_group_without_generic_authority():
     unit = WORKER_UNIT.read_text(encoding="utf-8")
     exec_line = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
