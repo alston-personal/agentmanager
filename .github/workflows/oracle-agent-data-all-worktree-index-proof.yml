@@ -1,0 +1,63 @@
+name: Oracle Agent Data All Worktree Index Proof
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-agent-data-all-worktree-index-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Check every worktree index for giant blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          REPO="$HOME/agent-data"
+          SHAS=(
+            a8bca9ae259c
+            64f144e35ef5
+            3f2fd5c8559f
+            752dec56513c
+          )
+
+          mapfile -t WORKTREES < <(git -C "$REPO" worktree list --porcelain | awk '/^worktree /{sub(/^worktree /,""); print}')
+          echo "worktree_count=${#WORKTREES[@]}"
+          test "${#WORKTREES[@]}" -ge 1
+
+          total_hits=0
+          idx=0
+          for wt in "${WORKTREES[@]}"; do
+            idx=$((idx+1))
+            test -d "$wt"
+            tmp="$(mktemp)"
+            git -C "$wt" ls-files -s > "$tmp"
+            wt_hits=0
+            for prefix in "${SHAS[@]}"; do
+              hits="$(grep -Ec "^[0-9]+ $prefix[0-9a-f]* [0-9]+[[:space:]]" "$tmp" || true)"
+              wt_hits=$((wt_hits+hits))
+            done
+            rm -f "$tmp"
+            echo "worktree_${idx}_index_hits=$wt_hits"
+            total_hits=$((total_hits+wt_hits))
+          done
+
+          echo "all_worktree_index_hits=$total_hits"
+          test "$total_hits" -eq 0
+          echo "agent_data_all_worktree_index_proof=PASS"
+          REMOTE
