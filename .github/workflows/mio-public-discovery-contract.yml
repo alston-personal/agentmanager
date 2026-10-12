@@ -6,9 +6,11 @@ on:
     paths:
       - 'scripts/persona_public_discovery_contract.py'
       - 'scripts/persona_social_discovery_triage.py'
+      - 'scripts/persona_keyword_social_runtime_bridge.py'
       - 'scripts/persona_threads_keyword_probe.py'
       - 'tests/test_persona_public_discovery_contract.py'
       - 'tests/test_persona_social_discovery_triage.py'
+      - 'tests/test_persona_keyword_social_runtime_bridge.py'
       - 'tests/test_persona_threads_keyword_probe.py'
       - '.github/workflows/mio-public-discovery-contract.yml'
   push:
@@ -34,4 +36,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Validate bounded no-write public discovery projection
-        run: python3 -m unittest tests.test_persona_public_discovery_contract tests.test_persona_threads_keyword_probe tests.test_persona_social_discovery_triage -v
+        run: python3 -m unittest tests.test_persona_public_discovery_contract tests.test_persona_threads_keyword_probe tests.test_persona_social_discovery_triage tests.test_persona_keyword_social_runtime_bridge -v
