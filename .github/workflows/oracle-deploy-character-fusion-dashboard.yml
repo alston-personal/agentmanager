@@ -81,14 +81,25 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
-          scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_PORT:-22}" \
+          timeout 90s scp \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=8 \
+            -o ConnectionAttempts=3 \
+            -o ServerAliveInterval=20 \
+            -o ServerAliveCountMax=6 \
+            -P "${DEPLOY_PORT:-22}" \
             scripts/deploy_dashboard_blue_green_user.sh \
             "${DEPLOY_USER}@${ORACLE_HOST}:/tmp/deploy_dashboard_blue_green_user.sh"
 
       - name: Build inactive slot, verify, cut over and retire old slot
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+          ssh \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=8 \
+            -o ConnectionAttempts=3 \
+            -o ServerAliveInterval=20 \
+            -o ServerAliveCountMax=30 \
             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
             "chmod 700 /tmp/deploy_dashboard_blue_green_user.sh && /tmp/deploy_dashboard_blue_green_user.sh '$GITHUB_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
 
