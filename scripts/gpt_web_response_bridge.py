@@ -388,7 +388,7 @@ def _assistant_text(page: CdpPage, request_id: str) -> str | None:
     expr = """(() => {
       const id = %s;
       const nodes = Array.from(document.querySelectorAll(
-        '[data-message-author-role="assistant"],[data-testid*="assistant-message"],[data-testid*="conversation-turn"],article'
+        '[data-message-author-role="assistant"],[data-testid*="assistant-message"],[data-testid*="message-assistant"],article[aria-label*="assistant" i]'
       ));
       for (let i = nodes.length - 1; i >= 0; i--) {
         const node = nodes[i];
@@ -397,6 +397,7 @@ def _assistant_text(page: CdpPage, request_id: str) -> str | None:
         if (!text.includes(id)) continue;
         // Never harvest an echoed prompt as an assistant reply.
         if (node.getAttribute('data-message-author-role') === 'user') continue;
+        if (node.querySelector('[data-message-author-role="user"]')) continue;
         if (!text.includes('"agentos_request_id"') && !text.includes('agentos_request_id')) continue;
         if (text.length < 40) continue;
         return text;
