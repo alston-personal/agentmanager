@@ -1,5 +1,7 @@
 name: Oracle Bootstrap Transport Control Plane
 
+# Emergency transport repair marker: Character Fusion 2026-10-12
+
 on:
   workflow_dispatch:
   push:
@@ -98,21 +100,11 @@ jobs:
             echo 'bootstrap_control_plane=PASS'
           } 2>&1 | tee "$OUT"
 
-      - name: Commit bootstrap control evidence
+      - name: Upload bootstrap control evidence
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          E=.agentos/evidence/bootstrap-control-plane.txt
-          test -f "$E" || exit 0
-          cp "$E" /tmp/bootstrap-control-plane.txt
-          git fetch origin main
-          git reset --hard origin/main
-          mkdir -p .agentos/evidence
-          cp /tmp/bootstrap-control-plane.txt "$E"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$E"
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): bootstrap deterministic control plane'
-          git push origin HEAD:main
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-control-plane-${{ github.run_id }}
+          path: .agentos/evidence/bootstrap-control-plane.txt
+          if-no-files-found: warn
+          retention-days: 14
