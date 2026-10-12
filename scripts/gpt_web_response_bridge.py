@@ -118,6 +118,7 @@ class CdpPage:
         self.seq = 0
         self.upload_network_probe: dict[str, Any] | None = None
         self._upload_request_ids: set[str] = set()
+        self._upload_request_classes: dict[str, str] = {}
 
     def observe_upload_event(self, event: dict[str, Any]) -> None:
         probe = self.upload_network_probe
@@ -135,6 +136,10 @@ class CdpPage:
                 rid = str(params.get("requestId") or "")
                 if rid:
                     self._upload_request_ids.add(rid)
+                    path = urllib.parse.urlsplit(url).path.lower()
+                    category = "file" if any(k in path for k in ("/files", "/upload", "/attachment", "/assets")) else "other"
+                    self._upload_request_classes[rid] = category
+                    probe["categories"][category]["requests"] += 1
                     probe["postRequests"] += 1
                     family = "chatgpt" if urllib.parse.urlsplit(url).hostname == "chatgpt.com" else "other"
                     probe["postHostFamilies"][family] += 1
@@ -144,13 +149,19 @@ class CdpPage:
                 if status:
                     bucket = str(status) if status in {400, 401, 403, 413, 429} else f"{status // 100}xx"
                     probe["responseStatuses"][bucket] = probe["responseStatuses"].get(bucket, 0) + 1
+                    category = self._upload_request_classes.get(str(params.get("requestId") or ""), "other")
+                    counts = probe["categories"][category]["statuses"]
+                    counts[bucket] = counts.get(bucket, 0) + 1
         elif method == "Network.loadingFailed":
             if str(params.get("requestId") or "") in self._upload_request_ids:
                 probe["networkFailures"] += 1
+                category = self._upload_request_classes.get(str(params.get("requestId") or ""), "other")
+                probe["categories"][category]["failures"] += 1
 
     def begin_upload_network_probe(self) -> None:
         self._upload_request_ids = set()
-        self.upload_network_probe = {"postRequests": 0, "postHostFamilies": {"chatgpt": 0, "other": 0}, "responseStatuses": {}, "networkFailures": 0}
+        self._upload_request_classes = {}
+        self.upload_network_probe = {"postRequests": 0, "postHostFamilies": {"chatgpt": 0, "other": 0}, "responseStatuses": {}, "networkFailures": 0, "categories": {"file": {"requests": 0, "statuses": {}, "failures": 0}, "other": {"requests": 0, "statuses": {}, "failures": 0}}}
 
     def close(self) -> None:
         try:

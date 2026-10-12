@@ -413,3 +413,18 @@ class GptWebUploadNetworkProbeTests(unittest.TestCase):
         self.assertEqual(page.upload_network_probe["responseStatuses"]["2xx"], 1)
         self.assertNotIn("uploads.example.invalid", str(page.upload_network_probe))
         self.assertNotIn("private", str(page.upload_network_probe))
+
+
+class UploadCorrelationTests(unittest.TestCase):
+    def test_request_class_uses_private_ids_only(self):
+        from scripts.gpt_web_response_bridge import CdpPage
+        page = CdpPage.__new__(CdpPage)
+        page.upload_network_probe = None
+        page.begin_upload_network_probe()
+        page.observe_upload_event({"method": "Network.requestWillBeSent", "params": {"requestId": "alpha", "request": {"method": "POST", "url": "https://chatgpt.com/backend-api/files?token=secret"}}})
+        page.observe_upload_event({"method": "Network.responseReceived", "params": {"requestId": "alpha", "response": {"status": 201}}})
+        page.observe_upload_event({"method": "Network.loadingFailed", "params": {"requestId": "alpha"}})
+        self.assertEqual(page.upload_network_probe["categories"]["file"]["requests"], 1)
+        self.assertEqual(page.upload_network_probe["categories"]["file"]["statuses"]["2xx"], 1)
+        self.assertEqual(page.upload_network_probe["categories"]["file"]["failures"], 1)
+        self.assertNotIn("secret", str(page.upload_network_probe))
