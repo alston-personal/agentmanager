@@ -17,7 +17,7 @@ def _time(raw):
     if not isinstance(raw, str):
         return None
     try:
-        value = re.sub(r"([+-]\\d{2})(\\d{2})$", r"\\1:\\2", raw.strip().replace("Z", "+00:00"))
+        value = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", raw.strip().replace("Z", "+00:00"))
         result = datetime.fromisoformat(value)
         return result.astimezone(timezone.utc) if result.tzinfo else None
     except ValueError:
