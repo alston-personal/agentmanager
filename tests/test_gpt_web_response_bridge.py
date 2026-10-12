@@ -489,3 +489,15 @@ class ImageStructureWithoutContentTests(unittest.TestCase):
         self.assertIn("inFormBlob",code)
         self.assertIn("attachmentControlCount",code)
         self.assertNotIn("img.src",code)
+
+
+class AttachmentGrowthTests(unittest.TestCase):
+    def test_requires_new_blob_and_new_remove_control(self):
+        from scripts.gpt_web_response_bridge import _attachment_growth
+        def shot(blob, remove):
+            return {"attachmentSummary": {"imageStructure": {"inFormBlob": blob}, "attachmentControlCount":remove}}
+        self.assertTrue(_attachment_growth(shot(0,0),shot(1,1)))
+        self.assertFalse(_attachment_growth(shot(4,4),shot(4,4)))
+        self.assertFalse(_attachment_growth(shot(0,0),shot(1,0)))
+        self.assertFalse(_attachment_growth(shot(0,0),shot(0,1)))
+        self.assertFalse(_attachment_growth({},shot(0,0)))
