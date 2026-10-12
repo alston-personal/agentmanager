@@ -42,7 +42,35 @@ def run(cdp_url: str, image: Path) -> dict:
                 time.sleep(0.2)
             events=page.connection.file_chooser_events
             if not events:
-                return {"status": "FILE_CHOOSER_NOT_OPENED", "before":before.get("attachmentSummary",{})}
+                # ChatGPT may open an attachment menu first. Restrict the next
+                # click to a visible menu option explicitly labelled for files.
+                option = page.evaluate("""(() => {
+                  const nodes = Array.from(document.querySelectorAll(
+                    '[role="menuitem"],[role="option"],[data-radix-menu-content] button,[role="menu"] button'
+                  ));
+                  for (const el of nodes) {
+                    const title = ((el.getAttribute('aria-label') || '') + ' ' +
+                      (el.textContent || '')).trim().toLowerCase();
+                    const allowed = ['upload file','upload from computer','add photos','上傳檔案','從電腦上傳','照片與檔案'];
+                    if (!allowed.some(x => title.includes(x))) continue;
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0) return {x:r.left+r.width/2,y:r.top+r.height/2};
+                  }
+                  return null;
+                })()""")
+                if not isinstance(option, dict):
+                    return {"status":"ATTACH_MENU_UPLOAD_ITEM_NOT_FOUND","before":before.get("attachmentSummary",{})}
+                for kind in ("mousePressed", "mouseReleased"):
+                    page.call("Input.dispatchMouseEvent", {"type":kind,
+                      "x":float(option["x"]),"y":float(option["y"]),
+                      "button":"left","clickCount":1})
+                deadline=time.monotonic()+4
+                while time.monotonic()<deadline and not page.connection.file_chooser_events:
+                    page.evaluate("1")
+                    time.sleep(0.2)
+                events=page.connection.file_chooser_events
+                if not events:
+                    return {"status":"FILE_CHOOSER_NOT_OPENED_AFTER_MENU","before":before.get("attachmentSummary",{})}
             chooser=events[-1]
             backend_id=chooser.get("backendNodeId")
             if not isinstance(backend_id,int):
