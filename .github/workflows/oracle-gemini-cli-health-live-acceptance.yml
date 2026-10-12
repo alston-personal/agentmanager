@@ -1,5 +1,7 @@
 name: Oracle Gemini CLI Health Live Acceptance
 
+# trigger: 2026-10-12 Character Fusion vision diagnosis
+
 on:
   push:
     branches:
