@@ -1,4 +1,5 @@
 name: Dispatch Runtime Repair 20261012
+# diagnostic-trigger: runtime-converge-preflight
 
 on:
   pull_request:
