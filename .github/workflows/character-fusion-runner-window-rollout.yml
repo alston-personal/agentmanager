@@ -1,6 +1,6 @@
 name: Character Fusion Runner Window Rollout
 
-# trigger: 2026-10-12 character-fusion production rollout
+# trigger: 2026-10-12 character-fusion production rollout 1452Z
 
 on:
   pull_request:
