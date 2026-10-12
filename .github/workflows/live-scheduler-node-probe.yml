@@ -50,7 +50,8 @@ jobs:
           curl -fsS --max-time 20             -H "Authorization: Bearer $TOKEN"             https://studio.milkcat.org/dashboard/api/agentos/v1/controller/scheduler             > "$RUNNER_TEMP/scheduler.json"
           python3 - "$RUNNER_TEMP/scheduler.json" <<'PY'
           import json,sys
-          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          raw=json.load(open(sys.argv[1],encoding='utf-8'))
+          d=raw.get('runner_pool') if isinstance(raw,dict) and isinstance(raw.get('runner_pool'),dict) else raw
           out={
             'schema':d.get('schema'),
             'node':d.get('node'),
