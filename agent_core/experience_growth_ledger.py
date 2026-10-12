@@ -194,23 +194,6 @@ def append_attempt(
         if not str(value or "").strip():
             raise ValueError(f"{field} is required")
 
-    # An executor-provided digest or assertion is never ONE-side proof.
-    # Accepted attempts require the canonical stored bytes to match the
-    # claimed snapshot. Source attribution still requires a governed receipt.
-    accepted_classes = {"accepted_new", "accepted_update", "duplicate_noop"}
-    if classification in accepted_classes:
-        if not source_receipt or not after_digest:
-            raise ValueError("accepted attempt requires source receipt and canonical digest")
-        canonical = read_experience_set(project_id, data_root=data_root)
-        if digest_set(canonical) != after_digest:
-            raise ValueError("accepted attempt digest does not match ONE Experience store")
-        if after_count != len(canonical["artifacts"]):
-            raise ValueError("accepted attempt count does not match ONE Experience store")
-        if not set(persisted_experience_ids or []).issubset(
-            {item["experience_id"] for item in canonical["artifacts"]}
-        ):
-            raise ValueError("accepted attempt experience IDs are not in ONE store")
-
     record = {
         "schema": ATTEMPT_SCHEMA,
         "attempt_id": str(attempt_id),
@@ -248,6 +231,24 @@ def append_attempt(
                 "record_digest": record_digest,
                 "credential_exposed": False,
             }
+
+        # An executor-provided digest or assertion is never ONE-side proof.
+        # Accepted attempts require the canonical stored bytes to match the
+        # claimed snapshot. Source attribution still requires a governed receipt.
+        accepted_classes = {"accepted_new", "accepted_update", "duplicate_noop"}
+        if classification in accepted_classes:
+            if not source_receipt or not after_digest:
+                raise ValueError("accepted attempt requires source receipt and canonical digest")
+            canonical = read_experience_set(project_id, data_root=data_root)
+            if digest_set(canonical) != after_digest:
+                raise ValueError("accepted attempt digest does not match ONE Experience store")
+            if after_count != len(canonical["artifacts"]):
+                raise ValueError("accepted attempt count does not match ONE Experience store")
+            if not set(persisted_experience_ids or []).issubset(
+                {item["experience_id"] for item in canonical["artifacts"]}
+            ):
+                raise ValueError("accepted attempt experience IDs are not in ONE store")
+
 
         ledger["attempts"].append(record)
         _atomic_write(path, ledger)
