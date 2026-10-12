@@ -133,3 +133,7 @@ AgentOS is an active research and engineering project. Some subsystems are produ
 ---
 
 *Models are replaceable executors. Durable work should not be trapped inside one session.*
+
+## Mio external public discovery (experimental)
+
+`#1825` introduces a standalone, no-write public candidate receipt projection (`scripts/persona_public_discovery_contract.py`). It is **not** a live Threads feed connector or external reply executor. The existing owned-post `post.read` response cannot authorize external discovery. Actual public-source adapter, Oracle receipt, independent account validation, and optional exact-parent replies remain unimplemented pending tests and governance. See `docs/mio-public-discovery-contract.md`.
