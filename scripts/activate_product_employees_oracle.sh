@@ -50,6 +50,7 @@ WAKE_NODE_ROOT="$DATA_ROOT/employee-wake-node"
 WAKE_CONFIG="$WAKE_NODE_ROOT/client.json"
 HOST_STATE_ROOT="$DATA_ROOT/employee-worker-host"
 WORKER_STATE_ROOT="$DATA_ROOT/employee-worker-state"
+WORKER_SYSTEM_BOUNDARY_MARKER="${XDG_CONFIG_HOME:-$HOME/.config}/agentos/employee-worker-host-system-boundary"
 mkdir -p "$RUNTIME_ROOT" "$WAKE_ROOT" "$WAKE_NODE_ROOT" "$HOST_STATE_ROOT" "$WORKER_STATE_ROOT" "$USER_SYSTEMD_DIR"
 chmod 700 "$WAKE_NODE_ROOT"
 
@@ -112,7 +113,14 @@ systemctl --user enable agentos-employee-wake-node.service >/dev/null
 systemctl --user restart agentos-employee-wake-node.service
 systemctl --user is-active --quiet agentos-employee-wake-node.service
 systemctl --user is-active --quiet agentos-core-supervisor.service
-systemctl --user is-active --quiet agentos-employee-worker-host.service
+if [ -f "$WORKER_SYSTEM_BOUNDARY_MARKER" ]; then
+  sudo -n systemctl is-active --quiet agentos-employee-worker-host.service
+  ! systemctl --user is-active --quiet agentos-employee-worker-host.service 2>/dev/null
+  echo "product_employee_worker_owner=system"
+else
+  systemctl --user is-active --quiet agentos-employee-worker-host.service
+  echo "product_employee_worker_owner=user"
+fi
 
 # The wake Node must become eligible before acceptance. Presence and work claims
 # are created by the daemon/Supervisor; this bootstrap does not synthesize them.
