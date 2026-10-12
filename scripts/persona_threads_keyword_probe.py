@@ -50,6 +50,14 @@ def probe(*, binding_account, expected_account, allowed_scopes, token, query, op
         return {**report, "status": "BLOCKED", "reason": "PROVIDER_ERROR"}
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         return {**report, "status": "BLOCKED", "reason": "INVALID_SOURCE_RESPONSE"}
+    # App-review restrictions may return only the authenticated user's own posts.
+    # Such a result is NOT evidence of discovery of other accounts.
+    rows = payload["data"]
+    if rows and all(isinstance(row, dict) and
+                    str(row.get("username") or "").lstrip("@").lower() == expected_account
+                    for row in rows):
+        return {**report, "status": "UNVERIFIED", "reason": "OWN_POSTS_ONLY",
+                "result_count": len(rows), "source_kind": "official_threads_keyword_search"}
     # A keyword-search response alone does not attest a root id, visibility,
     # or verified account binding. Keep raw content OUT of the receipt.
     entries = payload["data"]
