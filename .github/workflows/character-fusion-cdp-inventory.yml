@@ -33,28 +33,12 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inventory isolated CDP profiles
+      - uses: actions/checkout@v4
+      - name: Inventory read-only Oracle CDP identity (#1735)
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
-          import json, urllib.request
-          from urllib.parse import urlparse
-          for port in (9222,9223,9224):
-              try:
-                  with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
-                      rows=json.loads(r.read().decode("utf-8"))
-              except Exception as exc:
-                  print(f"cdp_port={port} state=unavailable error={type(exc).__name__}")
-                  continue
-              hosts=[]
-              for row in rows if isinstance(rows,list) else []:
-                  if not isinstance(row,dict) or row.get("type")!="page":
-                      continue
-                  u=urlparse(str(row.get("url") or ""))
-                  host=(u.hostname or "").lower()
-                  path=u.path or "/"
-                  if host:
-                      hosts.append(f"{host}{path[:80]}")
-              print(f"cdp_port={port} state=ready pages={len(hosts)} targets={json.dumps(hosts,ensure_ascii=False)}")
-          print("cdp_inventory=PASS")
-          PY
+          test -n "${DEPLOY_USER:-}" || { echo "oracle_identity_inventory=NO_DEPLOY_USER"; exit 1; }
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'python3 -' < scripts/oracle_browser_identity_inventory.py
+          echo "cdp_inventory=PASS"
