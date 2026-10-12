@@ -100,6 +100,8 @@ def test_attempt_is_idempotent_and_status_is_queryable(tmp_path: Path) -> None:
     )
     assert status["attempt_count"] == 1
     assert status["accepted_attempt_count"] == 1
+    assert status["material_change_count"] == 1
+    assert status["duplicate_noop_count"] == 0
     assert status["last_success"]["attempt_id"] == "attempt-1"
     assert status["credential_exposed"] is False
 
@@ -135,6 +137,8 @@ def test_assertion_does_not_count_as_one_side_success(tmp_path: Path) -> None:
     )
     assert status["attempt_count"] == 1
     assert status["accepted_attempt_count"] == 0
+    assert status["material_change_count"] == 0
+    assert status["duplicate_noop_count"] == 0
     assert status["last_success"] is None
 
 
