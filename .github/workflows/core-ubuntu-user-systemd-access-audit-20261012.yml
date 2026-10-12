@@ -1,0 +1,37 @@
+name: Core Ubuntu User Systemd Access Audit 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-ubuntu-user-systemd-access-audit-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Probe read-only control paths
+        shell: bash
+        run: |
+          set +e
+          echo "RUNNER_USER=$(id -un) UID=$(id -u)"
+
+          echo '=== machine path ==='
+          systemctl --user --machine=ubuntu@.host is-active agentos-realm-fabric.service
+          echo "machine_is_active_rc=$?"
+          systemctl --user --machine=ubuntu@.host show agentos-realm-fabric.service -p MainPID -p ExecStart -p WorkingDirectory
+          echo "machine_show_rc=$?"
+
+          echo '=== sudo ubuntu path ==='
+          sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user is-active agentos-realm-fabric.service
+          echo "sudo_is_active_rc=$?"
+          sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user show agentos-realm-fabric.service -p MainPID -p ExecStart -p WorkingDirectory
+          echo "sudo_show_rc=$?"
+
+          echo '=== direct bus path ==='
+          env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user is-active agentos-realm-fabric.service
+          echo "direct_is_active_rc=$?"
