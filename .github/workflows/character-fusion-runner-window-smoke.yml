@@ -1,6 +1,6 @@
 name: Character Fusion Runner Window Smoke
 
-# trigger: 2026-10-12 character-fusion live smoke v3
+# trigger: 2026-10-12 character-fusion live smoke diagnostics 0516Z
 
 on:
   pull_request:
