@@ -1,0 +1,56 @@
+name: Core Oracle Host Snapshot 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-oracle-host-snapshot-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read-only host snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" '
+              set +e
+              echo "=== uptime ==="
+              uptime
+              echo "=== disk ==="
+              df -hT /
+              df -ih /
+              echo "=== mounts ==="
+              findmnt -rno TARGET,SOURCE,FSTYPE 2>/dev/null | grep -Ei "gdrive|google|rclone|fuse" || true
+              echo "=== gdrive paths ==="
+              for p in /home/ubuntu/gdrive /home/ubuntu/.local/share/agentos/gdrive-remote-v2; do
+                echo "--- $p"
+                ls -ld "$p" 2>/dev/null || true
+                readlink -f "$p" 2>/dev/null || true
+                mountpoint "$p" 2>/dev/null || true
+                du -sh "$p" 2>/dev/null || true
+              done
+              echo "=== top-level home usage ==="
+              du -xhd1 /home/ubuntu 2>/dev/null | sort -h | tail -n 30
+              echo "=== memory ==="
+              free -h
+              echo "=== pressure ==="
+              cat /proc/pressure/memory 2>/dev/null || true
+              cat /proc/pressure/io 2>/dev/null || true
+              echo "=== top memory ==="
+              ps -eo pid,user,%cpu,%mem,rss,stat,comm,args --sort=-%mem | head -n 25
+              echo "=== top cpu ==="
+              ps -eo pid,user,%cpu,%mem,rss,stat,comm,args --sort=-%cpu | head -n 25
+            '
