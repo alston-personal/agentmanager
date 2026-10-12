@@ -59,5 +59,26 @@ class PublicDiscoveryContractTests(unittest.TestCase):
         self.assertNotIn("TOKEN", str(report))
         self.assertEqual(len(report["items"][0]["text_excerpt"]), 500)
 
+
+    def test_post_read_is_exact_object_bound(self):
+        receipt = {**SOURCE, "operation": "public.post.read", "object_id": "999"}
+        self.assertEqual(self.read(source=receipt)["reason"], "OBJECT_ID_MISMATCH")
+        receipt["object_id"] = "123"
+        self.assertEqual(len(self.read(source=receipt)["items"]), 1)
+
+    def test_post_read_rejects_batch(self):
+        receipt = {**SOURCE, "operation": "public.post.read", "object_id": "123"}
+        self.assertEqual(self.read(rows=[POST, POST], source=receipt)["reason"], "OBJECT_ID_MISMATCH")
+
+    def test_invalid_clock_window_and_cursor(self):
+        for hours in (-1, 0, float("nan"), float("inf"), 169):
+            with self.subTest(hours=hours), self.assertRaises(ValueError):
+                self.read(max_age_hours=hours)
+        with self.assertRaises(ValueError):
+            self.read(seen=["x"] * 5001)
+
+    def test_missing_reader_identity(self):
+        self.assertEqual(self.read(source={**SOURCE, "account": None})["reason"], "ACCOUNT_MISMATCH")
+
 if __name__ == "__main__":
     unittest.main()
