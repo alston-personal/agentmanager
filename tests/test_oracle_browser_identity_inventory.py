@@ -81,12 +81,12 @@ class InventoryTests(unittest.TestCase):
             root = Path(dirname)
             (root / "net").mkdir()
             (root / "net/tcp").write_text(
-                "sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\\n"
-                "0: 0100007F:2407 00000000:0000 0A 0:0 00:0 0 1000 0 98765\\n"
+                "sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n"
+                "0: 0100007F:2407 00000000:0000 0A 0:0 00:0 0 1000 0 98765\n"
             )
             pid = root / "1234"
             (pid / "fd").mkdir(parents=True)
-            (pid / "comm").write_text("chromium\\n")
+            (pid / "comm").write_text("chromium\n")
             (pid / "fd/3").symlink_to("socket:[98765]")
             result = module.socket_ownership(root, (9223, 9224))
         record = result["records"][9223]
@@ -102,7 +102,7 @@ class InventoryTests(unittest.TestCase):
             root = Path(dirname)
             (root / "net").mkdir()
             (root / "net/tcp").write_text(
-                "header\\n0: 0100007F:2406 00000000:0000 0A 0:0 00:0 0 1000 0 99\\n"
+                "header\n0: 0100007F:2406 00000000:0000 0A 0:0 00:0 0 1000 0 99\n"
             )
             result = module.socket_ownership(root, (9222,))
         self.assertEqual(result["records"][9222]["state"], "LISTENER_OWNER_UNRESOLVED")
