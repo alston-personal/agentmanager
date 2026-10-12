@@ -46,7 +46,11 @@ def triage_public_discovery(projection, *, visited_authors=(), contacted_posts=(
             topic = interest["topic"].strip()
             if not 1 <= len(topic) <= 45:
                 continue
-            derived[topic] = (topic,)
+            keywords = {topic}
+            for terms in TOPICS.values():
+                if any(term in topic for term in terms):
+                    keywords.update(terms)
+            derived[topic] = tuple(sorted(keywords))
         if not derived:
             return {"schema": SCHEMA, "status": "BLOCKED", "reason": "NO_EVIDENCED_INTERESTS", "items": [], "write_allowed": False}
         topics = derived
