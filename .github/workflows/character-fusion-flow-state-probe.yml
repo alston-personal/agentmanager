@@ -1,0 +1,102 @@
+name: Character Fusion Flow State Probe
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-flow-state-probe.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-flow-state-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'flow_state_probe=PASS' .github/workflows/character-fusion-flow-state-probe.yml
+
+  probe:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe Flow composer state via raw CDP
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import asyncio, json, urllib.request, websockets
+          PORT=9225
+          with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list",timeout=5) as r:
+              rows=json.loads(r.read().decode())
+          target=next((x for x in rows if x.get("type")=="page" and "flow.google.com/project/" in str(x.get("url") or "")),None)
+          if not target:
+              raise SystemExit("flow_project_session=NOT_FOUND")
+
+          async def main():
+              async with websockets.connect(target["webSocketDebuggerUrl"],open_timeout=5,max_size=8*1024*1024) as ws:
+                  seq=0
+                  async def call(method,params=None):
+                      nonlocal seq
+                      seq+=1; ident=seq
+                      await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+                      while True:
+                          msg=json.loads(await ws.recv())
+                          if msg.get("id")==ident:
+                              if msg.get("error"): raise RuntimeError(msg["error"])
+                              return msg.get("result") or {}
+                  async def ev(expr):
+                      r=await call("Runtime.evaluate",{"expression":expr,"returnByValue":True,"awaitPromise":True})
+                      return (r.get("result") or {}).get("value")
+
+                  async def state(label):
+                      s=await ev(r'''(() => {
+                        const inp=[...document.querySelectorAll('input[aria-label="可編輯的文字"]')].find(x=>x.offsetParent!==null);
+                        const btn=[...document.querySelectorAll('button')].find(x=>x.offsetParent!==null && (x.getAttribute('aria-label')||'').includes('開始生成'));
+                        const form=btn?.closest('form');
+                        const root=inp?.closest('form') || inp?.parentElement?.parentElement?.parentElement;
+                        return {
+                          input:{value:inp?.value||'',disabled:!!inp?.disabled,readOnly:!!inp?.readOnly,classes:inp?.className||'',outer:(inp?.outerHTML||'').slice(0,1200)},
+                          button:{disabled:!!btn?.disabled,ariaDisabled:btn?.getAttribute('aria-disabled'),classes:btn?.className||'',outer:(btn?.outerHTML||'').slice(0,1200)},
+                          form:(form?.outerHTML||'').slice(0,3500),
+                          nearby:(root?.innerText||'').replace(/\s+/g,' ').trim().slice(0,1800)
+                        };
+                      })()''')
+                      print(json.dumps({"label":label,"state":s},ensure_ascii=False))
+
+                  await state("initial")
+                  focused=await ev(r'''(() => {
+                    const el=[...document.querySelectorAll('input[aria-label="可編輯的文字"]')].find(x=>x.offsetParent!==null && !x.disabled);
+                    if(!el) return false; el.focus(); return document.activeElement===el;
+                  })()''')
+                  if not focused: raise RuntimeError("visible_input_not_focusable")
+                  await call("Input.dispatchKeyEvent",{"type":"keyDown","modifiers":2,"key":"a","code":"KeyA","windowsVirtualKeyCode":65})
+                  await call("Input.dispatchKeyEvent",{"type":"keyUp","modifiers":2,"key":"a","code":"KeyA","windowsVirtualKeyCode":65})
+                  await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"Backspace","code":"Backspace","windowsVirtualKeyCode":8})
+                  await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"Backspace","code":"Backspace","windowsVirtualKeyCode":8})
+                  await call("Input.insertText",{"text":"small blue water droplet mascot"})
+                  await asyncio.sleep(0.8)
+                  await state("after_insert_text")
+
+                  await call("Input.dispatchKeyEvent",{"type":"keyDown","key":" ","code":"Space","windowsVirtualKeyCode":32,"text":" "})
+                  await call("Input.dispatchKeyEvent",{"type":"keyUp","key":" ","code":"Space","windowsVirtualKeyCode":32})
+                  await asyncio.sleep(0.8)
+                  await state("after_key_event")
+
+                  # Leave a harmless short prompt in the field; do NOT click Generate.
+                  print("flow_state_probe=PASS")
+          asyncio.run(main())
+          PY
