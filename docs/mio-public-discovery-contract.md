@@ -93,3 +93,25 @@ currently exports those variables or that official app review is granted.
 An operator should execute it only under the approved existing binding after
 confirming source ownership, preferably through existing governed node
 dispatch. No user needs to paste token values into chat or GitHub.
+
+### Social exploration triage (candidate, not deployed)
+
+`scripts/persona_social_discovery_triage.py` ranks a bounded set of verified,
+read-only public discovery candidates, using observed topic overlap
+(animals, walks, outfits, daily life), author familiarity and previous
+contact/blocklist history. Previously contacted posts and blocked accounts
+are omitted; newly discovered people are considered before already-seen
+authors. A lack of interesting candidates is a **successful non-action**, not
+a quota failure. This is not limited to cats: multiple interest lanes make
+Mio's discovery less repetitive, and should eventually be sourced from
+validated persona IR rather than this initial offline fixture vocabulary.
+
+All triage output has `write_allowed=false` and `reply_allowed=false`.
+A later independent context review must prove the conversation welcomes a
+reply, check time/repetition/relationship history, enforce the persona's
+energy and decision autonomy, verify exact root/parent and write authority,
+and obtain a real platform receipt. There is no requirement to follow or
+reply to every candidate, no automatic DM, and no guaranteed growth.
+
+This component is not yet integrated with the actual Oracle social runtime,
+and no real third-party Threads post or author has been read by this change.
