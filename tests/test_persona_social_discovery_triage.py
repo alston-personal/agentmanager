@@ -39,3 +39,19 @@ class TriageTests(unittest.TestCase):
         self.assertEqual(triage_public_discovery(self.projection)["candidate_count"],0)
 if __name__=="__main__":
     unittest.main()
+
+    def test_evidenced_persona_ir_interest_matches_known_terms(self):
+        ir={"current_self":{"interests_with_evidence":[
+            {"topic":"貓與小動物","basis":["verified-event-1"],"strength":"emerging"}]}}
+        result=triage_public_discovery(self.projection,persona_ir=ir)
+        self.assertEqual(len(result["items"]),1)
+        self.assertEqual(result["items"][0]["author"],"otherperson")
+
+    def test_unverified_interest_does_not_become_persona_topic(self):
+        ir={"current_self":{"interests_with_evidence":[{"topic":"穿搭與生活風格","basis":[]}]}}
+        result=triage_public_discovery(self.projection,persona_ir=ir)
+        self.assertEqual(result["reason"],"NO_EVIDENCED_INTERESTS")
+
+    def test_malformed_persona_ir_is_fail_closed(self):
+        result=triage_public_discovery(self.projection,persona_ir={"current_self":{"interests_with_evidence":None}})
+        self.assertEqual(result["status"],"BLOCKED")
