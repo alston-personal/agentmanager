@@ -51,6 +51,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_GOOGLE_VIDS_GENERATE: ActionPolicy("gui", 16, "high", ("media.google-vids.generate", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile", "google-media-vids")),
     bc.ACTION_VISION_STUDIO_PRODUCE: ActionPolicy("gui", 17, "high", ("media.vision-studio.produce", "media.google-flow.generate", "browser.cdp", "browser.persistent_profile"), ("session:google:flow", "vision-studio-rain-exit")),
     bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("maintenance", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
+    bc.ACTION_RUNTIME_CONVERGE: ActionPolicy("maintenance", 4, "high", ("node.runtime.converge",), ("oracle-core-runtime",)),
     bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("session:threads:mio",)) ,
     bc.ACTION_READ_OURSONG_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read", "persona.social.dm.read"), ("session:threads:oursong",)) ,
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("session:threads:mio",)) ,
