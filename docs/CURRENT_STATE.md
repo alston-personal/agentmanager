@@ -251,3 +251,7 @@ The governed path is:
 
 The bounded command file `.agentos/commands/oracle-gui-worker-install.json` may trigger the hosted repair carrier. This keeps runner selection and Oracle execution authority inside Runner Window while preserving the existing installer implementation.
 
+
+### Runner Window runtime convergence
+
+The public Runner Window distinguishes narrow transport repair from full Core runtime convergence. `agentos.runtime/repair` remains the legacy transport-repair path; `node.runtime/converge` invokes the canonical typed `agentos.runtime-converge-request/v1` through the Action Relay. The request fixes node identity, repository and source ref and accepts only the exact source commit carried by the scheduler authority envelope. Because the live Action Relay can have a root parent with only the shared `agentos` group, convergence subprocesses explicitly drop to the canonical `ubuntu` user and use `/run/user/1001` for user-systemd operations. This prevents root HOME/user-bus drift and ensures Realm Fabric/service installation targets the actual Core runtime owner.
