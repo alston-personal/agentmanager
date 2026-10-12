@@ -676,6 +676,12 @@ def restore_cached_render(job: dict[str, Any], rendered_layers: list[str], targe
         "provider": "real-render-cache",
         "cacheKey": key,
         "renderedLayers": rendered_layers,
+        "pendingLayers": [],
+        "quality": {
+            "accepted": True,
+            "checkedAt": (read_json(cached.with_suffix(".json")) or {}).get("reviewedAt"),
+            "checks": [{"code": "approved_render_cache", "passed": True}],
+        },
     }
     return True
 
