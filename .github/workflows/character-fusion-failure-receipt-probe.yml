@@ -46,7 +46,17 @@ jobs:
           print("state="+str(d.get('state') or 'unknown'))
           print("ok="+str(r.get('ok')).lower())
           print("failure_class="+str(r.get('failure_class') or 'none'))
-          print("failed_steps="+",".join(str(x)[:120] for x in (r.get('failed_steps') or [])[:10]))
+          steps=r.get('steps') or []
+          failed=[x for x in steps if isinstance(x,dict) and x.get('step')=='run_script']
+          print("failed_steps="+",".join(str(x.get('step'))+":"+str(x.get('returncode',x.get('error','unknown'))) for x in failed[:4]))
+          def safe_tail(value,limit):
+              s=str(value or '')[-limit:]
+              s=re.sub(r'(?i)(api[_-]?key|token|secret|password)=\\S+',r'\\1=[REDACTED]',s)
+              s=re.sub(r'https?://\\S+','[URL]',s)
+              return s.replace("\\n"," | ")
+          if failed:
+              print("run_script_stdout_tail="+safe_tail(failed[-1].get('stdout'),1800))
+              print("run_script_stderr_tail="+safe_tail(failed[-1].get('stderr'),1800))
           err=str(r.get('error') or '')
           err=re.sub(r'(?i)(api[_-]?key|token|secret|password)=\S+',r'\1=[REDACTED]',err)
           err=re.sub(r'https?://\S+','[URL]',err)
