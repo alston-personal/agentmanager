@@ -1078,6 +1078,24 @@ async def main():
         if concept_mode == 'clicked':
             await asyncio.sleep(1.2)
 
+        image_mode=await evaluate(r'''(() => {
+          const candidates=[...document.querySelectorAll('button,[role="button"]')]
+            .filter(x=>x.offsetParent!==null);
+          const button=candidates.find(x=>{
+            const text=(x.innerText||x.textContent||'').replace(/\s+/g,' ').trim();
+            const aria=(x.getAttribute('aria-label')||'').trim();
+            const title=(x.getAttribute('title')||'').trim();
+            return /製作多個圖像版本|圖像版本|image versions|create images|generate images/i.test(
+              [text,aria,title].join(' ')
+            );
+          });
+          if(!button) return {clicked:false,reason:'already-or-no-image-mode-control'};
+          button.click();
+          return {clicked:true,text:(button.innerText||button.textContent||'').trim().slice(0,120)};
+        })()''')
+        if image_mode and image_mode.get("clicked"):
+            await asyncio.sleep(1.2)
+
         baseline=await evaluate(r'''(async() => {
           const out=[];
           for(const el of document.querySelectorAll('img')){
@@ -1204,7 +1222,34 @@ async def main():
             await asyncio.sleep(2.0)
 
         if not chosen:
-            raise TimeoutError("flow_generated_image_timeout")
+            output_state=await evaluate(r'''(() => {
+              const vis=el=>!!(el.offsetWidth||el.offsetHeight||el.getClientRects().length);
+              const clean=s=>(s||'').replace(/\s+/g,' ').trim().slice(0,220);
+              const imgs=[...document.querySelectorAll('img')].filter(vis).map(el=>({
+                src:clean(el.currentSrc||el.src),
+                alt:clean(el.alt),
+                cls:clean(el.className?.baseVal||el.className||''),
+                w:Math.round(el.getBoundingClientRect().width),
+                h:Math.round(el.getBoundingClientRect().height)
+              })).slice(-12);
+              const videos=[...document.querySelectorAll('video')].filter(vis).map(el=>({
+                src:clean(el.currentSrc||el.src),
+                poster:clean(el.poster),
+                cls:clean(el.className?.baseVal||el.className||''),
+                w:Math.round(el.getBoundingClientRect().width),
+                h:Math.round(el.getBoundingClientRect().height)
+              })).slice(-12);
+              const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(vis).map(el=>({
+                text:clean(el.innerText||el.textContent),
+                aria:clean(el.getAttribute('aria-label')),
+                disabled:!!el.disabled
+              })).filter(x=>/圖像|image|影片|video|生成|generate|版本|version/i.test((x.text||'')+' '+(x.aria||''))).slice(-20);
+              return {imgs,videos,buttons};
+            })()''')
+            raise TimeoutError(
+                "flow_generated_image_timeout; output_state="
+                + json.dumps(output_state, ensure_ascii=False)[:5000]
+            )
 
         src=chosen.get("src","")
         if src.startswith("data:image/"):
