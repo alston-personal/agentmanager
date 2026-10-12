@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+
+from agent_core.experience_store import experience_path, digest_set
 
 import pytest
 
@@ -67,6 +70,12 @@ def test_attempt_is_idempotent_and_status_is_queryable(tmp_path: Path) -> None:
         data_root=tmp_path,
     )
 
+    canonical = experience(artifact("core.a.v1", "a"))
+    store_path = experience_path("agentos-core", data_root=tmp_path)
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store_path.write_text(json.dumps(canonical), encoding="utf-8")
+    args["after_digest"] = digest_set(canonical)
+
     first = append_attempt(**args)
     second = append_attempt(**args)
     assert first["appended"] is True
@@ -116,3 +125,25 @@ def test_assertion_does_not_count_as_one_side_success(tmp_path: Path) -> None:
     assert status["attempt_count"] == 1
     assert status["accepted_attempt_count"] == 0
     assert status["last_success"] is None
+
+
+def test_claimed_accepted_experience_requires_matching_one_snapshot(tmp_path: Path) -> None:
+    canonical = experience(artifact("core.a.v1", "a"))
+    path = experience_path("agentos-core", data_root=tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(canonical), encoding="utf-8")
+    args = dict(
+        project_id="agentos-core", attempt_id="unverified-1",
+        executor_id="gemini-oracle", source_node="oracle",
+        classification="accepted_new", timestamp="2026-10-12T03:35:00Z",
+        source_receipt="receipt://one/unverified-1",
+        persisted_experience_ids=["core.a.v1"], before_count=0,
+        after_count=1, data_root=tmp_path,
+    )
+    with pytest.raises(ValueError, match="digest"):
+        append_attempt(after_digest="sha256:" + "0" * 64, **args)
+    with pytest.raises(ValueError, match="count"):
+        append_attempt(after_digest=digest_set(canonical), **{**args, "after_count": 2})
+    with pytest.raises(ValueError, match="IDs"):
+        append_attempt(after_digest=digest_set(canonical), **{**args, "persisted_experience_ids": ["not-present"]})
+    assert growth_status("agentos-core", data_root=tmp_path)["attempt_count"] == 0
