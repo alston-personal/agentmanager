@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_public_discovery_contract.py'
+      - 'scripts/persona_threads_keyword_probe.py'
       - 'tests/test_persona_public_discovery_contract.py'
+      - 'tests/test_persona_threads_keyword_probe.py'
       - '.github/workflows/mio-public-discovery-contract.yml'
   push:
     branches: [main]
@@ -30,4 +32,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Validate bounded no-write public discovery projection
-        run: python3 -m unittest tests.test_persona_public_discovery_contract -v
+        run: python3 -m unittest tests.test_persona_public_discovery_contract tests.test_persona_threads_keyword_probe -v
