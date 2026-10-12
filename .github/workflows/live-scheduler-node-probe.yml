@@ -15,7 +15,15 @@ permissions:
   id-token: write
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'live_scheduler_node_probe=PASS' .github/workflows/live-scheduler-node-probe.yml
+
   probe:
+    if: github.event_name == 'push'
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
