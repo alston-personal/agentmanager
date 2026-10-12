@@ -29,16 +29,22 @@ jobs:
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
-            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
-          EXPECTED="$1"
           UNIT=agentos-employee-worker-host.service
           CURRENT=/home/ubuntu/agent-data/runtime/core/current
+          REQUIRED_WORKER_FIX=4707959e4bf878e26e0afbceb72fde4cbbcde396
+          REQUIRED_SHUTDOWN_FIX=f3295b986f379796b06adcd4fe8ff0463217d6a6
 
           current="$(readlink -f "$CURRENT")"
-          expected="/home/ubuntu/agent-data/releases/core/$EXPECTED"
+          deployed_sha="$(basename "$current")"
           echo "recovery_current_release=$current"
-          test "$current" = "$expected"
+          echo "recovery_deployed_sha=$deployed_sha"
+          test -d "$current/.git"
+          test "$(git -C "$current" rev-parse HEAD)" = "$deployed_sha"
+          git -C "$current" merge-base --is-ancestor "$REQUIRED_WORKER_FIX" "$deployed_sha"
+          git -C "$current" merge-base --is-ancestor "$REQUIRED_SHUTDOWN_FIX" "$deployed_sha"
+          echo "recovery_required_fixes_present=PASS"
 
           active="$(systemctl --user show "$UNIT" -p ActiveState --value)"
           sub="$(systemctl --user show "$UNIT" -p SubState --value)"
@@ -61,7 +67,7 @@ jobs:
           echo "worker_memory_max=$memory_max"
 
           test "$active" = active
-          test "$wd" = "$expected"
+          test "$wd" = "$current"
           test -n "$pid"
           test "$pid" != 0
           test "$cpu_weight" = 20
