@@ -1,6 +1,6 @@
 name: Dispatch Runtime Repair 20261012
 # quarantine-trigger: tracked-checkout-backup
-# diagnostic-trigger: runtime-converge-preflight
+# diagnostic-trigger: runtime-converge-dirty-paths
 
 on:
   pull_request:

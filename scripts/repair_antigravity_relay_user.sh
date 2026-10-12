@@ -93,6 +93,14 @@ TRACKED_DIRTY_COUNT="$(git -C "$REPO" status --porcelain=v1 --untracked-files=no
 HEAD_MATCH=0
 [ "$CURRENT_HEAD" = "$SOURCE_COMMIT" ] && HEAD_MATCH=1
 echo "antigravity_repair_stage=runtime_preflight:head_match=$HEAD_MATCH:tracked_dirty_count=$TRACKED_DIRTY_COUNT"
+if [ "$TRACKED_DIRTY_COUNT" != "0" ]; then
+  git -C "$REPO" status --porcelain=v1 --untracked-files=no | while IFS= read -r line; do
+    status="${line:0:2}"
+    path="${line:3}"
+    safe_path="$(printf '%s' "$path" | tr -cd 'A-Za-z0-9._/@+-')"
+    echo "antigravity_repair_stage=runtime_preflight_dirty:status=$status:path=$safe_path"
+  done
+fi
 
 if [ "$TRACKED_DIRTY_COUNT" -gt 0 ]; then
   REPAIR_STAGE="quarantine_tracked_checkout"
