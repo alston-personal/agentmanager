@@ -1,0 +1,64 @@
+name: Live Scheduler Node Probe
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/live-scheduler-node-probe.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/live-scheduler-node-probe.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'live_scheduler_node_probe=PASS' .github/workflows/live-scheduler-node-probe.yml
+
+  probe:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Mint scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Read live scheduler projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20             -H "Authorization: Bearer $TOKEN"             https://studio.milkcat.org/dashboard/api/agentos/v1/controller/scheduler             > "$RUNNER_TEMP/scheduler.json"
+          python3 - "$RUNNER_TEMP/scheduler.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          out={
+            'schema':d.get('schema'),
+            'node':d.get('node'),
+            'updated_at':d.get('updated_at'),
+            'failover_candidates':d.get('failover_candidates') or [],
+            'workers':d.get('workers') or {},
+            'queue_depth':d.get('queue_depth') or {},
+          }
+          print(json.dumps(out,indent=2,ensure_ascii=False))
+          print('live_scheduler_node_probe=PASS')
+          PY
