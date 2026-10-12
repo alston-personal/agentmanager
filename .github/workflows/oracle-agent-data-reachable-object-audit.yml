@@ -1,0 +1,66 @@
+name: Oracle Agent Data Reachable Object Audit
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-agent-data-reachable-object-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect largest reachable objects without verify-pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          REPO="$HOME/agent-data"
+          TMP="$(mktemp)"
+          trap 'rm -f "$TMP"' EXIT
+
+          echo "disk_before=$(df -P / | awk 'NR==2{print $5}')"
+          echo "reachable_scan=START"
+
+          git -C "$REPO" rev-list --objects --all \
+            | git -C "$REPO" cat-file --batch-check='%(objectname) %(objecttype) %(objectsize) %(rest)' \
+            | awk '$2=="blob"{print $3 "\t" $1 "\t" substr($0,index($0,$4))}' \
+            | sort -nr \
+            | head -n 40 > "$TMP"
+
+          python3 - "$TMP" <<'PY'
+          import re,sys
+          rows=open(sys.argv[1],encoding='utf-8',errors='replace').read().splitlines()
+          sensitive=re.compile(r'(^|/)(secrets?|credentials?|tokens?|cookies?)(/|$)|api[_-]?key|password',re.I)
+          total=0
+          for i,line in enumerate(rows,1):
+              size,sha,path=(line.split('\t',2)+['',''])[:3]
+              try: n=int(size)
+              except Exception: continue
+              total+=n
+              if sensitive.search(path):
+                  path='[REDACTED_SENSITIVE_PATH]'
+              print(f"reachable_blob_rank={i} size={n} sha={sha[:12]} path={path[:240]}")
+          print(f"top40_reachable_blob_total_bytes={total}")
+          print(f"top40_count={len(rows)}")
+          PY
+
+          echo "reachable_scan=DONE"
+          git -C "$REPO" count-objects -vH | sed 's/^/git_/'
+          echo "disk_after=$(df -P / | awk 'NR==2{print $5}')"
+          echo "oracle_agent_data_reachable_object_audit=PASS"
+          REMOTE
