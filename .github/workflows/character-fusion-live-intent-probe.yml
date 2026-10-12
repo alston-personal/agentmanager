@@ -1,0 +1,56 @@
+name: Character Fusion Live Intent Probe
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-live-intent-probe.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-live-intent-probe.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'studio.character-fusion' .github/workflows/character-fusion-live-intent-probe.yml
+
+  probe:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Mint scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1]))['value'])
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+      - name: Verify live Character Fusion intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20 -H "Authorization: Bearer $TOKEN"             https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch > "$RUNNER_TEMP/catalog.json"
+          python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          rows=d.get('intents') or d.get('catalog') or []
+          found=[r for r in rows if isinstance(r,dict) and r.get('capability')=='studio.character-fusion' and r.get('operation')=='deploy']
+          print(json.dumps(found,ensure_ascii=False))
+          print('character_fusion_live_intent='+('PASS' if found else 'MISSING'))
+          raise SystemExit(0 if found else 2)
+          PY
