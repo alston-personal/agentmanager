@@ -1,0 +1,42 @@
+name: Oracle User Delegate Controller Detail
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-user-delegate-controller-detail.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect user manager delegate controller detail
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          echo "delegate=$(systemctl show user@1001.service -p Delegate --value 2>/dev/null || true)"
+          echo "delegate_controllers=$(systemctl show user@1001.service -p DelegateControllers --value 2>/dev/null || true)"
+          echo "dropin_paths=$(systemctl show user@1001.service -p DropInPaths --value 2>/dev/null || true)"
+
+          echo "unit_fragment_begin"
+          systemctl cat user@1001.service --no-pager 2>/dev/null             | grep -E '^# /|^\[Service\]|^Delegate=|^Slice=|^After=|^Requires='             | sed -n '1,120p' || true
+          echo "unit_fragment_end"
+
+          echo "oracle_user_delegate_controller_detail=PASS"
+          REMOTE
