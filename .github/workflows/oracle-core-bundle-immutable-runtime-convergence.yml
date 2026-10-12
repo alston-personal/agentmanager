@@ -290,7 +290,8 @@ jobs:
 
           if [ -f "$WORKER_SYSTEM_MARKER" ]; then
             test -f "$RELEASE/.agent/scripts/agentos-employee-worker-host-system.service"
-            sudo -n install -o root -g root -m 0644               "$RELEASE/.agent/scripts/agentos-employee-worker-host-system.service" "$WORKER_SYSTEM_UNIT"
+            sudo -n install -o root -g root -m 0644 \
+              "$RELEASE/.agent/scripts/agentos-employee-worker-host-system.service" "$WORKER_SYSTEM_UNIT"
             sudo -n systemctl daemon-reload
             sudo -n systemctl restart agentos-employee-worker-host.service
             sudo -n systemctl is-active --quiet agentos-employee-worker-host.service
@@ -305,6 +306,9 @@ jobs:
             test "$(cat "$worker_root/cpu.weight")" = "20"
             test "$(cat "$worker_root/memory.max")" = "1073741824"
             grep -Eq '^default[[:space:]]+20
+            echo "core_bundle_runtime=agentos-employee-worker-host.service:system-immutable"
+            echo "core_bundle_worker_kernel_resource_boundary=PASS"
+          fi
           echo "core_bundle_source_commit=$SOURCE_COMMIT"
           echo "core_bundle_release=$RELEASE"
           echo "core_bundle_current=$CURRENT"
