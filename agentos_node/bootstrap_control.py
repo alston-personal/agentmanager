@@ -76,6 +76,7 @@ ACTION_DEPLOY_MIO_TRYON = "agentos.mio_tryon.deploy"
 ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
 ACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
 ACTION_DEPLOY_STUDIO_WEB_MIO = "agentos.studio_web_mio.deploy"
+ACTION_DEPLOY_CHARACTER_FUSION_DASHBOARD = "agentos.character_fusion_dashboard.deploy"
 ACTION_INSTALL_MIO_OBSERVER_TIMER = "agentos.mio_observer.timer.install"
 ACTION_ACTIVATE_OURSONG_PERSONA = "agentos.oursong_persona.activate"
 ACTION_PROBE_OURSONG_PERSONA = "agentos.oursong_persona.status"
@@ -143,6 +144,7 @@ ALLOWED_ACTIONS = {
     ACTION_INSTALL_ORACLE_EXEC,
     ACTION_PROJECT_MIO_OBSERVER,
     ACTION_DEPLOY_STUDIO_WEB_MIO,
+    ACTION_DEPLOY_CHARACTER_FUSION_DASHBOARD,
     ACTION_INSTALL_MIO_OBSERVER_TIMER,
     ACTION_ACTIVATE_OURSONG_PERSONA,
     ACTION_PROBE_OURSONG_PERSONA,
@@ -359,6 +361,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_INSTALL_ORACLE_EXEC,
         ACTION_PROJECT_MIO_OBSERVER,
         ACTION_DEPLOY_STUDIO_WEB_MIO,
+        ACTION_DEPLOY_CHARACTER_FUSION_DASHBOARD,
         ACTION_INSTALL_MIO_OBSERVER_TIMER,
         ACTION_ACTIVATE_OURSONG_PERSONA,
         ACTION_PROBE_OURSONG_PERSONA,
@@ -1295,6 +1298,12 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             timeout=600,
             source_commit=source_commit,
             env_extra={"AGENTOS_STUDIO_COMMIT":str(params.get("studio_commit") or "")},
+        )
+    if action == ACTION_DEPLOY_CHARACTER_FUSION_DASHBOARD:
+        return _run_canonical_script(
+            "scripts/deploy_dashboard_blue_green_user.sh",
+            timeout=900,
+            source_commit=source_commit,
         )
     if action == ACTION_INSTALL_MIO_OBSERVER_TIMER:
         return _run_canonical_script(
