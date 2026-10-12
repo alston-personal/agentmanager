@@ -18,7 +18,7 @@ MAX_CANDIDATES = 30
 
 
 def triage_public_discovery(projection, *, visited_authors=(), contacted_posts=(),
-                            blocklisted_authors=(), max_candidates=5):
+                            blocklisted_authors=(), max_candidates=5, persona_ir=None):
     if not isinstance(projection, dict) or projection.get("schema") != "agentos.persona-public-discovery/v1" or projection.get("status") != "PASS" or projection.get("write_allowed") is not False:
         return {"schema": SCHEMA, "status": "BLOCKED", "reason": "VERIFIED_PROJECTION_REQUIRED", "items": [], "write_allowed": False}
     rows = projection.get("items")
@@ -32,6 +32,24 @@ def triage_public_discovery(projection, *, visited_authors=(), contacted_posts=(
     visited = {str(x).lower().lstrip("@") for x in visited_authors}
     contacted = {str(x) for x in contacted_posts}
     blocked = {str(x).lower().lstrip("@") for x in blocklisted_authors}
+    # Prefer the current validated persona interests over static defaults.
+    # Never treat arbitrary unverified platform text as a new persona interest.
+    topics = TOPICS
+    if persona_ir is not None:
+        interests = (persona_ir.get("current_self") or {}).get("interests_with_evidence") if isinstance(persona_ir, dict) else None
+        if not isinstance(interests, list) or len(interests) > 20:
+            return {"schema": SCHEMA, "status": "BLOCKED", "reason": "PERSONA_IR_INVALID", "items": [], "write_allowed": False}
+        derived = {}
+        for interest in interests:
+            if not isinstance(interest, dict) or not isinstance(interest.get("topic"), str) or not isinstance(interest.get("basis"), list) or not interest["basis"]:
+                continue
+            topic = interest["topic"].strip()
+            if not 1 <= len(topic) <= 45:
+                continue
+            derived[topic] = (topic,)
+        if not derived:
+            return {"schema": SCHEMA, "status": "BLOCKED", "reason": "NO_EVIDENCED_INTERESTS", "items": [], "write_allowed": False}
+        topics = derived
     ranked = []
     for row in rows:
         if not isinstance(row, dict) or row.get("reply_allowed") is not False or row.get("decision") != "UNDECIDED":
@@ -41,7 +59,7 @@ def triage_public_discovery(projection, *, visited_authors=(), contacted_posts=(
             continue
         if author.lower() in blocked or post in contacted or author.lower() == str(projection.get("account", "")).lower():
             continue
-        matches = [lane for lane, terms in TOPICS.items() if any(term in text for term in terms)]
+        matches = [lane for lane, terms in topics.items() if any(term in text for term in terms)]
         if not matches:
             continue
         ranked.append({"post_id": post, "author": author, "topic_lanes": matches,
