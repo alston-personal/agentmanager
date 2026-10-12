@@ -16,6 +16,11 @@ on:
         required: false
         default: '{}'
         type: string
+      wait_seconds:
+        description: Bounded receipt wait in seconds
+        required: false
+        default: 720
+        type: number
   workflow_call:
     inputs:
       capability:
@@ -28,6 +33,10 @@ on:
         required: false
         default: '{}'
         type: string
+      wait_seconds:
+        required: false
+        default: 720
+        type: number
 
 permissions:
   contents: read
@@ -36,7 +45,7 @@ permissions:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
     steps:
@@ -48,6 +57,7 @@ jobs:
           CAPABILITY: ${{ inputs.capability }}
           OPERATION: ${{ inputs.operation }}
           PAYLOAD_JSON: ${{ inputs.payload_json }}
+          WAIT_SECONDS: ${{ inputs.wait_seconds }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -58,6 +68,8 @@ jobs:
           assert re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,95}",op),op
           payload=json.loads(os.environ.get("PAYLOAD_JSON") or "{}")
           assert isinstance(payload,dict)
+          wait=int(os.environ.get("WAIT_SECONDS") or "720")
+          assert 30 <= wait <= 1200, wait
           encoded=json.dumps(payload,separators=(",",":"),ensure_ascii=False)
           assert len(encoded)<=8000
           print("agentos_dispatch_envelope=PASS")
@@ -88,9 +100,12 @@ jobs:
           CAPABILITY: ${{ inputs.capability }}
           OPERATION: ${{ inputs.operation }}
           PAYLOAD_JSON: ${{ inputs.payload_json }}
+          WAIT_SECONDS: ${{ inputs.wait_seconds }}
         run: |
           set -euo pipefail
-          AGENTOS_DISPATCH_WAIT_SECONDS=720             bash scripts/agentos_dispatch.sh               "$CAPABILITY" "$OPERATION" "$GITHUB_SHA"               --payload-json "$PAYLOAD_JSON"               | tee "$RUNNER_TEMP/agentos-dispatch-receipt.txt"
+          test "$WAIT_SECONDS" -ge 30
+          test "$WAIT_SECONDS" -le 1200
+          AGENTOS_DISPATCH_WAIT_SECONDS="$WAIT_SECONDS"             bash scripts/agentos_dispatch.sh               "$CAPABILITY" "$OPERATION" "$GITHUB_SHA"               --payload-json "$PAYLOAD_JSON"               | tee "$RUNNER_TEMP/agentos-dispatch-receipt.txt"
           grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/agentos-dispatch-receipt.txt"
           echo "agentos_dispatch=PASS"
 
