@@ -136,3 +136,6 @@ The Growth Auditor must classify conservatively:
 - G5 is longitudinal and must not be inferred from one event.
 
 See `docs/GROWTH_AUDITOR.md` for the runtime contract.
+
+
+Architecture-sensitive execution that reuses prior validated experience MUST preserve that reuse through the durable work item. The common verified completion seam emits the Growth observation into the data-layer inbox; executors must not write the Growth Proof ledger directly. Observer failure must never invalidate an already verified task completion.
