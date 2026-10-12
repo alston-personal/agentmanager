@@ -1,0 +1,31 @@
+name: Dispatch Runtime Repair 20261012
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/dispatch-runtime-repair-20261012.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/dispatch-runtime-repair-20261012.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'agentos.runtime' .github/workflows/dispatch-runtime-repair-20261012.yml
+
+  repair:
+    if: github.event_name == 'push'
+    needs: validate
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: agentos.runtime
+      operation: repair
+      payload_json: '{}'
