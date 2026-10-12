@@ -552,21 +552,17 @@ if __name__ == "__main__":
     unittest.main()
 
 
-def test_local_ocr_failure_is_reviewable_without_vision_provider(tmp_path, monkeypatch):
-    from services.invoice_intake import invoice_core
-    from PIL import Image
-    from io import BytesIO
-    image = Image.new("RGB", (100, 70), "white")
-    buffer = BytesIO()
-    image.save(buffer, format="PNG")
-    store = invoice_core.InvoiceStore(tmp_path / "invoice-reviewable")
-    receipt = store.ingest(buffer.getvalue(), "test.png", "image/png")
-    monkeypatch.setattr(invoice_core, "extract_legacy_invoice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("local_ocr_broken")))
-    monkeypatch.setattr(invoice_core.vision_ocr, "configuration", lambda: {"mode": "off", "status": "DISABLED"})
-    processed = store.process(receipt["invoice_id"])
-    saved = store.get_invoice(receipt["invoice_id"])
-    assert processed["status"] == "recognition_insufficient"
-    assert saved["status"] == "recognition_insufficient"
-    assert saved["invoice_id"] == receipt["invoice_id"]
-    reviewed = store.review(receipt["invoice_id"], "test-operator", {"vendor_name": "人工確認商家"})
-    assert reviewed["status"] == "reviewed"
+class InvoiceNoProviderFallbackTests(unittest.TestCase):
+    def test_local_ocr_failure_is_reviewable_without_vision_provider(self):
+        from services.invoice_intake import invoice_core
+        with tempfile.TemporaryDirectory() as tmp:
+            store = invoice_core.InvoiceStore(Path(tmp) / "invoice-reviewable")
+            receipt = store.ingest(jpeg_bytes(), "test.jpg", "image/jpeg")
+            with patch.object(invoice_core, "extract_legacy_invoice", side_effect=RuntimeError("local_ocr_broken")), \
+                 patch.object(invoice_core.vision_ocr, "configuration", return_value={"mode": "off", "status": "DISABLED"}):
+                processed = store.process(receipt["invoice_id"])
+            saved = store.get_invoice(receipt["invoice_id"])
+            self.assertEqual(processed["status"], "recognition_insufficient")
+            self.assertEqual(saved["status"], "recognition_insufficient")
+            reviewed = store.review(receipt["invoice_id"], "test-operator", {"vendor_name": "人工確認商家"})
+            self.assertEqual(reviewed["status"], "reviewed")
