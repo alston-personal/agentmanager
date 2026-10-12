@@ -1,0 +1,55 @@
+name: Oracle User Manager Delegate Probe
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-user-manager-delegate-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Probe user manager delegation prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          echo "systemd_version=$(systemd --version | head -n1)"
+          echo "kernel=$(uname -r)"
+          echo "linger=$(loginctl show-user ubuntu -p Linger --value 2>/dev/null || true)"
+          echo "user_manager_active=$(systemctl is-active user@1001.service 2>/dev/null || true)"
+          echo "user_manager_delegate=$(systemctl show user@1001.service -p Delegate --value 2>/dev/null || true)"
+          echo "user_manager_slice=$(systemctl show user@1001.service -p Slice --value 2>/dev/null || true)"
+          echo "user_manager_control_group=$(systemctl show user@1001.service -p ControlGroup --value 2>/dev/null || true)"
+
+          echo "user_slice_subtree=$(cat /sys/fs/cgroup/user.slice/user-1001.slice/cgroup.subtree_control 2>/dev/null || true)"
+          echo "user_manager_subtree=$(cat /sys/fs/cgroup/user.slice/user-1001.slice/user@1001.service/cgroup.subtree_control 2>/dev/null || true)"
+          echo "system_slice_controllers=$(cat /sys/fs/cgroup/system.slice/cgroup.controllers 2>/dev/null || true)"
+          echo "system_slice_subtree=$(cat /sys/fs/cgroup/system.slice/cgroup.subtree_control 2>/dev/null || true)"
+
+          echo "enabled_user_services_begin"
+          systemctl --user list-unit-files --state=enabled --type=service --no-legend 2>/dev/null | sed -n '1,80p' || true
+          echo "enabled_user_services_end"
+
+          echo "active_user_services_begin"
+          systemctl --user list-units --state=active --type=service --no-legend 2>/dev/null | sed -n '1,80p' || true
+          echo "active_user_services_end"
+
+          echo "oracle_user_manager_delegate_probe=PASS"
+          REMOTE
