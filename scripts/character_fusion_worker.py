@@ -1077,15 +1077,15 @@ async def main():
         baseline_src={x.get("src","") for x in baseline}
 
         focused=await evaluate(r'''(() => {
-          const inputs=[...document.querySelectorAll('input[aria-label="可編輯的文字"]')]
-            .filter(x=>x.offsetParent!==null && !x.disabled);
-          const el=inputs[0];
+          const editors=[...document.querySelectorAll('.base-prompt-box .ProseMirror[contenteditable="true"], flow-base-prompt-box .ProseMirror[contenteditable="true"]')]
+            .filter(x=>x.offsetParent!==null);
+          const el=editors[0];
           if(!el) return false;
           el.focus();
           return document.activeElement===el;
         })()''')
         if not focused:
-            raise RuntimeError("flow_visible_prompt_input_not_found")
+            raise RuntimeError("flow_prosemirror_prompt_not_found")
 
         await call("Input.dispatchKeyEvent",{"type":"keyDown","modifiers":2,"key":"a","code":"KeyA","windowsVirtualKeyCode":65})
         await call("Input.dispatchKeyEvent",{"type":"keyUp","modifiers":2,"key":"a","code":"KeyA","windowsVirtualKeyCode":65})
@@ -1094,30 +1094,16 @@ async def main():
         await call("Input.insertText",{"text":prompt})
 
         typed=await evaluate(r'''(() => {
-          const el=[...document.querySelectorAll('input[aria-label="可編輯的文字"]')]
-            .find(x=>x.offsetParent!==null && !x.disabled);
-          return el ? {value:(el.value||''),length:(el.value||'').length} : null;
+          const el=[...document.querySelectorAll('.base-prompt-box .ProseMirror[contenteditable="true"], flow-base-prompt-box .ProseMirror[contenteditable="true"]')]
+            .find(x=>x.offsetParent!==null);
+          const value=(el?.innerText||el?.textContent||'').trim();
+          return el ? {value:value.slice(0,240),length:value.length} : null;
         })()''')
         if not typed or int(typed.get("length") or 0) < 20:
             raise RuntimeError(f"flow_prompt_not_typed:{typed}")
 
-        committed=await evaluate(r'''(() => {
-          const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(x=>x.offsetParent!==null);
-          const b=buttons.find(x=>{
-            const aria=(x.getAttribute('aria-label')||'').trim();
-            const title=(x.getAttribute('title')||'').trim();
-            const text=(x.innerText||x.textContent||'').trim();
-            return /^(done|完成|套用|儲存)$/i.test(text) || /完成|套用|儲存/i.test(aria+' '+title);
-          });
-          if(!b) return false;
-          b.click();
-          return true;
-        })()''')
-        if not committed:
-            raise RuntimeError("flow_prompt_commit_button_not_found")
-
         sent=False
-        for _ in range(40):
+        for _ in range(60):
             sent=await evaluate(r'''(() => {
               const buttons=[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null);
               const b=buttons.find(x => (x.getAttribute('aria-label')||'').includes('開始生成'));
