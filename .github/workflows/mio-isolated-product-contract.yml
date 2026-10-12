@@ -2,7 +2,7 @@ name: Mio Isolated Product Contract
 
 on:
   pull_request:
-    branches: [core/integration]
+    branches: [core/integration, feat/mio-product-isolation-contract-20261008]
     paths:
       - 'dashboard/lib/wardrobe-registry.ts'
       - 'dashboard/lib/tryon-jobs.ts'
