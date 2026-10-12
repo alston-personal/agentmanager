@@ -174,6 +174,7 @@ def append_attempt(
     classification: str,
     timestamp: str,
     source_receipt: str | None = None,
+    verified_one_receipt: dict[str, Any] | None = None,
     persisted_experience_ids: list[str] | None = None,
     before_count: int | None = None,
     after_count: int | None = None,
@@ -202,6 +203,7 @@ def append_attempt(
         "classification": classification,
         "timestamp": str(timestamp),
         "source_receipt": source_receipt,
+        "one_receipt_digest": _digest(verified_one_receipt) if verified_one_receipt is not None else None,
         "persisted_experience_ids": sorted(
             set(str(x) for x in (persisted_experience_ids or []) if str(x))
         ),
@@ -239,6 +241,24 @@ def append_attempt(
         if classification in accepted_classes:
             if not source_receipt or not after_digest:
                 raise ValueError("accepted attempt requires source receipt and canonical digest")
+            # Fail closed unless the ONE-owned caller supplies a bound receipt.
+            # This is a structural gate; provenance authentication must be
+            # enforced at the ONE control boundary before calling this method.
+            proof = verified_one_receipt
+            if not isinstance(proof, dict) or proof.get("schema") != "agentos.experience-one-write-receipt/v1":
+                raise ValueError("accepted attempt requires ONE write receipt")
+            required = {
+                "project_id": project_id,
+                "attempt_id": attempt_id,
+                "executor_id": executor_id,
+                "source_node": source_node,
+                "after_digest": after_digest,
+                "source_receipt": source_receipt,
+            }
+            if any(proof.get(key) != value for key, value in required.items()):
+                raise ValueError("ONE write receipt attribution mismatch")
+            if proof.get("accepted") is not True:
+                raise ValueError("ONE write receipt not accepted")
             canonical = read_experience_set(project_id, data_root=data_root)
             if digest_set(canonical) != after_digest:
                 raise ValueError("accepted attempt digest does not match ONE Experience store")
