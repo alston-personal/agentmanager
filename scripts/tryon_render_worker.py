@@ -69,6 +69,26 @@ ORDER = [
 ]
 
 
+# Scoped to this worker process: stop retrying providers that report terminal
+# configuration/credit errors. A service restart permits a fresh health probe.
+_PROVIDER_DISABLED: dict[str, str] = {}
+
+
+def terminal_provider_reason(error: BaseException) -> str | None:
+    message = str(error).lower()
+    if "config_error" in message or "invalid state" in message:
+        return "provider_configuration_error"
+    if any(value in message for value in (
+        "inference_credits_exhausted",
+        "no remaining credits",
+        "insufficient credits",
+        "zerogpu runs limit",
+        "exceeded your zerogpu",
+    )):
+        return "provider_credits_exhausted"
+    return None
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -350,6 +370,10 @@ def inference_provider_reference_try_on(
         board_bytes = board_path.read_bytes()
 
         for provider, model in INFERENCE_PROVIDER_ROUTES:
+            provider_key = f"inference:{provider}:{model}"
+            if provider_key in _PROVIDER_DISABLED:
+                errors.append(f"{provider}:{model}=DISABLED:{_PROVIDER_DISABLED[provider_key]}")
+                continue
             try:
                 client = InferenceClient(
                     provider=provider,
@@ -376,6 +400,9 @@ def inference_provider_reference_try_on(
                     raise RuntimeError("Inference Provider output is unexpectedly small")
                 return str(output), f"{provider}:{model}"
             except Exception as exc:
+                reason = terminal_provider_reason(exc)
+                if reason:
+                    _PROVIDER_DISABLED[provider_key] = reason
                 errors.append(f"{provider}:{model}={type(exc).__name__}:{exc}"[:700])
 
         raise RuntimeError("Inference Providers failed: " + " | ".join(errors))
@@ -465,6 +492,9 @@ def omni_try_on(
         temp_inputs.append(object_path)
 
         for space_id in ANY_ITEM_SPACE_IDS:
+            if space_id in _PROVIDER_DISABLED:
+                errors.append(f"{space_id}=DISABLED:{_PROVIDER_DISABLED[space_id]}")
+                continue
             for attempt in range(1, 4):
                 try:
                     result = any_item_client(space_id).predict(
@@ -479,7 +509,10 @@ def omni_try_on(
                     return str(output_path(result)), space_id
                 except Exception as exc:
                     message = f"{type(exc).__name__}:{exc}"
-                    transient = any(
+                    reason = terminal_provider_reason(exc)
+                    if reason:
+                        _PROVIDER_DISABLED[space_id] = reason
+                    transient = not reason and any(
                         marker in message.lower()
                         for marker in (
                             "502 bad gateway",
@@ -518,14 +551,12 @@ def omni_try_on(
             errors.append(f"inference-providers={type(exc).__name__}:{exc}"[:1200])
 
         detail = " | ".join(errors)
-        quota_exhausted = any(
-            marker in detail.lower()
-            for marker in (
-                "zerogpu runs limit",
-                "exceeded your zerogpu",
-                "quota",
-                "rate limit",
-            )
+        quota_exhausted = (
+            "provider_credits_exhausted" in detail
+            or "inference_credits_exhausted" in detail.lower()
+            or "no remaining credits" in detail.lower()
+            or "zerogpu runs limit" in detail.lower()
+            or "exceeded your zerogpu" in detail.lower()
         )
         code = "any_item_provider_quota_exhausted" if quota_exhausted else "any_item_provider_failed"
         auth_hint = " (HF_TOKEN not configured)" if quota_exhausted and not HF_TOKEN else ""
