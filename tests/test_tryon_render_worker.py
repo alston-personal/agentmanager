@@ -160,6 +160,7 @@ def test_cached_prefix_is_reused_when_new_bag_provider_fails(monkeypatch, tmp_pa
     prefix_path = worker.cache_path(prefix_key)
     prefix_path.parent.mkdir(parents=True, exist_ok=True)
     prefix_path.write_bytes(cached.read_bytes())
+    prefix_path.with_suffix('.json').write_text(json.dumps({'qualityAccepted': True}), encoding='utf-8')
 
     def should_not_rerender_clothing(*args, **kwargs):
         raise AssertionError("cached lower_main must not be re-rendered")
