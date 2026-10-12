@@ -720,3 +720,23 @@ def test_controller_rejects_execution_carrier_fields(field):
     }
     with pytest.raises(ValueError):
         controller.dispatch(body)
+
+
+def test_root_runtime_commands_drop_to_canonical_ubuntu_user(monkeypatch):
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 0)
+    argv = relay._runtime_user_argv([
+        "systemctl", "--user", "is-active", "agentos-realm-fabric.service"
+    ])
+    assert argv[:5] == ["/usr/sbin/runuser", "-u", "ubuntu", "--", "/usr/bin/env"]
+    assert "HOME=/home/ubuntu" in argv
+    assert "XDG_RUNTIME_DIR=/run/user/1001" in argv
+    assert "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus" in argv
+    assert argv[-4:] == [
+        "systemctl", "--user", "is-active", "agentos-realm-fabric.service"
+    ]
+
+
+def test_non_root_runtime_commands_remain_direct(monkeypatch):
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 1001)
+    argv = ["git", "status", "--porcelain"]
+    assert relay._runtime_user_argv(argv) == argv

@@ -18,6 +18,7 @@ from typing import Any
 SCHEMA = "agentos.bootstrap-request/v1"
 RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
+ACTION_RUNTIME_CONVERGE = "agentos.runtime.converge"
 ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
 ACTION_RELAY_STATUS = "agentos.relay.status"
 ACTION_SCHEDULER_STATUS = "agentos.scheduler.status"
@@ -84,6 +85,7 @@ ACTION_EXECUTOR_JOB_INSPECT = "agentos.executor_job.inspect"
 ACTION_GITHUB_ACTIONS_DISPATCH = "agentos.github_actions.workflow_dispatch"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
+    ACTION_RUNTIME_CONVERGE,
     ACTION_RUNNER_WINDOW_PROBE,
     ACTION_RELAY_STATUS,
     ACTION_SCHEDULER_STATUS,
@@ -318,6 +320,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     if source_commit is not None and not COMMIT_RE.fullmatch(source_commit):
         raise ValueError("source_commit must be an exact lowercase 40-hex commit SHA")
     exact_actions = {
+        ACTION_RUNTIME_CONVERGE,
         ACTION_NODE_TRANSACTIONAL_OTA,
         ACTION_NODE_OTA_INSPECT,
         ACTION_DEPLOY_REALM_GATEWAY,
@@ -1094,6 +1097,37 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
                 "AGENTOS_OTA_CANDIDATE_COMMIT": str(params.get("candidate_commit") or ""),
             },
         )
+    if action == ACTION_RUNTIME_CONVERGE:
+        if not source_commit:
+            raise ValueError("runtime converge requires exact source_commit")
+        from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
+
+        request = {
+            "schema": "agentos.runtime-converge-request/v1",
+            "request_id": f"runner-window-runtime-converge-{source_commit}",
+            "node_id": "oracle-core-node",
+            "repository": "alston-personal/agentmanager",
+            "source_ref": "core/integration",
+            "source_commit": source_commit,
+        }
+        dispatcher = ActionRelayRuntimeConvergeDispatcher()
+        submission = dispatcher.submit(request=request)
+        task_id = str(submission.get("task_id") or "")
+        deadline = time.monotonic() + 420.0
+        receipt = None
+        while task_id and time.monotonic() < deadline:
+            receipt = dispatcher.inspect(task_id)
+            if receipt is not None:
+                break
+            time.sleep(1.0)
+        return {
+            "ok": bool(receipt and receipt.get("ok") is True),
+            "source_commit": source_commit,
+            "runtime_converge": receipt or {
+                **submission,
+                "status": "timeout",
+            },
+        }
     if action == ACTION_REPAIR_TRANSPORT:
         env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
         if source_commit:
