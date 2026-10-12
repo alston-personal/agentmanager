@@ -1,0 +1,35 @@
+name: Vision Studio Rain Exit Dispatch Inspect
+
+on:
+  push:
+    branches: [core/integration]
+    paths: ['.github/workflows/vision-studio-rain-exit-dispatch-inspect.yml']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+      REQUEST_ID: agentos.vision_studio.produce-1791789235-fa2fe644
+    steps:
+      - name: Mint credential and inspect dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8'))['value'])
+          PY
+          )"
+          echo "::add-mask::$token"
+          code="$(curl -sS -o "$RUNNER_TEMP/status.json" -w '%{http_code}' --max-time 15             -H "Authorization: Bearer $token"             "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch/requests/$REQUEST_ID" || true)"
+          echo "http=$code"
+          cat "$RUNNER_TEMP/status.json"; echo
+          test "$code" = 200
