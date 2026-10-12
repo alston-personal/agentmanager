@@ -45,6 +45,7 @@ EMPLOYEE_WORKER_WAKE_ROOT="${AGENTOS_EMPLOYEE_WAKE_ROOT:-}"
 EMPLOYEE_WORKER_HOST_STATE_ROOT="${AGENTOS_EMPLOYEE_WORKER_HOST_STATE_ROOT:-$DATA_ROOT/employee-worker-host}"
 EMPLOYEE_WORKER_STATE_ROOT="${AGENTOS_EMPLOYEE_WORKER_STATE_ROOT:-$DATA_ROOT/employee-worker-state}"
 EMPLOYEE_WORKER_NODE_ID="${AGENTOS_EMPLOYEE_WORKER_NODE_ID:-}"
+EMPLOYEE_WORKER_SYSTEM_BOUNDARY_MARKER="$SUPERVISOR_CONFIG_DIR/employee-worker-host-system-boundary"
 
 mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs"
 
@@ -361,8 +362,16 @@ if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
   systemctl --user enable agentos-core-supervisor.service >/dev/null
   systemctl --user restart agentos-core-supervisor.service
   if [ "${AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE:-0}" = "1" ]; then
-    systemctl --user enable agentos-employee-worker-host.service >/dev/null
-    systemctl --user restart agentos-employee-worker-host.service
+    if [ -f "$EMPLOYEE_WORKER_SYSTEM_BOUNDARY_MARKER" ]; then
+      # A separately governed system-level worker owns the singleton when the
+      # marker is present. Keep the user unit rendered for rollback, but never
+      # let immutable convergence revive a second worker process.
+      systemctl --user disable --now agentos-employee-worker-host.service 2>/dev/null || true
+      echo "Employee Worker Host owner: system boundary marker present"
+    else
+      systemctl --user enable agentos-employee-worker-host.service >/dev/null
+      systemctl --user restart agentos-employee-worker-host.service
+    fi
   else
     systemctl --user disable --now agentos-employee-worker-host.service 2>/dev/null || true
   fi

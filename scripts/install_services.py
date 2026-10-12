@@ -27,9 +27,16 @@ def _native_install_failed(result: dict[str, object]) -> bool:
     return isinstance(raw, int) and not isinstance(raw, bool) and raw != 0
 
 
-def _systemd_active(unit: str) -> bool:
+SYSTEM_WORKER_BOUNDARY_MARKER = Path.home() / ".config" / "agentos" / "employee-worker-host-system-boundary"
+
+
+def _systemd_active(unit: str, *, user: bool = True) -> bool:
+    command = ["systemctl"]
+    if user:
+        command.append("--user")
+    command.extend(["is-active", "--quiet", unit])
     completed = subprocess.run(
-        ["systemctl", "--user", "is-active", "--quiet", unit],
+        command,
         capture_output=True,
         text=True,
         check=False,
@@ -52,8 +59,13 @@ def _verify_linux_core_services(result: dict[str, object]) -> str | None:
     if not _systemd_active("agentos-core-supervisor.service"):
         return "core_supervisor_service_not_active"
     if str(os.environ.get("AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE") or "0").strip() == "1":
-        if not _systemd_active("agentos-employee-worker-host.service"):
-            return "employee_worker_host_service_not_active"
+        system_boundary = SYSTEM_WORKER_BOUNDARY_MARKER.is_file()
+        if not _systemd_active("agentos-employee-worker-host.service", user=not system_boundary):
+            return (
+                "employee_worker_host_system_service_not_active"
+                if system_boundary
+                else "employee_worker_host_service_not_active"
+            )
     return None
 
 

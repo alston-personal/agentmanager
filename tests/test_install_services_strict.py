@@ -62,8 +62,36 @@ class StrictInstallServicesTests(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("employee_worker_host_service_not_active", output)
         self.assertEqual(
-            [call.args[0] for call in active.call_args_list],
-            ["agentos-core-supervisor.service", "agentos-employee-worker-host.service"],
+            [(call.args, call.kwargs) for call in active.call_args_list],
+            [
+                (("agentos-core-supervisor.service",), {}),
+                (("agentos-employee-worker-host.service",), {"user": True}),
+            ],
+        )
+
+
+    def test_system_boundary_marker_requires_system_worker_active(self):
+        marker = Mock()
+        marker.is_file.return_value = True
+        with (
+            patch.object(install_services, "SYSTEM_WORKER_BOUNDARY_MARKER", marker),
+            patch.object(install_services, "_systemd_active", side_effect=[True, False]) as active,
+        ):
+            rc, output = self._run(
+                result={"installed": 1, "mode": "systemd"},
+                env={
+                    "AGENT_MODE": "CORE",
+                    "AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE": "1",
+                },
+            )
+        self.assertEqual(rc, 2)
+        self.assertIn("employee_worker_host_system_service_not_active", output)
+        self.assertEqual(
+            [(call.args, call.kwargs) for call in active.call_args_list],
+            [
+                (("agentos-core-supervisor.service",), {}),
+                (("agentos-employee-worker-host.service",), {"user": False}),
+            ],
         )
 
     def test_disabled_worker_host_is_not_required(self):
