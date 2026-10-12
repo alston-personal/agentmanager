@@ -48,6 +48,7 @@ jobs:
       capability: node.runtime
       operation: converge
       payload_json: '{}'
+      wait_seconds: 900
 
   smoke:
     if: github.event_name == 'push'
