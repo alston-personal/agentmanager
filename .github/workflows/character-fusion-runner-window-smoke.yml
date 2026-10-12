@@ -1,0 +1,53 @@
+name: Character Fusion Runner Window Smoke
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/bootstrap_control.py'
+      - 'agent_core/runner_window.py'
+      - 'scripts/character_fusion_live_smoke_user.sh'
+      - 'tests/test_runner_window.py'
+      - '.github/workflows/character-fusion-runner-window-smoke.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/bootstrap_control.py'
+      - 'agent_core/runner_window.py'
+      - 'scripts/character_fusion_live_smoke_user.sh'
+      - 'tests/test_runner_window.py'
+      - '.github/workflows/character-fusion-runner-window-smoke.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          python3 -m py_compile agentos_node/bootstrap_control.py agent_core/runner_window.py
+          python3 -m pytest -q tests/test_runner_window.py
+          bash -n scripts/character_fusion_live_smoke_user.sh
+
+  converge:
+    if: github.event_name == 'push'
+    needs: validate
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.runtime
+      operation: converge
+      payload_json: '{}'
+
+  smoke:
+    if: github.event_name == 'push'
+    needs: converge
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: studio.character-fusion
+      operation: smoke
+      payload_json: '{}'
