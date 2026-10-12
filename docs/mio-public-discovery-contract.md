@@ -71,3 +71,25 @@ App review and per-account availability may restrict search independently of
 the presence of a public endpoint; do not treat authorization errors or empty
 results as account acceptance. This discovery is documentation only and
 **does not** establish a successful live API call.
+
+### Minimal executable keyword permission probe (still not deployed)
+
+`scripts/persona_threads_keyword_probe.py` can issue **one bounded read-only**
+`GET /keyword_search` via the official Threads endpoint when and only when the
+approved existing binding owner supplies `AGENTOS_THREADS_BOUND_ACCOUNT`,
+`AGENTOS_THREADS_GRANTED_SCOPES`, and
+`AGENTOS_THREADS_ACCESS_TOKEN` through a protected runtime environment.
+It is *not* wired to, or allowed to search, local browser credentials. It sends
+a bearer token as an HTTP header and does not emit it, source content, query
+results, or raw error bodies in its sanitized receipt. It never posts, replies,
+or changes IR. Missing scope or mismatched binding fails closed, as do absent
+credentials. Even a successful response is `UNVERIFIED`, not the stronger
+`public.post.read` acceptance; a separate item-level content/provenance/root
+verification stage is still required.
+
+This script is a **diagnostic integration entry**, not an already installed
+social-runtime capability. There is no assertion that the Oracle binding owner
+currently exports those variables or that official app review is granted.
+An operator should execute it only under the approved existing binding after
+confirming source ownership, preferably through existing governed node
+dispatch. No user needs to paste token values into chat or GitHub.
