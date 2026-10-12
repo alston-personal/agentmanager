@@ -402,3 +402,14 @@ class GptWebUploadNetworkProbeTests(unittest.TestCase):
         self.assertEqual(page.upload_network_probe["responseStatuses"]["403"], 1)
         self.assertNotIn("secret", str(page.upload_network_probe))
         self.assertNotIn("invoice", str(page.upload_network_probe))
+        page.observe_upload_event({"method": "Network.requestWillBeSent", "params": {
+            "requestId": "r2", "request": {"method": "POST",
+            "url": "https://uploads.example.invalid/file?token=private",
+            "headers": {"Cookie": "private"}, "postData": "raw-invoice-image"}}})
+        page.observe_upload_event({"method": "Network.responseReceived", "params": {
+            "requestId": "r2", "response": {"status": 201}}})
+        self.assertEqual(page.upload_network_probe["postRequests"], 2)
+        self.assertEqual(page.upload_network_probe["postHostFamilies"], {"chatgpt": 1, "other": 1})
+        self.assertEqual(page.upload_network_probe["responseStatuses"]["2xx"], 1)
+        self.assertNotIn("uploads.example.invalid", str(page.upload_network_probe))
+        self.assertNotIn("private", str(page.upload_network_probe))
