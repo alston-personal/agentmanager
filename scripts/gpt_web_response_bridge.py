@@ -601,6 +601,25 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
         }
       }
       // Structural-only evidence: never export message text, prompt, or image data.
+      const responseStructure = (() => {
+        // Counts only: no conversation text, prompt, IDs, attributes or URLs.
+        const selectors = {
+          main: 'main', article: 'article',
+          textParagraphs: 'main p', turnCandidates: '[data-testid*="turn"]',
+          assistantCandidates: '[data-testid*="assistant"],[data-message-author-role="assistant"]',
+          markdown: '.markdown,[class*="markdown"]',
+          streaming: '[data-testid*="stream"],[aria-busy="true"]',
+          shadowHosts: '*'
+        };
+        const counts = {};
+        for (const [key, selector] of Object.entries(selectors)) {
+          if (key === 'shadowHosts') continue;
+          counts[key] = Math.min(300, document.querySelectorAll(selector).length);
+        }
+        counts.openShadowRoots = Math.min(300, Array.from(document.querySelectorAll('*'))
+          .filter(el => !!el.shadowRoot).length);
+        return counts;
+      })();
       const frameSummary = Array.from(document.querySelectorAll('iframe')).slice(0, 12).map(el => ({
         visible: el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0,
         sameOrigin: (() => { try { return !!el.contentDocument; } catch (_) { return false; } })()
@@ -662,6 +681,7 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
         readyState: document.readyState,
         roleCounts,
         frameSummary,
+        responseStructure,
         attachmentSummary,
         messageNodes: messageNodes.length,
         composerHasRequest: composerText.includes(%s),
