@@ -85,6 +85,46 @@ def process_visibility():
     return result
 
 
+
+def cdp_launch_hints():
+    """Count only launch-flag categories, not flag values, argv, or identities."""
+    counts = {"debugging_port_flag": 0, "debugging_pipe_flag": 0,
+              "profile_flag": 0, "browser_processes": 0,
+              "proxy_like_processes": 0, "unknown_process_argv": 0}
+    try:
+        procs = Path("/proc").iterdir()
+        for proc in procs:
+            if not proc.name.isdigit():
+                continue
+            try:
+                data = (proc / "cmdline").read_bytes()
+            except OSError:
+                counts["unknown_process_argv"] += 1
+                continue
+            argv = [p.decode("utf-8", "replace") for p in data.split(b"\0") if p]
+            if not argv:
+                continue
+            exe = argv[0].rsplit("/", 1)[-1].lower()
+            browser = any(tag in exe for tag in ("chrom", "brave", "msedge"))
+            proxy = exe in {"socat", "nginx", "haproxy", "ssh", "websockify"}
+            if proxy:
+                counts["proxy_like_processes"] += 1
+            if not browser:
+                continue
+            counts["browser_processes"] += 1
+            if any(arg == "--remote-debugging-port" or arg.startswith("--remote-debugging-port=")
+                   for arg in argv):
+                counts["debugging_port_flag"] += 1
+            if "--remote-debugging-pipe" in argv:
+                counts["debugging_pipe_flag"] += 1
+            if any(arg == "--user-data-dir" or arg.startswith("--user-data-dir=")
+                   for arg in argv):
+                counts["profile_flag"] += 1
+    except OSError:
+        counts["proc_scan_error"] = True
+    return counts
+
+
 def visibility_classification(records, stats):
     """Hints only: no heuristic verifies an account, profile, or namespace."""
     if stats.get("proc_scan_error"):
@@ -107,9 +147,11 @@ def inventory():
                   for p in r["processes"] if p["profile_id"]]
     shared = sorted({p for _, p in identities if len({port for port, q in identities if q == p}) > 1})
     visibility = process_visibility()
+    launch_hints = cdp_launch_hints()
     return {"schema": "agentos.browser_inventory/1", "issue": 1735,
             "read_only": True, "records": records, "shared_profile_ids": shared,
             "process_visibility": visibility,
+            "cdp_launch_hints": launch_hints,
             "process_visibility_classification": visibility_classification(records, visibility),
             "classification": "REVIEW_REQUIRED" if shared else "UNVERIFIED",
             "account_identity_verified": False}

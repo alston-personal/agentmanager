@@ -56,6 +56,24 @@ class InventoryTests(unittest.TestCase):
                          "BROWSER_VISIBLE_PORT_MAPPING_UNRESOLVED")
         self.assertFalse(result["account_identity_verified"])
 
+    def test_launch_hints_do_not_change_identity_verdict(self):
+        fake = {"debugging_port_flag": 1, "debugging_pipe_flag": 0,
+                "profile_flag": 1, "browser_processes": 2,
+                "proxy_like_processes": 1, "unknown_process_argv": 0}
+        with patch.object(module, "browser_processes", return_value=[]), patch.object(
+            module, "targets", return_value={"state": "CDP_READY", "page_hosts": []}
+        ), patch.object(module, "cdp_launch_hints", return_value=fake), patch.object(
+            module, "process_visibility", return_value={
+                "pid_entries": 2, "cmdline_readable": 2,
+                "cmdline_permission_denied": 0, "cmdline_other_errors": 0,
+                "chromium_like_processes": 2
+            }
+        ):
+            result = module.inventory()
+        self.assertEqual(result["cdp_launch_hints"], fake)
+        self.assertFalse(result["account_identity_verified"])
+        self.assertEqual(result["classification"], "UNVERIFIED")
+
     def test_distinct_profiles_still_do_not_prove_login(self):
         with patch.object(module, "browser_processes", side_effect=lambda port: [
             {"pid": port, "profile_id": str(port), "profile_explicit": True}
