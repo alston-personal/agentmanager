@@ -76,6 +76,17 @@ def test_attempt_is_idempotent_and_status_is_queryable(tmp_path: Path) -> None:
     store_path.write_text(json.dumps(canonical), encoding="utf-8")
     args["after_digest"] = digest_set(canonical)
 
+    args["verified_one_receipt"] = {
+        "schema": "agentos.experience-one-write-receipt/v1",
+        "project_id": args["project_id"],
+        "attempt_id": args["attempt_id"],
+        "executor_id": args["executor_id"],
+        "source_node": args["source_node"],
+        "after_digest": args["after_digest"],
+        "source_receipt": args["source_receipt"],
+        "accepted": True,
+    }
+
     first = append_attempt(**args)
     second = append_attempt(**args)
     assert first["appended"] is True
@@ -140,7 +151,20 @@ def test_claimed_accepted_experience_requires_matching_one_snapshot(tmp_path: Pa
         persisted_experience_ids=["core.a.v1"], before_count=0,
         after_count=1, data_root=tmp_path,
     )
-    with pytest.raises(ValueError, match="digest"):
+    args["verified_one_receipt"] = {
+        "schema": "agentos.experience-one-write-receipt/v1",
+        "project_id": args["project_id"],
+        "attempt_id": args["attempt_id"],
+        "executor_id": args["executor_id"],
+        "source_node": args["source_node"],
+        "after_digest": digest_set(canonical),
+        "source_receipt": args["source_receipt"],
+        "accepted": True,
+    }
+    without_proof = {k: v for k, v in args.items() if k != "verified_one_receipt"}
+    with pytest.raises(ValueError, match="ONE write receipt"):
+        append_attempt(after_digest=digest_set(canonical), **without_proof)
+    with pytest.raises(ValueError, match="attribution mismatch"):
         append_attempt(after_digest="sha256:" + "0" * 64, **args)
     with pytest.raises(ValueError, match="count"):
         append_attempt(after_digest=digest_set(canonical), **{**args, "after_count": 2})
