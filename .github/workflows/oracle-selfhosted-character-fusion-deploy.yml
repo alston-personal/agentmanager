@@ -1,10 +1,6 @@
 name: Oracle Selfhosted Character Fusion Deploy
 
 on:
-  push:
-    branches: [core/integration]
-    paths:
-      - '.github/workflows/oracle-selfhosted-character-fusion-deploy.yml'
   workflow_dispatch:
 
 permissions:
