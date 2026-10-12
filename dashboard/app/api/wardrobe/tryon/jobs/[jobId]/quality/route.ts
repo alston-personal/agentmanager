@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'node:fs';
+import path from 'node:path';
+import { AGENT_DATA_ROOT } from '@/lib/data-root';
 import { verifyToken } from '@/lib/auth';
 import { isMilkcatAdmin } from '@/lib/auth/roles';
 import { readJob, writeJob } from '@/lib/tryon-jobs';
@@ -55,6 +58,27 @@ export async function POST(
       },
     };
     writeJob(job);
+    // Review decisions also govern cache eligibility. Never approve a cache
+    // using an untrusted client-supplied path or key.
+    const cacheKey = job.output.cacheKey;
+    if (typeof cacheKey === 'string' && /^[0-9a-f]{64}$/.test(cacheKey)) {
+      const dir = path.join(AGENT_DATA_ROOT, 'projects', 'dressup-simulator', 'render_cache');
+      const asset = path.join(dir, cacheKey + '.webp');
+      if (fs.existsSync(asset) && fs.statSync(asset).size > 1000) {
+        const sidecar = path.join(dir, cacheKey + '.json');
+        const temporary = sidecar + '.' + process.pid + '.tmp';
+        const receipt = {
+          schema: 'agentos.tryon-cache-review/v1',
+          cacheKey,
+          qualityAccepted: accepted,
+          reviewedAt: job.output.quality.checkedAt,
+          reviewJobId: jobId,
+          issues: review.issues,
+        };
+        fs.writeFileSync(temporary, JSON.stringify(receipt) + '\\n', { mode: 0o600 });
+        fs.renameSync(temporary, sidecar);
+      }
+    }
     return NextResponse.json({ ok: true, jobId, quality: job.output.quality });
   } catch {
     return NextResponse.json({ error: 'Invalid review or job ID' }, { status: 400 });
