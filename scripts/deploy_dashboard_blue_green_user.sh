@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_SHA="${1:?source sha required}"
-RUN_ID="${2:?run id required}"
-RUN_ATTEMPT="${3:?run attempt required}"
+SOURCE_SHA="${1:-${AGENTOS_SOURCE_COMMIT:-}}"
+RUN_ID="${2:-${AGENTOS_RUN_ID:-$(date +%s)}}"
+RUN_ATTEMPT="${3:-${AGENTOS_RUN_ATTEMPT:-1}}"
+
+: "${SOURCE_SHA:?source sha required}"
 
 REPO=/home/ubuntu/agentmanager
 RELEASE_ROOT=/home/ubuntu/agent-data/releases/dashboard-blue-green
