@@ -1,0 +1,65 @@
+name: Character Fusion Runner Window Rollout
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-runner-window-rollout.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-runner-window-rollout.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate rollout contract
+        run: |
+          set -euo pipefail
+          grep -Fq 'node.runtime' .github/workflows/character-fusion-runner-window-rollout.yml
+          grep -Fq 'studio.character-fusion' .github/workflows/character-fusion-runner-window-rollout.yml
+          grep -Fq 'character_fusion_runner_window_rollout=PASS' .github/workflows/character-fusion-runner-window-rollout.yml
+
+  converge:
+    if: github.event_name == 'push'
+    needs: validate
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.runtime
+      operation: converge
+      payload_json: '{}'
+
+  deploy:
+    if: github.event_name == 'push'
+    needs: converge
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: studio.character-fusion
+      operation: deploy
+      payload_json: '{}'
+
+  accept:
+    if: github.event_name == 'push'
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Public Character Fusion acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          session_code="$(curl -sS -o /tmp/session -w '%{http_code}' --retry 3 --retry-all-errors --max-time 15             https://studio.milkcat.org/dashboard/api/auth/session || true)"
+          fusion_code="$(curl -sS -o /tmp/fusion -w '%{http_code}' --retry 3 --retry-all-errors --max-time 15             https://studio.milkcat.org/dashboard/api/character-fusion/v1/jobs/__probe__ || true)"
+          echo "dashboard_public_session_http=$session_code"
+          echo "character_fusion_public_unauth_http=$fusion_code"
+          test "$session_code" = 200
+          test "$fusion_code" = 401
+          grep -Fq 'Login required' /tmp/fusion
+          echo 'character_fusion_runner_window_rollout=PASS'
