@@ -298,7 +298,21 @@ export function writeCanonicalGarment(
       note,
     },
     acquisition: { state: 'want_to_try', owned: false, worn: false },
-    tryOn: { state: 'ready_for_tryon', asset: null },
+    // An image URL is not a canonical isolated garment render. Do not expose
+    // imported retail metadata as try-on ready until the product-only artifact
+    // and its quality receipt are actually produced.
+    visualIR: {
+      schema: 'agentos.garment-visual-ir/v1',
+      state: 'pending_extraction',
+      sourceImageUrl: product.imageUrl,
+      garmentOnlyAsset: null,
+      garmentOnlyMask: null,
+      silhouette: null,
+      material: null,
+      color: product.variant,
+      extractionReceipt: null,
+    },
+    tryOn: { state: 'needs_isolated_render', asset: null },
   };
   const tmp = destination + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
