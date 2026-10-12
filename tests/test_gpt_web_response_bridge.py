@@ -454,3 +454,14 @@ class NativeGuiUploadProbeContractTests(unittest.TestCase):
         src=inspect.getsource(CdpPage.call)
         self.assertIn("Page.fileChooserOpened",src)
         self.assertIn("backendNodeId",src)
+
+
+class NativeChooserMenuContractTests(unittest.TestCase):
+    def test_probe_supports_scoped_second_click_and_no_submit(self):
+        from pathlib import Path
+        src=Path("scripts/gpt_web_gui_upload_probe.py").read_text(encoding="utf-8")
+        self.assertIn("ATTACH_MENU_UPLOAD_ITEM_NOT_FOUND",src)
+        self.assertIn("FILE_CHOOSER_NOT_OPENED_AFTER_MENU",src)
+        self.assertIn("'[role=\"menuitem\"]",src)
+        self.assertNotIn("Input.insertText",src)
+        self.assertNotIn("_click_send(",src)
