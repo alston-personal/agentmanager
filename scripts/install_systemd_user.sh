@@ -317,6 +317,13 @@ EnvironmentFile=$ENV_FILE
 ExecStart=$PYTHON_BIN scripts/lobster.py --loop
 Restart=always
 RestartSec=30
+# Lobster may be blocked inside a provider subprocess for up to several minutes.
+# A service restart/deploy must not inherit that task timeout and stall the control plane.
+# systemd owns the full cgroup, so after the bounded grace period it terminates the
+# provider child together with Lobster instead of waiting for Python's 300s task timeout.
+TimeoutStopSec=15s
+KillMode=control-group
+SendSIGKILL=yes
 StandardOutput=append:$DATA_ROOT/logs/lobster.log
 StandardError=append:$DATA_ROOT/logs/lobster.log
 
