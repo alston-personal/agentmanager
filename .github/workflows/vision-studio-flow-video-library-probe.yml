@@ -105,12 +105,21 @@ jobs:
                 href=p.get("href") or ""
                 if not href: continue
                 await ev("location.href="+json.dumps("https://flow.google.com"+href)+";true")
-                await asyncio.sleep(4)
+                # Give Flow enough time to hydrate the project instead of sampling
+                # the transient "載入中…" shell.
+                for _ in range(12):
+                  await asyncio.sleep(1)
+                  ready=await ev(r'''(() => {
+                    const t=(document.body.innerText||'').replace(/\s+/g,' ');
+                    return !/載 入 中|載入中|loading/i.test(t);
+                  })()''')
+                  if ready: break
                 state=await ev(r'''(() => {
                   const clean=s=>(s||'').replace(/\s+/g,' ').trim();
                   const vids=[...document.querySelectorAll('video')].map(e=>({src:(e.currentSrc||e.src||'').slice(0,700),poster:(e.poster||'').slice(0,500),duration:e.duration||0}));
                   const res=performance.getEntriesByType('resource').map(x=>x.name||'').filter(u=>/video|mp4|webm|googlevideo|videoplayback|blob/i.test(u)).slice(-80);
-                  return {url:location.href,body:clean(document.body.innerText).slice(0,1200),video_count:vids.length,videos:vids,resource_count:res.length,resources:res};
+                  const imgs=[...document.querySelectorAll('img')].map(e=>({src:(e.currentSrc||e.src||'').slice(0,500),alt:(e.alt||'').slice(0,120)})).slice(0,80);
+                  return {url:location.href,body:clean(document.body.innerText).slice(0,1600),video_count:vids.length,videos:vids,img_count:imgs.length,imgs,resource_count:res.length,resources:res};
                 })()''')
                 scan.append({"project":p,"state":state})
               print("flow_project_media_scan="+json.dumps(scan,ensure_ascii=False))
