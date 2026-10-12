@@ -1099,10 +1099,25 @@ async def main():
           return el ? {value:(el.value||''),length:(el.value||'').length} : null;
         })()''')
         if not typed or int(typed.get("length") or 0) < 20:
-            raise RuntimeError(f"flow_prompt_not_committed:{typed}")
+            raise RuntimeError(f"flow_prompt_not_typed:{typed}")
+
+        committed=await evaluate(r'''(() => {
+          const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(x=>x.offsetParent!==null);
+          const b=buttons.find(x=>{
+            const aria=(x.getAttribute('aria-label')||'').trim();
+            const title=(x.getAttribute('title')||'').trim();
+            const text=(x.innerText||x.textContent||'').trim();
+            return /^(done|完成|套用|儲存)$/i.test(text) || /完成|套用|儲存/i.test(aria+' '+title);
+          });
+          if(!b) return false;
+          b.click();
+          return true;
+        })()''')
+        if not committed:
+            raise RuntimeError("flow_prompt_commit_button_not_found")
 
         sent=False
-        for _ in range(20):
+        for _ in range(40):
             sent=await evaluate(r'''(() => {
               const buttons=[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null);
               const b=buttons.find(x => (x.getAttribute('aria-label')||'').includes('開始生成'));
