@@ -84,6 +84,16 @@ show_source() {
   git -C "$REPO" show "$SOURCE_COMMIT:$1"
 }
 
+# Bounded convergence diagnostic: expose no paths or diff content. This is
+# intentionally emitted through the already-public antigravity_repair_stage
+# marker so transport repair can diagnose why node.runtime/converge failed
+# without widening the public receipt surface.
+CURRENT_HEAD="$(git -C "$REPO" rev-parse HEAD)"
+TRACKED_DIRTY_COUNT="$(git -C "$REPO" status --porcelain=v1 --untracked-files=no | wc -l | tr -d ' ')"
+HEAD_MATCH=0
+[ "$CURRENT_HEAD" = "$SOURCE_COMMIT" ] && HEAD_MATCH=1
+echo "antigravity_repair_stage=runtime_preflight:head_match=$HEAD_MATCH:tracked_dirty_count=$TRACKED_DIRTY_COUNT"
+
 REPAIR_STAGE="materialize_relay_runtime"
 show_source agentos_node/__init__.py > "$TMPDIR/__init__.py"
 show_source agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"
