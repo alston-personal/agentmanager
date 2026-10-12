@@ -1,0 +1,63 @@
+name: Character Fusion Runner Window Deploy
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-runner-window-deploy.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-runner-window-deploy.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          bash -n scripts/agentos_dispatch.sh
+          grep -Fq 'studio.character-fusion' agent_core/runner_window.py
+          grep -Fq 'runner_window_dispatch=PASS' scripts/agentos_dispatch.sh
+
+  dispatch:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint trusted Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Dispatch Character Fusion production deploy
+        shell: bash
+        env:
+          AGENTOS_DISPATCH_WAIT_SECONDS: '480'
+        run: |
+          set -euo pipefail
+          bash scripts/agentos_dispatch.sh \
+            studio.character-fusion \
+            deploy \
+            "$GITHUB_SHA"
