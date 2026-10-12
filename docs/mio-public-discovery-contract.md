@@ -12,3 +12,26 @@ schedule a PDCA action, or write persona state. Production adapter ownership,
 account isolation, a node-authoritative actual public read, IR-based evaluation,
 and exact-parent real reply receipts all remain **unverified / not implemented**
 by this stage. Growth Proof is not claimed. Tests run without platform writes.
+
+### Existing public search probe — reuse, not a live adapter
+
+Existing `scripts/probe_threads_public_search.py` and workflow
+`.github/workflows/oracle-probe-threads-public-search.yml` already expose a
+no-login, no-write, no-antibot-bypass public-search **URL probe**, originally
+for vendor discovery. Its output schema `milkcat.threads-public-search-probe/v2`
+provides search terms, filters, discovered post URLs, and flags
+`post_text_emitted=false`, `db_written=false`. The probe can inform candidate
+URL acquisition where platform use is permitted, but cannot establish verified
+content, root/parent IDs, public visibility, account-bound access or author
+context. Its evidence is not a `public.feed.read` or `public.post.read`
+receipt. Do **not** feed probe URL rows directly to the projection or create
+`reply.send` candidates from them.
+
+Integration path: shared social capability owner validates a safe public
+post-content read for each candidate URL (or explicitly returns BLOCKED),
+binds reader identity `mio.milkcat`, emits sanitized per-source
+`receipt_id` with `operation=public.post.read`, and only then hands bounded
+post objects to this projection. No GUI session reuse from
+`oursong_alstonhuang`. Platform-read failure must not be hidden by fabricated
+success receipts. Any terms/seeds should derive from IR and actual observed
+interests, not copy the vendor search probe's vendor-service query list.
