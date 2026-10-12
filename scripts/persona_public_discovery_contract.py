@@ -4,6 +4,7 @@ This module does not fetch platform data, infer personas, or publish replies.
 The social adapter must separately prove authorized public-read access.
 """
 from datetime import datetime, timedelta, timezone
+import math
 import re
 
 SCHEMA = "agentos.persona-public-discovery/v1"
@@ -32,19 +33,29 @@ def project_public_candidates(*, rows, source_receipt, account, now, seen=(), ma
         raise ValueError("account invalid")
     if not isinstance(rows, list) or len(rows) > MAX_ITEMS:
         raise ValueError("unbounded input")
+    if not isinstance(max_age_hours, (int, float)) or isinstance(max_age_hours, bool) or not math.isfinite(max_age_hours) or not 0 < max_age_hours <= 168:
+        raise ValueError("invalid age window")
+    if not isinstance(seen, (list, tuple, set, frozenset)) or len(seen) > 5000:
+        raise ValueError("unbounded seen cursor")
     if not isinstance(source_receipt, dict) or source_receipt.get("ok") is not True:
         return {"schema": SCHEMA, "status": "BLOCKED", "reason": "SOURCE_UNVERIFIED",
                 "account": account, "items": [], "write_allowed": False}
     if source_receipt.get("operation") not in ("public.feed.read", "public.post.read"):
         return {"schema": SCHEMA, "status": "BLOCKED", "reason": "PUBLIC_ADAPTER_REQUIRED",
                 "account": account, "items": [], "write_allowed": False}
-    if source_receipt.get("account", "").lstrip("@").lower() != account.lstrip("@").lower():
+    source_account = source_receipt.get("account")
+    if not isinstance(source_account, str) or source_account.lstrip("@").lower() != account.lstrip("@").lower():
         return {"schema": SCHEMA, "status": "BLOCKED", "reason": "ACCOUNT_MISMATCH",
                 "account": account, "items": [], "write_allowed": False}
     receipt_id = source_receipt.get("receipt_id")
     if not isinstance(receipt_id, str) or not receipt_id or len(receipt_id) > 128:
         return {"schema": SCHEMA, "status": "BLOCKED", "reason": "RECEIPT_MISSING",
                 "account": account, "items": [], "write_allowed": False}
+    if source_receipt["operation"] == "public.post.read":
+        object_id = source_receipt.get("object_id")
+        if len(rows) != 1 or not isinstance(object_id, str) or not ID.fullmatch(object_id) or str(rows[0].get("id", "")) != object_id:
+            return {"schema": SCHEMA, "status": "BLOCKED", "reason": "OBJECT_ID_MISMATCH",
+                    "account": account, "items": [], "write_allowed": False}
     seen_ids = set(str(i) for i in seen)
     accepted, deduped, rejected = [], set(), 0
     clock = now.astimezone(timezone.utc)
