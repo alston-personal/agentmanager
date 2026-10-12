@@ -60,3 +60,20 @@ class KeywordProbeTests(unittest.TestCase):
         self.assertIn("search_type=RECENT",captured[0].full_url)
         self.assertNotIn("fake-secret",captured[0].full_url)
         self.assertEqual(captured[0].get_header("Authorization"), "Bearer fake-secret")
+
+
+    def test_provider_error_envelope_rejected(self):
+        result=self.run_probe(opener=lambda req, timeout: Response({"error":{"message":"sensitive provider data"},"data":[]}))
+        self.assertEqual(result["reason"], "PROVIDER_ERROR")
+        self.assertNotIn("sensitive", json.dumps(result))
+
+    def test_rate_limit_is_explicit(self):
+        def fail(req, timeout): raise HTTPError(req.full_url, 429, "limited", {}, io.BytesIO(b"secret"))
+        self.assertEqual(self.run_probe(opener=fail)["reason"], "RATE_LIMITED")
+
+    def test_overlarge_or_malformed_results_rejected(self):
+        self.assertEqual(self.run_probe(opener=lambda req, timeout: Response({"data":[{}]*6}))["reason"], "RESULT_SCHEMA_UNEXPECTED")
+        self.assertEqual(self.run_probe(opener=lambda req, timeout: Response({"data":[None]}))["reason"], "RESULT_SCHEMA_UNEXPECTED")
+
+    def test_scope_whitespace_is_normalized(self):
+        self.assertEqual(self.run_probe(allowed_scopes=[" threads_keyword_search "])["status"], "UNVERIFIED")
