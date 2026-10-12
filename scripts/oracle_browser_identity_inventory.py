@@ -29,7 +29,16 @@ def browser_processes(port):
                     (proc / "cmdline").read_bytes().split(b"\0") if v]
         except OSError:
             continue
-        has_port = any(a == f"--remote-debugging-port={port}" or\n                       (a == "--remote-debugging-port" and i + 1 < len(args) and args[i + 1] == str(port))\n                       for i, a in enumerate(args))\n        if not has_port:\n            continue\n        path = next((a.split("=", 1)[1] for a in args\n                     if a.startswith("--user-data-dir=")), None)\n        if path is None and "--user-data-dir" in args:\n            index = args.index("--user-data-dir")\n            path = args[index + 1] if index + 1 < len(args) else None
+        has_port = any(a == f"--remote-debugging-port={port}" or
+                       (a == "--remote-debugging-port" and i + 1 < len(args) and args[i + 1] == str(port))
+                       for i, a in enumerate(args))
+        if not has_port:
+            continue
+        path = next((a.split("=", 1)[1] for a in args
+                     if a.startswith("--user-data-dir=")), None)
+        if path is None and "--user-data-dir" in args:
+            index = args.index("--user-data-dir")
+            path = args[index + 1] if index + 1 < len(args) else None
         found.append({"pid": int(proc.name), "profile_id": profile_id(path),
                       "profile_explicit": bool(path)})
     return found
