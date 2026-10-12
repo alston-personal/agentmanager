@@ -1,0 +1,114 @@
+name: Oracle Agent Data Pack Forensics
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-agent-data-pack-forensics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect largest packed objects read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" python3 - <<'PY'
+          from __future__ import annotations
+          import re
+          import subprocess
+          from pathlib import Path
+
+          repo = Path.home() / "agent-data"
+          pack_dir = repo / ".git" / "objects" / "pack"
+          packs = sorted(pack_dir.glob("*.pack"), key=lambda p: p.stat().st_size, reverse=True)
+          if not packs:
+              raise SystemExit("no pack files")
+          pack = packs[0]
+          idx = pack.with_suffix(".idx")
+          print(f"largest_pack_name={pack.name}")
+          print(f"largest_pack_bytes={pack.stat().st_size}")
+          if not idx.is_file():
+              raise SystemExit("largest pack idx missing")
+
+          verify = subprocess.run(
+              ["git", "-C", str(repo), "verify-pack", "-v", str(idx)],
+              text=True, capture_output=True, check=True,
+          ).stdout.splitlines()
+          rows = []
+          for line in verify:
+              parts = line.split()
+              if len(parts) < 5 or not re.fullmatch(r"[0-9a-f]{40}", parts[0]):
+                  continue
+              try:
+                  size = int(parts[2]); packed = int(parts[3])
+              except ValueError:
+                  continue
+              rows.append((size, packed, parts[0], parts[1]))
+          rows.sort(reverse=True)
+          top = rows[:40]
+          wanted = {sha for _,_,sha,_ in top}
+
+          def object_map(args):
+              proc = subprocess.Popen(
+                  ["git", "-C", str(repo), "rev-list", "--objects", *args],
+                  text=True, stdout=subprocess.PIPE,
+              )
+              found = {}
+              assert proc.stdout is not None
+              for line in proc.stdout:
+                  sha, sep, path = line.rstrip("\n").partition(" ")
+                  if sha in wanted:
+                      found[sha] = path if sep else ""
+              proc.stdout.close()
+              rc = proc.wait()
+              if rc != 0:
+                  raise SystemExit(f"rev-list failed rc={rc}")
+              return found
+
+          all_map = object_map(["--all"])
+          head_map = object_map(["HEAD"])
+
+          sensitive = re.compile(r"(^|/)(secrets?|credentials?|tokens?|cookies?)(/|$)|api[_-]?key|password", re.I)
+          def safe_path(path):
+              if not path:
+                  return "none"
+              if sensitive.search(path):
+                  return "[REDACTED_SENSITIVE_PATH]"
+              return path[:240]
+
+          head_count = 0
+          any_ref_count = 0
+          for rank, (size, packed_size, sha, kind) in enumerate(top, 1):
+              in_head = sha in head_map
+              in_any = sha in all_map
+              head_count += int(in_head)
+              any_ref_count += int(in_any)
+              path = all_map.get(sha) or head_map.get(sha) or ""
+              print(
+                  f"object_rank={rank} sha={sha[:12]} type={kind} "
+                  f"size={size} packed={packed_size} "
+                  f"reachable_head={str(in_head).lower()} "
+                  f"reachable_any_ref={str(in_any).lower()} "
+                  f"path={safe_path(path)}"
+              )
+          print(f"top40_reachable_head={head_count}")
+          print(f"top40_reachable_any_ref={any_ref_count}")
+          print(f"top40_unreachable_any_ref={len(top)-any_ref_count}")
+          print("agent_data_pack_forensics=PASS")
+          PY
