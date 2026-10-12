@@ -251,6 +251,31 @@ with sync_playwright() as p:
         raise SystemExit(0)
 
     print("google_flow_stage=GENERATE_TRIGGERED")
+
+    # Flow may insert a per-generation credit confirmation after the initial
+    # Generate action. Approve only this single generation; never enable the
+    # persistent "always approve" option.
+    page.wait_for_timeout(1200)
+    approval_body=text_blob(page)
+    if any(x in approval_body for x in ("要開始生成這 1 部影片嗎？","要開始生成這 1 部影片嗎?","消耗 15 點","consume 15")):
+        approved=False
+        try:
+            loc=page.get_by_text("核准",exact=True)
+            if loc.count() and loc.first.is_visible(timeout=800):
+                loc.first.click(timeout=3000)
+                approved=True
+        except Exception:
+            pass
+        if not approved:
+            approved=click_text(page,[r"^核准$",r"^approve$"],timeout_ms=3000)
+        if approved:
+            print("google_flow_stage=CREDIT_APPROVED_ONCE")
+            page.wait_for_timeout(1200)
+        else:
+            save_debug(page,"approval-required")
+            print("google_flow_generate=APPROVAL_REQUIRED")
+            raise SystemExit(0)
+
     deadline=time.monotonic()+720
     video=None
     while time.monotonic()<deadline:
