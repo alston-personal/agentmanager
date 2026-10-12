@@ -676,6 +676,9 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         # addresses, auth data or invoice contents.
         page.call("Network.enable")
         page.connection.begin_upload_network_probe()
+        # Compare pre-existing alerts with post-selection alerts. Existing
+        # page alerts alone cannot be attributed to this upload.
+        upload_baseline = _submission_snapshot(page, request_id)
         # Capture the trusted native input/change signal before CDP file
         # selection. No filenames, file bytes or prompt contents are retained.
         page.evaluate("""(() => {
@@ -730,7 +733,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             if not selection_confirmed:
                 raise RuntimeError(
                     "GPT_WEB_FILE_SELECTION_UNVERIFIED:" +
-                    json.dumps({"dom": upload_observation, "fileEvents": upload_event_probe,
+                    json.dumps({"baselineAlertCounts": (upload_baseline.get("attachmentSummary") or {}).get("errorIndicators", {}), "dom": upload_observation, "fileEvents": upload_event_probe,
                                 "network": page.connection.upload_network_probe},
                                ensure_ascii=False, sort_keys=True)
                 )
