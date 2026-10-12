@@ -347,8 +347,8 @@ def refresh_sessions(root: Path, cdp_url: str) -> str:
 
 
 def _page(cdp_url: str) -> CdpTargetSession:
-    # /uc/ is known to expose no role-bearing messages in the invoice
-    # acceptance. Do not reuse that surface for another invoke.
+    # Choose a clean, already-open ChatGPT tab before touching any attachments.
+    # Never clear or submit drafts owned by another user/session.
     candidates = [
         item for item in _targets(cdp_url)
         if item.get("type") == "page"
@@ -356,22 +356,32 @@ def _page(cdp_url: str) -> CdpTargetSession:
         and not str(item.get("url") or "").startswith("https://chatgpt.com/uc/")
         and item.get("webSocketDebuggerUrl")
     ]
-    if candidates:
-        target = candidates[-1]
-    else:
-        # Stay in the existing Chromium profile; never create credentials or
-        # switch another account's profile. A fresh target may still redirect
-        # to /uc/ and must then fail closed before upload.
-        target = _create_target(cdp_url, "https://chatgpt.com/")
-    page = _open_target_connection(cdp_url, target)
-    try:
-        href = page.evaluate("location.href")
-        if str(href).startswith("https://chatgpt.com/uc/"):
-            raise RuntimeError("GPT_WEB_UNSUPPORTED_CONVERSATION_ROUTE:/uc/")
-        return page
-    except Exception:
-        page.close()
-        raise
+    for target in reversed(candidates):
+        page = None
+        try:
+            page = _open_target_connection(cdp_url, target)
+            href = page.evaluate("location.href")
+            if str(href).startswith("https://chatgpt.com/uc/"):
+                continue
+            snapshot = _submission_snapshot(page, "agentos-clean-target-check")
+            attachment = snapshot.get("attachmentSummary") or {}
+            images = attachment.get("imageStructure") or {}
+            has_pending = (
+                int(images.get("inFormBlob") or 0) > 0
+                and int(attachment.get("attachmentControlCount") or 0) > 0
+            )
+            if not has_pending:
+                selected = page
+                page = None
+                return selected
+        except Exception:
+            pass
+        finally:
+            if page is not None:
+                page.close()
+    # Never create a potentially unauthenticated tab or disturb user drafts
+    # until a dedicated authenticated isolated-target acquisition exists.
+    raise RuntimeError("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE")
 
 
 def _assistant_text(page: CdpPage, request_id: str) -> str | None:
