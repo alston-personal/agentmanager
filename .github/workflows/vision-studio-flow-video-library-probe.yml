@@ -85,6 +85,35 @@ jobs:
                 };
               })()''')
               print("flow_video_library_state="+json.dumps(st,ensure_ascii=False))
+
+              # There is no global Video library on the Flow landing page.
+              # Enumerate every existing project card read-only and inspect each
+              # project for rendered video/media evidence.
+              projects=await ev(r'''(() => {
+                const out=[];
+                for(const a of document.querySelectorAll('a[aria-label="開啟專案"],a[href^="/project/"]')){
+                  const card=a.closest('flow-project-card,.project-card,.projects-grid-item')||a.parentElement;
+                  const text=((card&&card.innerText)||a.innerText||'').replace(/\s+/g,' ').trim().slice(0,220);
+                  const href=a.getAttribute('href')||'';
+                  if(href && !out.some(x=>x.href===href)) out.push({href,text});
+                }
+                return out.slice(0,30);
+              })()''') or []
+              print("flow_project_scan_targets="+json.dumps(projects,ensure_ascii=False))
+              scan=[]
+              for p in projects:
+                href=p.get("href") or ""
+                if not href: continue
+                await ev("location.href="+json.dumps("https://flow.google.com"+href)+";true")
+                await asyncio.sleep(4)
+                state=await ev(r'''(() => {
+                  const clean=s=>(s||'').replace(/\s+/g,' ').trim();
+                  const vids=[...document.querySelectorAll('video')].map(e=>({src:(e.currentSrc||e.src||'').slice(0,700),poster:(e.poster||'').slice(0,500),duration:e.duration||0}));
+                  const res=performance.getEntriesByType('resource').map(x=>x.name||'').filter(u=>/video|mp4|webm|googlevideo|videoplayback|blob/i.test(u)).slice(-80);
+                  return {url:location.href,body:clean(document.body.innerText).slice(0,1200),video_count:vids.length,videos:vids,resource_count:res.length,resources:res};
+                })()''')
+                scan.append({"project":p,"state":state})
+              print("flow_project_media_scan="+json.dumps(scan,ensure_ascii=False))
               print("flow_video_library_probe=PASS")
           asyncio.run(main())
           PY
