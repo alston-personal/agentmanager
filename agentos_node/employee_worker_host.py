@@ -225,6 +225,10 @@ class EmployeeWorkerHost:
             raise ValueError("employee_worker_child_timeout_invalid")
         if self.lease_seconds < 30 or self.lease_seconds > 3600:
             raise ValueError("employee_worker_lease_seconds_invalid")
+        # Terminal dispatches are immutable from the worker host's perspective.
+        # Keep a filename index so historical wake capsules do not force a JSON
+        # read of both wake + dispatch state on every poll forever.
+        self._terminal_dispatch_keys: set[tuple[str, str]] | None = None
 
     @property
     def dispatch_root(self) -> Path:
@@ -280,11 +284,37 @@ class EmployeeWorkerHost:
             raise RuntimeError("employee_worker_dispatch_state_invalid")
         return payload
 
+    @staticmethod
+    def _dispatch_key(path: Path) -> tuple[str, str]:
+        return (path.parent.name, path.name)
+
+    def _terminal_dispatch_index(self) -> set[tuple[str, str]]:
+        if self._terminal_dispatch_keys is not None:
+            return self._terminal_dispatch_keys
+        terminal: set[tuple[str, str]] = set()
+        if self.dispatch_root.is_dir():
+            for path in self.dispatch_root.glob("*/*.json"):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if isinstance(payload, dict) and payload.get("status") in TERMINAL_DISPATCH_STATES:
+                    terminal.add(self._dispatch_key(path))
+        self._terminal_dispatch_keys = terminal
+        return terminal
+
     def _candidates(self) -> list[WorkerHostCandidate]:
         if not self.wake_root.is_dir():
             return []
         result: list[WorkerHostCandidate] = []
+        terminal = self._terminal_dispatch_index()
         for path in self.wake_root.glob("*/*.json"):
+            # Wake and dispatch filenames share employee_id + wake/generation.
+            # Skip terminal history before opening the wake capsule. On a host
+            # with tens of thousands of completed wakes this turns the hot path
+            # from repeated JSON churn into a cheap directory-name comparison.
+            if self._dispatch_key(path) in terminal:
+                continue
             capsule = self._read_capsule(path)
             if capsule is None:
                 continue
@@ -293,6 +323,7 @@ class EmployeeWorkerHost:
                 continue
             existing = self._read_dispatch(capsule)
             if existing and existing.get("status") in TERMINAL_DISPATCH_STATES:
+                terminal.add(self._dispatch_key(self._dispatch_path(capsule)))
                 continue
             result.append(WorkerHostCandidate(path=path, capsule=capsule, adapter=adapter))
         result.sort(
@@ -340,7 +371,10 @@ class EmployeeWorkerHost:
         }
 
     def _persist_dispatch(self, candidate: WorkerHostCandidate, state: dict[str, Any]) -> dict[str, Any]:
-        _atomic_write(self._dispatch_path(candidate.capsule), state)
+        path = self._dispatch_path(candidate.capsule)
+        _atomic_write(path, state)
+        if state.get("status") in TERMINAL_DISPATCH_STATES and self._terminal_dispatch_keys is not None:
+            self._terminal_dispatch_keys.add(self._dispatch_key(path))
         return state
 
     def _child_command(self, adapter: EmployeeWorkerAdapter) -> list[str]:

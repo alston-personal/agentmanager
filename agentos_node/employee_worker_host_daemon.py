@@ -133,9 +133,11 @@ def run_forever(host: ExactEmployeeWorkerHost, *, stop_event: Event | None = Non
     poll_seconds = _env_int("AGENTOS_EMPLOYEE_WORKER_POLL_SECONDS", 2, minimum=1, maximum=60)
     with _singleton_lock(host.host_state_root):
         while not stopper.is_set():
-            result = host.process_one()
-            if result is None:
-                stopper.wait(poll_seconds)
+            host.process_one()
+            # Backpressure is mandatory even when work was observed. Without
+            # this wait a backlog causes an unbounded rescan loop where each
+            # completed item immediately triggers another full wake-tree scan.
+            stopper.wait(poll_seconds)
 
 
 def build_parser() -> argparse.ArgumentParser:

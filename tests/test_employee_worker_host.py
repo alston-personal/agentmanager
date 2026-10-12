@@ -123,6 +123,35 @@ class EmployeeWorkerHostTests(unittest.TestCase):
             self.assertNotIn("--executable", command)
             self.assertNotIn("--argv", command)
 
+    def test_terminal_dispatch_index_skips_historical_wake_json_reads(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            host = self._host(base)
+            employee = "agentos-spec-steward"
+            wake_dir = base / "wake" / employee
+            dispatch_dir = base / "host" / "dispatches" / employee
+            wake_dir.mkdir(parents=True, exist_ok=True)
+            dispatch_dir.mkdir(parents=True, exist_ok=True)
+
+            for index in range(20):
+                capsule = _capsule(wake_id=f"wake-terminal-{index}", presence_generation=1)
+                filename = f"wake-terminal-{index}.000001.json"
+                (wake_dir / filename).write_text(json.dumps(capsule), encoding="utf-8")
+                (dispatch_dir / filename).write_text(
+                    json.dumps({"schema": DISPATCH_SCHEMA, "status": "checkpointed"}),
+                    encoding="utf-8",
+                )
+
+            active = _capsule(wake_id="wake-active", presence_generation=1)
+            (wake_dir / "wake-active.000001.json").write_text(json.dumps(active), encoding="utf-8")
+
+            with patch.object(host, "_read_capsule", wraps=host._read_capsule) as read_capsule:
+                candidates = host._candidates()
+
+            self.assertEqual(read_capsule.call_count, 1)
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(candidates[0].capsule["wake_id"], "wake-active")
+
     def test_prior_launch_is_unknown_and_is_not_replayed(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
