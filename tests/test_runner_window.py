@@ -543,3 +543,15 @@ def test_runtime_repair_quarantines_tracked_checkout_before_reset():
     assert 'git -C "$REPO" reset --hard HEAD' in text
     assert 'test "$POST_DIRTY_COUNT" = 0' in text
     assert "antigravity_repair=CHECKOUT_QUARANTINED" in text
+
+
+def test_character_fusion_smoke_intent_is_registered():
+    from agent_core.runner_window import resolve_intent
+    intent, params = resolve_intent(
+        "studio.character-fusion",
+        "smoke",
+        source_commit="a" * 40,
+        payload={},
+    )
+    assert intent.action == "agentos.character_fusion.smoke"
+    assert params == {"source_commit": "a" * 40}
