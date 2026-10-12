@@ -35,3 +35,39 @@ post objects to this projection. No GUI session reuse from
 `oursong_alstonhuang`. Platform-read failure must not be hidden by fabricated
 success receipts. Any terms/seeds should derive from IR and actual observed
 interests, not copy the vendor search probe's vendor-service query list.
+
+### Official Threads API discovery path (verified public documentation 2026-10-12)
+
+Meta's official Threads API documents `GET https://graph.threads.net/keyword_search`,
+request parameters `q`, `search_type=TOP|RECENT` and requested `fields`.
+It uses the `threads_keyword_search` OAuth permission. Source:
+https://www.postman.com/meta/threads/request/m9j4i2x/search-for-threads-posts
+and https://www.postman.com/meta/threads/documentation/dht3nzz/threads-api .
+
+This is the **preferred authorized public-read integration candidate** ahead of
+the existing HTML URL probe. Production access is UNVERIFIED: the current Mio
+social binding/credential's actual granted scopes, application review status,
+token account identity, keyword-search reachability, result field availability,
+and governance owner must be checked **from the Oracle node**, with only
+sanitized receipt metadata returned (never token values). A successful owned
+`post.read` call is not evidence that `threads_keyword_search` is available.
+
+The initial executable acceptance should be strictly read-only:
+1. Inspect an authenticated, existing Mio social binding (without exporting secrets).
+2. Resolve official public keyword search scope; if absent report
+   `AUTH_SCOPE_REQUIRED` instead of using another account.
+3. On an approved, bounded 1-query probe, verify the resulting post object
+   provenance, content, author (if available), post id/root id, public visibility
+   and timestamp **individually**. A field not returned is unknown, never
+   invented. If the API cannot attest `visibility=public` or root identity,
+   hold as `UNVERIFIED` rather than marking the contract PASS.
+4. Emit a node-authoritative receipt with account binding, API operation,
+   sanitized result counts, source receipt id, scopes present/missing and
+   failure classification; do not publish, reply or mutate persona IR.
+5. Only wire an authorized adapter to the existing no-write projection
+   after the runtime reading contract is demonstrably compatible.
+
+App review and per-account availability may restrict search independently of
+the presence of a public endpoint; do not treat authorization errors or empty
+results as account acceptance. This discovery is documentation only and
+**does not** establish a successful live API call.
