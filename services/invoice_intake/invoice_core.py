@@ -1480,8 +1480,9 @@ class InvoiceStore:
                         ocr_memory=self.ocr_memory,
                     )
                 except Exception as exc:
-                    if config['mode'] != 'primary' or config['status'] != 'CONFIGURED':
-                        raise
+                    # A local OCR crash must not strand a safely archived image
+                    # merely because paid/multimodal providers are unavailable.
+                    # A human can review the original and retry OCR later.
                     extraction = Extraction(
                         dict.fromkeys(vision_ocr.CORE_FIELDS),
                         {},

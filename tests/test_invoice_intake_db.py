@@ -447,30 +447,24 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
             )
 
 
-    def test_process_error_persists_terminal_reason(self):
+    def test_local_ocr_error_preserves_reviewable_invoice(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = InvoiceStore(Path(tmp), data_scope="test")
             created = store.ingest(
-                jpeg_bytes(),
-                "error.jpg",
-                "image/jpeg",
-                source_type="upload",
-                batch_id="batch-error",
+                jpeg_bytes(), "error.jpg", "image/jpeg",
+                source_type="upload", batch_id="batch-error",
             )
             with patch(
                 "services.invoice_intake.invoice_core.extract_legacy_invoice",
                 side_effect=RuntimeError("synthetic provider/parser failure"),
             ):
-                with self.assertRaises(RuntimeError):
-                    store.process(created["invoice_id"])
-
+                processed = store.process(created["invoice_id"])
             item = store.get_invoice(created["invoice_id"])
-            self.assertEqual(item["status"], "error")
-            recognition = item.get("recognition") or {}
-            self.assertEqual(recognition.get("status"), "error")
-            self.assertEqual((recognition.get("error") or {}).get("stage"), "process")
-            self.assertEqual((recognition.get("error") or {}).get("type"), "RuntimeError")
-            self.assertFalse(item["background_enrichment_pending"])
+            self.assertEqual(processed["status"], "recognition_insufficient")
+            self.assertEqual(item["status"], "recognition_insufficient")
+            # recognition is an optional UI projection; the persisted invoice
+            # status is the authoritative fail-open review contract.
+            # Optional background enrichment may still run independently.
 
     def test_existing_schema_migrates_without_dropping_invoice_tables(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -550,3 +544,19 @@ class InvoiceIntakeDbBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InvoiceNoProviderFallbackTests(unittest.TestCase):
+    def test_local_ocr_failure_is_reviewable_without_vision_provider(self):
+        from services.invoice_intake import invoice_core
+        with tempfile.TemporaryDirectory() as tmp:
+            store = invoice_core.InvoiceStore(Path(tmp) / "invoice-reviewable")
+            receipt = store.ingest(jpeg_bytes(), "test.jpg", "image/jpeg")
+            with patch.object(invoice_core, "extract_legacy_invoice", side_effect=RuntimeError("local_ocr_broken")), \
+                 patch.object(invoice_core.vision_ocr, "configuration", return_value={"mode": "off", "status": "DISABLED"}):
+                processed = store.process(receipt["invoice_id"])
+            saved = store.get_invoice(receipt["invoice_id"])
+            self.assertEqual(processed["status"], "recognition_insufficient")
+            self.assertEqual(saved["status"], "recognition_insufficient")
+            reviewed = store.review(receipt["invoice_id"], "test-operator", {"vendor_name": "人工確認商家"})
+            self.assertEqual(reviewed["status"], "reviewed")
