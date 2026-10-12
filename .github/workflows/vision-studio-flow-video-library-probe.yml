@@ -25,8 +25,12 @@ jobs:
           import asyncio,json,urllib.request,websockets
           PORT=9225
           rows=json.loads(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list",timeout=5).read().decode())
-          t=next((x for x in rows if x.get("type")=="page" and "flow.google.com" in str(x.get("url") or "")),None)
-          if not t: raise SystemExit("flow_video_library_probe=NO_FLOW_PAGE")
+          pages=[x for x in rows if x.get("type")=="page"]
+          print("flow_cdp_pages="+json.dumps([{"id":x.get("id"),"url":x.get("url"),"title":x.get("title")} for x in pages],ensure_ascii=False))
+          t=next((x for x in pages if "flow.google.com" in str(x.get("url") or "")),None)
+          if not t and pages:
+              t=pages[0]
+          if not t: raise SystemExit("flow_video_library_probe=NO_PAGE_TARGET")
           async def main():
             async with websockets.connect(t["webSocketDebuggerUrl"],open_timeout=5,max_size=16*1024*1024) as ws:
               seq=0
