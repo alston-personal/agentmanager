@@ -59,7 +59,18 @@ def run(cdp_url: str, image: Path) -> dict:
                   return null;
                 })()""")
                 if not isinstance(option, dict):
-                    return {"status":"ATTACH_MENU_UPLOAD_ITEM_NOT_FOUND","before":before.get("attachmentSummary",{})}
+                    menu_state = page.evaluate("""(() => {
+                      const selectors = ['[role="menu"]','[role="menuitem"]','[role="dialog"]',
+                        '[role="option"]','[data-state="open"]','[aria-expanded="true"]'];
+                      const counts = {};
+                      for (const selector of selectors) {
+                        counts[selector] = Array.from(document.querySelectorAll(selector))
+                          .filter(el => el.getBoundingClientRect().width > 0).length;
+                      }
+                      return counts;
+                    })()""")
+                    return {"status":"ATTACH_MENU_UPLOAD_ITEM_NOT_FOUND",
+                      "menuStructure":menu_state,"before":before.get("attachmentSummary",{})}
                 for kind in ("mousePressed", "mouseReleased"):
                     page.call("Input.dispatchMouseEvent", {"type":kind,
                       "x":float(option["x"]),"y":float(option["y"]),
