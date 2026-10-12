@@ -1,0 +1,79 @@
+name: Oracle Post Reclaim Health Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-post-reclaim-health-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify Oracle after pack reclaim
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          REPO="$HOME/agent-data"
+          UNIT=agentos-employee-worker-host.service
+          GDRIVE="$HOME/.local/share/agentos/gdrive-remote-v2"
+          STATE="$HOME/.local/state/agentos/gdrive-health.state"
+
+          echo "root_use_percent=$(df -P / | awk 'NR==2 {print $5}')"
+          git -C "$REPO" fsck --connectivity-only --no-dangling >/dev/null
+          echo "agent_data_connectivity=PASS"
+
+          systemctl --user is-active --quiet "$UNIT"
+          echo "worker_active=PASS"
+          echo "worker_cpu_quota=$(systemctl --user show "$UNIT" -p CPUQuotaPerSecUSec --value)"
+          echo "worker_cpu_weight=$(systemctl --user show "$UNIT" -p CPUWeight --value)"
+          echo "worker_io_weight=$(systemctl --user show "$UNIT" -p IOWeight --value)"
+          echo "worker_memory_max=$(systemctl --user show "$UNIT" -p MemoryMax --value)"
+
+          cpu0="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
+          sleep 5
+          cpu1="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
+          python3 - "$cpu0" "$cpu1" <<'PY'
+          import sys
+          a=int(sys.argv[1] or 0); b=int(sys.argv[2] or 0)
+          pct=max(0.0,(b-a)/5_000_000_000*100.0)
+          print(f"worker_cpu_percent_5s={pct:.2f}")
+          if pct>55.0: raise SystemExit("worker cpu above expected bound")
+          PY
+
+          python3 - /proc/pressure/io <<'PY'
+          import re,sys
+          vals={}
+          for line in open(sys.argv[1],encoding='utf-8'):
+              name=line.split()[0]
+              vals[name]={k:float(v) for k,v in re.findall(r'(avg10|avg60|avg300)=([0-9.]+)',line)}
+          for name in ('some','full'):
+              for key in ('avg10','avg60','avg300'):
+                  print(f"io_psi_{name}_{key}={vals.get(name,{}).get(key,0.0):.2f}")
+          PY
+
+          test "$(mountpoint -q "$GDRIVE"; echo $?)" = 0
+          state="$(grep '^state=' "$STATE" | tail -n1 | cut -d= -f2-)"
+          echo "gdrive_health_state=$state"
+          case "$state" in READY|RECOVERED) ;; *) exit 41;; esac
+          timeout 10 test -d "$GDRIVE/backups"
+          echo "gdrive_backups=PASS"
+
+          test ! -e "$REPO/.git/objects/pack/pack-05712690d52472e874ca91a3f728329bfa7c0a00.pack"
+          echo "giant_pack_absent=PASS"
+          echo "oracle_post_reclaim_health=PASS"
+          REMOTE
