@@ -45,12 +45,12 @@ jobs:
           echo "worker_memory_max=$(systemctl --user show "$UNIT" -p MemoryMax --value)"
 
           cpu0="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
-          sleep 5
+          sleep 10
           cpu1="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
           python3 - "$cpu0" "$cpu1" <<'PY'
           import sys
           a=int(sys.argv[1] or 0); b=int(sys.argv[2] or 0)
-          pct=max(0.0,(b-a)/5_000_000_000*100.0)
+          pct=max(0.0,(b-a)/10_000_000_000*100.0)
           print(f"worker_cpu_percent_5s={pct:.2f}")
           if pct>55.0: raise SystemExit("worker cpu above expected bound")
           PY
