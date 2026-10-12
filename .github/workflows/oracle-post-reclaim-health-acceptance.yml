@@ -22,37 +22,84 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Verify Oracle after pack reclaim
+      - name: Verify Oracle after pack reclaim and Worker cutover
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
           REPO="$HOME/agent-data"
           UNIT=agentos-employee-worker-host.service
+          MARKER="$HOME/.config/agentos/employee-worker-host-system-boundary"
+          CURRENT="$HOME/agent-data/runtime/core/current"
           GDRIVE="$HOME/.local/share/agentos/gdrive-remote-v2"
           STATE="$HOME/.local/state/agentos/gdrive-health.state"
 
-          echo "root_use_percent=$(df -P / | awk 'NR==2 {print $5}')"
+          root_pct="$(df -P / | awk 'NR==2 {gsub("%","",$5); print $5}')"
+          echo "root_use_percent=${root_pct}%"
+          test "$root_pct" -lt 85
+
           git -C "$REPO" fsck --connectivity-only --no-dangling >/dev/null
           echo "agent_data_connectivity=PASS"
+          size_pack="$(git -C "$REPO" count-objects -v | awk '/^size-pack:/{print $2}')"
+          echo "agent_data_size_pack_kib=$size_pack"
+          test "$size_pack" -lt 2097152
 
-          systemctl --user is-active --quiet "$UNIT"
+          test -f "$MARKER"
+          ! systemctl --user is-active --quiet "$UNIT" 2>/dev/null
+          sudo -n systemctl is-active --quiet "$UNIT"
+          echo "worker_owner=system"
           echo "worker_active=PASS"
-          echo "worker_cpu_quota=$(systemctl --user show "$UNIT" -p CPUQuotaPerSecUSec --value)"
-          echo "worker_cpu_weight=$(systemctl --user show "$UNIT" -p CPUWeight --value)"
-          echo "worker_io_weight=$(systemctl --user show "$UNIT" -p IOWeight --value)"
-          echo "worker_memory_max=$(systemctl --user show "$UNIT" -p MemoryMax --value)"
 
-          cpu0="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
+          current="$(readlink -f "$CURRENT")"
+          pid="$(sudo -n systemctl show "$UNIT" -p MainPID --value)"
+          test -n "$pid" && test "$pid" != 0
+          test "$(readlink -f "/proc/$pid/cwd")" = "$current"
+          cg="$(sudo -n systemctl show "$UNIT" -p ControlGroup --value)"
+          case "$cg" in /system.slice/*) ;; *) exit 42;; esac
+          root="/sys/fs/cgroup$cg"
+
+          echo "worker_control_group=$cg"
+          echo "worker_cpu_max=$(cat "$root/cpu.max")"
+          echo "worker_cpu_weight=$(cat "$root/cpu.weight")"
+          echo "worker_io_weight=$(tr '\n' ';' < "$root/io.weight")"
+          echo "worker_memory_max=$(cat "$root/memory.max")"
+          test "$(cat "$root/cpu.max")" = "50000 100000"
+          test "$(cat "$root/cpu.weight")" = "20"
+          grep -Eq '^default[[:space:]]+20$' "$root/io.weight"
+          test "$(cat "$root/memory.max")" = "1073741824"
+
+          read u0 p0 t0 x0 < <(awk '
+            $1=="usage_usec"{u=$2}
+            $1=="nr_periods"{p=$2}
+            $1=="nr_throttled"{t=$2}
+            $1=="throttled_usec"{x=$2}
+            END{print u+0,p+0,t+0,x+0}
+          ' "$root/cpu.stat")
+          ts0="$(date +%s%N)"
           sleep 10
-          cpu1="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
-          python3 - "$cpu0" "$cpu1" <<'PY'
+          read u1 p1 t1 x1 < <(awk '
+            $1=="usage_usec"{u=$2}
+            $1=="nr_periods"{p=$2}
+            $1=="nr_throttled"{t=$2}
+            $1=="throttled_usec"{x=$2}
+            END{print u+0,p+0,t+0,x+0}
+          ' "$root/cpu.stat")
+          ts1="$(date +%s%N)"
+          python3 - "$u0" "$u1" "$p0" "$p1" "$t0" "$t1" "$x0" "$x1" "$ts0" "$ts1" <<'PY'
           import sys
-          a=int(sys.argv[1] or 0); b=int(sys.argv[2] or 0)
-          pct=max(0.0,(b-a)/10_000_000_000*100.0)
-          print(f"worker_cpu_percent_5s={pct:.2f}")
-          if pct>55.0: raise SystemExit("worker cpu above expected bound")
+          u0,u1,p0,p1,t0,t1,x0,x1,ts0,ts1=map(int,sys.argv[1:])
+          wall=max(1,ts1-ts0)
+          pct=max(0,u1-u0)*100_000_000_000/wall/1_000_000
+          print(f"worker_cpu_percent_10s={pct:.2f}")
+          print(f"worker_periods_delta={max(0,p1-p0)}")
+          print(f"worker_throttled_periods_delta={max(0,t1-t0)}")
+          print(f"worker_throttled_usec_delta={max(0,x1-x0)}")
+          if pct > 55.0:
+              raise SystemExit("worker cpu above kernel boundary")
+          if p1-p0 <= 0:
+              raise SystemExit("cpu bandwidth periods are not active")
           PY
 
           python3 - /proc/pressure/io <<'PY'
@@ -64,9 +111,13 @@ jobs:
           for name in ('some','full'):
               for key in ('avg10','avg60','avg300'):
                   print(f"io_psi_{name}_{key}={vals.get(name,{}).get(key,0.0):.2f}")
+          if vals.get('some',{}).get('avg300',100.0) >= 50.0:
+              raise SystemExit("io some avg300 still elevated")
+          if vals.get('full',{}).get('avg300',100.0) >= 35.0:
+              raise SystemExit("io full avg300 still elevated")
           PY
 
-          test "$(mountpoint -q "$GDRIVE"; echo $?)" = 0
+          mountpoint -q "$GDRIVE"
           state="$(grep '^state=' "$STATE" | tail -n1 | cut -d= -f2-)"
           echo "gdrive_health_state=$state"
           case "$state" in READY|RECOVERED) ;; *) exit 41;; esac
@@ -77,5 +128,3 @@ jobs:
           echo "giant_pack_absent=PASS"
           echo "oracle_post_reclaim_health=PASS"
           REMOTE
-
-# retrigger-20261012-closure
