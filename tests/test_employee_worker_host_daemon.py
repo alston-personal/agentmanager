@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentos_node.employee_worker_host_daemon import _singleton_lock, build_host
+from agentos_node.employee_worker_host_daemon import _singleton_lock, build_host, run_forever
 
 
 class EmployeeWorkerHostDaemonTests(unittest.TestCase):
@@ -61,6 +61,37 @@ class EmployeeWorkerHostDaemonTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "roots_must_not_overlap"):
                     build_host()
+
+    def test_run_forever_applies_backpressure_after_observed_work(self):
+        class FakeHost:
+            def __init__(self, root: Path):
+                self.host_state_root = root
+                self.calls = 0
+
+            def process_one(self):
+                self.calls += 1
+                return {"status": "checkpointed"}
+
+        class StopAfterWait:
+            def __init__(self):
+                self.stopped = False
+                self.waits = []
+
+            def is_set(self):
+                return self.stopped
+
+            def wait(self, seconds):
+                self.waits.append(seconds)
+                self.stopped = True
+                return True
+
+        with tempfile.TemporaryDirectory() as td:
+            host = FakeHost(Path(td))
+            stopper = StopAfterWait()
+            with patch.dict(os.environ, {"AGENTOS_EMPLOYEE_WORKER_POLL_SECONDS": "2"}, clear=False):
+                run_forever(host, stop_event=stopper)
+        self.assertEqual(host.calls, 1)
+        self.assertEqual(stopper.waits, [2])
 
     def test_singleton_lock_rejects_second_process_owner(self):
         if os.name == "nt":
