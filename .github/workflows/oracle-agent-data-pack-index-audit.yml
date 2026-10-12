@@ -1,0 +1,105 @@
+name: Oracle Agent Data Pack Index Audit
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-agent-data-pack-index-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect largest pack via index only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          REPO="$HOME/agent-data"
+          PACK_DIR="$REPO/.git/objects/pack"
+          PACK="$(find "$PACK_DIR" -maxdepth 1 -type f -name '*.pack' -printf '%s %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
+          test -n "$PACK"
+          IDX="${PACK%.pack}.idx"
+          test -f "$IDX"
+          echo "largest_pack_name=$(basename "$PACK")"
+          echo "largest_pack_bytes=$(stat -c %s "$PACK")"
+
+          timeout 120 python3 - "$REPO" "$IDX" <<'PY'
+          from __future__ import annotations
+          import re, subprocess, sys
+          from pathlib import Path
+
+          repo=Path(sys.argv[1])
+          idx=Path(sys.argv[2])
+
+          show=subprocess.run(["git","show-index"],input=idx.read_bytes(),capture_output=True,check=True)
+          shas=[]
+          for raw in show.stdout.decode("utf-8","replace").splitlines():
+              parts=raw.split()
+              if len(parts)>=2 and re.fullmatch(r"[0-9a-f]{40}",parts[1]):
+                  shas.append(parts[1])
+          print("largest_pack_object_count="+str(len(shas)))
+
+          proc=subprocess.run(
+              ["git","-C",str(repo),"cat-file","--batch-check=%(objectname) %(objecttype) %(objectsize) %(objectsize:disk)"],
+              input="\n".join(shas)+"\n",text=True,capture_output=True,check=True,timeout=90,
+          )
+          rows=[]
+          for line in proc.stdout.splitlines():
+              p=line.split()
+              if len(p)!=4 or p[1]=="missing":
+                  continue
+              try:
+                  rows.append((int(p[3]),int(p[2]),p[0],p[1]))
+              except ValueError:
+                  pass
+          rows.sort(reverse=True)
+          top=rows[:30]
+          wanted={r[2] for r in top}
+
+          def mapping(args):
+              p=subprocess.Popen(["git","-C",str(repo),"rev-list","--objects",*args],stdout=subprocess.PIPE,text=True)
+              out={}
+              assert p.stdout
+              for line in p.stdout:
+                  sha,sep,path=line.rstrip("\n").partition(" ")
+                  if sha in wanted:
+                      out[sha]=path if sep else ""
+              p.stdout.close()
+              rc=p.wait()
+              if rc!=0: raise SystemExit("rev-list failed")
+              return out
+
+          all_map=mapping(["--all"])
+          head_map=mapping(["HEAD"])
+          sensitive=re.compile(r"(^|/)(secrets?|credentials?|tokens?|cookies?)(/|$)|api[_-]?key|password",re.I)
+          def safe(path):
+              if not path: return "none"
+              if sensitive.search(path): return "[REDACTED_SENSITIVE_PATH]"
+              return path[:220]
+
+          for i,(disk,size,sha,kind) in enumerate(top,1):
+              print(
+                  f"rank={i} sha={sha[:12]} type={kind} size={size} disk={disk} "
+                  f"head={str(sha in head_map).lower()} any_ref={str(sha in all_map).lower()} "
+                  f"path={safe(all_map.get(sha) or head_map.get(sha) or '')}"
+              )
+          print("top30_reachable_head="+str(sum(1 for _,_,s,_ in top if s in head_map)))
+          print("top30_reachable_any_ref="+str(sum(1 for _,_,s,_ in top if s in all_map)))
+          print("top30_unreachable_any_ref="+str(sum(1 for _,_,s,_ in top if s not in all_map)))
+          print("agent_data_pack_index_audit=PASS")
+          PY
+          REMOTE
