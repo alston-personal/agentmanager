@@ -1076,7 +1076,22 @@ async def main():
           return 'clicked';
         })()''')
         if concept_mode == 'clicked':
-            await asyncio.sleep(1.2)
+            # Flow resolves the concept-art starter through its agent first.
+            # The actual Generate control appears only after that tool response
+            # settles, so wait for tool readiness instead of assuming a fixed
+            # 1.2s transition.
+            tool_ready=False
+            for _ in range(180):
+                tool_ready=await evaluate(r'''(() => {
+                  const buttons=[...document.querySelectorAll('button')]
+                    .filter(x=>x.offsetParent!==null);
+                  return !!buttons.find(x => (x.getAttribute('aria-label')||'').includes('開始生成'));
+                })()''')
+                if tool_ready:
+                    break
+                await asyncio.sleep(0.5)
+            if not tool_ready:
+                raise TimeoutError("flow_concept_art_tool_ready_timeout")
 
         baseline=await evaluate(r'''(() => {
           const out=[];
