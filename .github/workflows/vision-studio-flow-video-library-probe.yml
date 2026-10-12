@@ -1,0 +1,86 @@
+name: Vision Studio Flow Video Library Probe
+on:
+  push:
+    branches: [core/integration]
+    paths: ['.github/workflows/vision-studio-flow-video-library-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe Flow video library via raw CDP
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import asyncio,json,urllib.request,websockets
+          PORT=9225
+          rows=json.loads(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list",timeout=5).read().decode())
+          t=next((x for x in rows if x.get("type")=="page" and "flow.google.com" in str(x.get("url") or "")),None)
+          if not t: raise SystemExit("flow_video_library_probe=NO_FLOW_PAGE")
+          async def main():
+            async with websockets.connect(t["webSocketDebuggerUrl"],open_timeout=5,max_size=16*1024*1024) as ws:
+              seq=0
+              async def call(m,p=None):
+                nonlocal seq
+                seq+=1;i=seq
+                await ws.send(json.dumps({"id":i,"method":m,"params":p or {}}))
+                while True:
+                  z=json.loads(await ws.recv())
+                  if z.get("id")==i:
+                    if z.get("error"): raise RuntimeError(z["error"])
+                    return z.get("result") or {}
+              async def ev(s):
+                r=await call("Runtime.evaluate",{"expression":s,"returnByValue":True,"awaitPromise":True})
+                return (r.get("result") or {}).get("value")
+              await ev("location.href='https://flow.google.com/';true")
+              await asyncio.sleep(5)
+              inv=await ev(r'''(() => {
+                const v=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);
+                const c=s=>(s||'').replace(/\s+/g,' ').trim().slice(0,180);
+                const out=[];
+                for(const e of [...document.querySelectorAll('*')].filter(v)){
+                  const t=c(e.innerText||e.textContent),a=c(e.getAttribute&&e.getAttribute('aria-label'));
+                  if(['影片','Videos','Video'].includes(t)||['影片','Videos','Video'].includes(a)){
+                    let n=e,chain=[];
+                    for(let d=0;d<6&&n;d++,n=n.parentElement) chain.push({d,tag:(n.tagName||'').toLowerCase(),text:c(n.innerText||n.textContent),aria:c(n.getAttribute&&n.getAttribute('aria-label')),role:c(n.getAttribute&&n.getAttribute('role')),href:c(n.getAttribute&&n.getAttribute('href')),cls:c((n.className||'')+'')});
+                    out.push(chain);
+                  }
+                }
+                return {url:location.href,matches:out.slice(0,20)};
+              })()''')
+              print("flow_video_nav_inventory="+json.dumps(inv,ensure_ascii=False))
+              clk=await ev(r'''(() => {
+                const v=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);
+                const c=s=>(s||'').replace(/\s+/g,' ').trim();
+                const e=[...document.querySelectorAll('*')].filter(v).find(x=>['影片','Videos','Video'].includes(c(x.innerText||x.textContent))||['影片','Videos','Video'].includes(c(x.getAttribute&&x.getAttribute('aria-label'))));
+                if(!e)return {ok:false};
+                const q=e.closest('a,button,[role="button"],[role="link"]')||e;q.click();
+                return {ok:true,tag:(q.tagName||'').toLowerCase(),text:c(q.innerText||q.textContent),href:(q.getAttribute&&q.getAttribute('href'))||''};
+              })()''')
+              print("flow_video_nav_click="+json.dumps(clk,ensure_ascii=False))
+              await asyncio.sleep(6)
+              st=await ev(r'''(() => {
+                const v=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);
+                const c=s=>(s||'').replace(/\s+/g,' ').trim().slice(0,220);
+                return {
+                  url:location.href,
+                  body:c(document.body.innerText).slice(0,1600),
+                  videos:[...document.querySelectorAll('video')].map(e=>({visible:v(e),src:(e.currentSrc||e.src||'').slice(0,700),poster:(e.poster||'').slice(0,500),duration:e.duration||0})),
+                  controls:[...document.querySelectorAll('a,button,[role="button"],[role="link"]')].filter(v).map(e=>({tag:(e.tagName||'').toLowerCase(),text:c(e.innerText||e.textContent),aria:c(e.getAttribute('aria-label')),href:c(e.getAttribute('href'))})).slice(0,160),
+                  resources:performance.getEntriesByType('resource').map(x=>x.name||'').filter(u=>/video|mp4|webm|googlevideo|videoplayback|blob/i.test(u)).slice(-100)
+                };
+              })()''')
+              print("flow_video_library_state="+json.dumps(st,ensure_ascii=False))
+              print("flow_video_library_probe=PASS")
+          asyncio.run(main())
+          PY
