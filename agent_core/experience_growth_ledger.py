@@ -43,7 +43,7 @@ def _data_root() -> Path:
 
 def ledger_path(project_id: str, *, data_root: Path | None = None) -> Path:
     project_id = str(project_id or "").strip()
-    if not project_id or "/" in project_id or "\" in project_id or project_id in {".", ".."}:
+    if not project_id or "/" in project_id or "\\" in project_id or project_id in {".", ".."}:
         raise ValueError("invalid project_id")
     root = data_root or _data_root()
     return root / "experience" / project_id / "growth-ledger.json"
