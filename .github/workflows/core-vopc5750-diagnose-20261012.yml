@@ -1,0 +1,112 @@
+name: Core VOPC5750 Diagnose 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-vopc5750-diagnose-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2efc5d4c9db2267abf491806fe47b9901fc403b7
+
+      - name: Inspect node, queue, and safe canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time,uuid
+          from datetime import datetime,timezone
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_map=NodeRegistry().node_map()
+          node=next((n for n in node_map.get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
+
+          fabric=RealmFabricStore()
+          data=fabric.load()
+          queue=list((data.get('tasks') or {}).get('vopc5750') or [])
+
+          summary=[]
+          for item in queue:
+              if not isinstance(item,dict):
+                  continue
+              summary.append({
+                  'task_id':item.get('task_id'),
+                  'action':item.get('action'),
+                  'queued_at':item.get('queued_at'),
+                  'lease_count':item.get('_lease_count'),
+                  'leased_at':item.get('_leased_at'),
+                  'lease_until':item.get('_lease_until'),
+              })
+
+          print('NODE='+json.dumps(node,sort_keys=True))
+          print('QUEUE='+json.dumps(summary,sort_keys=True))
+
+          stale_test_prefixes=(
+              'task-semantic-',
+              'task-canary-',
+              'task-runtime-audit-',
+          )
+          kept=[]
+          removed=[]
+          for item in queue:
+              tid=str(item.get('task_id') or '') if isinstance(item,dict) else ''
+              action=str(item.get('action') or '') if isinstance(item,dict) else ''
+              if tid.startswith(stale_test_prefixes) and action in {
+                  'desktop.semantic_preview',
+                  'desktop.session.inspect',
+                  'shell.exec',
+              }:
+                  removed.append(tid)
+              else:
+                  kept.append(item)
+
+          if removed:
+              data['tasks']['vopc5750']=kept
+              fabric.save(data)
+          print('REMOVED_TEST_TASKS='+json.dumps(removed))
+
+          canary_id='task-diagnose-canary-'+uuid.uuid4().hex
+          fabric.queue_task('vopc5750',{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':canary_id,
+              'action':'desktop.session.inspect',
+          })
+
+          receipt=None
+          deadline=time.time()+20
+          while time.time()<deadline:
+              receipt=fabric.get_receipt(canary_id)
+              if receipt:
+                  break
+              time.sleep(1)
+
+          after=fabric.load()
+          record=next(
+              (x for x in list((after.get('tasks') or {}).get('vopc5750') or [])
+               if isinstance(x,dict) and x.get('task_id')==canary_id),
+              None
+          )
+
+          print('CANARY='+json.dumps({
+              'task_id':canary_id,
+              'receipt':receipt,
+              'queue_record':record,
+          },sort_keys=True))
+
+          if receipt and receipt.get('ok') is True:
+              print('VOPC5750_TASK_TRANSPORT=PASS')
+          else:
+              print('VOPC5750_TASK_TRANSPORT=FAIL')
+          PY
