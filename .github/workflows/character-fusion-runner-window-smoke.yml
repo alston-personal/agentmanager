@@ -1,5 +1,7 @@
 name: Character Fusion Runner Window Smoke
 
+# trigger: 2026-10-12 character-fusion live smoke
+
 on:
   pull_request:
     branches: [core/integration]
