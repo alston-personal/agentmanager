@@ -379,9 +379,39 @@ def _page(cdp_url: str) -> CdpTargetSession:
         finally:
             if page is not None:
                 page.close()
-    # Never create a potentially unauthenticated tab or disturb user drafts
-    # until a dedicated authenticated isolated-target acquisition exists.
-    raise RuntimeError("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE")
+    # An authenticated Chromium profile may have only draft-bearing tabs.
+    # Try a fresh isolated target without mutating any existing draft.
+    # A new target is usable only after an actual composer is verified.
+    fresh = None
+    page = None
+    try:
+        fresh = _create_target(cdp_url, "https://chatgpt.com/")
+        page = _open_target_connection(cdp_url, fresh)
+        _focus_composer(page, timeout_seconds=12.0)
+        snapshot = _submission_snapshot(page, "agentos-clean-fresh-target-check")
+        attachment = snapshot.get("attachmentSummary") or {}
+        images = attachment.get("imageStructure") or {}
+        if int(images.get("inFormBlob") or 0) or int(attachment.get("attachmentControlCount") or 0):
+            raise RuntimeError("GPT_WEB_FRESH_TARGET_NOT_CLEAN")
+        if str(page.evaluate("location.pathname") or "").startswith("/uc/"):
+            raise RuntimeError("GPT_WEB_FRESH_TARGET_UNSUPPORTED_ROUTE")
+        selected = page
+        page = None
+        return selected
+    except Exception:
+        raise RuntimeError("GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE") from None
+    finally:
+        if page is not None:
+            page.close()
+            if fresh and fresh.get("id"):
+                try:
+                    browser = CdpPage(_browser_ws_url(cdp_url))
+                    try:
+                        browser.call("Target.closeTarget", {"targetId": fresh["id"]})
+                    finally:
+                        browser.close()
+                except Exception:
+                    pass
 
 
 def _assistant_text(page: CdpPage, request_id: str) -> str | None:
