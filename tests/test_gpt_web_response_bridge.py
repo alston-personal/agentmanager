@@ -386,3 +386,19 @@ class GptWebNativeFileEventEvidenceTests(unittest.TestCase):
         self.assertIn("selectedCountAtEvent", body)
         self.assertIn("event.isTrusted", body)
         self.assertNotIn("FileReader", body)
+
+
+class GptWebUploadNetworkProbeTests(unittest.TestCase):
+    def test_network_probe_never_exposes_urls_or_headers(self):
+        from scripts.gpt_web_response_bridge import CdpPage
+        page = CdpPage.__new__(CdpPage)
+        page.upload_network_probe = None
+        page._upload_request_ids = set()
+        page.begin_upload_network_probe()
+        page.observe_upload_event({"method": "Network.requestWillBeSent", "params": {
+            "requestId": "r1", "request": {"method": "POST", "url": "https://chatgpt.com/backend-api/files?secret=bad", "headers": {"Authorization": "secret"}, "postData": "invoice"}}})
+        page.observe_upload_event({"method": "Network.responseReceived", "params": {"requestId": "r1", "response": {"status": 403, "url": "https://chatgpt.com/private"}}})
+        self.assertEqual(page.upload_network_probe["postRequests"], 1)
+        self.assertEqual(page.upload_network_probe["responseStatuses"]["403"], 1)
+        self.assertNotIn("secret", str(page.upload_network_probe))
+        self.assertNotIn("invoice", str(page.upload_network_probe))
