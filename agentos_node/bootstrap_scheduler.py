@@ -81,6 +81,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_PROBE_MIO_IMAGE_CONTAINER: ActionPolicy("build", 45, "normal", ("asset.processing",)),
     bc.ACTION_PROJECT_MIO_OBSERVER: ActionPolicy("maintenance", LOW, "low", ("observer.update",), ("oracle-core-runtime",)),
     bc.ACTION_DEPLOY_STUDIO_WEB_MIO: ActionPolicy("maintenance", LOW, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_CHARACTER_FUSION_DASHBOARD: ActionPolicy("maintenance", LOW, "low", ("deployment",), ("oracle-core-runtime",)),
     bc.ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR: ActionPolicy("maintenance", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
     bc.ACTION_MIGRATE_GALAXY_EXPERIMENT_MONITOR: ActionPolicy("maintenance", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
     bc.ACTION_INSTALL_MIO_OBSERVER_TIMER: ActionPolicy("maintenance", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),

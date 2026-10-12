@@ -184,6 +184,7 @@ def test_runner_window_catalog_contains_stable_public_intents():
     assert ("agentos.control-inbox", "reconcile") in items
     assert ("browser.gui", "smoke") in items
     assert ("social.runtime", "deploy") in items
+    assert ("studio.character-fusion", "deploy") in items
     assert ("social.publish", "mio.approved") in items
     assert ("persona.runtime", "oursong.activate") in items
     assert ("persona.runtime", "oursong.status") in items
@@ -516,3 +517,18 @@ def test_oursong_mio_dm_roundtrip_intent_is_bounded():
     assert "session:threads:mio" in policy.locks
     assert "session:threads:oursong" in policy.locks
     assert "persona.social.dm.roundtrip" in policy.capabilities
+
+
+def test_character_fusion_dashboard_deploy_is_bounded_public_intent():
+    intent, params = resolve_intent(
+        "studio.character-fusion",
+        "deploy",
+        source_commit="f" * 40,
+        payload={},
+    )
+    assert intent.action == bc.ACTION_DEPLOY_CHARACTER_FUSION_DASHBOARD
+    assert params == {"source_commit": "f" * 40}
+    assert public_intent_for_action(bc.ACTION_DEPLOY_CHARACTER_FUSION_DASHBOARD) == {
+        "capability": "studio.character-fusion",
+        "operation": "deploy",
+    }
