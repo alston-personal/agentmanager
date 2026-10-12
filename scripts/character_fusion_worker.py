@@ -1078,17 +1078,32 @@ async def main():
         if concept_mode == 'clicked':
             await asyncio.sleep(1.2)
 
-        baseline=await evaluate(r'''(() => {
+        baseline=await evaluate(r'''(async() => {
           const out=[];
           for(const el of document.querySelectorAll('img')){
             if(!(el.offsetWidth||el.offsetHeight||el.getClientRects().length)) continue;
             const r=el.getBoundingClientRect();
-            if(r.width<180||r.height<180) continue;
-            out.push({src:el.currentSrc||el.src||'',w:r.width,h:r.height});
+            const src=el.currentSrc||el.src||'';
+            const isFlowAsset=src.includes('flow.google.com/asb/');
+            const isThumbnail=el.classList.contains('thumbnail');
+            if(!src || (!isFlowAsset && !isThumbnail && (r.width<180 || r.height<180))) continue;
+            let digest='';
+            if(isFlowAsset || isThumbnail){
+              try{
+                const resp=await fetch(src,{credentials:'include',cache:'no-store'});
+                if(resp.ok){
+                  const buf=await resp.arrayBuffer();
+                  const hash=await crypto.subtle.digest('SHA-256',buf);
+                  digest=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');
+                }
+              }catch(_){}
+            }
+            out.push({src,digest,w:r.width,h:r.height,isFlowAsset,isThumbnail});
           }
           return out;
         })()''') or []
         baseline_src={x.get("src","") for x in baseline}
+        baseline_digest={x.get("digest","") for x in baseline if x.get("digest")}
 
         focused=await evaluate(r'''(() => {
           const editors=[...document.querySelectorAll('.base-prompt-box .ProseMirror[contenteditable="true"], flow-base-prompt-box .ProseMirror[contenteditable="true"]')]
@@ -1132,10 +1147,10 @@ async def main():
         if sent is not True:
             raise RuntimeError(f"flow_generate_button_unavailable:{sent}")
 
-        deadline=time.monotonic()+210
+        deadline=time.monotonic()+330
         chosen=None
         while time.monotonic()<deadline:
-            rows=await evaluate(r'''(() => {
+            rows=await evaluate(r'''(async() => {
               const out=[];
               for(const el of document.querySelectorAll('img')){
                 if(!(el.offsetWidth||el.offsetHeight||el.getClientRects().length)) continue;
@@ -1145,8 +1160,20 @@ async def main():
                 const isFlowAsset = src.includes('flow.google.com/asb/');
                 const isThumbnail = el.classList.contains('thumbnail');
                 if(!isFlowAsset && !isThumbnail && (r.width<256 || r.height<256)) continue;
+                let digest='';
+                if(isFlowAsset || isThumbnail){
+                  try{
+                    const resp=await fetch(src,{credentials:'include',cache:'no-store'});
+                    if(resp.ok){
+                      const buf=await resp.arrayBuffer();
+                      const hash=await crypto.subtle.digest('SHA-256',buf);
+                      digest=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');
+                    }
+                  }catch(_){}
+                }
                 out.push({
                   src,
+                  digest,
                   w:r.width,
                   h:r.height,
                   alt:(el.alt||'').slice(0,160),
@@ -1156,7 +1183,13 @@ async def main():
               }
               return out;
             })()''') or []
-            fresh=[x for x in rows if x.get("src","") not in baseline_src]
+            fresh=[
+                x for x in rows
+                if (
+                    x.get("src","") not in baseline_src
+                    or (x.get("digest") and x.get("digest") not in baseline_digest)
+                )
+            ]
             if fresh:
                 fresh.sort(
                     key=lambda x: (
