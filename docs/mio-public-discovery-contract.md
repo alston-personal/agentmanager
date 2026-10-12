@@ -119,3 +119,36 @@ and no real third-party Threads post or author has been read by this change.
 ### IR-grounded exploration topic policy
 
 The read-only triage now optionally accepts a current persona IR and derives candidate matching lanes from `current_self.interests_with_evidence` when at least one source basis is present. Only bounded known-topic synonyms are expanded. No source evidence, malformed IR or no evidenced interests yields a BLOCKED decision; this prevents nearby trends or a single stranger's post from silently becoming Mio's own enduring interest. The static topic vocabulary remains a legacy fallback **only when the caller does not supply an IR**, so runtime integration must supply the authoritative IR to enforce grounded interests. This is currently a tested contract, not a deployed social feed reader.
+
+### Implementation owner rediscovered on core/integration (2026-10-12)
+
+An existing **actual provider operation** is present on the
+`core/integration` branch, at `agentos_node/social/threads.py`:
+`ThreadsProvider.read(request)` accepts `operation="keyword.search"`,
+uses the existing `CredentialVault` account binding and calls
+`transport.paged("keyword_search", ..., max_pages=1)` with a
+10-item limit and the official `id,text,timestamp,username,permalink`
+projection. `agentos_node/social/contracts.py` already validates
+`query`, `search_type` and `search_mode`.
+`scripts/diagnose_mio_threads_search_scope_user.py` also exists on
+that branch and probes `/debug_token`, returning only grant status.
+
+**This is the preferred owner and integration path.** The stand-alone
+`persona_threads_keyword_probe.py` in this PR is only an offline-tested
+diagnostic fallback, **not** a competing production provider and should not
+be deployed in parallel with that runtime. Before adding any new runtime
+operation, determine which immutable social-runtime version is installed
+on Oracle; do not promote an old integration branch wholesale to main.
+
+Crucially, `threads.py` already records that a historical Meta
+`/debug_token` check found the then-current token to be missing
+`threads_keyword_search`. Treat that as a historical observation,
+not proof of current grant status. Current node-authoritative acceptance
+must prove (1) exact Mio account binding, (2) scope status from the
+existing diagnostic or credential owner, (3) whether the installed runtime
+supports `keyword.search`, (4) one safe read-only search and its
+source receipt if authorized, and (5) no cross-account session reuse.
+If scope is absent, classify AUTH_SCOPE_REQUIRED and route to the
+approved reauthorization/app-review workflow, rather than retrying
+scrapers or constructing fake evidence. Do not alter Mio's current
+posting/reply/heartbeat paths.
