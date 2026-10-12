@@ -305,17 +305,13 @@ class GptWebTargetRoutingTests(unittest.TestCase):
             self.assertIs(_page("http://127.0.0.1:9222"), endpoint)
         opened.assert_called_once_with("http://127.0.0.1:9222", normal)
 
-    def test_fails_closed_when_fresh_target_redirects_to_uc(self):
+    def test_fails_closed_without_clean_existing_target(self):
         from scripts.gpt_web_response_bridge import _page
-        endpoint = Mock()
-        endpoint.evaluate.return_value = "https://chatgpt.com/uc/temp"
-        fresh = {"type": "page", "url": "https://chatgpt.com/", "webSocketDebuggerUrl": "ws://fresh"}
         with patch("scripts.gpt_web_response_bridge._targets", return_value=[]), \
-             patch("scripts.gpt_web_response_bridge._create_target", return_value=fresh), \
-             patch("scripts.gpt_web_response_bridge._open_target_connection", return_value=endpoint):
-            with self.assertRaisesRegex(RuntimeError, "GPT_WEB_UNSUPPORTED_CONVERSATION_ROUTE"):
+             patch("scripts.gpt_web_response_bridge._create_target") as create:
+            with self.assertRaisesRegex(RuntimeError, "GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE"):
                 _page("http://127.0.0.1:9222")
-        endpoint.close.assert_called_once()
+            create.assert_not_called()
 
 
 class GptWebAttachmentDiagnosticsTests(unittest.TestCase):
