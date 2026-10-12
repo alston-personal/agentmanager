@@ -20,6 +20,7 @@ INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("agentos.scheduler", "status", bc.ACTION_SCHEDULER_STATUS),
     RunnerWindowIntent("agentos.relay", "restart", bc.ACTION_RELAY_RESTART),
     RunnerWindowIntent("agentos.runtime", "repair", bc.ACTION_REPAIR_TRANSPORT),
+    RunnerWindowIntent("node.runtime", "converge", bc.ACTION_RUNTIME_CONVERGE),
     RunnerWindowIntent("agentos.control-inbox", "reconcile", bc.ACTION_RECONCILE_CONTROL_INBOX),
     RunnerWindowIntent("agentos.executor", "job.submit", bc.ACTION_EXECUTOR_JOB_SUBMIT, frozenset({"job_type"})),
     RunnerWindowIntent("agentos.executor", "job.inspect", bc.ACTION_EXECUTOR_JOB_INSPECT, frozenset({"job_id"})),
