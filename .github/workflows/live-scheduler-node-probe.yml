@@ -1,7 +1,5 @@
 name: Live Scheduler Node Probe
 
-# probe trigger: 2026-10-12 runner recovery
-
 on:
   pull_request:
     branches: [core/integration]
