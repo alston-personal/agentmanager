@@ -635,6 +635,12 @@ def cached_render(job: dict[str, Any], rendered_layers: list[str]) -> tuple[str,
     cached = cache_path(key)
     if not cached.exists() or cached.stat().st_size < 1000:
         return None
+    # A generated image is NOT a verified garment application. Do not let
+    # historical unreviewed candidates become a trusted input to later layers.
+    sidecar = cached.with_suffix(".json")
+    receipt = read_json(sidecar) if sidecar.exists() else None
+    if not isinstance(receipt, dict) or receipt.get("qualityAccepted") is not True:
+        return None
     return key, cached
 
 
