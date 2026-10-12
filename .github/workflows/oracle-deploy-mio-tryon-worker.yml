@@ -2,6 +2,11 @@ name: Oracle Deploy Mio Try-On Worker
 
 on:
   workflow_dispatch:
+    inputs:
+      fresh_inference:
+        description: "Force a real uncached garment inference (external provider may be unavailable)"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -160,14 +165,17 @@ jobs:
           JOB_DIR="$ROOT/render_jobs/runtime"
           ASSET_DIR="$ROOT/render_assets"
           JOB_ID="mio-worker-selftest-$RANDOM-$(date +%s)"
+          FRESH_INFERENCE="${{ github.event_name == 'workflow_dispatch' && inputs.fresh_inference || false }}"
+          echo "mio_tryon_fresh_inference_requested=$FRESH_INFERENCE"
           JOB="$JOB_DIR/$JOB_ID.json"
           ASSET="$ASSET_DIR/$JOB_ID.webp"
           mkdir -p "$JOB_DIR" "$ASSET_DIR"
 
-          python3 - "$JOB" "$JOB_ID" <<'PY'
+          python3 - "$JOB" "$JOB_ID" "$FRESH_INFERENCE" <<'PY'
           import json, pathlib, sys
           from datetime import datetime, timezone
           path=pathlib.Path(sys.argv[1]); job_id=sys.argv[2]
+          garment_id="net-43774-002-fresh-"+job_id if sys.argv[3] == "true" else "net-43774-002"
           now=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
           job={
             "schema":"agentos.tryon-render-job/v1",
@@ -180,7 +188,7 @@ jobs:
               "baseBodyAsset":"/personas/mio/mio-base-v2.webp",
               "layerOrder":["upper_main"],
               "selectedLayers":{
-                "upper_main":{"garmentId":"net-43774-002","name":"white top","layer":"upper_main","sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"}
+                "upper_main":{"garmentId":garment_id,"name":"white top","layer":"upper_main","sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"}
               }
             },
             "output":{"asset":None,"previewAsset":None,"width":None,"height":None},
@@ -205,6 +213,22 @@ jobs:
               test -s "$ASSET"
               BYTES=$(wc -c < "$ASSET")
               test "$BYTES" -gt 1000
+              PROVIDER="$(python3 - "$JOB" <<'PY'
+          import json,sys
+          output=json.load(open(sys.argv[1],encoding="utf-8")).get("output") or {}
+          print(output.get("provider","unknown"))
+          PY
+              )"
+              echo "mio_tryon_worker_selftest_provider=$PROVIDER"
+              if [ "$FRESH_INFERENCE" = true ] && [ "$PROVIDER" != hybrid-vton ]; then
+                echo "mio_tryon_fresh_inference=FAIL unexpected_provider:$PROVIDER" >&2
+                break
+              fi
+              if [ "$FRESH_INFERENCE" = true ]; then
+                echo "mio_tryon_fresh_inference=PASS"
+              else
+                echo "mio_tryon_fresh_inference=NOT_TESTED"
+              fi
               echo "mio_tryon_worker_selftest=PASS bytes=$BYTES"
               SELFTEST_OK=1
               break
