@@ -40,7 +40,7 @@ jobs:
             | git -C "$REPO" cat-file --batch-check='%(objectname) %(objecttype) %(objectsize) %(rest)' \
             | awk '$2=="blob"{print $3 "\t" $1 "\t" substr($0,index($0,$4))}' \
             | sort -nr \
-            | head -n 40 > "$TMP"
+            | sed -n '1,40p' > "$TMP"
 
           python3 - "$TMP" <<'PY'
           import re,sys
