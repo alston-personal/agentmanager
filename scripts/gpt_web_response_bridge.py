@@ -129,11 +129,15 @@ class CdpPage:
             request = params.get("request") or {}
             # Never retain URLs, headers, cookies, filenames or request bodies.
             url = str(request.get("url") or "")
-            if str(request.get("method") or "") == "POST" and urllib.parse.urlsplit(url).hostname == "chatgpt.com":
+            if str(request.get("method") or "") == "POST":
+                # Uploads can use a distinct signed-storage host. Track only
+                # counts, never domains, full URLs, headers or request bodies.
                 rid = str(params.get("requestId") or "")
                 if rid:
                     self._upload_request_ids.add(rid)
                     probe["postRequests"] += 1
+                    family = "chatgpt" if urllib.parse.urlsplit(url).hostname == "chatgpt.com" else "other"
+                    probe["postHostFamilies"][family] += 1
         elif method == "Network.responseReceived":
             if str(params.get("requestId") or "") in self._upload_request_ids:
                 status = int((params.get("response") or {}).get("status") or 0)
@@ -146,7 +150,7 @@ class CdpPage:
 
     def begin_upload_network_probe(self) -> None:
         self._upload_request_ids = set()
-        self.upload_network_probe = {"postRequests": 0, "responseStatuses": {}, "networkFailures": 0}
+        self.upload_network_probe = {"postRequests": 0, "postHostFamilies": {"chatgpt": 0, "other": 0}, "responseStatuses": {}, "networkFailures": 0}
 
     def close(self) -> None:
         try:
