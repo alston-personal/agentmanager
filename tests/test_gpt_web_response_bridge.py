@@ -465,3 +465,13 @@ class NativeChooserMenuContractTests(unittest.TestCase):
         self.assertIn("'[role=\"menuitem\"]",src)
         self.assertNotIn("Input.insertText",src)
         self.assertNotIn("_click_send(",src)
+
+
+class NativeChooserTriggerExclusionContractTests(unittest.TestCase):
+    def test_second_click_cannot_reclick_attachment_trigger(self):
+        from pathlib import Path
+        code=Path("scripts/gpt_web_gui_upload_probe.py").read_text(encoding="utf-8")
+        self.assertIn("centerX-triggerX",code)
+        self.assertIn("centerY-triggerY",code)
+        self.assertIn("json.dumps(x)",code)
+        self.assertNotIn("Input.insertText",code)
