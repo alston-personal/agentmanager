@@ -659,6 +659,18 @@ def _confirm_submit(page: Any, *, request_id: str, baseline_assistants: int, bas
     )
 
 
+def _attachment_growth(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    """Require newly added in-form blob image AND new remove-attachment control."""
+    a = (before.get("attachmentSummary") or {})
+    b = (after.get("attachmentSummary") or {})
+    old_imgs = (a.get("imageStructure") or {})
+    new_imgs = (b.get("imageStructure") or {})
+    return (
+        int(new_imgs.get("inFormBlob") or 0) > int(old_imgs.get("inFormBlob") or 0)
+        and int(b.get("attachmentControlCount") or 0) > int(a.get("attachmentControlCount") or 0)
+    )
+
+
 def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, Any]) -> str:
     image = Path(str(inner["image_path"])).expanduser().resolve()
     allowed_raw = os.environ.get("AGENTOS_GPT_WEB_ALLOWED_ROOTS", "/home/ubuntu/agentmanager/benchmarks/invoice_handwriting/fixtures")
@@ -745,7 +757,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             upload_observation: dict[str, Any] = {}
             while time.monotonic() < upload_deadline:
                 upload_observation = _submission_snapshot(page, request_id)
-                if int((upload_observation.get("attachmentSummary") or {}).get("imagePreviewCount") or 0) > 0:
+                if _attachment_growth(upload_baseline, upload_observation):
                     selection_confirmed = True
                     break
                 time.sleep(0.4)
