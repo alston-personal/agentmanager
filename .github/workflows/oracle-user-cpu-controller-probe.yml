@@ -1,0 +1,66 @@
+name: Oracle User CPU Controller Probe
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-user-cpu-controller-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect CPU controller delegation read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          UNIT=agentos-employee-worker-host.service
+          cg="$(systemctl --user show "$UNIT" -p ControlGroup --value)"
+          echo "unit_control_group=$cg"
+
+          echo "cgroup_fs_type=$(stat -fc %T /sys/fs/cgroup)"
+          echo "root_controllers=$(cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo none)"
+          echo "root_subtree_control=$(cat /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || echo none)"
+
+          path="/sys/fs/cgroup"
+          IFS='/' read -r -a parts <<< "${cg#/}"
+          for part in "${parts[@]}"; do
+            [ -n "$part" ] || continue
+            path="$path/$part"
+            echo "node=$path"
+            echo "controllers=$(cat "$path/cgroup.controllers" 2>/dev/null || echo missing)"
+            echo "subtree_control=$(cat "$path/cgroup.subtree_control" 2>/dev/null || echo missing)"
+            echo "cpu_max_exists=$([ -e "$path/cpu.max" ] && echo true || echo false)"
+            echo "cpu_weight_exists=$([ -e "$path/cpu.weight" ] && echo true || echo false)"
+            if [ -e "$path/cpu.max" ]; then
+              printf 'cpu_max_hex='
+              od -An -tx1 -v "$path/cpu.max" | tr -d ' \n'
+              echo
+              printf 'cpu_max_text='
+              cat "$path/cpu.max"
+            fi
+            if [ -e "$path/cpu.weight" ]; then
+              printf 'cpu_weight_text='
+              cat "$path/cpu.weight"
+            fi
+          done
+
+          echo "user_slice_cpu_accounting=$(systemctl show user-1001.slice -p CPUAccounting --value 2>/dev/null || true)"
+          echo "user_slice_cpu_quota=$(systemctl show user-1001.slice -p CPUQuotaPerSecUSec --value 2>/dev/null || true)"
+          echo "oracle_user_cpu_controller_probe=PASS"
+          REMOTE
