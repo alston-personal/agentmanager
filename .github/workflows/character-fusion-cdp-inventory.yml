@@ -5,10 +5,12 @@ on:
     branches: [core/integration]
     paths:
       - '.github/workflows/character-fusion-cdp-inventory.yml'
+      - 'scripts/oracle_browser_identity_inventory.py'
   push:
     branches: [core/integration]
     paths:
       - '.github/workflows/character-fusion-cdp-inventory.yml'
+      - 'scripts/oracle_browser_identity_inventory.py'
 
 permissions:
   contents: read
