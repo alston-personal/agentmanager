@@ -546,6 +546,21 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
           connected: el.isConnected
         })),
         imagePreviewCount: document.querySelectorAll('[data-testid*="attachment"], [data-testid*="upload"], [data-testid*="preview"]').length,
+        imageStructure: (() => {
+          const imgs = Array.from(document.querySelectorAll('img'));
+          const inForm = imgs.filter(el => el.closest('form'));
+          const countScheme = (items, scheme) => items.filter(el => {
+            const src = el.getAttribute('src') || '';
+            return scheme === 'blob' ? src.startsWith('blob:') :
+              scheme === 'data' ? src.startsWith('data:') : false;
+          }).length;
+          return {inForm: inForm.length, inFormBlob: countScheme(inForm, 'blob'),
+            inFormData: countScheme(inForm, 'data'),
+            allBlob: countScheme(imgs, 'blob'), allData: countScheme(imgs, 'data')};
+        })(),
+        attachmentControlCount: document.querySelectorAll(
+          'form button[aria-label*="Remove"], form button[aria-label*="移除"], form [data-testid*="remove-attachment"]'
+        ).length,
         // Structural hints only: avoid text, labels, image URLs and filenames.
         inputContext: Array.from(document.querySelectorAll('input[type="file"]')).slice(0, 8).map(el => {
           const parent = el.parentElement;

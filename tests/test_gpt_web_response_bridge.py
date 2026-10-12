@@ -475,3 +475,17 @@ class NativeChooserTriggerExclusionContractTests(unittest.TestCase):
         self.assertIn("centerY-triggerY",code)
         self.assertIn("json.dumps(x)",code)
         self.assertNotIn("Input.insertText",code)
+
+
+class ImageStructureWithoutContentTests(unittest.TestCase):
+    def test_snapshot_captures_form_image_context_without_urls(self):
+        from unittest.mock import Mock
+        from scripts.gpt_web_response_bridge import _submission_snapshot
+        page=Mock()
+        page.evaluate.return_value={"attachmentSummary":{}}
+        _submission_snapshot(page,"safe-id")
+        code=page.evaluate.call_args.args[0]
+        self.assertIn("imageStructure",code)
+        self.assertIn("inFormBlob",code)
+        self.assertIn("attachmentControlCount",code)
+        self.assertNotIn("img.src",code)
