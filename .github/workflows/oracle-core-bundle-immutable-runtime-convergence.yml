@@ -6,6 +6,10 @@ on:
     branches: [core/integration]
     paths:
       - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
+      - '.agent/scripts/agentos-employee-worker-host.service'
+      - '.agent/scripts/agentos-employee-worker-host-system.service'
+      - 'scripts/install_systemd_user.sh'
+      - 'scripts/install_services.py'
   workflow_dispatch:
 
 permissions:
@@ -42,7 +46,10 @@ jobs:
           RUNTIME_ROOT="$DATA_ROOT/runtime/core"
           RELEASE="$RELEASE_ROOT/$SOURCE_COMMIT"
           CURRENT="$RUNTIME_ROOT/current"
+          PREVIOUS_CURRENT="$(readlink -f "$CURRENT" 2>/dev/null || true)"
           UNIT_DIR=/home/ubuntu/.config/systemd/user
+          WORKER_SYSTEM_MARKER=/home/ubuntu/.config/agentos/employee-worker-host-system-boundary
+          WORKER_SYSTEM_UNIT=/etc/systemd/system/agentos-employee-worker-host.service
           BACKUP="$(mktemp -d /tmp/agentos-core-units.XXXXXX)"
           UNITS=(
             os-chronos.service
@@ -74,6 +81,7 @@ jobs:
           for unit in "${UNITS[@]}"; do
             [ -f "$UNIT_DIR/$unit" ] && cp -a "$UNIT_DIR/$unit" "$BACKUP/$unit"
           done
+          [ -f "$WORKER_SYSTEM_UNIT" ] && sudo -n cp -a "$WORKER_SYSTEM_UNIT" "$BACKUP/agentos-employee-worker-host.system.service" || true
           : > "$BACKUP/active-services"
           for unit in "${SERVICES[@]}"; do
             systemctl --user is-active --quiet "$unit" 2>/dev/null && echo "$unit" >> "$BACKUP/active-services" || true
@@ -84,14 +92,23 @@ jobs:
           # historical host may have been activated before the enable toggle was
           # persisted in the shared .env. Reuse only its existing bounded
           # host-local environment; do not infer or invent wake/node identity.
-          if grep -qx 'agentos-employee-worker-host.service' "$BACKUP/active-services"; then
-            WORKER_ENV=/home/ubuntu/.config/agentos/employee-worker-host.env
+          WORKER_ENV=/home/ubuntu/.config/agentos/employee-worker-host.env
+          WORKER_SYSTEM_ACTIVE=0
+          if [ -f "$WORKER_SYSTEM_MARKER" ] && sudo -n systemctl is-active --quiet agentos-employee-worker-host.service 2>/dev/null; then
+            WORKER_SYSTEM_ACTIVE=1
+          fi
+          if grep -qx 'agentos-employee-worker-host.service' "$BACKUP/active-services" || [ "$WORKER_SYSTEM_ACTIVE" = 1 ]; then
             test -f "$WORKER_ENV"
             set -a
             source "$WORKER_ENV"
             export AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE=1
             set +a
             echo "core_bundle_worker_intent=PRESERVE_ACTIVE"
+          fi
+          if [ -f "$WORKER_SYSTEM_MARKER" ]; then
+            echo "core_bundle_worker_owner=system"
+          else
+            echo "core_bundle_worker_owner=user"
           fi
 
           rollback() {
@@ -104,6 +121,16 @@ jobs:
                 fi
               done
               systemctl --user daemon-reload || true
+              if [ -f "$WORKER_SYSTEM_MARKER" ]; then
+                if [ -f "$BACKUP/agentos-employee-worker-host.system.service" ]; then
+                  sudo -n cp -a "$BACKUP/agentos-employee-worker-host.system.service" "$WORKER_SYSTEM_UNIT" || true
+                  sudo -n systemctl daemon-reload || true
+                fi
+                if [ -n "$PREVIOUS_CURRENT" ] && [ -e "$PREVIOUS_CURRENT" ]; then
+                  ln -sfn "$PREVIOUS_CURRENT" "$CURRENT" || true
+                fi
+                sudo -n systemctl restart agentos-employee-worker-host.service || true
+              fi
               while read -r unit; do
                 [ -n "$unit" ] && systemctl --user restart "$unit" || true
               done < "$BACKUP/active-services"
@@ -213,7 +240,12 @@ jobs:
           test "$lobster_restarts_before" = "$lobster_restarts_after"
           echo "core_bundle_lobster_stable=PASS"
           if [ "${AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE:-0}" = 1 ]; then
-            systemctl --user is-active --quiet agentos-employee-worker-host.service
+            if [ -f "$WORKER_SYSTEM_MARKER" ]; then
+              sudo -n systemctl is-active --quiet agentos-employee-worker-host.service
+              ! systemctl --user is-active --quiet agentos-employee-worker-host.service 2>/dev/null
+            else
+              systemctl --user is-active --quiet agentos-employee-worker-host.service
+            fi
           fi
 
           # Actual running processes, not merely unit text, must execute from the immutable release.
@@ -235,7 +267,7 @@ jobs:
             esac
             echo "core_bundle_runtime=$unit:immutable"
           done
-          if systemctl --user is-active --quiet agentos-employee-worker-host.service; then
+          if [ ! -f "$WORKER_SYSTEM_MARKER" ] && systemctl --user is-active --quiet agentos-employee-worker-host.service; then
             worker_wd="$(systemctl --user show agentos-employee-worker-host.service -p WorkingDirectory --value)"
             test "$(readlink -f "$worker_wd")" = "$RELEASE" || {
               echo "ERROR: worker host unit WorkingDirectory is not exact release: $worker_wd" >&2
@@ -249,12 +281,41 @@ jobs:
             worker_pid="$(systemctl --user show agentos-employee-worker-host.service -p MainPID --value)"
             test -n "$worker_pid" && test "$worker_pid" != 0
             systemctl --user --no-pager --full status agentos-employee-worker-host.service | grep -q 'employee_worker_host_daemon'
-            echo "core_bundle_runtime=agentos-employee-worker-host.service:immutable"
+            echo "core_bundle_runtime=agentos-employee-worker-host.service:user-immutable"
             echo "core_bundle_worker_group_boundary=PASS"
           fi
 
           ln -sfn "$RELEASE" "$CURRENT"
           test "$(readlink -f "$CURRENT")" = "$RELEASE"
+
+          if [ -f "$WORKER_SYSTEM_MARKER" ]; then
+            test -f "$RELEASE/.agent/scripts/agentos-employee-worker-host-system.service"
+            sudo -n install -o root -g root -m 0644               "$RELEASE/.agent/scripts/agentos-employee-worker-host-system.service" "$WORKER_SYSTEM_UNIT"
+            sudo -n systemctl daemon-reload
+            sudo -n systemctl restart agentos-employee-worker-host.service
+            sudo -n systemctl is-active --quiet agentos-employee-worker-host.service
+            worker_pid="$(sudo -n systemctl show agentos-employee-worker-host.service -p MainPID --value)"
+            test -n "$worker_pid" && test "$worker_pid" != 0
+            worker_cwd="$(readlink -f "/proc/$worker_pid/cwd")"
+            test "$worker_cwd" = "$RELEASE"
+            worker_cg="$(sudo -n systemctl show agentos-employee-worker-host.service -p ControlGroup --value)"
+            case "$worker_cg" in /system.slice/*) ;; *) echo "ERROR: system worker outside system.slice: $worker_cg" >&2; exit 27;; esac
+            worker_root="/sys/fs/cgroup$worker_cg"
+            test "$(cat "$worker_root/cpu.max")" = "50000 100000"
+            test "$(cat "$worker_root/cpu.weight")" = "20"
+            test "$(cat "$worker_root/memory.max")" = "1073741824"
+            grep -Eq '^default[[:space:]]+20
+          echo "core_bundle_source_commit=$SOURCE_COMMIT"
+          echo "core_bundle_release=$RELEASE"
+          echo "core_bundle_current=$CURRENT"
+          echo "core_bundle_immutable_runtime=PASS"
+          trap - EXIT
+          rm -rf "$BACKUP"
+          REMOTE
+ "$worker_root/io.weight"
+            echo "core_bundle_runtime=agentos-employee-worker-host.service:system-immutable"
+            echo "core_bundle_worker_kernel_resource_boundary=PASS"
+          fi
           echo "core_bundle_source_commit=$SOURCE_COMMIT"
           echo "core_bundle_release=$RELEASE"
           echo "core_bundle_current=$CURRENT"
