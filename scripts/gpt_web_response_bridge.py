@@ -116,6 +116,37 @@ class CdpPage:
             raise RuntimeError(f"CDP_WS_CONNECT_FAILED:{type(exc).__name__}:{exc}") from exc
         self.ws.settimeout(5)
         self.seq = 0
+        self.upload_network_probe: dict[str, Any] | None = None
+        self._upload_request_ids: set[str] = set()
+
+    def observe_upload_event(self, event: dict[str, Any]) -> None:
+        probe = self.upload_network_probe
+        if probe is None:
+            return
+        method = event.get("method")
+        params = event.get("params") or {}
+        if method == "Network.requestWillBeSent":
+            request = params.get("request") or {}
+            # Never retain URLs, headers, cookies, filenames or request bodies.
+            url = str(request.get("url") or "")
+            if str(request.get("method") or "") == "POST" and urllib.parse.urlsplit(url).hostname == "chatgpt.com":
+                rid = str(params.get("requestId") or "")
+                if rid:
+                    self._upload_request_ids.add(rid)
+                    probe["postRequests"] += 1
+        elif method == "Network.responseReceived":
+            if str(params.get("requestId") or "") in self._upload_request_ids:
+                status = int((params.get("response") or {}).get("status") or 0)
+                if status:
+                    bucket = str(status) if status in {400, 401, 403, 413, 429} else f"{status // 100}xx"
+                    probe["responseStatuses"][bucket] = probe["responseStatuses"].get(bucket, 0) + 1
+        elif method == "Network.loadingFailed":
+            if str(params.get("requestId") or "") in self._upload_request_ids:
+                probe["networkFailures"] += 1
+
+    def begin_upload_network_probe(self) -> None:
+        self._upload_request_ids = set()
+        self.upload_network_probe = {"postRequests": 0, "responseStatuses": {}, "networkFailures": 0}
 
     def close(self) -> None:
         try:
@@ -139,6 +170,8 @@ class CdpPage:
                     raise TimeoutError(f"CDP_COMMAND_RECV_TIMEOUT:{method}") from exc
                 raise RuntimeError(f"CDP_COMMAND_RECV_FAILED:{method}:{type(exc).__name__}:{exc}") from exc
             message = json.loads(raw)
+            if message.get("method") and (not session_id or message.get("sessionId") == session_id):
+                self.observe_upload_event(message)
             if message.get("id") != call_id:
                 continue
             if "error" in message:
@@ -605,6 +638,10 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
                 "GPT_WEB_FILE_INPUT_NOT_FOUND:" +
                 json.dumps(_composer_snapshot(page), ensure_ascii=False, sort_keys=True)
             )
+        # Network telemetry is structural and bounded; never capture upload bodies,
+        # addresses, auth data or invoice contents.
+        page.call("Network.enable")
+        page.connection.begin_upload_network_probe()
         # Capture the trusted native input/change signal before CDP file
         # selection. No filenames, file bytes or prompt contents are retained.
         page.evaluate("""(() => {
@@ -659,7 +696,8 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             if not selection_confirmed:
                 raise RuntimeError(
                     "GPT_WEB_FILE_SELECTION_UNVERIFIED:" +
-                    json.dumps({"dom": upload_observation, "fileEvents": upload_event_probe},
+                    json.dumps({"dom": upload_observation, "fileEvents": upload_event_probe,
+                                "network": page.connection.upload_network_probe},
                                ensure_ascii=False, sort_keys=True)
                 )
 
