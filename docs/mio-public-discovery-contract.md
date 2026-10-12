@@ -152,3 +152,19 @@ If scope is absent, classify AUTH_SCOPE_REQUIRED and route to the
 approved reauthorization/app-review workflow, rather than retrying
 scrapers or constructing fake evidence. Do not alter Mio's current
 posting/reply/heartbeat paths.
+
+### Offline-tested read bridge to native Social Runtime
+
+`scripts/persona_keyword_social_runtime_bridge.py` is an injectable,
+fail-closed read-only bridge targeting the existing operation
+`keyword.search` (rather than creating a second OAuth transport). It
+requires explicit `mio.milkcat`/persona binding, provider account ID,
+bounded query, and an exact identity-matching Social Runtime receipt.
+Missing scope, rejected reads, malformed/overlarge results and own-only
+search are separately classified. No raw post content or token is
+emitted. Tests use an injected offline read function rather than live
+Oracle or social-platform calls. Importantly, this is **not** installed
+in the live persona worker and no node-authoritative receipt has been
+seen. Integration needs approval of the existing runtime owner and a
+safe, independently observed Oracle readback. No write authority is
+implied by keyword search.
