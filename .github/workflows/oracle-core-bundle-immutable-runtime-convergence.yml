@@ -300,26 +300,19 @@ jobs:
             worker_cwd="$(readlink -f "/proc/$worker_pid/cwd")"
             test "$worker_cwd" = "$RELEASE"
             worker_cg="$(sudo -n systemctl show agentos-employee-worker-host.service -p ControlGroup --value)"
-            case "$worker_cg" in /system.slice/*) ;; *) echo "ERROR: system worker outside system.slice: $worker_cg" >&2; exit 27;; esac
+            case "$worker_cg" in
+              /system.slice/*) ;;
+              *) echo "ERROR: system worker outside system.slice: $worker_cg" >&2; exit 27 ;;
+            esac
             worker_root="/sys/fs/cgroup$worker_cg"
             test "$(cat "$worker_root/cpu.max")" = "50000 100000"
             test "$(cat "$worker_root/cpu.weight")" = "20"
             test "$(cat "$worker_root/memory.max")" = "1073741824"
-            grep -Eq '^default[[:space:]]+20
+            grep -Eq '^default[[:space:]]+20$' "$worker_root/io.weight"
             echo "core_bundle_runtime=agentos-employee-worker-host.service:system-immutable"
             echo "core_bundle_worker_kernel_resource_boundary=PASS"
           fi
-          echo "core_bundle_source_commit=$SOURCE_COMMIT"
-          echo "core_bundle_release=$RELEASE"
-          echo "core_bundle_current=$CURRENT"
-          echo "core_bundle_immutable_runtime=PASS"
-          trap - EXIT
-          rm -rf "$BACKUP"
-          REMOTE
- "$worker_root/io.weight"
-            echo "core_bundle_runtime=agentos-employee-worker-host.service:system-immutable"
-            echo "core_bundle_worker_kernel_resource_boundary=PASS"
-          fi
+
           echo "core_bundle_source_commit=$SOURCE_COMMIT"
           echo "core_bundle_release=$RELEASE"
           echo "core_bundle_current=$CURRENT"
