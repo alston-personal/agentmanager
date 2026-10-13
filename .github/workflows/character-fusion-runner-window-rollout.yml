@@ -1,6 +1,6 @@
 name: Character Fusion Runner Window Rollout
 
-# trigger: 2026-10-13 latest Character Fusion production rollout 0815
+# trigger: 2026-10-13 Character Fusion rollout after immutable-converge fix 0820
 
 on:
   pull_request:
