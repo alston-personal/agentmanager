@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 PRODUCT="net-31234-product-689961"
+EXPECTED_PIXEL_SHA="06a3aa8736af3dac238775a8c08ab90ce0fb9f5f8f5fa7ead0cdfd6d60d80ba9"
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
@@ -23,6 +24,8 @@ def isolate(source:Path,output:Path,source_sha:str):
     if sha(raw)!=source_sha:
         raise ValueError("source_asset_digest_mismatch")
     rgb_img=Image.open(io.BytesIO(raw)).convert("RGB")
+    if sha(rgb_img.tobytes())!=EXPECTED_PIXEL_SHA:
+        raise ValueError("source_pixels_not_canonical")
     w,h=rgb_img.size
     if w<500 or h<600 or max(w,h)>4000:
         raise ValueError("unexpected source dimensions")
