@@ -62,6 +62,22 @@ class ProjectContinuationIndexTests(unittest.TestCase):
         ir["continuation"] = {"recommended_action": "Open fresh Codex"}
         return params
 
+    def test_action_relay_registration_and_bounded_delegate(self):
+        from agentos_node.action_relay import ACTIONS
+        action = ACTIONS["agentos.project.publish_continuation"]
+        with patch("agent_core.project_continuation_index.publish_project_continuation") as publish:
+            publish.return_value = {"ok": True, "schema": "agentos.project-continuation-publish/v1"}
+            receipt = action(self.params)
+            publish.assert_called_once_with(self.params)
+            self.assertTrue(receipt["ok"])
+
+    def test_action_relay_rejects_noncanonical_project(self):
+        from agentos_node.action_relay import ACTIONS
+        params = json.loads(json.dumps(self.params))
+        params["project_id"] = "untrusted-project"
+        with self.assertRaisesRegex(ValueError, "restricted to agentos-core"):
+            ACTIONS["agentos.project.publish_continuation"](params)
+
     def test_rejects_noncanonical_project(self):
         params = dict(self.params)
         params["project_id"] = "other"
