@@ -7,6 +7,8 @@ on:
       - 'agent_core/resolve_facade.py'
       - 'agentos_node/action_relay.py'
       - 'tests/test_project_continuation_index.py'
+      - 'tests/test_continuation_cutover_receipt.py'
+      - 'scripts/check_continuation_cutover_receipt.py'
       - '.github/workflows/project-continuation-publication-contract.yml'
 permissions:
   contents: read
@@ -34,4 +36,4 @@ jobs:
       - name: Validate continuation publisher and relay syntax
         run: |
           python3 -m py_compile agent_core/project_continuation_index.py agentos_node/action_relay.py
-          PYTHONPATH="$PWD" python3 -m unittest tests.test_project_continuation_index tests.test_action_relay -v
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_project_continuation_index tests.test_action_relay tests.test_continuation_cutover_receipt -v
