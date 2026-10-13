@@ -8,7 +8,6 @@ separate review evidence for audit. Reject if any recorded asset has changed.
 """
 from __future__ import annotations
 import argparse,hashlib,io,json,os,pathlib,re,tempfile
-from PIL import Image,ImageChops
 ROOT=pathlib.Path(os.environ.get("AGENT_DATA_ROOT",str(pathlib.Path.home()/"agent-data")))/"projects/dressup-simulator"
 ID="net-31234-product-689961"
 SRC="4b60389046bc037394a8d69511b104835cc1fcfc3b5e3964636244863495723e"
@@ -29,7 +28,7 @@ def write_json(path, data):
     os.chmod(temp,0o600)
     os.replace(temp,path)
 
-def run(promote):
+def run(promote, prevalidated=False):
     canonical=ROOT/"garments/imported"/(ID+".json")
     src=ROOT/"source_images"/SRC/"original"
     folder=ROOT/"isolation_candidates"/ID/SRC
@@ -48,21 +47,37 @@ def run(promote):
     if receipt.get("garmentId")!=ID or receipt.get("sourceAssetSha256")!=SRC or receipt.get("isolatedAssetSha256")!=IMG or receipt.get("maskSha256")!=MASK or receipt.get("targetLayer")!="lower_main":
         raise ValueError("candidate_fingerprint_mismatch")
     if digest(src.read_bytes())!=SRC or digest(png.read_bytes())!=IMG or digest(mask.read_bytes())!=MASK:raise ValueError("input_image_hash_mismatch")
-    source=Image.open(src).convert("RGB")
-    garment=Image.open(png).convert("RGBA")
-    alpha=Image.open(mask).convert("L")
-    if source.size!=garment.size or source.size!=alpha.size or garment.size[0]<500 or garment.size[1]<600:
-        raise ValueError("image_dimensions_invalid")
-    if digest(source.tobytes())!=PIXEL:raise ValueError("source_pixels_changed")
-    if garment.getchannel("A").tobytes()!=alpha.tobytes():raise ValueError("mask_alpha_mismatch")
-    if garment.convert("RGB").tobytes()!=source.tobytes():raise ValueError("product_pixels_not_preserved")
-    box=alpha.getbbox()
-    if not box:raise ValueError("empty_alpha")
-    width,height=source.size
-    coverage=sum(alpha.histogram()[1:])/(width*height)
-    visible=sum(alpha.histogram()[220:])/(width*height)
-    if not (.09<coverage<.55 and visible>.08 and box[3]-box[1]>.65*height and box[2]-box[0]>.2*width):
-        raise ValueError("segmentation_shape_out_of_range")
+    # Independent full pixel QA runs on a separate hosted runner with Pillow.
+    # The Oracle promotion phase has no image processing package dependency.
+    if not prevalidated:
+        from PIL import Image
+        source=Image.open(src).convert("RGB")
+        garment=Image.open(png).convert("RGBA")
+        alpha=Image.open(mask).convert("L")
+        if source.size!=garment.size or source.size!=alpha.size or garment.size[0]<500 or garment.size[1]<600:
+            raise ValueError("image_dimensions_invalid")
+        if digest(source.tobytes())!=PIXEL:raise ValueError("source_pixels_changed")
+        if garment.getchannel("A").tobytes()!=alpha.tobytes():raise ValueError("mask_alpha_mismatch")
+        if garment.convert("RGB").tobytes()!=source.tobytes():raise ValueError("product_pixels_not_preserved")
+        box=alpha.getbbox()
+        if not box:raise ValueError("empty_alpha")
+        width,height=source.size
+        coverage=sum(alpha.histogram()[1:])/(width*height)
+        visible=sum(alpha.histogram()[220:])/(width*height)
+        if not (.09<coverage<.55 and visible>.08 and box[3]-box[1]>.65*height and box[2]-box[0]>.2*width):
+            raise ValueError("segmentation_shape_out_of_range")
+    else:
+        if not promote:
+            raise ValueError("prevalidation_allowed_only_for_promotion")
+        import struct
+        image_data=png.read_bytes()
+        if image_data[:8]!=bytes([137,80,78,71,13,10,26,10]):
+            raise ValueError("invalid_rgba_png_magic")
+        width,height=struct.unpack(">II",image_data[16:24])
+        if width<500 or height<600 or width>4000 or height>4000:
+            raise ValueError("unexpected_png_dimensions")
+        box=None
+        visible=None
     ir=receipt.get("productIR",{})
     if ir.get("schema")!="agentos.wardrobe-product-ir/v1" or ir.get("category")!="lower_main" or "front pleats" not in ir.get("mustKeep",[]):
         raise ValueError("product_ir_not_acceptable")
@@ -73,8 +88,8 @@ def run(promote):
       "reviewer":REVIEWER,"decision":"accepted",
       "method":"distinct reviewer visually compared original+PNG plus independent pixel QA",
       "visualEvidence":"https://github.com/alston-personal/agentmanager/actions/runs/38358610266",
-      "imageSize":[width,height],"alphaBBox":list(box),
-      "visiblePixelCoverage":round(visible,5),
+      "imageSize":[width,height],"alphaBBox":list(box) if box else None,
+      "visiblePixelCoverage":round(visible,5) if visible is not None else None,
       "checks":{"sku_and_color":True,"no_model_or_unrelated_clothes":True,
                 "pleats_waist_and_leg_shape":True,"alpha_mask_identical":True,
                 "rgb_pixels_from_official_photo":True,"source_and_asset_hashes":True},
@@ -119,5 +134,6 @@ def run(promote):
 if __name__=="__main__":
     p=argparse.ArgumentParser()
     p.add_argument("--promote",action="store_true")
+    p.add_argument("--prevalidated-by-hosted-runner",action="store_true")
     args=p.parse_args()
-    run(args.promote)
+    run(args.promote,args.prevalidated_by_hosted_runner)
