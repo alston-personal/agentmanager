@@ -552,3 +552,13 @@ class UcStrictJsonReplyTests(unittest.TestCase):
         self.assertIn("payload.agentos_request_id !== id",source)
         self.assertIn("total_amount",source)
         self.assertIn('node.closest(\'form,nav,aside',source)
+
+
+class BoundedUcReplyWaitTests(unittest.TestCase):
+    def test_uc_route_does_not_abort_after_six_polls(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import invoke
+        code=inspect.getsource(invoke)
+        self.assertNotIn("empty_message_ticks >= 6",code)
+        self.assertIn('ucMessageSurfacePending',code)
+        self.assertIn('deadline = time.monotonic() + 45',code)
