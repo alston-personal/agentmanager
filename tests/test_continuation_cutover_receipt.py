@@ -21,7 +21,9 @@ class CutoverEvidenceTests(unittest.TestCase):
 
     def test_complete_manifest_is_only_structurally_valid(self):
         receipt = {key: "sample-actual-value" for key in FIELDS}
-        receipt.update(pr="1923", pre_generation="g1", post_generation="g2",\n                       runtime_release_sha="a"*40, readback_execution_sha256="b"*64,\n                       readback_continuity_sha256="c"*64, review_approval="review-id-123")
+        receipt.update(pr="1923", pre_generation="g1", post_generation="g2",
+                       runtime_release_sha="a"*40, readback_execution_sha256="b"*64,
+                       readback_continuity_sha256="c"*64, review_approval="review-id-123")
         self.assertEqual([], assess(receipt))
 
 if __name__ == "__main__":
