@@ -17,6 +17,14 @@ from agent_core.governed_execution import execute_bound_work_intent
 EXPECTED_AUTHORITY_POLICY = "core-supervisor-employee-wake-v1"
 EXPECTED_TRANSPORT = "one_direct"
 ELIGIBLE_PRECLAIM_DELIVERY_STATES = {"awaiting_claim"}
+_GOVERNED_DELIVERY_INDEX_CACHE: dict[
+    str,
+    tuple[
+        tuple[int, int, int, int],
+        dict[tuple[str, str, str, str, str, int, str], list[dict[str, Any]]],
+    ],
+] = {}
+
 SUPPORTED_PRODUCT_RUNNERS = {
     "zeus_writer_v1": {
         "employee_id": "zeus-writer",
@@ -73,21 +81,59 @@ def _require_runner_scope(runner_kind: str, capsule: dict[str, Any]) -> dict[str
     return scope
 
 
-def require_governed_product_delivery(
-    runtime_root: str | Path,
-    runner_kind: str,
-    capsule: dict[str, Any],
-) -> dict[str, Any]:
-    """Bind one product wake to one exact Supervisor/S4 delivery before claim."""
-    _require_runner_scope(runner_kind, capsule)
-    root = Path(runtime_root).expanduser().resolve()
-    wake = capsule.get("wake_intent")
+def _wake_fingerprint(wake: Any) -> str:
+    if not isinstance(wake, dict):
+        return ""
+    raw = json.dumps(wake, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return __import__("hashlib").sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _evidence_signature(deliveries: Path, intents: Path) -> tuple[int, int, int, int]:
+    ds = deliveries.stat()
+    ins = intents.stat()
+    return (ds.st_mtime_ns, ds.st_ctime_ns, ins.st_mtime_ns, ins.st_ctime_ns)
+
+
+def _delivery_index_key(
+    *,
+    employee_id: Any,
+    assignment_id: Any,
+    wake_id: Any,
+    node_id: Any,
+    presence_id: Any,
+    presence_generation: Any,
+    wake: Any,
+) -> tuple[str, str, str, str, str, int, str]:
+    return (
+        str(employee_id or ""),
+        str(assignment_id or ""),
+        str(wake_id or ""),
+        str(node_id or ""),
+        str(presence_id or ""),
+        int(presence_generation or 0),
+        _wake_fingerprint(wake),
+    )
+
+
+def _governed_delivery_index(
+    root: Path,
+) -> dict[tuple[str, str, str, str, str, int, str], list[dict[str, Any]]]:
     deliveries = root / "supervisor" / "deliveries"
     intents = root / "supervisor" / "intents"
     if not deliveries.is_dir() or not intents.is_dir():
-        raise PermissionError("product_employee_worker_governed_delivery_missing")
+        return {}
 
-    matches: list[dict[str, Any]] = []
+    try:
+        signature = _evidence_signature(deliveries, intents)
+    except OSError:
+        return {}
+
+    cache_key = str(root)
+    cached = _GOVERNED_DELIVERY_INDEX_CACHE.get(cache_key)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
+    index: dict[tuple[str, str, str, str, str, int, str], list[dict[str, Any]]] = {}
     for path in sorted(deliveries.glob("reconcile_*.json")):
         try:
             delivery = _read(path)
@@ -97,12 +143,6 @@ def require_governed_product_delivery(
             continue
         if delivery.get("status") not in ELIGIBLE_PRECLAIM_DELIVERY_STATES:
             continue
-        if delivery.get("employee_id") != capsule.get("employee_id"):
-            continue
-        if delivery.get("assignment_id") != capsule.get("assignment_id"):
-            continue
-        if delivery.get("wake_id") != capsule.get("wake_id"):
-            continue
         if delivery.get("transport") != EXPECTED_TRANSPORT:
             continue
         if delivery.get("authority_policy_id") != EXPECTED_AUTHORITY_POLICY:
@@ -110,12 +150,6 @@ def require_governed_product_delivery(
         if delivery.get("capability") != WAKE_CAPABILITY:
             continue
         if delivery.get("dispatch_performed") is not True:
-            continue
-        if delivery.get("node_id") != capsule.get("node_id"):
-            continue
-        if delivery.get("presence_id") != capsule.get("presence_id"):
-            continue
-        if int(delivery.get("presence_generation") or 0) != int(capsule.get("presence_generation") or 0):
             continue
         if not delivery.get("task_id") or not delivery.get("wake_attempt_id"):
             continue
@@ -138,9 +172,9 @@ def require_governed_product_delivery(
             continue
         if intent.get("kind") != "employee_wake":
             continue
-        if intent.get("employee_id") != capsule.get("employee_id"):
+        if intent.get("employee_id") != delivery.get("employee_id"):
             continue
-        if intent.get("assignment_id") != capsule.get("assignment_id"):
+        if intent.get("assignment_id") != delivery.get("assignment_id"):
             continue
         if intent.get("authority_boundary") != "observe_and_select_only":
             continue
@@ -151,9 +185,50 @@ def require_governed_product_delivery(
             continue
         if intent.get("credential_exposed") is not False:
             continue
-        if not _same_wake(intent.get("wake_intent"), wake):
+        wake = intent.get("wake_intent")
+        if not isinstance(wake, dict):
             continue
-        matches.append(delivery)
+
+        key = _delivery_index_key(
+            employee_id=delivery.get("employee_id"),
+            assignment_id=delivery.get("assignment_id"),
+            wake_id=delivery.get("wake_id"),
+            node_id=delivery.get("node_id"),
+            presence_id=delivery.get("presence_id"),
+            presence_generation=delivery.get("presence_generation"),
+            wake=wake,
+        )
+        index.setdefault(key, []).append(delivery)
+
+    _GOVERNED_DELIVERY_INDEX_CACHE[cache_key] = (signature, index)
+    return index
+
+
+def require_governed_product_delivery(
+    runtime_root: str | Path,
+    runner_kind: str,
+    capsule: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind one product wake to one exact Supervisor/S4 delivery before claim.
+
+    Historical Supervisor evidence is indexed per directory generation so a
+    steady-state worker performs an O(1) exact lookup instead of rescanning every
+    reconcile JSON on every poll. Atomic evidence replacement changes directory
+    metadata and invalidates the cache.
+    """
+    _require_runner_scope(runner_kind, capsule)
+    root = Path(runtime_root).expanduser().resolve()
+    wake = capsule.get("wake_intent")
+    key = _delivery_index_key(
+        employee_id=capsule.get("employee_id"),
+        assignment_id=capsule.get("assignment_id"),
+        wake_id=capsule.get("wake_id"),
+        node_id=capsule.get("node_id"),
+        presence_id=capsule.get("presence_id"),
+        presence_generation=capsule.get("presence_generation"),
+        wake=wake,
+    )
+    matches = _governed_delivery_index(root).get(key, [])
 
     if len(matches) != 1:
         raise PermissionError(
