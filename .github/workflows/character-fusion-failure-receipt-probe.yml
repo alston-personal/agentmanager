@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 3
     env:
       BASE: https://studio.milkcat.org/dashboard/api/agentos
-      REQUEST_ID: agentos.character_fusion.smoke-1791776490-350feb4f
+      REQUEST_ID: agentos.character_fusion.smoke-1791795009-c43f441e
     steps:
       - name: Mint scheduler credential
         shell: bash
