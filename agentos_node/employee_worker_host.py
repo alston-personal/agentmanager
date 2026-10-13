@@ -229,6 +229,12 @@ class EmployeeWorkerHost:
         # Keep a filename index so historical wake capsules do not force a JSON
         # read of both wake + dispatch state on every poll forever.
         self._terminal_dispatch_keys: set[tuple[str, str]] | None = None
+        # Cache only non-terminal wake paths. Directory mtimes invalidate the
+        # relevant slice, so steady-state polling never enumerates tens of
+        # thousands of historical filenames.
+        self._wake_path_cache: dict[str, set[Path]] = {}
+        self._wake_dir_mtimes_ns: dict[str, int] = {}
+        self._wake_root_mtime_ns: int | None = None
 
     @property
     def dispatch_root(self) -> Path:
@@ -303,18 +309,73 @@ class EmployeeWorkerHost:
         self._terminal_dispatch_keys = terminal
         return terminal
 
+    def _refresh_wake_path_cache(self, terminal: set[tuple[str, str]]) -> list[Path]:
+        if not self.wake_root.is_dir():
+            self._wake_path_cache.clear()
+            self._wake_dir_mtimes_ns.clear()
+            self._wake_root_mtime_ns = None
+            return []
+
+        try:
+            root_mtime = self.wake_root.stat().st_mtime_ns
+        except OSError:
+            return []
+
+        # Discover employee directories only when the wake-root directory itself
+        # changed. Existing employee directories are checked independently below.
+        if self._wake_root_mtime_ns != root_mtime or not self._wake_dir_mtimes_ns:
+            current_dirs = {
+                child.name: child
+                for child in self.wake_root.iterdir()
+                if child.is_dir()
+            }
+            stale = set(self._wake_dir_mtimes_ns) - set(current_dirs)
+            for name in stale:
+                self._wake_dir_mtimes_ns.pop(name, None)
+                self._wake_path_cache.pop(name, None)
+            for name in current_dirs:
+                self._wake_dir_mtimes_ns.setdefault(name, -1)
+            self._wake_root_mtime_ns = root_mtime
+
+        for employee_id in list(self._wake_dir_mtimes_ns):
+            directory = self.wake_root / employee_id
+            try:
+                mtime = directory.stat().st_mtime_ns
+            except OSError:
+                self._wake_dir_mtimes_ns.pop(employee_id, None)
+                self._wake_path_cache.pop(employee_id, None)
+                continue
+            if self._wake_dir_mtimes_ns.get(employee_id) == mtime:
+                continue
+            # Rebuild only this employee's non-terminal slice when its directory
+            # changed. Historical terminal wake filenames never enter the cache.
+            paths = {
+                path
+                for path in directory.glob("*.json")
+                if self._dispatch_key(path) not in terminal
+            }
+            self._wake_path_cache[employee_id] = paths
+            self._wake_dir_mtimes_ns[employee_id] = mtime
+
+        # A dispatch can become terminal without changing the wake directory.
+        # Remove those keys lazily from the hot path.
+        for employee_id, paths in list(self._wake_path_cache.items()):
+            filtered = {path for path in paths if self._dispatch_key(path) not in terminal}
+            if filtered != paths:
+                self._wake_path_cache[employee_id] = filtered
+
+        return [
+            path
+            for employee_id in sorted(self._wake_path_cache)
+            for path in sorted(self._wake_path_cache[employee_id])
+        ]
+
     def _candidates(self) -> list[WorkerHostCandidate]:
         if not self.wake_root.is_dir():
             return []
         result: list[WorkerHostCandidate] = []
         terminal = self._terminal_dispatch_index()
-        for path in self.wake_root.glob("*/*.json"):
-            # Wake and dispatch filenames share employee_id + wake/generation.
-            # Skip terminal history before opening the wake capsule. On a host
-            # with tens of thousands of completed wakes this turns the hot path
-            # from repeated JSON churn into a cheap directory-name comparison.
-            if self._dispatch_key(path) in terminal:
-                continue
+        for path in self._refresh_wake_path_cache(terminal):
             capsule = self._read_capsule(path)
             if capsule is None:
                 continue
