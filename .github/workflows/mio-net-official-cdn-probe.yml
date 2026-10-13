@@ -1,0 +1,31 @@
+name: Mio Official NET CDN Image Probe
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - 'scripts/probe_mio_net_official_cdn.py'
+      - '.github/workflows/mio-net-official-cdn-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet Pillow
+      - name: Probe vendor CDN exact SKU and color image patterns
+        run: |
+          python scripts/probe_mio_net_official_cdn.py --manifest .agentos/commands/mio-net-source-backfill.json --output "$RUNNER_TEMP/net-cdn-probe"
+      - name: Preserve actual image bytes and matching evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-net-official-cdn-evidence
+          path: ${{ runner.temp }}/net-cdn-probe/
+          if-no-files-found: warn
+          retention-days: 7
