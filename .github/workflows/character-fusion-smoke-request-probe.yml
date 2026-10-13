@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           base="https://studio.milkcat.org/dashboard/api/agentos"
-          request_id="agentos.character_fusion.smoke-1791791867-894416a0"
+          request_id="agentos.character_fusion.smoke-1791795009-c43f441e"
           for path in             "v1/dispatch/$request_id"             "v1/controller/scheduler"; do
             code="$(curl -sS -o "$RUNNER_TEMP/out.json" -w '%{http_code}' --max-time 20               -H "Authorization: Bearer $TOKEN" "$base/$path" || true)"
             echo "probe_path=$path http=$code"
@@ -69,3 +69,4 @@ jobs:
             fi
           done
           echo "character_fusion_smoke_request_probe=PASS"
+          # probe-current-20261013
