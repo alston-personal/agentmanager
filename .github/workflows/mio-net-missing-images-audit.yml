@@ -32,10 +32,10 @@ jobs:
                 body=res.read(2_000_000).decode("utf-8","replace")
                 result["httpStatus"]=res.status
               candidates=[]
-              for m in re.finditer(r'(?:https?:)?//(?:s-net|net)\\.wimg\\.tw/[^\\s"\\x27<>]+',body,re.I):
+              for m in re.finditer(r'(?:https?:)?//(?:s-net|net)\.wimg\.tw/[^\s"\x27<>]+',body,re.I):
                 candidate=html.unescape(m.group(0))
                 if candidate.startswith("//"):candidate="https:"+candidate
-                candidate=candidate.replace("\\u0026","&").replace("&amp;","&")
+                candidate=candidate.replace("\u0026","&").replace("&amp;","&")
                 if candidate not in candidates:candidates.append(candidate)
               result["candidates"]=candidates[:25]
               result["status"]="source_candidates_found" if candidates else "no_cdn_assets_in_html"
@@ -44,7 +44,7 @@ jobs:
               result["errorType"]=type(e).__name__
             output.append(result)
             print(garment_id, result["status"],len(result["candidates"]))
-          pathlib.Path("mio-net-source-audit.json").write_text(json.dumps(output,ensure_ascii=False,indent=2)+"\\n")
+          pathlib.Path("mio-net-source-audit.json").write_text(json.dumps(output,ensure_ascii=False,indent=2)+"\n")
           PY
       - uses: actions/upload-artifact@v4
         if: always()
