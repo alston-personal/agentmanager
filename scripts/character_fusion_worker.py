@@ -350,14 +350,26 @@ output_path = Path(sys.argv[3])
 lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
 lock_path.parent.mkdir(parents=True, exist_ok=True)
 
-def inventory():
-    with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=5) as r:
-        return json.loads(r.read().decode("utf-8"))
+def discover_gemini_target():
+    observed=[]
+    for port in (9222,9223,9224,9225,9226):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
+                rows=json.loads(r.read().decode("utf-8"))
+        except Exception:
+            continue
+        for row in rows:
+            if row.get("type")!="page":
+                continue
+            url=str(row.get("url") or "")
+            if url.startswith(("http://","https://")):
+                observed.append((port,url[:220]))
+            if "gemini.google.com" in url:
+                return port,row
+    hosts=sorted({u.split("/")[2] for _,u in observed if "://" in u})
+    raise RuntimeError("gemini_web_no_session; observed_hosts="+",".join(hosts[:20]))
 
-targets=[x for x in inventory() if x.get("type")=="page" and "gemini.google.com" in str(x.get("url") or "")]
-if not targets:
-    raise RuntimeError("gemini_web_no_session")
-target=targets[0]
+PORT,target = discover_gemini_target()
 ws_url=str(target.get("webSocketDebuggerUrl") or "")
 if not ws_url:
     raise RuntimeError("gemini_web_missing_ws")
@@ -1029,16 +1041,28 @@ prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
 output = Path(sys.argv[2])
 lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
 lock_path.parent.mkdir(parents=True, exist_ok=True)
-PORT = 9225
+PORTS = (9222, 9223, 9224, 9225, 9226)
 
-def inventory():
-    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list", timeout=5) as r:
-        return json.loads(r.read().decode("utf-8"))
+def discover_flow_target():
+    observed=[]
+    for port in PORTS:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
+                rows=json.loads(r.read().decode("utf-8"))
+        except Exception:
+            continue
+        for row in rows:
+            if row.get("type")!="page":
+                continue
+            url=str(row.get("url") or "")
+            if url.startswith(("http://","https://")):
+                observed.append((port,url[:220]))
+            if "flow.google.com/project/" in url:
+                return port,row
+    hosts=sorted({u.split("/")[2] for _,u in observed if "://" in u})
+    raise RuntimeError("flow_project_session_not_found; observed_hosts="+",".join(hosts[:20]))
 
-targets=[x for x in inventory() if x.get("type")=="page" and "flow.google.com/project/" in str(x.get("url") or "")]
-if not targets:
-    raise RuntimeError("flow_project_session_not_found")
-target=targets[0]
+PORT,target = discover_flow_target()
 ws_url=str(target.get("webSocketDebuggerUrl") or "")
 if not ws_url:
     raise RuntimeError("flow_project_ws_missing")
@@ -1328,128 +1352,126 @@ with lock_path.open("a+") as lock:
 
 
 def _render_image_gemini_web(target_ir: dict[str, Any], strict: bool) -> bytes:
-    python_bin = Path.home() / ".local/share/agentos/gui-worker/venv/bin/python"
+    python_bin = Path("/usr/bin/python3")
     if not python_bin.is_file():
-        raise RuntimeError("Gemini Web GUI worker venv is unavailable")
+        raise RuntimeError("system python is unavailable for Gemini Web image fallback")
 
     prompt = render_prompt(target_ir, strict=strict) + """
-Use your image-generation capability now. Return a generated image, not a text description.
-The result must be a single polished mascot on a simple clean background.
+Generate a single square mascot IMAGE. Return only the generated image, with no captions or extra text.
 """
-    with tempfile.TemporaryDirectory(prefix="character-fusion-gemini-web-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="character-fusion-gemini-web-image-") as tmp:
         prompt_path = Path(tmp) / "prompt.txt"
         output_path = Path(tmp) / "output.png"
         prompt_path.write_text(prompt, encoding="utf-8")
-        helper = r'''
-import fcntl
+        helper = r"""
+import asyncio
+import base64
+import json
 import sys
 import time
+import urllib.request
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+import websockets
 
 prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
 output = Path(sys.argv[2])
-lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
-lock_path.parent.mkdir(parents=True, exist_ok=True)
 
-composer_selectors = [
-    'rich-textarea div[contenteditable="true"]',
-    'textarea[aria-label*="prompt" i]',
-    '[contenteditable="true"][aria-label*="prompt" i]',
-    'div.ql-editor[contenteditable="true"]',
-    'textarea',
-    '[contenteditable="true"]',
-]
-image_selectors = [
-    'model-response img',
-    '[data-test-id*="model-response"] img',
-    '.model-response-text img',
-    'message-content img',
-    'img[alt*="generated" i]',
-]
-
-def first_visible(page, selectors):
-    for selector in selectors:
+def discover():
+    observed=[]
+    for port in (9222,9223,9224,9225,9226):
         try:
-            loc = page.locator(selector)
-            for i in range(min(loc.count(), 16)):
-                item = loc.nth(i)
-                try:
-                    if item.is_visible(timeout=250):
-                        return item
-                except Exception:
-                    pass
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
+                rows=json.loads(r.read().decode("utf-8"))
         except Exception:
-            pass
-    return None
+            continue
+        for row in rows:
+            if row.get("type")!="page":
+                continue
+            url=str(row.get("url") or "")
+            if url.startswith(("http://","https://")):
+                observed.append((port,url[:220]))
+            if "gemini.google.com" in url:
+                return port,row
+    hosts=sorted({u.split("/")[2] for _,u in observed if "://" in u})
+    raise RuntimeError("gemini_web_no_session; observed_hosts="+",".join(hosts[:20]))
 
-def candidates(page):
-    rows = []
-    seen = set()
-    for selector in image_selectors:
-        try:
-            loc = page.locator(selector)
-            for i in range(loc.count()):
-                item = loc.nth(i)
-                try:
-                    if not item.is_visible(timeout=200):
-                        continue
-                    box = item.bounding_box()
-                    if not box or box.get("width", 0) < 180 or box.get("height", 0) < 180:
-                        continue
-                    key = (selector, i, round(box.get("width", 0)), round(box.get("height", 0)))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    rows.append(item)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return rows
+port,target=discover()
+ws_url=str(target.get("webSocketDebuggerUrl") or "")
+if not ws_url:
+    raise RuntimeError("gemini_web_missing_ws")
 
-with lock_path.open("a+") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
-        if not browser.contexts:
-            raise RuntimeError("gemini_web_no_browser_context")
-        pages = [x for x in browser.contexts[0].pages if "gemini.google.com" in str(x.url or "")]
-        if not pages:
-            raise RuntimeError("gemini_web_no_session")
-        page = next((x for x in pages if first_visible(x, composer_selectors) is not None), pages[0])
-        page.bring_to_front()
-        composer = first_visible(page, composer_selectors)
-        if composer is None:
+async def main():
+    seq=0
+    async with websockets.connect(ws_url,open_timeout=5,close_timeout=2,max_size=16*1024*1024) as ws:
+        async def call(method,params=None):
+            nonlocal seq
+            seq+=1; ident=seq
+            await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+            while True:
+                msg=json.loads(await ws.recv())
+                if msg.get("id")==ident:
+                    if msg.get("error"): raise RuntimeError(f"cdp {method}: {msg['error']}")
+                    return msg.get("result") or {}
+        async def ev(expr):
+            r=await call("Runtime.evaluate",{"expression":expr,"returnByValue":True,"awaitPromise":True})
+            return (r.get("result") or {}).get("value")
+
+        baseline=await ev(r'''(() => [...document.querySelectorAll('img')].map(x=>x.currentSrc||x.src||'').filter(Boolean))()''') or []
+        focused=await ev(r'''(() => {
+          const sels=['rich-textarea div[contenteditable="true"]','textarea','[contenteditable="true"]'];
+          for(const s of sels){
+            const el=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null && !x.disabled);
+            if(el){el.focus(); return true;}
+          }
+          return false;
+        })()''')
+        if not focused:
             raise RuntimeError("gemini_web_composer_not_found")
+        await call("Input.insertText",{"text":prompt})
+        await asyncio.sleep(0.5)
+        sent=await ev(r'''(() => {
+          const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(x=>x.offsetParent!==null);
+          const b=buttons.find(x=>/send|submit|送出|傳送/i.test(
+            [x.getAttribute('aria-label'),x.getAttribute('title'),x.innerText].filter(Boolean).join(' ')
+          ));
+          if(!b || b.disabled) return false;
+          b.click(); return true;
+        })()''')
+        if not sent:
+            raise RuntimeError("gemini_web_submit_failed")
 
-        baseline = len(candidates(page))
-        try:
-            composer.fill(prompt)
-        except Exception:
-            composer.click()
-            page.keyboard.press("ControlOrMeta+A")
-            page.keyboard.type(prompt)
-        page.keyboard.press("Enter")
+        deadline=time.monotonic()+180
+        src=None
+        while time.monotonic()<deadline:
+            rows=await ev(r'''(() => [...document.querySelectorAll('img')].filter(x=>x.offsetParent!==null).map(x=>({
+              src:x.currentSrc||x.src||'',w:x.getBoundingClientRect().width,h:x.getBoundingClientRect().height
+            })).filter(x=>x.src))()''') or []
+            fresh=[x for x in rows if x.get("src") not in baseline and x.get("w",0)>=128 and x.get("h",0)>=128]
+            if fresh:
+                fresh.sort(key=lambda x:x.get("w",0)*x.get("h",0),reverse=True)
+                src=fresh[0]["src"]; break
+            await asyncio.sleep(2)
+        if not src:
+            raise TimeoutError("gemini_web_generated_image_timeout")
 
-        deadline = time.monotonic() + 180
-        chosen = None
-        while time.monotonic() < deadline:
-            rows = candidates(page)
-            if len(rows) > baseline:
-                chosen = rows[-1]
-                break
-            time.sleep(1.5)
+        expr=json.dumps(src)
+        data_url=await ev(r'''(async(src)=>{
+          const r=await fetch(src,{credentials:'include'});
+          if(!r.ok) throw new Error('asset_http_'+r.status);
+          const b=await r.blob();
+          return await new Promise((ok,fail)=>{
+            const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.onerror=fail;fr.readAsDataURL(b);
+          });
+        })('''+expr+''')''')
+        if not isinstance(data_url,str) or "," not in data_url:
+            raise RuntimeError("gemini_web_asset_export_failed")
+        output.write_bytes(base64.b64decode(data_url.split(",",1)[1]))
+        if output.stat().st_size<10000:
+            raise RuntimeError("gemini_web_generated_image_too_small")
+        print(f"character_fusion_gemini_web_image=PASS port={port}")
 
-        if chosen is None:
-            raise TimeoutError("gemini_web_image_response_timeout")
-
-        chosen.scroll_into_view_if_needed()
-        chosen.screenshot(path=str(output), type="png")
-        if not output.is_file() or output.stat().st_size < 10000:
-            raise RuntimeError("gemini_web_image_capture_invalid")
-        print("character_fusion_gemini_web_render=PASS")
-'''
+asyncio.run(main())
+"""
         proc = subprocess.run(
             [str(python_bin), "-c", helper, str(prompt_path), str(output_path)],
             env=os.environ.copy(),
@@ -1458,65 +1480,9 @@ with lock_path.open("a+") as lock:
             timeout=240,
         )
         if proc.returncode != 0:
-            tail = (proc.stderr or proc.stdout or "")[-3000:]
+            tail=(proc.stderr or proc.stdout or "")[-3000:]
             raise RuntimeError(f"Gemini Web image fallback failed: {tail}")
-        data = output_path.read_bytes()
-        if len(data) < 10000:
-            raise RuntimeError("Gemini Web image fallback returned an unexpectedly small image")
-        return data
-
-
-def _render_image_hf(target_ir: dict[str, Any], strict: bool) -> bytes:
-    token = _resolve_hf_token()
-    if not token:
-        raise RuntimeError("HF_TOKEN is not configured for Character Fusion image fallback")
-
-    python_bin = Path("/home/ubuntu/.local/share/mio-tryon-venv/bin/python")
-    if not python_bin.is_file():
-        raise RuntimeError("Mio try-on inference venv is unavailable for Character Fusion fallback")
-
-    model = os.environ.get("HF_CHARACTER_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
-    prompt = render_prompt(target_ir, strict=strict) + """
-Render as a polished mascot illustration. The subject MUST be the non-human mascot species in the
-target body_plan. Human traits may appear only as stylized accessories or material-native motifs.
-No human body, no human inside costume, no literal human hair.
-"""
-    with tempfile.TemporaryDirectory(prefix="character-fusion-hf-") as tmp:
-        prompt_path = Path(tmp) / "prompt.txt"
-        output_path = Path(tmp) / "output.png"
-        prompt_path.write_text(prompt, encoding="utf-8")
-        helper = r'''
-import os
-import sys
-from pathlib import Path
-from huggingface_hub import InferenceClient
-
-prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
-out = Path(sys.argv[2])
-model = sys.argv[3]
-client = InferenceClient(api_key=os.environ["HF_TOKEN"], provider="auto")
-image = client.text_to_image(
-    prompt,
-    model=model,
-    width=1024,
-    height=1024,
-)
-image.save(out, format="PNG")
-'''
-        proc = subprocess.run(
-            [str(python_bin), "-c", helper, str(prompt_path), str(output_path), model],
-            env={**os.environ, "HF_TOKEN": token},
-            capture_output=True,
-            text=True,
-            timeout=240,
-        )
-        if proc.returncode != 0:
-            tail = (proc.stderr or proc.stdout or "")[-3000:]
-            raise RuntimeError(f"Hugging Face image fallback failed: {tail}")
-        data = output_path.read_bytes()
-        if len(data) < 10000:
-            raise RuntimeError("Hugging Face image fallback returned an unexpectedly small image")
-        return data
+        return output_path.read_bytes()
 
 
 def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | None, strict: bool) -> bytes:
