@@ -78,6 +78,27 @@ class ProjectContinuationIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "restricted to agentos-core"):
             ACTIONS["agentos.project.publish_continuation"](params)
 
+    def test_relay_forwards_bounded_cas_fence(self):
+        from agentos_node.action_relay import ACTIONS
+        params = json.loads(json.dumps(self.params))
+        params["expected_index_id"] = "idx-previous"
+        params["expected_ir_id"] = "ir-previous"
+        with patch("agent_core.project_continuation_index.publish_project_continuation") as publish:
+            publish.return_value = {"ok": True}
+            ACTIONS["agentos.project.publish_continuation"](params)
+            forwarded = publish.call_args
+            self.assertEqual(set(forwarded.args[0]), {"project_id", "execution_head", "continuation"})
+            self.assertEqual(forwarded.kwargs, {"expected_index_id": "idx-previous", "expected_ir_id": "ir-previous"})
+
+    def test_relay_rejects_half_fence_and_extra_keys(self):
+        from agentos_node.action_relay import ACTIONS
+        params = dict(self.params, expected_index_id="idx-previous")
+        with self.assertRaisesRegex(ValueError, "supplied together"):
+            ACTIONS["agentos.project.publish_continuation"](params)
+        params = dict(self.params, arbitrary_path="/tmp/other")
+        with self.assertRaisesRegex(ValueError, "canonical payload"):
+            ACTIONS["agentos.project.publish_continuation"](params)
+
     def test_rejects_noncanonical_project(self):
         params = dict(self.params)
         params["project_id"] = "other"
