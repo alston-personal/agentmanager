@@ -1,3 +1,4 @@
+# Incident acceptance trigger: verify Oracle after Employee Worker hot-path rollout
 name: Oracle Post Reclaim Health Acceptance
 
 on:
