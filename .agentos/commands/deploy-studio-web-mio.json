@@ -1,6 +1,6 @@
 {
   "schema": "agentos.studio-web-mio-deploy/v1",
-  "studioCommit": "f7799606a5acc30064b9fd8755d61aff57f410ec",
+  "studioCommit": "be19dd525fe5c548f2610a9b5a814830f7e9038f",
   "requestedAt": "2026-10-13T12:00:00+08:00",
-  "reason": "Publish white shoe manual target-contour preview in wardrobe Debug inspector (#141)"
+  "reason": "Publish admin-only isolation asset inspection UI (#142); fail closed while backend pending"
 }
