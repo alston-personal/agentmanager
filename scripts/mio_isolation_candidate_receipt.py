@@ -25,6 +25,7 @@ def candidate_receipt(
     must_keep: list[str] | None,
     extraction_backend: str,
     target_match_evidence: dict[str, Any] | None = None,
+    views: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     source = str(source_fingerprint)
     if len(source) != 64 or any(ch not in "0123456789abcdef" for ch in source):
@@ -34,6 +35,24 @@ def candidate_receipt(
     visual_ok = isolated_image is not None and isolated_image.is_file() and isolated_image.stat().st_size > 1000
     mask_ok = mask is not None and mask.is_file() and mask.stat().st_size > 100
     evidence = target_match_evidence if isinstance(target_match_evidence, dict) else {}
+    views = [] if views is None else views
+    if not isinstance(views, list):
+        raise ValueError("views must be a list")
+    normalized_views = []
+    allowed_angles = {"front", "side", "back", "top", "three_quarter"}
+    allowed_sources = {"official_photo", "manual_annotation", "generated_reference"}
+    for view in views:
+        if not isinstance(view, dict) or view.get("angle") not in allowed_angles or view.get("sourceType") not in allowed_sources:
+            raise ValueError("invalid multiview entry")
+        if view.get("verified") is not True and view.get("verified") is not False:
+            raise ValueError("verified must be boolean")
+        if view["sourceType"] == "generated_reference" and view["verified"] is True:
+            raise ValueError("generated reference cannot claim verified product truth")
+        asset = view.get("assetSha256")
+        if not isinstance(asset, str) or len(asset) != 64 or any(c not in "0123456789abcdef" for c in asset):
+            raise ValueError("view asset digest required")
+        normalized_views.append({"angle":view["angle"],"sourceType":view["sourceType"],
+                                 "verified":view["verified"],"assetSha256":asset})
     # An extraction backend can supply candidate data, but it is not itself the
     # reviewer. Independent evidence must be supplied by a later verifier.
     state = "candidate" if visual_ok and mask_ok and attributes and must_keep else "needs_review"
@@ -51,6 +70,8 @@ def candidate_receipt(
             "category": target_layer,
             "attributes": attributes or {},
             "mustKeep": must_keep or [],
+            "views": normalized_views,
+            "multiviewStatus": "not_required_for_single_view_admission" if not normalized_views else "pending_cross_view_review",
         },
         "extractor": extraction_backend,
         "targetMatchEvidence": evidence,
