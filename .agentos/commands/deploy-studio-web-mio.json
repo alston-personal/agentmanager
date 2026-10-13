@@ -1,6 +1,6 @@
 {
   "schema": "agentos.studio-web-mio-deploy/v1",
-  "studioCommit": "be19dd525fe5c548f2610a9b5a814830f7e9038f",
+  "studioCommit": "ad0e0ac9092d87d5ae141701f45f9d8495c5b4ac",
   "requestedAt": "2026-10-13T12:00:00+08:00",
-  "reason": "Publish admin-only isolation asset inspection UI (#142); fail closed while backend pending"
+  "reason": "Fix Mio Debug asset request infinite loading with 8-second timeout (#143)"
 }
