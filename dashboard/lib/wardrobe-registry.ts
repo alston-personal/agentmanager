@@ -57,6 +57,7 @@ export type CanonicalGarmentRecord = {
     } | null;
     sourceFingerprint?: string | null;
     approvedFingerprint?: string | null;
+    approvedAssetSha256?: string | null;
     approvedAt?: string | null;
     extractorVersion?: string | null;
   };
