@@ -35,6 +35,87 @@ def _capsule(employee_id: str, assignment_id: str, role_id: str, skill_id: str) 
     }
 
 
+def _materialize_governed_delivery(runtime_root: Path, capsule: dict, reconcile_id: str = "reconcile_test") -> None:
+    deliveries = runtime_root / "supervisor" / "deliveries"
+    intents = runtime_root / "supervisor" / "intents"
+    deliveries.mkdir(parents=True, exist_ok=True)
+    intents.mkdir(parents=True, exist_ok=True)
+    delivery = {
+        "schema": product_worker.DELIVERY_STATE_SCHEMA,
+        "status": "awaiting_claim",
+        "employee_id": capsule["employee_id"],
+        "assignment_id": capsule["assignment_id"],
+        "wake_id": capsule["wake_id"],
+        "transport": product_worker.EXPECTED_TRANSPORT,
+        "authority_policy_id": product_worker.EXPECTED_AUTHORITY_POLICY,
+        "capability": product_worker.WAKE_CAPABILITY,
+        "dispatch_performed": True,
+        "node_id": capsule["node_id"],
+        "presence_id": capsule["presence_id"],
+        "presence_generation": capsule["presence_generation"],
+        "task_id": "task-1",
+        "wake_attempt_id": "attempt-1",
+        "reconcile_id": reconcile_id,
+    }
+    intent = {
+        "schema": product_worker.INTENT_RECORD_SCHEMA,
+        "reconcile_id": reconcile_id,
+        "state": "planned",
+        "dispatch_performed": False,
+        "intent": {
+            "schema": product_worker.RECONCILE_INTENT_SCHEMA,
+            "kind": "employee_wake",
+            "employee_id": capsule["employee_id"],
+            "assignment_id": capsule["assignment_id"],
+            "authority_boundary": "observe_and_select_only",
+            "node_selection": "unbound",
+            "executor_selection": "unbound",
+            "transport_selection": "unbound",
+            "capability_authority": "unbound",
+            "credential_exposed": False,
+            "wake_intent": capsule["wake_intent"],
+        },
+    }
+    (deliveries / f"{reconcile_id}.json").write_text(json.dumps(delivery), encoding="utf-8")
+    (intents / f"{reconcile_id}.json").write_text(json.dumps(intent), encoding="utf-8")
+
+
+def test_governed_delivery_index_reuses_unchanged_evidence_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    capsule = _capsule(
+        "zeus-writer",
+        "zeus-writer-continuation-v1",
+        "product.zeus_writer",
+        "writing.project.continue",
+    )
+    _materialize_governed_delivery(tmp_path, capsule)
+    product_worker._GOVERNED_DELIVERY_INDEX_CACHE.clear()
+
+    first = product_worker.require_governed_product_delivery(tmp_path, "zeus_writer_v1", capsule)
+    assert first["reconcile_id"] == "reconcile_test"
+
+    monkeypatch.setattr(product_worker, "_read", lambda path: (_ for _ in ()).throw(AssertionError("evidence reread")))
+    second = product_worker.require_governed_product_delivery(tmp_path, "zeus_writer_v1", capsule)
+    assert second["reconcile_id"] == "reconcile_test"
+
+
+def test_governed_delivery_index_invalidates_when_evidence_directory_changes(tmp_path: Path) -> None:
+    capsule = _capsule(
+        "zeus-writer",
+        "zeus-writer-continuation-v1",
+        "product.zeus_writer",
+        "writing.project.continue",
+    )
+    _materialize_governed_delivery(tmp_path, capsule, "reconcile_one")
+    product_worker._GOVERNED_DELIVERY_INDEX_CACHE.clear()
+    assert product_worker.require_governed_product_delivery(tmp_path, "zeus_writer_v1", capsule)["reconcile_id"] == "reconcile_one"
+
+    _materialize_governed_delivery(tmp_path, capsule, "reconcile_two")
+    with pytest.raises(PermissionError, match="governed_delivery_ambiguous"):
+        product_worker.require_governed_product_delivery(tmp_path, "zeus_writer_v1", capsule)
+
+
 def test_v2_registry_resolves_only_exact_product_scope() -> None:
     registry = ProductEmployeeWorkerAdapterRegistry()
     zeus = _capsule(
