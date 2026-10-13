@@ -21,7 +21,7 @@ from datetime import datetime,timezone
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-PROJECT_URL="https://flow.google.com/project/7c7d201a-ee6f-40e1-aa4c-2309c9543237"
+PROJECT_URL=""
 EXPECTED_MARKERS=("taipei","metro","umbrella","mio")
 out_root=Path(sys.argv[1])
 stamp=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -32,20 +32,35 @@ print("google_flow_rain_exit_stage=CONNECT_CDP",flush=True)
 with sync_playwright() as p:
     browser=p.chromium.connect_over_cdp("http://127.0.0.1:9225",timeout=10000)
     ctx=browser.contexts[0]
-    page=next((x for x in ctx.pages if PROJECT_URL in str(x.url or "")),None)
+    page=next((x for x in ctx.pages if "flow.google.com" in str(x.url or "")),None)
     if page is None:
         page=ctx.new_page()
-        page.goto(PROJECT_URL,wait_until="domcontentloaded",timeout=60000)
+    page.goto("https://flow.google.com/",wait_until="domcontentloaded",timeout=60000)
     page.bring_to_front()
     page.wait_for_timeout(5000)
+
+    # Discover newest project whose body still contains the canonical s01 markers.
+    links=page.locator('a[aria-label="開啟專案"],a[href^="/project/"]')
+    candidates=[]
+    for i in range(min(links.count(),30)):
+        href=str(links.nth(i).get_attribute("href") or "")
+        if href and href not in candidates:
+            candidates.append(href)
+    matched=None
+    for href in candidates:
+        page.goto("https://flow.google.com"+href,wait_until="domcontentloaded",timeout=60000)
+        page.wait_for_timeout(3500)
+        body=(page.locator("body").inner_text(timeout=4000) or "")
+        low=body.lower()
+        if all(m in low for m in EXPECTED_MARKERS):
+            matched=href
+            break
+    if matched is None:
+        print("google_flow_rain_exit_resume=NO_MATCHING_PROJECT")
+        raise SystemExit(0)
+
     print("google_flow_rain_exit_stage=PROJECT_LOADED",flush=True)
     print("google_flow_rain_exit_url="+str(page.url or "")[:500])
-
-    body=(page.locator("body").inner_text(timeout=4000) or "")
-    low=body.lower()
-    if not all(m in low for m in EXPECTED_MARKERS):
-        print("google_flow_rain_exit_resume=PROJECT_MISMATCH")
-        raise SystemExit(0)
     print("google_flow_rain_exit_project_match=PASS")
 
     approval_text=("要開始生成這 1 部影片嗎" in body or
