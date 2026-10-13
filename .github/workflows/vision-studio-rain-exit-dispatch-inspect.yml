@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 5
     env:
       AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
-      REQUEST_ID: agentos.vision_studio.produce-1791789235-fa2fe644
+      REQUEST_ID: agentos.vision_studio.produce-1791794090-77bfa95f
     steps:
       - name: Mint credential and inspect dispatch
         shell: bash
