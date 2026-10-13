@@ -123,6 +123,36 @@ class EmployeeWorkerHostTests(unittest.TestCase):
             self.assertNotIn("--executable", command)
             self.assertNotIn("--argv", command)
 
+    def test_wake_path_cache_does_not_reenumerate_unchanged_terminal_history(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            host = self._host(base)
+            employee = "agentos-spec-steward"
+            wake_dir = base / "wake" / employee
+            dispatch_dir = base / "host" / "dispatches" / employee
+            wake_dir.mkdir(parents=True, exist_ok=True)
+            dispatch_dir.mkdir(parents=True, exist_ok=True)
+
+            for index in range(50):
+                capsule = _capsule(wake_id=f"wake-terminal-{index}", presence_generation=1)
+                filename = f"wake-terminal-{index}.000001.json"
+                (wake_dir / filename).write_text(json.dumps(capsule), encoding="utf-8")
+                (dispatch_dir / filename).write_text(
+                    json.dumps({"schema": DISPATCH_SCHEMA, "status": "checkpointed"}),
+                    encoding="utf-8",
+                )
+
+            active = _capsule(wake_id="wake-active", presence_generation=1)
+            active_path = wake_dir / "wake-active.000001.json"
+            active_path.write_text(json.dumps(active), encoding="utf-8")
+
+            first = host._refresh_wake_path_cache(host._terminal_dispatch_index())
+            self.assertEqual(first, [active_path])
+
+            with patch.object(Path, "glob", side_effect=AssertionError("unchanged wake directory re-enumerated")):
+                second = host._refresh_wake_path_cache(host._terminal_dispatch_index())
+            self.assertEqual(second, [active_path])
+
     def test_terminal_dispatch_index_skips_historical_wake_json_reads(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
