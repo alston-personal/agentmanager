@@ -213,3 +213,27 @@ thread parent before separate reasoning and any platform write. Ordinary
 reading must update only Experience Ledger, not bump Persona IR revision.
 Lack of verified login/profile must be reported `LOGIN_REQUIRED`, not
 silently replaced by an owned-post API read or unrelated browser session.
+
+### Governed Oracle read-only acceptance workflow
+
+`.github/workflows/mio-oracle-public-discovery-read-acceptance.yml`
+runs one explicitly bounded `keyword.search` diagnostic on Oracle using
+the existing Social Runtime account binding. It copies only three
+Python source files to a temporary node directory and deletes them on
+exit. It does **not** touch installed PDCA scripts, the persona worker,
+systemd timers, or the social write flag. The only uploaded artifact is
+a seven-day, sanitized, no-post-text diagnostic receipt. This workflow
+can be manually dispatched or runs on main when its scoped files change,
+**after** an approved merge.
+
+An `UNVERIFIED` result proves only that a provider read succeeded at
+the bound Social Runtime; it does not prove a third-party post is
+publicly accessible or suitable for commenting. `BLOCKED` is a
+completed diagnostic with an explicit reason (for example absent scope
+or missing runtime config). This workflow cannot satisfy social
+discovery completion alone: an independent public-post provenance
+check, persona decision, separately governed external-write
+acceptance, platform reply receipt, and readback remain required.
+
+While a PR has not merged, the workflow definition itself is not
+deployed. Do not report actual Oracle results from PR CI alone.
