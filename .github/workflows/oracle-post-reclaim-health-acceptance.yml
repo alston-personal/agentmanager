@@ -73,6 +73,8 @@ jobs:
           grep -Eq '^default[[:space:]]+20$' "$root/io.weight"
           test "$(cat "$root/memory.max")" = "1073741824"
 
+          worker_proc_count="$(wc -l < "$root/cgroup.procs")"
+          echo "worker_cgroup_proc_count=$worker_proc_count"
           read u0 p0 t0 x0 < <(awk '
             $1=="usage_usec"{u=$2}
             $1=="nr_periods"{p=$2}
@@ -90,9 +92,9 @@ jobs:
             END{print u+0,p+0,t+0,x+0}
           ' "$root/cpu.stat")
           ts1="$(date +%s%N)"
-          python3 - "$u0" "$u1" "$p0" "$p1" "$t0" "$t1" "$x0" "$x1" "$ts0" "$ts1" <<'PY'
+          python3 - "$u0" "$u1" "$p0" "$p1" "$t0" "$t1" "$x0" "$x1" "$ts0" "$ts1" "$worker_proc_count" <<'PY'
           import sys
-          u0,u1,p0,p1,t0,t1,x0,x1,ts0,ts1=map(int,sys.argv[1:])
+          u0,u1,p0,p1,t0,t1,x0,x1,ts0,ts1,proc_count=map(int,sys.argv[1:])
           wall=max(1,ts1-ts0)
           pct=max(0,u1-u0)*100_000_000_000/wall/1_000_000
           print(f"worker_cpu_percent_10s={pct:.2f}")
@@ -101,6 +103,11 @@ jobs:
           print(f"worker_throttled_usec_delta={max(0,x1-x0)}")
           if pct > 55.0:
               raise SystemExit("worker cpu above kernel boundary")
+          # With only the long-lived daemon in the cgroup, historical state must
+          # not consume a meaningful CPU core. The 10% ceiling is deliberately
+          # far above the post-fix live baseline (0.09%) to tolerate jitter.
+          if proc_count == 1 and pct > 10.0:
+              raise SystemExit("idle worker daemon cpu regression")
           if p1-p0 <= 0:
               raise SystemExit("cpu bandwidth periods are not active")
           PY
