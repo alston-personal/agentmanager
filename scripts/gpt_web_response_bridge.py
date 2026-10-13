@@ -459,6 +459,26 @@ def _assistant_text(page: CdpPage, request_id: str) -> str | None:
         if (text.length < 40) continue;
         return text;
       }
+      // /uc/ uses no role-bearing assistant elements in live Oracle.
+      // Accept only an actual parsed JSON object with exact request ID;
+      // reject user/form/nav text and any prose containing the ID.
+      const main = document.querySelector('main');
+      if (main && location.pathname.startsWith('/uc/')) {
+        const candidates = Array.from(main.querySelectorAll('p,pre,code')).slice(-120);
+        for (let i = candidates.length - 1; i >= 0; i--) {
+          const node = candidates[i];
+          if (node.closest('form,nav,aside,[data-message-author-role="user"]')) continue;
+          const value = (node.innerText || node.textContent || '').trim();
+          if (!value || value.length > 65536) continue;
+          let payload;
+          try { payload = JSON.parse(value); } catch (_) { continue; }
+          if (!payload || Array.isArray(payload) || typeof payload !== 'object') continue;
+          if (payload.agentos_request_id !== id) continue;
+          if (!Object.prototype.hasOwnProperty.call(payload, 'invoice_number')) continue;
+          if (!Object.prototype.hasOwnProperty.call(payload, 'total_amount')) continue;
+          return value;
+        }
+      }
       return null;
     })()""" % json.dumps(request_id)
     value = page.evaluate(expr)
