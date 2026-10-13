@@ -188,6 +188,8 @@ def publish_project_continuation(
     try:
         with os.fdopen(lock_fd, "r+") as lock_handle:
             fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            if not expected_index and (execution_path.exists() or continuation_path.exists()):
+                raise ValueError("existing continuation requires guarded advancement")
             if expected_index:
                 current_index, current_ir = _current_generation(execution_path, continuation_path)
                 if current_index != expected_index or current_ir != expected_ir:
