@@ -186,3 +186,30 @@ re-authorization was performed by creating this script.
 The runtime integration path still requires a governed deployment to
 Oracle and a one-shot safe capability check; this is a diagnostic entry,
 not an assertion that current production has search scope or the bridge.
+
+### For You exploration lane — new offline contract, NOT live browsing
+
+Threads' personalized `For You` feed is a UI behavior and must not be
+misrepresented as official Meta `keyword.search` access. The rediscovered
+`agentos_node/social/threads_gui_client.py` in `core/integration` is a
+**Darwin/macOS private-message** browser reader, not an Oracle For You
+implementation, and cannot be reused as an account-isolated feed reader.
+
+`scripts/persona_for_you_observation.py` provides an independent,
+bounded **read-only projection** accepting a separately verified
+`mio.milkcat` account identity receipt, a `for_you.read` GUI observation
+receipt, exact home-page URL and at most 20 observed post URLs.
+It emits only foreign-account candidate URLs with
+`content_verified=false`, `reply_allowed=false`, and
+`ir_revision_required=false`. The browser runtime **does not yet emit**
+the required receipts; this projection is not a working browser probe and
+must never fabricate identity attestations.
+
+Future acceptance: use only a documented isolated Mio browser profile
+(never the oursong profile), verify identity before feed observation,
+navigate within permitted UI constraints, take one bounded page snapshot,
+emit immutable node-authoritative receipts, verify public content and
+thread parent before separate reasoning and any platform write. Ordinary
+reading must update only Experience Ledger, not bump Persona IR revision.
+Lack of verified login/profile must be reported `LOGIN_REQUIRED`, not
+silently replaced by an owned-post API read or unrelated browser session.
