@@ -53,6 +53,24 @@ def isolate_uniform_background(source: pathlib.Path, dest: pathlib.Path):
     coverage=opaque/(tw*th)
     if coverage<0.08 or coverage>0.85:
         return {"state":"needs_target_segmentation","reason":"ambiguous_product_coverage","coverage":round(coverage,4)}
+    # Conservative guard: pale products on pale backgrounds are frequently
+    # hollowed out by flood-fill (NET 40832-002 real-photo regression).
+    # Measure light pixels within the foreground bounding region, rather than
+    # treating any successfully written alpha mask as a sound extraction.
+    foreground=[(x,y) for y in range(th) for x in range(tw) if pixels[x,y][3]>0]
+    if foreground and min(background)>=235:
+        left=min(p[0] for p in foreground); right=max(p[0] for p in foreground)
+        top=min(p[1] for p in foreground); bottom=max(p[1] for p in foreground)
+        area=max(1,(right-left+1)*(bottom-top+1))
+        # Near-background holes inside the product envelope imply that
+        # white fabric, laces, or soles may have disappeared. Fail closed.
+        transparent_inner=sum(1 for y in range(top,bottom+1)
+                              for x in range(left,right+1)
+                              if pixels[x,y][3]==0)
+        if area>=2000 and transparent_inner/area>0.12:
+            return {"state":"needs_target_segmentation",
+                    "reason":"pale_product_or_internal_mask_holes",
+                    "interiorTransparentRatio":round(transparent_inner/area,4)}
     dest.parent.mkdir(parents=True,exist_ok=True)
     mask_path = dest.with_name(dest.stem + ".mask.png")
     # Use the actual alpha channel as the reproducible isolation mask.
