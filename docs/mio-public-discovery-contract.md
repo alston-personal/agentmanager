@@ -168,3 +168,21 @@ in the live persona worker and no node-authoritative receipt has been
 seen. Integration needs approval of the existing runtime owner and a
 safe, independently observed Oracle readback. No write authority is
 implied by keyword search.
+
+### Node-side operator diagnostic entrypoint (not deployed)
+
+`scripts/persona_keyword_node_diagnostic.py` is a manual, explicitly
+read-only executor using the same product key and persona account
+binding resolver as `persona_social_executor.py`. It calls the existing
+local `/v1/social/status` with `operation=keyword.search`, never
+reads Threads browser profiles, and returns a sanitized BLOCKED or
+UNVERIFIED receipt without external post text or credentials.
+`--receipt-out` is mode 0600. This does **not** automatically schedule
+external discovery, publish social actions, or certify node-authoritative
+execution; its `node_verified=false` flag remains conservative until
+separately attached node-execution evidence is collected. No login or
+re-authorization was performed by creating this script.
+
+The runtime integration path still requires a governed deployment to
+Oracle and a one-shot safe capability check; this is a diagnostic entry,
+not an assertion that current production has search scope or the bridge.
