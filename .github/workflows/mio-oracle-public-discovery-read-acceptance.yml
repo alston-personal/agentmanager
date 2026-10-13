@@ -1,0 +1,76 @@
+name: Mio Oracle Public Discovery Read Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/persona_keyword_node_diagnostic.py'
+      - 'scripts/persona_keyword_social_runtime_bridge.py'
+      - 'scripts/persona_social_executor.py'
+      - '.github/workflows/mio-oracle-public-discovery-read-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mio-discovery-read-acceptance
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run one isolated read-only Social Runtime probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          test -f scripts/persona_keyword_node_diagnostic.py
+          test -f scripts/persona_keyword_social_runtime_bridge.py
+          test -f scripts/persona_social_executor.py
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          SSH=(ssh -o StrictHostKeyChecking=accept-new -p "$PORT")
+          SCP=(scp -o StrictHostKeyChecking=accept-new -P "$PORT")
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          REMOTE_TMP="$("${SSH[@]}" "$TARGET" 'mktemp -d /tmp/mio-discovery-read-XXXXXXXX')"
+          [[ "$REMOTE_TMP" == /tmp/mio-discovery-read-* ]]
+          cleanup() {
+            "${SSH[@]}" "$TARGET" "rm -rf -- '$REMOTE_TMP'" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          "${SSH[@]}" "$TARGET" "mkdir -p '$REMOTE_TMP/scripts'; touch '$REMOTE_TMP/scripts/__init__.py'"
+          "${SCP[@]}" scripts/persona_keyword_node_diagnostic.py scripts/persona_keyword_social_runtime_bridge.py scripts/persona_social_executor.py "$TARGET:$REMOTE_TMP/scripts/"
+          # The diagnostic uses the existing local account-bound Social Runtime.
+          # It does not perform browser automation, OAuth, posting or replying.
+          "${SSH[@]}" "$TARGET" "PYTHONPATH='$REMOTE_TMP' python3 -m scripts.persona_keyword_node_diagnostic --query '散步' --receipt-out '$REMOTE_TMP/receipt.json'"
+          "${SSH[@]}" "$TARGET" "cat '$REMOTE_TMP/receipt.json'" > mio-discovery-read-receipt.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("mio-discovery-read-receipt.json").read_text())
+          assert d["schema"] in ("agentos.mio-keyword-social-runtime-probe/v1","agentos.mio-keyword-node-diagnostic/v1")
+          assert d["write_performed"] is False and d.get("read_only",True) is True
+          assert not d.get("items")
+          assert d.get("status") in ("BLOCKED","UNVERIFIED")
+          print("mio_discovery_read_probe=" + str(d["status"]))
+          print("mio_discovery_read_reason=" + str(d.get("reason","UNKNOWN")))
+          print("mio_discovery_external_post_verified=NO")
+          PY
+      - name: Store sanitized read-only node diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-discovery-read-sanitized
+          path: mio-discovery-read-receipt.json
+          if-no-files-found: ignore
+          retention-days: 7
