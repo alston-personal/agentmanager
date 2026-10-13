@@ -1,0 +1,18 @@
+name: Mio Gemini Terminal OAuth Regression
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'capabilities/wardrobe_visual_review/gemini_backend.py'
+      - 'tests/test_mio_gemini_terminal_oauth.py'
+      - '.github/workflows/mio-gemini-terminal-oauth-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject repeated terminal-OAuth retries and preserve recovery path
+        run: python3 -m unittest -v tests/test_mio_gemini_terminal_oauth.py
