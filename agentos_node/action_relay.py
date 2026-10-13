@@ -5,6 +5,7 @@ import grp
 import hashlib
 import json
 import os
+import pwd
 from pathlib import Path
 import stat
 import subprocess
@@ -48,6 +49,17 @@ def _share(path: Path, *, directory: bool = False) -> None:
         current = path.stat()
         if current.st_gid != gid or stat.S_IMODE(current.st_mode) != desired_mode:
             raise
+
+
+def _verify_continuation_capsule_owner(path: Path) -> None:
+    """Narrow Unix ownership gate; not a substitute for ONE authorization."""
+    info = path.lstat()
+    expected_uid = pwd.getpwnam("agentos-node").pw_uid
+    expected_gid = grp.getgrnam(SHARED_GROUP).gr_gid
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != expected_uid
+            or info.st_gid != expected_gid or stat.S_IMODE(info.st_mode) != 0o660):
+        raise PermissionError("continuation capsule must be agentos-node owned, shared-group regular file")
+
 
 
 class Paths:
@@ -1470,6 +1482,8 @@ class ActionRelayWorker:
             supplied = str(capsule.get("digest") or ""); unsigned = dict(capsule); unsigned.pop("digest", None)
             expected = "sha256:" + hashlib.sha256(_canonical(unsigned)).hexdigest()
             if supplied != expected: raise ValueError("capsule digest mismatch")
+            if action == "agentos.project.publish_continuation":
+                _verify_continuation_capsule_owner(processing)
             result = ACTIONS[action](params)
             # governed_receipt_reserved_fields_v1: the relay owns receipt identity.
             # Capability results may carry their own schema/metadata but must never
