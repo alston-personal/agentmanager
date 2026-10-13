@@ -1,6 +1,6 @@
 name: Character Fusion Runner Window Smoke
 
-# trigger: 2026-10-12 character-fusion live smoke after timeout fix 1644
+# trigger: 2026-10-13 character-fusion smoke after Flow prompt commit restore
 
 on:
   pull_request:
