@@ -237,3 +237,9 @@ acceptance, platform reply receipt, and readback remain required.
 
 While a PR has not merged, the workflow definition itself is not
 deployed. Do not report actual Oracle results from PR CI alone.
+
+### Actual OAuth scope diagnosis after OWN_POSTS_ONLY
+
+After production run 38366719572 returned `OWN_POSTS_ONLY`, `scripts/persona_keyword_scope_check.py` adds a sanitized, account-bound `/debug_token` probe. It reuses the existing Mio persona binding in the Oracle private credential vault; it does not print the token, account ID, third-party content, or raw provider errors. The existing isolated Oracle read-acceptance workflow now records both the effective `threads_keyword_search` scope determination and the original keyword-search classification in its short-lived artifact. Both results are **diagnostic only**. A `GRANTED` token scope is not proof of Meta App Review approval or successful external discovery. Do not bypass Meta's permissions, promote own-posts-only responses, or turn on the global outbound reply switch.
+
+The change requires independent PR merge approval and a **new actual node run** before declaring any current grant result.
