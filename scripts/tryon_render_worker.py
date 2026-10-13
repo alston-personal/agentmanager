@@ -1356,9 +1356,13 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         job["status"] = "failed"
         job["failedAt"] = checked_at
         job["completedAt"] = None
+        terminal_auth = receipt.get("backendClassification") == "OAUTH_CLIENT_UNSUPPORTED"
         job["error"] = {
-            "code": "VISUAL_QA_NOT_ACCEPTED",
-            "message": "Generated image held: " + str(receipt.get("reason") or state)[:300],
+            "code": "VISUAL_QA_PROVIDER_TERMINAL" if terminal_auth else "VISUAL_QA_NOT_ACCEPTED",
+            "message": (
+                "Gemini CLI OAuth client unsupported; change provider/auth method, do not re-login"
+                if terminal_auth else "Generated image held: " + str(receipt.get("reason") or state)[:300]
+            ),
         }
         job["output"]["asset"] = None
         job["output"]["previewAsset"] = None
