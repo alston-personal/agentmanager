@@ -118,6 +118,17 @@ class ProjectContinuationIndexTests(unittest.TestCase):
                 action(stale)
             self.assertEqual(before, (head_path.read_bytes(), cont_path.read_bytes()))
 
+    @patch("agent_core.project_continuation_index.resolve_project_identity")
+    def test_rejects_unguarded_overwrite_without_mutation(self, resolve):
+        resolve.return_value = self.project
+        publish_project_continuation(self.params, data_root=self.root)
+        head = self.root / "projects" / "agentos-core" / "execution-head.json"
+        continuation = self.root / "projects" / "agentos-core" / "continuity" / "latest.json"
+        previous = (head.read_bytes(), continuation.read_bytes())
+        with self.assertRaisesRegex(ValueError, "requires guarded advancement"):
+            publish_project_continuation(self._child_params(), data_root=self.root)
+        self.assertEqual(previous, (head.read_bytes(), continuation.read_bytes()))
+
     def test_rejects_noncanonical_project(self):
         params = dict(self.params)
         params["project_id"] = "other"
