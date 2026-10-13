@@ -1,0 +1,69 @@
+{
+  "schema": "agentos.mio-net-source-backfill/v1",
+  "description": "Read-only GUI extraction; never auto-approve a garment or inferred image.",
+  "items": [
+    {
+      "garmentId": "net-31307-product-690093",
+      "productId": "31307",
+      "optionId": "690093",
+      "variantCode": null,
+      "productUrl": "https://m.net-fashion.net/product/690093"
+    },
+    {
+      "garmentId": "net-43969-product-722633",
+      "productId": "43969",
+      "optionId": "722633",
+      "variantCode": null,
+      "productUrl": "https://m.net-fashion.net/product/722633"
+    },
+    {
+      "garmentId": "net-31234-product-689961",
+      "productId": "31234",
+      "optionId": "689961",
+      "variantCode": "014",
+      "productUrl": "https://m.net-fashion.net/product/689961"
+    },
+    {
+      "garmentId": "net-42621-black-751122",
+      "productId": "42621",
+      "optionId": "751122",
+      "variantCode": "900",
+      "productUrl": "https://www.net-fashion.net/product/751122"
+    },
+    {
+      "garmentId": "net-33148-002",
+      "productId": "33148",
+      "optionId": "715711",
+      "variantCode": "002",
+      "productUrl": "https://www.net-fashion.net/product/715711"
+    },
+    {
+      "garmentId": "net-49250-002",
+      "productId": "49250",
+      "optionId": "745114",
+      "variantCode": "002",
+      "productUrl": "https://www.net-fashion.net/product/745114"
+    },
+    {
+      "garmentId": "net-39841-variant-pending",
+      "productId": "39841",
+      "optionId": "666117",
+      "variantCode": null,
+      "productUrl": "https://m.net-fashion.net/product/666117"
+    },
+    {
+      "garmentId": "net-49640-003",
+      "productId": "49640",
+      "optionId": "731541",
+      "variantCode": "003",
+      "productUrl": "https://www.net-fashion.net/product/731541"
+    },
+    {
+      "garmentId": "net-49362-719",
+      "productId": "49362",
+      "optionId": "732716",
+      "variantCode": "719",
+      "productUrl": "https://www.net-fashion.net/product/732716"
+    }
+  ]
+}
