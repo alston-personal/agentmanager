@@ -44,19 +44,21 @@ def test_runner_inspect_discovers_only_github_runner_units():
 def test_runner_recover_restarts_only_discovered_runner_unit():
     client = _client()
     calls = []
+    restarted = False
 
     def fake_run(argv, **kwargs):
+        nonlocal restarted
         calls.append(argv)
         if argv[:2] == ['systemctl', 'list-units']:
             return subprocess.CompletedProcess(
-                argv, 0,
-                stdout='actions.runner.repo.node.service loaded active running Runner\n',
-                stderr='',
+                argv, 0, stdout='actions.runner.repo.node.service loaded active running Runner\n', stderr=''
             )
         if argv[:2] == ['systemctl', 'is-active']:
-            return subprocess.CompletedProcess(argv, 0, stdout='active\n', stderr='')
+            state = 'active\n' if restarted else 'inactive\n'
+            return subprocess.CompletedProcess(argv, 0 if restarted else 3, stdout=state, stderr='')
         if 'restart' in argv:
             assert argv[-1] == 'actions.runner.repo.node.service'
+            restarted = True
             return subprocess.CompletedProcess(argv, 0, stdout='', stderr='')
         raise AssertionError(argv)
 
@@ -69,3 +71,26 @@ def test_runner_recover_restarts_only_discovered_runner_unit():
     assert result['restart_attempted_count'] == 1
     assert result['restart_failed_count'] == 0
     assert not any('ssh.service' in part for call in calls for part in call)
+
+
+def test_runner_recover_does_not_restart_active_runner():
+    client = _client()
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:2] == ['systemctl', 'list-units']:
+            return subprocess.CompletedProcess(
+                argv, 0, stdout='actions.runner.repo.node.service loaded active running Runner\n', stderr=''
+            )
+        if argv[:2] == ['systemctl', 'is-active']:
+            return subprocess.CompletedProcess(argv, 0, stdout='active\n', stderr='')
+        raise AssertionError(f'healthy runner must not be restarted: {argv}')
+
+    with mock.patch('agentos_node.thin_client.platform.system', return_value='Linux'), \
+         mock.patch('agentos_node.thin_client.subprocess.run', side_effect=fake_run):
+        result = client._recover_runner()
+
+    assert result['recovered'] is True
+    assert result['restart_attempted_count'] == 0
+    assert all('restart' not in call for call in calls)

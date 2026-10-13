@@ -453,6 +453,14 @@ class ThinClient:
         units = self._runner_units()
         restart_returncodes: list[int] = []
         for unit in units:
+            # Recovery must not interrupt a healthy runner processing queued jobs.
+            # An explicit unhealthy state is required before any restart.
+            state = subprocess.run(
+                ['systemctl', 'is-active', unit],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            if state.returncode == 0 and state.stdout.strip() == 'active':
+                continue
             argv = ['systemctl', 'restart', unit]
             if hasattr(os, 'geteuid') and os.geteuid() != 0:
                 argv = ['sudo', '-n', *argv]
@@ -466,7 +474,7 @@ class ThinClient:
             'runner_active_count_before': before['runner_active_count'],
             'runner_active_count': after['runner_active_count'],
             'runner_failed_count': after['runner_failed_count'],
-            'restart_attempted_count': len(units),
+            'restart_attempted_count': len(restart_returncodes),
             'restart_failed_count': sum(1 for code in restart_returncodes if code != 0),
             'runner_healthy': after['runner_healthy'],
             'recovered': bool(units) and all(code == 0 for code in restart_returncodes) and after['runner_healthy'],
