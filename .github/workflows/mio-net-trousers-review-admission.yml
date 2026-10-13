@@ -24,7 +24,28 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Run independent visual-evidence plus pixel-level review on Oracle
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet Pillow
+      - name: Independently review original pixels and alpha on a separate hosted runner
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: ${{ runner.temp }}/mio-independent-qa
+        run: |
+          set -euo pipefail
+          STORE="$AGENT_DATA_ROOT/projects/dressup-simulator"
+          mkdir -p "$STORE"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            "tar -czf - -C /home/ubuntu/agent-data/projects/dressup-simulator \
+              garments/imported/net-31234-product-689961.json \
+              source_images/4b60389046bc037394a8d69511b104835cc1fcfc3b5e3964636244863495723e/original \
+              isolation_candidates/net-31234-product-689961/4b60389046bc037394a8d69511b104835cc1fcfc3b5e3964636244863495723e \
+              isolation_jobs/net-31234-product-689961.json" \
+            | tar -xzf - -C "$STORE"
+          python scripts/review_and_promote_mio_net_trousers.py | tee "$RUNNER_TEMP/mio-independent-pixel-qa.json"
+          grep -Fq '"state": "qa_pass_no_promotion"' "$RUNNER_TEMP/mio-independent-pixel-qa.json"
+      - name: Promote precisely verified source bytes on Oracle (no worker packages changed)
         shell: bash
         run: |
           set -euo pipefail
@@ -36,10 +57,7 @@ jobs:
           WORK="$(mktemp /tmp/mio-review-XXXXXX.py)"
           trap 'rm -f "$WORK"' EXIT
           git -C "$REPO" show "$SHA:scripts/review_and_promote_mio_net_trousers.py" > "$WORK"
-          PY="$HOME/.local/share/agentos/gui-worker/venv/bin/python"
-          test -x "$PY"
-          "$PY" "$WORK"
-          "$PY" "$WORK" --promote
+          python3 "$WORK" --promote --prevalidated-by-hosted-runner
           REMOTE
           grep -Fq '"state": "approved"' "$RUNNER_TEMP/mio-review.log"
       - name: Verify approved endpoint serves the exact alpha PNG
