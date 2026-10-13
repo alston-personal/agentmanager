@@ -935,3 +935,8 @@ Capability results may carry their own schema and metadata, but they must never 
 ### Realm Fabric transactional mutation lock
 
 The JSON-backed Realm Fabric store is concurrently mutated by threaded ONE HTTP handlers and by governed Oracle-side control workflows. Transport-critical read-modify-write paths (heartbeat, task enqueue, task lease/pull, and receipt acknowledgement) must execute under one in-process re-entrant lock plus a cross-process file lock on `fabric.json.lock`. Atomic file replacement alone is insufficient because two writers can load the same snapshot and later overwrite each other's independent updates. This lock prevents lost task leases and lost receipts while preserving the existing atomic-replace durability boundary.
+
+
+## Branch convergence governance (proposal, 2026-10-13)
+
+PR #1921 proposes main as the single future development integration line while core/integration temporarily retains verified production release authority. This is **proposed, not yet merged or deployed**. The branch-convergence path-audit CI classifies changes for review and fails unclassified paths; RED classification is informational pending independently enforced human-owner approval and GitHub branch ruleset verification. The complete pinned branch-delta inventory, current Oracle runtime proof, OIDC migration and rollback validation remain outstanding under #1682 and coordinator #889. An approved PR or successful CI is not deployment evidence. Do not use this proposal to bypass main's explicit human merge approval.
