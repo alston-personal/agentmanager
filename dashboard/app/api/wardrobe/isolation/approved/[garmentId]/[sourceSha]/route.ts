@@ -27,7 +27,9 @@ export async function GET(_request: Request, context:{
      approved.state!=='approved' || !approved.approvedFingerprint ||
      approved.approvedFingerprint!==fingerprint ||
      !approved.productIR || !Array.isArray(approved.productIR.mustKeep) ||
+     !approved.approvedAssetSha256 || !SHA.test(approved.approvedAssetSha256) ||
      !approved.isolatedImageUrl ||
+     !/^https:\/\//.test(approved.isolatedImageUrl) ||
      !approved.isolatedImageUrl.endsWith('/'+garmentId+'/'+sourceSha)){
     return NextResponse.json({error:'Approved garment not found'},{status:404,headers:{'Cache-Control':'no-store'}});
   }
@@ -39,7 +41,9 @@ export async function GET(_request: Request, context:{
     const receipt=JSON.parse(fs.readFileSync(receiptFile,'utf8'));
     if(receipt.garmentId!==garmentId ||receipt.sourceAssetSha256!==sourceSha ||
        receipt.approved!==true||receipt.review?.state!=='accepted' ||
-       receipt.isolatedAssetSha256!==approved.approvedAssetSha256){
+       receipt.isolatedAssetSha256!==approved.approvedAssetSha256 ||
+       receipt.productIR?.schema!=='agentos.wardrobe-product-ir/v1' ||
+       receipt.productIR?.category!==approved.productIR.category){
       throw Error('not accepted');
     }
     const file=path.join(folder,'garment.png');
