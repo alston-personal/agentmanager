@@ -39,7 +39,7 @@ class Proc(SimpleNamespace):
 def test_failed_action_relay_receipt_preserves_action_identity(tmp_path, monkeypatch):
     root = tmp_path / "relay"
     client = relay.ActionRelayClient(root)
-    capsule = client.submit(relay.ACTION, {"request": _request()})
+    capsule = client.submit(relay.ACTION, {"request": request()})
 
     def boom(_params):
         raise RuntimeError("synthetic failure")
