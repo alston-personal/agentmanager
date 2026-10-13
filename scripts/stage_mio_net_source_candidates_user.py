@@ -78,8 +78,27 @@ def stage_product(row, product, bundle):
     if hashlib.sha256(source.read_bytes()).hexdigest()!=sha:
         raise ValueError("source_digest_mismatch")
     snapshot=ROOT/"source_images"/sha/"original"
-    copy_immutable(source,snapshot,sha)
     target=ROOT/"garments"/"imported"/(garment_id+".json")
+    if target.exists() and not target.is_symlink():
+        existing=json.loads(target.read_text(encoding="utf-8"))
+        existing_source=(existing.get("source") or {})
+        previous_sha=existing_source.get("sourceAssetSha256")
+        if (existing.get("garmentId")==garment_id
+            and existing.get("characterId")=="sunlake-milkcat-ai-001"
+            and existing_source.get("imageUrl")==url
+            and isinstance(previous_sha,str) and DIGEST.fullmatch(previous_sha)
+            and (ROOT/"source_images"/previous_sha/"original").is_file()
+            and (ROOT/"isolation_jobs"/(garment_id+".json")).is_file()):
+            canonical=ROOT/"source_images"/previous_sha/"original"
+            if hashlib.sha256(canonical.read_bytes()).hexdigest()!=previous_sha:
+                raise ValueError("canonical_source_snapshot_corrupted")
+            # CDN responses may be re-encoded with identical visual pixels.
+            # Never churn already-registered immutable bytes on retries.
+            return {"garmentId":garment_id,"state":"awaiting_isolation",
+                    "sourceSha256":previous_sha,"sourceUrl":url,
+                    "approved":False,"sourceSnapshotExists":True,
+                    "idempotent":True}
+    copy_immutable(source,snapshot,sha)
     if target.exists():
         if target.is_symlink(): raise ValueError("unsafe_registry_record")
         record=json.loads(target.read_text(encoding="utf-8"))
