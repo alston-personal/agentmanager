@@ -58,22 +58,30 @@ async function evaluateExistingTab(wsUrl) {
 }
 async function inspect({port, expected}) {
   const summary = {port, cdp_state: 'UNAVAILABLE', account_state: 'UNKNOWN',
-                   examined_threads_pages: 0, account_identity_verified: false};
+                   examined_threads_pages: 0, page_targets: 0,
+                   threads_page_targets: 0, threads_ws_targets: 0,
+                   classification: 'CDP_UNAVAILABLE', account_identity_verified: false};
   try {
     const tabs = await json('http://127.0.0.1:' + port + '/json/list');
     summary.cdp_state = 'READY';
+    summary.classification = 'NO_THREADS_TAB';
     if (!Array.isArray(tabs)) return summary;
     const states = [];
     for (const tab of tabs.slice(0, 30)) {
-      if (tab.type !== 'page' || !tab.webSocketDebuggerUrl) continue;
+      if (tab.type !== 'page') continue;
+      summary.page_targets += 1;
       let u;
       try { u = new URL(tab.url); } catch { continue; }
       if (!HOSTS.has(u.hostname.toLowerCase())) continue;
+      summary.threads_page_targets += 1;
+      if (!tab.webSocketDebuggerUrl) { summary.classification = 'THREADS_WS_MISSING'; continue; }
+      summary.threads_ws_targets += 1;
       summary.examined_threads_pages += 1;
       try { states.push(accountEvidence(
         await evaluateExistingTab(tab.webSocketDebuggerUrl), expected));
       } catch { states.push('UNKNOWN'); }
     }
+    if (summary.threads_ws_targets) summary.classification = 'EVALUATED_EXISTING_TAB';
     const definite = states.filter(s => s === 'EXPECTED' || s === 'MISMATCH');
     if (states.includes('AMBIGUOUS') || new Set(definite).size > 1)
       summary.account_state = 'AMBIGUOUS';
