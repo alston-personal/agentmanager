@@ -39,5 +39,21 @@ class ReceiptTests(unittest.TestCase):
             self.assertEqual(row["state"], "needs_review")
             self.assertFalse(row["approved"])
 
+    def test_optional_multiview_is_not_approval(self):
+        kwargs=dict(garment_id="shoe",target_layer="shoes",
+                    source_fingerprint=sha256(b"source").hexdigest(),
+                    isolated_image=None,mask=None,attributes={"color":"white"},
+                    must_keep=["shoe upper"],extraction_backend="target-mask")
+        empty=module.candidate_receipt(**kwargs)
+        self.assertEqual(empty["productIR"]["views"],[])
+        self.assertFalse(empty["approved"])
+        view={"angle":"side","sourceType":"official_photo",
+              "assetSha256":sha256(b"photo").hexdigest(),"verified":True}
+        row=module.candidate_receipt(**kwargs,views=[view])
+        self.assertEqual(row["productIR"]["views"],[view])
+        self.assertEqual(row["productIR"]["multiviewStatus"],"pending_cross_view_review")
+        with self.assertRaisesRegex(ValueError,"generated reference"):
+            module.candidate_receipt(**kwargs,views=[dict(view,sourceType="generated_reference")])
+
 if __name__ == "__main__":
     unittest.main()
