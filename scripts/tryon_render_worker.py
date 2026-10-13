@@ -1070,10 +1070,17 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
             f"Rendering {layer} ({index + 1}/{len(target_layers)})",
         )
         item = selected[layer]
-        source_url = item.get("sourceImageUrl") if isinstance(item, dict) else None
-        if not isinstance(source_url, str) or not source_url.startswith(("http://", "https://")):
+        source_url = item.get("isolatedImageUrl") if isinstance(item, dict) else None
+        product_ir = item.get("productIR") if isinstance(item, dict) else None
+        if (
+            not isinstance(source_url, str)
+            or not source_url.startswith("https://")
+            or not isinstance(product_ir, dict)
+            or product_ir.get("schema") != "agentos.wardrobe-product-ir/v1"
+            or product_ir.get("category") != layer
+        ):
             pending_layers.append(layer)
-            warnings.append({"layer": layer, "code": "missing_source_image"})
+            warnings.append({"layer": layer, "code": "GARMENT_ISOLATION_REQUIRED"})
             continue
 
         previous_handler = signal.signal(signal.SIGALRM, _layer_timeout_handler)
@@ -1081,7 +1088,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         try:
             if layer in CLOTHING_SUPPORTED:
                 garment_name = str(item.get("name") or "garment") if isinstance(item, dict) else "garment"
-                description = f"{garment_name}; {CLOTHING_SUPPORTED[layer]}"
+                description = f"{garment_name}; {CLOTHING_SUPPORTED[layer]}; preserve the isolated product exactly: {json.dumps(product_ir, ensure_ascii=False)}"
                 primary_errors: list[str] = []
                 primary_ok = False
                 for attempt in range(1, 3):

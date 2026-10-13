@@ -1,0 +1,60 @@
+name: Mio NET Source Capture on Oracle GUI
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - 'scripts/capture_mio_net_sources_oracle_gui.py'
+      - '.agentos/commands/mio-net-source-backfill.json'
+      - '.github/workflows/mio-net-source-capture-oracle.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mio-net-source-capture-oracle
+  cancel-in-progress: false
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Capture and audit nine source candidates via isolated GUI context
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE' | tee "$RUNNER_TEMP/mio-source-capture.log"
+          set -euo pipefail
+          AGENT_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$AGENT_SHA"
+          WORK="$(mktemp -d /tmp/mio-net-gui-XXXXXX)"
+          trap 'rm -rf "$WORK"' EXIT
+          git -C "$REPO" show "$AGENT_SHA:scripts/capture_mio_net_sources_oracle_gui.py" > "$WORK/capture.py"
+          git -C "$REPO" show "$AGENT_SHA:.agentos/commands/mio-net-source-backfill.json" > "$WORK/manifest.json"
+          PY="$HOME/.local/share/agentos/gui-worker/venv/bin/python"
+          if [ ! -x "$PY" ]; then
+            echo 'mio_source_capture=GUI_WORKER_NOT_INSTALLED'
+            exit 3
+          fi
+          if ! curl --silent --fail --max-time 3 http://127.0.0.1:9222/json/version >/dev/null; then
+            echo 'mio_source_capture=CDP_UNAVAILABLE'
+            exit 4
+          fi
+          "$PY" "$WORK/capture.py" --manifest "$WORK/manifest.json" --cdp 'http://127.0.0.1:9222'
+          echo 'mio_source_capture=EXECUTED'
+          REMOTE
+      - name: Upload sanitized run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-net-gui-source-capture-receipt
+          path: ${{ runner.temp }}/mio-source-capture.log
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,44 @@
+name: Mio Oracle Trousers Source to Candidate Preflight
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - 'scripts/verify_mio_net_trousers_oracle_candidate_user.py'
+      - '.github/workflows/mio-oracle-trousers-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Independently check on-Oracle candidate/source integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE' | tee "$RUNNER_TEMP/trousers-preflight.json"
+          set -euo pipefail
+          SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$SHA"
+          TEMP="$(mktemp /tmp/mio-trousers-preflight-XXXXXX.py)"
+          trap 'rm -f "$TEMP"' EXIT
+          git -C "$REPO" show "$SHA:scripts/verify_mio_net_trousers_oracle_candidate_user.py" > "$TEMP"
+          python3 "$TEMP"
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mio-trousers-oracle-readonly-preflight
+          path: ${{ runner.temp }}/trousers-preflight.json
+          if-no-files-found: warn
+          retention-days: 7

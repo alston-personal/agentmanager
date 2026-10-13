@@ -6,6 +6,7 @@ import { verifyToken } from '@/lib/auth';
 import { isMilkcatAdmin } from '@/lib/auth/roles';
 import { AGENT_DATA_ROOT } from '@/lib/data-root';
 import { resolveRetailProduct, writeCanonicalGarment, type IntakeState, type ResolvedProduct } from '@/lib/wardrobe-ingest';
+import { enqueueIsolatedProduct } from '@/lib/wardrobe-isolation';
 
 const INTAKE_DIR = path.join(AGENT_DATA_ROOT, 'projects', 'dressup-simulator', 'intake');
 const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
@@ -123,6 +124,19 @@ async function processRecord(record: IntakeRecord) {
 
   try {
     const product = await resolveRetailProduct(sourceUrl, record.characterId);
+    // A URL-only metadata result is not a completed import. Keep the intake
+    // visible and retryable without creating an unusable canonical garment.
+    if (!product.imageUrl || !product.imageUrl.startsWith('https://')) {
+      record.product = product;
+      record.state = 'needs_review';
+      record.error = 'official_source_image_missing';
+      record.updatedAt = new Date().toISOString();
+      writeRecord(record);
+      return record;
+    }
+    // Queue first: a missing/invalid photo must not create a phantom garment.
+    // Existing queueing is idempotent by image fingerprint.
+    enqueueIsolatedProduct(product, product.garmentId);
     writeCanonicalGarment(
       AGENT_DATA_ROOT,
       record.characterId,
@@ -132,7 +146,7 @@ async function processRecord(record: IntakeRecord) {
       record.note
     );
     record.product = product;
-    record.state = 'ready_for_tryon';
+    record.state = 'awaiting_isolation';
     record.updatedAt = new Date().toISOString();
     writeRecord(record);
   } catch (error) {
@@ -232,7 +246,7 @@ export async function POST(request: NextRequest) {
     const existing = safeReadRecords().find(
       (record) => record.characterId === characterId && record.source.url === sourceUrl.toString()
     );
-    if (existing && existing.state === 'ready_for_tryon') {
+    if (existing && (existing.state === 'ready_for_tryon' || existing.state === 'awaiting_isolation')) {
       return NextResponse.json({ success: true, duplicate: true, ingested: true, record: existing });
     }
 
@@ -264,7 +278,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       duplicate: Boolean(existing),
-      ingested: processed.state === 'ready_for_tryon',
+      ingested: processed.state === 'ready_for_tryon' || processed.state === 'awaiting_isolation',
       record: processed,
     }, { status: existing ? 200 : processed.state === 'ready_for_tryon' ? 201 : 202 });
   } catch (error) {

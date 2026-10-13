@@ -1,0 +1,87 @@
+{
+  "schema": "agentos.mio-net-source-backfill/v1",
+  "description": "Read-only GUI extraction; never auto-approve a garment or inferred image.",
+  "items": [
+    {
+      "garmentId": "net-31307-product-690093",
+      "productId": "31307",
+      "optionId": "690093",
+      "variantCode": null,
+      "productUrl": "https://m.net-fashion.net/product/690093",
+      "name": "軟質V領襯衫",
+      "slot": "upper_main"
+    },
+    {
+      "garmentId": "net-43969-product-722633",
+      "productId": "43969",
+      "optionId": "722633",
+      "variantCode": null,
+      "productUrl": "https://m.net-fashion.net/product/722633",
+      "name": "仿羊絨V領針織外套",
+      "slot": "upper_outer"
+    },
+    {
+      "garmentId": "net-31234-product-689961",
+      "productId": "31234",
+      "optionId": "689961",
+      "variantCode": "014",
+      "productUrl": "https://m.net-fashion.net/product/689961",
+      "name": "打褶後鬆緊長褲",
+      "slot": "lower_main"
+    },
+    {
+      "garmentId": "net-42621-black-751122",
+      "productId": "42621",
+      "optionId": "751122",
+      "variantCode": "900",
+      "productUrl": "https://www.net-fashion.net/product/751122",
+      "name": "刷毛圓領直筒洋裝",
+      "slot": "onepiece"
+    },
+    {
+      "garmentId": "net-33148-002",
+      "productId": "33148",
+      "optionId": "715711",
+      "variantCode": "002",
+      "productUrl": "https://www.net-fashion.net/product/715711",
+      "name": "肩綁帶吊帶背心",
+      "slot": "upper_inner"
+    },
+    {
+      "garmentId": "net-49250-002",
+      "productId": "49250",
+      "optionId": "745114",
+      "variantCode": "002",
+      "productUrl": "https://www.net-fashion.net/product/745114",
+      "name": "素色女短襪(五入組)",
+      "slot": "socks"
+    },
+    {
+      "garmentId": "net-39841-variant-pending",
+      "productId": "39841",
+      "optionId": "666117",
+      "variantCode": null,
+      "productUrl": "https://m.net-fashion.net/product/666117",
+      "name": "飛織樂福鞋",
+      "slot": "shoes"
+    },
+    {
+      "garmentId": "net-49640-003",
+      "productId": "49640",
+      "optionId": "731541",
+      "variantCode": "003",
+      "productUrl": "https://www.net-fashion.net/product/731541",
+      "name": "女士基本款棒球帽",
+      "slot": "accessory_1"
+    },
+    {
+      "garmentId": "net-49362-719",
+      "productId": "49362",
+      "optionId": "732716",
+      "variantCode": "719",
+      "productUrl": "https://www.net-fashion.net/product/732716",
+      "name": "印花絲巾",
+      "slot": "accessory_2"
+    }
+  ]
+}

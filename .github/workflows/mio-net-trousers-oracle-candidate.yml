@@ -1,0 +1,96 @@
+name: Mio Exact NET Trousers Candidate on Oracle
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - 'scripts/isolate_mio_net_dark_trousers.py'
+      - 'scripts/stage_mio_dark_trousers_candidate_user.py'
+      - '.github/workflows/mio-net-trousers-oracle-candidate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mio-net-trousers-oracle-candidate
+  cancel-in-progress: false
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet Pillow opencv-python-headless
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read immutable registered original from Oracle
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" python3 - <<'PY'
+          import json,pathlib
+          root=pathlib.Path.home()/"agent-data/projects/dressup-simulator"
+          receipt=json.loads((root/"source_sync_receipts/net-31234-product-689961.json").read_text())
+          assert receipt["state"]=="awaiting_isolation", receipt["state"]
+          print(receipt["sourceSha256"])
+          PY
+          )"
+          [[ "$SHA" =~ ^[a-f0-9]{64}$ ]]
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/mio-dark-trousers"
+          scp -q -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}:/home/ubuntu/agent-data/projects/dressup-simulator/source_images/$SHA/original" "$RUNNER_TEMP/mio-dark-trousers/source.jpg"
+      - name: Produce exact-vendor-color source-preserving candidate PNG and mask
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          python scripts/isolate_mio_net_dark_trousers.py --source "$RUNNER_TEMP/mio-dark-trousers/source.jpg" --source-sha256 "$SOURCE_SHA" --output "$RUNNER_TEMP/mio-dark-trousers/candidate"
+          python - <<'PY'
+          from PIL import Image
+          import pathlib,os,json
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'mio-dark-trousers/candidate'
+          image=Image.open(root/'garment.png').convert('RGBA')
+          mask=Image.open(root/'garment.mask.png').convert('L')
+          assert image.size==mask.size
+          assert image.getchannel('A').tobytes()==mask.tobytes()
+          receipt=json.loads((root/'candidate-receipt.json').read_text())
+          assert receipt['state']=='candidate' and receipt['approved'] is False
+          assert receipt['sourcePixelSha256']=='06a3aa8736af3dac238775a8c08ab90ce0fb9f5f8f5fa7ead0cdfd6d60d80ba9'
+          print('mio_dark_trousers_png_and_mask_consistency=PASS')
+          PY
+      - name: Install unapproved candidate on Oracle for independent visual inspection
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="/tmp/mio-dark-trousers-${GITHUB_RUN_ID}.tar.gz"
+          tar -czf "$RUNNER_TEMP/mio-dark-trousers-candidate.tar.gz" -C "$RUNNER_TEMP/mio-dark-trousers/candidate" .
+          scp -q -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -P "${DEPLOY_SSH_PORT:-22}" "$RUNNER_TEMP/mio-dark-trousers-candidate.tar.gz" "${DEPLOY_USER}@${ORACLE_HOST}:$ARCHIVE"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" "$ARCHIVE" "$SOURCE_SHA" <<'REMOTE'
+          set -euo pipefail
+          COMMIT="$1"; ARCHIVE="$2"; SHA="$3"
+          REPO=/home/ubuntu/agentmanager
+          WORK="$(mktemp -d /tmp/mio-trousers-XXXXXX)"
+          trap 'rm -rf "$WORK" "$ARCHIVE"' EXIT
+          mkdir -p "$WORK/candidate"
+          git -C "$REPO" fetch --no-tags origin "$COMMIT"
+          git -C "$REPO" show "$COMMIT:scripts/stage_mio_dark_trousers_candidate_user.py" > "$WORK/stage.py"
+          tar -xzf "$ARCHIVE" -C "$WORK/candidate"
+          python3 "$WORK/stage.py" --folder "$WORK/candidate" --source-sha256 "$SHA"
+          REMOTE
+      - name: Retain source, candidate and receipt for independent QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-dark-trousers-real-candidate-review
+          path: ${{ runner.temp }}/mio-dark-trousers/
+          if-no-files-found: warn
+          retention-days: 7

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { normalizeWardrobeLayer } from './wardrobe-layers.mjs';
 
-export type IntakeState = 'pending_metadata' | 'fetching' | 'ready_for_tryon' | 'needs_review';
+export type IntakeState = 'pending_metadata' | 'fetching' | 'awaiting_isolation' | 'ready_for_tryon' | 'needs_review';
 
 export type ResolvedProduct = {
   garmentId: string;
@@ -299,7 +299,7 @@ export function writeCanonicalGarment(
       note,
     },
     acquisition: { state: 'want_to_try', owned: false, worn: false },
-    tryOn: { state: 'ready_for_tryon', asset: null },
+    tryOn: { state: 'awaiting_isolation', asset: null },
   };
   const tmp = destination + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });

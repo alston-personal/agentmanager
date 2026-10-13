@@ -1,0 +1,88 @@
+name: Mio Official NET CDN Image Probe
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - 'scripts/probe_mio_net_official_cdn.py'
+      - '.github/workflows/mio-net-official-cdn-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet Pillow
+      - name: Probe vendor CDN exact SKU and color image patterns
+        run: |
+          python scripts/probe_mio_net_official_cdn.py --manifest .agentos/commands/mio-net-source-backfill.json --output "$RUNNER_TEMP/net-cdn-probe"
+      - name: Run actual single-product isolation candidate on verified source bytes
+        run: |
+          python - <<'PY'
+          import importlib.util,json,hashlib,pathlib,os
+          base=pathlib.Path(os.environ['RUNNER_TEMP'])/'net-cdn-probe'
+          module=pathlib.Path('scripts/isolate_mio_product_candidate.py')
+          spec=importlib.util.spec_from_file_location('mio_isolate',module)
+          extractor=importlib.util.module_from_spec(spec);spec.loader.exec_module(extractor)
+          report=json.loads((base/'report.json').read_text())
+          results=[]
+          for product in report['products']:
+            for entry in product['images']:
+              ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[entry['contentType']]
+              path=base/product['garmentId']/(entry['imageSha256']+'.'+ext)
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==entry['imageSha256']
+              dest=base/product['garmentId']/(entry['imageSha256']+'.isolated.png')
+              outcome=extractor.isolate_uniform_background(path,dest)
+              results.append({'garmentId':product['garmentId'],'sourceSha256':entry['imageSha256'],
+                              'state':outcome['state'],'reason':outcome.get('reason'),
+                              'approved':False,'review':'pending_visual_QC'})
+              print('mio_isolation_try='+product['garmentId']+':'+outcome['state'])
+          (base/'isolation-results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\\n')
+          PY
+      - name: Dry-run six canonical imports in isolated runner data root
+        env:
+          AGENT_DATA_ROOT: ${{ runner.temp }}/mio-import-dryrun
+        run: |
+          python scripts/stage_mio_net_source_candidates_user.py --manifest .agentos/commands/mio-net-source-backfill.json --bundle "$RUNNER_TEMP/net-cdn-probe" | tee "$RUNNER_TEMP/mio-import-dryrun.log"
+          grep -Fxq 'mio_source_staged=6' "$RUNNER_TEMP/mio-import-dryrun.log"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Backfill six immutable NET original photos to Oracle candidate registry
+        shell: bash
+        env:
+          ORACLE_HOST: 161.33.24.170
+          DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="/tmp/mio-net-sources-${GITHUB_RUN_ID}.tar.gz"
+          tar -czf "$RUNNER_TEMP/mio-net-sources.tar.gz" -C "$RUNNER_TEMP/net-cdn-probe" .
+          scp -q -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -P "${DEPLOY_SSH_PORT:-22}" "$RUNNER_TEMP/mio-net-sources.tar.gz" "${DEPLOY_USER}@${ORACLE_HOST}:$ARCHIVE"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" "$ARCHIVE" <<'REMOTE' | tee "$RUNNER_TEMP/mio-oracle-source-backfill.log"
+          set -euo pipefail
+          COMMIT="$1"; ARCHIVE="$2"
+          REPO=/home/ubuntu/agentmanager
+          WORK="$(mktemp -d /tmp/mio-source-backfill-XXXXXX)"
+          trap 'rm -rf "$WORK" "$ARCHIVE"' EXIT
+          mkdir -p "$WORK/bundle"
+          git -C "$REPO" fetch --no-tags origin "$COMMIT"
+          git -C "$REPO" show "$COMMIT:scripts/stage_mio_net_source_candidates_user.py" > "$WORK/stage.py"
+          git -C "$REPO" show "$COMMIT:.agentos/commands/mio-net-source-backfill.json" > "$WORK/manifest.json"
+          tar -xzf "$ARCHIVE" -C "$WORK/bundle"
+          python3 "$WORK/stage.py" --manifest "$WORK/manifest.json" --bundle "$WORK/bundle"
+          REMOTE
+          grep -Fxq 'mio_source_staged=6' "$RUNNER_TEMP/mio-oracle-source-backfill.log"
+      - name: Preserve actual image bytes and matching evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-net-official-cdn-evidence
+          path: ${{ runner.temp }}/net-cdn-probe/
+          if-no-files-found: warn
+          retention-days: 7
