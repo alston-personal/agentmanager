@@ -1,6 +1,6 @@
 name: Character Fusion Runner Window Smoke
 
-# trigger: 2026-10-13 Character Fusion smoke port-neutral sessions 0833
+# trigger: 2026-10-13 Character Fusion smoke after HF restore 1218
 
 on:
   pull_request:
