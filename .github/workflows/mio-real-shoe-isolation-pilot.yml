@@ -1,0 +1,61 @@
+name: Mio Real Shoe Isolation Pilot
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - '.github/workflows/mio-real-shoe-isolation-pilot.yml'
+      - 'scripts/fetch_and_isolate_mio_net_product.py'
+      - 'scripts/run_mio_product_isolation.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-shoe-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated image extractor
+        run: python -m pip install --quiet Pillow
+      - name: Create immutable pilot job under isolated temp root
+        env:
+          AGENT_DATA_ROOT: ${{ runner.temp }}/mio-shoe-pilot
+        run: |
+          mkdir -p "$AGENT_DATA_ROOT/projects/dressup-simulator/isolation_jobs"
+          python - <<'PY'
+          import json,hashlib,os,pathlib
+          url='https://net.wimg.tw/files/1/products/734984_400_002E799BDE889B2.jpg?v=32571'
+          root=pathlib.Path(os.environ['AGENT_DATA_ROOT'])/'projects/dressup-simulator'
+          job={'schema':'agentos.wardrobe-isolation-job/v1','garmentId':'net-40832-002','state':'pending','targetLayer':'shoes','productName':'NET 防潑水帆布鞋 002 白色','sourceImageUrl':url,'sourceFingerprint':hashlib.sha256(url.encode()).hexdigest()}
+          (root/'isolation_jobs/net-40832-002.json').write_text(json.dumps(job,ensure_ascii=False),encoding='utf-8')
+          PY
+      - name: Download real official shoe photo and extract candidate (never autoapprove)
+        env:
+          AGENT_DATA_ROOT: ${{ runner.temp }}/mio-shoe-pilot
+        run: |
+          set -euo pipefail
+          python scripts/fetch_and_isolate_mio_net_product.py net-40832-002 > "$AGENT_DATA_ROOT/receipt.stdout.json"
+          python - <<'PY'
+          import json,os,pathlib
+          path=pathlib.Path(os.environ['AGENT_DATA_ROOT'])/'receipt.stdout.json'
+          receipt=json.loads(path.read_text())
+          assert receipt['approved'] is False
+          assert receipt['garmentId']=='net-40832-002'
+          assert receipt['sourceSnapshot'] and pathlib.Path(receipt['sourceSnapshot']).is_file()
+          print('shoe_isolation_pilot_state='+receipt['state'])
+          print('shoe_isolation_pilot_outcome='+receipt['extractorOutcome'])
+          PY
+      - name: Upload source, candidate, mask and receipt even on failed isolation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-real-shoe-isolation-pilot
+          path: |
+            ${{ runner.temp }}/mio-shoe-pilot/receipt.stdout.json
+            ${{ runner.temp }}/mio-shoe-pilot/projects/dressup-simulator/source_images/
+            ${{ runner.temp }}/mio-shoe-pilot/projects/dressup-simulator/isolation_candidates/
+          if-no-files-found: warn
+          retention-days: 7
