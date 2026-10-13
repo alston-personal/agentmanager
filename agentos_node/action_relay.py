@@ -131,6 +131,17 @@ def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
 
 
 
+def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
+    """Publish the canonical AgentOS Core continuation through one narrow action.
+
+    The relay accepts no arbitrary path or shell. Project identity, mutation
+    authority, schemas, index generation, and canonical target paths are all
+    revalidated by the publisher under the ubuntu execution identity.
+    """
+    from agent_core.project_continuation_index import publish_project_continuation
+    return publish_project_continuation(params)
+
+
 def _register_agentos_core_project(params: dict[str, Any]) -> dict[str, Any]:
     """Register the canonical AgentOS Core project through the ubuntu authority boundary.
 
@@ -1384,16 +1395,6 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "agentos.project.publish_continuation": _publish_project_continuation,
 }
 
-
-def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
-    """Publish the canonical AgentOS Core continuation through one narrow action.
-
-    The relay accepts no arbitrary path or shell. Project identity, mutation
-    authority, schemas, index generation, and canonical target paths are all
-    revalidated by the publisher under the ubuntu execution identity.
-    """
-    from agent_core.project_continuation_index import publish_project_continuation
-    return publish_project_continuation(params)
 
 
 class ActionRelayWorker:
