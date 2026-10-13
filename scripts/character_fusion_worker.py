@@ -1149,6 +1149,29 @@ async def main():
         if not typed or int(typed.get("length") or 0) < 20:
             raise RuntimeError(f"flow_prompt_not_typed:{typed}")
 
+        # Flow's base prompt editor is an inline edit surface. Text insertion
+        # alone does not commit the prompt into the generation state; the UI
+        # must leave edit mode first. This was previously proven live and was
+        # accidentally lost during later Flow fallback rewrites.
+        committed=await evaluate(r'''(() => {
+          const buttons=[...document.querySelectorAll('button,[role="button"]')]
+            .filter(x=>x.offsetParent!==null);
+          const b=buttons.find(x=>{
+            const aria=(x.getAttribute('aria-label')||'').trim();
+            const title=(x.getAttribute('title')||'').trim();
+            const text=(x.innerText||x.textContent||'').replace(/\s+/g,' ').trim();
+            return /^(done|完成|套用|儲存)$/i.test(text)
+              || /完成|套用|儲存/i.test(aria+' '+title);
+          });
+          if(!b) return {clicked:false,reason:'commit-control-not-found'};
+          if(b.disabled) return {clicked:false,reason:'commit-control-disabled'};
+          b.click();
+          return {clicked:true,text:(b.innerText||b.textContent||'').trim().slice(0,80)};
+        })()''')
+        if not committed or not committed.get("clicked"):
+            raise RuntimeError(f"flow_prompt_commit_button_unavailable:{committed}")
+        await asyncio.sleep(0.8)
+
         sent=False
         for _ in range(60):
             sent=await evaluate(r'''(() => {
