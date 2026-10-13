@@ -124,6 +124,19 @@ async function processRecord(record: IntakeRecord) {
 
   try {
     const product = await resolveRetailProduct(sourceUrl, record.characterId);
+    // A URL-only metadata result is not a completed import. Keep the intake
+    // visible and retryable without creating an unusable canonical garment.
+    if (!product.imageUrl || !product.imageUrl.startsWith('https://')) {
+      record.product = product;
+      record.state = 'needs_review';
+      record.error = 'official_source_image_missing';
+      record.updatedAt = new Date().toISOString();
+      writeRecord(record);
+      return record;
+    }
+    // Queue first: a missing/invalid photo must not create a phantom garment.
+    // Existing queueing is idempotent by image fingerprint.
+    enqueueIsolatedProduct(product, product.garmentId);
     writeCanonicalGarment(
       AGENT_DATA_ROOT,
       record.characterId,
@@ -132,7 +145,6 @@ async function processRecord(record: IntakeRecord) {
       record.intakeId,
       record.note
     );
-    enqueueIsolatedProduct(product, product.garmentId);
     record.product = product;
     record.state = 'awaiting_isolation';
     record.updatedAt = new Date().toISOString();
