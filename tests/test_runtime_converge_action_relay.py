@@ -48,7 +48,7 @@ def test_failed_action_relay_receipt_preserves_action_identity(tmp_path, monkeyp
 
     monkeypatch.setitem(relay.ACTIONS, relay.ACTION, boom)
     worker = action_relay.ActionRelayWorker(root)
-    receipt = worker.run_once()
+    receipt = worker.process_one()
 
     assert receipt is not None
     assert receipt["ok"] is False
