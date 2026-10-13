@@ -581,6 +581,80 @@ def inference_provider_reference_try_on(
                 pass
 
 
+def extract_qwen_person_panel_if_collage(output: str) -> str:
+    """Only crop a clearly bounded, fully visible portrait panel from Qwen boards.
+
+    Qwen can return a square two-panel composition where the left rectangle is
+    an already dressed full-body portrait and the right retains a detached
+    product. Reject ambiguous layouts by leaving them unchanged for semantic QA.
+    Never infer a person bounding box or blindly crop arbitrary generations.
+    """
+    source = output_path(output)
+    with Image.open(source) as loaded:
+        image = loaded.convert("RGB")
+    width, height = image.size
+    if not (width >= 768 and height >= 768 and abs(width - height) <= width * 0.08):
+        return str(source)
+    pixels = image.load()
+
+    def nonwhite_runs(y: int) -> list[tuple[int, int]]:
+        runs = []
+        start = None
+        for x in range(width + 1):
+            fg = False
+            if x < width:
+                r, g, b = pixels[x, y]
+                fg = min(r, g, b) < 242
+            if fg and start is None:
+                start = x
+            elif not fg and start is not None:
+                runs.append((start, x))
+                start = None
+        return runs
+
+    def panel_run(y: int) -> tuple[int, int] | None:
+        matches = [
+            (a, b) for a, b in nonwhite_runs(y)
+            if 0.02 * width <= a <= 0.15 * width
+            and 0.48 * width <= b <= 0.80 * width
+            and 0.40 * width <= b - a <= 0.75 * width
+        ]
+        return max(matches, key=lambda span: span[1] - span[0]) if matches else None
+
+    top = panel_run(int(height * 0.10))
+    bottom = panel_run(int(height * 0.86))
+    if not top or not bottom or abs(top[0] - bottom[0]) > 4 or abs(top[1] - bottom[1]) > 4:
+        return str(source)
+    left, right = top
+    test_x = left + min(5, max(1, (right - left) // 20))
+    vertical = []
+    start = None
+    for y in range(height + 1):
+        fg = False
+        if y < height:
+            r, g, b = pixels[test_x, y]
+            fg = min(r, g, b) < 242
+        if fg and start is None:
+            start = y
+        elif not fg and start is not None:
+            if y - start >= 0.65 * height:
+                vertical.append((start, y))
+            start = None
+    if len(vertical) != 1:
+        return str(source)
+    upper, lower = vertical[0]
+    panel_width, panel_height = right - left, lower - upper
+    if not (0.55 <= panel_width / panel_height <= 0.85 and
+            upper < 0.15 * height and lower > 0.82 * height):
+        return str(source)
+    cropped = image.crop((left, upper, right, lower))
+    fd, name = tempfile.mkstemp(prefix="mio-qwen-worn-person-", suffix=".png")
+    os.close(fd)
+    path = Path(name)
+    cropped.save(path, format="PNG")
+    return str(path)
+
+
 def qwen_reference_try_on(
     person_source: str,
     object_url: str,
@@ -630,7 +704,11 @@ def qwen_reference_try_on(
         if not isinstance(result, (list, tuple)) or len(result) < 2:
             raise RuntimeError(f"Qwen workflow returned unexpected result: {result!r}")
         edited = result[1]
-        validated = reject_detached_reference(str(output_path(edited)), object_path, object_class)
+        # Qwen may output a board with a dressed subject on the left and a
+        # duplicated detached SKU on the right. Only a provably bounded intact
+        # portrait panel can be cropped; anything ambiguous awaits semantic QA.
+        normalized = extract_qwen_person_panel_if_collage(str(output_path(edited)))
+        validated = reject_detached_reference(normalized, object_path, object_class)
         if layer:
             validated = reject_gross_layer_mismatch(validated, object_path, layer)
         return validated, QWEN_EDIT_SPACE_ID
