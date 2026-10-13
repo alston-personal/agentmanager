@@ -1,5 +1,6 @@
 """Validate evidence completeness; never treat CI success as live acceptance."""
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -14,6 +15,13 @@ def assess(obj):
         missing.append("pr_must_equal_1923")
     if obj.get("pre_generation") == obj.get("post_generation") and obj.get("pre_generation"):
         missing.append("generation_must_advance")
+    sha_fields = ("runtime_release_sha", "readback_execution_sha256", "readback_continuity_sha256")
+    for key in sha_fields:
+        value = obj.get(key)
+        if isinstance(value, str) and value.strip() and not re.fullmatch(r"[a-fA-F0-9]{64}" if key.endswith("sha256") else r"[a-fA-F0-9]{40}", value):
+            missing.append(key + "_invalid_format")
+    if obj.get("review_approval") == "example":
+        missing.append("review_approval_placeholder")
     return sorted(set(missing))
 
 def main():
@@ -22,7 +30,7 @@ def main():
     obj = json.loads(Path(sys.argv[1]).read_text())
     missing = assess(obj)
     print(json.dumps({"schema": "agentos.continuation-cutover-check/v1",
-                      "accepted": not missing, "missing_or_invalid": missing}, indent=2))
+                      "structurally_complete": not missing, "runtime_authenticated": False, "missing_or_invalid": missing}, indent=2))
     if missing:
         raise SystemExit(1)
 
