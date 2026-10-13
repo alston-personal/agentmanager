@@ -65,6 +65,7 @@ def candidate_receipt(
         "isolatedAsset": str(isolated_image) if visual_ok else None,
         "maskAsset": str(mask) if mask_ok else None,
         "isolatedAssetSha256": hashlib.sha256(isolated_image.read_bytes()).hexdigest() if visual_ok else None,
+        "maskSha256": hashlib.sha256(mask.read_bytes()).hexdigest() if mask_ok else None,
         "productIR": {
             "schema": IR_SCHEMA,
             "category": target_layer,
