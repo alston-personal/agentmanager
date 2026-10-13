@@ -1,0 +1,60 @@
+name: Mio NET Trousers Independent Review and Real Try-on Admission
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - 'scripts/review_and_promote_mio_net_trousers.py'
+      - '.github/workflows/mio-net-trousers-review-admission.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mio-trousers-review-admission
+  cancel-in-progress: false
+jobs:
+  admission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run independent visual-evidence plus pixel-level review on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE' | tee "$RUNNER_TEMP/mio-review.log"
+          set -euo pipefail
+          SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$SHA"
+          WORK="$(mktemp /tmp/mio-review-XXXXXX.py)"
+          trap 'rm -f "$WORK"' EXIT
+          git -C "$REPO" show "$SHA:scripts/review_and_promote_mio_net_trousers.py" > "$WORK"
+          PY="$HOME/.local/share/agentos/gui-worker/venv/bin/python"
+          test -x "$PY"
+          "$PY" "$WORK"
+          "$PY" "$WORK" --promote
+          REMOTE
+          grep -Fq '"state": "approved"' "$RUNNER_TEMP/mio-review.log"
+      - name: Verify approved endpoint serves the exact alpha PNG
+        run: |
+          set -euo pipefail
+          curl -fLsS --max-time 30 \
+            https://studio.milkcat.org/dashboard/api/wardrobe/isolation/approved/net-31234-product-689961/4b60389046bc037394a8d69511b104835cc1fcfc3b5e3964636244863495723e \
+            -o "$RUNNER_TEMP/mio-approved.png"
+          echo "4d65de1c95c40d096c50794c6034d933512b8d2e213302d3074832e409eb6ec3  $RUNNER_TEMP/mio-approved.png" | sha256sum -c -
+          echo "mio_approved_png_public_delivery=PASS"
+      - name: Upload sanitized review receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-trousers-independent-review-admission
+          path: ${{ runner.temp }}/mio-review.log
+          if-no-files-found: warn
+          retention-days: 14
