@@ -1,0 +1,45 @@
+name: Mio Wrong Trousers Render Visual Rejection
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - 'scripts/quarantine_mio_wrong_trousers_render_user.py'
+      - '.github/workflows/mio-wrong-trousers-render-rejection.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reject:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Reject exact wrong garment render and archive original quality signals
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE' | tee "$RUNNER_TEMP/mio-render-rejection.txt"
+          set -euo pipefail
+          SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$SHA"
+          WORK="$(mktemp /tmp/mio-reject-XXXXXX.py)"
+          trap 'rm -f "$WORK"' EXIT
+          git -C "$REPO" show "$SHA:scripts/quarantine_mio_wrong_trousers_render_user.py" > "$WORK"
+          python3 "$WORK"
+          REMOTE
+          grep -Fq '"state": "visual_rejected"' "$RUNNER_TEMP/mio-render-rejection.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mio-wrong-trousers-quality-audit
+          path: ${{ runner.temp }}/mio-render-rejection.txt
+          if-no-files-found: warn
+          retention-days: 14
