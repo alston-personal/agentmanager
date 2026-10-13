@@ -50,6 +50,9 @@ grep -Fq 'AI 試穿需要登入' "$SRC/wardrobe/index.html"
 grep -Fq 'data-tryon-action' "$SRC/wardrobe/index.html"
 grep -Fq 'data-mobile-tryon-action' "$SRC/wardrobe/index.html"
 grep -Fq '正在等待試穿結果' "$SRC/wardrobe/index.html"
+for product in 'Polo領中腰異材質洋裝' '肩綁帶吊帶背心' '素色女短襪' '飛織樂福鞋' '女士基本款棒球帽' '印花絲巾'; do
+  grep -Fq "$product" "$SRC/wardrobe/index.html" || { echo "studio_web_mio_missing_product=$product" >&2; exit 4; }
+done
 printf '{"studio_commit":"%s","source":"studio-web","bundle":"personas/mio"}\n' "$STUDIO_COMMIT" > "$SRC/release.json"
 
 mkdir -p "$(dirname "$BACKUP")" "$LIVE"
@@ -72,6 +75,8 @@ for i in $(seq 1 20); do
     && printf '%s' "$WARDROBE" | grep -Fq '登入／重新授權' \
     && printf '%s' "$WARDROBE" | grep -Fq 'AI 試穿需要登入' \
     && printf '%s' "$WARDROBE" | grep -Fq 'data-tryon-action' \
+    && printf '%s' "$WARDROBE" | grep -Fq 'Polo領中腰異材質洋裝' \
+    && printf '%s' "$WARDROBE" | grep -Fq '女士基本款棒球帽' \
     && printf '%s' "$RELEASE" | grep -Fq "\"studio_commit\":\"$STUDIO_COMMIT\""; then
     echo "studio_web_mio_public_observer=PASS"
     echo "studio_web_mio_public_wardrobe=PASS"
