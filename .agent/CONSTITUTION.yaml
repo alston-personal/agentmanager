@@ -18,6 +18,12 @@ principles:
   - id: no_arbitrary_privilege_bridge
     level: immutable
     statement: "跨身份或高權限操作必須使用 schema-validated、allowlisted action；不得以 prompt 或任意 shell 取代治理介面。"
+  - id: single_source_branch_convergence
+    level: immutable
+    statement: "單一開發主線與可追溯正式發布權必須一致收斂：main 作為預設開發整合主線；既有 core/integration 在遷移驗收完成前僅維持明確授權的正式 Runtime/發布與必要修復，不得無計畫持續平行開發。分支間任何變更都必須登錄 owner、來源 SHA、目標、等效性、驗證、回歸/退役計畫；不得直接巨量合併、reset 或未經授權切換正式 Runtime。"
+  - id: branch_convergence_receipt_gate
+    level: core
+    statement: "分支收斂以功能等效、治理與 OIDC 權限、受控部署及實機 receipt 驗收，不以 commit 數歸零或 PR merged 宣稱完成；main 保護規則與明確的人類合併核准不得繞過。阻塞的工作必須有持久 owner、下一動作、驗收依據與可升級的 blocker。"
   - id: specification_closure
     level: core
     statement: "正式規格必須有 owner、target、acceptance criteria、closure path，並持續追蹤直到關閉或正式廢止。"
