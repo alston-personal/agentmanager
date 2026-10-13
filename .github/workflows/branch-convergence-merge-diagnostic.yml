@@ -1,0 +1,64 @@
+name: Branch Convergence Merge Diagnostic
+on:
+  push:
+    branches:
+      - convergence/project-continuation-publish-20261013
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: branch-convergence-merge-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  merge-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head (read-only)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Three-way merge diagnostic against current main
+        id: diagnostic
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p merge-diagnostic
+          git config user.name 'AgentOS Merge Diagnostic'
+          git config user.email 'merge-diagnostic@users.noreply.github.com'
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          {
+            echo "pr_head=$(git rev-parse HEAD)"
+            echo "main_head=$(git rev-parse origin/main)"
+            echo "merge_base=$(git merge-base HEAD origin/main)"
+          } > merge-diagnostic/refs.txt
+          set +e
+          git -c core.editor=true merge --no-commit --no-ff origin/main > merge-diagnostic/merge-output.txt 2>&1
+          result=$?
+          set -e
+          git diff --name-only --diff-filter=U > merge-diagnostic/conflicted-paths.txt
+          git ls-files -u > merge-diagnostic/unmerged-index.txt
+          echo "merge_exit=$result" >> "$GITHUB_OUTPUT"
+          cat merge-diagnostic/refs.txt
+          cat merge-diagnostic/merge-output.txt
+          echo '--- conflicted paths ---'
+          cat merge-diagnostic/conflicted-paths.txt
+          if [ "$result" -eq 0 ]; then
+            echo 'CLEAN_MERGE: read-only simulation succeeded; no branch push or deployment.'
+          else
+            echo 'MERGE_CONFLICT: diagnostics preserved; no branch push or deployment.'
+          fi
+      - name: Upload merge conflict evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-convergence-merge-diagnostic-${{ github.run_id }}
+          path: merge-diagnostic/
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Fail if merge requires conflict resolution
+        if: steps.diagnostic.outputs.merge_exit != '0'
+        run: |
+          echo 'Three-way merge needs explicit conflict resolution; see diagnostic artifact.'
+          exit 1
