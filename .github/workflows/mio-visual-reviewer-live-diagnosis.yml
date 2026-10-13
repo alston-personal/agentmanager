@@ -1,0 +1,51 @@
+name: Mio Visual Reviewer Live Diagnosis
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - '.github/workflows/mio-visual-reviewer-live-diagnosis.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read sanitized latest semantic quality failure and reviewer readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY' | tee "$RUNNER_TEMP/mio-semantic-diagnosis.json"
+          import json,pathlib,shutil,subprocess
+          job="sunlake-milkcat-ai-001-tryon-2026-10-13T08-49-32-311Z-9c81ad47"
+          root=pathlib.Path.home()/"agent-data/projects/dressup-simulator"
+          doc=json.loads((root/"render_jobs/runtime"/(job+".json")).read_text())
+          q=(doc.get("output") or {}).get("quality") or {}
+          unit=subprocess.run(["systemctl","--user","is-active","agentos-mio-tryon-render-worker.service"],capture_output=True,text=True,timeout=5)
+          candidates=[pathlib.Path.home()/".local/bin/gemini",pathlib.Path("/usr/local/bin/gemini"),pathlib.Path("/usr/bin/gemini")]
+          cli_installed=any(p.is_file() for p in candidates) or bool(shutil.which("gemini"))
+          creds=pathlib.Path.home()/".gemini/oauth_creds.json"
+          print(json.dumps({"schema":"agentos.mio-visual-reviewer-diagnosis/v1",
+            "jobId":job,"jobStatus":doc.get("status"),"provider":(doc.get("output") or {}).get("provider"),
+            "backendClassification":q.get("backendClassification"),"backend":q.get("backend"),
+            "qualityState":q.get("state"),"qualityAccepted":q.get("accepted"),
+            "qualityReason":q.get("reason"),"reviewer":q.get("reviewer"),
+            "workerActive":unit.stdout.strip()=="active",
+            "geminiCliInstalled":cli_installed,"geminiOauthExists":creds.is_file()},ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mio-semantic-reviewer-diagnosis
+          path: ${{ runner.temp }}/mio-semantic-diagnosis.json
+          if-no-files-found: warn
+          retention-days: 7
