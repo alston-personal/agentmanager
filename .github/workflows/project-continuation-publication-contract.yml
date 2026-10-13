@@ -1,0 +1,22 @@
+name: Project Continuation Publication Contract
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agent_core/project_continuation_index.py'
+      - 'agent_core/resolve_facade.py'
+      - 'agentos_node/action_relay.py'
+      - 'tests/test_project_continuation_index.py'
+      - '.github/workflows/project-continuation-publication-contract.yml'
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate continuation publisher and relay syntax
+        run: |
+          python3 -m py_compile agent_core/project_continuation_index.py agentos_node/action_relay.py
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_project_continuation_index -v
