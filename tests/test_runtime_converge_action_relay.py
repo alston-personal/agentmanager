@@ -47,7 +47,7 @@ def test_failed_action_relay_receipt_preserves_action_identity(tmp_path, monkeyp
         raise RuntimeError("synthetic failure")
 
     monkeypatch.setitem(relay.ACTIONS, relay.ACTION, boom)
-    worker = relay.ActionRelayWorker(root)
+    worker = action_relay.ActionRelayWorker(root)
     receipt = worker.run_once()
 
     assert receipt is not None
