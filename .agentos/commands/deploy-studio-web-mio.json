@@ -1,6 +1,6 @@
 {
   "schema": "agentos.studio-web-mio-deploy/v1",
-  "studioCommit": "7ca6253f3f761a19af1f61c7521a833c5c274d72",
-  "requestedAt": "2026-10-13T10:30:00+08:00",
-  "reason": "Publish Mio wardrobe Debug inspector route and verify 16 garment candidate selection"
+  "studioCommit": "33b32f560358dc3b1c8079110fa0aa7e072d50b4",
+  "requestedAt": "2026-10-13T11:10:00+08:00",
+  "reason": "Publish white shoe actual isolation QA evidence in Mio wardrobe Debug inspector (#139)"
 }
