@@ -37,6 +37,12 @@ jobs:
           git rev-list --left-right --count "$MAIN_PIN...$CORE_PIN" > evidence/rev-counts.txt
           git diff --no-ext-diff --name-status --no-renames -z "$MAIN_PIN" "$CORE_PIN" > evidence/diff-name-status.nul
           git diff --no-ext-diff --stat "$MAIN_PIN" "$CORE_PIN" > evidence/diff-stat.txt
+          # Locate real deployment contract implementers without guessing filenames.
+          # Emit paths only; avoid storing source lines or secrets.
+          for side in MAIN CORE; do
+            if [[ "$side" == "MAIN" ]]; then pin="$MAIN_PIN"; else pin="$CORE_PIN"; fi
+            git grep -I -l -E 'claim_deployment|install_release|deployment_generation|rejected_generation|desired_core_commit' "$pin" -- ':!*.lock' > "evidence/${side,,}-deployment-contract-paths.txt" || test "$?" -eq 1
+          done
           git log --left-right --cherry-mark --format='%m%x09%H%x09%s' "$MAIN_PIN...$CORE_PIN" > evidence/cherry-mark-commits.tsv
           git log --left-right --cherry-pick --format='%m%x09%H%x09%s' "$MAIN_PIN...$CORE_PIN" > evidence/cherry-pick-commits.tsv
           python3 - <<'PY'
