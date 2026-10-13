@@ -935,3 +935,8 @@ Capability results may carry their own schema and metadata, but they must never 
 ### Realm Fabric transactional mutation lock
 
 The JSON-backed Realm Fabric store is concurrently mutated by threaded ONE HTTP handlers and by governed Oracle-side control workflows. Transport-critical read-modify-write paths (heartbeat, task enqueue, task lease/pull, and receipt acknowledgement) must execute under one in-process re-entrant lock plus a cross-process file lock on `fabric.json.lock`. Atomic file replacement alone is insufficient because two writers can load the same snapshot and later overwrite each other's independent updates. This lock prevents lost task leases and lost receipts while preserving the existing atomic-replace durability boundary.
+
+
+## Project continuation publication (candidate PR, 2026-10-13)
+
+Draft PR #1923 proposes the narrow `agentos.project.publish_continuation` action and `agent_core/project_continuation_index.py` with its existing regression tests from `core/integration` onto `main`. It is **not merged, not deployed, and not a runtime receipt**. Publication is constrained to the canonical `agentos-core` project with governance-resolved mutation authority, matching index generations, lock and atomic file updates. Main's `resolve_facade` compatibility and Relay authorization behavior must pass hosted tests, while `core/integration` retains release authority pending #1682 acceptance and explicit protected-main merge approval.
