@@ -1,0 +1,90 @@
+name: Branch Convergence Pinned Inventory
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/branch-convergence-inventory.yml'
+      - '.github/workflows/branch-convergence-path-audit.yml'
+      - 'scripts/check_branch_convergence_paths.py'
+      - 'scripts/branch_convergence_triage.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pinned, read-only two-branch inventory
+        shell: bash
+        env:
+          MAIN_PIN: de4b9615ecdff287773b3a9758966c03afb9b8ba
+          CORE_PIN: 5dc29632e6f2b04a33d3d8621b2d6f1ff2c95f27
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          git fetch --no-tags origin "$MAIN_PIN" "$CORE_PIN"
+          git cat-file -e "${MAIN_PIN}^{commit}"
+          git cat-file -e "${CORE_PIN}^{commit}"
+          git --version > evidence/git-version.txt
+          printf '%s\n' "$MAIN_PIN" > evidence/main-sha.txt
+          printf '%s\n' "$CORE_PIN" > evidence/core-sha.txt
+          git merge-base "$MAIN_PIN" "$CORE_PIN" > evidence/merge-base.txt
+          git rev-list --left-right --count "$MAIN_PIN...$CORE_PIN" > evidence/rev-counts.txt
+          git diff --no-ext-diff --name-status --no-renames -z "$MAIN_PIN" "$CORE_PIN" > evidence/diff-name-status.nul
+          git diff --no-ext-diff --stat "$MAIN_PIN" "$CORE_PIN" > evidence/diff-stat.txt
+          # Locate real deployment contract implementers without guessing filenames.
+          # Emit paths only; avoid storing source lines or secrets.
+          for side in MAIN CORE; do
+            if [[ "$side" == "MAIN" ]]; then pin="$MAIN_PIN"; else pin="$CORE_PIN"; fi
+            git grep -I -l -E 'claim_deployment|install_release|deployment_generation|rejected_generation|desired_core_commit' "$pin" -- ':!*.lock' > "evidence/${side,,}-deployment-contract-paths.txt" || test "$?" -eq 1
+          done
+          git log --left-right --cherry-mark --format='%m%x09%H%x09%s' "$MAIN_PIN...$CORE_PIN" > evidence/cherry-mark-commits.tsv
+          git log --left-right --cherry-pick --format='%m%x09%H%x09%s' "$MAIN_PIN...$CORE_PIN" > evidence/cherry-pick-commits.tsv
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          root=Path("evidence")
+          raw=(root/"diff-name-status.nul").read_bytes().split(b"\0")
+          items=[]
+          i=0
+          while i < len(raw):
+              if not raw[i]:
+                  i+=1
+                  continue
+              status=raw[i].decode("utf-8","replace")
+              path=raw[i+1].decode("utf-8","replace")
+              items.append({"status":status,"path":path,"classification":"UNKNOWN","owner":None,"next_action":"classify effective capability and consumer impact"})
+              i+=2
+          (root/"files.json").write_text(json.dumps({"schema":"agentos.branch-convergence-inventory/v1","files":items},ensure_ascii=False,indent=2))
+          sums={}
+          for item in items:
+              group=item["path"].split("/",1)[0]
+              sums[group]=sums.get(group,0)+1
+          (root/"directory-counts.json").write_text(json.dumps(dict(sorted(sums.items())),indent=2))
+          from scripts.branch_convergence_triage import transform
+          triaged=transform(items)
+          counts={}
+          for row in triaged:
+              key=(row['domain'], row['path_direction'])
+              counts[key]=counts.get(key,0)+1
+          (root/'triage.json').write_text(json.dumps({'schema':'agentos.branch-triage/v1','records':triaged,'summary':[{'domain':k[0],'direction':k[1],'count':v} for k,v in sorted(counts.items())]},ensure_ascii=False,indent=2))
+          print(f'triage_records={len(triaged)}')
+          manifest={}
+          for p in root.iterdir():
+              if p.is_file():
+                  manifest[p.name]={"sha256":hashlib.sha256(p.read_bytes()).hexdigest(),"bytes":p.stat().st_size}
+          (root/"manifest.json").write_text(json.dumps(manifest,indent=2))
+          print(f"pinned_inventory_files={len(items)}")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: branch-convergence-pinned-inventory-${{ github.sha }}
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
