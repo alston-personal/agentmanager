@@ -37,6 +37,21 @@ class ActionRelayTests(unittest.TestCase):
             _verify_continuation_capsule_owner(capsule)
 
     @patch("agentos_node.action_relay._share", lambda *args, **kwargs: None)
+    def test_continuation_owner_denial_prevents_handler_side_effect(self):
+        client = ActionRelayClient(self.root)
+        capsule = client.submit("agentos.project.publish_continuation", {"project_id": "agentos-core"})
+        called = []
+        with patch("agentos_node.action_relay._verify_continuation_capsule_owner",
+                   side_effect=PermissionError("untrusted owner")), \
+             patch.dict(ACTIONS, {"agentos.project.publish_continuation":
+                                  lambda params: called.append(params) or {"ok": True}}):
+            receipt = ActionRelayWorker(self.root).process_one()
+        self.assertFalse(receipt["ok"])
+        self.assertIn("untrusted owner", receipt["error"])
+        self.assertEqual(called, [])
+        self.assertEqual(receipt["capsule_id"], capsule["capsule_id"])
+
+    @patch("agentos_node.action_relay._share", lambda *args, **kwargs: None)
     def test_rejects_arbitrary_action(self):
         client = ActionRelayClient(self.root)
         with self.assertRaises(ValueError):
