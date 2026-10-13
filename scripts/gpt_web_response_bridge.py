@@ -942,11 +942,10 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
                 and saw_generation
             ):
                 empty_message_ticks += 1
-                if empty_message_ticks >= 6:
-                    raise RuntimeError(
-                        "GPT_WEB_ROUTE_MESSAGE_SURFACE_UNSUPPORTED:" +
-                        json.dumps(last_snapshot, ensure_ascii=False, sort_keys=True)
-                    )
+                # /uc/ can be a transitional route after the request is sent.
+                # Do not abort after three seconds: continue bounded polling for
+                # a correlated reply, but preserve a diagnostic on final timeout.
+                last_snapshot["ucMessageSurfacePending"] = True
             else:
                 empty_message_ticks = 0
             if (
@@ -961,6 +960,10 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             time.sleep(0.5)
         # Preserve transition evidence: the final DOM alone can be empty after
         # ChatGPT navigates, rerenders, or discards a newly submitted message.
+        if (last_snapshot.get("pagePath") or "").startswith("/uc/") and (
+            int(last_snapshot.get("messageNodes") or 0) == 0
+        ):
+            last_snapshot["ucMessageSurfacePending"] = True
         last_snapshot["sawGenerationAfterSubmit"] = saw_generation
         last_snapshot["sawCorrelatedUserAfterSubmit"] = saw_correlated_user
         last_snapshot["sawAssistantAfterSubmit"] = saw_assistant
