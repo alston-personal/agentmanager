@@ -540,3 +540,15 @@ class FreshTargetReadinessContractTests(unittest.TestCase):
         self.assertIn('time.monotonic() + 12.0',source)
         self.assertIn('GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE:',source)
         self.assertIn('Target.closeTarget',source)
+
+
+class UcStrictJsonReplyTests(unittest.TestCase):
+    def test_uc_fallback_requires_parsed_json_and_exact_correlation(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import _assistant_text
+        source=inspect.getsource(_assistant_text)
+        self.assertIn("location.pathname.startsWith('/uc/')",source)
+        self.assertIn("JSON.parse(value)",source)
+        self.assertIn("payload.agentos_request_id !== id",source)
+        self.assertIn("total_amount",source)
+        self.assertIn('node.closest(\'form,nav,aside',source)
