@@ -6,6 +6,14 @@ class CutoverEvidenceTests(unittest.TestCase):
         self.assertIn("action_receipt_id", assess({}))
         self.assertIn("review_approval", assess({}))
 
+    def test_fake_authenticated_claim_rejected(self):
+        receipt = {key: "sample" for key in FIELDS}
+        receipt.update(pr="1923", pre_generation="g1", post_generation="g2",
+                       runtime_release_sha="a"*40, readback_execution_sha256="b"*64,
+                       readback_continuity_sha256="c"*64,
+                       review_approval="review-id-123", runtime_authenticated=True)
+        self.assertIn("runtime_authentication_not_verified", assess(receipt))
+
     def test_same_generation_is_rejected(self):
         receipt = {key: "example" for key in FIELDS}
         receipt.update(pr="1923", pre_generation="g1", post_generation="g1")
