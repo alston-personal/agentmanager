@@ -6,11 +6,13 @@ on:
     paths:
       - '.github/workflows/character-fusion-cdp-inventory.yml'
       - 'scripts/oracle_browser_identity_inventory.py'
+      - 'scripts/oracle_threads_existing_tab_readback.js'
   push:
     branches: [core/integration]
     paths:
       - '.github/workflows/character-fusion-cdp-inventory.yml'
       - 'scripts/oracle_browser_identity_inventory.py'
+      - 'scripts/oracle_threads_existing_tab_readback.js'
 
 permissions:
   contents: read
@@ -21,6 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: grep -Fq 'cdp_inventory=PASS' .github/workflows/character-fusion-cdp-inventory.yml
+      - run: node --check scripts/oracle_threads_existing_tab_readback.js
 
   inventory:
     if: github.event_name == 'push'
@@ -44,3 +47,10 @@ jobs:
             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
             'python3 -' < scripts/oracle_browser_identity_inventory.py
           echo "cdp_inventory=PASS"
+      - name: Read existing Threads tabs without navigation (#1735)
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'bash -c '\''NODE=$(find /home/ubuntu/.local/share/agentos/gui-worker/venv/lib -type f -path "*/playwright/driver/node" -print -quit); test -n "$NODE" && exec "$NODE" -'\''' \
+            < scripts/oracle_threads_existing_tab_readback.js
