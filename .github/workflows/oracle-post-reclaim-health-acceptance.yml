@@ -1,3 +1,4 @@
+# Live recheck trigger: verify Employee Worker wake-path cache rollout from PR #1892
 # Incident acceptance trigger: verify Oracle after Employee Worker hot-path rollout
 name: Oracle Post Reclaim Health Acceptance
 
