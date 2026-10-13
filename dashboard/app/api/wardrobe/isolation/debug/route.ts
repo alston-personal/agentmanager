@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { isMilkcatAdmin } from '@/lib/auth/roles';
@@ -10,6 +11,16 @@ const ID = /^[A-Za-z0-9._-]{1,160}$/;
 const SHA = /^[a-f0-9]{64}$/;
 const MAX_GARMENTS = 250;
 const MAX_VERSIONS = 20;
+function hasVerifiedFile(dir: string, filename: string, expected: unknown): boolean {
+  if (typeof expected !== 'string' || !SHA.test(expected)) return false;
+  try {
+    const file = path.join(dir, filename);
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 15_000_000) return false;
+    const bytes = fs.readFileSync(file);
+    return crypto.createHash('sha256').update(bytes).digest('hex') === expected;
+  } catch { return false; }
+}
 
 function isAdmin(request: NextRequest): boolean {
   return request.cookies.getAll('auth_token').some(({value}) => {
@@ -43,8 +54,8 @@ export async function GET(request: NextRequest) {
         records.push({
           garmentId,sourceSha,state:receipt.state,extractorOutcome:receipt.extractorOutcome,
           approved:receipt.approved === true,
-          hasCandidate:Boolean(receipt.isolatedAssetSha256),
-          hasMask:Boolean(receipt.maskSha256),
+          hasCandidate:hasVerifiedFile(path.join(ROOT,garmentId,sourceSha),'garment.png',receipt.isolatedAssetSha256),
+          hasMask:hasVerifiedFile(path.join(ROOT,garmentId,sourceSha),'garment.mask.png',receipt.maskSha256),
           reviewState:receipt.review?.state || 'unknown',
         });
       } catch { /* Corrupt candidates are not advertised. */ }
