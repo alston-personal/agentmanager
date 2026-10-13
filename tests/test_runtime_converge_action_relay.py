@@ -204,8 +204,13 @@ def test_preflight_refuses_unknown_dirty_checkout_after_exact_target_is_resolved
 
     def fake_git(repo, *args, timeout=120):
         calls.append(("git", args))
-        assert args == ("fetch", "--no-tags", "origin", "core/integration")
-        return Proc(returncode=0, stdout="")
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc(returncode=0, stdout="")
+        if args == ("cat-file", "-e", f"{SHA}^{{commit}}"):
+            return Proc(returncode=0, stdout="")
+        if args == ("merge-base", "--is-ancestor", SHA, SHA):
+            return Proc(returncode=0, stdout="")
+        raise AssertionError(args)
 
     monkeypatch.setattr(relay, "_git_value", fake_git_value)
     monkeypatch.setattr(relay, "_git", fake_git)
@@ -231,7 +236,15 @@ def test_preflight_accepts_only_proven_target_equivalent_dirty(monkeypatch, tmp_
         raise AssertionError(args)
 
     monkeypatch.setattr(relay, "_git_value", fake_git_value)
-    monkeypatch.setattr(relay, "_git", lambda *a, **k: Proc(returncode=0, stdout=""))
+    def fake_git(repo, *args, timeout=120):
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc(returncode=0, stdout="")
+        if args == ("cat-file", "-e", f"{SHA}^{{commit}}"):
+            return Proc(returncode=0, stdout="")
+        if args == ("merge-base", "--is-ancestor", SHA, SHA):
+            return Proc(returncode=0, stdout="")
+        raise AssertionError(args)
+    monkeypatch.setattr(relay, "_git", fake_git)
     status = " M agentos_node/bootstrap_control.py\0"
     monkeypatch.setattr(relay, "_tracked_status", lambda repo: status)
     seen = []
@@ -324,8 +337,9 @@ def test_target_equivalent_dirty_converges_with_explicit_classification(monkeypa
     assert result["credential_exposed"] is False
 
 
-def test_preflight_refuses_requested_sha_that_is_not_exact_ref_head(monkeypatch, tmp_path):
+def test_preflight_accepts_requested_sha_when_ref_head_has_advanced(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
+    advanced = "c" * 40
 
     def fake_git_value(repo, *args):
         if args[:3] == ("remote", "get-url", "origin"):
@@ -333,13 +347,53 @@ def test_preflight_refuses_requested_sha_that_is_not_exact_ref_head(monkeypatch,
         if args == ("rev-parse", "HEAD"):
             return PREVIOUS
         if args == ("rev-parse", "FETCH_HEAD"):
-            return "c" * 40
+            return advanced
+        raise AssertionError(args)
+
+    calls = []
+    def fake_git(repo, *args, timeout=120):
+        calls.append(args)
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc(returncode=0, stdout="")
+        if args == ("cat-file", "-e", f"{SHA}^{{commit}}"):
+            return Proc(returncode=0, stdout="")
+        if args == ("merge-base", "--is-ancestor", SHA, advanced):
+            return Proc(returncode=0, stdout="")
         raise AssertionError(args)
 
     monkeypatch.setattr(relay, "_git_value", fake_git_value)
-    monkeypatch.setattr(relay, "_git", lambda *a, **k: Proc(returncode=0, stdout=""))
+    monkeypatch.setattr(relay, "_git", fake_git)
+    monkeypatch.setattr(relay, "_tracked_status", lambda repo: "")
+    assert relay._preflight(tmp_path, request()) == (PREVIOUS, False, False)
+    assert ("merge-base", "--is-ancestor", SHA, advanced) in calls
+
+
+def test_preflight_rejects_requested_sha_outside_allowed_ref_history(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    advanced = "c" * 40
+
+    def fake_git_value(repo, *args):
+        if args[:3] == ("remote", "get-url", "origin"):
+            return "git@github.com:alston-personal/agentmanager.git"
+        if args == ("rev-parse", "HEAD"):
+            return PREVIOUS
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return advanced
+        raise AssertionError(args)
+
+    def fake_git(repo, *args, timeout=120):
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc(returncode=0, stdout="")
+        if args == ("cat-file", "-e", f"{SHA}^{{commit}}"):
+            return Proc(returncode=0, stdout="")
+        if args == ("merge-base", "--is-ancestor", SHA, advanced):
+            return Proc(returncode=1, stdout="")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git_value", fake_git_value)
+    monkeypatch.setattr(relay, "_git", fake_git)
     result = relay.converge_runtime(request(), repo=tmp_path)
-    assert result["classification"] == "exact_source_head_mismatch"
+    assert result["classification"] == "source_commit_not_in_allowed_ref_history"
 
 
 def test_health_failure_rolls_back_exact_previous_generation(monkeypatch, tmp_path):
