@@ -66,14 +66,16 @@ async function inspect({port, expected}) {
     summary.cdp_state = 'READY';
     summary.classification = 'NO_THREADS_TAB';
     if (!Array.isArray(tabs)) return summary;
+    // Count all page metadata first. Bound only active WebSocket evaluations.
+    const pages = tabs.filter(tab => tab && tab.type === 'page');
+    summary.page_targets = pages.length;
+    const threads = pages.filter(tab => {
+      try { return HOSTS.has(new URL(tab.url).hostname.toLowerCase()); }
+      catch { return false; }
+    });
+    summary.threads_page_targets = threads.length;
     const states = [];
-    for (const tab of tabs.slice(0, 30)) {
-      if (tab.type !== 'page') continue;
-      summary.page_targets += 1;
-      let u;
-      try { u = new URL(tab.url); } catch { continue; }
-      if (!HOSTS.has(u.hostname.toLowerCase())) continue;
-      summary.threads_page_targets += 1;
+    for (const tab of threads.slice(0, 3)) {
       if (!tab.webSocketDebuggerUrl) { summary.classification = 'THREADS_WS_MISSING'; continue; }
       summary.threads_ws_targets += 1;
       summary.examined_threads_pages += 1;
