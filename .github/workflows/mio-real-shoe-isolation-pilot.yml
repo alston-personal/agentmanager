@@ -45,6 +45,10 @@ jobs:
           assert receipt['approved'] is False
           assert receipt['garmentId']=='net-40832-002'
           assert receipt['sourceSnapshot'] and pathlib.Path(receipt['sourceSnapshot']).is_file()
+          # Known regression: pale NET 40832 shoes must NOT be accepted as a
+          # valid target-only garment on a white background.
+          assert receipt['extractorOutcome']=='needs_target_segmentation', receipt
+          assert receipt['state']=='needs_review', receipt
           print('shoe_isolation_pilot_state='+receipt['state'])
           print('shoe_isolation_pilot_outcome='+receipt['extractorOutcome'])
           PY
