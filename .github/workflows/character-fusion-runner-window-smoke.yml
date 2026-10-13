@@ -1,6 +1,6 @@
 name: Character Fusion Runner Window Smoke
 
-# trigger: 2026-10-13 Character Fusion smoke after HF restore 1218
+# trigger: 2026-10-13 Character Fusion smoke after Action Relay receipt fix 1225
 
 on:
   pull_request:
