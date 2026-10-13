@@ -1,0 +1,46 @@
+name: Branch Convergence Path Audit
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  path-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -p test_branch_convergence_paths.py -v
+      - name: Audit all changed paths including rename and deletion
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" > /tmp/changed-paths.nul
+          else
+            git diff --name-only --no-renames -z HEAD^ HEAD > /tmp/changed-paths.nul
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          from scripts.check_branch_convergence_paths import audit
+          paths = [p.decode("utf-8") for p in Path("/tmp/changed-paths.nul").read_bytes().split(b"\0") if p]
+          result = audit(paths)
+          Path("branch-path-risk.json").write_text(json.dumps(result, indent=2, ensure_ascii=False))
+          print(json.dumps(result["summary"], sort_keys=True))
+          if result["summary"]["INVALID"] or result["summary"]["UNKNOWN"]:
+              raise SystemExit("Unknown/invalid changed paths: classify them before approval")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: branch-path-risk-${{ github.sha }}
+          path: branch-path-risk.json
+          if-no-files-found: warn
