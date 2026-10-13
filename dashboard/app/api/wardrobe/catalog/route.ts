@@ -73,7 +73,7 @@ function readCatalog(characterId: string): PublicGarment[] {
           worn: Boolean(raw?.acquisition?.worn),
         },
         tryOn: {
-          state: String(raw?.tryOn?.state || raw?.tryOn?.status || 'ready_for_tryon'),
+          state: raw?.tryOnSource?.state === 'approved' && raw?.tryOnSource?.approvedFingerprint && raw?.tryOnSource?.productIR && raw?.tryOnSource?.isolatedImageUrl ? 'ready_for_tryon' : 'awaiting_isolation',
           asset: raw?.tryOn?.asset ? String(raw.tryOn.asset) : null,
         },
       }];
