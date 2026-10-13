@@ -1713,6 +1713,199 @@ asyncio.run(main())
         return output_path.read_bytes()
 
 
+def _render_image_chatgpt_web(target_ir: dict[str, Any], strict: bool) -> bytes:
+    python_bin = Path("/usr/bin/python3")
+    if not python_bin.is_file():
+        raise RuntimeError("system python is unavailable for ChatGPT Web image fallback")
+
+    prompt = render_prompt(target_ir, strict=strict) + """
+Generate exactly ONE square mascot image from this design.
+Return the generated image only. Do not add captions, labels, UI mockups, or explanatory text.
+"""
+    with tempfile.TemporaryDirectory(prefix="character-fusion-chatgpt-web-image-") as tmp:
+        prompt_path = Path(tmp) / "prompt.txt"
+        output_path = Path(tmp) / "output.png"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        helper = r"""
+import asyncio
+import base64
+import fcntl
+import json
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+import websockets
+
+prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
+output = Path(sys.argv[2])
+lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
+lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+def discover():
+    observed=[]
+    for port in (9222,9223,9224,9225,9226):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
+                rows=json.loads(r.read().decode("utf-8"))
+        except Exception:
+            continue
+        for row in rows:
+            if row.get("type") != "page":
+                continue
+            url=str(row.get("url") or "")
+            if url.startswith(("http://","https://")):
+                observed.append((port,url[:220]))
+            if "chatgpt.com" in url:
+                return port,row
+    hosts=sorted({u.split("/")[2] for _,u in observed if "://" in u})
+    raise RuntimeError("chatgpt_web_no_session; observed_hosts="+",".join(hosts[:20]))
+
+_port,target=discover()
+ws_url=str(target.get("webSocketDebuggerUrl") or "")
+if not ws_url:
+    raise RuntimeError("chatgpt_web_missing_ws")
+
+async def main():
+    seq=0
+    async with websockets.connect(ws_url,open_timeout=5,close_timeout=2,max_size=32*1024*1024) as ws:
+        async def call(method,params=None):
+            nonlocal seq
+            seq+=1
+            ident=seq
+            await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+            while True:
+                msg=json.loads(await ws.recv())
+                if msg.get("id")==ident:
+                    if msg.get("error"):
+                        raise RuntimeError(f"cdp {method}: {msg['error']}")
+                    return msg.get("result") or {}
+
+        async def ev(expr):
+            r=await call("Runtime.evaluate",{
+                "expression":expr,
+                "returnByValue":True,
+                "awaitPromise":True,
+            })
+            return (r.get("result") or {}).get("value")
+
+        baseline=await ev(r'''(() => [...document.querySelectorAll('img')]
+          .map(x=>x.currentSrc||x.src||'').filter(Boolean))()''') or []
+        baseline=set(baseline)
+
+        focused=await ev(r'''(() => {
+          const sels=['#prompt-textarea','[data-testid="composer-input"]','textarea','[contenteditable="true"]'];
+          for(const s of sels){
+            const el=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null && !x.disabled);
+            if(el){el.focus();return true;}
+          }
+          return false;
+        })()''')
+        if not focused:
+            raise RuntimeError("chatgpt_web_composer_not_found")
+        await call("Input.insertText",{"text":prompt})
+        await asyncio.sleep(0.5)
+
+        sent=False
+        for _ in range(30):
+            sent=await ev(r'''(() => {
+              const sels=['[data-testid="send-button"]','button[aria-label*="send" i]','button[aria-label*="送出" i]'];
+              for(const s of sels){
+                const b=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null && !x.disabled);
+                if(b){b.click();return true;}
+              }
+              return false;
+            })()''')
+            if sent is True:
+                break
+            await asyncio.sleep(0.25)
+        if not sent:
+            raise RuntimeError("chatgpt_web_submit_failed")
+
+        deadline=time.monotonic()+240
+        chosen=None
+        while time.monotonic()<deadline:
+            rows=await ev(r'''(() => {
+              const out=[];
+              for(const el of document.querySelectorAll('[data-message-author-role="assistant"] img, main img')){
+                if(!(el.offsetWidth||el.offsetHeight||el.getClientRects().length)) continue;
+                const r=el.getBoundingClientRect();
+                const src=el.currentSrc||el.src||'';
+                if(!src || r.width<128 || r.height<128) continue;
+                out.push({
+                  src,
+                  w:r.width,
+                  h:r.height,
+                  alt:(el.alt||'').slice(0,180),
+                  cls:String(el.className||'').slice(0,180)
+                });
+              }
+              return out;
+            })()''') or []
+            fresh=[x for x in rows if x.get("src") not in baseline]
+            if fresh:
+                fresh.sort(key=lambda x:x.get("w",0)*x.get("h",0),reverse=True)
+                chosen=fresh[0]
+                break
+            await asyncio.sleep(2.0)
+
+        if not chosen:
+            state=await ev(r'''(() => ({
+              assistants:[...document.querySelectorAll('[data-message-author-role="assistant"]')]
+                .slice(-3).map(x=>(x.innerText||x.textContent||'').trim().slice(0,500)),
+              imgs:[...document.querySelectorAll('main img')].filter(x=>x.offsetParent!==null)
+                .slice(-12).map(x=>({src:(x.currentSrc||x.src||'').slice(0,240),alt:(x.alt||'').slice(0,120),
+                  w:Math.round(x.getBoundingClientRect().width),h:Math.round(x.getBoundingClientRect().height)}))
+            }))()''')
+            raise TimeoutError("chatgpt_web_generated_image_timeout; state="+json.dumps(state,ensure_ascii=False)[:3500])
+
+        src=str(chosen.get("src") or "")
+        if src.startswith("data:image/"):
+            output.write_bytes(base64.b64decode(src.split(",",1)[1]))
+        elif src.startswith("blob:") or src.startswith("http"):
+            src_json=json.dumps(src)
+            data_url=await ev(r'''(async(src)=>{
+              const r=await fetch(src,{credentials:'include'});
+              if(!r.ok) throw new Error('chatgpt_asset_fetch_http_'+r.status);
+              const b=await r.blob();
+              return await new Promise((ok,fail)=>{
+                const fr=new FileReader();
+                fr.onload=()=>ok(fr.result);
+                fr.onerror=fail;
+                fr.readAsDataURL(b);
+              });
+            })('''+src_json+''')''')
+            if not isinstance(data_url,str) or "," not in data_url:
+                raise RuntimeError("chatgpt_web_image_export_failed")
+            output.write_bytes(base64.b64decode(data_url.split(",",1)[1]))
+        else:
+            raise RuntimeError("chatgpt_web_generated_image_src_unsupported:"+src[:100])
+
+        if output.stat().st_size < 10000:
+            raise RuntimeError("chatgpt_web_generated_image_too_small")
+        print("character_fusion_chatgpt_web_image=PASS")
+
+with lock_path.open("a+") as lock:
+    fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
+    asyncio.run(main())
+"""
+        proc = subprocess.run(
+            [str(python_bin), "-c", helper, str(prompt_path), str(output_path)],
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if proc.returncode != 0:
+            tail=(proc.stderr or proc.stdout or "")[-3500:]
+            raise RuntimeError(f"ChatGPT Web image fallback failed: {tail}")
+        data=output_path.read_bytes()
+        if len(data)<10000:
+            raise RuntimeError("ChatGPT Web image fallback returned an unexpectedly small image")
+        return data
+
+
 def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | None, strict: bool) -> bytes:
     parts: list[dict[str, Any]] = [{"text": render_prompt(target_ir, strict=strict)}]
     if main_visual:
@@ -1770,9 +1963,13 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
                 try:
                     return _render_image_gemini_web(target_ir, strict=strict)
                 except RuntimeError as web_exc:
-                    raise RuntimeError(
-                        f"all image fallbacks failed; flow={flow_exc}; gemini_web={web_exc}"
-                    ) from web_exc
+                    try:
+                        return _render_image_chatgpt_web(target_ir, strict=strict)
+                    except RuntimeError as chatgpt_exc:
+                        raise RuntimeError(
+                            "all image fallbacks failed; "
+                            f"flow={flow_exc}; gemini_web={web_exc}; chatgpt_web={chatgpt_exc}"
+                        ) from chatgpt_exc
 
 
 def inspect_output(image_path: Path) -> dict[str, Any]:
