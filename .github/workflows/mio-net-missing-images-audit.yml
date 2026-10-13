@@ -1,0 +1,54 @@
+name: Mio NET Missing Source Image Audit
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths: ['.github/workflows/mio-net-missing-images-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect official product HTML for image candidates (no write/promotion)
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,urllib.parse,re,html,pathlib
+          products=[
+            ("net-31307-product-690093","690093"),("net-43969-product-722633","722633"),
+            ("net-31234-product-689961","689961"),("net-42621-black-751122","751122"),
+            ("net-33148-002","715711"),("net-49250-002","745114"),
+            ("net-39841-variant-pending","666117"),("net-49640-003","731541"),
+            ("net-49362-719","732716")]
+          output=[]
+          for garment_id,pid in products:
+            url="https://www.net-fashion.net/product/"+pid
+            result={"garmentId":garment_id,"productUrl":url,"status":"unverified","candidates":[]}
+            try:
+              req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 (compatible; MilkcatImageAudit/1.0)"})
+              with urllib.request.urlopen(req,timeout=18) as res:
+                body=res.read(2_000_000).decode("utf-8","replace")
+                result["httpStatus"]=res.status
+              candidates=[]
+              for m in re.finditer(r'(?:https?:)?//(?:s-net|net)\\.wimg\\.tw/[^\\s"\\x27<>]+',body,re.I):
+                candidate=html.unescape(m.group(0))
+                if candidate.startswith("//"):candidate="https:"+candidate
+                candidate=candidate.replace("\\u0026","&").replace("&amp;","&")
+                if candidate not in candidates:candidates.append(candidate)
+              result["candidates"]=candidates[:25]
+              result["status"]="source_candidates_found" if candidates else "no_cdn_assets_in_html"
+            except Exception as e:
+              result["status"]="source_fetch_failed"
+              result["errorType"]=type(e).__name__
+            output.append(result)
+            print(garment_id, result["status"],len(result["candidates"]))
+          pathlib.Path("mio-net-source-audit.json").write_text(json.dumps(output,ensure_ascii=False,indent=2)+"\\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mio-net-source-image-audit
+          path: mio-net-source-audit.json
+          retention-days: 7
