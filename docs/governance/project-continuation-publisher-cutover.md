@@ -20,3 +20,6 @@ If rejected because the observed generation differs, the caller MUST re-resolve 
 - #1680 owns Oracle Runner restoration. An unexecuted queued audit is NOT a pass.
 - #1923 is a scoped `main` candidate. Explicit human approval is required for protected-main merge. A successful GitHub-hosted unit run alone cannot authorize production cutover.
 - `core/integration` retains current runtime authority pending verified release cutover; no automatic writer enablement merely because PR is merged.
+
+## Security boundary: capsule integrity is not caller authorization
+The current `ActionRelayWorker.process_one` validates an **unkeyed SHA-256 digest** of a capsule, then dispatches `ACTIONS[action](params)`. Anyone who can submit an arbitrary capsule to the inbox can recompute an unkeyed digest. Therefore the digest alone proves neither authenticated ONE provenance nor authorized project mutation. Publisher-side `mutation_allowed` governance is necessary but must not be mistaken for caller authentication. Before production activation, the action inbox's writer ACL, ONE dispatch authorization, project scope, and provenance-to-receipt binding must be independently verified at the actual Oracle runtime. The hosted tests and Oracle Governance Directory Audit do not supply that proof. **Do not enable live publication merely because the PR passes CI.**
