@@ -1,3 +1,4 @@
+# Incident rollout trigger: deploy Product Employee preclaim evidence index from PR #1908
 # Incident rollout trigger: deploy Employee Worker wake-path cache fix from PR #1892
 # Incident rollout trigger: deploy Employee Worker hot-set/backpressure fix from PR #1789
 name: Oracle Core Bundle Immutable Runtime Convergence
