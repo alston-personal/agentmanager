@@ -6,6 +6,7 @@ on:
       - '.github/workflows/branch-convergence-inventory.yml'
       - '.github/workflows/branch-convergence-path-audit.yml'
       - 'scripts/check_branch_convergence_paths.py'
+      - 'scripts/branch_convergence_triage.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -59,6 +60,14 @@ jobs:
               group=item["path"].split("/",1)[0]
               sums[group]=sums.get(group,0)+1
           (root/"directory-counts.json").write_text(json.dumps(dict(sorted(sums.items())),indent=2))
+          from scripts.branch_convergence_triage import transform
+          triaged=transform(items)
+          counts={}
+          for row in triaged:
+              key=(row['domain'], row['path_direction'])
+              counts[key]=counts.get(key,0)+1
+          (root/'triage.json').write_text(json.dumps({'schema':'agentos.branch-triage/v1','records':triaged,'summary':[{'domain':k[0],'direction':k[1],'count':v} for k,v in sorted(counts.items())]},ensure_ascii=False,indent=2))
+          print(f'triage_records={len(triaged)}')
           manifest={}
           for p in root.iterdir():
               if p.is_file():
