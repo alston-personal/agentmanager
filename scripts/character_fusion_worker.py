@@ -1580,6 +1580,8 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
             hf_message = str(hf_exc)
             if not any(marker in hf_message for marker in (
                 "402 Payment Required",
+                "Purchase pre-paid credits",
+                "included credits",
                 "depleted your monthly included credits",
                 "quota",
                 "rate",
