@@ -43,6 +43,8 @@ test -s "$SRC/index.html"
 test -s "$SRC/observer/index.html"
 test -s "$SRC/activity.json"
 test -s "$SRC/wardrobe/index.html"
+test -s "$SRC/wardrobe/debug/index.html"
+grep -Fq "澪的衣櫃 · 單品檢查模式" "$SRC/wardrobe/debug/index.html"
 grep -Fq '澪的內心窗口' "$SRC/observer/index.html"
 grep -Fq 'data-tryon-auth-banner' "$SRC/wardrobe/index.html"
 grep -Fq '登入／重新授權' "$SRC/wardrobe/index.html"
@@ -69,9 +71,11 @@ mv "$TMP" "$DST"
 for i in $(seq 1 20); do
   OBSERVER="$(curl -L -fsS --max-time 15 https://studio.milkcat.org/personas/mio/observer/ || true)"
   WARDROBE="$(curl -L -fsS --max-time 15 https://studio.milkcat.org/personas/mio/wardrobe/ || true)"
+  DEBUG="$(curl -L -fsS --max-time 15 https://studio.milkcat.org/personas/mio/wardrobe/debug/ || true)"
   RELEASE="$(curl -L -fsS --max-time 15 https://studio.milkcat.org/personas/mio/release.json || true)"
   if printf '%s' "$OBSERVER" | grep -Fq '澪的內心窗口' \
     && printf '%s' "$WARDROBE" | grep -Fq 'data-tryon-auth-banner' \
+    && printf '%s' "$DEBUG" | grep -Fq '澪的衣櫃 · 單品檢查模式' \
     && printf '%s' "$WARDROBE" | grep -Fq '登入／重新授權' \
     && printf '%s' "$WARDROBE" | grep -Fq 'AI 試穿需要登入' \
     && printf '%s' "$WARDROBE" | grep -Fq 'data-tryon-action' \
