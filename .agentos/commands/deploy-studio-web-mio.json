@@ -1,6 +1,6 @@
 {
   "schema": "agentos.studio-web-mio-deploy/v1",
-  "studioCommit": "ad0e0ac9092d87d5ae141701f45f9d8495c5b4ac",
-  "requestedAt": "2026-10-13T12:00:00+08:00",
-  "reason": "Fix Mio Debug asset request infinite loading with 8-second timeout (#143)"
+  "studioCommit": "3b1aed261f7350fc159b6bb2f9db1d766e6cea6d",
+  "requestedAt": "2026-10-13T14:25:00+08:00",
+  "reason": "Publish six real NET vendor CDN source images from verified download evidence (#144)"
 }
