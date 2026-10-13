@@ -199,9 +199,9 @@ class PostReasoningTests(unittest.TestCase):
         output,_,receipt,actions,_=self.run_generator([
             subprocess.CompletedProcess("codex",1,"","authentication required")],
             ir=ir,liveness=True,claude=False,gemini=False,codex=True)
-        self.assertEqual(output["status"],"CANDIDATE_CREATED")
-        self.assertIn("舒服",actions[0]["primary_text"])
-        self.assertEqual(receipt["status"],"FALLBACK")
+        self.assertEqual(output["status"],"DEFER")
+        self.assertEqual(actions,[])
+        self.assertEqual(receipt["status"],"DEFER")
         self.assertEqual(receipt["ir_authoring_context"]["ir_id"],"fashion-r1")
 
     def test_housekeeping_cannot_hide_older_own_claims_from_actual_prompt(self):
@@ -291,10 +291,8 @@ class PostReasoningTests(unittest.TestCase):
         output,_,receipt,actions,_=self.run_generator([
             subprocess.CompletedProcess("codex",1,"","authentication required")],
             events=[event],liveness=True,claude=False,gemini=False,codex=True)
-        self.assertEqual(output["reason"],"post_exact_duplicate")
-        self.assertEqual(receipt["status"],"FALLBACK")
-        self.assertTrue(receipt["fallback_used"])
-        self.assertEqual(receipt["candidate_check"]["status"],"DEFER")
+        self.assertEqual(output["reason"],"persona_reasoning_exhausted")
+        self.assertEqual(receipt["status"],"DEFER")
         self.assertEqual(actions,[])
 
     def test_last_real_post_survives_raw_window_for_liveness_without_forcing_consider(self):
@@ -382,7 +380,7 @@ class PostReasoningTests(unittest.TestCase):
                     subprocess.CompletedProcess("codex", 1, "", "authentication required private-secret")
                 ], claude=False, gemini=False, codex=True, liveness=liveness)
                 self.assertEqual(receipt["attempts"][0]["failure_class"], "AUTH_REQUIRED")
-                self.assertEqual(receipt["status"], "FALLBACK" if liveness else "DEFER")
+                self.assertEqual(receipt["status"], "DEFER")
                 self.assertNotIn("private-secret", json.dumps(receipt))
                 if actions:
                     self.assertEqual(actions[0]["reasoning_executor"], "safe_liveness_fallback")
@@ -404,11 +402,8 @@ class PostReasoningTests(unittest.TestCase):
             subprocess.TimeoutExpired("claude", 45),
             subprocess.CompletedProcess("gemini", 1, "", "quota exceeded")
         ], liveness=True)
-        self.assertEqual(receipt["status"], "FALLBACK")
-        self.assertTrue(receipt["fallback_used"])
-        self.assertEqual(actions[0]["reasoning_executor"], "safe_liveness_fallback")
-        self.assertTrue(actions[0]["requires_real_adapter_receipt"])
-        self.assertEqual(actions[0]["status"], "candidate")
+        self.assertEqual(receipt["status"], "DEFER")
+        self.assertEqual(actions, [])
         self.assertEqual(receipt["attempts"][1]["failure_class"], "RATE_LIMITED")
 
     def test_malformed_decision_is_not_a_pass_or_publication(self):
