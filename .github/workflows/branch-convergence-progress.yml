@@ -1,0 +1,31 @@
+name: Branch Convergence Progress Snapshot
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 1 * * *'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/branch_convergence_progress.py'
+      - '.github/workflows/branch-convergence-progress.yml'
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Produce verifiable convergence progress summary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/branch_convergence_progress.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: branch-convergence-progress-${{ github.run_id }}
+          path: |
+            progress.json
+            progress.md
+          retention-days: 90
