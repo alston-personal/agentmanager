@@ -940,3 +940,8 @@ The JSON-backed Realm Fabric store is concurrently mutated by threaded ONE HTTP 
 ## Project continuation publication (candidate PR, 2026-10-13)
 
 Draft PR #1923 proposes the narrow `agentos.project.publish_continuation` action and `agent_core/project_continuation_index.py` with its existing regression tests from `core/integration` onto `main`. It is **not merged, not deployed, and not a runtime receipt**. Publication is constrained to the canonical `agentos-core` project with governance-resolved mutation authority, matching index generations, lock and atomic file updates. Main's `resolve_facade` compatibility and Relay authorization behavior must pass hosted tests, while `core/integration` retains release authority pending #1682 acceptance and explicit protected-main merge approval.
+
+
+## Branch convergence governance (merged to main, 2026-10-13)
+
+PR #1921 has merged to main, establishing the single future development integration line while core/integration temporarily retains verified production release authority. Governance merge is not production deployment or cutover. The branch-convergence path-audit CI classifies changes for review and fails unclassified paths; RED classification is informational pending independently enforced human-owner approval and GitHub branch ruleset verification. The complete pinned branch-delta inventory, current Oracle runtime proof, OIDC migration and rollback validation remain outstanding under #1682 and coordinator #889. An approved PR or successful CI is not deployment evidence. Do not use this proposal to bypass main's explicit human merge approval.
