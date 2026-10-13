@@ -1,3 +1,4 @@
+# Incident rollout trigger: deploy Employee Worker hot-set/backpressure fix from PR #1789
 name: Oracle Core Bundle Immutable Runtime Convergence
 # employee-worker-hotset-recovery-20261012
 # system-worker-post-cutover-verification-20261012
