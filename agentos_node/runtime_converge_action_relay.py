@@ -319,8 +319,22 @@ def _preflight(repo: Path, request: Mapping[str, Any]) -> tuple[str, bool, bool]
     if fetched.returncode != 0:
         raise RuntimeError("source_fetch_failed")
     observed_head = _git_value(repo, "rev-parse", "FETCH_HEAD")
-    if observed_head != source_commit:
-        raise RuntimeError("exact_source_head_mismatch")
+
+    # The requested commit is immutable, while core/integration may advance
+    # between GitHub dispatch and Oracle execution.  Accept the exact requested
+    # commit when it is already present in the fetched branch history; do not
+    # require it to remain the mutable branch head.
+    present = _git(repo, "cat-file", "-e", f"{source_commit}^{{commit}}")
+    if present.returncode != 0:
+        exact_fetch = _git(repo, "fetch", "--no-tags", "origin", source_commit)
+        if exact_fetch.returncode != 0:
+            raise RuntimeError("exact_source_fetch_failed")
+        present = _git(repo, "cat-file", "-e", f"{source_commit}^{{commit}}")
+        if present.returncode != 0:
+            raise RuntimeError("exact_source_missing")
+    ancestor = _git(repo, "merge-base", "--is-ancestor", source_commit, observed_head)
+    if ancestor.returncode != 0:
+        raise RuntimeError("source_commit_not_in_allowed_ref_history")
 
     dirty = _tracked_status(repo)
     target_equivalent_dirty = False
