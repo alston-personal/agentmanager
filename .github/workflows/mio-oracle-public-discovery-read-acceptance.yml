@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_keyword_node_diagnostic.py'
+      - 'scripts/persona_keyword_scope_check.py'
       - 'scripts/persona_keyword_social_runtime_bridge.py'
       - 'scripts/persona_social_executor.py'
       - '.github/workflows/mio-oracle-public-discovery-read-acceptance.yml'
@@ -36,6 +37,7 @@ jobs:
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
           test -f scripts/persona_keyword_node_diagnostic.py
+          test -f scripts/persona_keyword_scope_check.py
           test -f scripts/persona_keyword_social_runtime_bridge.py
           test -f scripts/persona_social_executor.py
           PORT="${DEPLOY_SSH_PORT:-22}"
@@ -49,7 +51,18 @@ jobs:
           }
           trap cleanup EXIT
           "${SSH[@]}" "$TARGET" "mkdir -p '$REMOTE_TMP/scripts'; touch '$REMOTE_TMP/scripts/__init__.py'"
-          "${SCP[@]}" scripts/persona_keyword_node_diagnostic.py scripts/persona_keyword_social_runtime_bridge.py scripts/persona_social_executor.py "$TARGET:$REMOTE_TMP/scripts/"
+          "${SCP[@]}" scripts/persona_keyword_node_diagnostic.py scripts/persona_keyword_social_runtime_bridge.py scripts/persona_keyword_scope_check.py scripts/persona_social_executor.py "$TARGET:$REMOTE_TMP/scripts/"
+          # Current-bound-token permission check, read only and sanitized.
+          "${SSH[@]}" "$TARGET" "PYTHONPATH='$REMOTE_TMP' python3 -m scripts.persona_keyword_scope_check" > mio-discovery-scope-receipt.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("mio-discovery-scope-receipt.json").read_text())
+          assert d["schema"] == "agentos.mio-keyword-scope-check/v1"
+          assert d["write_performed"] is False
+          assert d["status"] in ("PASS","BLOCKED")
+          print("mio_search_scope_diagnostic=" + d["reason"])
+          PY
           # The diagnostic uses the existing local account-bound Social Runtime.
           # It does not perform browser automation, OAuth, posting or replying.
           "${SSH[@]}" "$TARGET" "PYTHONPATH='$REMOTE_TMP' python3 -m scripts.persona_keyword_node_diagnostic --query '散步' --receipt-out '$REMOTE_TMP/receipt.json'"
@@ -71,6 +84,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mio-discovery-read-sanitized
-          path: mio-discovery-read-receipt.json
+          path: |
+            mio-discovery-read-receipt.json
+            mio-discovery-scope-receipt.json
           if-no-files-found: ignore
           retention-days: 7
