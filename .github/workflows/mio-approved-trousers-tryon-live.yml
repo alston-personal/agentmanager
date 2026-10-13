@@ -1,0 +1,138 @@
+name: Mio Approved NET Trousers Live Try-on Acceptance
+on:
+  push:
+    branches: [feat/mio-product-isolation-contract-20261008]
+    paths:
+      - '.github/workflows/mio-approved-trousers-tryon-live.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mio-approved-trousers-live-tryon
+  cancel-in-progress: false
+jobs:
+  tryon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Create and poll REAL Mio render using approved trousers
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE' | tee "$RUNNER_TEMP/mio-trousers-live-tryon.txt"
+          set -euo pipefail
+          ACTIVE="$(cat /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-slot)"
+          case "$ACTIVE" in blue|green) ;; *) echo 'invalid_dashboard_slot'; exit 2;; esac
+          LIVE="$(readlink -f "/home/ubuntu/agent-data/runtime/dashboard/$ACTIVE")"
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          test -d "$LIVE/node_modules/jsonwebtoken" && test -f "$CONFIG"
+          JWT_SECRET_VALUE="$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          for raw in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line:continue
+              k,v=line.split('=',1)
+              if k.strip()=='JWT_SECRET':
+                  print(v.strip().strip('"').strip("'"))
+                  break
+          PY
+          )"
+          test -n "$JWT_SECRET_VALUE"
+          export JWT_SECRET_VALUE
+          TOKEN="$(cd "$LIVE" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          process.stdout.write(jwt.sign({
+            username:'mio-tryon-accepted-trousers-e2e',
+            provider:'e2e',
+            subject:'ordinary-user',
+            exp:Math.floor(Date.now()/1000)+1500
+          },process.env.JWT_SECRET_VALUE));
+          NODE
+          )"
+          unset JWT_SECRET_VALUE
+          TMP="$(mktemp -d /tmp/mio-approved-render-XXXXXX)"
+          trap 'rm -rf "$TMP"' EXIT
+          BASE=https://studio.milkcat.org
+          CODE="$(curl --noproxy '*' -ksS -o "$TMP/create.json" -w '%{http_code}' \
+            --resolve studio.milkcat.org:443:127.0.0.1 --max-time 30 \
+            -X POST -H 'Content-Type: application/json' -H "Cookie: auth_token=$TOKEN" \
+            --data '{"characterId":"sunlake-milkcat-ai-001","view":"front","pose":"neutral_standing","selectedLayers":{"lower_main":"net-31234-product-689961"}}' \
+            "$BASE/dashboard/api/wardrobe/tryon/render")"
+          echo "mio_approved_trousers_create_http=$CODE"
+          if [ "$CODE" != 201 ] && [ "$CODE" != 200 ]; then
+            python3 - "$TMP/create.json" <<'PY'
+          import json,sys
+          try:
+              doc=json.load(open(sys.argv[1]))
+              print('mio_approved_trousers_create_error='+str(doc.get('error','unknown'))[:120])
+          except Exception: print('mio_approved_trousers_create_error=invalid_response')
+          PY
+            exit 4
+          fi
+          JOB_ID="$(python3 - "$TMP/create.json" <<'PY'
+          import json,re,sys
+          doc=json.load(open(sys.argv[1]));job=str(doc.get('jobId',''))
+          assert doc.get('success') is True and re.fullmatch(r'[A-Za-z0-9._-]{1,220}',job)
+          print(job)
+          PY
+          )"
+          echo "mio_approved_trousers_job_id=$JOB_ID"
+          for i in $(seq 1 130); do
+            CODE="$(curl --noproxy '*' -ksS -o "$TMP/poll.json" -w '%{http_code}' --max-time 15 \
+              --resolve studio.milkcat.org:443:127.0.0.1 \
+              -H "Cookie: auth_token=$TOKEN" \
+              "$BASE/dashboard/api/wardrobe/tryon/jobs/$JOB_ID")"
+            if [ "$CODE" != 200 ]; then echo "mio_poll_http=$CODE"; exit 5;fi
+            STATE="$(python3 - "$TMP/poll.json" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1])).get('status','unknown'))
+          PY
+          )"
+            echo "mio_render_poll=$i status=$STATE"
+            if [ "$STATE" = "ready" ]; then
+              ASSET="$(python3 - "$TMP/poll.json" <<'PY'
+          import json,sys
+          out=json.load(open(sys.argv[1])).get('output') or {}
+          assert 'lower_main' in (out.get('renderedLayers') or []),out
+          assert 'lower_main' not in (out.get('pendingLayers') or []),out
+          print(out['asset'])
+          PY
+              )"
+              case "$ASSET" in /dashboard/api/wardrobe/tryon/assets/*) ;; *) echo 'invalid_asset_url'; exit 6;; esac
+              CODE="$(curl --noproxy '*' -ksS -o "$TMP/asset" -w '%{http_code}' --max-time 30 \
+                --resolve studio.milkcat.org:443:127.0.0.1 -H "Cookie: auth_token=$TOKEN" "$BASE$ASSET")"
+              test "$CODE" = 200 && test "$(wc -c < "$TMP/asset")" -gt 10000
+              echo "mio_approved_trousers_render_ready=PASS"
+              echo "mio_approved_trousers_result_path=$ASSET"
+              echo "mio_approved_trousers_result_sha256=$(sha256sum "$TMP/asset" | cut -d' ' -f1)"
+              exit 0
+            fi
+            if [ "$STATE" = failed ] || [ "$STATE" = cancelled ]; then
+              python3 - "$TMP/poll.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          print('mio_render_failure='+str(d.get('error') or d.get('message') or d.get('progress') or 'unknown')[:400])
+          PY
+              exit 7
+            fi
+            sleep 4
+          done
+          echo 'mio_approved_trousers_render=TIMEOUT'
+          exit 8
+          REMOTE
+      - name: Archive sanitized run receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-approved-trousers-live-tryon-receipt
+          path: ${{ runner.temp }}/mio-trousers-live-tryon.txt
+          if-no-files-found: warn
+          retention-days: 14
