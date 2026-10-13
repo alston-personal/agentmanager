@@ -1114,7 +1114,16 @@ class ActionRelayWorker:
             for key, value in result.items():
                 receipt[("result_" + key) if key in reserved else key] = value
         except Exception as exc:
-            receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),"ok": False,"error": f"{type(exc).__name__}: {exc}"}
+            receipt = {
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "action": action,
+                "started_at": started,
+                "completed_at": _now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
         target = self.paths.receipts / f"{capsule_id}.json"; tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(receipt, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
         _share(tmp); tmp.replace(target); _share(target); processing.unlink(missing_ok=True); return receipt

@@ -8,6 +8,7 @@ import pytest
 
 from agent_core.controller_service import ControllerService
 from agent_core.runtime_converge_contract import ALLOWED_REPOSITORY, SCHEMA
+from agentos_node import action_relay
 from agentos_node import runtime_converge_action_relay as relay
 
 
@@ -34,6 +35,28 @@ class Proc(SimpleNamespace):
     returncode: int = 0
     stdout: str = ""
     stderr: str = ""
+
+
+def test_failed_action_relay_receipt_preserves_action_identity(tmp_path, monkeypatch):
+    monkeypatch.setattr(action_relay, "_share", lambda *_args, **_kwargs: None)
+    root = tmp_path / "relay"
+    client = relay.ActionRelayClient(root)
+    capsule = client.submit(relay.ACTION, {"request": request()})
+
+    def boom(_params):
+        raise RuntimeError("synthetic failure")
+
+    monkeypatch.setitem(relay.ACTIONS, relay.ACTION, boom)
+    worker = action_relay.ActionRelayWorker(root)
+    receipt = worker.process_one()
+
+    assert receipt is not None
+    assert receipt["ok"] is False
+    assert receipt["action"] == relay.ACTION
+    assert "synthetic failure" in receipt["error"]
+    persisted = client.receipt(capsule["capsule_id"])
+    assert persisted is not None
+    assert persisted["action"] == relay.ACTION
 
 
 def test_relay_registers_fixed_semantic_action_without_generic_carrier():
