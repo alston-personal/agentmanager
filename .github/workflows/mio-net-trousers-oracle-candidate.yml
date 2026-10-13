@@ -34,7 +34,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SHA="$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" python3 -c 'import json,pathlib;root=pathlib.Path.home()/"agent-data/projects/dressup-simulator";p=root/"source_sync_receipts/net-31234-product-689961.json";r=json.loads(p.read_text());assert r["state"]=="awaiting_isolation";print(r["sourceSha256"])')"
+          SHA="$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" python3 - <<'PY'
+          import json,pathlib
+          root=pathlib.Path.home()/"agent-data/projects/dressup-simulator"
+          receipt=json.loads((root/"source_sync_receipts/net-31234-product-689961.json").read_text())
+          assert receipt["state"]=="awaiting_isolation", receipt["state"]
+          print(receipt["sourceSha256"])
+          PY
+          )"
           [[ "$SHA" =~ ^[a-f0-9]{64}$ ]]
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           mkdir -p "$RUNNER_TEMP/mio-dark-trousers"
