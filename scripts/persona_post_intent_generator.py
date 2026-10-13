@@ -441,8 +441,8 @@ def main():
     if max_posts is not None and len(todays_posts)>=max_posts:
         print(json.dumps({"status":"NO_POST","reason":"daily_post_max_reached","posts_today":len(todays_posts)},ensure_ascii=False))
         return 0
-    if todays_posts and min_gap is not None:
-        gap=(now_utc-todays_posts[-1]).total_seconds()/60.0
+    if last_successful_post is not None and min_gap is not None:
+        gap=(now_utc-last_successful_post).total_seconds()/60.0
         if gap < min_gap:
             print(json.dumps({"status":"DEFER","reason":"minimum_post_gap","gap_minutes":round(gap,1),"required":min_gap},ensure_ascii=False))
             return 0
