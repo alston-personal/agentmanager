@@ -8,6 +8,7 @@ import pytest
 
 from agent_core.controller_service import ControllerService
 from agent_core.runtime_converge_contract import ALLOWED_REPOSITORY, SCHEMA
+from agentos_node import action_relay
 from agentos_node import runtime_converge_action_relay as relay
 
 
@@ -37,6 +38,7 @@ class Proc(SimpleNamespace):
 
 
 def test_failed_action_relay_receipt_preserves_action_identity(tmp_path, monkeypatch):
+    monkeypatch.setattr(action_relay, "_share", lambda *_args, **_kwargs: None)
     root = tmp_path / "relay"
     client = relay.ActionRelayClient(root)
     capsule = client.submit(relay.ACTION, {"request": request()})
