@@ -1119,22 +1119,45 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                         )):
                             break
                 if not primary_ok:
-                    set_progress(path, job, "rendering", f"{SPACE_ID} did not pass; trying Inference Provider fallback")
-                    person_url, provider_space = inference_provider_reference_try_on(
-                        person_url,
-                        source_url,
-                        CLOTHING_SUPPORTED[layer],
-                        seed_base + index,
-                        layer=layer,
-                    )
-                    provider = "hf-inference-provider-reference-edit"
-                    warnings.append(
-                        {
+                    # Try an existing non-Inference-credits image-edit Space
+                    # before the paid Inference Provider lane. Keep the
+                    # semantic review gate; generating a plausible-looking
+                    # different garment is NOT a successful try-on.
+                    product_ir = item.get("productIR") or {}
+                    garment_hint = garment_name + "; " + CLOTHING_SUPPORTED[layer]
+                    if layer == "lower_main" and any(token in garment_name.lower()
+                            for token in ("長褲", "trouser", "long pant")):
+                        garment_hint += "; FULL-LENGTH trousers covering legs to ankles; shorts are incorrect"
+                    garment_hint += "; preserve exact SKU color, cut, pleats and fabric: " + json.dumps(
+                        product_ir, ensure_ascii=False
+                    )[:900]
+                    try:
+                        set_progress(path, job, "rendering",
+                                     f"{SPACE_ID} unavailable; trying {QWEN_EDIT_SPACE_ID}")
+                        person_url, provider_space = qwen_reference_try_on(
+                            person_url, source_url, garment_hint,
+                            seed_base + index, layer=layer,
+                        )
+                        provider = "qwen-reference-edit"
+                    except Exception as qwen_exc:
+                        warnings.append({
                             "layer": layer,
-                            "code": "specialized_renderer_fallback",
-                            "message": " | ".join(primary_errors)[-1200:],
-                        }
-                    )
+                            "code": "qwen_tryon_fallback_unavailable",
+                            "message": (type(qwen_exc).__name__ + ": " + str(qwen_exc))[:600],
+                        })
+                        set_progress(path, job, "rendering",
+                                     f"{QWEN_EDIT_SPACE_ID} unavailable; trying Inference Provider")
+                        person_url, provider_space = inference_provider_reference_try_on(
+                            person_url, source_url,
+                            CLOTHING_SUPPORTED[layer], seed_base + index,
+                            layer=layer,
+                        )
+                        provider = "hf-inference-provider-reference-edit"
+                    warnings.append({
+                        "layer": layer,
+                        "code": "specialized_renderer_fallback",
+                        "message": " | ".join(primary_errors)[-1200:],
+                    })
             else:
                 def any_item_progress(message: str):
                     set_progress(path, job, "rendering", f"{layer}: {message}")
