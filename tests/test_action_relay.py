@@ -1,11 +1,14 @@
 # CI trigger: governed Action Relay bootstrap validation
 import json
+import os
+import stat
+from types import SimpleNamespace
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentos_node.action_relay import ActionRelayClient, ActionRelayWorker, ACTIONS
+from agentos_node.action_relay import ActionRelayClient, ActionRelayWorker, ACTIONS, _verify_continuation_capsule_owner
 
 
 class ActionRelayTests(unittest.TestCase):
@@ -15,6 +18,23 @@ class ActionRelayTests(unittest.TestCase):
 
     def tearDown(self):
         self.td.cleanup()
+
+    def test_continuation_capsule_rejects_group_member_other_than_node_owner(self):
+        capsule = self.root.parent / "candidate.json"
+        capsule.write_text("{}")
+        capsule.chmod(0o660)
+        with patch("agentos_node.action_relay.pwd.getpwnam", return_value=SimpleNamespace(pw_uid=os.getuid()+1)), \
+             patch("agentos_node.action_relay.grp.getgrnam", return_value=SimpleNamespace(gr_gid=os.getgid())):
+            with self.assertRaises(PermissionError):
+                _verify_continuation_capsule_owner(capsule)
+
+    def test_continuation_capsule_accepts_correct_unix_owner_and_mode(self):
+        capsule = self.root.parent / "candidate.json"
+        capsule.write_text("{}")
+        capsule.chmod(0o660)
+        with patch("agentos_node.action_relay.pwd.getpwnam", return_value=SimpleNamespace(pw_uid=os.getuid())), \
+             patch("agentos_node.action_relay.grp.getgrnam", return_value=SimpleNamespace(gr_gid=os.getgid())):
+            _verify_continuation_capsule_owner(capsule)
 
     @patch("agentos_node.action_relay._share", lambda *args, **kwargs: None)
     def test_rejects_arbitrary_action(self):
