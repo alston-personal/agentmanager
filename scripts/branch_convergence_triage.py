@@ -15,6 +15,21 @@ def domain(p):
             return label
     return "other"
 
+def review_lane(path):
+    if path.startswith((".agent/", ".agentos/", "docs/governance/")):
+        return "governance-review"
+    if path.startswith((".github/workflows/", "scripts/deploy_")):
+        return "release-authority-review"
+    if path.startswith(("agent_core/", "runtime_core/")):
+        return "core-runtime-review"
+    return "owner-unresolved"
+
+def review_priority(path):
+    critical = (".agent/CONSTITUTION.yaml", ".agent/governance/",
+                ".github/workflows/", "agent_core/", "runtime_core/",
+                "docs/CORE_DEPLOYMENT", "scripts/deploy_")
+    return "P0_CONTRACT_REVIEW" if path.startswith(critical) else "P1_SUBSYSTEM_REVIEW"
+
 def transform(records):
     out = []
     for record in records:
@@ -23,6 +38,8 @@ def transform(records):
                      "M": "DIFFERENT_ON_BOTH"}.get(code, "UNKNOWN_DIRECTION")
         out.append({**record, "path_direction": direction, "domain": domain(record["path"]),
                     "classification": "UNKNOWN", "evidence_level": "path-only",
+                    "review_priority": review_priority(record["path"]),
+                    "review_lane": review_lane(record["path"]),
                     "next_action": "review patch equivalence, owner, consumers and release contract"})
     return out
 
