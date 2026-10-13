@@ -916,6 +916,10 @@ def persist_quality_receipt(cache_key: str | None, job: dict[str, Any]) -> None:
     atomic_write(meta_path, meta)
 
 
+def visual_review_accepted(receipt: dict[str, Any]) -> bool:
+    return receipt.get("state") == "verified" and receipt.get("accepted") is True
+
+
 def run_visual_review(job: dict[str, Any], candidate_path: Path) -> dict[str, Any]:
     machine_checks = list(((job.get("output") or {}).get("quality") or {}).get("checks") or [])
     if evaluate_review is None or review_with_gemini is None:
@@ -1240,16 +1244,24 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
     }
     persist_quality_receipt(cache_key, job)
 
-    job["status"] = "ready"
-    job["completedAt"] = checked_at
-    job["failedAt"] = None
-    if state == "verified":
-        message = "Visual review verified; candidate promoted"
-    elif state == "rejected":
-        message = "Visual review rejected candidate; regenerate or inspect evidence"
+    # A generated image is NOT a successful try-on until semantic review has
+    # positively accepted the exact requested garment and persona.
+    if visual_review_accepted(receipt):
+        job["status"] = "ready"
+        job["completedAt"] = checked_at
+        job["failedAt"] = None
+        set_progress(path, job, "ready", "Visual review verified requested garment")
     else:
-        message = "Candidate render available; semantic visual review did not promote it"
-    set_progress(path, job, "ready", message)
+        job["status"] = "failed"
+        job["failedAt"] = checked_at
+        job["completedAt"] = None
+        job["error"] = {
+            "code": "VISUAL_QA_NOT_ACCEPTED",
+            "message": "Generated image held: " + str(receipt.get("reason") or state)[:300],
+        }
+        job["output"]["asset"] = None
+        job["output"]["previewAsset"] = None
+        set_progress(path, job, "failed", job["error"]["message"])
 
 
 def mark_failed(path: Path, job: dict[str, Any], exc: Exception) -> None:
