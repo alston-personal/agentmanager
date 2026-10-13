@@ -1,6 +1,6 @@
 name: Character Fusion Runner Window Smoke
 
-# trigger: 2026-10-13 Character Fusion smoke after Action Relay receipt fix 1225
+# trigger: 2026-10-13 Character Fusion smoke after ChatGPT Web VLM 1242
 
 on:
   pull_request:
