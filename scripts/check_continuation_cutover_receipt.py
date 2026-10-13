@@ -22,6 +22,9 @@ def assess(obj):
             missing.append(key + "_invalid_format")
     if obj.get("review_approval") == "example":
         missing.append("review_approval_placeholder")
+    # Syntactic validity is not trust. Explicitly refuse any claim of authenticated runtime.
+    if obj.get("runtime_authenticated") is True:
+        missing.append("runtime_authentication_not_verified")
     return sorted(set(missing))
 
 def main():
