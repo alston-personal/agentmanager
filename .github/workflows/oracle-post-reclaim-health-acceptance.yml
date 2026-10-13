@@ -121,6 +121,9 @@ jobs:
           print(f"worker_wakes_without_dispatch={len(wake_keys-dispatch_keys)}")
           PY
 
+          echo "worker_supervisor_delivery_files=$(find "$HOME/agent-data/employee-runtime/supervisor/deliveries" -maxdepth 1 -type f -name 'reconcile_*.json' 2>/dev/null | wc -l)"
+          echo "worker_supervisor_intent_files=$(find "$HOME/agent-data/employee-runtime/supervisor/intents" -maxdepth 1 -type f -name 'reconcile_*.json' 2>/dev/null | wc -l)"
+
           python3 - /proc/pressure/io <<'PY'
           import re,sys
           vals={}
