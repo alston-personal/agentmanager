@@ -56,7 +56,7 @@ export async function GET(request: NextRequest, context: {
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
     const expected = kind === 'garment' ? receipt.isolatedAssetSha256 : receipt.maskSha256;
     if (!expected || digest !== expected) throw new Error('Artifact fingerprint mismatch');
-    return new NextResponse(bytes, {headers:{
+    return new NextResponse(new Uint8Array(bytes), {headers:{
       'Content-Type':'image/png','Cache-Control':'private, no-store',
       'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"
     }});
