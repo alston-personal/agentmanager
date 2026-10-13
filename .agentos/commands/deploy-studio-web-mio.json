@@ -1,6 +1,6 @@
 {
   "schema": "agentos.studio-web-mio-deploy/v1",
-  "studioCommit": "524e86413d40556f7f4ed35bfe8b9c3250cd688a",
-  "requestedAt": "2026-10-08T15:15:00+08:00",
-  "reason": "Deploy visual-quality release gate for Mio try-on candidate results"
+  "studioCommit": "eb1a750f434f60cd561e7e13f068b4e090e45f11",
+  "requestedAt": "2026-10-13T09:45:00+08:00",
+  "reason": "Publish and verify 16-item Mio wardrobe after #133 and #135, preserving auth and rollback"
 }
