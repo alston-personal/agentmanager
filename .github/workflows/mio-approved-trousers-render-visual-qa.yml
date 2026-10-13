@@ -24,15 +24,15 @@ jobs:
         run: |
           set -euo pipefail
           scp -q -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -P "${DEPLOY_SSH_PORT:-22}" \
-            "${DEPLOY_USER}@${ORACLE_HOST}:/home/ubuntu/agent-data/projects/dressup-simulator/render_assets/sunlake-milkcat-ai-001-tryon-2026-10-13T08-36-43-176Z-cde673e9.webp" \
+            "${DEPLOY_USER}@${ORACLE_HOST}:/home/ubuntu/agent-data/projects/dressup-simulator/render_assets/sunlake-milkcat-ai-001-tryon-2026-10-13T08-49-32-311Z-9c81ad47.webp" \
             "$RUNNER_TEMP/mio-approved-trousers-render.webp"
           test "$(wc -c < "$RUNNER_TEMP/mio-approved-trousers-render.webp")" -gt 10000
-          echo "7e899176e1b17002eb53dfeec71be8d796eefd0ae3c396ef953fdec96ed65d61  $RUNNER_TEMP/mio-approved-trousers-render.webp" | sha256sum -c -
+          sha256sum "$RUNNER_TEMP/mio-approved-trousers-render.webp"
           file "$RUNNER_TEMP/mio-approved-trousers-render.webp"
-          echo 'mio_render_visual_artifact_verified=PASS'
+          echo 'mio_render_visual_artifact_retrieved_for_independent_review=PASS'
       - uses: actions/upload-artifact@v4
         with:
-          name: mio-approved-trousers-actual-render
+          name: mio-qwen-trousers-unverified-render
           path: ${{ runner.temp }}/mio-approved-trousers-render.webp
           if-no-files-found: error
           retention-days: 14
