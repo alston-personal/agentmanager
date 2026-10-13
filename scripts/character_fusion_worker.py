@@ -189,16 +189,21 @@ def _vision_fallback_json(prompt: str, image_path: Path) -> dict[str, Any]:
         errors.append(f"gemini_cli={type(exc).__name__}: {exc}")
 
     try:
-        return _hf_vlm_json(prompt, image_path)
-    except Exception as exc:
-        errors.append(f"hf={type(exc).__name__}: {exc}")
-
-    try:
         return _gemini_web_vlm_json(prompt, image_path)
     except Exception as exc:
         errors.append(f"gemini_web={type(exc).__name__}: {exc}")
 
-    raise RuntimeError("all vision fallbacks failed; " + "; ".join(errors[-4:]))
+    try:
+        return _chatgpt_web_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"chatgpt_web={type(exc).__name__}: {exc}")
+
+    try:
+        return _hf_vlm_json(prompt, image_path)
+    except Exception as exc:
+        errors.append(f"hf={type(exc).__name__}: {exc}")
+
+    raise RuntimeError("all vision fallbacks failed; " + "; ".join(errors[-5:]))
 
 
 def _parse_loose_json_text(text: str) -> dict[str, Any]:
@@ -319,6 +324,176 @@ raise RuntimeError("No HF VLM succeeded: " + " | ".join(errors[-6:]))
             tail = (proc.stderr or proc.stdout or "")[-3000:]
             raise RuntimeError(f"Hugging Face vision fallback failed: {tail}")
         return _parse_loose_json_text(proc.stdout)
+
+
+def _chatgpt_web_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
+    python_bin = Path("/usr/bin/python3")
+    if not python_bin.is_file():
+        raise RuntimeError("system python is unavailable for ChatGPT Web vision fallback")
+
+    with tempfile.TemporaryDirectory(prefix="character-fusion-chatgpt-web-vlm-") as tmp:
+        prompt_path = Path(tmp) / "prompt.txt"
+        output_path = Path(tmp) / "response.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        helper = r"""
+import asyncio
+import fcntl
+import json
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+import websockets
+
+prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
+image_path = Path(sys.argv[2])
+output_path = Path(sys.argv[3])
+lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
+lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+def discover():
+    observed=[]
+    for port in (9222,9223,9224,9225,9226):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
+                rows=json.loads(r.read().decode("utf-8"))
+        except Exception:
+            continue
+        for row in rows:
+            if row.get("type") != "page":
+                continue
+            url=str(row.get("url") or "")
+            if url.startswith(("http://","https://")):
+                observed.append((port,url[:220]))
+            if "chatgpt.com" in url:
+                return port,row
+    hosts=sorted({u.split("/")[2] for _,u in observed if "://" in u})
+    raise RuntimeError("chatgpt_web_no_session; observed_hosts="+",".join(hosts[:20]))
+
+_port,target=discover()
+ws_url=str(target.get("webSocketDebuggerUrl") or "")
+if not ws_url:
+    raise RuntimeError("chatgpt_web_missing_ws")
+
+async def main():
+    seq=0
+    async with websockets.connect(ws_url,open_timeout=5,close_timeout=2,max_size=16*1024*1024) as ws:
+        async def call(method,params=None):
+            nonlocal seq
+            seq+=1
+            ident=seq
+            await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+            while True:
+                msg=json.loads(await ws.recv())
+                if msg.get("id")==ident:
+                    if msg.get("error"):
+                        raise RuntimeError(f"cdp {method}: {msg['error']}")
+                    return msg.get("result") or {}
+
+        async def ev(expr):
+            r=await call("Runtime.evaluate",{
+                "expression":expr,
+                "returnByValue":True,
+                "awaitPromise":True,
+            })
+            return (r.get("result") or {}).get("value")
+
+        baseline=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="assistant"]').length)()''') or 0)
+
+        doc=await call("DOM.getDocument",{"depth":-1,"pierce":True})
+        root=(doc.get("root") or {}).get("nodeId")
+        if not root:
+            raise RuntimeError("chatgpt_web_dom_root_missing")
+        q=await call("DOM.querySelector",{"nodeId":root,"selector":"input[type=file]"})
+        node_id=q.get("nodeId")
+        if not node_id:
+            # Some ChatGPT builds lazily create the file input after opening the attachment menu.
+            await ev(r'''(() => {
+              const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(x=>x.offsetParent!==null);
+              const b=buttons.find(x=>/attach|upload|add|附件|上傳|新增/i.test(
+                [x.getAttribute('aria-label'),x.getAttribute('title'),x.innerText].filter(Boolean).join(' ')
+              ));
+              if(b) b.click();
+              return true;
+            })()''')
+            await asyncio.sleep(0.5)
+            doc=await call("DOM.getDocument",{"depth":-1,"pierce":True})
+            root=(doc.get("root") or {}).get("nodeId")
+            q=await call("DOM.querySelector",{"nodeId":root,"selector":"input[type=file]"})
+            node_id=q.get("nodeId")
+        if not node_id:
+            raise RuntimeError("chatgpt_web_image_upload_control_not_found")
+        await call("DOM.setFileInputFiles",{"nodeId":node_id,"files":[str(image_path)]})
+        await asyncio.sleep(1.2)
+
+        focused=await ev(r'''(() => {
+          const sels=['#prompt-textarea','[data-testid="composer-input"]','textarea','[contenteditable="true"]'];
+          for(const s of sels){
+            const el=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null && !x.disabled);
+            if(el){el.focus(); return true;}
+          }
+          return false;
+        })()''')
+        if not focused:
+            raise RuntimeError("chatgpt_web_composer_not_found")
+        await call("Input.insertText",{"text":prompt})
+        await asyncio.sleep(0.5)
+
+        sent=False
+        for _ in range(30):
+            sent=await ev(r'''(() => {
+              const selectors=['[data-testid="send-button"]','button[aria-label*="send" i]','button[aria-label*="送出" i]'];
+              for(const s of selectors){
+                const b=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null && !x.disabled);
+                if(b){b.click();return true;}
+              }
+              return false;
+            })()''')
+            if sent is True:
+                break
+            await asyncio.sleep(0.25)
+        if not sent:
+            raise RuntimeError("chatgpt_web_submit_failed")
+
+        deadline=time.monotonic()+180
+        last=""
+        stable=0
+        response=""
+        while time.monotonic()<deadline:
+            rows=await ev(r'''(() => [...document.querySelectorAll('[data-message-author-role="assistant"]')]
+              .map(x=>(x.innerText||x.textContent||'').trim()))()''') or []
+            if len(rows)>baseline and str(rows[-1]).strip():
+                current=str(rows[-1]).strip()
+                if current==last:
+                    stable+=1
+                else:
+                    last=current
+                    stable=0
+                if stable>=2:
+                    response=current
+                    break
+            await asyncio.sleep(1.5)
+        if not response:
+            raise TimeoutError("chatgpt_web_vlm_response_timeout")
+        output_path.write_text(response,encoding="utf-8")
+        print("character_fusion_chatgpt_web_vlm=PASS")
+
+with lock_path.open("a+") as lock:
+    fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
+    asyncio.run(main())
+"""
+        proc = subprocess.run(
+            [str(python_bin), "-c", helper, str(prompt_path), str(image_path), str(output_path)],
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=220,
+        )
+        if proc.returncode != 0:
+            tail=(proc.stderr or proc.stdout or "")[-3000:]
+            raise RuntimeError(f"ChatGPT Web vision fallback failed: {tail}")
+        return _parse_loose_json_text(output_path.read_text(encoding="utf-8"))
 
 
 def _gemini_web_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
