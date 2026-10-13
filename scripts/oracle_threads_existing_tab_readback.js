@@ -15,7 +15,7 @@ function accountEvidence(hrefs, expected) {
     try {
       const u = new URL(String(href), 'https://www.threads.com');
       if (!HOSTS.has(u.hostname.toLowerCase())) continue;
-      const match = /^\\/@([a-z0-9_.]+)(?:\\/|$)/i.exec(u.pathname);
+      const match = new RegExp('^/@([a-z0-9_.]+)(?:/|$)', 'i').exec(u.pathname);
       if (match) candidates.add(match[1].toLowerCase());
     } catch {}
   }
