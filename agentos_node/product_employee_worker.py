@@ -188,12 +188,6 @@ def _governed_delivery_index(
         wake = intent.get("wake_intent")
         if not isinstance(wake, dict):
             continue
-        if wake.get("wake_id") != delivery.get("wake_id"):
-            continue
-        if wake.get("employee_id") != delivery.get("employee_id"):
-            continue
-        if wake.get("assignment_id") != delivery.get("assignment_id"):
-            continue
 
         key = _delivery_index_key(
             employee_id=delivery.get("employee_id"),
