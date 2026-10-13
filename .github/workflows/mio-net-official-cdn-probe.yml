@@ -21,6 +21,29 @@ jobs:
       - name: Probe vendor CDN exact SKU and color image patterns
         run: |
           python scripts/probe_mio_net_official_cdn.py --manifest .agentos/commands/mio-net-source-backfill.json --output "$RUNNER_TEMP/net-cdn-probe"
+      - name: Run actual single-product isolation candidate on verified source bytes
+        run: |
+          python - <<'PY'
+          import importlib.util,json,hashlib,pathlib,os
+          base=pathlib.Path(os.environ['RUNNER_TEMP'])/'net-cdn-probe'
+          module=pathlib.Path('scripts/isolate_mio_product_candidate.py')
+          spec=importlib.util.spec_from_file_location('mio_isolate',module)
+          extractor=importlib.util.module_from_spec(spec);spec.loader.exec_module(extractor)
+          report=json.loads((base/'report.json').read_text())
+          results=[]
+          for product in report['products']:
+            for entry in product['images']:
+              ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[entry['contentType']]
+              path=base/product['garmentId']/(entry['imageSha256']+'.'+ext)
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==entry['imageSha256']
+              dest=base/product['garmentId']/(entry['imageSha256']+'.isolated.png')
+              outcome=extractor.isolate_uniform_background(path,dest)
+              results.append({'garmentId':product['garmentId'],'sourceSha256':entry['imageSha256'],
+                              'state':outcome['state'],'reason':outcome.get('reason'),
+                              'approved':False,'review':'pending_visual_QC'})
+              print('mio_isolation_try='+product['garmentId']+':'+outcome['state'])
+          (base/'isolation-results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\\n')
+          PY
       - name: Preserve actual image bytes and matching evidence
         if: always()
         uses: actions/upload-artifact@v4
