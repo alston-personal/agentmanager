@@ -103,6 +103,23 @@ jobs:
               raise SystemExit("cpu bandwidth periods are not active")
           PY
 
+          echo "=== worker cgroup processes ==="
+          while read -r child_pid; do
+            [ -r "/proc/$child_pid/stat" ] || continue
+            ps -p "$child_pid" -o pid=,ppid=,pcpu=,pmem=,stat=,etime=,comm= 2>/dev/null || true
+          done < "$root/cgroup.procs"
+
+          python3 - "$HOME/agent-data/employee-wakes" "$HOME/agent-data/employee-worker-host/dispatches" <<'PY'
+          from pathlib import Path
+          import sys
+          wakes=Path(sys.argv[1]); dispatches=Path(sys.argv[2])
+          wake_keys={(p.parent.name,p.name) for p in wakes.glob("*/*.json")}
+          dispatch_keys={(p.parent.name,p.name) for p in dispatches.glob("*/*.json")}
+          print(f"worker_wake_files={len(wake_keys)}")
+          print(f"worker_dispatch_files={len(dispatch_keys)}")
+          print(f"worker_wakes_without_dispatch={len(wake_keys-dispatch_keys)}")
+          PY
+
           python3 - /proc/pressure/io <<'PY'
           import re,sys
           vals={}
