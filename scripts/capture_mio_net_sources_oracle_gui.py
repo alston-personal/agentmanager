@@ -160,7 +160,7 @@ def run(manifest: Path, cdp: str) -> int:
             page.close()
         finally:
             context.close()   # Only close the temporary isolated context.
-            browser.close()   # Disconnect CDP; do not shut down Chromium.
+            # Never call browser.close() on the shared CDP server: preserve account tabs.
     return 0
 
 
