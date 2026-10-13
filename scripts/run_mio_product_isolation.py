@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 from isolate_mio_product_candidate import isolate_uniform_background
 from mio_isolation_candidate_receipt import candidate_receipt
@@ -27,8 +28,25 @@ def run(garment_id: str, source: Path):
         raise ValueError("source image missing or unsafe")
     source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
     target = ROOT / "isolation_candidates" / garment_id / source_sha
+    # Keep a byte-identical, content-addressed snapshot of the source. Never
+    # overwrite an existing digest path: detect corruption instead.
+    source_store = ROOT / "source_images" / source_sha
+    source_store.mkdir(parents=True, exist_ok=True)
+    source_snapshot = source_store / "original"
+    if source_snapshot.exists():
+        if source_snapshot.is_symlink() or hashlib.sha256(source_snapshot.read_bytes()).hexdigest() != source_sha:
+            raise ValueError("source snapshot digest mismatch")
+    else:
+        staged = source_store / ("original." + str(os.getpid()) + ".tmp")
+        try:
+            shutil.copyfile(source, staged)
+            if hashlib.sha256(staged.read_bytes()).hexdigest() != source_sha:
+                raise ValueError("source changed during snapshot")
+            os.replace(staged, source_snapshot)
+        finally:
+            staged.unlink(missing_ok=True)
     destination = target / "garment.png"
-    result = isolate_uniform_background(source, destination)
+    result = isolate_uniform_background(source_snapshot, destination)
     receipt = candidate_receipt(
         garment_id=garment_id,
         target_layer=task["targetLayer"],
@@ -42,6 +60,7 @@ def run(garment_id: str, source: Path):
     )
     receipt["extractorOutcome"] = result["state"]
     receipt["sourceAssetSha256"] = source_sha
+    receipt["sourceSnapshot"] = str(source_snapshot)
     receipt["approved"] = False
     target.mkdir(parents=True, exist_ok=True)
     receipt_file = target / "candidate-receipt.json"
