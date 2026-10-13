@@ -1,6 +1,6 @@
 {
   "schema": "agentos.studio-web-mio-deploy/v1",
-  "studioCommit": "7d917df452a7ebc058cf998de26bebfe1c7b541f",
-  "requestedAt": "2026-10-13T11:40:00+08:00",
-  "reason": "Restore NET dress photo and truthful white shoe QC status in Mio wardrobe (#140)"
+  "studioCommit": "f7799606a5acc30064b9fd8755d61aff57f410ec",
+  "requestedAt": "2026-10-13T12:00:00+08:00",
+  "reason": "Publish white shoe manual target-contour preview in wardrobe Debug inspector (#141)"
 }
