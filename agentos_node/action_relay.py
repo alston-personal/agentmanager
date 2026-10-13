@@ -1381,7 +1381,19 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "agentos.realm-fabric.install_release": _install_realm_fabric_release,
     "agentos.maintenance.issue71_repair_node_registry": _issue71_repair_node_registry,
     "agentos.project.register_core": _register_agentos_core_project,
+    "agentos.project.publish_continuation": _publish_project_continuation,
 }
+
+
+def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
+    """Publish the canonical AgentOS Core continuation through one narrow action.
+
+    The relay accepts no arbitrary path or shell. Project identity, mutation
+    authority, schemas, index generation, and canonical target paths are all
+    revalidated by the publisher under the ubuntu execution identity.
+    """
+    from agent_core.project_continuation_index import publish_project_continuation
+    return publish_project_continuation(params)
 
 
 class ActionRelayWorker:
