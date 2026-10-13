@@ -36,6 +36,27 @@ class Proc(SimpleNamespace):
     stderr: str = ""
 
 
+def test_failed_action_relay_receipt_preserves_action_identity(tmp_path, monkeypatch):
+    root = tmp_path / "relay"
+    client = relay.ActionRelayClient(root)
+    capsule = client.submit(relay.ACTION, {"request": _request()})
+
+    def boom(_params):
+        raise RuntimeError("synthetic failure")
+
+    monkeypatch.setitem(relay.ACTIONS, relay.ACTION, boom)
+    worker = relay.ActionRelayWorker(root)
+    receipt = worker.run_once()
+
+    assert receipt is not None
+    assert receipt["ok"] is False
+    assert receipt["action"] == relay.ACTION
+    assert "synthetic failure" in receipt["error"]
+    persisted = client.receipt(capsule["capsule_id"])
+    assert persisted is not None
+    assert persisted["action"] == relay.ACTION
+
+
 def test_relay_registers_fixed_semantic_action_without_generic_carrier():
     assert relay.ACTION == "agentos.runtime.converge"
     assert relay.ACTION in relay.ACTIONS
