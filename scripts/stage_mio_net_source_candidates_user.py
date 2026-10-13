@@ -94,9 +94,11 @@ def stage_product(row, product, bundle):
                 raise ValueError("canonical_source_snapshot_corrupted")
             # CDN responses may be re-encoded with identical visual pixels.
             # Never churn already-registered immutable bytes on retries.
-            return {"garmentId":garment_id,"state":"awaiting_isolation",
+            job_state=json.loads((ROOT/"isolation_jobs"/(garment_id+".json")).read_text(encoding="utf-8")).get("state")
+            is_approved=job_state=="approved" or (existing.get("tryOnSource") or {}).get("state")=="approved"
+            return {"garmentId":garment_id,"state":"existing_approved_preserved" if is_approved else "awaiting_isolation",
                     "sourceSha256":previous_sha,"sourceUrl":url,
-                    "approved":False,"sourceSnapshotExists":True,
+                    "approved":is_approved,"sourceSnapshotExists":True,
                     "idempotent":True}
     copy_immutable(source,snapshot,sha)
     if target.exists():
