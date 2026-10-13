@@ -26,6 +26,7 @@ class ReceiptTests(unittest.TestCase):
             self.assertEqual(row["state"], "candidate")
             self.assertFalse(row["approved"])
             self.assertEqual(row["review"]["state"], "pending")
+            self.assertEqual(row["maskSha256"], sha256(b"y" * 200).hexdigest())
     def test_missing_mask_needs_review(self):
         with tempfile.TemporaryDirectory() as directory:
             source = pathlib.Path(directory) / "isolated.png"
