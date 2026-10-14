@@ -624,3 +624,70 @@ class GptWebUcJsonHarvestTests(unittest.TestCase):
         self.assertIn("value.indexOf('{')", source)
         self.assertIn("value.lastIndexOf('}')", source)
         self.assertIn("value.slice(first, last + 1)", source)
+
+
+class GptWebNetworkResponseHarvestTests(unittest.TestCase):
+    def test_extracts_correlated_invoice_from_sse_nested_message(self):
+        from scripts.gpt_web_response_bridge import _extract_correlated_invoice_json
+        request_id = "invoice:req:net-12345678"
+        invoice = {
+            "agentos_request_id": request_id,
+            "invoice_number": "MY04200253",
+            "invoice_date": "2019-03-23",
+            "seller_tax_id": "82328968",
+            "total_amount": 50,
+        }
+        event = {"message": {"content": {"parts": [json.dumps(invoice, ensure_ascii=False)]}}}
+        body = "data: " + json.dumps(event, ensure_ascii=False) + "\n\ndata: [DONE]\n"
+        result = _extract_correlated_invoice_json(body, request_id)
+        self.assertIsNotNone(result)
+        payload = json.loads(result)
+        self.assertEqual(payload["invoice_number"], "MY04200253")
+        self.assertEqual(payload["agentos_request_id"], request_id)
+
+    def test_rejects_uncorrelated_network_json(self):
+        from scripts.gpt_web_response_bridge import _extract_correlated_invoice_json
+        body = json.dumps({
+            "agentos_request_id": "other",
+            "invoice_number": "MY04200253",
+            "total_amount": 50,
+        })
+        self.assertIsNone(
+            _extract_correlated_invoice_json(body, "invoice:req:net-12345678")
+        )
+
+    def test_response_network_probe_keeps_only_counts_and_private_ids(self):
+        from scripts.gpt_web_response_bridge import CdpPage
+        page = CdpPage.__new__(CdpPage)
+        page.response_network_probe = None
+        page._response_request_ids = set()
+        page._response_finished_ids = []
+        page._response_seen_ids = set()
+        page.begin_response_network_probe()
+        page.observe_response_event({
+            "method": "Network.requestWillBeSent",
+            "params": {
+                "requestId": "r1",
+                "request": {
+                    "method": "POST",
+                    "url": "https://chatgpt.com/backend-api/conversation?token=secret",
+                    "headers": {"Authorization": "secret"},
+                    "postData": "private invoice",
+                },
+            },
+        })
+        page.observe_response_event({
+            "method": "Network.responseReceived",
+            "params": {"requestId": "r1", "response": {"status": 200}},
+        })
+        page.observe_response_event({
+            "method": "Network.loadingFinished",
+            "params": {"requestId": "r1", "encodedDataLength": 128},
+        })
+        self.assertEqual(page.response_network_probe["postRequests"], 1)
+        self.assertEqual(page.response_network_probe["responses"], 1)
+        self.assertEqual(page.response_network_probe["finished"], 1)
+        rendered = str(page.response_network_probe)
+        self.assertNotIn("secret", rendered)
+        self.assertNotIn("invoice", rendered)
+        self.assertNotIn("chatgpt.com", rendered)
