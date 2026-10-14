@@ -361,7 +361,8 @@ class GptWebUploadSettlementTests(unittest.TestCase):
         import inspect
         from scripts.gpt_web_response_bridge import invoke, _submission_snapshot
         source = inspect.getsource(invoke)
-        self.assertIn("upload_deadline = time.monotonic() + 8.0", source)
+        self.assertIn("_wait_attachment_accepted(", source)
+        self.assertIn("timeout_seconds=8.0", source)
         self.assertIn("GPT_WEB_ATTACHMENT_NOT_ACCEPTED", source)
         page = Mock()
         page.evaluate.return_value = {"attachmentSummary": {"fileInputStates": [{"acceptsImage": True, "selectedCount": 1}]}}
