@@ -11,10 +11,13 @@ on:
       - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_gemini_cli_one.py'
       - 'tests/test_gemini_cli_install_provider.py'
+      - 'scripts/probe_antigravity_cli_one.py'
+      - 'tests/test_antigravity_cli_one_probe.py'
       - '.github/workflows/gemini-cli-one-guard.yml'
   push:
     branches:
       - core/issue-623-gemini-cli-one
+      - core/integration
     paths:
       - 'agentos_node/gemini_cli_one_hook.py'
       - 'agentos_node/gemini_cli_install_provider.py'
@@ -24,6 +27,8 @@ on:
       - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_gemini_cli_one.py'
       - 'tests/test_gemini_cli_install_provider.py'
+      - 'scripts/probe_antigravity_cli_one.py'
+      - 'tests/test_antigravity_cli_one_probe.py'
       - '.github/workflows/gemini-cli-one-guard.yml'
 
 permissions:
@@ -43,8 +48,10 @@ jobs:
       - name: Compile candidate
         run: |
           python -m py_compile             agentos_node/gemini_cli_one_hook.py             agentos_node/gemini_cli_install_provider.py             scripts/install_gemini_cli_one.py
+          python -m py_compile scripts/probe_antigravity_cli_one.py tests/test_antigravity_cli_one_probe.py
           bash -n scripts/install_oracle_gemini_cli_one.sh
       - name: Verify Gemini CLI ONE contracts
         run: |
           python -m unittest tests.test_gemini_cli_one -v
+          python -m unittest tests.test_antigravity_cli_one_probe -v
           python -m pytest -q tests/test_gemini_cli_install_provider.py
