@@ -552,7 +552,7 @@ class UcStrictJsonReplyTests(unittest.TestCase):
         from scripts.gpt_web_response_bridge import _assistant_text
         source=inspect.getsource(_assistant_text)
         self.assertIn("location.pathname.startsWith('/uc/')",source)
-        self.assertIn("JSON.parse(value)",source)
+        self.assertIn("JSON.parse(text)",source)
         self.assertIn("payload.agentos_request_id !== id",source)
         self.assertIn("total_amount",source)
         self.assertIn('node.closest(\'form,nav,aside',source)
