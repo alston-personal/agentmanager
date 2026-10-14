@@ -10,7 +10,7 @@ from pathlib import PurePosixPath
 
 RED_PREFIXES = (
     ".agent/", ".agentos/", ".github/workflows/",
-    "agentos/core/", "core/", "one/", "supervisor/",
+    "agent_core/", "agentos_node/", "agentos/core/", "core/", "one/", "supervisor/",
     "executor/", "node/", "scripts/deploy_",
     "scripts/check_", "docs/CORE_DEPLOYMENT",
 )
