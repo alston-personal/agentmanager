@@ -1,0 +1,51 @@
+name: Branch Convergence Merge Diagnostic
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  merge-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Diagnose three-way merge, never push
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p merge-diagnostic
+          git config user.name 'AgentOS Merge Diagnostic'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin main
+          {
+            echo "pr_head=$(git rev-parse HEAD)"
+            echo "main_head=$(git rev-parse FETCH_HEAD)"
+            echo "merge_base=$(git merge-base HEAD FETCH_HEAD)"
+          } > merge-diagnostic/refs.txt
+          set +e
+          git merge --no-commit --no-ff FETCH_HEAD > merge-diagnostic/merge-output.txt 2>&1
+          result=$?
+          set -e
+          git diff --name-only --diff-filter=U > merge-diagnostic/conflicted-paths.txt
+          git ls-files -u > merge-diagnostic/unmerged-index.txt
+          cat merge-diagnostic/refs.txt
+          cat merge-diagnostic/merge-output.txt
+          cat merge-diagnostic/conflicted-paths.txt
+          echo "merge_exit=$result" >> merge-diagnostic/refs.txt
+          if [ "$result" -ne 0 ]; then
+            exit 1
+          fi
+      - name: Upload diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-merge-diagnostic-${{ github.run_id }}
+          path: merge-diagnostic/
+          if-no-files-found: warn

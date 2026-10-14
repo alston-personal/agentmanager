@@ -5,6 +5,7 @@ import grp
 import hashlib
 import json
 import os
+import pwd
 from pathlib import Path
 import stat
 import subprocess
@@ -48,6 +49,17 @@ def _share(path: Path, *, directory: bool = False) -> None:
         current = path.stat()
         if current.st_gid != gid or stat.S_IMODE(current.st_mode) != desired_mode:
             raise
+
+
+def _verify_continuation_capsule_owner(path: Path) -> None:
+    """Narrow Unix ownership gate; not a substitute for ONE authorization."""
+    info = path.lstat()
+    expected_uid = pwd.getpwnam("agentos-node").pw_uid
+    expected_gid = grp.getgrnam(SHARED_GROUP).gr_gid
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != expected_uid
+            or info.st_gid != expected_gid or stat.S_IMODE(info.st_mode) != 0o660):
+        raise PermissionError("continuation capsule must be agentos-node owned, shared-group regular file")
+
 
 
 class Paths:
@@ -129,6 +141,30 @@ def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
         "required_path": "governed_studio_web_release",
     }
 
+
+
+def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
+    """Publish the canonical AgentOS Core continuation through one narrow action.
+
+    The relay accepts no arbitrary path or shell. Project identity, mutation
+    authority, schemas, index generation, and canonical target paths are all
+    revalidated by the publisher under the ubuntu execution identity.
+    """
+    from agent_core.project_continuation_index import publish_project_continuation
+    expected_keys = {"expected_index_id", "expected_ir_id"}
+    base_keys = {"project_id", "execution_head", "continuation"}
+    if not isinstance(params, dict) or not base_keys.issubset(params) or set(params) - (base_keys | expected_keys):
+        raise ValueError("publish_continuation accepts only canonical payload and optional CAS fence")
+    fence_keys = set(params) & expected_keys
+    if fence_keys and fence_keys != expected_keys:
+        raise ValueError("expected_index_id and expected_ir_id must be supplied together")
+    payload = {key: params[key] for key in base_keys}
+    if fence_keys:
+        if not all(isinstance(params[k], str) and params[k].strip() for k in expected_keys):
+            raise ValueError("CAS fence values must be non-empty strings")
+        return publish_project_continuation(payload, expected_index_id=params["expected_index_id"],
+                                            expected_ir_id=params["expected_ir_id"])
+    return publish_project_continuation(payload)
 
 
 def _register_agentos_core_project(params: dict[str, Any]) -> dict[str, Any]:
@@ -1381,7 +1417,9 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "agentos.realm-fabric.install_release": _install_realm_fabric_release,
     "agentos.maintenance.issue71_repair_node_registry": _issue71_repair_node_registry,
     "agentos.project.register_core": _register_agentos_core_project,
+    "agentos.project.publish_continuation": _publish_project_continuation,
 }
+
 
 
 class ActionRelayWorker:
@@ -1444,6 +1482,8 @@ class ActionRelayWorker:
             supplied = str(capsule.get("digest") or ""); unsigned = dict(capsule); unsigned.pop("digest", None)
             expected = "sha256:" + hashlib.sha256(_canonical(unsigned)).hexdigest()
             if supplied != expected: raise ValueError("capsule digest mismatch")
+            if action == "agentos.project.publish_continuation":
+                _verify_continuation_capsule_owner(processing)
             result = ACTIONS[action](params)
             # governed_receipt_reserved_fields_v1: the relay owns receipt identity.
             # Capability results may carry their own schema/metadata but must never

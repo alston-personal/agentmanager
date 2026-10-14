@@ -1,0 +1,39 @@
+name: Project Continuation Publication Contract
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agent_core/project_continuation_index.py'
+      - 'agent_core/resolve_facade.py'
+      - 'agentos_node/action_relay.py'
+      - 'tests/test_project_continuation_index.py'
+      - 'tests/test_continuation_cutover_receipt.py'
+      - 'scripts/check_continuation_cutover_receipt.py'
+      - '.github/workflows/project-continuation-publication-contract.yml'
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Locate tracked continuation writers in pinned integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 5dc29632e6f2b04a33d3d8621b2d6f1ff2c95f27
+          git grep -I -l -E 'publish_project_continuation|agentos[.]project[.]publish_continuation|expected_index_id' 5dc29632e6f2b04a33d3d8621b2d6f1ff2c95f27 -- '*.py' '*.yml' '*.yaml' '*.sh' > continuation-consumer-paths.txt || test "$?" -eq 1
+          echo "Tracked matching paths:"
+          cat continuation-consumer-paths.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: continuation-consumer-paths-${{ github.run_id }}
+          path: continuation-consumer-paths.txt
+          retention-days: 30
+      - name: Validate continuation publisher and relay syntax
+        run: |
+          python3 -m py_compile agent_core/project_continuation_index.py agentos_node/action_relay.py
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_project_continuation_index tests.test_action_relay tests.test_continuation_cutover_receipt -v
