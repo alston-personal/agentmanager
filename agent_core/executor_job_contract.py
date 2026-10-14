@@ -455,6 +455,8 @@ def project_executor_job_receipt(
             "gemini_cli_version",
             "agy_probe_sha256",
             "agy_marker_matched",
+            "agy_version_exit_code",
+            "agy_version_detected",
             "gemini_cli_diagnostic_tags",
             "codex_cli_version",
             "codex_liveness",
