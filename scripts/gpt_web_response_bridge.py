@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from datetime import datetime, timezone
 import json
 import time
@@ -38,6 +39,87 @@ def atomic_json(path: Path, payload: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(tmp, path)
+
+
+def _invoice_payload_matches(value: Any, request_id: str) -> bool:
+    return (
+        isinstance(value, dict)
+        and str(value.get("agentos_request_id") or "") == request_id
+        and "invoice_number" in value
+        and "total_amount" in value
+    )
+
+
+def _extract_correlated_invoice_json(text: str, request_id: str) -> str | None:
+    """Extract only an invoice JSON object correlated to this invocation."""
+    if not isinstance(text, str) or not text or len(text) > 2 * 1024 * 1024:
+        return None
+
+    queue = [text]
+    seen: set[str] = set()
+    decoder = json.JSONDecoder()
+    visited = 0
+
+    while queue and visited < 500:
+        current = queue.pop(0)
+        if not isinstance(current, str) or current in seen:
+            continue
+        seen.add(current)
+        visited += 1
+        if len(current) > 2 * 1024 * 1024:
+            continue
+        stripped = current.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.replace("```json", "", 1).replace("```", "").strip()
+
+        parsed: Any = None
+        try:
+            parsed = json.loads(stripped)
+        except Exception:
+            parsed = None
+
+        if parsed is not None:
+            stack = [parsed]
+            while stack and visited < 1000:
+                item = stack.pop()
+                visited += 1
+                if _invoice_payload_matches(item, request_id):
+                    return json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+                if isinstance(item, dict):
+                    stack.extend(item.values())
+                elif isinstance(item, list):
+                    stack.extend(item)
+                elif isinstance(item, str) and item not in seen and len(item) <= 2 * 1024 * 1024:
+                    queue.append(item)
+
+        # SSE/event-stream bodies frequently carry one JSON object per data line.
+        for line in stripped.splitlines():
+            candidate = line.strip()
+            if candidate.startswith("data:"):
+                candidate = candidate[5:].strip()
+            if candidate and candidate != "[DONE]" and candidate not in seen:
+                queue.append(candidate)
+
+        # A JSON object can be embedded in event prose or another wrapper.
+        if request_id in stripped:
+            id_pos = stripped.find(request_id)
+            window_start = max(0, id_pos - 65536)
+            starts = [i for i in range(window_start, id_pos + 1) if stripped[i:i+1] == "{"]
+            for start in reversed(starts[-120:]):
+                try:
+                    obj, _ = decoder.raw_decode(stripped[start:])
+                except Exception:
+                    continue
+                if _invoice_payload_matches(obj, request_id):
+                    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+                if isinstance(obj, (dict, list)):
+                    try:
+                        encoded = json.dumps(obj, ensure_ascii=False)
+                    except Exception:
+                        continue
+                    if encoded not in seen:
+                        queue.append(encoded)
+    return None
 
 
 def write_descriptor(root: Path, *, ready: bool) -> None:
@@ -120,6 +202,10 @@ class CdpPage:
         self.upload_network_probe: dict[str, Any] | None = None
         self._upload_request_ids: set[str] = set()
         self._upload_request_classes: dict[str, str] = {}
+        self.response_network_probe: dict[str, Any] | None = None
+        self._response_request_ids: set[str] = set()
+        self._response_finished_ids: list[str] = []
+        self._response_seen_ids: set[str] = set()
 
     def observe_upload_event(self, event: dict[str, Any]) -> None:
         probe = self.upload_network_probe
@@ -164,6 +250,56 @@ class CdpPage:
         self._upload_request_classes = {}
         self.upload_network_probe = {"postRequests": 0, "postHostFamilies": {"chatgpt": 0, "other": 0}, "responseStatuses": {}, "networkFailures": 0, "categories": {"file": {"requests": 0, "statuses": {}, "failures": 0}, "other": {"requests": 0, "statuses": {}, "failures": 0}}}
 
+    def begin_response_network_probe(self) -> None:
+        self._response_request_ids = set()
+        self._response_finished_ids = []
+        self._response_seen_ids = set()
+        self.response_network_probe = {
+            "postRequests": 0,
+            "responses": 0,
+            "finished": 0,
+            "failures": 0,
+            "bodyAttempts": 0,
+            "tooLarge": 0,
+        }
+
+    def observe_response_event(self, event: dict[str, Any]) -> None:
+        probe = self.response_network_probe
+        if probe is None:
+            return
+        method = event.get("method")
+        params = event.get("params") or {}
+        rid = str(params.get("requestId") or "")
+        if method == "Network.requestWillBeSent":
+            request = params.get("request") or {}
+            url = str(request.get("url") or "")
+            parsed = urllib.parse.urlsplit(url)
+            path = parsed.path.lower()
+            if (
+                str(request.get("method") or "") == "POST"
+                and parsed.hostname == "chatgpt.com"
+                and not any(k in path for k in ("/files", "/upload", "/attachment", "/assets"))
+                and rid
+                and len(self._response_request_ids) < 40
+            ):
+                self._response_request_ids.add(rid)
+                probe["postRequests"] += 1
+        elif method == "Network.responseReceived" and rid in self._response_request_ids:
+            status = int((params.get("response") or {}).get("status") or 0)
+            if 200 <= status < 300:
+                probe["responses"] += 1
+        elif method == "Network.loadingFinished" and rid in self._response_request_ids:
+            encoded = int(params.get("encodedDataLength") or 0)
+            if encoded > 2 * 1024 * 1024:
+                probe["tooLarge"] += 1
+                self._response_seen_ids.add(rid)
+            elif rid not in self._response_finished_ids:
+                self._response_finished_ids.append(rid)
+                probe["finished"] += 1
+        elif method == "Network.loadingFailed" and rid in self._response_request_ids:
+            probe["failures"] += 1
+            self._response_seen_ids.add(rid)
+
     def close(self) -> None:
         try:
             self.ws.close()
@@ -191,6 +327,7 @@ class CdpPage:
                 self.file_chooser_events.append({"backendNodeId":params.get("backendNodeId")})
             if message.get("method") and (not session_id or message.get("sessionId") == session_id):
                 self.observe_upload_event(message)
+                self.observe_response_event(message)
             if message.get("id") != call_id:
                 continue
             if "error" in message:
@@ -434,6 +571,44 @@ def _page(cdp_url: str) -> CdpTargetSession:
                         browser.close()
                 except Exception:
                     pass
+
+
+def _network_response_text(page: Any, request_id: str) -> str | None:
+    connection = getattr(page, "connection", None)
+    if connection is None:
+        return None
+    probe = getattr(connection, "response_network_probe", None)
+    if probe is None:
+        return None
+
+    for rid in list(getattr(connection, "_response_finished_ids", [])):
+        if rid in connection._response_seen_ids:
+            continue
+        connection._response_seen_ids.add(rid)
+        probe["bodyAttempts"] += 1
+        try:
+            result = page.call("Network.getResponseBody", {"requestId": rid})
+        except Exception:
+            continue
+        body = result.get("body")
+        if not isinstance(body, str):
+            continue
+        if result.get("base64Encoded") is True:
+            try:
+                raw = base64.b64decode(body, validate=False)
+                if len(raw) > 2 * 1024 * 1024:
+                    probe["tooLarge"] += 1
+                    continue
+                body = raw.decode("utf-8", errors="replace")
+            except Exception:
+                continue
+        if len(body) > 2 * 1024 * 1024:
+            probe["tooLarge"] += 1
+            continue
+        parsed = _extract_correlated_invoice_json(body, request_id)
+        if parsed:
+            return parsed
+    return None
 
 
 def _assistant_text(page: CdpPage, request_id: str) -> str | None:
@@ -1154,6 +1329,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             timeout_seconds=15.0,
         )
 
+        page.connection.begin_response_network_probe()
         _click_send(page, request_id=request_id, timeout_seconds=12.0)
         _confirm_submit(
             page,
@@ -1171,6 +1347,8 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         empty_message_ticks = 0
         while time.monotonic() < deadline:
             text = _assistant_text(page, request_id)
+            if not text:
+                text = _network_response_text(page, request_id)
             if text:
                 if len(text) > MAX_TEXT:
                     raise RuntimeError("GPT_WEB_RESPONSE_TOO_LARGE")
@@ -1213,6 +1391,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
         last_snapshot["sawGenerationAfterSubmit"] = saw_generation
         last_snapshot["sawCorrelatedUserAfterSubmit"] = saw_correlated_user
         last_snapshot["sawAssistantAfterSubmit"] = saw_assistant
+        last_snapshot["responseNetworkProbe"] = page.connection.response_network_probe
         # This final structural snapshot helps distinguish a changed page route
         # from stale selectors; no user/assistant content is logged.
         raise RuntimeError(
