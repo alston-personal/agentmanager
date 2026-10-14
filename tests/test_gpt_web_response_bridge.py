@@ -294,16 +294,17 @@ class GptWebRouteCompatibilityTests(unittest.TestCase):
 
 
 class GptWebTargetRoutingTests(unittest.TestCase):
-    def test_excludes_uc_target_and_reuses_normal_chat(self):
+    def test_allows_clean_uc_target(self):
         from scripts.gpt_web_response_bridge import _page
-        normal = {"type": "page", "url": "https://chatgpt.com/c/abc", "webSocketDebuggerUrl": "ws://normal"}
         uc = {"type": "page", "url": "https://chatgpt.com/uc/temp", "webSocketDebuggerUrl": "ws://uc"}
         endpoint = Mock()
-        endpoint.evaluate.return_value = normal["url"]
-        with patch("scripts.gpt_web_response_bridge._targets", return_value=[normal, uc]), \
-             patch("scripts.gpt_web_response_bridge._open_target_connection", return_value=endpoint) as opened:
+        endpoint.evaluate.return_value = uc["url"]
+        clean = {"attachmentSummary":{"imageStructure":{"inFormBlob":0},"attachmentControlCount":0}}
+        with patch("scripts.gpt_web_response_bridge._targets", return_value=[uc]), \
+             patch("scripts.gpt_web_response_bridge._open_target_connection", return_value=endpoint) as opened, \
+             patch("scripts.gpt_web_response_bridge._submission_snapshot", return_value=clean):
             self.assertIs(_page("http://127.0.0.1:9222"), endpoint)
-        opened.assert_called_once_with("http://127.0.0.1:9222", normal)
+        opened.assert_called_once_with("http://127.0.0.1:9222", uc)
 
     def test_fails_closed_without_clean_existing_target(self):
         from scripts.gpt_web_response_bridge import _page
@@ -542,6 +543,7 @@ class FreshTargetReadinessContractTests(unittest.TestCase):
         self.assertIn('time.monotonic() + 12.0',source)
         self.assertIn('GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE:',source)
         self.assertIn('Target.closeTarget',source)
+        self.assertNotIn('GPT_WEB_FRESH_TARGET_UNSUPPORTED_ROUTE',source)
 
 
 class UcStrictJsonReplyTests(unittest.TestCase):
