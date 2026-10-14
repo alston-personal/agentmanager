@@ -180,3 +180,47 @@ class GptWebComposerDiscoveryTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(RuntimeError,"GPT_WEB_LOGIN_REQUIRED"):
             _focus_composer(page,timeout_seconds=0.2)
+
+
+class GptWebComposerDiscoveryTests(unittest.TestCase):
+    def test_focus_composer_accepts_visible_role_textbox(self):
+        from scripts.gpt_web_response_bridge import _focus_composer
+
+        class Page:
+            def __init__(self):
+                self.calls = 0
+            def evaluate(self, expression):
+                self.calls += 1
+                if "return {" in expression and "selector" in expression:
+                    return {
+                        "ok": True,
+                        "selector": '[role="textbox"]',
+                        "tag": "DIV",
+                        "contenteditable": "true",
+                        "role": "textbox",
+                        "testid": None,
+                    }
+                return {}
+
+        result = _focus_composer(Page(), timeout_seconds=0.1)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["selector"], '[role="textbox"]')
+
+    def test_focus_composer_reports_login_required(self):
+        from scripts.gpt_web_response_bridge import _focus_composer
+
+        class Page:
+            def evaluate(self, expression):
+                if "return {" in expression and "selector" in expression:
+                    return {"ok": False}
+                return {
+                    "href": "https://chatgpt.com/",
+                    "title": "ChatGPT",
+                    "readyState": "complete",
+                    "fileInputs": 1,
+                    "loginRequired": True,
+                    "candidates": [],
+                }
+
+        with self.assertRaisesRegex(RuntimeError, "GPT_WEB_LOGIN_REQUIRED"):
+            _focus_composer(Page(), timeout_seconds=0.1)
