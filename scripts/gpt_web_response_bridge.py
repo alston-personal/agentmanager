@@ -353,7 +353,6 @@ def _page(cdp_url: str) -> CdpTargetSession:
         item for item in _targets(cdp_url)
         if item.get("type") == "page"
         and str(item.get("url") or "").startswith("https://chatgpt.com/")
-        and not str(item.get("url") or "").startswith("https://chatgpt.com/uc/")
         and item.get("webSocketDebuggerUrl")
     ]
     for target in reversed(candidates):
@@ -361,8 +360,6 @@ def _page(cdp_url: str) -> CdpTargetSession:
         try:
             page = _open_target_connection(cdp_url, target)
             href = page.evaluate("location.href")
-            if str(href).startswith("https://chatgpt.com/uc/"):
-                continue
             snapshot = _submission_snapshot(page, "agentos-clean-target-check")
             attachment = snapshot.get("attachmentSummary") or {}
             images = attachment.get("imageStructure") or {}
@@ -408,8 +405,6 @@ def _page(cdp_url: str) -> CdpTargetSession:
         images = attachment.get("imageStructure") or {}
         if int(images.get("inFormBlob") or 0) or int(attachment.get("attachmentControlCount") or 0):
             raise RuntimeError("GPT_WEB_FRESH_TARGET_NOT_CLEAN")
-        if str(page.evaluate("location.pathname") or "").startswith("/uc/"):
-            raise RuntimeError("GPT_WEB_FRESH_TARGET_UNSUPPORTED_ROUTE")
         selected = page
         page = None
         return selected
