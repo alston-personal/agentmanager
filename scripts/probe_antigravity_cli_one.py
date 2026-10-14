@@ -90,9 +90,13 @@ def main() -> int:
             print(json.dumps(receipt("NOT_ELF_BINARY")))
             return 1
         version = safe_run([str(BINARY), "--version"], timeout=15)
-        version_value = version.stdout.strip()
-        if version.returncode or not re.fullmatch(r"agy [0-9]+(?:\.[0-9]+){1,3}(?:[-+][a-zA-Z0-9._-]+)?", version_value):
-            print(json.dumps(receipt("VERSION_UNVERIFIED", executable=str(BINARY), sha256=digest)))
+        version_raw = (version.stdout or "") + "\n" + (version.stderr or "")
+        # Match known CLI version forms, persist only normalized semver.
+        version_match = re.search(r"(?i)(?:^|\s)(?:agy\s+(?:version\s+)?)?(v?\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9._-]+)?)(?=\s|$)", version_raw.strip())
+        version_value = "agy " + version_match.group(1).lstrip("v") if version_match else ""
+        if version.returncode or not version_match:
+            print(json.dumps(receipt("VERSION_UNVERIFIED", executable=str(BINARY), sha256=digest,
+                                     version_exit_code=version.returncode, version_detected=bool(version_match))))
             return 1
         start = time.monotonic()
         run = safe_run(
