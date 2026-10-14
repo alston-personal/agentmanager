@@ -562,3 +562,17 @@ class BoundedUcReplyWaitTests(unittest.TestCase):
         self.assertNotIn("empty_message_ticks >= 6",code)
         self.assertIn('ucMessageSurfacePending',code)
         self.assertIn('deadline = time.monotonic() + 45',code)
+
+
+class GptWebAttachmentAcceptanceTests(unittest.TestCase):
+    def test_attachment_accepted_on_preview_growth(self):
+        from scripts.gpt_web_response_bridge import _attachment_accepted
+        before={"attachmentSummary":{"imagePreviewCount":0,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
+        after={"attachmentSummary":{"imagePreviewCount":1,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
+        self.assertTrue(_attachment_accepted(before,after))
+
+    def test_attachment_rejected_when_filelist_only_without_ui_growth(self):
+        from scripts.gpt_web_response_bridge import _attachment_accepted
+        before={"attachmentSummary":{"imagePreviewCount":0,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
+        after={"attachmentSummary":{"imagePreviewCount":0,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
+        self.assertFalse(_attachment_accepted(before,after))
