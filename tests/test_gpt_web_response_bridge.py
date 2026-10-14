@@ -585,8 +585,23 @@ class GptWebAttachmentAcceptanceTests(unittest.TestCase):
 class GptWebPreSubmitInvariantTests(unittest.TestCase):
     def test_invoke_requires_attachment_to_survive_until_submit(self):
         import inspect
-        from scripts.gpt_web_response_bridge import invoke
+        from scripts.gpt_web_response_bridge import invoke, _wait_pre_submit_ready
         source=inspect.getsource(invoke)
-        self.assertIn("GPT_WEB_ATTACHMENT_LOST_BEFORE_SUBMIT", source)
-        self.assertIn("_attachment_accepted(upload_baseline, inserted)", source)
-        self.assertIn("GPT_WEB_SEND_NOT_ENABLED_BEFORE_SUBMIT", source)
+        helper=inspect.getsource(_wait_pre_submit_ready)
+        self.assertIn("_wait_pre_submit_ready(", source)
+        self.assertIn("GPT_WEB_ATTACHMENT_LOST_BEFORE_SUBMIT", helper)
+        self.assertIn("_attachment_accepted(upload_baseline, last)", helper)
+        self.assertIn("GPT_WEB_SEND_NOT_ENABLED_BEFORE_SUBMIT", helper)
+
+
+class GptWebPreSubmitSettleTests(unittest.TestCase):
+    def test_invoke_waits_for_send_enablement(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import invoke, _wait_pre_submit_ready
+        source=inspect.getsource(invoke)
+        helper=inspect.getsource(_wait_pre_submit_ready)
+        self.assertIn("_wait_pre_submit_ready(", source)
+        self.assertIn("timeout_seconds=15.0", source)
+        self.assertIn("GPT_WEB_PROMPT_LOST_BEFORE_SUBMIT", helper)
+        self.assertIn("GPT_WEB_ATTACHMENT_LOST_BEFORE_SUBMIT", helper)
+        self.assertIn("GPT_WEB_SEND_NOT_ENABLED_BEFORE_SUBMIT", helper)

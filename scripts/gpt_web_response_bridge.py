@@ -723,6 +723,41 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {"invalid_snapshot":True}
 
 
+def _wait_pre_submit_ready(
+    page: Any,
+    *,
+    request_id: str,
+    upload_baseline: dict[str, Any],
+    timeout_seconds: float = 15.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        last = _submission_snapshot(page, request_id)
+        if last.get("composerHasRequest") is not True:
+            raise RuntimeError(
+                "GPT_WEB_PROMPT_LOST_BEFORE_SUBMIT:" +
+                json.dumps(last, ensure_ascii=False, sort_keys=True)
+            )
+        if not _attachment_accepted(upload_baseline, last):
+            raise RuntimeError(
+                "GPT_WEB_ATTACHMENT_LOST_BEFORE_SUBMIT:" +
+                json.dumps(last, ensure_ascii=False, sort_keys=True)
+            )
+        enabled_send = any(
+            int(item.get("enabled") or 0) > 0
+            for item in (last.get("send") or [])
+            if isinstance(item, dict)
+        )
+        if enabled_send:
+            return last
+        time.sleep(0.4)
+    raise RuntimeError(
+        "GPT_WEB_SEND_NOT_ENABLED_BEFORE_SUBMIT:" +
+        json.dumps(last, ensure_ascii=False, sort_keys=True)
+    )
+
+
 def _click_send(page: Any, *, request_id: str, timeout_seconds: float = 12.0) -> dict[str, Any]:
     selectors_json=json.dumps(SEND_SELECTORS)
     deadline=time.monotonic()+timeout_seconds
@@ -1037,25 +1072,15 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
                 json.dumps(inserted, ensure_ascii=False, sort_keys=True)
             )
 
-        # Upload acceptance must still be true immediately before submit.
-        # ChatGPT can transiently render an attachment and then discard it
-        # while the composer rerenders. Never send a text-only invoice request.
-        if not _attachment_accepted(upload_baseline, inserted):
-            raise RuntimeError(
-                "GPT_WEB_ATTACHMENT_LOST_BEFORE_SUBMIT:" +
-                json.dumps(inserted, ensure_ascii=False, sort_keys=True)
-            )
-
-        enabled_send = any(
-            int(item.get("enabled") or 0) > 0
-            for item in (inserted.get("send") or [])
-            if isinstance(item, dict)
+        # Upload acceptance must remain true while ChatGPT finishes any
+        # asynchronous attachment processing. Wait boundedly for Send to become
+        # enabled, but fail immediately if the prompt or attachment disappears.
+        _wait_pre_submit_ready(
+            page,
+            request_id=request_id,
+            upload_baseline=upload_baseline,
+            timeout_seconds=15.0,
         )
-        if not enabled_send:
-            raise RuntimeError(
-                "GPT_WEB_SEND_NOT_ENABLED_BEFORE_SUBMIT:" +
-                json.dumps(inserted, ensure_ascii=False, sort_keys=True)
-            )
 
         _click_send(page, request_id=request_id, timeout_seconds=12.0)
         _confirm_submit(
