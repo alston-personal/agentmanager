@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -37,20 +38,24 @@ def main() -> int:
     found = latest_candidate()
     if found is None:
         print("antigravity_image_inspect_probe=SKIP_NO_CANDIDATE")
-        return 0
+        return 1
 
     _, job, asset = found
     work = Path("/home/ubuntu/agent-data/runtime/agy-image-probe")
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True, exist_ok=True)
     shutil.copy2(asset, work / "candidate.webp")
+    candidate_sha256 = hashlib.sha256((work / "candidate.webp").read_bytes()).hexdigest()
 
     layer, item = next(iter(((job.get("input") or {}).get("selectedLayers") or {}).items()))
     source = str((item or {}).get("sourceImageUrl") or "")
     if not source.startswith(("http://", "https://")):
         print("antigravity_image_inspect_probe=INVALID_REFERENCE")
-        return 0
+        return 1
     _download(source, work / "reference.jpg")
+    reference_sha256 = hashlib.sha256((work / "reference.jpg").read_bytes()).hexdigest()
+    print("antigravity_image_probe_candidate_sha256=" + candidate_sha256)
+    print("antigravity_image_probe_reference_sha256=" + reference_sha256)
 
     client = AntigravityRelayClient("/home/ubuntu/agent-data/runtime/antigravity-relay")
     instruction = (
@@ -95,13 +100,26 @@ def main() -> int:
             print("antigravity_image_probe_error=" + error)
             if receipt.get("ok") is not True:
                 print("antigravity_image_inspect_probe=BACKEND_ERROR")
-                return 0
-            compact = output.lower().replace(" ", "")
-            if '"imagereadable":true' in compact:
+                return 1
+            try:
+                parsed = json.loads(str(receipt.get("stdout") or "").strip())
+                valid = (
+                    isinstance(parsed, dict)
+                    and parsed.get("schema") == "agentos.image-inspect-probe/v1"
+                    and parsed.get("imageReadable") is True
+                    and parsed.get("layer") == layer
+                    and isinstance(parsed.get("match"), bool)
+                    and isinstance(parsed.get("evidence"), str)
+                    and len(parsed["evidence"].strip()) >= 8
+                )
+            except (ValueError, TypeError, KeyError):
+                valid = False
+            if valid:
+                print("antigravity_image_probe_match=" + str(parsed["match"]))
                 print("antigravity_image_inspect_probe=READY")
-            else:
-                print("antigravity_image_inspect_probe=UNSUPPORTED")
-            return 0
+                return 0
+            print("antigravity_image_inspect_probe=INVALID_RECEIPT")
+            return 1
         time.sleep(2)
 
     print("antigravity_image_inspect_probe=TIMEOUT")
@@ -125,7 +143,7 @@ def main() -> int:
             print(f"antigravity_relay_{name}_gid={stat.st_gid}")
         except Exception as exc:
             print(f"antigravity_relay_{name}_inspect_error={type(exc).__name__}:{exc}")
-    return 0
+    return 1
 
 
 if __name__ == "__main__":
