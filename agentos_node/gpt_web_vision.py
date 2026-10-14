@@ -70,6 +70,11 @@ def build_plan(request: dict[str, Any], *, workspace: Path) -> dict[str, Any]:
             "Read the attached invoice image and return ONLY one JSON object. "
             "Do not guess unreadable values; use null and list uncertain fields. "
             "Required fields: " + ", ".join(str(x) for x in fields) + ". "
+            "For Taiwan uniform invoices, invoice_number must preserve the complete printed "
+            "number: exactly two uppercase Latin letters followed by eight digits when readable. "
+            "Never drop the two-letter prefix; if the prefix is unreadable, return null and mark "
+            "invoice_number uncertain rather than returning digits only. "
+            "seller_tax_id must preserve all eight digits when readable. "
             "Amounts must be numbers, line_items must be an array, and include "
             "needs_review:boolean plus uncertain_fields:string[]. "
             + 'Also include exactly "agentos_request_id":"' + request_id + '" at top level. '
