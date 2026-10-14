@@ -40,12 +40,14 @@ class AntigravityJobTests(unittest.TestCase):
                         "classification": "ANTIGRAVITY_INFERENCE_PASS",
                         "successful": True, "expected_marker_matched": True,
                         "version": "agy 1.3.4", "sha256": "a" * 64,
-                        "secret": "SHOULD_NOT_ESCAPE"}
+                        "secret": "SHOULD_NOT_ESCAPE", "version_exit_code": 0, "version_detected": True}
             with patch("agentos_node.antigravity_cli_probe_provider.subprocess.run",
                        return_value=CompletedProcess([], 0, json.dumps(response), "")):
                 result = run_antigravity_probe(self.request, runtime_root=root)
         self.assertTrue(result["successful"])
         self.assertEqual(result["agy_probe_sha256"], "a" * 64)
+        self.assertEqual(result["agy_version_exit_code"], 0)
+        self.assertTrue(result["agy_version_detected"])
         self.assertNotIn("secret", result)
 
     def test_successful_false_even_if_verdict_text_passes(self):
