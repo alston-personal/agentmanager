@@ -5,6 +5,7 @@ on:
     branches: [core/integration]
     paths:
       - 'scripts/tryon_render_worker.py'
+      - 'capabilities/wardrobe_visual_review/**'
       - 'scripts/deploy_mio_tryon_worker_user.sh'
       - '.github/workflows/oracle-deploy-mio-tryon-worker.yml'
   workflow_dispatch:
@@ -65,6 +66,7 @@ jobs:
           test -s /home/ubuntu/.local/share/mio-tryon/runtime-lib/capabilities/wardrobe_visual_review/review.py
           test -s /home/ubuntu/.local/share/mio-tryon/runtime-lib/capabilities/wardrobe_visual_review/gemini_backend.py
           grep -Fq 'review_with_gemini' "$WORKER"
+          grep -Fq '_is_terminal_oauth_blocked' /home/ubuntu/.local/share/mio-tryon/runtime-lib/capabilities/wardrobe_visual_review/gemini_backend.py
           echo "mio_visual_review_backend_installed=PASS"
           echo "mio_tryon_worker_production_deploy=PASS"
           REMOTE
