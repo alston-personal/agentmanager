@@ -42,7 +42,7 @@ class ProbeTests(unittest.TestCase):
 
                     def runner(args, *, timeout):
                         if args[-1] == "--version":
-                            return CompletedProcess(args, 0, version_text + "\\n", "")
+                            return CompletedProcess(args, 0, version_text + "\n", "")
                         return CompletedProcess(args, 0, '{"response":"AGENTOS_GEMINI_READY"}', "")
 
                     with patch.object(probe, "BINARY", binary), patch.object(
