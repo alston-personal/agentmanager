@@ -1,73 +1,51 @@
 name: Branch Convergence Merge Diagnostic
 on:
-  push:
-    branches: [convergence/project-continuation-publish-20261013]
-    paths: [.github/workflows/branch-convergence-merge-diagnostic.yml]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
-  contents: write
-concurrency:
-  group: branch-convergence-merge-repair-${{ github.ref }}
-  cancel-in-progress: false
+  contents: read
 jobs:
-  reconcile-known-document-conflict:
+  merge-diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: github.ref == 'refs/heads/convergence/project-continuation-publish-20261013'
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout PR head
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.sha }}
-      - name: Merge main with strict known-conflict guard
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Diagnose three-way merge, never push
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'AgentOS Convergence Bot'
+          mkdir -p merge-diagnostic
+          git config user.name 'AgentOS Merge Diagnostic'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          echo "pr_head=$(git rev-parse HEAD)"
-          echo "main_head=$(git rev-parse origin/main)"
-          if git merge-base --is-ancestor origin/main HEAD; then
-            echo "Main already an ancestor; nothing to merge."
-            exit 0
+          git fetch --no-tags origin main
+          {
+            echo "pr_head=$(git rev-parse HEAD)"
+            echo "main_head=$(git rev-parse FETCH_HEAD)"
+            echo "merge_base=$(git merge-base HEAD FETCH_HEAD)"
+          } > merge-diagnostic/refs.txt
+          set +e
+          git merge --no-commit --no-ff FETCH_HEAD > merge-diagnostic/merge-output.txt 2>&1
+          result=$?
+          set -e
+          git diff --name-only --diff-filter=U > merge-diagnostic/conflicted-paths.txt
+          git ls-files -u > merge-diagnostic/unmerged-index.txt
+          cat merge-diagnostic/refs.txt
+          cat merge-diagnostic/merge-output.txt
+          cat merge-diagnostic/conflicted-paths.txt
+          echo "merge_exit=$result" >> merge-diagnostic/refs.txt
+          if [ "$result" -ne 0 ]; then
+            exit 1
           fi
-          if git merge --no-commit --no-ff origin/main; then
-            echo "Git auto-merged without conflicts."
-          else
-            mapfile -t paths < <(git diff --name-only --diff-filter=U)
-            printf 'Conflicts: %s\n' "${paths[*]}"
-            if [ "${#paths[@]}" -ne 1 ] || [ "${paths[0]}" != 'docs/CURRENT_STATE.md' ]; then
-              echo "Unexpected conflict set; refusing repair."
-              exit 1
-            fi
-            python3 - <<'PY'
-          import subprocess
-          from pathlib import Path
-          path = "docs/CURRENT_STATE.md"
-          def stage(n):
-              return subprocess.check_output(["git", "show", f":{n}:{path}"], text=True)
-          ours = stage(2)
-          theirs = stage(3)
-          anchor = "## Project continuation publication (candidate PR, 2026-10-13)"
-          if ours.count(anchor) != 1 or anchor in theirs:
-              raise SystemExit("Unexpected continuation anchor; refusing")
-          paragraph = ours[ours.index(anchor):].split("\n## ", 1)[0].rstrip()
-          if "agentos.project.publish_continuation" not in paragraph:
-              raise SystemExit("Continuation text missing; refusing")
-          Path(path).write_text(theirs.rstrip() + "\n\n" + paragraph + "\n")
-          PY
-            git add docs/CURRENT_STATE.md
-          fi
-          if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
-            echo "Unresolved conflict remains"; exit 1
-          fi
-          git diff --cached --check
-          PYTHONPATH=. python3 -m unittest tests.test_project_continuation_index tests.test_action_relay tests.test_continuation_cutover_receipt -q
-          python3 scripts/documentation_reality_guard.py --help >/dev/null 2>&1 || true
-          if ! git diff --cached --quiet; then
-            git commit -m 'merge: reconcile main into continuation publisher candidate (#1923)'
-            git push origin HEAD:refs/heads/convergence/project-continuation-publish-20261013
-          else
-            echo 'No staged changes after merge; no push required.'
-          fi
+      - name: Upload diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-merge-diagnostic-${{ github.run_id }}
+          path: merge-diagnostic/
+          if-no-files-found: warn
