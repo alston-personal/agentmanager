@@ -107,6 +107,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="surface://gemini-cli",
         read_only=False,
     ),
+    "antigravity.cli.probe": JobTypeSpec(
+        job_type="antigravity.cli.probe",
+        capability="agentos.executor.probe.antigravity-cli",
+        authority="bounded-read-only",
+        executor_class="antigravity-cli",
+        project_id="agentos-core",
+        workload_ref="surface://antigravity-cli",
+        read_only=True,
+    ),
     "gemini.cli.health": JobTypeSpec(
         job_type="gemini.cli.health",
         capability="agentos.executor.health.gemini-cli",
