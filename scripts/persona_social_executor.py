@@ -231,6 +231,24 @@ def select_action(ready):
     a failed data push left a candidate in Git but a journal on the node.
     Selection never validates media or changes the deferred image intent.
     """
+    # Observations are generally first, but an overdue reply must not be
+    # starved by a fresh observation candidate on every social timer tick.
+    # Use the existing write_intent_id/acceptance path for idempotency; do not
+    # manufacture or refresh an intent here.
+    now_utc=datetime.now(timezone.utc)
+    overdue_replies=[]
+    for action in ready:
+        if action.get("capability")!="social.reply.send":
+            continue
+        try:
+            eligible=datetime.fromisoformat(str(action.get("not_before") or "").replace("Z","+00:00"))
+            if eligible.tzinfo is not None and now_utc-eligible >= timedelta(minutes=90):
+                overdue_replies.append((eligible,action))
+        except (ValueError,TypeError):
+            continue
+    if overdue_replies:
+        return min(overdue_replies,key=lambda row:row[0])[1]
+
     observation=next((x for x in ready if x.get("capability")=="social.threads.observe"),None)
     if observation is not None:
         return observation
