@@ -294,16 +294,17 @@ class GptWebRouteCompatibilityTests(unittest.TestCase):
 
 
 class GptWebTargetRoutingTests(unittest.TestCase):
-    def test_excludes_uc_target_and_reuses_normal_chat(self):
+    def test_allows_clean_uc_target(self):
         from scripts.gpt_web_response_bridge import _page
-        normal = {"type": "page", "url": "https://chatgpt.com/c/abc", "webSocketDebuggerUrl": "ws://normal"}
         uc = {"type": "page", "url": "https://chatgpt.com/uc/temp", "webSocketDebuggerUrl": "ws://uc"}
         endpoint = Mock()
-        endpoint.evaluate.return_value = normal["url"]
-        with patch("scripts.gpt_web_response_bridge._targets", return_value=[normal, uc]), \
-             patch("scripts.gpt_web_response_bridge._open_target_connection", return_value=endpoint) as opened:
+        endpoint.evaluate.return_value = uc["url"]
+        clean = {"attachmentSummary":{"imageStructure":{"inFormBlob":0},"attachmentControlCount":0}}
+        with patch("scripts.gpt_web_response_bridge._targets", return_value=[uc]), \
+             patch("scripts.gpt_web_response_bridge._open_target_connection", return_value=endpoint) as opened, \
+             patch("scripts.gpt_web_response_bridge._submission_snapshot", return_value=clean):
             self.assertIs(_page("http://127.0.0.1:9222"), endpoint)
-        opened.assert_called_once_with("http://127.0.0.1:9222", normal)
+        opened.assert_called_once_with("http://127.0.0.1:9222", uc)
 
     def test_fails_closed_without_clean_existing_target(self):
         from scripts.gpt_web_response_bridge import _page
@@ -343,7 +344,7 @@ class GptWebImageInputContractTests(unittest.TestCase):
         source = inspect.getsource(bridge.invoke)
         self.assertIn("includes('image')", source)
         self.assertIn("Runtime.callFunctionOn", source)
-        self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
+        self.assertIn("GPT_WEB_ATTACHMENT_NOT_ACCEPTED", source)
 
 
 class GptWebFileSelectionClassificationTests(unittest.TestCase):
@@ -351,8 +352,9 @@ class GptWebFileSelectionClassificationTests(unittest.TestCase):
         import inspect
         from scripts.gpt_web_response_bridge import invoke
         source = inspect.getsource(invoke)
-        self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
-        self.assertIn("_attachment_growth(upload_baseline, upload_observation)", source)
+        self.assertIn("GPT_WEB_ATTACHMENT_NOT_ACCEPTED", source)
+        self.assertIn("_attachment_accepted(upload_baseline, upload_observation)", source)
+        self.assertIn("_native_file_chooser_upload", source)
 
 
 class GptWebUploadSettlementTests(unittest.TestCase):
@@ -360,8 +362,9 @@ class GptWebUploadSettlementTests(unittest.TestCase):
         import inspect
         from scripts.gpt_web_response_bridge import invoke, _submission_snapshot
         source = inspect.getsource(invoke)
-        self.assertIn("upload_deadline = time.monotonic() + 8.0", source)
-        self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
+        self.assertIn("_wait_attachment_accepted(", source)
+        self.assertIn("timeout_seconds=8.0", source)
+        self.assertIn("GPT_WEB_ATTACHMENT_NOT_ACCEPTED", source)
         page = Mock()
         page.evaluate.return_value = {"attachmentSummary": {"fileInputStates": [{"acceptsImage": True, "selectedCount": 1}]}}
         state = _submission_snapshot(page, "invoice:req:12345678")
@@ -540,6 +543,7 @@ class FreshTargetReadinessContractTests(unittest.TestCase):
         self.assertIn('time.monotonic() + 12.0',source)
         self.assertIn('GPT_WEB_CLEAN_AUTHENTICATED_TARGET_UNAVAILABLE:',source)
         self.assertIn('Target.closeTarget',source)
+        self.assertNotIn('GPT_WEB_FRESH_TARGET_UNSUPPORTED_ROUTE',source)
 
 
 class UcStrictJsonReplyTests(unittest.TestCase):
@@ -562,3 +566,17 @@ class BoundedUcReplyWaitTests(unittest.TestCase):
         self.assertNotIn("empty_message_ticks >= 6",code)
         self.assertIn('ucMessageSurfacePending',code)
         self.assertIn('deadline = time.monotonic() + 45',code)
+
+
+class GptWebAttachmentAcceptanceTests(unittest.TestCase):
+    def test_attachment_accepted_on_preview_growth(self):
+        from scripts.gpt_web_response_bridge import _attachment_accepted
+        before={"attachmentSummary":{"imagePreviewCount":0,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
+        after={"attachmentSummary":{"imagePreviewCount":1,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
+        self.assertTrue(_attachment_accepted(before,after))
+
+    def test_attachment_rejected_when_filelist_only_without_ui_growth(self):
+        from scripts.gpt_web_response_bridge import _attachment_accepted
+        before={"attachmentSummary":{"imagePreviewCount":0,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
+        after={"attachmentSummary":{"imagePreviewCount":0,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
+        self.assertFalse(_attachment_accepted(before,after))

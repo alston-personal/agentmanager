@@ -353,7 +353,6 @@ def _page(cdp_url: str) -> CdpTargetSession:
         item for item in _targets(cdp_url)
         if item.get("type") == "page"
         and str(item.get("url") or "").startswith("https://chatgpt.com/")
-        and not str(item.get("url") or "").startswith("https://chatgpt.com/uc/")
         and item.get("webSocketDebuggerUrl")
     ]
     for target in reversed(candidates):
@@ -361,8 +360,6 @@ def _page(cdp_url: str) -> CdpTargetSession:
         try:
             page = _open_target_connection(cdp_url, target)
             href = page.evaluate("location.href")
-            if str(href).startswith("https://chatgpt.com/uc/"):
-                continue
             snapshot = _submission_snapshot(page, "agentos-clean-target-check")
             attachment = snapshot.get("attachmentSummary") or {}
             images = attachment.get("imageStructure") or {}
@@ -408,8 +405,6 @@ def _page(cdp_url: str) -> CdpTargetSession:
         images = attachment.get("imageStructure") or {}
         if int(images.get("inFormBlob") or 0) or int(attachment.get("attachmentControlCount") or 0):
             raise RuntimeError("GPT_WEB_FRESH_TARGET_NOT_CLEAN")
-        if str(page.evaluate("location.pathname") or "").startswith("/uc/"):
-            raise RuntimeError("GPT_WEB_FRESH_TARGET_UNSUPPORTED_ROUTE")
         selected = page
         page = None
         return selected
@@ -788,6 +783,135 @@ def _attachment_growth(before: dict[str, Any], after: dict[str, Any]) -> bool:
     )
 
 
+def _attachment_accepted(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    """Require UI evidence that ChatGPT accepted the selected image."""
+    a = (before.get("attachmentSummary") or {})
+    b = (after.get("attachmentSummary") or {})
+    old_imgs = (a.get("imageStructure") or {})
+    new_imgs = (b.get("imageStructure") or {})
+    return any([
+        int(b.get("imagePreviewCount") or 0) > int(a.get("imagePreviewCount") or 0),
+        int(b.get("attachmentControlCount") or 0) > int(a.get("attachmentControlCount") or 0),
+        int(new_imgs.get("inFormBlob") or 0) > int(old_imgs.get("inFormBlob") or 0),
+        int(new_imgs.get("inFormData") or 0) > int(old_imgs.get("inFormData") or 0),
+    ])
+
+
+def _wait_attachment_accepted(
+    page: Any,
+    *,
+    before: dict[str, Any],
+    request_id: str,
+    timeout_seconds: float = 8.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        last = _submission_snapshot(page, request_id)
+        if _attachment_accepted(before, last):
+            return last
+        time.sleep(0.4)
+    return last
+
+
+def _native_file_chooser_upload(
+    page: Any,
+    *,
+    image: Path,
+    before: dict[str, Any],
+    request_id: str,
+) -> tuple[bool, dict[str, Any]]:
+    """Try the real attachment control/file chooser path without sending a prompt."""
+    page.connection.file_chooser_events = []
+    page.call("Page.enable")
+    page.call("Page.setInterceptFileChooserDialog", {"enabled": True})
+    try:
+        candidate = page.evaluate("""(() => {
+          const labels = ['attach','add files','upload','附件','上傳','新增'];
+          const nodes = Array.from(document.querySelectorAll('button,[role="button"]'));
+          for (const el of nodes) {
+            const caption = ((el.getAttribute('aria-label') || '') + ' ' +
+              (el.getAttribute('data-testid') || '') + ' ' +
+              (el.textContent || '')).trim().toLowerCase();
+            if (!labels.some(x => caption.includes(x))) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              return {x:r.left+r.width/2,y:r.top+r.height/2};
+            }
+          }
+          return null;
+        })()""")
+        if not isinstance(candidate, dict):
+            return False, {"status": "ATTACH_BUTTON_NOT_FOUND"}
+
+        x, y = float(candidate["x"]), float(candidate["y"])
+        for kind in ("mousePressed", "mouseReleased"):
+            page.call("Input.dispatchMouseEvent", {
+                "type": kind, "x": x, "y": y,
+                "button": "left", "clickCount": 1,
+            })
+
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline and not page.connection.file_chooser_events:
+            page.evaluate("1")
+            time.sleep(0.2)
+
+        if not page.connection.file_chooser_events:
+            option = page.evaluate("""(() => {
+              const nodes = Array.from(document.querySelectorAll(
+                '[role="menuitem"],[role="option"],[data-radix-menu-content] button,[role="menu"] button,button,[role="button"]'
+              ));
+              const allowed = ['upload file','upload files','upload from computer','add photos','add files',
+                '上傳檔案','上傳檔案或照片','從電腦上傳','照片與檔案'];
+              for (const el of nodes) {
+                const title = ((el.getAttribute('aria-label') || '') + ' ' +
+                  (el.textContent || '')).trim().toLowerCase();
+                if (!allowed.some(x => title.includes(x))) continue;
+                const r = el.getBoundingClientRect();
+                if (r.width <= 0 || r.height <= 0) continue;
+                return {x:r.left+r.width/2,y:r.top+r.height/2};
+              }
+              return null;
+            })()""")
+            if isinstance(option, dict):
+                for kind in ("mousePressed", "mouseReleased"):
+                    page.call("Input.dispatchMouseEvent", {
+                        "type": kind,
+                        "x": float(option["x"]), "y": float(option["y"]),
+                        "button": "left", "clickCount": 1,
+                    })
+                deadline = time.monotonic() + 4.0
+                while time.monotonic() < deadline and not page.connection.file_chooser_events:
+                    page.evaluate("1")
+                    time.sleep(0.2)
+
+        if not page.connection.file_chooser_events:
+            return False, {"status": "FILE_CHOOSER_NOT_OPENED"}
+
+        chooser = page.connection.file_chooser_events[-1]
+        backend_id = chooser.get("backendNodeId")
+        if not isinstance(backend_id, int):
+            return False, {"status": "CHOOSER_NO_BACKEND_NODE"}
+
+        page.call("DOM.setFileInputFiles", {
+            "backendNodeId": backend_id,
+            "files": [str(image)],
+        })
+        after = _wait_attachment_accepted(
+            page, before=before, request_id=request_id, timeout_seconds=8.0
+        )
+        return _attachment_accepted(before, after), {
+            "status": "ATTACHMENT_ACCEPTED" if _attachment_accepted(before, after)
+                else "ATTACHMENT_NOT_ACCEPTED",
+            "after": after.get("attachmentSummary", {}),
+        }
+    finally:
+        try:
+            page.call("Page.setInterceptFileChooserDialog", {"enabled": False})
+        except Exception:
+            pass
+
+
 def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, Any]) -> str:
     image = Path(str(inner["image_path"])).expanduser().resolve()
     allowed_raw = os.environ.get("AGENTOS_GPT_WEB_ALLOWED_ROOTS", "/home/ubuntu/agentmanager/benchmarks/invoice_handwriting/fixtures")
@@ -864,33 +988,38 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             "window.__agentosUploadProbe || {installed:false,events:[]}"
         )
         selected_files = selected.get("value") or []
-        # React may replace the input synchronously after the change event.
-        # In that case, the stale object can have an empty FileList even if
-        # the application received the image. Classify as inconclusive rather
-        # than asserting an upload failure; retain the later live reply gate.
-        selection_confirmed = any(
+        filelist_confirmed = any(
             isinstance(f, dict) and f.get("name") == image.name
             and f.get("size") == image.stat().st_size
             for f in selected_files
         )
-        if not selection_confirmed:
-            # Upload previews can be asynchronous; a single immediate DOM
-            # read is not evidence that the frontend rejected the image.
-            upload_deadline = time.monotonic() + 8.0
-            upload_observation: dict[str, Any] = {}
-            while time.monotonic() < upload_deadline:
+
+        upload_observation = _wait_attachment_accepted(
+            page, before=upload_baseline, request_id=request_id, timeout_seconds=8.0
+        )
+        attachment_confirmed = _attachment_accepted(upload_baseline, upload_observation)
+
+        native_result: dict[str, Any] | None = None
+        if not attachment_confirmed:
+            native_ok, native_result = _native_file_chooser_upload(
+                page, image=image, before=upload_baseline, request_id=request_id
+            )
+            attachment_confirmed = native_ok
+            if native_ok:
                 upload_observation = _submission_snapshot(page, request_id)
-                if _attachment_growth(upload_baseline, upload_observation):
-                    selection_confirmed = True
-                    break
-                time.sleep(0.4)
-            if not selection_confirmed:
-                raise RuntimeError(
-                    "GPT_WEB_FILE_SELECTION_UNVERIFIED:" +
-                    json.dumps({"baselineAttachmentSummary": upload_baseline.get("attachmentSummary", {}), "dom": upload_observation, "fileEvents": upload_event_probe,
-                                "network": page.connection.upload_network_probe},
-                               ensure_ascii=False, sort_keys=True)
-                )
+
+        if not attachment_confirmed:
+            raise RuntimeError(
+                "GPT_WEB_ATTACHMENT_NOT_ACCEPTED:" +
+                json.dumps({
+                    "fileListConfirmed": filelist_confirmed,
+                    "baselineAttachmentSummary": upload_baseline.get("attachmentSummary", {}),
+                    "afterAttachmentSummary": upload_observation.get("attachmentSummary", {}),
+                    "fileEvents": upload_event_probe,
+                    "network": page.connection.upload_network_probe,
+                    "nativeChooser": native_result,
+                }, ensure_ascii=False, sort_keys=True)
+            )
 
         # File upload may rerender the composer. Reacquire/focus it instead of
         # assuming the pre-upload DOM node is still active.

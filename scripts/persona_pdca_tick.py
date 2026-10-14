@@ -191,7 +191,7 @@ def main():
     silence_hours=((now_utc-last_successful_post_ts).total_seconds()/3600.0) if last_successful_post_ts else 999.0
     post_no_publish_streak=int(state.get("post_no_publish_streak",0) or 0)
     last_post_ts=todays_posts[-1] if todays_posts else None
-    post_gap_min=((now_utc-last_post_ts).total_seconds()/60.0) if last_post_ts else None
+    post_gap_min=((now_utc-last_successful_post_ts).total_seconds()/60.0) if last_successful_post_ts else None
     target_raw=growth.get("daily_post_target")
     max_raw=growth.get("daily_post_max")
     gap_raw=growth.get("minimum_post_gap_minutes")
