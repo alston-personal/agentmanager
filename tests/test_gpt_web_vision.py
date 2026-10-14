@@ -97,3 +97,20 @@ class GptWebVisionResponseTests(unittest.TestCase):
         receipt["result"]["request_id"] = "other"
         with self.assertRaises(ValueError):
             parse_harvest_receipt(receipt, request_id="invoice:req:12345678")
+
+
+class TaiwanInvoicePromptContractTests(unittest.TestCase):
+    def test_invoice_prompt_preserves_two_letter_prefix(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            image=root/"invoice.png"
+            image.write_bytes(b"image")
+            plan=build_plan({
+                "schema":"agentos.gpt-web-vision-request/v0.1",
+                "capability":"vision.invoice.extract",
+                "image_path":"invoice.png",
+                "request_id":"invoice:req:12345678",
+            },workspace=root)
+        prompt=plan["plan"]["steps"][3]["text"]
+        self.assertIn("two uppercase Latin letters followed by eight digits", prompt)
+        self.assertIn("Never drop the two-letter prefix", prompt)
