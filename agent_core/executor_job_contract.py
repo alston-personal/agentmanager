@@ -453,6 +453,8 @@ def project_executor_job_receipt(
             "gemini_probe_attempts",
             "gemini_health_classification",
             "gemini_cli_version",
+            "agy_probe_sha256",
+            "agy_marker_matched",
             "gemini_cli_diagnostic_tags",
             "codex_cli_version",
             "codex_liveness",
