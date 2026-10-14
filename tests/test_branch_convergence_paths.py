@@ -19,3 +19,7 @@ class BranchConvergencePathRiskTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_agentos_node_requires_review(self):
+        self.assertEqual(classify("agentos_node/gpt_web_vision.py"), "RED")
