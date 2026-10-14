@@ -665,7 +665,7 @@ class GptWebNetworkResponseHarvestTests(unittest.TestCase):
         page._response_request_ids = set()
         page._response_finished_ids = []
         page._response_seen_ids = set()
-        page.begin_response_network_probe()
+        page.begin_response_network_probe("invoice:req:net-12345678")
         page.observe_response_event({
             "method": "Network.requestWillBeSent",
             "params": {
@@ -693,3 +693,54 @@ class GptWebNetworkResponseHarvestTests(unittest.TestCase):
         self.assertNotIn("secret", rendered)
         self.assertNotIn("invoice", rendered)
         self.assertNotIn("chatgpt.com", rendered)
+
+
+class GptWebNetworkRequestCorrelationTests(unittest.TestCase):
+    def test_correlated_request_response_can_supply_bridge_correlation(self):
+        from scripts.gpt_web_response_bridge import _extract_invoice_json_from_correlated_response
+        request_id = "invoice:req:bridge-12345678"
+        body = json.dumps({
+            "message": {
+                "content": {
+                    "parts": [json.dumps({
+                        "invoice_number": "MY04200253",
+                        "invoice_date": "2019-03-23",
+                        "seller_tax_id": "82328968",
+                        "total_amount": 50,
+                    })]
+                }
+            }
+        })
+        result = _extract_invoice_json_from_correlated_response(body, request_id)
+        self.assertIsNotNone(result)
+        payload = json.loads(result)
+        self.assertEqual(payload["agentos_request_id"], request_id)
+        self.assertEqual(payload["agentos_request_id_source"], "bridge_network_request")
+        self.assertEqual(payload["invoice_number"], "MY04200253")
+
+    def test_response_probe_marks_request_when_post_body_contains_correlation(self):
+        from scripts.gpt_web_response_bridge import CdpPage
+        page = CdpPage.__new__(CdpPage)
+        page.response_network_probe = None
+        page._response_request_ids = set()
+        page._response_finished_ids = []
+        page._response_seen_ids = set()
+        page._response_correlated_ids = set()
+        page._response_correlation_id = None
+        request_id = "invoice:req:bridge-12345678"
+        page.begin_response_network_probe(request_id)
+        page.observe_response_event({
+            "method": "Network.requestWillBeSent",
+            "params": {
+                "requestId": "r1",
+                "request": {
+                    "method": "POST",
+                    "url": "https://chatgpt.com/backend-api/conversation",
+                    "postData": '{"prompt":"' + request_id + '"}',
+                },
+            },
+        })
+        self.assertIn("r1", page._response_correlated_ids)
+        self.assertEqual(page.response_network_probe["correlatedRequests"], 1)
+        rendered = str(page.response_network_probe)
+        self.assertNotIn(request_id, rendered)

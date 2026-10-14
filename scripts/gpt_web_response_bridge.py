@@ -122,6 +122,85 @@ def _extract_correlated_invoice_json(text: str, request_id: str) -> str | None:
     return None
 
 
+def _extract_invoice_json_from_correlated_response(text: str, request_id: str) -> str | None:
+    """Extract invoice JSON when the network request itself is already correlated."""
+    exact = _extract_correlated_invoice_json(text, request_id)
+    if exact:
+        return exact
+    if not isinstance(text, str) or not text or len(text) > 2 * 1024 * 1024:
+        return None
+
+    queue = [text]
+    seen: set[str] = set()
+    decoder = json.JSONDecoder()
+    candidates: list[tuple[int, dict[str, Any]]] = []
+    visited = 0
+
+    def consider(value: Any) -> None:
+        nonlocal visited
+        stack = [value]
+        while stack and visited < 1500:
+            item = stack.pop()
+            visited += 1
+            if isinstance(item, dict):
+                existing_id = item.get("agentos_request_id")
+                if existing_id not in (None, "", request_id):
+                    continue
+                if "invoice_number" in item and "total_amount" in item and (
+                    "invoice_date" in item or "seller_tax_id" in item
+                ):
+                    score = sum(
+                        item.get(k) not in (None, "")
+                        for k in ("invoice_number", "invoice_date", "seller_tax_id", "total_amount")
+                    )
+                    candidates.append((score, dict(item)))
+                stack.extend(item.values())
+            elif isinstance(item, list):
+                stack.extend(item)
+            elif isinstance(item, str) and item not in seen and len(item) <= 2 * 1024 * 1024:
+                queue.append(item)
+
+    while queue and visited < 1500:
+        current = queue.pop(0)
+        if not isinstance(current, str) or current in seen:
+            continue
+        seen.add(current)
+        visited += 1
+        stripped = current.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.replace("```json", "", 1).replace("```", "").strip()
+
+        try:
+            consider(json.loads(stripped))
+        except Exception:
+            pass
+
+        for line in stripped.splitlines():
+            candidate = line.strip()
+            if candidate.startswith("data:"):
+                candidate = candidate[5:].strip()
+            if candidate and candidate != "[DONE]" and candidate not in seen:
+                queue.append(candidate)
+
+        # Search bounded embedded JSON objects even when the response is SSE/prose.
+        starts = [i for i, ch in enumerate(stripped[:262144]) if ch == "{"]
+        for start in starts[-160:]:
+            try:
+                obj, _ = decoder.raw_decode(stripped[start:])
+            except Exception:
+                continue
+            consider(obj)
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda pair: pair[0])
+    payload = candidates[-1][1]
+    payload["agentos_request_id"] = request_id
+    if "agentos_request_id_source" not in payload:
+        payload["agentos_request_id_source"] = "bridge_network_request"
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
 def write_descriptor(root: Path, *, ready: bool) -> None:
     atomic_json(root / "bridge.json", {
         "schema": BRIDGE_SCHEMA,
@@ -206,6 +285,8 @@ class CdpPage:
         self._response_request_ids: set[str] = set()
         self._response_finished_ids: list[str] = []
         self._response_seen_ids: set[str] = set()
+        self._response_correlated_ids: set[str] = set()
+        self._response_correlation_id: str | None = None
 
     def observe_upload_event(self, event: dict[str, Any]) -> None:
         probe = self.upload_network_probe
@@ -250,16 +331,21 @@ class CdpPage:
         self._upload_request_classes = {}
         self.upload_network_probe = {"postRequests": 0, "postHostFamilies": {"chatgpt": 0, "other": 0}, "responseStatuses": {}, "networkFailures": 0, "categories": {"file": {"requests": 0, "statuses": {}, "failures": 0}, "other": {"requests": 0, "statuses": {}, "failures": 0}}}
 
-    def begin_response_network_probe(self) -> None:
+    def begin_response_network_probe(self, request_id: str) -> None:
         self._response_request_ids = set()
         self._response_finished_ids = []
         self._response_seen_ids = set()
+        self._response_correlated_ids = set()
+        self._response_correlation_id = str(request_id or "")
         self.response_network_probe = {
             "postRequests": 0,
             "responses": 0,
             "finished": 0,
             "failures": 0,
             "bodyAttempts": 0,
+            "requestBodyChecks": 0,
+            "correlatedRequests": 0,
+            "bridgeCorrelatedPayloads": 0,
             "tooLarge": 0,
         }
 
@@ -284,6 +370,14 @@ class CdpPage:
             ):
                 self._response_request_ids.add(rid)
                 probe["postRequests"] += 1
+                post_data = request.get("postData")
+                if (
+                    isinstance(post_data, str)
+                    and self._response_correlation_id
+                    and self._response_correlation_id in post_data
+                ):
+                    self._response_correlated_ids.add(rid)
+                    probe["correlatedRequests"] += 1
         elif method == "Network.responseReceived" and rid in self._response_request_ids:
             status = int((params.get("response") or {}).get("status") or 0)
             if 200 <= status < 300:
@@ -585,6 +679,23 @@ def _network_response_text(page: Any, request_id: str) -> str | None:
         if rid in connection._response_seen_ids:
             continue
         connection._response_seen_ids.add(rid)
+
+        request_correlated = rid in connection._response_correlated_ids
+        if not request_correlated:
+            probe["requestBodyChecks"] += 1
+            try:
+                request_data = page.call("Network.getRequestPostData", {"requestId": rid})
+                post_data = request_data.get("postData")
+                request_correlated = (
+                    isinstance(post_data, str)
+                    and request_id in post_data
+                )
+            except Exception:
+                request_correlated = False
+            if request_correlated:
+                connection._response_correlated_ids.add(rid)
+                probe["correlatedRequests"] += 1
+
         probe["bodyAttempts"] += 1
         try:
             result = page.call("Network.getResponseBody", {"requestId": rid})
@@ -605,9 +716,15 @@ def _network_response_text(page: Any, request_id: str) -> str | None:
         if len(body) > 2 * 1024 * 1024:
             probe["tooLarge"] += 1
             continue
+
         parsed = _extract_correlated_invoice_json(body, request_id)
         if parsed:
             return parsed
+        if request_correlated:
+            parsed = _extract_invoice_json_from_correlated_response(body, request_id)
+            if parsed:
+                probe["bridgeCorrelatedPayloads"] += 1
+                return parsed
     return None
 
 
@@ -1329,7 +1446,7 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
             timeout_seconds=15.0,
         )
 
-        page.connection.begin_response_network_probe()
+        page.connection.begin_response_network_probe(request_id)
         _click_send(page, request_id=request_id, timeout_seconds=12.0)
         _confirm_submit(
             page,
