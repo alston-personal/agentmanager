@@ -1037,6 +1037,26 @@ def invoke(cdp_url: str, *, session_id: str, request_id: str, inner: dict[str, A
                 json.dumps(inserted, ensure_ascii=False, sort_keys=True)
             )
 
+        # Upload acceptance must still be true immediately before submit.
+        # ChatGPT can transiently render an attachment and then discard it
+        # while the composer rerenders. Never send a text-only invoice request.
+        if not _attachment_accepted(upload_baseline, inserted):
+            raise RuntimeError(
+                "GPT_WEB_ATTACHMENT_LOST_BEFORE_SUBMIT:" +
+                json.dumps(inserted, ensure_ascii=False, sort_keys=True)
+            )
+
+        enabled_send = any(
+            int(item.get("enabled") or 0) > 0
+            for item in (inserted.get("send") or [])
+            if isinstance(item, dict)
+        )
+        if not enabled_send:
+            raise RuntimeError(
+                "GPT_WEB_SEND_NOT_ENABLED_BEFORE_SUBMIT:" +
+                json.dumps(inserted, ensure_ascii=False, sort_keys=True)
+            )
+
         _click_send(page, request_id=request_id, timeout_seconds=12.0)
         _confirm_submit(
             page,

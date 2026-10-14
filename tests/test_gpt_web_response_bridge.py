@@ -580,3 +580,13 @@ class GptWebAttachmentAcceptanceTests(unittest.TestCase):
         before={"attachmentSummary":{"imagePreviewCount":0,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
         after={"attachmentSummary":{"imagePreviewCount":0,"attachmentControlCount":0,"imageStructure":{"inFormBlob":0,"inFormData":0}}}
         self.assertFalse(_attachment_accepted(before,after))
+
+
+class GptWebPreSubmitInvariantTests(unittest.TestCase):
+    def test_invoke_requires_attachment_to_survive_until_submit(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import invoke
+        source=inspect.getsource(invoke)
+        self.assertIn("GPT_WEB_ATTACHMENT_LOST_BEFORE_SUBMIT", source)
+        self.assertIn("_attachment_accepted(upload_baseline, inserted)", source)
+        self.assertIn("GPT_WEB_SEND_NOT_ENABLED_BEFORE_SUBMIT", source)
