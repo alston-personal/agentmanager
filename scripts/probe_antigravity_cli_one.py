@@ -81,8 +81,11 @@ def main() -> int:
         if not 0 < st.st_size <= MAX_BINARY_BYTES or not os.access(BINARY, os.X_OK):
             print(json.dumps(receipt("BINARY_INVALID")))
             return 1
+        hasher = hashlib.sha256()
         with BINARY.open("rb") as handle:
-            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                hasher.update(chunk)
+        digest = hasher.hexdigest()
         if not BINARY.open("rb").read(4) == bytes((127, 69, 76, 70)):
             print(json.dumps(receipt("NOT_ELF_BINARY")))
             return 1
