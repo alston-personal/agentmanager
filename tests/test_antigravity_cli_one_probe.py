@@ -32,6 +32,26 @@ class ProbeTests(unittest.TestCase):
         self.assertFalse(payload["successful"])
         self.assertFalse(payload["credential_exposed"])
 
+    def test_supported_version_formats(self):
+        for version_text in ("agy 1.3.4", "agy version 1.3.4", "1.3.4", "v1.3.4"):
+            with self.subTest(version_text=version_text):
+                with tempfile.TemporaryDirectory() as folder:
+                    binary = Path(folder) / "agy"
+                    binary.write_bytes(bytes((127, 69, 76, 70)) + b"test")
+                    binary.chmod(0o700)
+
+                    def runner(args, *, timeout):
+                        if args[-1] == "--version":
+                            return CompletedProcess(args, 0, version_text + "\\n", "")
+                        return CompletedProcess(args, 0, '{"response":"AGENTOS_GEMINI_READY"}', "")
+
+                    with patch.object(probe, "BINARY", binary), patch.object(
+                        probe, "safe_run", side_effect=runner
+                    ), contextlib.redirect_stdout(io.StringIO()) as output:
+                        rc = probe.main()
+                    self.assertEqual(rc, 0, output.getvalue())
+                    self.assertEqual(json.loads(output.getvalue())["version"], "agy 1.3.4")
+
     def test_fixed_binary_and_model_call(self):
         with tempfile.TemporaryDirectory() as folder:
             target = Path(folder) / "agy"
