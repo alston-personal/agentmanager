@@ -40,6 +40,10 @@ def main() -> int:
         'Read the attached Taiwan invoice image and return raw JSON only, no markdown. '
         'Include exactly "agentos_request_id":"' + corr + '". '
         'Extract invoice_number, invoice_date, seller_tax_id, total_amount. '
+        'For Taiwan uniform invoices, invoice_number must be the complete printed number: '
+        'exactly two uppercase Latin letters followed by eight digits when readable. '
+        'Never drop the two-letter prefix; if the prefix is unreadable, use null. '
+        'seller_tax_id must preserve all eight digits when readable. '
         'Do not guess unreadable values; use null.'
     )
     request={
@@ -83,11 +87,15 @@ def main() -> int:
     if payload.get("agentos_request_id") != corr:
         raise RuntimeError("model correlation mismatch")
 
+    mismatches=[]
     for key,value in EXPECTED.items():
         got=payload.get(key)
         print(f"gpt_web_invoice_roundtrip_field={key} got={got} expected={value}")
         if str(got).replace(" ","").upper() != str(value).replace(" ","").upper():
-            raise RuntimeError(f"field mismatch {key}: {got!r} != {value!r}")
+            mismatches.append({"field":key,"got":got,"expected":value})
+    if mismatches:
+        print("gpt_web_invoice_roundtrip_mismatches="+json.dumps(mismatches,ensure_ascii=False,sort_keys=True))
+        raise RuntimeError("roundtrip core field mismatch count="+str(len(mismatches)))
     print("gpt_web_invoice_roundtrip=PASS")
     return 0
 
