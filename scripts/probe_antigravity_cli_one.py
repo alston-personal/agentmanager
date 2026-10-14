@@ -92,7 +92,7 @@ def main() -> int:
         version = safe_run([str(BINARY), "--version"], timeout=15)
         version_raw = (version.stdout or "") + "\n" + (version.stderr or "")
         # Match known CLI version forms, persist only normalized semver.
-        version_match = re.search(r"(?i)(?:^|\s)(?:agy\s+(?:version\s+)?)?(v?\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9._-]+)?)(?=\s|$)", version_raw.strip())
+        version_match = re.search(r"(?im)^\s*(?:agy\s+(?:version\s+)?)?(v?\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9._-]+)?)\s*$", version_raw.strip())
         version_value = "agy " + version_match.group(1).lstrip("v") if version_match else ""
         if version.returncode or not version_match:
             print(json.dumps(receipt("VERSION_UNVERIFIED", executable=str(BINARY), sha256=digest,
