@@ -343,7 +343,7 @@ class GptWebImageInputContractTests(unittest.TestCase):
         source = inspect.getsource(bridge.invoke)
         self.assertIn("includes('image')", source)
         self.assertIn("Runtime.callFunctionOn", source)
-        self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
+        self.assertIn("GPT_WEB_ATTACHMENT_NOT_ACCEPTED", source)
 
 
 class GptWebFileSelectionClassificationTests(unittest.TestCase):
@@ -351,8 +351,9 @@ class GptWebFileSelectionClassificationTests(unittest.TestCase):
         import inspect
         from scripts.gpt_web_response_bridge import invoke
         source = inspect.getsource(invoke)
-        self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
-        self.assertIn("_attachment_growth(upload_baseline, upload_observation)", source)
+        self.assertIn("GPT_WEB_ATTACHMENT_NOT_ACCEPTED", source)
+        self.assertIn("_attachment_accepted(upload_baseline, upload_observation)", source)
+        self.assertIn("_native_file_chooser_upload", source)
 
 
 class GptWebUploadSettlementTests(unittest.TestCase):
@@ -361,7 +362,7 @@ class GptWebUploadSettlementTests(unittest.TestCase):
         from scripts.gpt_web_response_bridge import invoke, _submission_snapshot
         source = inspect.getsource(invoke)
         self.assertIn("upload_deadline = time.monotonic() + 8.0", source)
-        self.assertIn("GPT_WEB_FILE_SELECTION_UNVERIFIED", source)
+        self.assertIn("GPT_WEB_ATTACHMENT_NOT_ACCEPTED", source)
         page = Mock()
         page.evaluate.return_value = {"attachmentSummary": {"fileInputStates": [{"acceptsImage": True, "selectedCount": 1}]}}
         state = _submission_snapshot(page, "invoice:req:12345678")
