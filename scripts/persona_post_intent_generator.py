@@ -437,7 +437,7 @@ def main():
     gap_raw=growth.get("minimum_post_gap_minutes")
     daily_target=int(target_raw) if isinstance(target_raw,(int,float)) and not isinstance(target_raw,bool) else None
     max_posts=int(max_raw) if isinstance(max_raw,(int,float)) and not isinstance(max_raw,bool) else None
-    min_gap=int(gap_raw) if isinstance(gap_raw,(int,float)) and not isinstance(gap_raw,bool) else 240  # Default minimum anti-burst spacing; no daily posting quota.
+    min_gap=int(gap_raw) if isinstance(gap_raw,(int,float)) and not isinstance(gap_raw,bool) else None
     if max_posts is not None and len(todays_posts)>=max_posts:
         print(json.dumps({"status":"NO_POST","reason":"daily_post_max_reached","posts_today":len(todays_posts)},ensure_ascii=False))
         return 0
