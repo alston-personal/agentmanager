@@ -455,23 +455,50 @@ def _assistant_text(page: CdpPage, request_id: str) -> str | None:
         return text;
       }
       // /uc/ uses no role-bearing assistant elements in live Oracle.
-      // Accept only an actual parsed JSON object with exact request ID;
-      // reject user/form/nav text and any prose containing the ID.
+      // Harvest only a JSON object that contains the exact correlation ID.
+      // The response can be split across generic React containers, so inspect
+      // visible main descendants and parse either the whole text or a bounded
+      // JSON object substring. Never return unrelated prose or page text.
       const main = document.querySelector('main');
       if (main && location.pathname.startsWith('/uc/')) {
-        const candidates = Array.from(main.querySelectorAll('p,pre,code')).slice(-120);
-        for (let i = candidates.length - 1; i >= 0; i--) {
-          const node = candidates[i];
-          if (node.closest('form,nav,aside,[data-message-author-role="user"]')) continue;
+        const rawCandidates = Array.from(main.querySelectorAll('*')).filter(node => {
+          if (node.closest('form,nav,aside,[data-message-author-role="user"]')) return false;
+          const r = node.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) return false;
           const value = (node.innerText || node.textContent || '').trim();
-          if (!value || value.length > 65536) continue;
-          let payload;
-          try { payload = JSON.parse(value); } catch (_) { continue; }
-          if (!payload || Array.isArray(payload) || typeof payload !== 'object') continue;
-          if (payload.agentos_request_id !== id) continue;
-          if (!Object.prototype.hasOwnProperty.call(payload, 'invoice_number')) continue;
-          if (!Object.prototype.hasOwnProperty.call(payload, 'total_amount')) continue;
-          return value;
+          return value.includes(id) && value.length >= 40 && value.length <= 65536;
+        });
+
+        const candidates = rawCandidates.sort((a, b) => {
+          const ta = (a.innerText || a.textContent || '').trim().length;
+          const tb = (b.innerText || b.textContent || '').trim().length;
+          return ta - tb;
+        }).slice(0, 120);
+
+        const parseCandidate = (value) => {
+          const attempts = [value];
+          if (value.startsWith('```')) {
+            attempts.push(value.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim());
+          }
+          const first = value.indexOf('{');
+          const last = value.lastIndexOf('}');
+          if (first >= 0 && last > first) attempts.push(value.slice(first, last + 1));
+          for (const text of attempts) {
+            let payload;
+            try { payload = JSON.parse(text); } catch (_) { continue; }
+            if (!payload || Array.isArray(payload) || typeof payload !== 'object') continue;
+            if (payload.agentos_request_id !== id) continue;
+            if (!Object.prototype.hasOwnProperty.call(payload, 'invoice_number')) continue;
+            if (!Object.prototype.hasOwnProperty.call(payload, 'total_amount')) continue;
+            return JSON.stringify(payload);
+          }
+          return null;
+        };
+
+        for (const node of candidates) {
+          const value = (node.innerText || node.textContent || '').trim();
+          const parsed = parseCandidate(value);
+          if (parsed) return parsed;
         }
       }
       return null;

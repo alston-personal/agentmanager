@@ -552,7 +552,7 @@ class UcStrictJsonReplyTests(unittest.TestCase):
         from scripts.gpt_web_response_bridge import _assistant_text
         source=inspect.getsource(_assistant_text)
         self.assertIn("location.pathname.startsWith('/uc/')",source)
-        self.assertIn("JSON.parse(value)",source)
+        self.assertIn("JSON.parse(text)",source)
         self.assertIn("payload.agentos_request_id !== id",source)
         self.assertIn("total_amount",source)
         self.assertIn('node.closest(\'form,nav,aside',source)
@@ -605,3 +605,22 @@ class GptWebPreSubmitSettleTests(unittest.TestCase):
         self.assertIn("GPT_WEB_PROMPT_LOST_BEFORE_SUBMIT", helper)
         self.assertIn("GPT_WEB_ATTACHMENT_LOST_BEFORE_SUBMIT", helper)
         self.assertIn("GPT_WEB_SEND_NOT_ENABLED_BEFORE_SUBMIT", helper)
+
+
+class GptWebUcJsonHarvestTests(unittest.TestCase):
+    def test_uc_harvest_contract_accepts_generic_container_json(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import _assistant_text
+        source = inspect.getsource(_assistant_text)
+        self.assertIn("main.querySelectorAll('*')", source)
+        self.assertIn("value.includes(id)", source)
+        self.assertIn("JSON.stringify(payload)", source)
+        self.assertIn("payload.agentos_request_id !== id", source)
+
+    def test_uc_harvest_parses_bounded_json_substring(self):
+        import inspect
+        from scripts.gpt_web_response_bridge import _assistant_text
+        source = inspect.getsource(_assistant_text)
+        self.assertIn("value.indexOf('{')", source)
+        self.assertIn("value.lastIndexOf('}')", source)
+        self.assertIn("value.slice(first, last + 1)", source)
