@@ -51,6 +51,8 @@ def run_antigravity_probe(request: Mapping[str, Any], *, runtime_root: Path | No
             "gemini_cli_version": version,
             "agy_probe_sha256": digest,
             "agy_marker_matched": successful,
+            "agy_version_exit_code": output.get("version_exit_code") if type(output.get("version_exit_code")) is int and -1 <= output["version_exit_code"] <= 255 else None,
+            "agy_version_detected": output.get("version_detected") if type(output.get("version_detected")) is bool else None,
         }
     except (OSError, subprocess.TimeoutExpired, ValueError, TypeError):
         return {"classification": "PROBE_FAILED", "successful": False,
