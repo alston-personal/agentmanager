@@ -83,12 +83,12 @@ def main() -> int:
             return 1
         with BINARY.open("rb") as handle:
             digest = hashlib.file_digest(handle, "sha256").hexdigest()
-        if not BINARY.open("rb").read(4) == b"\\x7fELF":
+        if not BINARY.open("rb").read(4) == bytes((127, 69, 76, 70)):
             print(json.dumps(receipt("NOT_ELF_BINARY")))
             return 1
         version = safe_run([str(BINARY), "--version"], timeout=15)
         version_value = version.stdout.strip()
-        if version.returncode or not re.fullmatch(r"agy [0-9]+(?:\\.[0-9]+){1,3}(?:[-+][a-zA-Z0-9._-]+)?", version_value):
+        if version.returncode or not re.fullmatch(r"agy [0-9]+(?:\.[0-9]+){1,3}(?:[-+][a-zA-Z0-9._-]+)?", version_value):
             print(json.dumps(receipt("VERSION_UNVERIFIED", executable=str(BINARY), sha256=digest)))
             return 1
         start = time.monotonic()
@@ -100,7 +100,7 @@ def main() -> int:
         # Fail closed: evidence is only a fixed expected token, not free-form output.
         classification = (
             "ANTIGRAVITY_INFERENCE_PASS" if run.returncode == 0 and model_match(run.stdout)
-            else classify_error((run.stderr or "")[:8192] + "\\n" + (run.stdout or "")[:8192])
+            else classify_error((run.stderr or "")[:8192] + "\n" + (run.stdout or "")[:8192])
             if run.returncode else "UNEXPECTED_MODEL_RESPONSE"
         )
         value = receipt(classification, executable=str(BINARY), sha256=digest,
