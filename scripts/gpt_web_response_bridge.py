@@ -700,12 +700,50 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
         const role = node.getAttribute('data-message-author-role') || 'unknown';
         roleCounts[role] = (roleCounts[role] || 0) + 1;
       }
+
+      const nodeShape = (el) => {
+        if (!el || !el.tagName) return null;
+        const cls = String(el.className || '').split(/\s+/).filter(Boolean).slice(0, 6);
+        return {
+          tag: el.tagName,
+          role: el.getAttribute('role'),
+          testid: el.getAttribute('data-testid'),
+          ariaLive: el.getAttribute('aria-live'),
+          ariaBusy: el.getAttribute('aria-busy'),
+          classes: cls,
+          textChars: Math.min(20000, (el.innerText || el.textContent || '').length)
+        };
+      };
+      const correlatedNodes = [];
+      for (const el of Array.from(document.querySelectorAll('main *'))) {
+        const text = el.textContent || '';
+        if (!text.includes(%s)) continue;
+        const chain = [];
+        let cur = el;
+        for (let depth = 0; cur && depth < 5; depth++, cur = cur.parentElement) {
+          const shape = nodeShape(cur);
+          if (shape) chain.push(shape);
+        }
+        correlatedNodes.push({self: nodeShape(el), ancestors: chain});
+        if (correlatedNodes.length >= 8) break;
+      }
+
+      const mainTextCandidates = Array.from(document.querySelectorAll(
+        'main p, main div, main article, main section, main [role="article"], main [aria-live]'
+      )).filter(el => {
+        const r = el.getBoundingClientRect();
+        const text = (el.innerText || el.textContent || '').trim();
+        return r.width > 0 && r.height > 0 && text.length > 0;
+      }).slice(-30).map(nodeShape);
+
       return {
         pagePath: location.pathname.slice(0, 160),
         readyState: document.readyState,
         roleCounts,
         frameSummary,
         responseStructure,
+        correlatedNodes,
+        mainTextCandidates,
         attachmentSummary,
         messageNodes: messageNodes.length,
         composerHasRequest: composerText.includes(%s),
@@ -718,7 +756,14 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
         lastAssistantHasRequest: lastAssistant.includes(%s),
         generating
       };
-    })()""" % (composer_json, send_json, json.dumps(request_id), json.dumps(request_id), json.dumps(request_id))
+    })()""" % (
+        composer_json,
+        send_json,
+        json.dumps(request_id),
+        json.dumps(request_id),
+        json.dumps(request_id),
+        json.dumps(request_id),
+    )
     value=page.evaluate(expr)
     return value if isinstance(value, dict) else {"invalid_snapshot":True}
 
