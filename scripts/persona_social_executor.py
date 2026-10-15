@@ -403,6 +403,13 @@ def reconcile_held_reply(root, state, target, out, base, headers, now):
         target["provider_object_id"]=matched[0]
         target["reconciliation_required"]=False
         target["receipt_ref"]=str(out.relative_to(root))
+        intent=root/"pdca/reply_intents"/(str(target.get("action_id"))+".json")
+        if intent.exists():
+            original=json.loads(intent.read_text(encoding="utf-8"))
+            original.update(status="completed",provider_object_id=matched[0],
+                            receipt_ref=str(out.relative_to(root)),
+                            reconciliation_required=False)
+            save(intent,original)
     else:
         target["status"]="in_progress"
         target["reconciliation_required"]=True
