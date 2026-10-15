@@ -81,3 +81,5 @@ jobs:
 # Recheck after PR 1989 durable completion contract convergence.
 
 # Recheck after PR #1991 Realm Resolve private regression suite convergence.
+
+# Recheck after PR #1992 dual Thin Client contract convergence.
