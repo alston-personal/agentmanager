@@ -97,3 +97,5 @@ jobs:
 # Recheck after PR #2001 Windows watchdog liveness reconciliation.
 
 # Recheck after PR #2004 retired LayoutLab carrier.
+
+# Recheck after #2005 bounded manual-only Oracle ONE inspect.
