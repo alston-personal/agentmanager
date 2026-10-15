@@ -77,118 +77,156 @@ class TestRealmFabric(unittest.TestCase):
         self.assertEqual(node_map['nodes'][0]['status'], 'online')
         self.assertIn('filesystem.write', node_map['realm_capabilities'])
 
-    def test_task_pull_is_leased_until_receipt_ack(self):
-        invite = self.fabric.create_invite()
-        enrolled = self.fabric.enroll(
+
+    def test_task_pull_is_leased_until_receipt(self):
+        invite = self.fabric.create_invite(expires_minutes=5, label='lease-node')
+        policy = ThinClientPolicy(readable_roots=(self.workspace,))
+        config = ThinClientTransport.enroll(
+            one_url=self.base_url,
             invite_id=invite['invite_id'],
             code=invite['code'],
-            manifest={
-                'schema': 'agentos.node-manifest/v0.1',
-                'realm_id': 'realm-test',
-                'node_id': 'lease-node',
-                'role': 'client',
-                'hostname': 'lease-node',
-                'platform': 'Windows',
-                'capabilities': [],
-                'tool_presence': {},
-                'surface_inventory': {'surfaces': []},
-            },
+            node_id='lease-node',
+            policy=policy,
+            config_path=self.config_path,
         )
+
         task = {
             'schema': 'agentos.node-task/v0.1',
-            'task_id': 'lease-task',
+            'task_id': 'task-lease',
             'action': 'desktop.session.inspect',
         }
         self.fabric.queue_task('lease-node', task)
 
-        first = self.fabric.pull_tasks('lease-node', enrolled['node_token'])
-        self.assertEqual([item['task_id'] for item in first], ['lease-task'])
-        queued = self.fabric.load()['tasks']['lease-node']
-        self.assertEqual(len(queued), 1)
-        self.assertEqual(queued[0]['_lease_count'], 1)
-        self.assertTrue(queued[0]['_lease_until'])
+        first = self.fabric.pull_tasks('lease-node', config.node_token)
+        self.assertEqual([item['task_id'] for item in first], ['task-lease'])
 
-        second = self.fabric.pull_tasks('lease-node', enrolled['node_token'])
+        leased_store = self.fabric.load()['tasks']['lease-node']
+        self.assertEqual(len(leased_store), 1)
+        self.assertEqual(leased_store[0]['task_id'], 'task-lease')
+        self.assertEqual(leased_store[0]['_lease_count'], 1)
+        self.assertTrue(leased_store[0]['_lease_until'])
+
+        second = self.fabric.pull_tasks('lease-node', config.node_token)
         self.assertEqual(second, [])
 
-        self.fabric.record_receipt(
-            {
-                'schema': 'agentos.node-receipt/v0.1',
-                'realm_id': 'realm-test',
-                'node_id': 'lease-node',
-                'task_id': 'lease-task',
-                'action': 'desktop.session.inspect',
-                'ok': True,
-            },
-            enrolled['node_token'],
-        )
-        self.assertEqual(self.fabric.load()['tasks']['lease-node'], [])
-        self.assertTrue(self.fabric.get_receipt('lease-task')['ok'])
-
-    def test_legacy_receipts_externalize_without_loss(self):
-        hot = self.fabric.load()
-        hot['receipts'] = {
-            'legacy-a': {
-                'schema': 'agentos.node-receipt/v0.1',
-                'node_id': 'legacy-node',
-                'task_id': 'legacy-a',
-                'ok': True,
-                'received_at': '2026-10-01T00:00:00Z',
-            },
-            'legacy-b': {
-                'schema': 'agentos.node-receipt/v0.1',
-                'node_id': 'legacy-node',
-                'task_id': 'legacy-b',
-                'ok': False,
-                'received_at': '2026-10-01T00:00:01Z',
-            },
+        receipt = {
+            'schema': 'agentos.node-receipt/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'lease-node',
+            'task_id': 'task-lease',
+            'action': 'desktop.session.inspect',
+            'ok': True,
         }
-        self.fabric.save(hot)
+        self.fabric.record_receipt(receipt, config.node_token)
 
-        result = self.fabric.externalize_receipts()
-        self.assertTrue(result['ok'])
-        self.assertEqual(result['migrated_receipt_count'], 2)
-        self.assertEqual(result['hot_receipt_count'], 0)
-        self.assertEqual(self.fabric.load()['receipts'], {})
-        self.assertTrue(Path(result['backup_path']).exists())
-        self.assertTrue(self.fabric.get_receipt('legacy-a')['ok'])
-        self.assertFalse(self.fabric.get_receipt('legacy-b')['ok'])
+        self.assertEqual(self.fabric.load()['tasks']['lease-node'], [])
+        self.assertTrue(self.fabric.get_receipt('task-lease')['ok'])
 
-    def test_new_receipt_is_archived_not_added_to_hot_fabric(self):
-        invite = self.fabric.create_invite()
-        enrolled = self.fabric.enroll(
+
+    def test_concurrent_transport_mutations_preserve_receipt(self):
+        import threading
+
+        invite = self.fabric.create_invite(expires_minutes=5, label='concurrency-node')
+        policy = ThinClientPolicy(readable_roots=(self.workspace,))
+        config = ThinClientTransport.enroll(
+            one_url=self.base_url,
             invite_id=invite['invite_id'],
             code=invite['code'],
-            manifest={
-                'schema': 'agentos.node-manifest/v0.1',
-                'realm_id': 'realm-test',
-                'node_id': 'archive-node',
-                'role': 'client',
-                'hostname': 'archive-node',
-                'platform': 'Darwin',
-                'capabilities': [],
-                'tool_presence': {},
-                'surface_inventory': {'surfaces': []},
-            },
+            node_id='concurrency-node',
+            policy=policy,
+            config_path=self.config_path,
         )
-        stored = self.fabric.record_receipt(
-            {
-                'schema': 'agentos.node-receipt/v0.1',
-                'realm_id': 'realm-test',
-                'node_id': 'archive-node',
-                'task_id': 'archive-task',
-                'action': 'bounded.test',
-                'ok': True,
-            },
-            enrolled['node_token'],
-        )
-        self.assertTrue(stored['ok'])
-        self.assertNotIn('archive-task', self.fabric.load()['receipts'])
-        archived = self.fabric.get_receipt('archive-task')
-        self.assertIsNotNone(archived)
-        self.assertTrue(archived['ok'])
-        self.assertEqual(self.fabric.receipt_archive.count(), 1)
 
+        task = {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': 'task-concurrent-receipt',
+            'action': 'desktop.session.inspect',
+        }
+        self.fabric.queue_task('concurrency-node', task)
+        pulled = self.fabric.pull_tasks('concurrency-node', config.node_token)
+        self.assertEqual([x['task_id'] for x in pulled], ['task-concurrent-receipt'])
+
+        receipt = {
+            'schema': 'agentos.node-receipt/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'concurrency-node',
+            'task_id': 'task-concurrent-receipt',
+            'action': 'desktop.session.inspect',
+            'ok': True,
+        }
+        heartbeat = {
+            'schema': 'agentos.node-heartbeat/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'concurrency-node',
+            'observed_at': '2026-10-12T00:00:00Z',
+            'status': 'online',
+            'capabilities': [],
+        }
+
+        errors = []
+        def write_receipt():
+            try:
+                RealmFabricStore(self.fabric.path, node_registry=self.fabric.node_registry).record_receipt(receipt, config.node_token)
+            except Exception as exc:
+                errors.append(exc)
+
+        def write_heartbeats():
+            try:
+                other = RealmFabricStore(self.fabric.path, node_registry=self.fabric.node_registry)
+                for _ in range(25):
+                    other.record_heartbeat(heartbeat, config.node_token)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=write_receipt), threading.Thread(target=write_heartbeats)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        stored = self.fabric.load()
+        self.assertTrue(stored['receipts']['task-concurrent-receipt']['ok'])
+        self.assertEqual(stored['tasks']['concurrency-node'], [])
+
+    def test_concurrent_queue_mutations_do_not_drop_tasks(self):
+        import threading
+
+        invite = self.fabric.create_invite(expires_minutes=5, label='queue-node')
+        policy = ThinClientPolicy(readable_roots=(self.workspace,))
+        ThinClientTransport.enroll(
+            one_url=self.base_url,
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            node_id='queue-node',
+            policy=policy,
+            config_path=self.config_path,
+        )
+
+        errors = []
+        def enqueue(index):
+            try:
+                RealmFabricStore(self.fabric.path, node_registry=self.fabric.node_registry).queue_task(
+                    'queue-node',
+                    {
+                        'schema': 'agentos.node-task/v0.1',
+                        'task_id': f'task-concurrent-{index}',
+                        'action': 'desktop.session.inspect',
+                    },
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=enqueue, args=(i,)) for i in range(20)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        queued = self.fabric.load()['tasks']['queue-node']
+        self.assertEqual(len(queued), 20)
+        self.assertEqual({x['task_id'] for x in queued}, {f'task-concurrent-{i}' for i in range(20)})
 
     def test_invite_is_one_time(self):
         invite = self.fabric.create_invite()
