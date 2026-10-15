@@ -408,6 +408,28 @@ async def main():
             })
             return (r.get("result") or {}).get("value")
 
+        async def ensure_chat_surface():
+            state=await ev(r'''(() => ({
+              href:location.href,
+              hasComposer:!!([...document.querySelectorAll('#prompt-textarea,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                .find(x=>x.offsetParent!==null && !x.disabled))
+            }))()''') or {}
+            href=str(state.get("href") or "")
+            if "/uc/" in href or not state.get("hasComposer"):
+                await call("Page.navigate",{"url":"https://chatgpt.com/"})
+                deadline=time.monotonic()+30
+                while time.monotonic()<deadline:
+                    ready=await ev(r'''(() => !!([...document.querySelectorAll('#prompt-textarea,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                      .find(x=>x.offsetParent!==null && !x.disabled)))()''')
+                    if ready is True:
+                        return
+                    await asyncio.sleep(0.5)
+                final=await ev(r'''(() => ({href:location.href,title:document.title,
+                  text:(document.body?.innerText||'').slice(0,1200)}))()''')
+                raise RuntimeError("chatgpt_web_conversation_surface_unavailable; state="+json.dumps(final,ensure_ascii=False)[:1800])
+
+        await ensure_chat_surface()
+
         baseline=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="assistant"]').length)()''') or 0)
         user_baseline=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="user"]').length)()''') or 0)
 
@@ -1837,6 +1859,28 @@ async def main():
                 "awaitPromise":True,
             })
             return (r.get("result") or {}).get("value")
+
+        async def ensure_chat_surface():
+            state=await ev(r'''(() => ({
+              href:location.href,
+              hasComposer:!!([...document.querySelectorAll('#prompt-textarea,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                .find(x=>x.offsetParent!==null && !x.disabled))
+            }))()''') or {}
+            href=str(state.get("href") or "")
+            if "/uc/" in href or not state.get("hasComposer"):
+                await call("Page.navigate",{"url":"https://chatgpt.com/"})
+                deadline=time.monotonic()+30
+                while time.monotonic()<deadline:
+                    ready=await ev(r'''(() => !!([...document.querySelectorAll('#prompt-textarea,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                      .find(x=>x.offsetParent!==null && !x.disabled)))()''')
+                    if ready is True:
+                        return
+                    await asyncio.sleep(0.5)
+                final=await ev(r'''(() => ({href:location.href,title:document.title,
+                  text:(document.body?.innerText||'').slice(0,1200)}))()''')
+                raise RuntimeError("chatgpt_web_conversation_surface_unavailable; state="+json.dumps(final,ensure_ascii=False)[:1800])
+
+        await ensure_chat_surface()
 
         baseline=await ev(r'''(() => [...document.querySelectorAll('img')]
           .map(x=>x.currentSrc||x.src||'').filter(Boolean))()''') or []
