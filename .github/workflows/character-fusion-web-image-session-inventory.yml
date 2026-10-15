@@ -1,5 +1,5 @@
 name: Character Fusion Web Image Session Inventory
-# reprobe-20261015-chatgpt-vlm-submit
+# reprobe-20261015-chatgpt-composer-file-input
 
 on:
   pull_request:
@@ -39,6 +39,33 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import asyncio, json, urllib.request
+          import websockets
+
+          async def inspect_chatgpt(row):
+              ws=str(row.get("webSocketDebuggerUrl") or "")
+              if not ws:
+                  return {"error":"missing_ws"}
+              async with websockets.connect(ws,open_timeout=5,close_timeout=2,max_size=4*1024*1024) as sock:
+                  await sock.send(json.dumps({"id":1,"method":"Runtime.evaluate","params":{
+                      "expression":r"""(() => ({
+                        href:location.href,
+                        composer:[...document.querySelectorAll('#prompt-textarea,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                          .filter(x=>x.offsetParent!==null && !x.disabled)
+                          .map(x=>({tag:x.tagName,id:x.id,testid:x.getAttribute('data-testid'),role:x.getAttribute('role'),aria:x.getAttribute('aria-label')})),
+                        files:[...document.querySelectorAll('input[type=file]')].map((x,i)=>({
+                          i,accept:x.getAttribute('accept'),multiple:x.multiple,name:x.name,id:x.id,
+                          testid:x.getAttribute('data-testid'),aria:x.getAttribute('aria-label'),
+                          parent:(x.parentElement?.outerHTML||'').slice(0,500)
+                        }))
+                      }))()""",
+                      "returnByValue":True
+                  }}))
+                  while True:
+                      msg=json.loads(await sock.recv())
+                      if msg.get("id")==1:
+                          return ((msg.get("result") or {}).get("result") or {}).get("value")
+
           import json, urllib.request
           for port in (9222,9223,9224,9225,9226):
               try:
@@ -53,7 +80,13 @@ jobs:
                   url=str(row.get("url") or "")
                   title=str(row.get("title") or "")
                   if url.startswith(("http://","https://")):
-                      pages.append({"url":url[:300],"title":title[:160]})
+                      entry={"url":url[:300],"title":title[:160]}
+                      if "chatgpt.com" in url:
+                          try:
+                              entry["dom"]=asyncio.run(inspect_chatgpt(row))
+                          except Exception as e:
+                              entry["dom_error"]=f"{type(e).__name__}: {e}"[:300]
+                      pages.append(entry)
               print(json.dumps({"port":port,"status":"ok","pages":pages},ensure_ascii=False))
           print("web_image_session_inventory=PASS")
           PY
