@@ -1,0 +1,45 @@
+name: Branch Merge-Tree Diagnostic 1682 (read-only)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/branch-merge-tree-diagnostic-1682.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Exact branch tips and merge-tree conflicts (no checkout merge)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/core/integration:refs/remotes/origin/core/integration'
+          mkdir -p merge-diagnostic
+          git rev-parse origin/main > merge-diagnostic/main.sha
+          git rev-parse origin/core/integration > merge-diagnostic/integration.sha
+          git merge-base origin/main origin/core/integration > merge-diagnostic/merge-base.sha
+          set +e
+          git merge-tree --write-tree --name-only origin/main origin/core/integration > merge-diagnostic/merge-tree.txt 2>merge-diagnostic/stderr.txt
+          rc=$?
+          set -e
+          echo "merge_tree_exit=$rc"
+          printf 'merge_tree_exit=%s\n' "$rc" >> "$GITHUB_STEP_SUMMARY"
+          echo "main_sha=$(cat merge-diagnostic/main.sha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "integration_sha=$(cat merge-diagnostic/integration.sha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "merge_base=$(cat merge-diagnostic/merge-base.sha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "total_merge_tree_lines=$(wc -l < merge-diagnostic/merge-tree.txt)" >> "$GITHUB_STEP_SUMMARY"
+          sed -n '1,160p' merge-diagnostic/merge-tree.txt
+          if [ "$rc" -gt 1 ]; then
+            cat merge-diagnostic/stderr.txt
+            exit "$rc"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: merge-tree-1682-full-conflict-output
+          path: merge-diagnostic/
+          retention-days: 7
