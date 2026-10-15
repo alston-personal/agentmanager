@@ -329,10 +329,12 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
                 {"canonical_ir": {"goal": "probe"}, "instruction": "Return exactly PASS"},
                 workspace,
             )
-            self.assertEqual(argv[0:2], ["/home/ubuntu/.local/bin/agy", "run"])
-            self.assertIn("--task", argv)
-            self.assertIn("--workspace", argv)
-            self.assertEqual(argv[-1], str(workspace))
+            self.assertEqual(argv[0:2], ["/home/ubuntu/.local/bin/agy", "-p"])
+            self.assertIn("--output-format", argv)
+            self.assertEqual(argv[argv.index("--output-format") + 1], "text")
+            self.assertNotIn("run", argv)
+            self.assertNotIn("--task", argv)
+            self.assertNotIn("--workspace", argv)
             self.assertNotIn("sh", argv)
             self.assertNotIn("bash", argv)
 
