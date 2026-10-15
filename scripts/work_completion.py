@@ -12,24 +12,77 @@ from datetime import datetime, timedelta, timezone
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 from typing import Any, Iterator
 
 SCHEMA = "agentos.work-completion/v1"
-ACTIVE = {"accepted", "in_progress", "blocked", "verifying"}
+ACTIVE = {"accepted", "in_progress", "waiting_external", "blocked", "verifying"}
 TERMINAL = {"done", "cancelled"}
 ALLOWED = {
-    "accepted": {"in_progress", "blocked", "cancelled"},
-    "in_progress": {"blocked", "verifying", "cancelled"},
-    "blocked": {"in_progress", "cancelled"},
-    "verifying": {"in_progress", "blocked", "done"},
+    "accepted": {"in_progress", "waiting_external", "blocked", "cancelled"},
+    "in_progress": {"waiting_external", "blocked", "verifying", "cancelled"},
+    "waiting_external": {"accepted", "in_progress", "blocked", "cancelled"},
+    "blocked": {"in_progress", "waiting_external", "cancelled"},
+    "verifying": {"in_progress", "waiting_external", "blocked", "done"},
     "done": set(),
     "cancelled": set(),
 }
-PRIORITY = {"in_progress": 0, "accepted": 1, "verifying": 2, "blocked": 3}
+PRIORITY = {"in_progress": 0, "accepted": 1, "verifying": 2, "waiting_external": 3, "blocked": 4}
 EXECUTION_OWNERS = {"role://completion.controller", "role://lobster"}
 DEFAULT_LEASE_SECONDS = 1800
+INTAKE_SCHEMA = "agentos.work-intake/v1"
+INTAKE_FIELDS = {
+    "schema", "work_id", "project_id", "title", "next_action",
+    "acceptance", "source", "workspace", "lease_seconds",
+}
+
+
+
+def classify_blocker(value: str | None) -> str:
+    text = str(value or "").strip().casefold()
+    if not text:
+        return "NONE"
+
+    def matches(*terms: str) -> bool:
+        for term in terms:
+            term = term.casefold()
+            if " " in term or "/" in term or "_" in term:
+                if term in text:
+                    return True
+            elif re.search(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", text):
+                return True
+        return False
+
+    if matches(
+        "auth", "login", "credential", "human approval", "manual approval",
+        "human intervention", "2fa", "mfa",
+    ):
+        return "HUMAN_AUTH"
+    if matches(
+        "rate limit", "rate_limit", "quota", "capacity", "provider unavailable",
+        "timeout", "timed out", "任務逾時",
+    ):
+        return "PROVIDER_CAPACITY"
+    if matches(
+        "runtime", "converge", "controller", "runner window", "one", "one/", "transport",
+        "bridge", "service", "daemon", "node", "receipt continuity",
+        "executor_exception", "executor exception",
+    ):
+        return "RUNTIME_HEALTH"
+    if matches(
+        "twse", "t86", "market data", "historical data", "dataset", "data source",
+    ):
+        return "MARKET_DATA"
+    if matches(
+        "verify", "verification", "acceptance", "evidence", "test", "ci", "report",
+        "驗證失敗", "缺乏實體產出", "幻覺完成", "inspector",
+    ):
+        return "VERIFICATION"
+    return "UNKNOWN"
+
+
 
 
 def now() -> str:
@@ -122,6 +175,12 @@ def validate_item(item: dict[str, Any]) -> list[str]:
             problems.append("active_acceptance_missing")
     if status == "blocked" and not str(item.get("blocker") or "").strip():
         problems.append("blocked_reason_missing")
+    if status == "waiting_external":
+        wake = item.get("wake_condition")
+        if not isinstance(wake, dict):
+            problems.append("waiting_external_wake_condition_missing")
+        elif wake.get("kind") != "time" or not str(wake.get("not_before") or "").strip():
+            problems.append("waiting_external_wake_condition_invalid")
     if status == "done":
         evidence = item.get("evidence")
         verification = item.get("verification") or {}
@@ -171,6 +230,7 @@ def register(
             "source": source or None,
             "workspace": workspace or None,
             "blocker": None,
+            "wake_condition": None,
             "evidence": [],
             "verification": None,
             "created_at": stamp,
@@ -183,6 +243,46 @@ def register(
         state["items"][work_id] = item
         save(path, state)
         return item
+
+
+def register_intake_envelope(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Register bounded accepted work from a typed intake envelope.
+
+    This is deliberately data-only: callers cannot choose an executable,
+    command, arbitrary actor, or execution owner. Accepted work enters the
+    durable completion queue owned by Completion Controller.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("work_intake_must_be_object")
+    unknown = sorted(set(payload) - INTAKE_FIELDS)
+    if unknown:
+        raise ValueError("work_intake_unknown_fields:" + ",".join(unknown))
+    if payload.get("schema") != INTAKE_SCHEMA:
+        raise ValueError("work_intake_schema_invalid")
+
+    acceptance = payload.get("acceptance")
+    if not isinstance(acceptance, list):
+        raise ValueError("work_intake_acceptance_must_be_list")
+
+    workspace = str(payload.get("workspace") or "").strip()
+    if workspace and not Path(workspace).is_absolute():
+        raise ValueError("work_intake_workspace_must_be_absolute")
+
+    lease_seconds = int(payload.get("lease_seconds") or DEFAULT_LEASE_SECONDS)
+    return register(
+        path,
+        work_id=str(payload.get("work_id") or "").strip(),
+        project_id=str(payload.get("project_id") or "").strip(),
+        title=str(payload.get("title") or "").strip(),
+        owner="role://completion.controller",
+        next_action=str(payload.get("next_action") or "").strip(),
+        acceptance=[str(x) for x in acceptance],
+        source=str(payload.get("source") or "").strip(),
+        workspace=workspace,
+        lease_seconds=lease_seconds,
+    )
+
+
 
 
 def transition(
@@ -240,6 +340,194 @@ def transition(
             raise ValueError(",".join(problems))
         save(path, state)
         return item
+
+
+def wait_external(
+    path: Path,
+    *,
+    work_id: str,
+    actor: str,
+    not_before: str,
+    next_action: str,
+    reason: str = "",
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> dict[str, Any]:
+    """Persist a non-human wait and hand durable responsibility to the controller."""
+    try:
+        wake_at = datetime.fromisoformat(not_before.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("wait_not_before_invalid") from exc
+    if wake_at.tzinfo is None:
+        raise ValueError("wait_not_before_timezone_required")
+    if not next_action.strip():
+        raise ValueError("wait_next_action_required")
+    with locked(path):
+        state = load(path)
+        item = state["items"].get(work_id)
+        if not item:
+            raise KeyError("work_item_not_found")
+        current = str(item.get("status") or "")
+        if current in TERMINAL:
+            raise ValueError("terminal_work_cannot_wait")
+        if "waiting_external" not in ALLOWED.get(current, set()) and current != "waiting_external":
+            raise ValueError(f"invalid_transition:{current}->waiting_external")
+        previous_owner = str(item.get("owner") or "")
+        item["status"] = "waiting_external"
+        item["owner"] = "role://completion.controller"
+        if previous_owner != item["owner"]:
+            item["owner_generation"] = int(item.get("owner_generation") or 0) + 1
+        item["lease_expires_at"] = lease_deadline(lease_seconds)
+        item["next_action"] = next_action.strip()
+        item["blocker"] = reason.strip() or None
+        item["wake_condition"] = {
+            "kind": "time",
+            "not_before": wake_at.astimezone(timezone.utc).isoformat(),
+        }
+        item["updated_at"] = now()
+        item.setdefault("history", []).append(
+            {
+                "at": now(),
+                "event": "wait_external",
+                "actor": actor,
+                "from": current,
+                "from_owner": previous_owner,
+                "to_owner": item["owner"],
+                "wake_condition": item["wake_condition"],
+            }
+        )
+        problems = validate_item(item)
+        if problems:
+            raise ValueError(",".join(problems))
+        save(path, state)
+        return item
+
+
+MACHINE_RETRYABLE_BLOCKER_KINDS = {"VERIFICATION", "PROVIDER_CAPACITY", "RUNTIME_HEALTH"}
+MACHINE_RETRY_BASE_SECONDS = {
+    "VERIFICATION": 300,
+    "RUNTIME_HEALTH": 300,
+    "PROVIDER_CAPACITY": 900,
+}
+MACHINE_RETRY_MAX_SECONDS = 3600
+
+
+
+
+MACHINE_RETRYABLE_BLOCKER_KINDS = {"VERIFICATION", "PROVIDER_CAPACITY", "RUNTIME_HEALTH"}
+MACHINE_RETRY_BASE_SECONDS = {
+    "VERIFICATION": 300,
+    "RUNTIME_HEALTH": 300,
+    "PROVIDER_CAPACITY": 900,
+}
+MACHINE_RETRY_MAX_SECONDS = 3600
+
+
+def defer_machine_blockers(
+    path: Path,
+    *,
+    actor: str = "role://completion.watchdog",
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    at: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Convert machine-recoverable blocked work into durable timed waits.
+
+    HUMAN_AUTH and UNKNOWN remain blocked. This prevents a transient verifier,
+    provider-capacity, or runtime-health failure from requiring a human
+    continuation message while also avoiding hot retry loops.
+    """
+    point = at or datetime.now(timezone.utc)
+    deferred: list[dict[str, Any]] = []
+    with locked(path):
+        state = load(path)
+        for work_id, item in sorted(state["items"].items()):
+            if item.get("status") != "blocked":
+                continue
+            kind = classify_blocker(item.get("blocker"))
+            if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
+                continue
+            retry_count = max(0, int(item.get("machine_retry_count") or 0)) + 1
+            base = MACHINE_RETRY_BASE_SECONDS[kind]
+            delay = min(MACHINE_RETRY_MAX_SECONDS, base * (2 ** min(retry_count - 1, 4)))
+            wake_at = point + timedelta(seconds=delay)
+            previous_owner = str(item.get("owner") or "")
+            item["status"] = "waiting_external"
+            item["owner"] = "role://completion.controller"
+            if previous_owner != item["owner"]:
+                item["owner_generation"] = int(item.get("owner_generation") or 0) + 1
+            item["lease_expires_at"] = lease_deadline(lease_seconds)
+            item["wake_condition"] = {
+                "kind": "time",
+                "not_before": wake_at.astimezone(timezone.utc).isoformat(),
+            }
+            item["machine_retry_count"] = retry_count
+            item["last_blocker_kind"] = kind
+            item["updated_at"] = now()
+            item.setdefault("history", []).append(
+                {
+                    "at": now(),
+                    "event": "machine_blocker_deferred",
+                    "actor": actor,
+                    "blocker_kind": kind,
+                    "retry_count": retry_count,
+                    "not_before": item["wake_condition"]["not_before"],
+                }
+            )
+            problems = validate_item(item)
+            if problems:
+                raise ValueError(",".join(problems))
+            deferred.append({
+                "work_id": work_id,
+                "blocker_kind": kind,
+                "retry_count": retry_count,
+                "delay_seconds": delay,
+            })
+        if deferred:
+            save(path, state)
+    return deferred
+
+
+
+
+def wake_due(
+    path: Path,
+    *,
+    actor: str = "role://completion.watchdog",
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    at: datetime | None = None,
+) -> list[str]:
+    """Wake due non-human waits so the normal durable queue can resume them."""
+    point = at or datetime.now(timezone.utc)
+    awakened: list[str] = []
+    with locked(path):
+        state = load(path)
+        for work_id, item in sorted(state["items"].items()):
+            if item.get("status") != "waiting_external":
+                continue
+            wake = item.get("wake_condition") or {}
+            if wake.get("kind") != "time":
+                continue
+            raw = str(wake.get("not_before") or "")
+            try:
+                due = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if due > point:
+                continue
+            item["status"] = "accepted"
+            item["wake_condition"] = None
+            item["blocker"] = None
+            item["owner"] = "role://completion.controller"
+            item["lease_expires_at"] = lease_deadline(lease_seconds)
+            item["updated_at"] = now()
+            item.setdefault("history", []).append(
+                {"at": now(), "event": "wake", "actor": actor, "reason": "time_condition_due"}
+            )
+            awakened.append(work_id)
+        if awakened:
+            save(path, state)
+    return awakened
+
+
 
 
 def handoff(
@@ -311,7 +599,11 @@ def reclaim_stale(
             if item.get("status") not in ACTIVE or not lease_expired(item):
                 continue
             previous = str(item.get("owner") or "")
-            if previous in EXECUTION_OWNERS:
+            # The controller is the durable queue owner and may renew its own
+            # lease while work is waiting. An expired executor lease, including
+            # role://lobster, must be reclaimed so crashed execution cannot
+            # remain permanently "owned".
+            if previous == new_owner:
                 item["lease_expires_at"] = lease_deadline(lease_seconds)
                 item["updated_at"] = now()
                 continue
@@ -341,6 +633,8 @@ def next_item(path: Path, *, include_blocked: bool = False) -> dict[str, Any] | 
     for item in state["items"].values():
         status = item.get("status")
         if status not in ACTIVE:
+            continue
+        if status == "waiting_external":
             continue
         if status == "blocked" and not include_blocked:
             continue
@@ -454,6 +748,9 @@ def cli() -> int:
     p.add_argument("--workspace", default="")
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
+    p = sub.add_parser("register-intake")
+    p.add_argument("--input", type=Path, required=True)
+
     p = sub.add_parser("transition")
     p.add_argument("--id", required=True)
     p.add_argument("--to", required=True, choices=sorted(ACTIVE | TERMINAL))
@@ -462,6 +759,18 @@ def cli() -> int:
     p.add_argument("--blocker")
     p.add_argument("--evidence", action="append")
     p.add_argument("--verification", choices=["passed"])
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
+    p = sub.add_parser("wait-external")
+    p.add_argument("--id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--not-before", required=True)
+    p.add_argument("--next-action", required=True)
+    p.add_argument("--reason", default="")
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
+    p = sub.add_parser("wake-due")
+    p.add_argument("--actor", default="role://completion.watchdog")
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
     p = sub.add_parser("handoff")
@@ -474,6 +783,10 @@ def cli() -> int:
     p = sub.add_parser("heartbeat")
     p.add_argument("--id", required=True)
     p.add_argument("--actor", required=True)
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
+    p = sub.add_parser("defer-machine-blockers")
+    p.add_argument("--actor", default="role://completion.watchdog")
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
     p = sub.add_parser("reclaim-stale")
@@ -496,6 +809,9 @@ def cli() -> int:
             owner=args.owner, next_action=args.next_action, acceptance=args.accept,
             source=args.source, workspace=args.workspace, lease_seconds=args.lease_seconds,
         )
+    elif args.command == "register-intake":
+        payload = json.loads(args.input.read_text(encoding="utf-8"))
+        result = register_intake_envelope(args.state, payload)
     elif args.command == "transition":
         result = transition(
             args.state, work_id=args.id, target=args.to, actor=args.actor,
@@ -503,6 +819,17 @@ def cli() -> int:
             evidence=args.evidence, verification=args.verification,
             lease_seconds=args.lease_seconds,
         )
+    elif args.command == "wait-external":
+        result = wait_external(
+            args.state, work_id=args.id, actor=args.actor,
+            not_before=args.not_before, next_action=args.next_action,
+            reason=args.reason, lease_seconds=args.lease_seconds,
+        )
+    elif args.command == "wake-due":
+        awakened = wake_due(
+            args.state, actor=args.actor, lease_seconds=args.lease_seconds,
+        )
+        result = {"awakened": awakened}
     elif args.command == "handoff":
         result = handoff(
             args.state, work_id=args.id, actor=args.actor,
@@ -513,6 +840,12 @@ def cli() -> int:
         result = heartbeat(
             args.state, work_id=args.id, actor=args.actor, lease_seconds=args.lease_seconds,
         )
+    elif args.command == "defer-machine-blockers":
+        result = {
+            "deferred": defer_machine_blockers(
+                args.state, actor=args.actor, lease_seconds=args.lease_seconds,
+            )
+        }
     elif args.command == "reclaim-stale":
         reclaimed = reclaim_stale(
             args.state, actor=args.actor, new_owner=args.new_owner,
