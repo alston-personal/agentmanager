@@ -217,3 +217,29 @@ def test_gemini_cli_health_classifies_retired_oauth_client():
 
     assert _classify_health_failure(1, "IneligibleTierError reasonCode: UNSUPPORTED_CLIENT") == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
     assert _classify_health_failure(1, "This client is no longer supported; migrate to Antigravity") == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
+
+
+def test_terminal_oauth_shared_breaker_skips_cli_invocation(tmp_path, monkeypatch):
+    import agentos_node.gemini_cli_install_provider as provider
+    from agentos_node.provider_terminal_health import gemini_identity, record_block
+
+    fake_home = tmp_path / "ubuntu"
+    gemini = fake_home / ".local/bin/gemini"
+    gemini.parent.mkdir(parents=True)
+    gemini.write_text("#!/bin/sh\\n", encoding="utf-8")
+    monkeypatch.setattr(provider, "EXPECTED_HOME", fake_home)
+    monkeypatch.setattr(provider.Path, "home", classmethod(lambda cls: fake_home))
+    monkeypatch.setenv("USER", "ubuntu")
+    monkeypatch.setenv("AGENT_DATA_ROOT", str(tmp_path / "data"))
+    identity = gemini_identity(gemini, home=fake_home)
+    record_block(identity)
+
+    def forbidden_invocation(*args, **kwargs):
+        raise AssertionError("terminal OAuth must not invoke Gemini CLI")
+
+    monkeypatch.setattr(provider.subprocess, "run", forbidden_invocation)
+    result = provider.run_gemini_cli_health(canonical_gemini_cli_health_request())
+    assert result["classification"] == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
+    assert result["provider_health_cache_hit"] is True
+    assert result["gemini_cli_invoked"] is False
+    assert result["routable"] is False
