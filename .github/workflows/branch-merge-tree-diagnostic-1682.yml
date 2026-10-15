@@ -59,3 +59,5 @@ jobs:
 # Recheck after PR #1955 on core/integration.
 
 # Verify integration tip following #1956.
+
+# Read-only census after approved PR #1957 protected-main merge.
