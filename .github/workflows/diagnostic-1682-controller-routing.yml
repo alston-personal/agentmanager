@@ -16,4 +16,4 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest -v tests.test_controller_service
+      - run: python -m unittest -v tests.test_controller_service tests.test_controller_typed_desktop
