@@ -304,6 +304,7 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
     """
     allowed = {
         ("alston-personal/agentmanager", "oursong-persona-activation.yml", "core/integration"),
+        ("alston-personal/agentmanager", "agentos-dispatch.yml", "core/integration"),
     }
     repository = str(params.get("repository") or "")
     workflow = str(params.get("workflow") or "")
@@ -316,8 +317,19 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("GitHub Actions dispatch target is not allowlisted")
     if not isinstance(inputs, dict):
         raise ValueError("GitHub Actions dispatch inputs must be an object")
-    if inputs:
-        raise ValueError("this workflow does not accept dispatch inputs")
+    if workflow == "oursong-persona-activation.yml":
+        if inputs:
+            raise ValueError("this workflow does not accept dispatch inputs")
+    elif workflow == "agentos-dispatch.yml":
+        if inputs != {
+            "capability": "node.realm",
+            "operation": "inspect",
+            "payload_json": '{"node_id":"oracle-exec"}',
+            "wait_seconds": "120",
+        }:
+            raise ValueError("Golden Path dispatch inputs are not allowlisted")
+    else:
+        raise ValueError("workflow not allowlisted")
 
     auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
     if auth["returncode"] != 0:
@@ -334,6 +346,7 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
         "/usr/bin/gh", "workflow", "run", workflow,
         "--repo", repository,
         "--ref", ref,
+        *([entry for key, value in sorted(inputs.items()) for entry in ("-f", f"{key}={value}")]),
     ], cwd=Path.home(), timeout=30)
     if dispatch["returncode"] != 0:
         return {
