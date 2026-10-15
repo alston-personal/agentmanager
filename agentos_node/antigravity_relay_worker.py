@@ -266,7 +266,7 @@ class AntigravityRelayWorker:
             raise RuntimeError(f"no authorized local Antigravity executor discovered for provider={self.provider}")
         prompt = build_prompt(capsule)
         if self.provider == "agy":
-            return [*self.executor, "run", "--task", prompt, "--workspace", str(workspace)]
+            return [*self.executor, "-p", prompt, "--output-format", "text"]
         if self.provider == "gemini":
             return [*self.executor, "--skip-trust", "--approval-mode", "auto_edit", "--output-format", "text", "-p", prompt]
         if self.provider == "codex":
@@ -298,7 +298,7 @@ class AntigravityRelayWorker:
             raise RuntimeError(f"no authorized local Antigravity executor discovered for provider={provider}")
         prompt = build_prompt(capsule)
         if provider == "agy":
-            argv = [*executor, "run", "--task", prompt, "--workspace", str(workspace)]
+            argv = [*executor, "-p", prompt, "--output-format", "text"]
         elif provider == "gemini":
             argv = [*executor, "--skip-trust", "--approval-mode", "auto_edit", "--output-format", "text", "-p", prompt]
         elif provider == "codex":
