@@ -1,0 +1,19 @@
+name: Diagnostic 1682 Node Registry Recovery
+on:
+  pull_request:
+    paths:
+      - 'agent_core/node_registry.py'
+      - 'tests/test_node_registry_recovery.py'
+      - '.github/workflows/diagnostic-1682-node-registry-recovery.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest -v tests.test_node_registry_recovery
