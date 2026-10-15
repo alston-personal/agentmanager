@@ -39,6 +39,43 @@ class ReplySafetyTests(unittest.TestCase):
                  "not_before": (datetime.now(timezone.utc)-timedelta(minutes=2)).isoformat()}
         self.assertIs(fn([reply, observe]), observe)
 
+    def test_readback_reconciles_unique_exact_parent_without_writing(self):
+        fn = isolated_function("persona_social_executor.py", "reconcile_held_reply", {
+            "read_items": lambda request, headers: ([{
+                "id": "900", "is_reply_owned_by_me": True,
+                "replied_to": {"id": "123"}, "text": "hello"
+            }], {"ok": True}),
+            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8")
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/"pdca").mkdir()
+            target = {"action_id": "reply-test", "reply_to_id": "123",
+                      "root_post_id": "456", "primary_text": "hello",
+                      "capability": "social.reply.send", "status": "in_progress"}
+            state = {"pending_external_actions": [target]}
+            result = fn(root, state, target, root/"pdca"/"receipt.json", {}, {}, "2026-10-15T00:00:00Z")
+            self.assertEqual(result["readback_status"], "CONFIRMED")
+            self.assertEqual(target["status"], "completed")
+            self.assertFalse(result["write_performed"])
+
+    def test_absent_readback_keeps_reconciliation_hold(self):
+        fn = isolated_function("persona_social_executor.py", "reconcile_held_reply", {
+            "read_items": lambda request, headers: ([], {"ok": True}),
+            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8")
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/"pdca").mkdir()
+            target = {"action_id": "reply-test", "reply_to_id": "123",
+                      "root_post_id": "456", "primary_text": "hello",
+                      "capability": "social.reply.send", "status": "in_progress"}
+            state = {"pending_external_actions": [target]}
+            result = fn(root, state, target, root/"pdca"/"receipt.json", {}, {}, "2026-10-15T00:00:00Z")
+            self.assertEqual(result["readback_status"], "NOT_OBSERVED")
+            self.assertEqual(target["status"], "in_progress")
+            self.assertTrue(target["reconciliation_required"])
+
     def test_reserved_parent_survives_pending_queue_loss(self):
         fn = isolated_function("persona_reply_intent_generator.py", "reserved_reply_parents", {
             "load": lambda p: json.loads(p.read_text(encoding="utf-8"))
