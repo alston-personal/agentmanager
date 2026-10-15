@@ -748,6 +748,9 @@ def cli() -> int:
     p.add_argument("--workspace", default="")
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
+    p = sub.add_parser("register-intake")
+    p.add_argument("--input", type=Path, required=True)
+
     p = sub.add_parser("transition")
     p.add_argument("--id", required=True)
     p.add_argument("--to", required=True, choices=sorted(ACTIVE | TERMINAL))
@@ -756,6 +759,18 @@ def cli() -> int:
     p.add_argument("--blocker")
     p.add_argument("--evidence", action="append")
     p.add_argument("--verification", choices=["passed"])
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
+    p = sub.add_parser("wait-external")
+    p.add_argument("--id", required=True)
+    p.add_argument("--actor", required=True)
+    p.add_argument("--not-before", required=True)
+    p.add_argument("--next-action", required=True)
+    p.add_argument("--reason", default="")
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
+    p = sub.add_parser("wake-due")
+    p.add_argument("--actor", default="role://completion.watchdog")
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
     p = sub.add_parser("handoff")
@@ -768,6 +783,10 @@ def cli() -> int:
     p = sub.add_parser("heartbeat")
     p.add_argument("--id", required=True)
     p.add_argument("--actor", required=True)
+    p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+
+    p = sub.add_parser("defer-machine-blockers")
+    p.add_argument("--actor", default="role://completion.watchdog")
     p.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
 
     p = sub.add_parser("reclaim-stale")
@@ -790,6 +809,9 @@ def cli() -> int:
             owner=args.owner, next_action=args.next_action, acceptance=args.accept,
             source=args.source, workspace=args.workspace, lease_seconds=args.lease_seconds,
         )
+    elif args.command == "register-intake":
+        payload = json.loads(args.input.read_text(encoding="utf-8"))
+        result = register_intake_envelope(args.state, payload)
     elif args.command == "transition":
         result = transition(
             args.state, work_id=args.id, target=args.to, actor=args.actor,
@@ -797,6 +819,17 @@ def cli() -> int:
             evidence=args.evidence, verification=args.verification,
             lease_seconds=args.lease_seconds,
         )
+    elif args.command == "wait-external":
+        result = wait_external(
+            args.state, work_id=args.id, actor=args.actor,
+            not_before=args.not_before, next_action=args.next_action,
+            reason=args.reason, lease_seconds=args.lease_seconds,
+        )
+    elif args.command == "wake-due":
+        awakened = wake_due(
+            args.state, actor=args.actor, lease_seconds=args.lease_seconds,
+        )
+        result = {"awakened": awakened}
     elif args.command == "handoff":
         result = handoff(
             args.state, work_id=args.id, actor=args.actor,
@@ -807,6 +840,12 @@ def cli() -> int:
         result = heartbeat(
             args.state, work_id=args.id, actor=args.actor, lease_seconds=args.lease_seconds,
         )
+    elif args.command == "defer-machine-blockers":
+        result = {
+            "deferred": defer_machine_blockers(
+                args.state, actor=args.actor, lease_seconds=args.lease_seconds,
+            )
+        }
     elif args.command == "reclaim-stale":
         reclaimed = reclaim_stale(
             args.state, actor=args.actor, new_owner=args.new_owner,
