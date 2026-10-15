@@ -602,3 +602,56 @@ def test_golden_path_bootstrap_validation_rejects_wrong_node_without_side_effect
         bc._validate_request(tmp_path / "golden-test.request.json", request)
 
 
+
+
+def test_golden_path_action_relay_rejects_wrong_node_before_gh(monkeypatch):
+    from agentos_node import action_relay
+    monkeypatch.setattr(action_relay, "_run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("gh called before allowlist")))
+    params = {
+        "repository": "alston-personal/agentmanager",
+        "workflow": "agentos-dispatch.yml",
+        "ref": "core/integration",
+        "expected_head_sha": "9" * 40,
+        "inputs": {
+            "capability": "node.realm",
+            "operation": "inspect",
+            "payload_json": '{"node_id":"vopc5750"}',
+            "wait_seconds": "120",
+        },
+    }
+    with pytest.raises(ValueError, match="not allowlisted"):
+        action_relay._github_actions_dispatch(params)
+
+
+def test_golden_path_action_relay_passes_only_fixed_gh_fields(monkeypatch):
+    from agentos_node import action_relay
+    calls = []
+    def mocked_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "workflow", "run"]:
+            assert argv[3:7] == ["agentos-dispatch.yml", "--repo", "alston-personal/agentmanager", "--ref"]
+            assert argv[7] == "core/integration"
+            assert argv[8:] == [
+                "-f", "capability=node.realm",
+                "-f", "operation=inspect",
+                "-f", 'payload_json={"node_id":"oracle-exec"}',
+                "-f", "wait_seconds=120",
+            ]
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "run", "list"]:
+            return {"returncode": 0, "stdout": '[{"headSha":"' + "9"*40 + '","databaseId":123,"status":"queued","conclusion":null,"url":"https://github.com/alston-personal/agentmanager/actions/runs/123"}]', "stderr": ""}
+        raise AssertionError(argv)
+    monkeypatch.setattr(action_relay, "_run", mocked_run)
+    params = {
+        "repository": "alston-personal/agentmanager",
+        "workflow": "agentos-dispatch.yml",
+        "ref": "core/integration",
+        "expected_head_sha": "9"*40,
+        "inputs": {"capability":"node.realm","operation":"inspect","payload_json":'{"node_id":"oracle-exec"}',"wait_seconds":"120"},
+    }
+    result = action_relay._github_actions_dispatch(params)
+    assert result["ok"] is True
+    assert result["run_id"] == 123
+    assert len(calls) == 3
