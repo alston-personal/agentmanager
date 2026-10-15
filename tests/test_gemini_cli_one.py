@@ -47,6 +47,21 @@ class GeminiCliOneTests(unittest.TestCase):
         self.assertIn("ir-1", text)
         self.assertNotIn("token", text.casefold())
 
+    def test_antigravity_projection_preserves_one_ir_and_separate_identity(self):
+        gateway = FakeGateway()
+        result = gateway.resolve("agentos-core")
+        selector = {"project_id": "agentos-core", "index_id": "idx-1", "ir_id": "ir-1"}
+        projected = gemini_cli_one_hook._compact_context(
+            result, selector, surface="antigravity-cli", executor_class="antigravity-cli"
+        )
+        self.assertEqual(projected["source"], "ONE_SESSIONSTART_IR")
+        self.assertEqual(projected["surface"], "antigravity-cli")
+        self.assertEqual(projected["executor_class"], "antigravity-cli")
+        self.assertEqual(projected["ir_id"], "ir-1")
+        self.assertFalse(projected["credential_exposed"])
+        self.assertNotIn("hydration_receipt_ok", projected)
+        self.assertNotIn("experience_ids", projected)
+
     def test_installer_merges_mcp_and_sessionstart_without_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
