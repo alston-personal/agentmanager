@@ -37,7 +37,7 @@ jobs:
           import re
           from pathlib import Path
           data=Path("merge-diagnostic/merge-tree.txt").read_text()
-          items=re.findall(r"CONFLICT \\(([^)]+)\\): .*? in ([^\\n]+)",data)
+          items=re.findall(r"CONFLICT \(([^)]+)\): .*? in ([^\n]+)",data)
           print(f"EXACT_CONFLICT_MESSAGES={len(items)}")
           from collections import Counter
           print("EXACT_CONFLICT_TYPES="+str(dict(Counter(t for t,_ in items))))
