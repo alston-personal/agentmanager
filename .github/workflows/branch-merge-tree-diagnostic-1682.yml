@@ -57,3 +57,5 @@ jobs:
 # Recheck after PR #1954 on core/integration.
 
 # Recheck after PR #1955 on core/integration.
+
+# Verify integration tip following #1956.
