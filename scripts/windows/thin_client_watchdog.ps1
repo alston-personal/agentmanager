@@ -21,7 +21,7 @@ function Get-AgentOSClientProcess {
   return Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
       $_.CommandLine -and
-      $_.CommandLine -match 'agentos_node\.client_cli' -and
+      $_.CommandLine -match 'agentos_node\.client_cli|agentos-client(?:\.exe)?' -and
       $_.CommandLine -match '\brun\b'
     } |
     Select-Object -First 1
