@@ -186,7 +186,12 @@ class TestRealmFabric(unittest.TestCase):
 
         self.assertEqual(errors, [])
         stored = self.fabric.load()
-        self.assertTrue(stored['receipts']['task-concurrent-receipt']['ok'])
+        # Receipt archival is the canonical integration contract: check the
+        # durable receipt surface instead of assuming hot fabric JSON storage.
+        self.assertNotIn('task-concurrent-receipt', stored['receipts'])
+        archived = self.fabric.get_receipt('task-concurrent-receipt')
+        self.assertIsNotNone(archived)
+        self.assertTrue(archived['ok'])
         self.assertEqual(stored['tasks']['concurrency-node'], [])
 
     def test_concurrent_queue_mutations_do_not_drop_tasks(self):
