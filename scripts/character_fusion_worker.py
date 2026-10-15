@@ -460,7 +460,10 @@ async def main():
         if not node_id:
             raise RuntimeError("chatgpt_web_image_upload_control_not_found")
         await call("DOM.setFileInputFiles",{"nodeId":node_id,"files":[str(image_path)]})
-        await asyncio.sleep(1.2)
+        # Attachment processing is asynchronous. A fixed 1.2s delay was not
+        # enough on production and left the composer populated while the click
+        # was ignored. Give the UI a bounded settling window before submission.
+        await asyncio.sleep(3.0)
 
         focused=await ev(r'''(() => {
           const sels=['#prompt-textarea','[data-testid="composer-input"]','textarea','[contenteditable="true"]'];
@@ -476,12 +479,26 @@ async def main():
         await asyncio.sleep(0.5)
 
         sent=False
-        for _ in range(30):
+        for _ in range(60):
             sent=await ev(r'''(() => {
-              const selectors=['[data-testid="send-button"]','button[aria-label*="send" i]','button[aria-label*="送出" i]'];
+              const composer=[...document.querySelectorAll('#prompt-textarea,#mobile-composer-prompt,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                .find(x=>x.offsetParent!==null && !x.disabled);
+              if(!composer) return false;
+              const form=composer.closest('form');
+              const scope=form || document;
+              const selectors=[
+                '[data-testid="send-button"]',
+                '[data-testid="composer-submit-button"]',
+                'button[aria-label*="send" i]',
+                'button[aria-label*="送出" i]',
+                'button[type="submit"]'
+              ];
               for(const s of selectors){
-                const b=[...document.querySelectorAll(s)].find(x=>x.offsetParent!==null && !x.disabled);
+                const b=[...scope.querySelectorAll(s)].find(x=>x.offsetParent!==null && !x.disabled);
                 if(b){b.click();return true;}
+              }
+              if(form && typeof form.requestSubmit==='function'){
+                try{form.requestSubmit();return true;}catch(_){}
               }
               return false;
             })()''')
@@ -489,7 +506,7 @@ async def main():
                 break
             await asyncio.sleep(0.25)
         if not sent:
-            raise RuntimeError("chatgpt_web_submit_failed")
+            raise RuntimeError("chatgpt_web_submit_failed_after_attachment_settle")
 
         # A click is not proof that ChatGPT accepted the message. Confirm a
         # new user message exists; if the UI swallowed the click, retry with
@@ -513,6 +530,12 @@ async def main():
                 break
             await asyncio.sleep(0.25)
         if not submitted:
+            await ev(r'''(() => {
+              const x=[...document.querySelectorAll('#prompt-textarea,#mobile-composer-prompt,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                .find(x=>x.offsetParent!==null && !x.disabled);
+              if(x) x.focus();
+              return !!x;
+            })()''')
             await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
             await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
             for _ in range(20):
