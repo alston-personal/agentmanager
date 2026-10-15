@@ -371,6 +371,44 @@ def image_write(root,state,target,out,username,base,headers,control,now,energy_c
     save_private(journal_path,journal)
     return receipt
 
+def reconcile_held_reply(root, state, target, out, base, headers, now):
+    """Read-only exact-parent recovery; absence never authorizes a resend."""
+    parent=str(target.get("reply_to_id") or "")
+    post_id=str(target.get("root_post_id") or "")
+    text=str(target.get("primary_text") or "").strip()
+    status="UNCONFIRMED"
+    matched=[]
+    if parent.isdigit() and post_id.isdigit() and text:
+        try:
+            items,_=read_items({**base,"operation":"replies.read","object_id":post_id},headers)
+            matched=[str(row.get("id")) for row in items if isinstance(row,dict)
+                     and str(row.get("id") or "").isdigit()
+                     and row.get("is_reply_owned_by_me") is True
+                     and str((row.get("replied_to") or {}).get("id") if isinstance(row.get("replied_to"),dict) else "")==parent
+                     and str(row.get("text") or "").strip()==text]
+            status="CONFIRMED" if len(matched)==1 else "AMBIGUOUS" if len(matched)>1 else "NOT_OBSERVED"
+        except (OSError,ValueError,TypeError,RuntimeError):
+            status="READ_FAILED"
+    receipt={"schema":"agentos.persona-social-executor-receipt/v1",
+             "timestamp":now,"capability":"social.reply.send",
+             "action_id":target.get("action_id"),"operation":"reply.reconcile",
+             "status":"RECONCILED" if status=="CONFIRMED" else "RECONCILIATION_PENDING",
+             "readback_status":status,"write_performed":False,
+             "delivery_confirmed":status=="CONFIRMED",
+             "platform_object_id":matched[0] if status=="CONFIRMED" else None}
+    save(out,receipt)
+    target["reconciliation_receipt_ref"]=str(out.relative_to(root))
+    if status=="CONFIRMED":
+        target["status"]="completed"
+        target["provider_object_id"]=matched[0]
+        target["reconciliation_required"]=False
+        target["receipt_ref"]=str(out.relative_to(root))
+    else:
+        target["status"]="in_progress"
+        target["reconciliation_required"]=True
+    save(root/"pdca/state.json",state)
+    return receipt
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
@@ -386,6 +424,9 @@ def main():
         if not nb: return True
         try: return datetime.fromisoformat(nb.replace("Z","+00:00")) <= now_dt
         except Exception: return False
+    held=next((x for x in pending if isinstance(x,dict)
+        and x.get("capability")=="social.reply.send" and x.get("status")=="in_progress"
+        and x.get("reconciliation_required") is True),None)
     ready=[x for x in pending if isinstance(x,dict) and (x.get("status")=="candidate" or
         (x.get("status")=="in_progress" and x.get("capability")=="social.post.publish" and
          (x.get("media_intent") or {}).get("mode") in ("generate","existing_verified"))) and due(x) and x.get("capability") in (
@@ -393,7 +434,7 @@ def main():
     )]
     # Due reads retain priority; an optional image hold must not consume every
     # execution turn while an independently authorized reply is already due.
-    target=select_action(ready)
+    target=held or select_action(ready)
     now=now_dt.isoformat().replace("+00:00","Z")
     if not target:
         result={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"NO_ACTION","timestamp":now}
@@ -418,6 +459,9 @@ def main():
         base={"schema":"agentos.social-request/v1","product_id":product,
               "platform":"threads","account_binding_id":binding_id}
         headers={"X-AgentOS-Product-Key":product_key}
+        if held is target:
+            result=reconcile_held_reply(root,state,target,Path(args.receipt_out),base,headers,now_dt.isoformat().replace("+00:00","Z"))
+            print(json.dumps(result,ensure_ascii=False)); return 0
         if capability in ("social.threads.observe","social.reply.review"):
             result=observe(root,state,target,Path(args.receipt_out),args.username,base,headers,now_dt)
             print(json.dumps(result,ensure_ascii=False)); return 0
