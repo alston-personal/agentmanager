@@ -406,6 +406,7 @@ def reconcile_held_reply(root, state, target, out, base, headers, now):
     else:
         target["status"]="in_progress"
         target["reconciliation_required"]=True
+        target["next_reconcile_not_before"]=(datetime.fromisoformat(now.replace("Z","+00:00"))+timedelta(minutes=30)).isoformat().replace("+00:00","Z")
     save(root/"pdca/state.json",state)
     return receipt
 
@@ -426,7 +427,10 @@ def main():
         except Exception: return False
     held=next((x for x in pending if isinstance(x,dict)
         and x.get("capability")=="social.reply.send" and x.get("status")=="in_progress"
-        and x.get("reconciliation_required") is True),None)
+        and x.get("reconciliation_required") is True
+        and (not x.get("next_reconcile_not_before") or
+             timestamp(x["next_reconcile_not_before"]) is not None and
+             timestamp(x["next_reconcile_not_before"]) <= now_dt)),None)
     ready=[x for x in pending if isinstance(x,dict) and (x.get("status")=="candidate" or
         (x.get("status")=="in_progress" and x.get("capability")=="social.post.publish" and
          (x.get("media_intent") or {}).get("mode") in ("generate","existing_verified"))) and due(x) and x.get("capability") in (
