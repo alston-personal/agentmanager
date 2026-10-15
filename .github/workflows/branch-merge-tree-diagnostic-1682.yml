@@ -87,3 +87,5 @@ jobs:
 # Recheck after human-approved main PR #1988.
 
 # Recheck after docs-only PR #1996 capability registry reconciliation.
+
+# Recheck after docs-only README PR #1997.
