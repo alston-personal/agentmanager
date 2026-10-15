@@ -428,6 +428,9 @@ async def main():
                   text:(document.body?.innerText||'').slice(0,1200)}))()''')
                 raise RuntimeError("chatgpt_web_conversation_surface_unavailable; state="+json.dumps(final,ensure_ascii=False)[:1800])
 
+        await call("Emulation.setDeviceMetricsOverride",{
+            "width":1280,"height":900,"deviceScaleFactor":1,"mobile":False
+        })
         await ensure_chat_surface()
 
         baseline=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="assistant"]').length)()''') or 0)
@@ -492,9 +495,20 @@ async def main():
         # new user message exists; if the UI swallowed the click, retry with
         # Enter while the composer is still focused.
         submitted=False
+        async def submission_observed():
+            state=await ev(r'''(() => {
+              const composer=[...document.querySelectorAll('#prompt-textarea,#mobile-composer-prompt,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                .find(x=>x.offsetParent!==null && !x.disabled);
+              const text=((composer?.value ?? composer?.innerText ?? composer?.textContent ?? '')+'').trim();
+              const userCount=document.querySelectorAll('[data-message-author-role="user"]').length;
+              const stop=[...document.querySelectorAll('button')].some(b=>b.offsetParent!==null &&
+                /stop|停止|cancel generation/i.test([b.getAttribute('aria-label'),b.getAttribute('title'),b.innerText].filter(Boolean).join(' ')));
+              return {userCount,text,stop};
+            })()''') or {}
+            return int(state.get("userCount") or 0) > user_baseline or bool(state.get("stop")) or not str(state.get("text") or "").strip()
+
         for _ in range(20):
-            user_count=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="user"]').length)()''') or 0)
-            if user_count > user_baseline:
+            if await submission_observed():
                 submitted=True
                 break
             await asyncio.sleep(0.25)
@@ -502,14 +516,13 @@ async def main():
             await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
             await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
             for _ in range(20):
-                user_count=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="user"]').length)()''') or 0)
-                if user_count > user_baseline:
+                if await submission_observed():
                     submitted=True
                     break
                 await asyncio.sleep(0.25)
         if not submitted:
             state=await ev(r'''(() => ({
-              composer:(document.querySelector('#prompt-textarea')?.innerText||document.querySelector('#prompt-textarea')?.textContent||'').slice(0,500),
+              composer:(()=>{const x=document.querySelector('#prompt-textarea,#mobile-composer-prompt,[data-testid="composer-input"],textarea,[contenteditable="true"]'); return ((x?.value ?? x?.innerText ?? x?.textContent ?? '')+'').slice(0,500)})(),
               userCount:document.querySelectorAll('[data-message-author-role="user"]').length,
               assistantCount:document.querySelectorAll('[data-message-author-role="assistant"]').length,
               buttons:[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null).slice(-20)
@@ -1880,6 +1893,9 @@ async def main():
                   text:(document.body?.innerText||'').slice(0,1200)}))()''')
                 raise RuntimeError("chatgpt_web_conversation_surface_unavailable; state="+json.dumps(final,ensure_ascii=False)[:1800])
 
+        await call("Emulation.setDeviceMetricsOverride",{
+            "width":1280,"height":900,"deviceScaleFactor":1,"mobile":False
+        })
         await ensure_chat_surface()
 
         baseline=await ev(r'''(() => [...document.querySelectorAll('img')]
