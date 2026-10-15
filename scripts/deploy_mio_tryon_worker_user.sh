@@ -42,7 +42,7 @@ PY
 )"
 test -n "$HF_TOKEN_VALUE" || { echo "mio_tryon_deploy=HF_TOKEN_EMPTY" >&2; exit 3; }
 
-mkdir -p "$ROOT" "$RUNTIME_LIB/capabilities/wardrobe_visual_review" "$BIN" "$CFG" "$UNIT_DIR"
+mkdir -p "$ROOT" "$RUNTIME_LIB/capabilities/wardrobe_visual_review" "$RUNTIME_LIB/agentos_node" "$BIN" "$CFG" "$UNIT_DIR"
 
 if [ -n "$SOURCE_SHA" ]; then
   [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "mio_tryon_deploy=INVALID_SOURCE_SHA" >&2; exit 4; }
@@ -61,6 +61,9 @@ git -C "$REPO" show "$WORKER_COMMIT:capabilities/__init__.py" > "$RUNTIME_LIB/ca
 git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/__init__.py" > "$RUNTIME_LIB/capabilities/wardrobe_visual_review/__init__.py"
 git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/review.py" > "$RUNTIME_LIB/capabilities/wardrobe_visual_review/review.py"
 git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/gemini_backend.py" > "$RUNTIME_LIB/capabilities/wardrobe_visual_review/gemini_backend.py"
+git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/agy_backend.py" > "$RUNTIME_LIB/capabilities/wardrobe_visual_review/agy_backend.py"
+git -C "$REPO" show "$WORKER_COMMIT:agentos_node/__init__.py" > "$RUNTIME_LIB/agentos_node/__init__.py"
+git -C "$REPO" show "$WORKER_COMMIT:agentos_node/antigravity_relay.py" > "$RUNTIME_LIB/agentos_node/antigravity_relay.py"
 chmod 644 "$RUNTIME_LIB/capabilities/__init__.py" "$RUNTIME_LIB/capabilities/wardrobe_visual_review/"*.py
 
 if [ ! -x "$VENV/bin/python" ]; then
