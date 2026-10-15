@@ -141,60 +141,13 @@ def _classify_failure(text: str, *, timed_out: bool = False) -> str:
 # Persist a terminal unsupported-OAuth decision across worker restarts.  This
 # is an exact runtime/auth-method breaker, not a temporary rate-limit retry.
 # Changing CLI install or selected auth method invalidates the decision.
-TERMINAL_OAUTH_CLASS = "OAUTH_CLIENT_UNSUPPORTED"
-
-
-def _provider_breaker_identity(executable: str) -> str:
-    binary = Path(executable).resolve()
-    stat = binary.stat()
-    selected_type = "oauth-personal"
-    settings = Path.home() / ".gemini" / "settings.json"
-    if settings.is_file():
-        try:
-            selected_type = str((json.loads(settings.read_text(encoding="utf-8")).get("security") or {}).get("auth", {}).get("selectedType") or selected_type)
-        except (OSError, ValueError, TypeError, AttributeError):
-            pass
-    payload = json.dumps({"path": str(binary), "size": stat.st_size,
-                          "mtimeNs": stat.st_mtime_ns, "authType": selected_type},
-                         sort_keys=True)
-    return hashlib.sha256(payload.encode()).hexdigest()
-
-
-def _provider_breaker_path() -> Path:
-    root = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data")))
-    return root / "provider_health" / "gemini-cli" / "oauth-client-terminal.json"
-
-
-def _is_terminal_oauth_blocked(identity: str) -> bool:
-    try:
-        target = _provider_breaker_path()
-        if target.is_symlink():
-            return False
-        record = json.loads(target.read_text(encoding="utf-8"))
-        return (record.get("schema") == "agentos.provider-terminal-health/v1"
-                and record.get("identity") == identity
-                and record.get("classification") == TERMINAL_OAUTH_CLASS)
-    except (OSError, ValueError, TypeError):
-        return False
-
-
-def _record_terminal_oauth(identity: str) -> None:
-    target = _provider_breaker_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists() and target.is_symlink():
-        return
-    record = {"schema": "agentos.provider-terminal-health/v1",
-              "provider": "gemini-cli", "identity": identity,
-              "classification": TERMINAL_OAUTH_CLASS, "routable": False,
-              "retryPolicy": "require_runtime_or_auth_method_change",
-              "observedAtUnix": int(time.time())}
-    with tempfile.NamedTemporaryFile(mode="w", dir=target.parent, encoding="utf-8",
-                                     delete=False) as tmp:
-        json.dump(record, tmp, sort_keys=True)
-        tmp.write("\n")
-        staged = Path(tmp.name)
-    os.chmod(staged, 0o600)
-    os.replace(staged, target)
+from agentos_node.provider_terminal_health import (
+    TERMINAL_OAUTH_CLASS,
+    gemini_identity as _provider_breaker_identity,
+    breaker_path as _provider_breaker_path,
+    blocked as _is_terminal_oauth_blocked,
+    record_block as _record_terminal_oauth,
+)
 
 
 def review_with_gemini(
