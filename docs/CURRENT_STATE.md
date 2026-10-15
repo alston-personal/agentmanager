@@ -948,3 +948,21 @@ Draft PR #1923 proposes the narrow `agentos.project.publish_continuation` action
 ## Node Registry legacy snapshot recovery — source convergence candidate (2026-10-15)
 
 The Node Registry remains an atomic, locked single-JSON registry. A bounded compatibility reader may recover only multiple fully valid, sequential snapshots from the same Realm, selecting the final complete snapshot. Incomplete, cross-Realm, or malformed data continues to fail closed. The next authorized write canonicalizes through the normal locked atomic path. This is candidate source behavior; production Oracle adoption is not yet attested. See #1682 and PR #1969.
+
+## Runtime ownership registry convergence (2026-10-15)
+
+The declarative runtime ownership policy (`.agent/governance/runtime_ownership.json`)
+now reflects integration policy version `2026.10.06.1`, including the
+source-checkout reference-context allowlist and the Core release pointer's
+recorded acceptance metadata. It keeps the shared source checkout explicitly
+**non-production**, forbids mutable checkouts as a deployment primitive, and
+retains controller-owned immutable releases and service-specific locks.
+
+The `agentos-core` entry has a **recorded** `migration_state: active`,
+`accepted_release: 1387daab2309bcbc4e9098a5744cef5eff59a669`, and
+`live_receipt: github-actions:37394284772`, with historical audit counters
+(`immutable_count: 10`, `mutable_count: 0`, `result: PASS`). These are
+**historical declarations carried forward from integration**, not a fresh
+2026-10-15 Oracle runtime or production acceptance test. Live equivalence and
+receipt freshness must be revalidated independently before making operational
+claims or promoting deployments.
