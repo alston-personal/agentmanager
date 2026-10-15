@@ -229,12 +229,15 @@ class ControllerService:
         ):
             raise ValueError('node_id is required for privileged or typed action')
 
-        fabric_state = self.fabric.load()
+        # Typed dispatchers can use a fixed Fabric adapter without a load() API.
+        # Only capability-based selection requires a live queue snapshot.
+        fabric_state = {'tasks': {}}
         if requested_node_id:
             node_id = requested_node_id
             node = self._node_for_dispatch(node_id)
             selection_mode = 'explicit_target'
         else:
+            fabric_state = self.fabric.load()
             candidates = []
             for candidate in self.fabric.node_registry.node_map().get('nodes', []):
                 if candidate.get('status') != 'online':
