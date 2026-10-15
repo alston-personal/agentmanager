@@ -1,5 +1,7 @@
 name: Live Scheduler Node Probe
 
+# raw-receipt-probe: 2026-10-15T14:24+08:00
+
 # probe-trigger: 2026-10-15T14:17+08:00 character-fusion smoke queue
 
 on:
@@ -77,4 +79,20 @@ jobs:
           d=json.load(open(sys.argv[1],encoding='utf-8'))
           print(json.dumps(d,indent=2,ensure_ascii=False))
           print('character_fusion_smoke_request_probe=PASS')
+          PY
+
+      - name: Read raw Character Fusion smoke scheduler receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          request_id='agentos.character_fusion.smoke-1792044232-58ac8199'
+          curl -fsS --max-time 20 \
+            -H "Authorization: Bearer $TOKEN" \
+            "https://studio.milkcat.org/dashboard/api/agentos/v1/controller/scheduler/requests/$request_id" \
+            > "$RUNNER_TEMP/smoke-request-raw.json"
+          python3 - "$RUNNER_TEMP/smoke-request-raw.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(json.dumps(d,indent=2,ensure_ascii=False))
+          print('character_fusion_smoke_raw_receipt_probe=PASS')
           PY
