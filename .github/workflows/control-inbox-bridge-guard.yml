@@ -73,6 +73,8 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest
       - name: Run Control Inbox bridge regressions
         run: python -m pytest tests/test_control_inbox_bridge.py tests/test_active_continuation.py tests/test_realm_resolve_endpoint.py tests/test_control_inbox_runtime_installer.py tests/test_chatgpt_continuation_projection.py tests/test_control_inbox_service_repair.py -q
+      - name: Verify Golden Path governed dispatch regression
+        run: python -m pytest tests/test_runner_window.py -k 'golden_path' -q
       - name: Compile bootstrap and bridge modules
         run: python -m py_compile agent_core/control_inbox_bridge.py agent_core/chatgpt_continuation_projection.py agentos_node/bootstrap_control.py scripts/control_inbox_service_repair.py
       - name: Validate governed runtime installers
