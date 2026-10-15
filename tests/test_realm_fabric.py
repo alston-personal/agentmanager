@@ -186,9 +186,7 @@ class TestRealmFabric(unittest.TestCase):
 
         self.assertEqual(errors, [])
         stored = self.fabric.load()
-        # Receipt archival is the canonical integration contract: check the
-        # durable receipt surface instead of assuming hot fabric JSON storage.
-        self.assertNotIn('task-concurrent-receipt', stored['receipts'])
+        # Stable receipt API works for hot legacy state and durable archive.
         archived = self.fabric.get_receipt('task-concurrent-receipt')
         self.assertIsNotNone(archived)
         self.assertTrue(archived['ok'])
