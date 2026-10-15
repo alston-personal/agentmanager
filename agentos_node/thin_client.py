@@ -362,6 +362,9 @@ class ThinClient:
                 result = dict(result)
                 result.setdefault('adapter_id', str(adapter.adapter_id))
             reserved = {'schema', 'realm_id', 'node_id', 'task_id', 'action', 'started_at', 'completed_at', 'ok', 'cognition_ids_used', 'error'}
+            collisions = sorted(set(result).intersection(reserved))
+            if collisions:
+                receipt['result_metadata_collision_keys'] = collisions
             for key, value in result.items():
                 if key == 'schema':
                     receipt['result_schema'] = value
