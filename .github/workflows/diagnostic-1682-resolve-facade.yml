@@ -1,0 +1,19 @@
+name: Diagnostic 1682 Resolve Facade
+on:
+  pull_request:
+    paths:
+      - 'agent_core/resolve_facade.py'
+      - 'tests/test_resolve_facade.py'
+      - '.github/workflows/diagnostic-1682-resolve-facade.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest -v tests.test_resolve_facade tests.test_project_continuation_index
