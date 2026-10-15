@@ -409,6 +409,7 @@ async def main():
             return (r.get("result") or {}).get("value")
 
         baseline=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="assistant"]').length)()''') or 0)
+        user_baseline=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="user"]').length)()''') or 0)
 
         doc=await call("DOM.getDocument",{"depth":-1,"pierce":True})
         root=(doc.get("root") or {}).get("nodeId")
@@ -465,13 +466,45 @@ async def main():
         if not sent:
             raise RuntimeError("chatgpt_web_submit_failed")
 
+        # A click is not proof that ChatGPT accepted the message. Confirm a
+        # new user message exists; if the UI swallowed the click, retry with
+        # Enter while the composer is still focused.
+        submitted=False
+        for _ in range(20):
+            user_count=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="user"]').length)()''') or 0)
+            if user_count > user_baseline:
+                submitted=True
+                break
+            await asyncio.sleep(0.25)
+        if not submitted:
+            await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
+            await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
+            for _ in range(20):
+                user_count=int(await ev(r'''(() => document.querySelectorAll('[data-message-author-role="user"]').length)()''') or 0)
+                if user_count > user_baseline:
+                    submitted=True
+                    break
+                await asyncio.sleep(0.25)
+        if not submitted:
+            state=await ev(r'''(() => ({
+              composer:(document.querySelector('#prompt-textarea')?.innerText||document.querySelector('#prompt-textarea')?.textContent||'').slice(0,500),
+              userCount:document.querySelectorAll('[data-message-author-role="user"]').length,
+              assistantCount:document.querySelectorAll('[data-message-author-role="assistant"]').length,
+              buttons:[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null).slice(-20)
+                .map(x=>({text:(x.innerText||'').trim().slice(0,80),aria:(x.getAttribute('aria-label')||'').slice(0,120),disabled:!!x.disabled}))
+            }))()''')
+            raise RuntimeError("chatgpt_web_submit_not_observed; state="+json.dumps(state,ensure_ascii=False)[:2500])
+
         deadline=time.monotonic()+180
         last=""
         stable=0
         response=""
         while time.monotonic()<deadline:
             rows=await ev(r'''(() => [...document.querySelectorAll('[data-message-author-role="assistant"]')]
-              .map(x=>(x.innerText||x.textContent||'').trim()))()''') or []
+              .map(x=>{
+                const md=x.querySelector('.markdown');
+                return ((md?.innerText||md?.textContent||x.innerText||x.textContent||'').trim());
+              }))()''') or []
             if len(rows)>baseline and str(rows[-1]).strip():
                 current=str(rows[-1]).strip()
                 if current==last:
@@ -484,7 +517,13 @@ async def main():
                     break
             await asyncio.sleep(1.5)
         if not response:
-            raise TimeoutError("chatgpt_web_vlm_response_timeout")
+            state=await ev(r'''(() => ({
+              userCount:document.querySelectorAll('[data-message-author-role="user"]').length,
+              assistantCount:document.querySelectorAll('[data-message-author-role="assistant"]').length,
+              composer:(document.querySelector('#prompt-textarea')?.innerText||document.querySelector('#prompt-textarea')?.textContent||'').slice(0,500),
+              mainText:(document.querySelector('main')?.innerText||'').slice(-2000)
+            }))()''')
+            raise TimeoutError("chatgpt_web_vlm_response_timeout; state="+json.dumps(state,ensure_ascii=False)[:3000])
         output_path.write_text(response,encoding="utf-8")
         print("character_fusion_chatgpt_web_vlm=PASS")
 
