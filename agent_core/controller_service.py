@@ -217,14 +217,43 @@ class ControllerService:
         if schema not in (None, self.REQUEST_SCHEMA):
             raise ValueError('invalid controller dispatch schema')
 
-        node_id = str(request.get('node_id') or request.get('target_node') or '').strip()
+        requested_node_id = str(request.get('node_id') or request.get('target_node') or '').strip()
         action = str(request.get('action') or request.get('capability') or '').strip()
-        if not node_id:
-            raise ValueError('node_id is required')
         if not action:
             raise ValueError('action is required')
 
-        node = self._node_for_dispatch(node_id)
+        # Privileged and typed actions must preserve explicit Node authority.
+        if not requested_node_id and (
+            action in self.TYPED_DESKTOP_CAPABILITY
+            or action in {self.EXECUTOR_JOB_ACTION, self.RUNTIME_CONVERGE_ACTION}
+        ):
+            raise ValueError('node_id is required for privileged or typed action')
+
+        fabric_state = self.fabric.load()
+        if requested_node_id:
+            node_id = requested_node_id
+            node = self._node_for_dispatch(node_id)
+            selection_mode = 'explicit_target'
+        else:
+            candidates = []
+            for candidate in self.fabric.node_registry.node_map().get('nodes', []):
+                if candidate.get('status') != 'online':
+                    continue
+                advertised = {str(x) for x in (candidate.get('capabilities') or []) if str(x)}
+                if action not in advertised:
+                    continue
+                candidate_id = str(candidate.get('node_id') or '')
+                if not candidate_id:
+                    continue
+                queue_depth = len(fabric_state.get('tasks', {}).get(candidate_id, []))
+                age = candidate.get('heartbeat_age_seconds')
+                candidates.append((queue_depth, age if isinstance(age, int) else 10**9,
+                                   candidate_id, candidate))
+            if not candidates:
+                raise ValueError(f'no online node advertises capability: {action}')
+            candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+            _, _, node_id, node = candidates[0]
+            selection_mode = 'capability_auto'
         payload = request.get('payload')
         if payload is None:
             payload = {}
@@ -285,4 +314,9 @@ class ControllerService:
             'queue_schema': queued.get('schema'),
             'node_status': node.get('status'),
             'advertised_capability': True,
+            'selection_mode': selection_mode,
+            'requested_node_id': requested_node_id or None,
+            'candidate_queue_depth': len(fabric_state.get('tasks', {}).get(node_id, [])),
+            'selection_reason': ('explicit target validated' if selection_mode == 'explicit_target'
+                                 else 'lowest queued load among online capability matches'),
         }
