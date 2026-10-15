@@ -102,6 +102,37 @@ class ReplySafetyTests(unittest.TestCase):
             self.assertEqual(target["status"], "in_progress")
             self.assertFalse(result["delivery_confirmed"])
 
+    def test_orphan_restored_only_for_reconciliation(self):
+        fn = isolated_function("persona_social_executor.py", "recover_orphan_reply_intent", {
+            "json": json, "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8")
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            (root/"pdca"/"reply_intents").mkdir(parents=True)
+            (root/"pdca"/"reply_intents"/"old.json").write_text(json.dumps({
+                "action_id":"reply-1","capability":"social.reply.send",
+                "reply_to_id":"123","root_post_id":"456","status":"candidate"
+            }),encoding="utf-8")
+            state={"pending_external_actions":[]}
+            restored=fn(root,state)
+            self.assertEqual(restored["status"],"in_progress")
+            self.assertTrue(restored["reconciliation_required"])
+            self.assertFalse(restored["write_replay_allowed"])
+            self.assertIsNone(fn(root,state))
+
+    def test_completed_orphan_never_restored(self):
+        fn = isolated_function("persona_social_executor.py", "recover_orphan_reply_intent", {
+            "json": json, "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8")
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            (root/"pdca"/"reply_intents").mkdir(parents=True)
+            (root/"pdca"/"reply_intents"/"old.json").write_text(json.dumps({
+                "action_id":"reply-1","capability":"social.reply.send",
+                "reply_to_id":"123","root_post_id":"456","status":"completed"
+            }),encoding="utf-8")
+            self.assertIsNone(fn(root,{"pending_external_actions":[]}))
+
     def test_reserved_parent_survives_pending_queue_loss(self):
         fn = isolated_function("persona_reply_intent_generator.py", "reserved_reply_parents", {
             "load": lambda p: json.loads(p.read_text(encoding="utf-8"))
