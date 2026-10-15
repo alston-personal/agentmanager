@@ -95,3 +95,5 @@ jobs:
 # Recheck after PR #2000 release-lane governance guard convergence.
 
 # Recheck after PR #2001 Windows watchdog liveness reconciliation.
+
+# Recheck after PR #2004 retired LayoutLab carrier.
