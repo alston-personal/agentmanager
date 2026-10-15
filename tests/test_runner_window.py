@@ -656,6 +656,8 @@ def test_golden_path_action_relay_passes_only_fixed_gh_fields(monkeypatch):
     result = action_relay._github_actions_dispatch(params)
     assert result["ok"] is True
     assert result["run_id"] == 123
+    assert result["dispatch_ack_only"] is True
+    assert result["workflow_terminal_verified"] is False
     assert len(calls) == 3
 
 
