@@ -295,6 +295,15 @@ def _seed_verify_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
         _run(["rm", "-rf", str(verify_root)], cwd=Path.home(), timeout=30)
 
 
+def _github_run_created_after(created_at: str, lower_bound: datetime) -> bool:
+    """Correlate workflow runs with this dispatch attempt, not an older same-SHA run."""
+    try:
+        when = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        return when.tzinfo is not None and when >= lower_bound.replace(microsecond=0)
+    except (ValueError, TypeError):
+        return False
+
+
 def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
     """Dispatch one explicitly allowlisted GitHub Actions workflow.
 
@@ -342,6 +351,7 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
             "error": "ubuntu GitHub identity is not authenticated",
         }
 
+    dispatched_not_before = datetime.now(timezone.utc)
     dispatch = _run([
         "/usr/bin/gh", "workflow", "run", workflow,
         "--repo", repository,
@@ -379,7 +389,12 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
             except json.JSONDecodeError:
                 rows = []
             observed = next(
-                (row for row in rows if str(row.get("headSha") or "") == expected_head_sha),
+                (
+                    row for row in rows
+                    if str(row.get("headSha") or "") == expected_head_sha
+                    and isinstance(row.get("createdAt"), str)
+                    and _github_run_created_after(row["createdAt"], dispatched_not_before)
+                ),
                 None,
             )
             if observed is not None:
