@@ -157,14 +157,27 @@ echo "dashboard_bg_old_slot_stopped=PASS"
 echo "dashboard_bg_old_slot_unit=$OLD_UNIT"
 
 # Prove the public surface remains healthy with only the new slot serving.
-ps2=$(curl -sS -o /tmp/bg-public-session-post-retire -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/auth/session || true)
-ph2=$(curl -sS -o /tmp/bg-public-health-post-retire -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true)
-if [ "$ps2" != 200 ] || [ "$ph2" != 200 ] || ! grep -q 'agentos.one-health/v0.1' /tmp/bg-public-health-post-retire; then
+# The nginx switch itself is already verified above. Retiring the old process can
+# briefly reset an inherited/keep-alive connection, so use the same bounded,
+# fail-closed retry semantics as the first public verification instead of
+# rolling back on a single transient request.
+post_retire_ok=0
+for attempt in $(seq 1 20); do
+  ps2=$(curl -sS -o /tmp/bg-public-session-post-retire -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/auth/session || true)
+  ph2=$(curl -sS -o /tmp/bg-public-health-post-retire -w '%{http_code}' --max-time 5 https://studio.milkcat.org/dashboard/api/agentos/v1/health || true)
+  echo "dashboard_bg_post_retire_attempt=$attempt session_http=$ps2 health_http=$ph2"
+  if [ "$ps2" = 200 ] && [ "$ph2" = 200 ] && grep -q 'agentos.one-health/v0.1' /tmp/bg-public-health-post-retire; then
+    post_retire_ok=1
+    break
+  fi
+  sleep 0.5
+done
+if [ "$post_retire_ok" != 1 ]; then
   systemctl --user restart "$OLD_UNIT" || true
   sudo -n cp "$NGINX_SITE.pre-bg-$RUN_ID-$RUN_ATTEMPT" "$NGINX_SITE"
   sudo -n nginx -t
   sudo -n systemctl reload nginx
-  echo "ERROR: post-retire public verification failed; old slot and nginx upstream restored" >&2
+  echo "ERROR: post-retire public verification failed after bounded retries; old slot and nginx upstream restored" >&2
   exit 10
 fi
 echo "dashboard_bg_post_retire_public_verify=PASS"
