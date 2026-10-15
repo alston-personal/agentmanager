@@ -504,7 +504,9 @@ def main():
             target["status"]="in_progress"
             target["reconciliation_required"]=True
             target["receipt_ref"]=str(out.relative_to(root))
-            state["pending_external_actions"]=pending[-12:]
+            # Preserve the held action even when the bounded queue is full.
+            # Truncating here could lose the very reconciliation obligation.
+            state["pending_external_actions"]=pending
             save(root/"pdca/state.json",state)
             print(json.dumps(receipt,ensure_ascii=False))
             return 0
