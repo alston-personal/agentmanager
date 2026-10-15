@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from agent_core.executor_job_contract import canonical_executor_job_request, validate_executor_job
 from agentos_node.antigravity_cli_probe_provider import run_antigravity_probe
-from agentos_node.executor_job_adapter import ExecutorJobProviderRegistry
+from agentos_node.executor_job_adapter import ExecutorJobProviderRegistry, execute_registered_executor_job
 from agentos_node.antigravity_cli_probe_provider import register_antigravity_probe_provider
 
 
@@ -49,6 +49,31 @@ class AntigravityJobTests(unittest.TestCase):
         self.assertEqual(result["agy_version_exit_code"], 0)
         self.assertTrue(result["agy_version_detected"])
         self.assertNotIn("secret", result)
+
+    def test_provenance_fields_survive_complete_one_projection(self):
+        registry = ExecutorJobProviderRegistry()
+        registry.register(
+            job_type="antigravity.cli.probe", provider_id="attestation-test",
+            executor_class="antigravity-cli",
+            handler=lambda _: {
+                "classification": "ANTIGRAVITY_INFERENCE_PASS", "verdict": "PASS",
+                "successful": True, "authorized": True, "routable": True,
+                "executor_available": True, "gemini_cli_version": "agy 1.3.4",
+                "agy_probe_sha256": "a" * 64, "agy_marker_matched": True,
+                "agy_version_exit_code": 0, "agy_version_detected": True,
+                "secret": "SHOULD_NOT_ESCAPE",
+            },
+        )
+        projected = execute_registered_executor_job(
+            job_id="action-attestation123", request=self.request, registry=registry
+        )
+        self.assertTrue(projected["successful"])
+        self.assertEqual(projected["gemini_cli_version"], "agy 1.3.4")
+        self.assertEqual(projected["agy_probe_sha256"], "a" * 64)
+        self.assertTrue(projected["agy_marker_matched"])
+        self.assertEqual(projected["agy_version_exit_code"], 0)
+        self.assertTrue(projected["agy_version_detected"])
+        self.assertNotIn("secret", projected)
 
     def test_successful_false_even_if_verdict_text_passes(self):
         with tempfile.TemporaryDirectory() as dirname:
