@@ -1,6 +1,6 @@
 name: Character Fusion Runner Window Smoke
 
-# trigger-current: 2026-10-15T14:47+08:00 character-fusion smoke after VLM diagnostics
+# trigger-current: 2026-10-15T14:55+08:00 character-fusion smoke after ChatGPT VLM submit fix
 
 # trigger: 2026-10-13 Character Fusion final smoke after ChatGPT Web image renderer 1249
 
