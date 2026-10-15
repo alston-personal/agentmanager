@@ -91,3 +91,5 @@ jobs:
 # Recheck after docs-only README PR #1997.
 
 # Recheck after PR #1999 SSH receipt transport convergence.
+
+# Recheck after PR #2000 release-lane governance guard convergence.
