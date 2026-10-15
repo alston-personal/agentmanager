@@ -388,15 +388,26 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
                 rows = json.loads(probe.get("stdout") or "[]")
             except json.JSONDecodeError:
                 rows = []
-            observed = next(
-                (
-                    row for row in rows
-                    if str(row.get("headSha") or "") == expected_head_sha
-                    and isinstance(row.get("createdAt"), str)
-                    and _github_run_created_after(row["createdAt"], dispatched_not_before)
-                ),
-                None,
-            )
+            candidates = [
+                row for row in rows
+                if str(row.get("headSha") or "") == expected_head_sha
+                and isinstance(row.get("createdAt"), str)
+                and _github_run_created_after(row["createdAt"], dispatched_not_before)
+            ]
+            # A timestamp + commit does not uniquely identify simultaneous
+            # workflow_dispatch runs. Never attach an ambiguous run receipt.
+            if len(candidates) > 1:
+                return {
+                    "ok": False,
+                    "repository": repository,
+                    "workflow": workflow,
+                    "ref": ref,
+                    "expected_head_sha": expected_head_sha,
+                    "dispatched": True,
+                    "run_id": None,
+                    "error": "ambiguous workflow run correlation",
+                }
+            observed = candidates[0] if len(candidates) == 1 else None
             if observed is not None:
                 break
         time.sleep(1.0)
