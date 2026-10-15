@@ -64,6 +64,7 @@ git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/gemini_b
 git -C "$REPO" show "$WORKER_COMMIT:capabilities/wardrobe_visual_review/agy_backend.py" > "$RUNTIME_LIB/capabilities/wardrobe_visual_review/agy_backend.py"
 git -C "$REPO" show "$WORKER_COMMIT:agentos_node/__init__.py" > "$RUNTIME_LIB/agentos_node/__init__.py"
 git -C "$REPO" show "$WORKER_COMMIT:agentos_node/antigravity_relay.py" > "$RUNTIME_LIB/agentos_node/antigravity_relay.py"
+git -C "$REPO" show "$WORKER_COMMIT:agentos_node/provider_terminal_health.py" > "$RUNTIME_LIB/agentos_node/provider_terminal_health.py"
 chmod 644 "$RUNTIME_LIB/capabilities/__init__.py" "$RUNTIME_LIB/capabilities/wardrobe_visual_review/"*.py
 
 if [ ! -x "$VENV/bin/python" ]; then
