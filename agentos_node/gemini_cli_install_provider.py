@@ -257,6 +257,15 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
     if not gemini.is_file() or gemini.is_symlink() and not gemini.exists():
         return _failure("GEMINI_CLI_INSTALL_REQUIRED", executor_available=False, routable=False, authorized=False)
 
+    from agentos_node.provider_terminal_health import gemini_identity, blocked, record_block
+    try:
+        provider_identity = gemini_identity(gemini, home=EXPECTED_HOME)
+    except OSError:
+        provider_identity = None
+    if provider_identity and blocked(provider_identity):
+        return _failure("GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED",
+                        executor_available=True, routable=False, authorized=False)
+
     env = {
         **os.environ,
         "HOME": str(EXPECTED_HOME),
@@ -337,6 +346,8 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
             )
         elif classification == "GEMINI_CLI_HEALTH_NONZERO" and proc.returncode == 0:
             classification = "GEMINI_CLI_JSON_RESPONSE_INVALID"
+        if classification == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED" and provider_identity:
+            record_block(provider_identity)
         authorized = classification not in {"GEMINI_CLI_AUTH_REQUIRED", "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"}
         result = _failure(classification, executor_available=True, routable=False, authorized=authorized)
         diagnostic_tags = _gemini_health_diagnostic_tags(combined, payload)
