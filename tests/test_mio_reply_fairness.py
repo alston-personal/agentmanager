@@ -45,7 +45,8 @@ class ReplySafetyTests(unittest.TestCase):
                 "id": "900", "is_reply_owned_by_me": True,
                 "replied_to": {"id": "123"}, "text": "hello"
             }], {"ok": True}),
-            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8")
+            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8"),
+            "datetime": datetime, "timedelta": timedelta
         })
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -62,7 +63,8 @@ class ReplySafetyTests(unittest.TestCase):
     def test_absent_readback_keeps_reconciliation_hold(self):
         fn = isolated_function("persona_social_executor.py", "reconcile_held_reply", {
             "read_items": lambda request, headers: ([], {"ok": True}),
-            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8")
+            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8"),
+            "datetime": datetime, "timedelta": timedelta
         })
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -85,7 +87,8 @@ class ReplySafetyTests(unittest.TestCase):
         ]
         fn = isolated_function("persona_social_executor.py", "reconcile_held_reply", {
             "read_items": lambda request, headers: (rows, {"ok": True}),
-            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8")
+            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8"),
+            "datetime": datetime, "timedelta": timedelta
         })
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
