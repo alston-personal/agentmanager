@@ -95,7 +95,15 @@ def evaluate_review(request: dict[str, Any]) -> dict[str, Any]:
         for row in semantic_checks
     )
 
-    if hard_failed:
+    # A real semantic negative is a confirmed visual rejection, not missing coverage.
+    # Preserve candidate only when evidence is absent or the reviewer is unavailable.
+    semantic_negative = any(row.get("passed") is False for row in semantic_checks)
+
+    if semantic_ready and semantic_negative:
+        state = "rejected"
+        accepted = False
+        reason = "semantic_review_failed"
+    elif hard_failed:
         state = "rejected"
         accepted = False
         reason = "visual_review_failed"
