@@ -575,3 +575,9 @@ def test_golden_path_dispatch_intent_only_allows_typed_payload():
     )
     assert intent.action == bc.ACTION_GITHUB_ACTIONS_DISPATCH
     assert params["inputs"]["operation"] == "inspect"
+
+
+def test_golden_path_dispatch_rejects_unapproved_node_at_runtime():
+    # The typed envelope is not authorization; exact inputs must be separately checked.
+    assert "Golden Path only allows exact read-only oracle-exec inspection" in Path("agentos_node/bootstrap_control.py").read_text(encoding="utf-8")
+    assert "Golden Path dispatch inputs are not allowlisted" in Path("agentos_node/action_relay.py").read_text(encoding="utf-8")
