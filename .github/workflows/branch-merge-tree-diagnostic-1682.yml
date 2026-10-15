@@ -53,3 +53,5 @@ jobs:
           name: merge-tree-1682-full-conflict-output
           path: merge-diagnostic/
           retention-days: 7
+
+# Recheck after PR #1954 on core/integration.
