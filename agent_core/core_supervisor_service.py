@@ -251,6 +251,59 @@ class CoreSupervisorService:
         )
         return True
 
+    def _verified_dependency_states(self) -> dict[str, str]:
+        """Project terminal lifecycle receipts into existing typed WorkItem refs.
+
+        A closed issue, WorkItem state, or assignment state alone is never
+        completion authority. Ambiguous source refs fail closed.
+        """
+        candidates: dict[str, list[Any]] = {}
+        if not self.work_items.root.exists():
+            return {}
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+            candidates.setdefault(item.source_ref, []).append(item)
+
+        verified: dict[str, str] = {}
+        for ref, items in candidates.items():
+            if len(items) != 1:
+                continue
+            item = items[0]
+            try:
+                assignment = self.runtime.get_assignment(item.assignment_id)
+                result = assignment.result
+                if assignment.employee_id != item.employee_id or assignment.state != "completed" or not isinstance(result, dict):
+                    continue
+                generation = result.get("generation")
+                if type(generation) is not int or generation < 1:
+                    continue
+                expected = self.lifecycle._receipt_path(item.assignment_id, generation)
+                if result.get("receipt") != str(expected.relative_to(self.runtime.root)):
+                    continue
+                if result.get("schema") != "agentos.employee-assignment-receipt/v1" or result.get("outcome") != "completed":
+                    continue
+                receipt = _read(expected)
+                lease = self.lifecycle.get_lease(item.assignment_id)
+                if (
+                    not receipt or not lease
+                    or receipt.get("schema") != result["schema"]
+                    or receipt.get("assignment_id") != item.assignment_id
+                    or receipt.get("employee_id") != item.employee_id
+                    or receipt.get("generation") != generation
+                    or receipt.get("outcome") != "completed"
+                    or receipt.get("lease_id") != lease.lease_id
+                    or lease.generation != generation
+                    or lease.status != "completed"
+                ):
+                    continue
+                verified[ref] = "completed"
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        return verified
+
     def _blocked_assignments(self, dependency_states: Mapping[str, str]) -> set[str]:
         result: set[str] = set()
         if not self.work_items.root.exists():
@@ -275,7 +328,7 @@ class CoreSupervisorService:
         leader = self._require_leader(leader_generation, now=current)
         previous = _read(self.state_path) or {}
         cycle_generation = int(previous.get("cycle_generation") or 0) + 1
-        blocked = self._blocked_assignments(dependency_states or {})
+        blocked = self._blocked_assignments(self._verified_dependency_states() if dependency_states is None else dependency_states)
         persisted = self._persisted_reconcile_ids()
         plan = self.reconciler.reconcile(
             blocked_assignment_ids=blocked,
