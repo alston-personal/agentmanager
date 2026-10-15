@@ -101,6 +101,27 @@ class ProjectReleaseLaneTest(unittest.TestCase):
             (True, "production_candidate_allowed"),
         )
 
+    def test_policy_requires_human_promotion_and_pinned_deployments(self) -> None:
+        layoutlib = self.policy["projects"]["layoutlib"]
+        self.assertEqual(layoutlib["promotion_branch"], "main")
+        self.assertIs(layoutlib["promotion_requires"]["explicit_human_approval"], True)
+        self.assertIs(layoutlib["promotion_requires"]["pull_request"], True)
+        for lane, expected_branch in (("poc", "develop"), ("production", "main")):
+            config = layoutlib["deployment"][lane]
+            self.assertEqual(config["source_branch"], expected_branch)
+            self.assertIs(config["require_exact_source_sha"], True)
+
+    def test_noncanonical_or_uppercase_sha_fails_closed(self) -> None:
+        for bad in ("a" * 39, "A" * 40, "a" * 41, "a" * 39 + "z"):
+            with self.subTest(candidate_sha=bad):
+                self.assertEqual(
+                    decide(
+                        self.policy, "layoutlib", "poc_deploy", "develop",
+                        candidate_sha=bad,
+                    ),
+                    (False, "exact_source_sha_invalid"),
+                )
+
     def test_unknown_project_is_denied(self) -> None:
         self.assertEqual(
             decide(self.policy, "unknown", "development_write", "develop"),
