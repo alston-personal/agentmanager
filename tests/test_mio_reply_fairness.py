@@ -76,6 +76,29 @@ class ReplySafetyTests(unittest.TestCase):
             self.assertEqual(target["status"], "in_progress")
             self.assertTrue(target["reconciliation_required"])
 
+    def test_other_parent_or_non_owned_reply_cannot_confirm(self):
+        rows = [
+            {"id": "901", "is_reply_owned_by_me": True,
+             "replied_to": {"id": "different"}, "text": "hello"},
+            {"id": "902", "is_reply_owned_by_me": False,
+             "replied_to": {"id": "123"}, "text": "hello"},
+        ]
+        fn = isolated_function("persona_social_executor.py", "reconcile_held_reply", {
+            "read_items": lambda request, headers: (rows, {"ok": True}),
+            "save": lambda path, obj: path.write_text(json.dumps(obj), encoding="utf-8")
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/"pdca").mkdir()
+            target = {"action_id": "reply-test", "reply_to_id": "123",
+                      "root_post_id": "456", "primary_text": "hello",
+                      "capability": "social.reply.send", "status": "in_progress"}
+            state = {"pending_external_actions": [target]}
+            result = fn(root, state, target, root/"pdca"/"receipt.json", {}, {}, "2026-10-15T00:00:00Z")
+            self.assertEqual(result["readback_status"], "NOT_OBSERVED")
+            self.assertEqual(target["status"], "in_progress")
+            self.assertFalse(result["delivery_confirmed"])
+
     def test_reserved_parent_survives_pending_queue_loss(self):
         fn = isolated_function("persona_reply_intent_generator.py", "reserved_reply_parents", {
             "load": lambda p: json.loads(p.read_text(encoding="utf-8"))
