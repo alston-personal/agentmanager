@@ -1,5 +1,7 @@
 name: Live Scheduler Node Probe
 
+# probe-trigger: 2026-10-15T14:17+08:00 character-fusion smoke queue
+
 on:
   pull_request:
     branches: [core/integration]
