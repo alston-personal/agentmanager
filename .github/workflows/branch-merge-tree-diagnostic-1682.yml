@@ -65,3 +65,5 @@ jobs:
 # Recheck after approved main PR #1962 merge.
 
 # Recheck after integration Node document convergence PR #1964.
+
+# Recheck after #1967 CAS publisher convergence.
