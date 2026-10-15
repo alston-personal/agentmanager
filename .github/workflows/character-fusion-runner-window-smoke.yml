@@ -26,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   id-token: write
 
 jobs:
@@ -53,9 +54,42 @@ jobs:
       operation: converge
       payload_json: '{}'
 
+  wait_for_dashboard_deploy:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Wait for matching dashboard release when worker changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! git diff --name-only HEAD^ HEAD | grep -Fxq 'scripts/character_fusion_worker.py'; then
+            echo 'character_fusion_worker_unchanged=PASS'
+            exit 0
+          fi
+          for n in $(seq 1 72); do
+            conclusion=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/oracle-deploy-character-fusion-dashboard.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=20" --jq '[.workflow_runs[] | select(.head_sha == env.GITHUB_SHA) | .conclusion][0] // ""')
+            if [ "$conclusion" = success ]; then
+              echo 'matching_character_fusion_dashboard_deploy=PASS'
+              exit 0
+            fi
+            if [ "$conclusion" = failure ] || [ "$conclusion" = cancelled ]; then
+              echo "matching_character_fusion_dashboard_deploy=$conclusion"
+              exit 1
+            fi
+            sleep 10
+          done
+          echo 'matching_character_fusion_dashboard_deploy=TIMEOUT'
+          exit 1
+
   smoke:
     if: github.event_name == 'push'
-    needs: converge
+    needs: [converge, wait_for_dashboard_deploy]
     uses: ./.github/workflows/agentos-dispatch.yml
     with:
       capability: studio.character-fusion
