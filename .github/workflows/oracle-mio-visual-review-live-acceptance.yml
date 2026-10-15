@@ -59,7 +59,7 @@ jobs:
               rows.append((j.get('completedAt') or j.get('requestedAt') or '',j,asset))
           if not rows:
               print('mio_visual_review_live=SKIP_NO_CANDIDATE')
-              raise SystemExit(0)
+              raise SystemExit(1)
 
           _,job,asset=sorted(rows,reverse=True)[0]
           semantic=review_with_gemini(
@@ -93,6 +93,16 @@ jobs:
           message=str(semantic.get('message') or '').replace('\n',' ')[:800]
           print('mio_visual_review_backend_message='+message)
           print('mio_visual_review_state='+str(receipt.get('state')))
+          print('mio_visual_review_backend='+str(semantic.get('backend') or 'unknown'))
+          print('mio_visual_review_reason='+str(receipt.get('reason') or 'unknown'))
+          print('mio_visual_review_selected_layers='+','.join(sorted(request['selectedLayers'].keys())))
+          print('mio_visual_review_rendered_layers='+','.join(sorted(request['renderedLayers'])))
+          print('mio_visual_review_pending_layers='+','.join(sorted(request['pendingLayers'])))
+          for check in receipt.get('checks') or []:
+              code=str(check.get('code') or '')[:80]
+              layer=str(check.get('layer') or '')[:80]
+              outcome='PASS' if check.get('passed') is True else 'FAIL'
+              print('mio_visual_review_check='+code+':'+layer+':'+outcome)
           print('mio_visual_review_verified_layers='+','.join(receipt.get('verifiedLayers') or []))
           if receipt.get('accepted') is True and receipt.get('state') == 'verified':
               print('mio_visual_review_live=VERIFIED')
