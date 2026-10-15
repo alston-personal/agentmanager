@@ -77,3 +77,5 @@ jobs:
 # Recheck after #1979 ControllerService compatibility and test convergence.
 
 # Recheck after dual RealmFabric contract PR #1983.
+
+# Recheck after PR 1989 durable completion contract convergence.
