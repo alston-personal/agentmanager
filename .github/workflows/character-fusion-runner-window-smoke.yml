@@ -1,5 +1,7 @@
 name: Character Fusion Runner Window Smoke
 
+# trigger-current: 2026-10-15T14:01+08:00 character-fusion smoke after rollout
+
 # trigger: 2026-10-13 Character Fusion final smoke after ChatGPT Web image renderer 1249
 
 on:
