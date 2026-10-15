@@ -35,9 +35,15 @@ The repository currently contains working, tested slices of that architecture:
 - **Session lifecycle / handoff records** — session-close state is persisted through a host-neutral context-provider interface (`agent_core/session_lifecycle.py`, `runtime_core/`).
 - **Governance and responsibility resolution** — canonical role/capability ownership and resource discovery through `agentos-node` (`docs/AGENTOS_NODE.md`).
 - **Resource registry / world-state lookup** — query registered resources first and verify only when stale or missing.
+- **Reuse Before Build gate (v0.1 candidate)** — host-neutral deterministic `reuse / compose / build / deny` resolution in `runtime_core/capability_resolution.py`, bound to the existing Governance Directory by `agent_core/capability_gate.py`. A reusable governed provider blocks a new build unless an explicit override reason is supplied.
+- **Credits ledger (v0.1 candidate)** — off-chain integer credits with append-only SQLite entries, idempotent `grant / reserve / commit / release / refund`, and derived balance/reservation projections (`agent_core/credit_ledger.py`).
 - **Cross-node / Realm fabric work** — node manifests, enrollment/control surfaces, and remote command artifacts.
 - **Platform abstraction** — Linux, Windows, and macOS runtime/service drivers.
 - **Evidence-first operation** — `.agentos/evidence/` records acceptance and live-control-plane results rather than relying only on prose claims.
+- **Reusable Studio static-route release carrier** — a canonical `workflow_call` owns pinned-source build, narrow route replacement, rollback, local/public acceptance, and receipts; Milkcat World is the first real consumer. The capability is currently `extracted-first-consumer`, not yet broadly proven (`.github/workflows/reusable-studio-static-route-release.yml`, `.agent/governance/studio_release_capabilities.yaml`, `docs/asset-registry/studio-static-route-release.yaml`).
+- **Colab GPU provider integration candidate** — Google Colab is modeled as a governed external compute provider (`capability://compute.colab.execute`), with MiniMax H3 as the first composed media consumer (`capability://media.video.generate.minimax-h3`). Both remain `declared` until Oracle has a pinned upstream installation and live execution receipt (`capabilities/colab_compute/`, `capabilities/minimax_h3_colab/`, `docs/COLAB_GPU_PROVIDER.md`).
+
+The Reuse Before Build and Credits entries above are intentionally marked **v0.1 candidate** until branch CI and integration acceptance prove them in a real Milkcat execution path. They do not yet claim production billing, fiat value, transferability, or on-chain settlement.
 
 See **[Current Architecture & Reality](docs/CURRENT_STATE.md)** for the maintained implementation map and current research boundary.
 
@@ -96,6 +102,12 @@ python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
 ```
 
+The Reuse Before Build / Credits candidate slice uses the repository's pytest suite:
+
+```bash
+pytest -q tests/test_capability_resolution.py tests/test_capability_gate.py tests/test_credit_ledger.py
+```
+
 For a Core node, platform/service installation and live infrastructure require the separate data layer and environment-specific configuration. See `docs/RESTORE_NEW_MACHINE.md`, `docs/PLATFORM_DRIVERS.md`, and `docs/AGENTOS_NODE.md`.
 
 ## Documentation is part of the contract
@@ -122,87 +134,6 @@ AgentOS is an active research and engineering project. Some subsystems are produ
 
 *Models are replaceable executors. Durable work should not be trapped inside one session.*
 
+## Mio external public discovery (experimental)
 
-## Mio Telegram private bridge (deployment candidate; live acceptance pending)
-
-The dedicated @Mio_MilkcatBot uses scripts/mio_telegram_user.py and
-scripts/install_mio_telegram_user.sh. It does **not** reuse the privileged
-scripts/tg_bridge.py command handlers or its TELEGRAM_BOT_TOKEN.
-
-- Oracle ubuntu-owned credential: ~/.config/agentos/mio-telegram.env,
-  containing MIO_TELEGRAM_BOT_TOKEN. Never commit or print this value.
-- One-time owner pairing: the installer validates Telegram getMe, observes
-  private /start messages, requires exactly one candidate, then requires
-  local SSH confirmation before writing MIO_TELEGRAM_OWNER_ID (a private
-  Telegram user/chat ID). Unknown sender IDs and groups receive no response.
-- Existing persona source: ~/agent-data/personas/sunlake-milkcat/
-  (character_core.json, persona_state.json, reply_policy.json, recent
-  provenance-bearing public events). Local, private Telegram dialogue
-  history resides in ~/agent-data/runtime/persona/sunlake-milkcat/telegram/,
-  never in the public persona event-sync file or Git repository.
-- Existing private model execution boundary:
-  agentos-mio-agy-relay.service and
-  ~/agent-data/runtime/mio-antigravity-relay/. The Telegram transport only
-  submits a text-only persona request and checks its receipt; the transport
-  has no shell, workflow, Threads-publish, or AgentOS commander command.
-  The relay executor has its own separate security/permission boundary;
-  a prompt prohibiting tools is not, by itself, an OS-enforced sandbox.
-- **ChatGPT-first authority correction (Issue #422):** Telegram transport and
-  conversational model are separate. Default `MIO_TELEGRAM_CHAT_MODE` is
-  `chatgpt_pending`: paired owner's messages are kept in the existing
-  Oracle-local private FIFO, but no model is called and **there is no
-  ChatGPT auto-reply or ChatGPT-Plus API path yet**. The bot's /mode and
-  /status show this limitation. This mode does not modify or stop the
-  separate AGY relay used by other authorized Persona/Threads tasks.
-  Owner's explicit local `MIO_TELEGRAM_CHAT_MODE=agy_opt_in` is required to
-  enable the former Telegram AGY route; it must never be labeled ChatGPT.
-  Private Telegram text/IDs/receipts must NOT go into this public repo,
-  public GitHub Issue #50, CI logs, or unprotected callback URLs. Native
-  ChatGPT inbound auth, privacy, and actual reply must be independently
-  accepted before this mode can change from `chatgpt_pending`.
-- Normal owner-only chat and technical diagnostics are separate:
-  /debug on enables sanitized per-message status, /debug status shows the last
-  Telegram-specific result, and /debug off disables it. All private chats
-  default to normal mode. The status contains a bounded category, elapsed
-  seconds, relay provider, exit code and output size; it never includes raw
-  executor stdout/stderr, prompt, token or private conversation.
-  The displayed AGY stdout character count is the size of a CLI execution
-  envelope, NOT the persona reply size or model token usage. The compact
-  Telegram prompt reads only selected fields from the canonical persona IR
-  and bounded recent observed events/private turns; it never copies the
-  complete persona state into each short chat request. AGY returncode=1 is
-  an execution failure even if stdout is nonempty. Diagnostic stderr hints
-  are coarse guesses from sanitized patterns, never a raw log or confirmed
-  root cause. /debug status may refresh the last Telegram-specific status
-  from its exact capsule receipt without sending a new message or confusing
-  it with an unrelated Threads decision.
-- Persona responses are processed serially by a worker thread while the bot
-  continues polling and processing /debug commands. After a prolonged response
-  wait the owner receives a short normal acknowledgement rather than silence;
-  the reply itself still depends on a valid executor receipt and JSON parsing.
-  The relay waits up to 170 seconds. Owner-only text input now enters
-  ~/agent-data/runtime/persona/sunlake-milkcat/telegram/pending.json (mode
-  0600) before Telegram update offset advances. On an exact Telegram
-  executor_failed receipt classified as quota_or_rate, Mio retains that
-  original message and retries on a bounded 15m/1h/3h/6h/12h schedule;
-  after that it stops automatically and keeps the original for owner review.
-  Unknown send outcomes are marked delivery_uncertain and never resent
-  automatically. Only verified successful replies enter private chat history.
-  Successful offline tests do not establish that an AGY quota has reset,
-  that model-generated Telegram delivery has succeeded, or that all
-  possible crash windows can be distinguished from the Telegram API.
-- One-time install or reinstallation on Oracle as ubuntu from an accepted,
-  verified source worktree: AGENTOS_REPO=/path/to/worktree
-  bash scripts/install_mio_telegram_user.sh. Reinstallation uses getMe-only
-  verification; it does not compete with the running bot's getUpdates polling.
-  This installer does not merge branches, touch the old Telegram commander,
-  or install a new model/API credential.
-- Run offline safety regression:
-  python3 -m unittest discover -s tests -p test_mio_telegram_user.py -v
-  and bash -n scripts/install_mio_telegram_user.sh.
-
-Acceptance requires an actual on-Oracle getMe identity check, confirmed
-owner-only binding, active service and private relay, a Telegram /start
-delivery and a real owner message receiving a request-ID-bound Persona
-reply with a model receipt. The source commit/PR and static tests alone
-are **not** proof that the bot is online.
+`#1825` introduces a standalone, no-write public candidate receipt projection (`scripts/persona_public_discovery_contract.py`). It is **not** a live Threads feed connector or external reply executor. The existing owned-post `post.read` response cannot authorize external discovery. Actual public-source adapter, Oracle receipt, independent account validation, and optional exact-parent replies remain unimplemented pending tests and governance. See `docs/mio-public-discovery-contract.md`.
