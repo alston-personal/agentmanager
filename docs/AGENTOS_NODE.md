@@ -185,3 +185,7 @@ Do not reopen or modify Core routing merely because a downstream node capability
 The 2026-08-25 Oracle validation proved the original v0.1 discovery/governance/resource surface, including runtime entrypoint installation, governance/resource harvest, exclusive responsibility resolution, registered resource query, and Governance Directory audit.
 
 That evidence remains valid for those behaviors, but its enumerated capability list is not a permanent complete Node contract. Newer node/runtime capabilities must be verified from live advertisement and receipts.
+
+## Legacy NodeRegistry snapshot recovery (source contract)
+
+NodeRegistry ordinarily reads one validated JSON snapshot and publishes under its existing exclusive lock using atomic replacement. For historical data consisting of **two or more complete, consecutive, individually valid snapshots from exactly one Realm**, it may read the final complete snapshot as the latest state. Missing, truncated, non-object, malformed or cross-Realm segments must fail closed; no attempt is made to infer or repair arbitrary corruption. The next authorized mutation uses the existing locked atomic publication path to canonicalize the file. This is a source-level compatibility behavior, not a claim that any current Oracle registry is corrupted or that runtime recovery has been exercised.
