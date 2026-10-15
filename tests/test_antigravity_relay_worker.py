@@ -13,6 +13,24 @@ from agentos_node.antigravity_relay_worker import AntigravityRelayWorker, discov
 
 
 class AntigravityRelayWorkerTests(unittest.TestCase):
+
+    def test_official_agy_argv_uses_print_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            worker = AntigravityRelayWorker(Path(td), executor=["/opt/bin/agy"], provider="agy")
+            capsule = {
+                "schema": "agentos.antigravity-relay/v1",
+                "canonical_ir": {"schema": "agentos.executor-provider-ir/v0.1",
+                                 "goal": "Inspect an image", "operation": "agent.chat"},
+                "instruction": "Read the candidate image",
+            }
+            argv = worker._executor_argv(capsule, Path(td))
+            self.assertEqual(argv[0], "/opt/bin/agy")
+            self.assertIn("-p", argv)
+            self.assertIn("--output-format", argv)
+            self.assertNotIn("run", argv)
+            self.assertNotIn("--task", argv)
+            self.assertNotIn("--workspace", argv)
+
     def test_stranded_processing_is_quarantined_and_never_auto_replayed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
