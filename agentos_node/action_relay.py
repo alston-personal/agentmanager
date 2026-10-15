@@ -1012,7 +1012,22 @@ def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
     revalidated by the publisher under the ubuntu execution identity.
     """
     from agent_core.project_continuation_index import publish_project_continuation
-    return publish_project_continuation(params)
+    expected_keys = {"expected_index_id", "expected_ir_id"}
+    base_keys = {"project_id", "execution_head", "continuation"}
+    if not isinstance(params, dict) or not base_keys.issubset(params) or set(params) - (base_keys | expected_keys):
+        raise ValueError("publish_continuation accepts only canonical payload and optional CAS fence")
+    fence_keys = set(params) & expected_keys
+    if fence_keys and fence_keys != expected_keys:
+        raise ValueError("expected_index_id and expected_ir_id must be supplied together")
+    payload = {key: params[key] for key in base_keys}
+    if fence_keys:
+        if not all(isinstance(params[k], str) and params[k].strip() for k in expected_keys):
+            raise ValueError("CAS fence values must be non-empty strings")
+        return publish_project_continuation(payload, expected_index_id=params["expected_index_id"],
+                                            expected_ir_id=params["expected_ir_id"])
+    return publish_project_continuation(payload)
+
+
 
 def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "agentos-antigravity-relay"}): raise ValueError("unexpected parameters")
