@@ -50,51 +50,23 @@ AgentOS now treats reusable work as a capability, not a project-specific side ef
 | Capability | Provider | Status | Notes |
 | :--- | :--- | :--- | :--- |
 | **Video Indexing Hub** | `video-indexing` | 🧠 Proposed | Central visual indexing, transcript grounding, and scene-map artifact producer for all video-aware projects. |
-| **Governed Content Publish** | `capability://content.publish` → `service://content.publish` | 🧪 Implemented candidate | Versioned Content Artifact / batch facade over the existing Core #154/#267 Social Runtime and other registered platform providers; provider resolution never grants publish authority. |
+| **Web Static Index Renderer** | `capability://web.static-index.render` | ✅ Implemented candidate | 公開網頁產出流程呼叫的共用靜態索引能力；由產品提供頁面資料，Capability 統一產出 crawler/AI 可讀 HTML 與 receipt，避免各專案把 SEO/AI markup 寫死。 |
 
 ### Governance Capability
-
-ONE active continuation read candidate (#179): existing provider
-`agent_core.active_continuation` via the authenticated Realm controller API.
-`agentos.continuation.inspect` is an optional identity-only Control Inbox read,
-not a hydration or execution capability. Source tests do not establish live
-availability; acceptance and private/public boundaries are documented in
-`docs/CHATGPT_ONE_TRANSPORT.md`.
-
 | Capability | Provider | Status | Notes |
 | :--- | :--- | :--- | :--- |
 | **Spec Stewardship** | `scripts/spec_steward.py` | ✅ 現行 | Scans specs, project declarations, and STATUS files to surface drift, stale specs, and missing ownership. |
 | **AgentOS Status Center** | `scripts/agentos_status.py` | ✅ 現行 | Consolidated snapshot of roles, capabilities, projects, specs, and memory health for fast operational review. |
 | **端口巡護者 (Port Manager)** | `scripts/core_services/port_manager.py` | ✅ 現行 | 負責自動分配與追蹤 22 個專案的連接埠配置，防止端口衝突 |
 
-
-### Persona Agent Capabilities
-
-| Capability | Provider | Status | Notes |
-| :--- | :--- | :--- | :--- |
-| **Persona Agent Attachment** | `personas/mio/agent.yaml` + `schemas/persona-capability-attachment.schema.json` | ✅ 現行 | Persona identity/memory/PDCA remains independent from detachable platform/tool capabilities. |
-| **Mio Observer Public Projection** | `scripts/project_mio_observer_user.py` | 🟡 Initial | Projects public-safe Mio activity/status into the persona page surface. |
-| **Mio Observer Owner Projection** | `scripts/project_mio_observer_user.py` | 🟡 Initial | Projects owner-visible PDCA, energy, uncertainty, incidents and capability health without exposing private model reasoning. |
-| **Mio Persona Agent** | `personas/mio/agent.yaml` | ✅ Registered | `persona.mio` is a first-class Persona Agent; Threads/DM/wardrobe/visual generation are attached capabilities rather than the agent identity itself. |
-
-
 ### Usage Pattern
 ```bash
 python3 scripts/capability_registry.py
 python3 scripts/capability_registry.py --provides video.index.visual
 python3 scripts/capability_registry.py --requires video.index.visual
+python3 scripts/web_static_index.py --spec page-index.json --output dist/index.html
 python3 scripts/spec_steward.py
 python3 scripts/agentos_status.py
 ```
 
 *「石虎 Agent 的能力不僅是寫出的代碼，更是已知的律法。」*
-
-
-### Production Completion Gate
-
-| Capability | Provider | Status | Notes |
-| :--- | :--- | :--- | :--- |
-| **Production Acceptance** | `scripts/production_acceptance.py` | ✅ 現行 | Prevents source/CI success from being reported as deployed; route-specific verification detects SPA/home fallback false positives. |
-| **Deployment Completion Receipt** | `schemas/deployment-completion-receipt.schema.json` | ✅ 現行 | Standard lifecycle from SOURCE_READY through PRODUCTION_VERIFIED. Only PRODUCTION_VERIFIED closes deployed/public work. |
-
-Policy source: `docs/DEPLOYMENT_COMPLETION_CONTRACT.md`.

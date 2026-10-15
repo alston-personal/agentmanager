@@ -214,7 +214,12 @@ def _vision_fallback_json(prompt: str, image_path: Path) -> dict[str, Any]:
 
     # Keep every provider's diagnostic visible even when the last provider
     # emits a very long quota traceback (for example HF HTTP 402).
-    bounded = [error[:450] + ("…" if len(error) > 450 else "") for error in errors]
+    # Put the actionable browser failure first: worker receipts retain only
+    # a bounded stderr tail, and quota/auth errors otherwise bury UI state.
+    ranked = sorted(errors, key=lambda error: (not error.startswith("chatgpt_web="), error))
+    bounded = [error[:1400 if error.startswith("chatgpt_web=") else 220] +
+               ("…" if len(error) > (1400 if error.startswith("chatgpt_web=") else 220) else "")
+               for error in ranked]
     raise RuntimeError("all vision fallbacks failed; " + "; ".join(bounded))
 
 
@@ -528,6 +533,8 @@ async def main():
               composer:(()=>{const x=document.querySelector('#prompt-textarea,#mobile-composer-prompt,[data-testid="composer-input"],textarea,[contenteditable="true"]'); return ((x?.value ?? x?.innerText ?? x?.textContent ?? '')+'').slice(0,500)})(),
               userCount:document.querySelectorAll('[data-message-author-role="user"]').length,
               assistantCount:document.querySelectorAll('[data-message-author-role="assistant"]').length,
+              href:location.href,
+              upload:[...document.querySelectorAll('input[type="file"]')].map(x=>({id:x.id,files:x.files?.length||0})),
               buttons:[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null).slice(-20)
                 .map(x=>({text:(x.innerText||'').trim().slice(0,80),aria:(x.getAttribute('aria-label')||'').slice(0,120),disabled:!!x.disabled}))
             }))()''')
@@ -1954,7 +1961,28 @@ async def main():
                 break
             await asyncio.sleep(0.5)
         if not submitted:
-            raise RuntimeError("chatgpt_web_submit_not_observed; state="+json.dumps(submit_state,ensure_ascii=False)[:1600])
+            # The UI can swallow a synthetic click on some responsive surfaces.
+            # Try a keyboard submit, as done in the vision path, then verify
+            # that a new user message actually appeared before image waiting.
+            await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
+            await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"Enter","code":"Enter","windowsVirtualKeyCode":13,"nativeVirtualKeyCode":13})
+            for _ in range(20):
+                submit_state=await ev(r'''(() => ({
+                  href:location.href,
+                  composer:([...document.querySelectorAll('#prompt-textarea,#mobile-composer-prompt,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                    .find(x=>x.offsetParent!==null && !x.disabled)?.value||'').slice(0,160),
+                  userCount:document.querySelectorAll('[data-message-author-role="user"]').length,
+                  assistantCount:document.querySelectorAll('[data-message-author-role="assistant"]').length,
+                  buttons:[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null).slice(-10).map(x=>({
+                    aria:(x.getAttribute('aria-label')||'').slice(0,80),disabled:!!x.disabled
+                  }))
+                }))()''') or {}
+                if submit_state.get("userCount",0)>baseline_user_count:
+                    submitted=True
+                    break
+                await asyncio.sleep(0.5)
+        if not submitted:
+            raise RuntimeError("chatgpt_web_submit_not_observed; state="+json.dumps(submit_state,ensure_ascii=False)[:1800])
 
         deadline=time.monotonic()+240
         chosen=None
