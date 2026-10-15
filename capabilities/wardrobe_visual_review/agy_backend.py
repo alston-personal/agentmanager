@@ -10,7 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from agentos_node.antigravity_relay import AntigravityRelayClient
-from .gemini_backend import _download, _extract_json, _failure, SEMANTIC_SCHEMA
+from .gemini_backend import _download, _extract_json, _failure as _gemini_failure, SEMANTIC_SCHEMA
+
+
+def _failure(classification: str, message: str) -> dict[str, Any]:
+    receipt = _gemini_failure(classification, message)
+    receipt["backend"] = "agy"
+    return receipt
 
 RELAY_ROOT = Path("/home/ubuntu/agent-data/runtime/antigravity-relay")
 
