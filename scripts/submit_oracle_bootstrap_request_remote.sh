@@ -18,21 +18,26 @@ printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 printf '%s' "$TIMEOUT_SECONDS" | grep -Eq '^[0-9]{1,4}$'
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d,dict)' "$EXTRA_PARAMS_JSON"
 
+SSH_OPTS=(
+  -o StrictHostKeyChecking=accept-new
+  -o ConnectTimeout=8
+  -o ServerAliveInterval=15
+  -o ServerAliveCountMax=2
+  -p "$DEPLOY_SSH_PORT"
+)
+
 EXTRA_PARAMS_B64="$(printf '%s' "$EXTRA_PARAMS_JSON" | base64 | tr -d '\n')"
-ssh \
-  -o StrictHostKeyChecking=accept-new \
-  -o ConnectTimeout="${AGENTOS_SSH_CONNECT_TIMEOUT_SECONDS:-25}" \
-  -o ConnectionAttempts="${AGENTOS_SSH_CONNECTION_ATTEMPTS:-3}" \
-  -o ServerAliveInterval=15 \
-  -o ServerAliveCountMax=4 \
-  -p "$DEPLOY_SSH_PORT" "$DEPLOY_USER@$ORACLE_HOST" \
-  bash -s -- "$ACTION" "$REQUEST_ID" "$SOURCE_COMMIT" "$EXTRA_PARAMS_B64" "$TIMEOUT_SECONDS" <<'REMOTE'
+
+# Submit in a short SSH session. The AgentOS scheduler owns execution after the
+# request is atomically materialized, so a later network interruption cannot
+# cancel or ambiguously re-run the governed action.
+ssh "${SSH_OPTS[@]}" "$DEPLOY_USER@$ORACLE_HOST" \
+  bash -s -- "$ACTION" "$REQUEST_ID" "$SOURCE_COMMIT" "$EXTRA_PARAMS_B64" <<'REMOTE' >&2
 set -euo pipefail
 ACTION="$1"
 REQUEST_ID="$2"
 SOURCE_COMMIT="$3"
 EXTRA_PARAMS_JSON="$(printf '%s' "$4" | base64 -d)"
-TIMEOUT_SECONDS="$5"
 REPO=/home/ubuntu/agentmanager
 ROOT=/tmp/agentos-bootstrap-control
 REQUESTS="$ROOT/requests"
@@ -43,8 +48,6 @@ RECEIPT="$RECEIPTS/$REQUEST_ID.json"
 mkdir -p "$REQUESTS" "$RECEIPTS" "$ROOT/locks"
 chmod 1777 "$ROOT" "$REQUESTS" "$RECEIPTS"
 
-# Materialize the immutable source commit once, without allowing multiple
-# ingress jobs to mutate the shared git repository concurrently.
 (
   exec 9>"$ROOT/locks/oracle-source-materialize.lock"
   flock -w 60 9
@@ -52,6 +55,13 @@ chmod 1777 "$ROOT" "$REQUESTS" "$RECEIPTS"
     git -C "$REPO" fetch --no-tags origin "$SOURCE_COMMIT" >/dev/null
   fi
 )
+
+# A prior terminal receipt for the same deterministic request ID is safe to
+# reuse. Otherwise create exactly one request as agentos-node.
+if [ -s "$RECEIPT" ]; then
+  echo "request_already_completed=$REQUEST_ID"
+  exit 0
+fi
 
 sudo -n -u agentos-node env \
   ACTION="$ACTION" REQUEST_ID="$REQUEST_ID" SOURCE_COMMIT="$SOURCE_COMMIT" EXTRA_PARAMS_JSON="$EXTRA_PARAMS_JSON" REQUEST="$REQUEST" \
@@ -78,16 +88,33 @@ os.chmod(tmp,0o644)
 tmp.replace(path)
 os.chmod(path,0o644)
 PY
+echo "request_submitted=$REQUEST_ID"
+REMOTE
 
+# Poll with short independent SSH sessions instead of keeping one connection
+# idle for the full build/restart window. This turns transient SSH loss into a
+# retryable observation failure rather than a false deployment failure.
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 while [ "$SECONDS" -lt "$deadline" ]; do
-  if [ -s "$RECEIPT" ]; then
-    cat "$RECEIPT"
+  set +e
+  RECEIPT_JSON="$(
+    ssh "${SSH_OPTS[@]}" "$DEPLOY_USER@$ORACLE_HOST" \
+      bash -s -- "$REQUEST_ID" <<'REMOTE'
+set -euo pipefail
+REQUEST_ID="$1"
+RECEIPT="/tmp/agentos-bootstrap-control/receipts/$REQUEST_ID.json"
+[ -s "$RECEIPT" ] || exit 4
+cat "$RECEIPT"
+REMOTE
+  )"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ] && [ -n "$RECEIPT_JSON" ]; then
+    printf '%s\n' "$RECEIPT_JSON"
     exit 0
   fi
-  sleep 1
+  sleep 10
 done
 
 echo "receipt timeout for $REQUEST_ID" >&2
 exit 3
-REMOTE
