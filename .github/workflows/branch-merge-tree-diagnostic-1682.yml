@@ -101,3 +101,5 @@ jobs:
 # Recheck after #2005 bounded manual-only Oracle ONE inspect.
 
 # Recheck after AGENTS documentation PR #2007.
+
+# Recheck after user-approved protected-main PR #2008.
