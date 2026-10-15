@@ -492,14 +492,47 @@ def main():
             if not reply_to: raise SystemExit("social_reply_target_required")
             request["reply_to_id"]=reply_to
         control=str(env.get("AGENTOS_SOCIAL_CONTROL_TOKEN") or "")
-        if not control: raise SystemExit("social_control_token_missing")
-        ac,accepted=post("/internal/v1/social/acceptances",request,{"X-AgentOS-Control-Token":control})
+        def hold_reply(reason):
+            # Unknown acceptance/write outcomes must never be retried blindly.
+            receipt={"schema":"agentos.persona-social-executor-receipt/v1",
+                     "ok":False,"status":"BLOCKED","result":reason,
+                     "timestamp":now,"action_id":action_id,"capability":capability,
+                     "write_performed":False,"delivery_confirmed":False,
+                     "requires_platform_reconciliation":True}
+            out=Path(args.receipt_out)
+            save(out,receipt)
+            target["status"]="in_progress"
+            target["reconciliation_required"]=True
+            target["receipt_ref"]=str(out.relative_to(root))
+            state["pending_external_actions"]=pending[-12:]
+            save(root/"pdca/state.json",state)
+            print(json.dumps(receipt,ensure_ascii=False))
+            return 0
+        if not control:
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_CONTROL_UNAVAILABLE")
+            raise SystemExit("social_control_token_missing")
+        try:
+            ac,accepted=post("/internal/v1/social/acceptances",request,{"X-AgentOS-Control-Token":control})
+        except (OSError,ValueError,TimeoutError):
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_ACCEPTANCE_UNKNOWN")
+            raise
         acceptance_id=str(accepted.get("acceptance_id") or "")
         if ac not in (200,201) or not acceptance_id:
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_ACCEPTANCE_NOT_CONFIRMED")
             raise SystemExit("social_acceptance_failed:"+str(accepted.get("error") or ac))
         endpoint="/v1/social/reply" if capability=="social.reply.send" else "/v1/social/publish"
-        wc,wr=post(endpoint,request,{**headers,"X-AgentOS-Acceptance-ID":acceptance_id})
+        try:
+            wc,wr=post(endpoint,request,{**headers,"X-AgentOS-Acceptance-ID":acceptance_id})
+        except (OSError,ValueError,TimeoutError):
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_DELIVERY_UNKNOWN")
+            raise
         if wc!=200 or wr.get("ok") is False:
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_DELIVERY_NOT_CONFIRMED")
             raise SystemExit("social_write_failed:"+str(wr.get("error") or wc))
         energy_after=energy-energy_cost
         state["energy_current"]=round(energy_after,2)
