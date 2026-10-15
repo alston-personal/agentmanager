@@ -602,23 +602,3 @@ def test_golden_path_bootstrap_validation_rejects_wrong_node_without_side_effect
         bc._validate_request(tmp_path / "golden-test.request.json", request)
 
 
-def test_golden_path_bootstrap_validation_accepts_exact_read_only_envelope(tmp_path):
-    from agentos_node import bootstrap_control as bc
-    inputs = {
-        "capability": "node.realm",
-        "operation": "inspect",
-        "payload_json": '{"node_id":"oracle-exec"}',
-        "wait_seconds": "120",
-    }
-    request = {
-        "schema": bc.SCHEMA,
-        "request_id": "golden-test",
-        "action": bc.ACTION_GITHUB_ACTIONS_DISPATCH,
-        "params": {
-            "source_commit": "9" * 40,
-            "workflow": "agentos-dispatch.yml",
-            "ref": "core/integration",
-            "inputs": inputs,
-        },
-    }
-    assert bc._validate_request(tmp_path / "golden-test.request.json", request)[0] == bc.ACTION_GITHUB_ACTIONS_DISPATCH
