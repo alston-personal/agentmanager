@@ -29,6 +29,25 @@ class WardrobeVisualReviewTests(unittest.TestCase):
         self.assertEqual(receipt["state"], "rejected")
         self.assertTrue(any(row["code"] == "missing_selected_layer" for row in receipt["checks"]))
 
+    def test_explicit_layer_mismatch_is_rejected_not_candidate(self):
+        request = base_request()
+        request["semanticReceipt"] = {
+            "schema": "agentos.wardrobe-visual-semantic-receipt/v1",
+            "backendReady": True,
+            "backend": "agy",
+            "checks": [
+                {"code": "layer_match", "layer": "upper_main", "passed": True},
+                {"code": "layer_match", "layer": "lower_main", "passed": False,
+                 "message": "Reference garment is navy culottes, candidate is grey shorts."},
+                {"code": "identity_preserved", "passed": True},
+                {"code": "no_detached_reference", "passed": True},
+            ],
+        }
+        receipt = evaluate_review(request)
+        self.assertEqual(receipt["state"], "rejected")
+        self.assertFalse(receipt["accepted"])
+        self.assertEqual(receipt["reason"], "semantic_review_failed")
+
     def test_verifies_only_with_full_semantic_coverage(self):
         request = base_request()
         request["semanticReceipt"] = {
