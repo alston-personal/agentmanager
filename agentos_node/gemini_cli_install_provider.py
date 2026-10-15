@@ -263,8 +263,11 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
     except OSError:
         provider_identity = None
     if provider_identity and blocked(provider_identity):
-        return _failure("GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED",
-                        executor_available=True, routable=False, authorized=False)
+        result = _failure("GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED",
+                          executor_available=True, routable=False, authorized=False)
+        result["provider_health_cache_hit"] = True
+        result["gemini_cli_invoked"] = False
+        return result
 
     env = {
         **os.environ,
@@ -354,6 +357,8 @@ def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
         result["executor_returncode"] = int(proc.returncode)
         result["executor_timed_out"] = False
         result["gemini_cli_diagnostic_tags"] = diagnostic_tags
+        result["provider_health_cache_hit"] = False
+        result["gemini_cli_invoked"] = True
         result["gemini_health_classification"] = classification
         result["gemini_state"] = diagnostic_tags
         result["gemini_returncode"] = int(proc.returncode)
