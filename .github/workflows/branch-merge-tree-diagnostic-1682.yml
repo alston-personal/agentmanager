@@ -85,3 +85,5 @@ jobs:
 # Recheck after PR #1992 dual Thin Client contract convergence.
 
 # Recheck after human-approved main PR #1988.
+
+# Recheck after docs-only PR #1996 capability registry reconciliation.
