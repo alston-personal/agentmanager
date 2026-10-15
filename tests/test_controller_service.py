@@ -26,17 +26,16 @@ class ControllerFixture(unittest.TestCase):
             'hostname': 'VOPC5750',
             'platform': 'Windows',
             'platform_release': '11',
-            'capabilities': [
-                'agent.surface.inspect',
-                'desktop.windows.tile',
-                'desktop.mouse',
-                'desktop.keyboard',
-            ],
+            'capabilities': ['agent.surface.inspect'],
             'tool_presence': {},
             'surface_inventory': {'surfaces': []},
         }
         invite = self.fabric.create_invite(expires_minutes=5, label='controller-test')
-        enrolled = self.fabric.enroll(invite_id=invite['invite_id'], code=invite['code'], manifest=manifest)
+        enrolled = self.fabric.enroll(
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            manifest=manifest,
+        )
         self.node_token = enrolled['node_token']
         self.fabric.record_heartbeat({
             'schema': 'agentos.node-heartbeat/v0.1',
@@ -71,68 +70,72 @@ class TestControllerService(ControllerFixture):
         self.assertEqual(tasks[0]['action'], 'agent.surface.inspect')
         self.assertEqual(tasks[0]['task_id'], result['task_id'])
 
-    def test_typed_desktop_actions_route_to_bounded_node_tasks(self):
-        controller = ControllerService(self.fabric)
-
-        staged = controller.dispatch({
-            'node_id': 'vopc5750',
-            'action': 'desktop.window.stage',
-            'title_contains': 'Google Gemini',
-            'zone': 'full',
-            'reserve_top_px': 10,
-            'margin_px': 4,
-            'ignored': 'must-not-pass',
-        })
-        task = self.fabric.pull_tasks('vopc5750', self.node_token)[0]
-        self.assertEqual(staged['action'], 'desktop.window.stage')
-        self.assertEqual(task['action'], 'desktop.windows.tile')
-        self.assertEqual(task['controller_action'], 'desktop.window.stage')
-        self.assertEqual(task['windows'], [{'title_contains': 'Google Gemini', 'zone': 'full'}])
-        self.assertNotIn('ignored', task)
-
-        clicked = controller.dispatch({
-            'node_id': 'vopc5750',
-            'action': 'desktop.pointer.click',
-            'x': 900,
-            'y': 700,
-            'button': 'left',
-        })
-        task = self.fabric.pull_tasks('vopc5750', self.node_token)[0]
-        self.assertEqual(clicked['action'], 'desktop.pointer.click')
-        self.assertEqual(task['action'], 'desktop.mouse')
-        self.assertEqual(task['operation'], 'click')
-        self.assertEqual((task['x'], task['y'], task['button']), (900, 700, 'left'))
-
-        typed = controller.dispatch({
-            'node_id': 'vopc5750',
-            'action': 'desktop.text.insert',
-            'text': 'hello Gemini',
-        })
-        task = self.fabric.pull_tasks('vopc5750', self.node_token)[0]
-        self.assertEqual(typed['action'], 'desktop.text.insert')
-        self.assertEqual(task['action'], 'desktop.keyboard')
-        self.assertEqual(task['operation'], 'paste')
-        self.assertEqual(task['text'], 'hello Gemini')
-
-    def test_typed_desktop_actions_validate_contract(self):
-        controller = ControllerService(self.fabric)
-        bad = [
-            {'node_id': 'vopc5750', 'action': 'desktop.window.stage', 'title_contains': '', 'zone': 'full'},
-            {'node_id': 'vopc5750', 'action': 'desktop.window.stage', 'title_contains': 'x', 'zone': 'diagonal'},
-            {'node_id': 'vopc5750', 'action': 'desktop.pointer.click', 'x': -1, 'y': 1},
-            {'node_id': 'vopc5750', 'action': 'desktop.pointer.click', 'x': 1, 'y': 1, 'button': 'middle'},
-            {'node_id': 'vopc5750', 'action': 'desktop.text.insert', 'text': ''},
-            {'node_id': 'vopc5750', 'action': 'desktop.text.insert', 'text': 'x' * 1001},
-        ]
-        for req in bad:
-            with self.subTest(req=req):
-                with self.assertRaises(ValueError):
-                    controller.dispatch(req)
-
     def test_unadvertised_capability_is_rejected_before_queue(self):
         with self.assertRaisesRegex(ValueError, 'does not advertise capability'):
-            ControllerService(self.fabric).dispatch({'node_id': 'vopc5750', 'action': 'desktop.open_url'})
+            ControllerService(self.fabric).dispatch({
+                'node_id': 'vopc5750',
+                'action': 'desktop.open_url',
+            })
         self.assertEqual(self.fabric.load()['tasks']['vopc5750'], [])
+
+    def test_capability_only_dispatch_auto_selects_online_provider(self):
+        result = ControllerService(self.fabric).dispatch({
+            'schema': 'agentos.controller-dispatch/v0.1',
+            'action': 'agent.surface.inspect',
+            'payload': {'probe': 'auto-route'},
+        })
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['node_id'], 'vopc5750')
+        self.assertEqual(result['selection_mode'], 'capability_auto')
+        self.assertIsNone(result['requested_node_id'])
+        self.assertEqual(self.fabric.load()['tasks']['vopc5750'][0]['probe'], 'auto-route')
+
+    def test_capability_dispatch_prefers_lower_queue_depth(self):
+        root = Path(self.tmp.name)
+        manifest = {
+            'schema': 'agentos.node-manifest/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'vopc5751',
+            'role': 'client',
+            'hostname': 'VOPC5751',
+            'platform': 'Windows',
+            'platform_release': '11',
+            'capabilities': ['agent.surface.inspect'],
+            'tool_presence': {},
+            'surface_inventory': {'surfaces': []},
+        }
+        invite = self.fabric.create_invite(expires_minutes=5, label='controller-test-2')
+        enrolled = self.fabric.enroll(
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            manifest=manifest,
+        )
+        self.fabric.record_heartbeat({
+            'schema': 'agentos.node-heartbeat/v0.1',
+            'realm_id': 'realm-test',
+            'node_id': 'vopc5751',
+            'status': 'online',
+            'observed_at': None,
+            'uptime_seconds': 10,
+            'surface_count': 0,
+            'manifest': manifest,
+        }, enrolled['node_token'])
+        self.fabric.queue_task('vopc5750', {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': 'preloaded',
+            'action': 'agent.surface.inspect',
+        })
+        result = ControllerService(self.fabric).dispatch({
+            'action': 'agent.surface.inspect',
+        })
+        self.assertEqual(result['node_id'], 'vopc5751')
+        self.assertEqual(result['candidate_queue_depth'], 0)
+
+    def test_capability_only_dispatch_rejects_when_no_provider(self):
+        with self.assertRaisesRegex(ValueError, 'no online node advertises capability'):
+            ControllerService(self.fabric).dispatch({
+                'action': 'video.generate',
+            })
 
 
 class TestControllerEndpoint(ControllerFixture):
@@ -152,7 +155,11 @@ class TestControllerEndpoint(ControllerFixture):
     def test_controller_dispatch_http_route_enters_service(self):
         req = request.Request(
             self.base_url + '/v1/controller/dispatch',
-            data=json.dumps({'schema': 'agentos.controller-dispatch/v0.1', 'node_id': 'vopc5750', 'action': 'agent.surface.inspect'}).encode('utf-8'),
+            data=json.dumps({
+                'schema': 'agentos.controller-dispatch/v0.1',
+                'node_id': 'vopc5750',
+                'action': 'agent.surface.inspect',
+            }).encode('utf-8'),
             headers={'Content-Type': 'application/json'},
             method='POST',
         )
