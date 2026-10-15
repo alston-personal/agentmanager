@@ -2,10 +2,6 @@
 
 This repository is the **AgentOS logic/runtime root**. Mutable project state belongs in the configured data layer; runtime semantics, contracts, tests, governance, and automation live here.
 
-## Mio / 澪 Threads publishing — mandatory continuation
-
-For requests to publish Mio's text/photos or troubleshoot repeated loss of publishing capability, **first read** `personas/mio/PUBLISH_NOW.md` and then `personas/mio/THREADS_RUNBOOK.md` (latest live state). Discover currently available GitHub connector actions before claiming a tool is unavailable. Do not trigger duplicate public posts as technical tests or reuse old visuals without owner approval.
-
 ## Required reading order
 
 Before architecture or system-level changes:
@@ -16,66 +12,6 @@ Before architecture or system-level changes:
 4. `.agent/CONSTITUTION.yaml` and relevant governance/role sources when authority or policy is involved.
 
 Do not rely on older memory/pulse-era documents as current architecture if they disagree with `docs/CURRENT_STATE.md` and executable evidence.
-
-## Antigravity Gemini ONE self-bootstrap
-
-When the **Gemini executor/session inside the Antigravity IDE/2.0 surface** is asked to connect to, continue from, discover, or validate AgentOS ONE, it MUST read and follow:
-
-`.agents/skills/agentos-one-onboarding/SKILL.md`
-
-For Oracle-hosted Antigravity Gemini, fresh-session continuity is provided primarily by the global Gemini-side `PreInvocation` hook installed in `~/.gemini/config/hooks.json`.
-
-Fresh continuation selection is owned by ONE, not by the IDE workspace. `agent_core/active_continuation.py` maintains a Realm/runtime-level `agentos.active-continuation/v1` pointer containing only `project_id + index_id + ir_id`. That pointer is **not a second state store**: the authoritative working state remains the referenced Canonical IR generation.
-
-Before the first Gemini model call, the hook reads that active selector, resolves the selected canonical project, verifies that the selector's `index_id`/`ir_id` still match the current `agentos.execution-head/v1` + `agentos.ir/v1` generation, then injects a bounded `source=ONE_PREINVOCATION_IR` envelope. If the selector is stale or invalid, the hook fails closed.
-
-`workspacePaths` are environment metadata only. A fresh conversation opened in `/home/ubuntu/acas`, under `agentmanager/workspace/...`, or in another IDE workspace MUST NOT use that path to choose durable continuation. Workspace enumeration, Pulse/PM2 state, local memory, or vendor conversation history must never replace the ONE-selected Canonical IR.
-
-The existing canonical publisher in `agent_core/project_continuation_index.py` is initially restricted to `agentos-core`; it atomically publishes `execution-head.json` and `continuity/latest.json` with one shared `index_id`. The selector may point only to an actually current canonical generation. Until project publishing is deliberately generalized, do not fabricate cross-project IR by scanning workspaces.
-
-The Gemini-side `agentos-one` MCP server remains an explicit live-query surface (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). The PreInvocation hook and MCP adapter use the trusted Oracle-local read-only projection and expose no Realm/node credential to the model.
-
-If the active selector, Canonical IR head, or generation fence is unavailable/malformed/stale, fail closed with `ONE_IR_HEAD_UNRESOLVED`; do not reconstruct current state from local evidence.
-
-## Oracle TypeSafe skill
-
-Oracle TypeSafe installation is a governed bounded executor job, not a remote-shell exception.
-
-- Canonical job type: `typesafe.skill.install`.
-- Route: ONE controller → `oracle-core-node` → existing ubuntu Action Relay → fixed source-controlled provider.
-- The caller cannot supply command, argv, path, env, credential, source repository, skill name, or target agent.
-- The only install method is the fixed project-scoped `npx skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --yes --copy` command in `scripts/install_oracle_typesafe_skill.sh`, executed in `/home/ubuntu/agentmanager`.
-- Project installation is verified at `/home/ubuntu/agentmanager/.agents/skills/typesafe-ai/SKILL.md`; file-level success writes a sanitized receipt to `$AGENT_DATA_ROOT/runtime/skills/typesafe-ai/install-receipt.json`.
-- File installation does **not** prove that a fresh Antigravity IDE session loaded the skill, and it does not prove `agy`, Codex, or Claude loaded it. Those executor claims require separate evidence.
-- For TypeSafe-relevant project work, read the installed `SKILL.md` and current TypeSafe docs before implementing API/SDK integrations. The Skill is instructions, not an API credential or AgentOS authority grant.
-
-## OpenAI Codex IDE extension ONE bootstrap
-
-The OpenAI Codex IDE extension is a **separate extension/client** from the Gemini/Antigravity extension. Do not expect Codex to trigger `~/.gemini/config/hooks.json`, and do not use a retained Gemini PreInvocation attestation as evidence that a Codex thread was hydrated.
-
-Codex uses its own native bootstrap surfaces:
-
-- global Codex instructions in `~/.codex/AGENTS.md`;
-- Codex MCP configuration in `~/.codex/config.toml`;
-- AgentOS adapter `agentos_node/codex_one_mcp_stdio.py`.
-
-For a fresh Codex thread given a relative continuation instruction such as `continue` or `繼續`, Codex must call `agentos-one.one_resolve_active` before reconstructing work from workspace-local state. The tool resolves the ONE active selector and returns the referenced Canonical IR generation. Codex configuration contains bootstrap/discovery rules only; it MUST NOT contain a copied Canonical IR body.
-
-The Codex-side MCP projection is a trusted Oracle-local read-only surface. It may identify the Codex local harness from the Codex MCP configuration boundary, but the MCP process itself does not prove a specific vendor thread/model session. Realm/node credentials remain outside model-visible output.
-
-The current #152 E3 acceptance target is therefore **cross-extension continuity**:
-
-`Antigravity Gemini → AgentOS ONE Canonical IR → fresh OpenAI Codex IDE extension`
-
-The OpenAI Codex extension must recover the same ONE-selected project/generation from `one_resolve_active` without copied Gemini/Codex history and without using the current IDE workspace as continuation authority.
-
-## Shared executor identity boundary
-
-Connectivity, surface identity, executor identity, and model identity are separate claims. A Gemini PreInvocation `modelName` can bind a Gemini caller for that hook invocation; it cannot identify the separate OpenAI Codex extension. Likewise, a Codex MCP process proves the Codex local harness boundary but not an Antigravity Gemini model invocation.
-
-`agy`, standalone `gemini`, Antigravity Gemini, OpenAI Codex IDE extension, Codex CLI, Claude, and other providers are distinct executor/client identities. One is not acceptable evidence for another.
-
-If Oracle bootstrap is not installed, use the immutable bootstrap path documented by the relevant installer. For enrolled external clients, use the client installer rather than making a desktop executor own Realm credentials.
 
 ## Current architectural role
 
@@ -90,7 +26,7 @@ AgentOS currently contains, among other components:
 - platform runtime drivers;
 - operational evidence and drift guards.
 
-The model-independent **Cognitive IR / zero-cost arbitrary model switching** layer is still research unless and until a repeatable benchmark proves it. The existing `agentos.ir/v1` continuation contract is an implemented canonical continuation representation; that does not by itself prove the broader Cognitive IR research claim.
+The model-independent **Cognitive IR / zero-cost arbitrary model switching** layer is still research unless and until a repeatable benchmark proves it.
 
 ## Critical constraints
 
@@ -99,23 +35,8 @@ The model-independent **Cognitive IR / zero-cost arbitrary model switching** lay
 - Newer user intent must never be rolled back by stale snapshots, replay, or tool results.
 - Evidence and tool results do not silently rewrite user intent.
 - Claims in documentation must be backed by implementation paths; verified claims also need tests/evidence.
-- **Capability does not imply authority.** A tool being available, a reachable transport/runner, or a PR being mergeable does not authorize another class of operation.
-
-## Transport Routing Authority Rule
-
-For AgentOS Realm/Node/control-plane work, transport selection is authority-driven rather than convenience-driven. Read `docs/CHATGPT_ONE_TRANSPORT.md` and `governance/transport-routing.json`.
-
-Typed control-plane intents may use, in priority order when available:
-
-1. native/direct ONE transport;
-2. an AgentOS MCP/App bounded adapter;
-3. the current ChatGPT Bootstrap Control Inbox (#50).
-
-**GitHub Actions is not a generic fallback for control-plane work.** If all authorized ONE-side transports are unavailable or fail, surface that failure. Do not start or repurpose a workflow merely because a GitHub Actions runner can reach Oracle.
-
-GitHub Actions is an allowed carrier only for an explicitly classified workflow intent such as CI/tests, build/package, explicit release/deployment, or a separately authorized evidence workflow.
-
-Evaluate typed routing with `agent_core.transport_routing.resolve_transport`. Unknown intent classes and unauthorized requested transports fail closed.
+- **Capability does not imply authority.** A tool being available or a PR being mergeable does not authorize a protected-branch mutation.
+- **Production runtime truth is node-authoritative.** For runtime parity/health claims, consume the runtime node's `agentos.execution-receipt/v1`. A ChatGPT/container sandbox DNS or HTTP probe must never override or substitute for Oracle/runtime-node evidence. DNS failure, local-service failure, source mismatch, and public HTTP failure must remain distinguishable in the receipt.
 
 ## Protected Branch Authority Rule
 
@@ -125,7 +46,10 @@ For `main`, `master`, and `release/*`:
 2. agents may report a PR as `READY_FOR_MERGE`;
 3. agents MUST then stop at `AWAITING_HUMAN_APPROVAL`;
 4. CI success, mergeability, positive review, or a generic `continue` instruction are not merge authorization;
-5. do not merge or directly push to a protected branch without a separate explicit human authorization event.
+5. do not merge or directly push to a protected branch without a separate explicit human authorization event;
+6. development repository writes must name an explicit non-protected branch; never rely on an API's omitted/default branch argument;
+7. Core deployment authority, live acceptance, or evidence generation never grants repository publication authority;
+8. GitHub provider-side protection for `main` is mandatory. AgentOS policy/CI without a provider ref fence is incomplete enforcement.
 
 Evaluate the executable policy with:
 
@@ -137,6 +61,8 @@ python3 scripts/protected_branch_authority.py \
 ```
 
 The expected result without explicit human approval is `AWAITING_HUMAN_APPROVAL` and a non-zero exit status.
+
+Provider-side acceptance is tracked separately and must prove that GitHub rejects a direct `main` push before mutation. See `docs/governance/decisions/GOV-2026-08-30-001-mainline-physical-enforcement.md`.
 
 ## Documentation Reality Rule
 
@@ -155,16 +81,58 @@ python3 scripts/documentation_reality_guard.py
 
 CI enforces the same rule. Treat a documentation-drift failure as an architecture regression, not optional cleanup.
 
+## Public Web Surface Machine-Readability Rule
+
+Web surfaces created or materially changed by AgentOS MUST be classified before implementation as one of:
+
+1. **public-discoverable** — intended to be found, shared, indexed, summarized, or understood by humans, search engines, link previewers, or AI agents;
+2. **public-noindex** — publicly reachable but intentionally excluded from discovery/indexing;
+3. **private/authenticated** — user-specific, administrative, sensitive, or access-controlled.
+
+The reusable implementation owner is **`capability://web.static-index.render`**. Public web generators MUST resolve and invoke that capability; they MUST NOT independently embed another project-specific crawler/AI static-index implementation into application code.
+
+For **public-discoverable** routes:
+
+- Produce an `agentos.web-static-index/v1` input from the page/result's already-authorized public data and invoke `capability://web.static-index.render`.
+- Serve the generated semantic HTML as the initial representation of the public route, or as a deterministic public summary/share route included in the product's discovery strategy. Client JavaScript may enhance the page but must not be the only source of its purpose or primary result.
+- The static representation must contain a descriptive `<title>`, one meaningful `<h1>`, a concise textual summary, canonical URL, share metadata, correct robots intent, stable URLs, and correct HTTP status codes.
+- Product code supplies page-specific data; the shared capability owns escaping, base semantic markup, crawler-facing metadata, and its render receipt. Do not fork/copy its template merely to customize a product.
+- Structured data may be supplied only when it accurately represents the public page. Keep `robots.txt`, sitemap, canonical/noindex behavior, and route intent consistent.
+- Do not expose private inputs, hidden state, account data, secrets, or internal diagnostics merely to improve discoverability.
+
+For **public-noindex** routes, the same capability may be invoked with an explicit `noindex` robots policy when a machine-readable/shareable representation is useful. For **private/authenticated** routes, access control wins: do not create a public index artifact from private data.
+
+**AI-friendly does not mean blanket training permission.** Content machine-readability and crawler authorization are separate controls. Search, archival, and AI-training crawlers may be allowed or denied independently through deployment policy. Optional conventions such as `llms.txt` may be added as hints, but they do not replace the static-index capability, semantic HTML, access control, or robots directives.
+
+Acceptance for a public-discoverable route requires both the `agentos.web-static-index-receipt/v1` render receipt and a no-JavaScript fetch/inspection proving that a crawler can recover the route's title, primary heading, concise summary, canonical URL, and intended indexability.
+
 ## Useful verification
 
 ```bash
 python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
 python3 -m unittest tests.test_protected_branch_authority -v
-python3 -m unittest tests.test_transport_routing -v
+python3 -m unittest tests.test_production_parity_receipt -v
 python3 scripts/documentation_reality_guard.py
 ```
 
 ## Git reporting
 
 After pushing changes, report the remote/branch and latest commit hash.
+
+
+## Growth Proof ownership
+
+AgentOS has a fixed **Growth Auditor** responsibility. Executors perform work; the Closure Owner / Atlast keeps goals moving through execution -> acceptance -> close -> next work; the Growth Auditor independently evaluates whether accumulated validated experience caused later execution to improve.
+
+Architecture-sensitive runtimes that reuse prior experience SHOULD emit Growth Auditor observations after acceptance. Mutable proof evidence belongs in `$AGENT_DATA_ROOT/growth-proof/ledger.json`; do not commit live evidence into this repository.
+
+The Growth Auditor must classify conservatively:
+
+- persistence/source experience alone is not self-growth;
+- independent later reuse may qualify as G2;
+- causal/measured before-vs-after uplift is required for G3;
+- cross-boundary measured transfer may qualify as G4;
+- G5 is longitudinal and must not be inferred from one event.
+
+See `docs/GROWTH_AUDITOR.md` for the runtime contract.
