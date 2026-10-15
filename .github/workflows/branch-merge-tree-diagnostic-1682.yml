@@ -103,3 +103,5 @@ jobs:
 # Recheck after AGENTS documentation PR #2007.
 
 # Recheck after user-approved protected-main PR #2008.
+
+# Read-only verification after PR #2012 documentation convergence.
