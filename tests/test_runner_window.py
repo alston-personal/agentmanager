@@ -555,3 +555,23 @@ def test_character_fusion_smoke_intent_is_registered():
     )
     assert intent.action == "agentos.character_fusion.smoke"
     assert params == {"source_commit": "a" * 40}
+
+
+
+def test_golden_path_dispatch_intent_only_allows_typed_payload():
+    intent, params = resolve_intent(
+        "github.actions", "workflow.dispatch",
+        source_commit="9" * 40,
+        payload={
+            "workflow": "agentos-dispatch.yml",
+            "ref": "core/integration",
+            "inputs": {
+                "capability": "node.realm",
+                "operation": "inspect",
+                "payload_json": '{"node_id":"oracle-exec"}',
+                "wait_seconds": "120",
+            },
+        },
+    )
+    assert intent.action == bc.ACTION_GITHUB_ACTIONS_DISPATCH
+    assert params["inputs"]["operation"] == "inspect"
