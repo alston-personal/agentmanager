@@ -131,6 +131,66 @@ class CoreSupervisorServiceTests(unittest.TestCase):
         self.assertEqual(ready.new_intent_count, 1)
         self.assertEqual(ready.blocked_assignment_count, 0)
 
+    def test_default_cycle_unblocks_only_verified_terminal_dependency(self):
+        self.runtime.update_assignment("audit-001", state="cancelled")
+        store = WorkItemStore(self.runtime)
+        source_a = "github:alston-personal/agentmanager#501"
+        for name, source, deps in [
+            ("a", source_a, []),
+            ("b", "github:alston-personal/agentmanager#502", [source_a]),
+        ]:
+            store.persist({
+                "schema": WORK_ITEM_SCHEMA,
+                "work_item_id": f"work-{name}",
+                "source_kind": "github_issue",
+                "source_ref": source,
+                "project_id": "agentos-core",
+                "employee_id": "spec-steward",
+                "assignment_id": f"assignment-{name}",
+                "goal": f"Review {name}",
+                "dependency_refs": deps,
+                "state": "open",
+            })
+            store.project_pending_assignment(f"work-{name}")
+
+        service = self.service()
+        leader = service.claim_leader(now=T0)
+        initial = service.run_cycle(leader.generation, now=T0 + timedelta(seconds=1))
+        self.assertEqual(initial.blocked_assignment_count, 1)
+
+        self.lifecycle.claim(
+            "assignment-a", "spec-steward", "lease-a", lease_seconds=60, now=T0 + timedelta(seconds=2)
+        )
+        self.lifecycle.finish(
+            "assignment-a", "lease-a", state="completed", now=T0 + timedelta(seconds=3)
+        )
+        ready = service.run_cycle(leader.generation, now=T0 + timedelta(seconds=4))
+        self.assertEqual(ready.blocked_assignment_count, 0)
+        self.assertEqual(service._verified_dependency_states()[source_a], "completed")
+
+        # Assignment state without a matching canonical receipt is not enough.
+        receipt = self.lifecycle._receipt_path("assignment-a", 1)
+        receipt.unlink()
+        missing = service.run_cycle(leader.generation, now=T0 + timedelta(seconds=5))
+        self.assertEqual(missing.blocked_assignment_count, 1)
+
+    def test_ambiguous_dependency_ref_fails_closed(self):
+        store = WorkItemStore(self.runtime)
+        source = "github:alston-personal/agentmanager#511"
+        for index in (1, 2):
+            store.persist({
+                "schema": WORK_ITEM_SCHEMA,
+                "work_item_id": f"duplicate-{index}",
+                "source_kind": "github_issue",
+                "source_ref": source,
+                "project_id": "agentos-core",
+                "employee_id": "spec-steward",
+                "assignment_id": f"duplicate-assignment-{index}",
+                "goal": f"Duplicate {index}",
+                "state": "open",
+            })
+        self.assertNotIn(source, self.service()._verified_dependency_states())
+
     def test_expired_assignment_is_journaled_as_resume_unknown(self):
         self.lifecycle.claim(
             "audit-001", "spec-steward", "lease-old", lease_seconds=30, now=T0
