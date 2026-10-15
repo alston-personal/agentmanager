@@ -641,7 +641,9 @@ def test_golden_path_action_relay_passes_only_fixed_gh_fields(monkeypatch):
             ]
             return {"returncode": 0, "stdout": "", "stderr": ""}
         if argv[:3] == ["/usr/bin/gh", "run", "list"]:
-            return {"returncode": 0, "stdout": '[{"headSha":"' + "9"*40 + '","databaseId":123,"status":"queued","conclusion":null,"url":"https://github.com/alston-personal/agentmanager/actions/runs/123"}]', "stderr": ""}
+            from datetime import datetime, timezone
+            created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            return {"returncode": 0, "stdout": '[{"headSha":"' + "9"*40 + '","createdAt":"' + created_at + '","databaseId":123,"status":"queued","conclusion":null,"url":"https://github.com/alston-personal/agentmanager/actions/runs/123"}]', "stderr": ""}
         raise AssertionError(argv)
     monkeypatch.setattr(action_relay, "_run", mocked_run)
     params = {
@@ -655,3 +657,12 @@ def test_golden_path_action_relay_passes_only_fixed_gh_fields(monkeypatch):
     assert result["ok"] is True
     assert result["run_id"] == 123
     assert len(calls) == 3
+
+
+def test_golden_path_rejects_stale_same_sha_run():
+    from datetime import datetime, timezone
+    from agentos_node.action_relay import _github_run_created_after
+    now = datetime(2026, 10, 15, 8, 0, tzinfo=timezone.utc)
+    assert not _github_run_created_after("2026-10-15T07:59:00Z", now)
+    assert not _github_run_created_after("not-a-timestamp", now)
+    assert _github_run_created_after("2026-10-15T08:00:01Z", now)
