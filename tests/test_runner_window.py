@@ -666,3 +666,29 @@ def test_golden_path_rejects_stale_same_sha_run():
     assert not _github_run_created_after("2026-10-15T07:59:00Z", now)
     assert not _github_run_created_after("not-a-timestamp", now)
     assert _github_run_created_after("2026-10-15T08:00:01Z", now)
+
+
+def test_golden_path_refuses_ambiguous_same_sha_runs(monkeypatch):
+    from datetime import datetime, timezone
+    from agentos_node import action_relay
+    def mocked_run(argv, **kwargs):
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"] or argv[:3] == ["/usr/bin/gh", "workflow", "run"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "run", "list"]:
+            stamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            return {"returncode": 0, "stdout": __import__("json").dumps([
+                {"headSha": "9"*40, "createdAt": stamp, "databaseId": 101},
+                {"headSha": "9"*40, "createdAt": stamp, "databaseId": 102},
+            ]), "stderr": ""}
+        raise AssertionError(argv)
+    monkeypatch.setattr(action_relay, "_run", mocked_run)
+    result = action_relay._github_actions_dispatch({
+        "repository": "alston-personal/agentmanager",
+        "workflow": "agentos-dispatch.yml",
+        "ref": "core/integration",
+        "expected_head_sha": "9"*40,
+        "inputs": {"capability":"node.realm","operation":"inspect","payload_json":'{"node_id":"oracle-exec"}',"wait_seconds":"120"},
+    })
+    assert result["ok"] is False
+    assert result["run_id"] is None
+    assert result["error"] == "ambiguous workflow run correlation"
