@@ -41,8 +41,10 @@ def run_antigravity_probe(request: Mapping[str, Any], *, runtime_root: Path | No
         digest = str(output.get("sha256", ""))
         if not (len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)):
             digest = ""
+        successful = bool(successful and version.startswith("agy ") and digest)
         return {
-            "classification": classification if classification else "PROBE_INVALID_RECEIPT",
+            "classification": (classification if successful or classification != "ANTIGRAVITY_INFERENCE_PASS"
+                               else "PROBE_ATTESTATION_INCOMPLETE"),
             "successful": successful,
             "executor_available": True,
             "routable": successful,
