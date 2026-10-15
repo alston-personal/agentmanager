@@ -89,3 +89,5 @@ jobs:
 # Recheck after docs-only PR #1996 capability registry reconciliation.
 
 # Recheck after docs-only README PR #1997.
+
+# Recheck after PR #1999 SSH receipt transport convergence.
