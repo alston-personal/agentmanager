@@ -2,9 +2,6 @@ name: Oracle Realm ONE Runtime Inspect
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.agentos/commands/realm-one-runtime-inspect.json'
 
 permissions:
   contents: read
