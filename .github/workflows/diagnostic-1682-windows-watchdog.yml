@@ -1,0 +1,26 @@
+name: Diagnostic 1682 Windows Watchdog
+on:
+  pull_request:
+    paths:
+      - 'scripts/windows/thin_client_watchdog.ps1'
+      - '.github/workflows/diagnostic-1682-windows-watchdog.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell syntax and safety contract
+        shell: pwsh
+        run: |
+          $p='scripts/windows/thin_client_watchdog.ps1'
+          $tokens=$null; $errors=$null
+          $null=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p).Path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          $s=Get-Content -Raw $p
+          foreach ($required in @('Test-HeartbeatFresh','HeartbeatStaleSeconds','MinRestartSeconds','Stop-ScheduledTask','taskkill.exe','agentos-client')) {
+            if (-not $s.Contains($required)) { throw "Missing watchdog contract: $required" }
+          }
+          Write-Output 'watchdog_syntax_and_static_contract=PASS'
