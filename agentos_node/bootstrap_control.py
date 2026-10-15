@@ -273,35 +273,6 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         project_id=str(params.get("project_id") or "")
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", project_id):
             raise ValueError("invalid Vision Studio project_id")
-    if action == ACTION_GITHUB_ACTIONS_DISPATCH:
-        params = params or {}
-        from agentos_node.action_relay import ActionRelayClient
-        client = ActionRelayClient("/home/ubuntu/agent-data/runtime/action-relay")
-        capsule = client.submit("github.actions.workflow.dispatch", {
-            "repository": "alston-personal/agentmanager",
-            "workflow": str(params.get("workflow") or ""),
-            "ref": str(params.get("ref") or ""),
-            "inputs": params.get("inputs") or {},
-            "expected_head_sha": str(source_commit or ""),
-        })
-        capsule_id = str(capsule.get("capsule_id") or "")
-        deadline = time.monotonic() + 60.0
-        receipt = None
-        while time.monotonic() < deadline:
-            receipt = client.receipt(capsule_id)
-            if receipt is not None:
-                break
-            time.sleep(0.5)
-        ok = bool(receipt and receipt.get("ok") is True)
-        return {
-            "ok": ok,
-            "source_commit": source_commit,
-            "github_actions_dispatch": {
-                "capsule_id": capsule_id,
-                "state": "completed" if receipt is not None else "timeout",
-                "receipt": receipt,
-            },
-        }
     if action == ACTION_EXECUTOR_JOB_SUBMIT:
         job_type=str(params.get("job_type") or "")
         from agent_core.executor_job_contract import canonical_executor_job_request
@@ -1023,6 +994,35 @@ def _realm_executor_reconcile(node_id: str) -> dict[str, Any]:
     }
 
 def _execute(action: str, source_commit: str | None, post_key: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    if action == ACTION_GITHUB_ACTIONS_DISPATCH:
+        params = params or {}
+        from agentos_node.action_relay import ActionRelayClient
+        client = ActionRelayClient("/home/ubuntu/agent-data/runtime/action-relay")
+        capsule = client.submit("github.actions.workflow.dispatch", {
+            "repository": "alston-personal/agentmanager",
+            "workflow": str(params.get("workflow") or ""),
+            "ref": str(params.get("ref") or ""),
+            "inputs": params.get("inputs") or {},
+            "expected_head_sha": str(source_commit or ""),
+        })
+        capsule_id = str(capsule.get("capsule_id") or "")
+        deadline = time.monotonic() + 60.0
+        receipt = None
+        while time.monotonic() < deadline:
+            receipt = client.receipt(capsule_id)
+            if receipt is not None:
+                break
+            time.sleep(0.5)
+        ok = bool(receipt and receipt.get("ok") is True)
+        return {
+            "ok": ok,
+            "source_commit": source_commit,
+            "github_actions_dispatch": {
+                "capsule_id": capsule_id,
+                "state": "completed" if receipt is not None else "timeout",
+                "receipt": receipt,
+            },
+        }
     if action == ACTION_RUNNER_WINDOW_PROBE:
         return {
             "ok": True,
