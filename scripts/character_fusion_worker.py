@@ -212,7 +212,10 @@ def _vision_fallback_json(prompt: str, image_path: Path) -> dict[str, Any]:
     except Exception as exc:
         remember("hf", exc)
 
-    raise RuntimeError("all vision fallbacks failed; " + "; ".join(errors[-5:]))
+    # Keep every provider's diagnostic visible even when the last provider
+    # emits a very long quota traceback (for example HF HTTP 402).
+    bounded = [error[:450] + ("…" if len(error) > 450 else "") for error in errors]
+    raise RuntimeError("all vision fallbacks failed; " + "; ".join(bounded))
 
 
 def _parse_loose_json_text(text: str) -> dict[str, Any]:
