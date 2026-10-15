@@ -105,3 +105,5 @@ jobs:
 # Recheck after user-approved protected-main PR #2008.
 
 # Read-only verification after PR #2012 documentation convergence.
+
+# Recheck after PR #2013 retired LayoutLab v2 workflow.
