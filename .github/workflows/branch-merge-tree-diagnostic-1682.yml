@@ -69,3 +69,5 @@ jobs:
 # Recheck after #1967 CAS publisher convergence.
 
 # Recheck after merged #1968 resolver convergence.
+
+# Recheck after approved main PR #1969 NodeRegistry recovery merge.
