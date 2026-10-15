@@ -1,5 +1,13 @@
 # AgentOS Current Architecture & Reality
 
+## Golden Path v1 — bounded GitHub Actions relay (source candidate, not live accepted)
+
+The existing Runner Window intent `github.actions/workflow.dispatch` is extended only for `agentos-dispatch.yml@core/integration` with exact inputs `node.realm / inspect`, `{"node_id":"oracle-exec"}`, `wait_seconds=120`. Bootstrap and Ubuntu Action Relay both enforce this explicit allowlist. The legacy Oursong activation target continues to accept no inputs. No general workflow dispatcher, privileged shell, or unrestricted GitHub API access is exposed.
+
+Bootstrap request validation must be side-effect free; the Action Relay capsule is submitted only during governed execution. Relay checks the pinned source SHA and discovers a new matching workflow Run with timestamp and ambiguity fencing. **A Run ID is only dispatch acknowledgement** (`dispatch_ack_only=true`, `workflow_terminal_verified=false`); it is not proof of successful hosted workflow, Runner Window execution, Oracle Node health, or A→B→C autonomous handoff.
+
+Source-only regression is exercised by the existing Control Inbox Bridge Guard. Deployment requires exact installed release/identity evidence; the Golden Path is **not operationally verified** until an authenticated, bounded runtime receipt verifies the required dispatch and terminal Node outcome. Capability availability does not confer approval to merge a protected branch or deploy production.
+
 ## Mio DM health via the existing ONE executor-job route
 
 After the health job confirms `LOGIN_REQUIRED`, the fixed
