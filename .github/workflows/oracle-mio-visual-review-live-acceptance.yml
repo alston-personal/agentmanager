@@ -40,6 +40,7 @@ jobs:
 
           from capabilities.wardrobe_visual_review import evaluate_review
           from capabilities.wardrobe_visual_review.gemini_backend import review_with_gemini
+          from capabilities.wardrobe_visual_review.agy_backend import review_with_agy
 
           root=Path('/home/ubuntu/agent-data/projects/dressup-simulator')
           rows=[]
@@ -67,6 +68,16 @@ jobs:
               workspace_root=Path('/home/ubuntu/agent-data/runtime/wardrobe-visual-review-live'),
               timeout_seconds=35,
           )
+          if semantic.get('backendReady') is not True and semantic.get('classification') in {
+              'OAUTH_CLIENT_UNSUPPORTED', 'AUTH_REQUIRED', 'RATE_LIMITED',
+              'INSTALL_REQUIRED', 'TIMEOUT', 'BACKEND_ERROR'
+          }:
+              semantic=review_with_agy(
+                  job=job,
+                  candidate_path=asset,
+                  workspace_root=Path('/home/ubuntu/agent-data/runtime/wardrobe-visual-review-live'),
+                  timeout_seconds=120,
+              )
           request={
               'schema':'agentos.wardrobe-visual-review-request/v1',
               'selectedLayers':((job.get('input') or {}).get('selectedLayers') or {}),
@@ -83,9 +94,10 @@ jobs:
           print('mio_visual_review_backend_message='+message)
           print('mio_visual_review_state='+str(receipt.get('state')))
           print('mio_visual_review_verified_layers='+','.join(receipt.get('verifiedLayers') or []))
-          if semantic.get('backendReady') is True:
-              print('mio_visual_review_live=READY')
+          if receipt.get('accepted') is True and receipt.get('state') == 'verified':
+              print('mio_visual_review_live=VERIFIED')
           else:
               print('mio_visual_review_live='+classification)
+              raise SystemExit(1)
           PY
           REMOTE
