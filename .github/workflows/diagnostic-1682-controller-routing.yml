@@ -1,0 +1,19 @@
+name: Diagnostic 1682 Controller Routing
+on:
+  pull_request:
+    paths:
+      - 'agent_core/controller_service.py'
+      - 'tests/test_controller_service.py'
+      - '.github/workflows/diagnostic-1682-controller-routing.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest -v tests.test_controller_service
