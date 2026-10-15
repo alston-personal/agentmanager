@@ -79,3 +79,5 @@ jobs:
 # Recheck after dual RealmFabric contract PR #1983.
 
 # Recheck after PR 1989 durable completion contract convergence.
+
+# Recheck after PR #1991 Realm Resolve private regression suite convergence.
