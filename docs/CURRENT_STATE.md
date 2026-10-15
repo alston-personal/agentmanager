@@ -944,3 +944,7 @@ PR #1921 proposes main as the single future development integration line while c
 ## Project continuation publication (candidate PR, 2026-10-13)
 
 Draft PR #1923 proposes the narrow `agentos.project.publish_continuation` action and `agent_core/project_continuation_index.py` with its existing regression tests from `core/integration` onto `main`. It is **not merged, not deployed, and not a runtime receipt**. Publication is constrained to the canonical `agentos-core` project with governance-resolved mutation authority, matching index generations, lock and atomic file updates. Main's `resolve_facade` compatibility and Relay authorization behavior must pass hosted tests, while `core/integration` retains release authority pending #1682 acceptance and explicit protected-main merge approval.
+
+## Node Registry legacy snapshot recovery — source convergence candidate (2026-10-15)
+
+The Node Registry remains an atomic, locked single-JSON registry. A bounded compatibility reader may recover only multiple fully valid, sequential snapshots from the same Realm, selecting the final complete snapshot. Incomplete, cross-Realm, or malformed data continues to fail closed. The next authorized write canonicalizes through the normal locked atomic path. This is candidate source behavior; production Oracle adoption is not yet attested. See #1682 and PR #1969.
