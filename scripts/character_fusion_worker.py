@@ -1934,6 +1934,27 @@ async def main():
         if not sent:
             raise RuntimeError("chatgpt_web_submit_failed")
 
+        # A DOM click alone is not evidence that the prompt was submitted.
+        # Fail quickly with surface diagnostics instead of waiting four minutes
+        # for an image that cannot arrive.
+        submitted=False
+        submit_state={}
+        for _ in range(24):
+            submit_state=await ev(r'''(() => ({
+              href:location.href,
+              composer:([...document.querySelectorAll('#prompt-textarea,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+                .find(x=>x.offsetParent!==null && !x.disabled)?.innerText||'').slice(0,120),
+              userCount:document.querySelectorAll('[data-message-author-role="user"]').length,
+              assistantCount:document.querySelectorAll('[data-message-author-role="assistant"]').length,
+              body:(document.body?.innerText||'').slice(-600)
+            }))()''') or {}
+            if submit_state.get("userCount",0)>0:
+                submitted=True
+                break
+            await asyncio.sleep(0.5)
+        if not submitted:
+            raise RuntimeError("chatgpt_web_submit_not_observed; state="+json.dumps(submit_state,ensure_ascii=False)[:1600])
+
         deadline=time.monotonic()+240
         chosen=None
         while time.monotonic()<deadline:
@@ -1963,6 +1984,9 @@ async def main():
 
         if not chosen:
             state=await ev(r'''(() => ({
+              href:location.href,
+              body:(document.body?.innerText||'').slice(-1000),
+              userCount:document.querySelectorAll('[data-message-author-role="user"]').length,
               assistants:[...document.querySelectorAll('[data-message-author-role="assistant"]')]
                 .slice(-3).map(x=>(x.innerText||x.textContent||'').trim().slice(0,500)),
               imgs:[...document.querySelectorAll('main img')].filter(x=>x.offsetParent!==null)
