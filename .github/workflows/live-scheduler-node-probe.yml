@@ -65,3 +65,16 @@ jobs:
           print(json.dumps(out,indent=2,ensure_ascii=False))
           print('live_scheduler_node_probe=PASS')
           PY
+
+      - name: Read Character Fusion smoke request status
+        shell: bash
+        run: |
+          set -euo pipefail
+          request_id='agentos.character_fusion.smoke-1792044232-58ac8199'
+          curl -fsS --max-time 20             -H "Authorization: Bearer $TOKEN"             "https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch/requests/$request_id"             > "$RUNNER_TEMP/smoke-request.json"
+          python3 - "$RUNNER_TEMP/smoke-request.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(json.dumps(d,indent=2,ensure_ascii=False))
+          print('character_fusion_smoke_request_probe=PASS')
+          PY
