@@ -419,6 +419,10 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
         "ref": ref,
         "expected_head_sha": expected_head_sha,
         "dispatched": True,
+        # A discovered workflow run is only dispatch acknowledgement, not
+        # the nested Runner Window's terminal success receipt.
+        "workflow_terminal_verified": False,
+        "dispatch_ack_only": True,
         "run_id": observed.get("databaseId") if observed else None,
         "run_status": observed.get("status") if observed else None,
         "run_conclusion": observed.get("conclusion") if observed else None,
