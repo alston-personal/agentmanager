@@ -13,7 +13,7 @@ HOOK_SCHEMA = "agentos.gemini-cli-sessionstart/v0.1"
 SOURCE = "ONE_SESSIONSTART_IR"
 
 
-def _compact_context(result: dict[str, Any], selector: dict[str, Any]) -> dict[str, Any]:
+def _compact_context(result: dict[str, Any], selector: dict[str, Any], *, surface: str = "gemini-cli", executor_class: str = "gemini-cli") -> dict[str, Any]:
     continuation = result.get("continuation") if isinstance(result.get("continuation"), dict) else {}
     canonical_ir = continuation.get("canonical_ir") if isinstance(continuation.get("canonical_ir"), dict) else {}
     execution_head = result.get("execution_head") if isinstance(result.get("execution_head"), dict) else {}
@@ -32,8 +32,8 @@ def _compact_context(result: dict[str, Any], selector: dict[str, Any]) -> dict[s
         "next_action": result.get("next_action"),
         "mutation_allowed": bool(result.get("mutation_allowed")),
         "credential_exposed": False,
-        "surface": "gemini-cli",
-        "executor_class": "gemini-cli",
+        "surface": surface,
+        "executor_class": executor_class,
         "execution_head": {
             "schema": execution_head.get("schema"),
             "index_id": execution_head.get("index_id"),
