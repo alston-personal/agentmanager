@@ -1,0 +1,64 @@
+name: Oracle Deploy Antigravity Relay Worker
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/antigravity_relay_worker.py'
+      - '.github/workflows/oracle-deploy-antigravity-relay-worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-antigravity-relay-worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install exact relay worker and verify running service
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE=agentos_node/antigravity_relay_worker.py
+          EXPECTED=$(sha256sum "$SOURCE" | awk '{print $1}')
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'mkdir -p /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node'
+          scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_SSH_PORT:-22}" "$SOURCE" "${DEPLOY_USER}@${ORACLE_HOST}:/tmp/agentos-antigravity-relay-worker-stage.py"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$EXPECTED" "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          expected="$1"; generation="$2"
+          dest=/home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay_worker.py
+          stage=/tmp/agentos-antigravity-relay-worker-stage.py
+          backup=$(mktemp /tmp/agentos-antigravity-relay-worker-backup.XXXXXX)
+          /usr/bin/python3 -m py_compile "$stage"
+          test "$(sha256sum "$stage" | cut -d' ' -f1)" = "$expected"
+          test -s "$dest"
+          cp -p "$dest" "$backup"
+          restore() {
+            install -m 0664 "$backup" "$dest"
+            systemctl --user restart agentos-antigravity-relay.service || true
+          }
+          trap restore ERR
+          install -m 0664 "$stage" "$dest"
+          test "$(sha256sum "$dest" | cut -d' ' -f1)" = "$expected"
+          systemctl --user restart agentos-antigravity-relay.service
+          systemctl --user is-active --quiet agentos-antigravity-relay.service
+          PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext /usr/bin/python3 -c 'from agentos_node.antigravity_relay_worker import AntigravityRelayWorker; print("antigravity_runtime_import=PASS")'
+          trap - ERR
+          rm -f "$backup" "$stage"
+          echo "antigravity_relay_worker_deploy=PASS"
+          echo "antigravity_relay_worker_sha256=$expected"
+          echo "antigravity_relay_worker_source_commit=$generation"
+          REMOTE
