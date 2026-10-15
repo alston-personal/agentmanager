@@ -2,17 +2,19 @@ name: Project Release Lane Guard
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, core/integration]
     paths:
       - '.agent/governance/project_release_lanes.yaml'
+      - 'governance/project-release-lanes.json'
       - 'scripts/check_project_release_lane.py'
       - 'tests/test_project_release_lane.py'
       - '.github/workflows/project-release-lane-guard.yml'
       - '.github/workflows/oracle-release-layoutlab-v08-dev.yml'
   push:
-    branches: [main]
+    branches: [main, core/integration]
     paths:
       - '.agent/governance/project_release_lanes.yaml'
+      - 'governance/project-release-lanes.json'
       - 'scripts/check_project_release_lane.py'
       - 'tests/test_project_release_lane.py'
       - '.github/workflows/project-release-lane-guard.yml'
@@ -35,16 +37,55 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/check_project_release_lane.py --project layoutlib --action development_write --target-branch develop
-          if python scripts/check_project_release_lane.py --project layoutlib --action development_write --target-branch main; then
+          SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+          python scripts/check_project_release_lane.py \
+            --project layoutlib --action development_write --target-branch develop
+
+          if python scripts/check_project_release_lane.py \
+            --project layoutlib --action development_write --target-branch main; then
             echo 'expected development->main denial' >&2
             exit 1
           fi
-          python scripts/check_project_release_lane.py --project layoutlib --action poc_deploy --target-branch develop
-          if python scripts/check_project_release_lane.py --project layoutlib --action poc_deploy --target-branch main; then
+
+          if python scripts/check_project_release_lane.py \
+            --project layoutlib --action promotion --target-branch main; then
+            echo 'expected promotion without human approval denial' >&2
+            exit 1
+          fi
+
+          python scripts/check_project_release_lane.py \
+            --project layoutlib --action promotion --target-branch main \
+            --explicit-human-approval
+
+          if python scripts/check_project_release_lane.py \
+            --project layoutlib --action poc_deploy --target-branch develop; then
+            echo 'expected POC without exact SHA denial' >&2
+            exit 1
+          fi
+
+          if python scripts/check_project_release_lane.py \
+            --project layoutlib --action poc_deploy --target-branch main \
+            --candidate-sha "$SHA"; then
             echo 'expected POC main-source denial' >&2
             exit 1
           fi
+
+          python scripts/check_project_release_lane.py \
+            --project layoutlib --action poc_deploy --target-branch develop \
+            --candidate-sha "$SHA"
+
+          if python scripts/check_project_release_lane.py \
+            --project layoutlib --action production_deploy --target-branch develop \
+            --candidate-sha "$SHA"; then
+            echo 'expected production develop-source denial' >&2
+            exit 1
+          fi
+
+          python scripts/check_project_release_lane.py \
+            --project layoutlib --action production_deploy --target-branch main \
+            --candidate-sha "$SHA"
+
       - name: Verify LayoutLab POC uses pinned develop candidate
         shell: bash
         run: |

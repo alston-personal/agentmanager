@@ -9,7 +9,7 @@ import sys
 from pathlib import PurePosixPath
 
 RED_PREFIXES = (
-    ".agent/", ".agentos/", ".github/workflows/",
+    ".agent/", ".agentos/", ".github/workflows/", "governance/",
     "agent_core/", "agentos/core/", "core/", "one/", "supervisor/",
     "executor/", "node/", "agentos_node/", "scripts/deploy_",
     "scripts/check_", "docs/CORE_DEPLOYMENT",
