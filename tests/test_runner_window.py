@@ -555,3 +555,142 @@ def test_character_fusion_smoke_intent_is_registered():
     )
     assert intent.action == "agentos.character_fusion.smoke"
     assert params == {"source_commit": "a" * 40}
+
+
+
+def test_golden_path_dispatch_intent_only_allows_typed_payload():
+    intent, params = resolve_intent(
+        "github.actions", "workflow.dispatch",
+        source_commit="9" * 40,
+        payload={
+            "workflow": "agentos-dispatch.yml",
+            "ref": "core/integration",
+            "inputs": {
+                "capability": "node.realm",
+                "operation": "inspect",
+                "payload_json": '{"node_id":"oracle-exec"}',
+                "wait_seconds": "120",
+            },
+        },
+    )
+    assert intent.action == bc.ACTION_GITHUB_ACTIONS_DISPATCH
+    assert params["inputs"]["operation"] == "inspect"
+
+
+def test_golden_path_bootstrap_validation_rejects_wrong_node_without_side_effect(tmp_path, monkeypatch):
+    from agentos_node import bootstrap_control as bc
+    from agentos_node import action_relay
+    monkeypatch.setattr(action_relay.ActionRelayClient, "submit", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("side effect in validation")))
+    inputs = {
+        "capability": "node.realm",
+        "operation": "inspect",
+        "payload_json": '{"node_id":"vopc5750"}',
+        "wait_seconds": "120",
+    }
+    request = {
+        "schema": bc.SCHEMA,
+        "request_id": "golden-test",
+        "action": bc.ACTION_GITHUB_ACTIONS_DISPATCH,
+        "params": {
+            "source_commit": "9" * 40,
+            "workflow": "agentos-dispatch.yml",
+            "ref": "core/integration",
+            "inputs": inputs,
+        },
+    }
+    with pytest.raises(ValueError, match="exact read-only oracle-exec"):
+        bc._validate_request(tmp_path / "golden-test.request.json", request)
+
+
+
+
+def test_golden_path_action_relay_rejects_wrong_node_before_gh(monkeypatch):
+    from agentos_node import action_relay
+    monkeypatch.setattr(action_relay, "_run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("gh called before allowlist")))
+    params = {
+        "repository": "alston-personal/agentmanager",
+        "workflow": "agentos-dispatch.yml",
+        "ref": "core/integration",
+        "expected_head_sha": "9" * 40,
+        "inputs": {
+            "capability": "node.realm",
+            "operation": "inspect",
+            "payload_json": '{"node_id":"vopc5750"}',
+            "wait_seconds": "120",
+        },
+    }
+    with pytest.raises(ValueError, match="not allowlisted"):
+        action_relay._github_actions_dispatch(params)
+
+
+def test_golden_path_action_relay_passes_only_fixed_gh_fields(monkeypatch):
+    from agentos_node import action_relay
+    calls = []
+    def mocked_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "workflow", "run"]:
+            assert argv[3:7] == ["agentos-dispatch.yml", "--repo", "alston-personal/agentmanager", "--ref"]
+            assert argv[7] == "core/integration"
+            assert argv[8:] == [
+                "-f", "capability=node.realm",
+                "-f", "operation=inspect",
+                "-f", 'payload_json={"node_id":"oracle-exec"}',
+                "-f", "wait_seconds=120",
+            ]
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "run", "list"]:
+            from datetime import datetime, timezone
+            created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            return {"returncode": 0, "stdout": '[{"headSha":"' + "9"*40 + '","createdAt":"' + created_at + '","databaseId":123,"status":"queued","conclusion":null,"url":"https://github.com/alston-personal/agentmanager/actions/runs/123"}]', "stderr": ""}
+        raise AssertionError(argv)
+    monkeypatch.setattr(action_relay, "_run", mocked_run)
+    params = {
+        "repository": "alston-personal/agentmanager",
+        "workflow": "agentos-dispatch.yml",
+        "ref": "core/integration",
+        "expected_head_sha": "9"*40,
+        "inputs": {"capability":"node.realm","operation":"inspect","payload_json":'{"node_id":"oracle-exec"}',"wait_seconds":"120"},
+    }
+    result = action_relay._github_actions_dispatch(params)
+    assert result["ok"] is True
+    assert result["run_id"] == 123
+    assert result["dispatch_ack_only"] is True
+    assert result["workflow_terminal_verified"] is False
+    assert len(calls) == 3
+
+
+def test_golden_path_rejects_stale_same_sha_run():
+    from datetime import datetime, timezone
+    from agentos_node.action_relay import _github_run_created_after
+    now = datetime(2026, 10, 15, 8, 0, tzinfo=timezone.utc)
+    assert not _github_run_created_after("2026-10-15T07:59:00Z", now)
+    assert not _github_run_created_after("not-a-timestamp", now)
+    assert _github_run_created_after("2026-10-15T08:00:01Z", now)
+
+
+def test_golden_path_refuses_ambiguous_same_sha_runs(monkeypatch):
+    from datetime import datetime, timezone
+    from agentos_node import action_relay
+    def mocked_run(argv, **kwargs):
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"] or argv[:3] == ["/usr/bin/gh", "workflow", "run"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "run", "list"]:
+            stamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            return {"returncode": 0, "stdout": __import__("json").dumps([
+                {"headSha": "9"*40, "createdAt": stamp, "databaseId": 101},
+                {"headSha": "9"*40, "createdAt": stamp, "databaseId": 102},
+            ]), "stderr": ""}
+        raise AssertionError(argv)
+    monkeypatch.setattr(action_relay, "_run", mocked_run)
+    result = action_relay._github_actions_dispatch({
+        "repository": "alston-personal/agentmanager",
+        "workflow": "agentos-dispatch.yml",
+        "ref": "core/integration",
+        "expected_head_sha": "9"*40,
+        "inputs": {"capability":"node.realm","operation":"inspect","payload_json":'{"node_id":"oracle-exec"}',"wait_seconds":"120"},
+    })
+    assert result["ok"] is False
+    assert result["run_id"] is None
+    assert result["error"] == "ambiguous workflow run correlation"
