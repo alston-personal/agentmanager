@@ -21,10 +21,26 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
+      - uses: actions/checkout@v4
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
+      - name: Verify exact deployed semantic evaluator
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED=$(sha256sum capabilities/wardrobe_visual_review/review.py | awk '{print $1}')
+          for attempt in $(seq 1 25); do
+            ACTUAL=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'sha256sum /home/ubuntu/.local/share/mio-tryon/runtime-lib/capabilities/wardrobe_visual_review/review.py' | awk '{print $1}')
+            if [ "$ACTUAL" = "$EXPECTED" ]; then
+              echo "mio_visual_review_exact_evaluator=PASS"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "mio_visual_review_exact_evaluator=FAIL"
+          exit 1
       - name: Review latest existing candidate without mutation
         shell: bash
         run: |
