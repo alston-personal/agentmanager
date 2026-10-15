@@ -99,3 +99,5 @@ jobs:
 # Recheck after PR #2004 retired LayoutLab carrier.
 
 # Recheck after #2005 bounded manual-only Oracle ONE inspect.
+
+# Recheck after AGENTS documentation PR #2007.
