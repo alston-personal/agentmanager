@@ -23,9 +23,11 @@ from PIL import Image, ImageOps
 try:
     from capabilities.wardrobe_visual_review import evaluate_review
     from capabilities.wardrobe_visual_review.gemini_backend import review_with_gemini
+    from capabilities.wardrobe_visual_review.agy_backend import review_with_agy
 except Exception:
     evaluate_review = None
     review_with_gemini = None
+    review_with_agy = None
 
 try:
     from huggingface_hub import InferenceClient
@@ -1029,6 +1031,18 @@ def run_visual_review(job: dict[str, Any], candidate_path: Path) -> dict[str, An
                 workspace_root=REVIEW_WORKSPACE,
                 timeout_seconds=float(os.environ.get("AGENTOS_TRYON_REVIEW_TIMEOUT_SECONDS", "35")),
             )
+            if (semantic.get("backendReady") is not True
+                    and review_with_agy is not None
+                    and semantic.get("classification") in {
+                        "OAUTH_CLIENT_UNSUPPORTED", "AUTH_REQUIRED",
+                        "INSTALL_REQUIRED", "RATE_LIMITED", "TIMEOUT", "BACKEND_ERROR"
+                    }):
+                semantic = review_with_agy(
+                    job=job,
+                    candidate_path=candidate_path,
+                    workspace_root=REVIEW_WORKSPACE,
+                    timeout_seconds=float(os.environ.get("AGENTOS_TRYON_AGY_REVIEW_TIMEOUT_SECONDS", "120")),
+                )
     request = {
         "schema": "agentos.wardrobe-visual-review-request/v1",
         "selectedLayers": ((job.get("input") or {}).get("selectedLayers") or {}),
