@@ -62,6 +62,94 @@ class ProjectContinuationIndexTests(unittest.TestCase):
         ir["continuation"] = {"recommended_action": "Open fresh Codex"}
         return params
 
+    def test_action_relay_registration_and_bounded_delegate(self):
+        from agentos_node.action_relay import ACTIONS
+        action = ACTIONS["agentos.project.publish_continuation"]
+        with patch("agent_core.project_continuation_index.publish_project_continuation") as publish:
+            publish.return_value = {"ok": True, "schema": "agentos.project-continuation-publish/v1"}
+            receipt = action(self.params)
+            publish.assert_called_once_with(self.params)
+            self.assertTrue(receipt["ok"])
+
+    def test_action_relay_rejects_noncanonical_project(self):
+        from agentos_node.action_relay import ACTIONS
+        params = json.loads(json.dumps(self.params))
+        params["project_id"] = "untrusted-project"
+        with self.assertRaisesRegex(ValueError, "restricted to agentos-core"):
+            ACTIONS["agentos.project.publish_continuation"](params)
+
+    def test_relay_forwards_bounded_cas_fence(self):
+        from agentos_node.action_relay import ACTIONS
+        params = json.loads(json.dumps(self.params))
+        params["expected_index_id"] = "idx-previous"
+        params["expected_ir_id"] = "ir-previous"
+        with patch("agent_core.project_continuation_index.publish_project_continuation") as publish:
+            publish.return_value = {"ok": True}
+            ACTIONS["agentos.project.publish_continuation"](params)
+            forwarded = publish.call_args
+            self.assertEqual(set(forwarded.args[0]), {"project_id", "execution_head", "continuation"})
+            self.assertEqual(forwarded.kwargs, {"expected_index_id": "idx-previous", "expected_ir_id": "ir-previous"})
+
+    def test_relay_rejects_half_fence_and_extra_keys(self):
+        from agentos_node.action_relay import ACTIONS
+        params = dict(self.params, expected_index_id="idx-previous")
+        with self.assertRaisesRegex(ValueError, "supplied together"):
+            ACTIONS["agentos.project.publish_continuation"](params)
+        params = dict(self.params, arbitrary_path="/tmp/other")
+        with self.assertRaisesRegex(ValueError, "canonical payload"):
+            ACTIONS["agentos.project.publish_continuation"](params)
+
+    @patch("agent_core.project_continuation_index.resolve_project_identity")
+    def test_relay_end_to_end_rejects_stale_cas_without_mutation(self, resolve):
+        from agentos_node.action_relay import ACTIONS
+        from unittest.mock import patch as mock_patch
+        resolve.return_value = self.project
+        action = ACTIONS["agentos.project.publish_continuation"]
+        with mock_patch.dict("os.environ", {"AGENT_DATA_ROOT": str(self.root)}):
+            first = action(self.params)
+            self.assertTrue(first["ok"])
+            stale = self._child_params()
+            stale["expected_index_id"] = "wrong-index"
+            stale["expected_ir_id"] = "wrong-ir"
+            head_path = self.root / "projects" / "agentos-core" / "execution-head.json"
+            cont_path = self.root / "projects" / "agentos-core" / "continuity" / "latest.json"
+            before = (head_path.read_bytes(), cont_path.read_bytes())
+            with self.assertRaisesRegex(ValueError, "stale canonical IR parent"):
+                action(stale)
+            self.assertEqual(before, (head_path.read_bytes(), cont_path.read_bytes()))
+
+    @patch("agent_core.project_continuation_index.resolve_project_identity")
+    def test_rejects_unguarded_overwrite_without_mutation(self, resolve):
+        resolve.return_value = self.project
+        publish_project_continuation(self.params, data_root=self.root)
+        head = self.root / "projects" / "agentos-core" / "execution-head.json"
+        continuation = self.root / "projects" / "agentos-core" / "continuity" / "latest.json"
+        previous = (head.read_bytes(), continuation.read_bytes())
+        with self.assertRaisesRegex(ValueError, "requires guarded advancement"):
+            publish_project_continuation(self._child_params(), data_root=self.root)
+        self.assertEqual(previous, (head.read_bytes(), continuation.read_bytes()))
+
+    @patch("agent_core.project_continuation_index.resolve_project_identity")
+    def test_relay_end_to_end_guarded_advance_then_readback(self, resolve):
+        from agentos_node.action_relay import ACTIONS
+        from unittest.mock import patch as mock_patch
+        resolve.return_value = self.project
+        action = ACTIONS["agentos.project.publish_continuation"]
+        with mock_patch.dict("os.environ", {"AGENT_DATA_ROOT": str(self.root)}):
+            first = action(self.params)
+            self.assertEqual(first["index_id"], "idx-1")
+            child = self._child_params()
+            child["expected_index_id"] = "idx-1"
+            child["expected_ir_id"] = "ir-1"
+            second = action(child)
+            self.assertTrue(second["guarded_advance"])
+            self.assertEqual(second["index_id"], "idx-2")
+            path = self.root / "projects" / "agentos-core"
+            head = json.loads((path / "execution-head.json").read_text())
+            cont = json.loads((path / "continuity" / "latest.json").read_text())
+            self.assertEqual((head["index_id"], cont["index_id"]), ("idx-2", "idx-2"))
+            self.assertEqual(cont["canonical_ir"]["parent_ir_id"], "ir-1")
+
     def test_rejects_noncanonical_project(self):
         params = dict(self.params)
         params["project_id"] = "other"
