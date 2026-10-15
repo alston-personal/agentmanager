@@ -314,10 +314,21 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         workflow=str(params.get("workflow") or "")
         ref=str(params.get("ref") or "")
         inputs=params.get("inputs") or {}
-        if (workflow, ref) != ("oursong-persona-activation.yml", "core/integration"):
+        if not isinstance(inputs, dict):
+            raise ValueError("GitHub Actions dispatch inputs must be an object")
+        if (workflow, ref) == ("oursong-persona-activation.yml", "core/integration"):
+            if inputs:
+                raise ValueError("Oursong activation dispatch accepts no inputs")
+        elif (workflow, ref) == ("agentos-dispatch.yml", "core/integration"):
+            if inputs != {
+                "capability": "node.realm",
+                "operation": "inspect",
+                "payload_json": '{"node_id":"oracle-exec"}',
+                "wait_seconds": "120",
+            }:
+                raise ValueError("Golden Path only allows exact read-only oracle-exec inspection")
+        else:
             raise ValueError("GitHub Actions dispatch target is not allowlisted")
-        if not isinstance(inputs, dict) or inputs:
-            raise ValueError("Oursong activation dispatch accepts no inputs")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
