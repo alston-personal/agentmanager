@@ -178,30 +178,39 @@ def _groq_vlm_json(prompt: str, image_path: Path) -> dict[str, Any]:
 def _vision_fallback_json(prompt: str, image_path: Path) -> dict[str, Any]:
     errors: list[str] = []
 
+    def remember(label: str, exc: Exception) -> None:
+        # Keep every provider's root cause visible in bounded scheduler receipts.
+        # HF errors can be several KB long and previously hid the earlier web
+        # fallback failures that are usually the actionable diagnostics.
+        message = " ".join(str(exc).split())
+        if len(message) > 520:
+            message = message[:517] + "..."
+        errors.append(f"{label}={type(exc).__name__}: {message}")
+
     try:
         return _groq_vlm_json(prompt, image_path)
     except Exception as exc:
-        errors.append(f"groq={type(exc).__name__}: {exc}")
+        remember("groq", exc)
 
     try:
         return _gemini_cli_vlm_json(prompt, image_path)
     except Exception as exc:
-        errors.append(f"gemini_cli={type(exc).__name__}: {exc}")
+        remember("gemini_cli", exc)
 
     try:
         return _gemini_web_vlm_json(prompt, image_path)
     except Exception as exc:
-        errors.append(f"gemini_web={type(exc).__name__}: {exc}")
+        remember("gemini_web", exc)
 
     try:
         return _chatgpt_web_vlm_json(prompt, image_path)
     except Exception as exc:
-        errors.append(f"chatgpt_web={type(exc).__name__}: {exc}")
+        remember("chatgpt_web", exc)
 
     try:
         return _hf_vlm_json(prompt, image_path)
     except Exception as exc:
-        errors.append(f"hf={type(exc).__name__}: {exc}")
+        remember("hf", exc)
 
     raise RuntimeError("all vision fallbacks failed; " + "; ".join(errors[-5:]))
 
