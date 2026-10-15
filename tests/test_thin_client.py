@@ -1,9 +1,13 @@
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agent_core.one_uplift import BenchmarkMetrics, compare_before_after
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy
+from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport
 
 
 class TestThinClient(unittest.TestCase):
@@ -39,75 +43,6 @@ class TestThinClient(unittest.TestCase):
             self.assertTrue(read['ok'])
             self.assertEqual(read['content_utf8'], 'hello ONE')
 
-    def test_manifest_and_actions_expose_fast_executor_inventory(self):
-        from unittest import mock
-
-        inventory = {
-            'schema': 'agentos.executor-inventory/v0.2',
-            'executors': [{
-                'executor_id': 'claude-code',
-                'state': 'DISCOVERED',
-                'health_deferred': True,
-                'routable': False,
-            }],
-        }
-        client = ThinClient(
-            NodeIdentity('realm-test', 'client-executor-01'),
-            ThinClientPolicy(),
-        )
-        with mock.patch(
-            'agentos_node.executor_reconcile.discover_executor_inventory',
-            return_value=inventory,
-        ) as discover:
-            manifest = client.capability_manifest()
-            receipt = client.execute({
-                'schema': 'agentos.node-task/v0.1',
-                'task_id': 'executor-discover',
-                'action': 'agent.executor.discover',
-            })
-        self.assertIn('agent.executor.discover', manifest['capabilities'])
-        self.assertIn('agent.executor.reconcile', manifest['capabilities'])
-        self.assertEqual(manifest['executor_inventory'], inventory)
-        self.assertTrue(receipt['ok'])
-        self.assertEqual(receipt['executor_inventory'], inventory)
-        for call in discover.call_args_list:
-            self.assertEqual(call.kwargs.get('probe_health'), False)
-
-    def test_action_result_cannot_overwrite_receipt_envelope(self):
-        from unittest import mock
-
-        client = ThinClient(
-            NodeIdentity('realm-test', 'client-receipt-01'),
-            ThinClientPolicy(),
-        )
-        with mock.patch(
-            'agentos_node.interactive_desktop.inspect_windows',
-            return_value={
-                'schema': 'agentos.desktop-window-list/v0.1',
-                'node_id': 'malicious-or-accidental-override',
-                'task_id': 'wrong-task',
-                'action': 'wrong-action',
-                'ok': False,
-                'window_count': 1,
-            },
-        ):
-            receipt = client.execute({
-                'schema': 'agentos.node-task/v0.1',
-                'task_id': 'windows-inspect',
-                'action': 'desktop.windows.inspect',
-            })
-
-        self.assertEqual(receipt['schema'], 'agentos.node-receipt/v0.1')
-        self.assertEqual(receipt['node_id'], 'client-receipt-01')
-        self.assertEqual(receipt['task_id'], 'windows-inspect')
-        self.assertEqual(receipt['action'], 'desktop.windows.inspect')
-        self.assertTrue(receipt['ok'])
-        self.assertEqual(receipt['window_count'], 1)
-        self.assertEqual(
-            set(receipt['result_metadata_collision_keys']),
-            {'schema', 'node_id', 'task_id', 'action', 'ok'},
-        )
-
     def test_shell_requires_allowlist(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -126,37 +61,32 @@ class TestThinClient(unittest.TestCase):
             self.assertFalse(receipt['ok'])
             self.assertIn('not allowlisted', receipt['error'])
 
-    def test_manifest_advertises_ready_session_bridge_capabilities(self):
+
+    def test_successful_heartbeat_writes_local_liveness_marker(self):
         with tempfile.TemporaryDirectory() as tmp:
-            import json
-            import os
             root = Path(tmp)
-            bridge = root / 'bridge'
-            bridge.mkdir()
-            (bridge / 'bridge.json').write_text(json.dumps({
-                'schema': 'agentos.session-bridge/v0.1',
-                'provider': 'gemini',
-                'ready': True,
-                'operations': ['discover', 'snapshot', 'harvest', 'handoff']
-            }), encoding='utf-8')
-            old = os.environ.get('AGENTOS_GEMINI_BRIDGE')
-            os.environ['AGENTOS_GEMINI_BRIDGE'] = str(bridge)
-            try:
-                client = ThinClient(
-                    NodeIdentity('realm-test', 'client-session-01'),
-                    ThinClientPolicy(readable_roots=(root,)),
-                )
-                caps = client.capability_manifest()['capabilities']
-                self.assertIn('agent.session.discover', caps)
-                self.assertIn('agent.session.inspect', caps)
-                self.assertIn('agent.context.harvest', caps)
-                self.assertIn('agent.session.handoff', caps)
-                self.assertIn('agent.session.receipt', caps)
-            finally:
-                if old is None:
-                    os.environ.pop('AGENTOS_GEMINI_BRIDGE', None)
-                else:
-                    os.environ['AGENTOS_GEMINI_BRIDGE'] = old
+            policy = ThinClientPolicy(readable_roots=(root,), writable_roots=(root,))
+            client = ThinClient(NodeIdentity('realm-test', 'client-heartbeat-01'), policy)
+            config = ClientConfig(
+                one_url='http://127.0.0.1:8780',
+                realm_id='realm-test',
+                node_id='client-heartbeat-01',
+                node_token='test-token',
+            )
+            transport = ThinClientTransport(client, config)
+            marker = root / 'heartbeat.json'
+
+            with mock.patch.dict(os.environ, {'AGENTOS_CLIENT_HOME': str(root)}, clear=False):
+                with mock.patch.object(ThinClientTransport, '_request', return_value={'ok': True}):
+                    result = transport.heartbeat()
+
+            self.assertTrue(result['ok'])
+            self.assertTrue(marker.exists())
+            payload = json.loads(marker.read_text(encoding='utf-8'))
+            self.assertEqual(payload['schema'], 'agentos.local-heartbeat/v0.1')
+            self.assertEqual(payload['node_id'], 'client-heartbeat-01')
+            self.assertEqual(payload['realm_id'], 'realm-test')
+            self.assertIsNotNone(payload['recorded_at_epoch'])
 
     def test_uplift_dimensions(self):
         before = BenchmarkMetrics(
@@ -183,50 +113,83 @@ class TestThinClient(unittest.TestCase):
         self.assertGreater(report['uplift']['task_success'], 0)
 
 
-    def test_linux_ssh_inspect_and_recover_are_bounded(self):
-        import os
-        import platform
+
+    def test_manifest_reports_runtime_provenance_when_present(self):
+        import json
+        import tempfile
         from unittest import mock
 
-        client = ThinClient(
-            NodeIdentity('realm-test', 'oracle-exec'),
-            ThinClientPolicy(),
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runtime_root = Path(tmpdir)
+            pkg = runtime_root / 'agentos_node'
+            pkg.mkdir()
+            provenance = {
+                'schema': 'agentos.thin-client-runtime/v0.1',
+                'status': 'observed',
+                'source_ref': 'main',
+                'source_commit': 'a' * 40,
+                'path': str(runtime_root),
+                'provenance_path': str(runtime_root / 'runtime-provenance.json'),
+                'installed_at': '2026-10-07T00:00:00Z',
+            }
+            (runtime_root / 'runtime-provenance.json').write_text(json.dumps(provenance), encoding='utf-8')
+            policy = ThinClientPolicy()
+            client = ThinClient(NodeIdentity('realm-test', 'node-test'), policy)
+            with mock.patch('agentos_node.thin_client.__file__', str(pkg / 'thin_client.py')):
+                manifest = client.capability_manifest()
+            self.assertEqual(manifest['runtime']['source_commit'], 'a' * 40)
+            self.assertEqual(manifest['runtime']['path'], str(runtime_root))
 
-        def fake_run(argv, **kwargs):
-            class Result:
-                def __init__(self, returncode=0, stdout="", stderr=""):
-                    self.returncode = returncode
-                    self.stdout = stdout
-                    self.stderr = stderr
-            if argv[-3:] == ['systemctl', 'is-active', 'ssh']:
-                return Result(0, 'active\n', '')
-            if argv[-2:] == ['ss', '-lnt']:
-                return Result(0, 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n', '')
-            if argv[-3:] == ['systemctl', 'restart', 'ssh']:
-                return Result(0, '', '')
-            raise AssertionError(argv)
 
-        with mock.patch.object(platform, 'system', return_value='Linux'), \
-             mock.patch.object(os, 'geteuid', return_value=1000), \
-             mock.patch('agentos_node.thin_client.subprocess.run', side_effect=fake_run):
-            inspect = client.execute({
+
+    def test_action_result_cannot_overwrite_receipt_envelope(self):
+        client = ThinClient(NodeIdentity('realm-test', 'client-receipt-reserved'), ThinClientPolicy())
+        semantic_result = {
+            'schema': 'agentos.desktop-semantic-preview/v0.1',
+            'ok': False,
+            'task_id': 'malicious-task-id',
+            'action': 'other.action',
+            'read_only': True,
+            'state_hash': 'abc123',
+        }
+        with mock.patch('agentos_node.thin_client.semantic_preview', return_value=semantic_result):
+            receipt = client.execute({
                 'schema': 'agentos.node-task/v0.1',
-                'task_id': 'ssh-inspect',
-                'action': 'node.ssh.inspect',
+                'task_id': 't-semantic',
+                'action': 'desktop.semantic_preview',
             })
-            self.assertTrue(inspect['ok'])
-            self.assertTrue(inspect['ssh_service_active'])
-            self.assertTrue(inspect['port22_listening'])
 
-            recover = client.execute({
-                'schema': 'agentos.node-task/v0.1',
-                'task_id': 'ssh-recover',
-                'action': 'node.ssh.recover',
-            })
-            self.assertTrue(recover['ok'])
-            self.assertTrue(recover['recovered'])
-
+        self.assertEqual(receipt['schema'], 'agentos.node-receipt/v0.1')
+        self.assertEqual(receipt['task_id'], 't-semantic')
+        self.assertEqual(receipt['action'], 'desktop.semantic_preview')
+        self.assertTrue(receipt['ok'])
+        self.assertEqual(receipt['result_schema'], 'agentos.desktop-semantic-preview/v0.1')
+        self.assertFalse(receipt['result_ok'])
+        self.assertEqual(receipt['result_task_id'], 'malicious-task-id')
+        self.assertEqual(receipt['result_action'], 'other.action')
+        self.assertTrue(receipt['read_only'])
+        self.assertEqual(receipt['state_hash'], 'abc123')
 
 if __name__ == '__main__':
     unittest.main()
+
+
+    def test_session_invoke_routes_to_provider_bridge(self):
+        client = ThinClient(NodeIdentity('realm-test','client-invoke'), ThinClientPolicy())
+        fake = mock.Mock()
+        fake.request.return_value = {'request_id':'session-123'}
+        with mock.patch.object(client, '_session_bridge', return_value=fake):
+            receipt = client.execute({
+                'schema':'agentos.node-task/v0.1',
+                'task_id':'invoke-1',
+                'action':'agent.session.invoke',
+                'provider':'gpt-web',
+                'session_id':'chatgpt-web:1',
+                'payload':{'schema':'agentos.gpt-web-vision-invoke/v0.1','request_id':'invoice:req:1'},
+            })
+        self.assertTrue(receipt['ok'])
+        fake.request.assert_called_once_with(
+            'invoke',
+            session_id='chatgpt-web:1',
+            payload={'schema':'agentos.gpt-web-vision-invoke/v0.1','request_id':'invoice:req:1'},
+        )

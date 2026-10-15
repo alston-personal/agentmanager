@@ -16,6 +16,7 @@ import socket
 
 from agentos_node import interactive_desktop
 from agentos_node import desktop_demo
+from agentos_node.semantic_preview import semantic_preview
 from agentos_node.agent_surfaces import discover_surfaces
 from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
@@ -169,6 +170,16 @@ class ThinClient:
         caps.extend(self.adapters.capabilities())
         from agentos_node.executor_reconcile import discover_executor_inventory
         executor_inventory = discover_executor_inventory(probe_health=False)
+        runtime = observe_runtime()
+        if runtime.get('status') == 'unknown':
+            try:
+                candidate = Path(__file__).resolve().parent.parent / 'runtime-provenance.json'
+                if candidate.is_file():
+                    data = json.loads(candidate.read_text(encoding='utf-8-sig'))
+                    if isinstance(data, dict) and data.get('schema') == 'agentos.thin-client-runtime/v0.1':
+                        runtime = dict(data)
+            except (OSError, ValueError):
+                pass
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -184,7 +195,7 @@ class ThinClient:
             'surface_inventory': surface_inventory,
             'executor_inventory': executor_inventory,
             'adapters': self.adapters.describe(),
-            'runtime': observe_runtime(),
+            'runtime': runtime,
             'workspace_roots': {
                 'readable': [str(p.expanduser().resolve()) for p in self.policy.readable_roots],
                 'writable': [str(p.expanduser().resolve()) for p in self.policy.writable_roots],
@@ -311,6 +322,8 @@ class ThinClient:
             elif action == 'desktop.screenshot':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
                 result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
+            elif action == 'desktop.semantic_preview':
+                result = semantic_preview(task)
             elif action == 'desktop.preview.capture':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
                 result = interactive_desktop.preview_capture(
@@ -348,12 +361,17 @@ class ThinClient:
                     raise TypeError(f'adapter result must be object: {adapter.adapter_id}')
                 result = dict(result)
                 result.setdefault('adapter_id', str(adapter.adapter_id))
-            reserved = {'schema', 'realm_id', 'node_id', 'task_id', 'action', 'started_at', 'completed_at', 'ok', 'error'}
-            collisions = reserved.intersection(result)
+            reserved = {'schema', 'realm_id', 'node_id', 'task_id', 'action', 'started_at', 'completed_at', 'ok', 'cognition_ids_used', 'error'}
+            collisions = sorted(set(result).intersection(reserved))
             if collisions:
-                result = {key: value for key, value in result.items() if key not in reserved}
-                result['result_metadata_collision_keys'] = sorted(collisions)
-            receipt.update(result)
+                receipt['result_metadata_collision_keys'] = collisions
+            for key, value in result.items():
+                if key == 'schema':
+                    receipt['result_schema'] = value
+                elif key in reserved:
+                    receipt['result_' + key] = value
+                else:
+                    receipt[key] = value
             receipt['ok'] = True
         except Exception as exc:
             receipt['error'] = f'{type(exc).__name__}: {exc}'
