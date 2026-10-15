@@ -19,7 +19,8 @@ jobs:
           p=Path('.github/workflows/oracle-realm-one-inspect.yml')
           s=p.read_text()
           assert 'workflow_dispatch:' in s
-          assert "' .agentos/commands/realm-one-runtime-inspect.json'".replace("' ","'") in s
+          assert '  push:' not in s
+          assert '  pull_request:' not in s
           assert "github.actor == 'alstonhuang'" in s
           assert 'relay_receipts()' in s
           assert "'vopc5750_pending_tasks'" in s
