@@ -1,140 +1,187 @@
-# AgentOS Node / Realm Map Contract
+# AgentOS Node Contract v0.1
 
-**Status:** canonical Core Node documentation, 2026-09-11.
+`agentos-node` is the node-local canonical discovery and responsibility-resolution surface. It is not a second manager, a second role registry, or an authority-granting shell bridge.
 
-`agentos-node` and the ONE-side `NodeRegistry` are the canonical discovery/topology surfaces for AgentOS Nodes. They are not a second role registry, an executor registry by implication, or an authority-granting shell bridge.
+## Runtime entrypoint
 
-## Identity model
-
-Keep these identities separate:
-
-- **Realm** — membership/control domain.
-- **Node** — durable Realm participant with transport identity and heartbeat.
-- **Surface / extension** — e.g. Antigravity Gemini, OpenAI Codex IDE, Anthropic Claude Code extension.
-- **Executor adapter** — capability provider attached to a Node/surface.
-- **Backend/model** — actual model/provider behind an executor; may be unknown or differ from extension brand.
-- **Session/thread** — ephemeral execution instance.
-
-Canonical invariants:
-
-```text
-Node online != executor available
-advertised != routable != authorized != successful
-surface identity != backend/model identity
-```
-
-## Node Registry / Node Map
-
-`agent_core/node_registry.py` persists `agentos.node-registry/v0.1` and projects read-only `agentos.node-map/v0.1`.
-
-A Node manifest includes Node identity/role, hostname/platform, capabilities, tool presence, surface inventory, runtime provenance, workspace-root policy, timestamps and bounded benchmark projection where present.
-
-The map is generated from ONE-side state. It is not a hand-maintained inventory. Known deployed identities such as `oracle-core-node` and `vopc5750` are examples, not a complete hard-coded Realm.
-
-Reported `online` becomes effectively `offline` when heartbeat freshness expires. Executor availability is a child layer and requires its own evidence.
-
-## Capability / authority semantics
-
-A capability is a declared/routable contract, not permission by itself. The controller must separately resolve authority.
-
-Current bounded Oracle runtime convergence semantics:
-
-- `node.runtime.converge` is typed, not a generic shell carrier;
-- source repository/ref are allowlisted to AgentOS Core integration authority;
-- caller supplies an exact accepted commit, not executable/module/argv/shell/service/path/environment authority;
-- the governed ref is snapped for lane-membership proof;
-- the requested exact commit is fetched independently and must be an ancestor of that snapped allowlisted ref;
-- runtime bytes/installers are materialized only from the exact requested commit;
-- a later concurrent merge advancing `core/integration` does not invalidate the already-authorized immutable rollout;
-- health/profile/rollback remain part of acceptance.
-
-This replaces the earlier moving-head equality assumption exposed by #117 live rollouts and fixed by #320/#322.
-
-## Action Relay capability publication
-
-Capability publication into the shared Action Relay boundary is itself governed runtime state, not a casual file copy.
-
-Current accepted source rules include:
-
-- publish through the fixed `agentos` group execution boundary;
-- verify effective publisher GID and parent spool GID;
-- create a unique same-directory temporary inode;
-- write/fsync, atomic replace, and fsync the parent directory;
-- do not seize ownership/delete historical foreign-owned temp evidence merely to make rollout pass;
-- anchor Python imports to the immutable runtime root so `scripts/agentos_node.py` cannot shadow the real `agentos_node` package;
-- capability marker presence proves publication/prerequisites only, not job authorization or terminal success.
-
-The Worker Host uses the same principle: required group transition must occur before `no_new_privs` is locked, rather than assuming supplementary group state survives indefinitely in a long-lived service manager.
-
-## Executor / surface visibility
-
-`surface_inventory` describes topology only. Do not infer an executor is usable because an IDE extension is installed.
-
-Where known, executor observability should expose:
-
-- executor/surface identity;
-- backend identity/provenance or `unknown`;
-- availability/freshness;
-- declared capabilities;
-- routability and authorization separately;
-- last sanitized terminal evidence;
-- credential boundary.
-
-The visual Realm map consumes this canonical topology instead of creating a second topology database. #152 continues first-class Node↔executor lifecycle extraction.
-
-## Employee runtime relationship
-
-Product/role Employees are not Nodes and are not equivalent to executors. Durable Employee identity/assignment/lease lives in ONE organizational state; Nodes/executors provide governed execution surfaces.
-
-Recent #238 safety decisions:
-
-- an Employee wake delivery may not remain `queued` forever when the Node receipt is absent; after the source-owned bounded wait it becomes `unknown` with `node_receipt_timeout`, without blind redispatch of the same presence;
-- a product worker child is launch-eligible only after the exact Supervisor/S4 delivery satisfies the governed `awaiting_claim` contract;
-- the child repeats that same check immediately before claim to preserve TOCTOU safety.
-
-These are state-machine rules, not new execution authority.
-
-## Runtime entrypoint / discovery
-
-On the Oracle self-hosted Node identity the historical installed CLI entrypoint is:
+On the Oracle self-hosted node identity:
 
 ```text
 /home/agentos-node/.local/bin/agentos-node
 ```
 
-Mutable Realm/Node/project state remains external under Agent Data. Exact live runtime generation/profile must come from runtime inspection and receipts, never inferred from an install path or repository head.
+The runtime bundle is derived from the AgentOS logic repository and reads mutable state from `/home/ubuntu/agent-data`.
+
+## Harvest
+
+```bash
+agentos-node harvest
+```
+
+Harvest advertises what the node surface can route/query/observe. It may include governance, resource, resolve, runtime/surface, and other registered capabilities depending on the installed node version.
+
+Examples from the original v0.1 surface include:
+
+- `governance.resolve`
+- `governance.get`
+- `governance.list`
+- `resource.query`
+- `resource.register`
+- `resource.verify.site`
+
+The authoritative capability set is the node's live advertisement/NodeRegistry record, not this illustrative list.
+
+## Capability semantics
+
+Keep four states separate:
+
+```text
+advertised capability
+    != routable transport
+    != authorized effect
+    != successful execution
+```
+
+Rules:
+
+- Harvest/NodeRegistry capability advertisement is descriptive; it does not grant authority.
+- ONE/ControllerService may be reachable even when the target node does not advertise the requested capability.
+- A `NODE_CAPABILITY_NOT_ADVERTISED` result after ControllerService entry is a node-readiness/capability-convergence outcome, not evidence that the Core controller route is missing.
+- A capability that is advertised still requires whatever governance/effect authorization applies before mutation.
+- Architecture diagrams and expected capabilities are not substitutes for live capability advertisement.
+
+## Responsibility resolution
+
+Before implementing reusable or cross-project capability:
+
+```bash
+agentos-node governance resolve capability://network.port.allocate
+```
+
+Expected established ownership example:
+
+```text
+manager://port
+```
+
+An active exclusive owner means the caller must reuse/extend that owner instead of creating a competing implementation.
+
+Examples:
+
+```bash
+agentos-node governance get role://governance.spec_steward
+agentos-node governance list --kind manager
+agentos-node governance list --kind role
+```
+
+## World-model query
+
+```bash
+agentos-node resource get site://studio.milkcat.org
+agentos-node resource list --kind site
+```
+
+If a registered resource is fresh, use it. Only stale/unverified records should invoke targeted verification:
+
+```bash
+agentos-node resource verify-site site://studio.milkcat.org
+```
+
+## Project identity and source authority
+
+Project identity is not the repository or checkout path.
+
+Canonical Project Identity is owned by the AgentOS project store / resolver and projected into Governance Directory. A node may expose/query project information, but it must not infer canonical identity from its local filesystem.
+
+A canonical project separates:
+
+```text
+project_id
+aliases
+source repo/branch
+canonical source path
+source node
+state/data location
+runtime/deployment location
+```
+
+For mutation, project/source integrity must be resolved before acting. A local checkout that merely looks like the right repository is not sufficient source authority.
 
 ## Canonical authority boundaries
 
+The node surface is an index/router over existing authorities:
+
 | Concern | Authority |
-| --- | --- |
+|---|---|
 | Role semantics | `.agent/roles/registry.yaml` |
 | Responsibility/provider resolution | Governance Directory |
+| Canonical Project Identity / source locator | Project Store + canonical resolver, projected to Governance Directory |
 | World/environment state | Resource Registry |
-| Project identity/repo ownership | `docs/PROJECT_REPO_MAP.md` + project registry |
-| Durable continuation | ONE Canonical IR + active continuation selector |
-| Reusable learned experience | accepted ONE Experience artifacts |
-| Employee identity/assignment/lease | ONE Employee Runtime state |
-| Node membership/liveness/capabilities | ONE Node Registry / Node Map |
-| Executor liveness | explicit executor/provider evidence, not Node status |
-| Execution authorization | governance/effect-derived authority + controller routing |
-| Runtime generation acceptance | exact source/runtime receipt + health/profile evidence |
+| Port allocation | `manager://port` / Port Manager |
+| Node liveness/capability advertisement | NodeRegistry / live node heartbeat |
+| Core deployed generation | Core deployment authority state |
+| Execution authorization | Governance / effect-derived authority |
+| Execution proof | receipts/evidence |
 
-## Evidence rule
+`agentos-node` must not silently take ownership from those components.
 
-Evidence must prove the exact layer claimed:
+## Required executor startup protocol
 
-- heartbeat proves Node freshness, not executor success;
-- capability advertisement proves declaration/prerequisites, not authority;
-- ONE submission proves routing/acceptance, not workload success;
-- executor terminal receipt proves that declared job result, not publication authority;
-- exact source SHA proves source identity, not automatically service/profile convergence;
-- an Employee wake receipt proves delivery/terminal state, not permission to retry an ambiguous external effect.
+For system/cross-project work:
 
-This layered rule prevents topology and capability growth from silently becoming privilege growth.
+```text
+1. harvest / inspect live node capabilities
+2. resolve canonical project identity when project-scoped
+3. governance resolve(required capability/responsibility)
+4. query relevant registered resources
+5. targeted verify only if stale/missing
+6. reuse/extend active owner
+7. only if unresolved: discover -> register provider/resource
+8. authorize effect
+9. execute
+10. persist receipt/evidence
+```
 
-## 2026-09-28｜目前主要互動 Node
+This protocol operationalizes:
 
-- `mbpr`：Darwin client，已加入 `realm-alston`；LaunchAgent supervisor 實機 recovery proof PASS；transactional client runtime 已完成 bootstrap 與後續正式 OTA 驗收。
-- `vopc5750`：保留為歷史 Windows Node，但目前 heartbeat stale/offline；不得把需要即時互動的桌面／瀏覽器工作預設路由到此節點。
-- 對互動型工作，先以 Node Registry freshness + capability receipt 選擇目前可用 Node；不得只因 workflow 歷史上 hard-code 過 `vopc5750` 就視為預設執行端。
+> Discover before invent. Resolve before implement. Verify before trust.
+
+## Node Map / heartbeat rules
+
+The Realm Node Map is ONE-side persistent state. A node should be treated as live only when runtime evidence supports enrollment/status/heartbeat freshness.
+
+Do not:
+
+- count a conceptual ChatGPT/PC surface as a live Realm node without enrollment evidence;
+- infer freshness from a stale manifest alone;
+- infer capability from intended role or source code presence;
+- infer Node readiness from Core `/health` or ControllerService reachability.
+
+For Golden Path work, preserve heartbeat provenance, advertised capability set, runtime/version provenance where relevant, and the final action receipt.
+
+## Core / Node failure boundary established by Issue #64
+
+On 2026-08-28 the real Control Inbox path was used to test `agent.surface.inspect` for `vopc5750`.
+
+The request reached ControllerService, proving the Core route was alive, but the target node did not advertise the capability. The resulting node-level outcome was therefore the correct boundary.
+
+This establishes the debugging order:
+
+```text
+transport
+ -> ONE / controller route
+ -> ControllerService
+ -> node presence / heartbeat
+ -> capability advertisement
+ -> effect authority
+ -> node execution
+ -> receipt
+```
+
+Do not reopen or modify Core routing merely because a downstream node capability is missing unless fresh evidence shows the controller path itself has regressed.
+
+## Historical verified evidence
+
+The 2026-08-25 Oracle validation proved the original v0.1 discovery/governance/resource surface, including runtime entrypoint installation, governance/resource harvest, exclusive responsibility resolution, registered resource query, and Governance Directory audit.
+
+That evidence remains valid for those behaviors, but its enumerated capability list is not a permanent complete Node contract. Newer node/runtime capabilities must be verified from live advertisement and receipts.
