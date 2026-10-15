@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/oracle-antigravity-image-inspect-probe.yml'
       - 'scripts/probe_antigravity_image_inspect_user.py'
+      - 'agentos_node/antigravity_relay_worker.py'
   workflow_dispatch:
 
 permissions:
@@ -29,6 +30,10 @@ jobs:
         run: |
           set -euo pipefail
           git show "$GITHUB_SHA:scripts/probe_antigravity_image_inspect_user.py" > "$RUNNER_TEMP/probe.py"
+          EXPECTED_WORKER_SHA=$(sha256sum agentos_node/antigravity_relay_worker.py | awk '{print $1}')
+          REMOTE_WORKER_SHA=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'sha256sum /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay_worker.py' | awk '{print $1}')
+          test "$EXPECTED_WORKER_SHA" = "$REMOTE_WORKER_SHA"
+          echo "antigravity_relay_exact_worker=PASS"
           scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_SSH_PORT:-22}" "$RUNNER_TEMP/probe.py" "${DEPLOY_USER}@${ORACLE_HOST}:/tmp/probe-antigravity-image.py"
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
             'chmod 700 /tmp/probe-antigravity-image.py && python3 /tmp/probe-antigravity-image.py'
