@@ -32,11 +32,32 @@ def already_replied(events, reply):
         if rid and parent==rid: return True
     return False
 
-def reply_candidates(events,state,ir_binding):
+def reserved_reply_parents(root, pending):
+    """Persistent reservation: dropped queue entries are not permission to reply twice.
+
+    All previous reply intents remain reserved until platform reconciliation
+    proves that it is safe to close them. A conservative hold beats duplicate
+    public replies when a data clone or state truncation loses a candidate.
+    """
+    parents={str(action.get("reply_to_id")) for action in pending
+             if isinstance(action,dict) and action.get("capability")=="social.reply.send"
+             and action.get("reply_to_id")}
+    for path in (root/"pdca/reply_intents").glob("*.json"):
+        try:
+            old=load(path)
+            if old.get("capability")=="social.reply.send" and old.get("reply_to_id"):
+                parents.add(str(old["reply_to_id"]))
+        except (OSError,ValueError,TypeError):
+            continue
+    return parents
+
+
+def reply_candidates(events,state,ir_binding,reserved_parents=None):
     """Routeable comments only; a historical screenshot cannot starve the queue."""
     skipped={}
     candidates={}
     decisions=state.get("reply_decisions") or {}
+    reserved_parents=reserved_parents or set()
     for event in events:
         if event.get("type")!="reply.observed": continue
         author=str(event.get("author_handle") or event.get("username") or "").lstrip("@").casefold()
@@ -45,6 +66,9 @@ def reply_candidates(events,state,ir_binding):
         text=str(event.get("text") or event.get("summary") or "").strip()
         if not text: continue
         rid=str(event.get("object_id") or event.get("source_object_id") or "")
+        if rid in reserved_parents:
+            skipped["already_reserved"]=skipped.get("already_reserved",0)+1
+            continue
         root_id=str(event.get("root_post_id") or event.get("root_id") or "")
         root_post=root_text(events,root_id)
         stamp=normalize_ts(event.get("timestamp"))
@@ -148,7 +172,7 @@ def main():
     pending=list(state.get("pending_external_actions") or [])
     if any(x.get("status") in ("candidate","in_progress") and x.get("capability")=="social.reply.send" for x in pending if isinstance(x,dict)):
         print(json.dumps({"status":"SKIP","reason":"reply_send_already_pending"},ensure_ascii=False)); return 0
-    observed,skipped=reply_candidates(events,state,ir_binding)
+    observed,skipped=reply_candidates(events,state,ir_binding,reserved_reply_parents(root,pending))
     if not observed:
         status="DEFER" if any(k!="already_reviewed" for k in skipped) else "NO_CANDIDATE"
         reason="no_routeable_comment" if status=="DEFER" else "no_unreviewed_comment"

@@ -231,6 +231,24 @@ def select_action(ready):
     a failed data push left a candidate in Git but a journal on the node.
     Selection never validates media or changes the deferred image intent.
     """
+    # Observations are generally first, but an overdue reply must not be
+    # starved by a fresh observation candidate on every social timer tick.
+    # Use the existing write_intent_id/acceptance path for idempotency; do not
+    # manufacture or refresh an intent here.
+    now_utc=datetime.now(timezone.utc)
+    overdue_replies=[]
+    for action in ready:
+        if action.get("capability")!="social.reply.send":
+            continue
+        try:
+            eligible=datetime.fromisoformat(str(action.get("not_before") or "").replace("Z","+00:00"))
+            if eligible.tzinfo is not None and now_utc-eligible >= timedelta(minutes=90):
+                overdue_replies.append((eligible,action))
+        except (ValueError,TypeError):
+            continue
+    if overdue_replies:
+        return min(overdue_replies,key=lambda row:row[0])[1]
+
     observation=next((x for x in ready if x.get("capability")=="social.threads.observe"),None)
     if observation is not None:
         return observation
@@ -353,6 +371,45 @@ def image_write(root,state,target,out,username,base,headers,control,now,energy_c
     save_private(journal_path,journal)
     return receipt
 
+def reconcile_held_reply(root, state, target, out, base, headers, now):
+    """Read-only exact-parent recovery; absence never authorizes a resend."""
+    parent=str(target.get("reply_to_id") or "")
+    post_id=str(target.get("root_post_id") or "")
+    text=str(target.get("primary_text") or "").strip()
+    status="UNCONFIRMED"
+    matched=[]
+    if parent.isdigit() and post_id.isdigit() and text:
+        try:
+            items,_=read_items({**base,"operation":"replies.read","object_id":post_id},headers)
+            matched=[str(row.get("id")) for row in items if isinstance(row,dict)
+                     and str(row.get("id") or "").isdigit()
+                     and row.get("is_reply_owned_by_me") is True
+                     and str((row.get("replied_to") or {}).get("id") if isinstance(row.get("replied_to"),dict) else "")==parent
+                     and str(row.get("text") or "").strip()==text]
+            status="CONFIRMED" if len(matched)==1 else "AMBIGUOUS" if len(matched)>1 else "NOT_OBSERVED"
+        except (OSError,ValueError,TypeError,RuntimeError):
+            status="READ_FAILED"
+    receipt={"schema":"agentos.persona-social-executor-receipt/v1",
+             "timestamp":now,"capability":"social.reply.send",
+             "action_id":target.get("action_id"),"operation":"reply.reconcile",
+             "status":"RECONCILED" if status=="CONFIRMED" else "RECONCILIATION_PENDING",
+             "readback_status":status,"write_performed":False,
+             "delivery_confirmed":status=="CONFIRMED",
+             "platform_object_id":matched[0] if status=="CONFIRMED" else None}
+    save(out,receipt)
+    target["reconciliation_receipt_ref"]=str(out.relative_to(root))
+    if status=="CONFIRMED":
+        target["status"]="completed"
+        target["provider_object_id"]=matched[0]
+        target["reconciliation_required"]=False
+        target["receipt_ref"]=str(out.relative_to(root))
+    else:
+        target["status"]="in_progress"
+        target["reconciliation_required"]=True
+        target["next_reconcile_not_before"]=(datetime.fromisoformat(now.replace("Z","+00:00"))+timedelta(minutes=30)).isoformat().replace("+00:00","Z")
+    save(root/"pdca/state.json",state)
+    return receipt
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
@@ -368,6 +425,12 @@ def main():
         if not nb: return True
         try: return datetime.fromisoformat(nb.replace("Z","+00:00")) <= now_dt
         except Exception: return False
+    held=next((x for x in pending if isinstance(x,dict)
+        and x.get("capability")=="social.reply.send" and x.get("status")=="in_progress"
+        and x.get("reconciliation_required") is True
+        and (not x.get("next_reconcile_not_before") or
+             timestamp(x["next_reconcile_not_before"]) is not None and
+             timestamp(x["next_reconcile_not_before"]) <= now_dt)),None)
     ready=[x for x in pending if isinstance(x,dict) and (x.get("status")=="candidate" or
         (x.get("status")=="in_progress" and x.get("capability")=="social.post.publish" and
          (x.get("media_intent") or {}).get("mode") in ("generate","existing_verified"))) and due(x) and x.get("capability") in (
@@ -375,7 +438,7 @@ def main():
     )]
     # Due reads retain priority; an optional image hold must not consume every
     # execution turn while an independently authorized reply is already due.
-    target=select_action(ready)
+    target=held or select_action(ready)
     now=now_dt.isoformat().replace("+00:00","Z")
     if not target:
         result={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"NO_ACTION","timestamp":now}
@@ -400,6 +463,9 @@ def main():
         base={"schema":"agentos.social-request/v1","product_id":product,
               "platform":"threads","account_binding_id":binding_id}
         headers={"X-AgentOS-Product-Key":product_key}
+        if held is target:
+            result=reconcile_held_reply(root,state,target,Path(args.receipt_out),base,headers,now_dt.isoformat().replace("+00:00","Z"))
+            print(json.dumps(result,ensure_ascii=False)); return 0
         if capability in ("social.threads.observe","social.reply.review"):
             result=observe(root,state,target,Path(args.receipt_out),args.username,base,headers,now_dt)
             print(json.dumps(result,ensure_ascii=False)); return 0
@@ -474,14 +540,49 @@ def main():
             if not reply_to: raise SystemExit("social_reply_target_required")
             request["reply_to_id"]=reply_to
         control=str(env.get("AGENTOS_SOCIAL_CONTROL_TOKEN") or "")
-        if not control: raise SystemExit("social_control_token_missing")
-        ac,accepted=post("/internal/v1/social/acceptances",request,{"X-AgentOS-Control-Token":control})
+        def hold_reply(reason):
+            # Unknown acceptance/write outcomes must never be retried blindly.
+            receipt={"schema":"agentos.persona-social-executor-receipt/v1",
+                     "ok":False,"status":"BLOCKED","result":reason,
+                     "timestamp":now,"action_id":action_id,"capability":capability,
+                     "write_performed":False,"delivery_confirmed":False,
+                     "requires_platform_reconciliation":True}
+            out=Path(args.receipt_out)
+            save(out,receipt)
+            target["status"]="in_progress"
+            target["reconciliation_required"]=True
+            target["receipt_ref"]=str(out.relative_to(root))
+            # Preserve the held action even when the bounded queue is full.
+            # Truncating here could lose the very reconciliation obligation.
+            state["pending_external_actions"]=pending
+            save(root/"pdca/state.json",state)
+            print(json.dumps(receipt,ensure_ascii=False))
+            return 0
+        if not control:
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_CONTROL_UNAVAILABLE")
+            raise SystemExit("social_control_token_missing")
+        try:
+            ac,accepted=post("/internal/v1/social/acceptances",request,{"X-AgentOS-Control-Token":control})
+        except (OSError,ValueError,TimeoutError):
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_ACCEPTANCE_UNKNOWN")
+            raise
         acceptance_id=str(accepted.get("acceptance_id") or "")
         if ac not in (200,201) or not acceptance_id:
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_ACCEPTANCE_NOT_CONFIRMED")
             raise SystemExit("social_acceptance_failed:"+str(accepted.get("error") or ac))
         endpoint="/v1/social/reply" if capability=="social.reply.send" else "/v1/social/publish"
-        wc,wr=post(endpoint,request,{**headers,"X-AgentOS-Acceptance-ID":acceptance_id})
+        try:
+            wc,wr=post(endpoint,request,{**headers,"X-AgentOS-Acceptance-ID":acceptance_id})
+        except (OSError,ValueError,TimeoutError):
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_DELIVERY_UNKNOWN")
+            raise
         if wc!=200 or wr.get("ok") is False:
+            if capability=="social.reply.send":
+                return hold_reply("SOCIAL_DELIVERY_NOT_CONFIRMED")
             raise SystemExit("social_write_failed:"+str(wr.get("error") or wc))
         energy_after=energy-energy_cost
         state["energy_current"]=round(energy_after,2)
