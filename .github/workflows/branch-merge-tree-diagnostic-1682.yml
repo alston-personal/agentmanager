@@ -33,7 +33,17 @@ jobs:
           echo "integration_sha=$(cat merge-diagnostic/integration.sha)" >> "$GITHUB_STEP_SUMMARY"
           echo "merge_base=$(cat merge-diagnostic/merge-base.sha)" >> "$GITHUB_STEP_SUMMARY"
           echo "total_merge_tree_lines=$(wc -l < merge-diagnostic/merge-tree.txt)" >> "$GITHUB_STEP_SUMMARY"
-          sed -n '1,160p' merge-diagnostic/merge-tree.txt
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          data=Path("merge-diagnostic/merge-tree.txt").read_text()
+          items=re.findall(r"CONFLICT \\(([^)]+)\\): .*? in ([^\\n]+)",data)
+          print(f"EXACT_CONFLICT_MESSAGES={len(items)}")
+          from collections import Counter
+          print("EXACT_CONFLICT_TYPES="+str(dict(Counter(t for t,_ in items))))
+          for t,p in items:
+              print("CONFLICT_PATH",t,p)
+          PY
           if [ "$rc" -gt 1 ]; then
             cat merge-diagnostic/stderr.txt
             exit "$rc"
