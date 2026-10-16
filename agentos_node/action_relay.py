@@ -1496,6 +1496,8 @@ class ActionRelayWorker:
             }
             if action in privileged_actions:
                 _verify_continuation_capsule_owner(processing)
+                if capsule.get("authority") != {"source": "agentos-node", "target_user": "ubuntu", "arbitrary_shell": False}:
+                    raise PermissionError("privileged relay capsule authority contract mismatch")
             result = ACTIONS[action](params)
             # governed_receipt_reserved_fields_v1: the relay owns receipt identity.
             # Capability results may carry their own schema/metadata but must never
