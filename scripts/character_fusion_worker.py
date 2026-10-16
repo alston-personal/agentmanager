@@ -2234,7 +2234,15 @@ Judge what is visibly present, not what the prompt intended.
         return _vision_fallback_json(prompt, image_path)
 def accept(preset: str, target: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
     expected = ((target.get("body_plan") or {}).get("kind") or "").strip()
-    actual_kind = ((actual.get("body_plan") or {}).get("kind") or "").strip()
+    observed_body_plan = actual.get("body_plan")
+    if isinstance(observed_body_plan, dict):
+        actual_kind = str(observed_body_plan.get("kind") or "").strip()
+    elif isinstance(observed_body_plan, str):
+        # Vision providers can return a bare body-plan label rather than
+        # {"kind": ...}. Preserve the observation but never assume it passed.
+        actual_kind = observed_body_plan.strip()
+    else:
+        actual_kind = ""
     checks = {
         "body_plan": actual_kind == expected if expected else True,
         "no_human_torso": not bool(actual.get("human_torso_dominant")),
