@@ -54,6 +54,7 @@ from pathlib import Path
 target = Path(os.environ["AGENTOS_PINNED_PATH"])
 payload = {
     "schema": "agentos.thin-client-runtime/v0.1",
+    "status": "observed",
     "source_ref": os.environ["AGENTOS_PINNED_REF"],
     "source_commit": os.environ["AGENTOS_PINNED_SHA"],
 }
