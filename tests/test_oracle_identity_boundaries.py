@@ -116,6 +116,11 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         self.assertFalse(any(isinstance(c.func, ast.Attribute) and c.func.attr in {"replace", "unlink", "chmod", "chown"} for c in calls))
         self.assertIn("client.submit(CLAIM_ACTION", source)
         self.assertIn("client.submit(INSTALL_ACTION", source)
+        relay = (audit.ROOT / "agentos_node/action_relay.py").read_text(encoding="utf-8")
+        self.assertIn('self.paths.inbox / f"{capsule_id}.json.tmp"', relay)
+        self.assertIn("_share(tmp); tmp.replace(target); _share(target)", relay)
+        self.assertIn('"target_user": "ubuntu", "arbitrary_shell": False', relay)
+        self.assertIn("desired_mode = 0o2770 if directory else 0o660", relay)
         self.assertIn("receipt.get('executor_user') != 'ubuntu'", source)
         self.assertIn("OUT = ROOT / '.agentos/evidence/realm-fabric-install-current.json'", source)
 
