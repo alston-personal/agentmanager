@@ -2,10 +2,6 @@ name: Repair Governance Shared Boundary
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/oracle-repair-governance-shared-boundary.yml'
 
 permissions:
   contents: read
