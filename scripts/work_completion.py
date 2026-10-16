@@ -39,7 +39,6 @@ INTAKE_FIELDS = {
 }
 
 
-
 def classify_blocker(value: str | None) -> str:
     text = str(value or "").strip().casefold()
     if not text:
@@ -81,8 +80,6 @@ def classify_blocker(value: str | None) -> str:
     ):
         return "VERIFICATION"
     return "UNKNOWN"
-
-
 
 
 def now() -> str:
@@ -283,8 +280,6 @@ def register_intake_envelope(path: Path, payload: dict[str, Any]) -> dict[str, A
     )
 
 
-
-
 def transition(
     path: Path,
     *,
@@ -323,6 +318,8 @@ def transition(
             item["blocker"] = blocker.strip()
         else:
             item["blocker"] = None
+        if target != "waiting_external":
+            item["wake_condition"] = None
         if evidence:
             item.setdefault("evidence", []).extend(str(x).strip() for x in evidence if str(x).strip())
         if target == "done":
@@ -411,17 +408,6 @@ MACHINE_RETRY_BASE_SECONDS = {
 MACHINE_RETRY_MAX_SECONDS = 3600
 
 
-
-
-MACHINE_RETRYABLE_BLOCKER_KINDS = {"VERIFICATION", "PROVIDER_CAPACITY", "RUNTIME_HEALTH"}
-MACHINE_RETRY_BASE_SECONDS = {
-    "VERIFICATION": 300,
-    "RUNTIME_HEALTH": 300,
-    "PROVIDER_CAPACITY": 900,
-}
-MACHINE_RETRY_MAX_SECONDS = 3600
-
-
 def defer_machine_blockers(
     path: Path,
     *,
@@ -486,8 +472,6 @@ def defer_machine_blockers(
     return deferred
 
 
-
-
 def wake_due(
     path: Path,
     *,
@@ -526,8 +510,6 @@ def wake_due(
         if awakened:
             save(path, state)
     return awakened
-
-
 
 
 def handoff(
@@ -665,7 +647,7 @@ def board_projection(path: Path) -> str:
     ]
     if not active:
         return ""
-    marks = {"accepted": " ", "in_progress": "/", "blocked": "!", "verifying": "/"}
+    marks = {"accepted": " ", "in_progress": "/", "waiting_external": "~", "blocked": "!", "verifying": "/"}
     projects: dict[str, list[dict[str, Any]]] = {}
     for item in active:
         projects.setdefault(str(item["project_id"]), []).append(item)
@@ -717,6 +699,8 @@ def verified_done(path: Path, *, work_id: str, actor: str, evidence: str) -> dic
     if status == "accepted":
         transition(path, work_id=work_id, target="in_progress", actor=actor, next_action=item["next_action"])
         status = "in_progress"
+    if status == "waiting_external":
+        raise ValueError("waiting_external_not_due")
     if status == "blocked":
         transition(path, work_id=work_id, target="in_progress", actor=actor, next_action=item["next_action"])
         status = "in_progress"
