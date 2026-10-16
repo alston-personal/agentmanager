@@ -43,6 +43,27 @@ if [ ! -f "$RUNTIME/agentos_node/client_cli.py" ]; then
   mkdir -p "$ROOT/runtime"
   mv "$TMP" "$RUNTIME"
 fi
+# Runtime identity belongs to the immutable installed snapshot, not the current
+# controller checkout or a stale launcher environment. ThinClient reads this
+# adjacent to its loaded module and includes it in its manifest/heartbeat.
+PROVENANCE="$RUNTIME/runtime-provenance.json"
+if [ ! -f "$PROVENANCE" ]; then
+  AGENTOS_PINNED_REF="$REF" AGENTOS_PINNED_SHA="$SOURCE_COMMIT" AGENTOS_PINNED_PATH="$PROVENANCE" python3 - <<'PY'
+import json, os
+from pathlib import Path
+target = Path(os.environ["AGENTOS_PINNED_PATH"])
+payload = {
+    "schema": "agentos.thin-client-runtime/v0.1",
+    "status": "observed",
+    "source_ref": os.environ["AGENTOS_PINNED_REF"],
+    "source_commit": os.environ["AGENTOS_PINNED_SHA"],
+}
+tmp = target.with_suffix(".json.tmp")
+tmp.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+tmp.replace(target)
+PY
+fi
+echo "agentos_oracle_exec_runtime_provenance=PASS"
 ln -sfn "$RUNTIME" "$ROOT/current"
 
 cat > "$LAUNCHER" <<EOF
