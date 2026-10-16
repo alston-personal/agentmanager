@@ -403,12 +403,53 @@ def reconcile_held_reply(root, state, target, out, base, headers, now):
         target["provider_object_id"]=matched[0]
         target["reconciliation_required"]=False
         target["receipt_ref"]=str(out.relative_to(root))
+        intent=root/"pdca/reply_intents"/(str(target.get("action_id"))+".json")
+        if intent.exists():
+            original=json.loads(intent.read_text(encoding="utf-8"))
+            original.update(status="completed",provider_object_id=matched[0],
+                            receipt_ref=str(out.relative_to(root)),
+                            reconciliation_required=False)
+            save(intent,original)
     else:
         target["status"]="in_progress"
         target["reconciliation_required"]=True
         target["next_reconcile_not_before"]=(datetime.fromisoformat(now.replace("Z","+00:00"))+timedelta(minutes=30)).isoformat().replace("+00:00","Z")
     save(root/"pdca/state.json",state)
     return receipt
+
+def recover_orphan_reply_intent(root, state):
+    """Restore one lost reply for READ-ONLY reconciliation, never for sending.
+
+    reply_intents/ is durable across the bounded pending queue; do not
+    interpret absence from pending as permission to publish again.
+    """
+    pending=state.get("pending_external_actions") or []
+    tracked={str(x.get("action_id")) for x in pending if isinstance(x,dict)}
+    historical=[]
+    for path in (root/"pdca/reply_intents").glob("*.json"):
+        try:
+            record=json.loads(path.read_text(encoding="utf-8"))
+        except (OSError,ValueError,TypeError):
+            continue
+        if not isinstance(record,dict) or record.get("capability")!="social.reply.send":
+            continue
+        aid=str(record.get("action_id") or "")
+        if not aid or aid in tracked or record.get("status") in ("completed","cancelled","superseded","skipped"):
+            continue
+        if not str(record.get("reply_to_id") or "").isdigit() or not str(record.get("root_post_id") or "").isdigit():
+            continue
+        historical.append((str(record.get("created_at") or ""),path,record))
+    if not historical:
+        return None
+    _,path,record=min(historical,key=lambda x:(x[0],str(x[1])))
+    restored={**record,"status":"in_progress","reconciliation_required":True,
+              "recovery_source":"durable_reply_intent","write_replay_allowed":False}
+    # Keep the complete pending ledger; do not evict another live task.
+    pending.append(restored)
+    state["pending_external_actions"]=pending
+    save(root/"pdca/state.json",state)
+    return restored
+
 
 def main():
     ap=argparse.ArgumentParser()
@@ -418,6 +459,7 @@ def main():
     args=ap.parse_args()
     root=Path(args.persona_dir)
     state=json.loads((root/"pdca/state.json").read_text(encoding="utf-8"))
+    orphan=recover_orphan_reply_intent(root,state)
     pending=list(state.get("pending_external_actions") or [])
     now_dt=datetime.now(timezone.utc)
     def due(x):
