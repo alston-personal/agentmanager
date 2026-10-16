@@ -1334,6 +1334,55 @@ image.save(out, format="PNG")
         return data
 
 
+def _render_image_qwen_reuse(target_ir: dict[str, Any], person: Path, strict: bool) -> bytes:
+    """Reuse the Qwen Image Edit Gradio capability already exercised by Mio try-on.
+
+    The renderer is deliberately independent of the try-on product/garment
+    board; this task edits the person's appearance into a non-human mascot.
+    """
+    python_bin = Path("/home/ubuntu/.local/share/mio-tryon-venv/bin/python")
+    if not python_bin.is_file():
+        raise RuntimeError("qwen_reuse_venv_missing")
+    space = os.environ.get("AGENTOS_TRYON_QWEN_EDIT_SPACE_ID", "Qwen/Qwen-Image-2.1-workflow")
+    prompt = render_prompt(target_ir, strict=strict) + (
+        "\nTurn the supplied reference person into ONE non-human square mascot image. "
+        "The fused Character IR is authoritative: maintain the water-drop body plan; "
+        "transfer only recognizable appearance traits, not human body anatomy. "
+        "No reference board, no embedded face, no human costume, no text."
+    )
+    with tempfile.TemporaryDirectory(prefix="character-fusion-qwen-reuse-") as tmp:
+        prompt_path = Path(tmp) / "prompt.txt"
+        output = Path(tmp) / "output.png"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        helper = r'''
+import sys
+from pathlib import Path
+from gradio_client import Client, handle_file
+from PIL import Image
+source, prompt_path, output_path, space = sys.argv[1:]
+client = Client(space, download_files=True, verbose=False)
+result = client.predict(handle_file(source), Path(prompt_path).read_text(encoding="utf-8"),
+                        api_name="/rewritten_instruction")
+if not isinstance(result, (tuple, list)) or len(result) < 2:
+    raise RuntimeError("qwen_reuse_unexpected_result")
+candidate = result[1]
+if isinstance(candidate, dict):
+    candidate = candidate.get("path") or candidate.get("url")
+with Image.open(str(candidate)) as image:
+    image.convert("RGB").save(output_path, format="PNG")
+'''
+        proc = subprocess.run(
+            [str(python_bin), "-c", helper, str(person), str(prompt_path), str(output), space],
+            capture_output=True, text=True, timeout=240,
+        )
+        if proc.returncode:
+            raise RuntimeError("qwen_reuse_failed: " + (proc.stderr or proc.stdout or "")[-700:])
+        data = output.read_bytes()
+        if len(data) < 10000 or not data.startswith(bytes.fromhex("89504e470d0a1a0a")):
+            raise RuntimeError("qwen_reuse_invalid_png")
+        return data
+
+
 def _render_image_flow(target_ir: dict[str, Any], strict: bool) -> bytes:
     python_bin = Path("/usr/bin/python3")
     if not python_bin.is_file():
@@ -2140,6 +2189,10 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
             )):
                 raise
             try:
+                return _render_image_qwen_reuse(target_ir, person, strict=strict)
+            except (RuntimeError, subprocess.TimeoutExpired) as qwen_exc:
+                qwen_reason = str(qwen_exc)[:300]
+            try:
                 return _render_image_flow(target_ir, strict=strict)
             except RuntimeError as flow_exc:
                 try:
@@ -2150,7 +2203,7 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
                     except RuntimeError as chatgpt_exc:
                         raise RuntimeError(
                             "all image fallbacks failed; "
-                            f"flow={flow_exc}; gemini_web={web_exc}; chatgpt_web={chatgpt_exc}"
+                            f"qwen={qwen_reason}; flow={flow_exc}; gemini_web={web_exc}; chatgpt_web={chatgpt_exc}"
                         ) from chatgpt_exc
 
 
