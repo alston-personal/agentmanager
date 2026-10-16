@@ -1378,7 +1378,7 @@ with Image.open(str(candidate)) as image:
         if proc.returncode:
             raise RuntimeError("qwen_reuse_failed: " + (proc.stderr or proc.stdout or "")[-700:])
         data = output.read_bytes()
-        if len(data) < 10000 or not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        if len(data) < 10000 or not data.startswith(bytes.fromhex("89504e470d0a1a0a")):
             raise RuntimeError("qwen_reuse_invalid_png")
         return data
 
