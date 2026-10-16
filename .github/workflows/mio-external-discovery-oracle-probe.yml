@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_keyword_node_diagnostic.py'
+      - 'scripts/persona_keyword_scope_check.py'
       - 'scripts/persona_keyword_social_runtime_bridge.py'
       - '.github/workflows/mio-external-discovery-oracle-probe.yml'
 
@@ -37,7 +38,7 @@ jobs:
           WORK="/tmp/mio-discovery-${GITHUB_RUN_ID}"
           PORT="${DEPLOY_SSH_PORT:-22}"
           ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '$WORK/scripts'"
-          for src in persona_social_executor.py persona_keyword_social_runtime_bridge.py persona_keyword_node_diagnostic.py; do
+          for src in persona_social_executor.py persona_keyword_social_runtime_bridge.py persona_keyword_node_diagnostic.py persona_keyword_scope_check.py; do
             scp -P "$PORT" -o StrictHostKeyChecking=accept-new "scripts/$src" "${DEPLOY_USER}@${DEPLOY_HOST}:$WORK/scripts/$src"
           done
           ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}"             "WORK='$WORK' bash -s" <<'REMOTE'
@@ -45,13 +46,23 @@ jobs:
           trap 'rm -rf "$WORK"' EXIT
           test "$(hostname)" = "instance-20260129-0852"
           test "$(id -u)" = "1001"
+          PYTHONPATH="$WORK" python3 -m scripts.persona_keyword_scope_check > "$WORK/scope.json"
+          python3 - "$WORK/scope.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          scope=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          print("mio_keyword_scope_receipt="+json.dumps({
+            k:scope.get(k) for k in ("schema","status","reason","keyword_search_granted","write_performed")
+            if k in scope},ensure_ascii=False,sort_keys=True))
+          assert scope.get("write_performed") is False
+          PY
           PYTHONPATH="$WORK" python3 -m scripts.persona_keyword_node_diagnostic             --query '穿搭' --receipt-out "$WORK/discovery.json" > /dev/null
           python3 - "$WORK/discovery.json" <<'PY'
           import json,sys
           from pathlib import Path
           report=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
           allowed={"schema","status","operation","reason","checked_at","node_verified",
-                   "write_performed","external_item_count","candidate_count","source_status"}
+                   "write_performed","external_item_count","candidate_count","source_status","result_count","source_receipt_id"}
           print("mio_discovery_oracle_receipt="+json.dumps({k:v for k,v in report.items() if k in allowed},
                                                         ensure_ascii=False,sort_keys=True))
           assert report.get("write_performed") is False
