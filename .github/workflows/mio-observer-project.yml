@@ -2,13 +2,6 @@ name: Mio Observer Projection
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/mio-observer-project.yml'
-      - 'scripts/project_mio_observer_user.py'
-      - 'scripts/project_mio_observer_user.sh'
 
 permissions:
   contents: read
