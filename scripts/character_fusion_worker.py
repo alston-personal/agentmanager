@@ -1912,6 +1912,7 @@ async def main():
           .map(x=>x.currentSrc||x.src||'').filter(Boolean))()''') or []
         baseline=set(baseline)
         baseline_user_count=await ev(r'''(() => document.querySelectorAll('[data-message-author-role="user"]').length)()''') or 0
+        baseline_href=await ev(r'''(() => location.href)()''') or ""
 
         focused=await ev(r'''(() => {
           const sels=['#prompt-textarea','[data-testid="composer-input"]','textarea','[contenteditable="true"]'];
@@ -1969,7 +1970,9 @@ async def main():
               assistantCount:document.querySelectorAll('[data-message-author-role="assistant"]').length,
               body:(document.body?.innerText||'').slice(-600)
             }))()''') or {}
-            if submit_state.get("userCount",0)>baseline_user_count:
+            if (submit_state.get("userCount",0)>baseline_user_count or
+                (str(submit_state.get("href") or "") != baseline_href and
+                 "/uc/" in str(submit_state.get("href") or ""))):
                 submitted=True
                 break
             await asyncio.sleep(0.5)
@@ -1990,7 +1993,9 @@ async def main():
                     aria:(x.getAttribute('aria-label')||'').slice(0,80),disabled:!!x.disabled
                   }))
                 }))()''') or {}
-                if submit_state.get("userCount",0)>baseline_user_count:
+                if (submit_state.get("userCount",0)>baseline_user_count or
+                (str(submit_state.get("href") or "") != baseline_href and
+                 "/uc/" in str(submit_state.get("href") or ""))):
                     submitted=True
                     break
                 await asyncio.sleep(0.5)
