@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import argparse, json
 from pathlib import Path
-from model2ir import extract_ir, stabilize_external_ir, compile_reversible_gltf, score_roundtrip
+from model2ir import extract_ir, stabilize_external_ir
+from model2ir_stabilized_import_regression import verify_candidate_storage
 
 CORE={'pelvis','torso','head','left_arm','right_arm','left_leg','right_leg'}
 
@@ -50,11 +51,8 @@ def main():
         assert CORE <= ids, (label, sorted(CORE-ids))
         assert cand['body_plan']['source'].startswith('VRM-')
         assert cand['body_plan']['confidence'] >= .99
-        carrier=compile_reversible_gltf(obj,cand)
-        sp=out/f'{label}-stable.gltf'; write(sp,carrier)
-        back=extract_ir(sp); score=score_roundtrip(cand,back)
-        assert score['lossless_reversible']
-        vrm_results[label]={'coverage':ev['core_coverage'],'confidence':cand['body_plan']['confidence'],'roundtrip':True}
+        storage=verify_candidate_storage(obj,cand,out/f'{label}-candidate.json')
+        vrm_results[label]={'coverage':ev['core_coverage'],'confidence':cand['body_plan']['confidence'],'candidate_storage':storage}
 
     rig=json.loads(Path(args.rigged).read_text())
     for n in rig.get('nodes',[]): n.pop('name',None)
@@ -68,21 +66,18 @@ def main():
     # topology may infer body-plan class, but must not invent left/right semantic parts
     ids={x['id'] for x in rc.get('parts',[])}
     assert not ({'left_arm','right_arm','left_leg','right_leg'} & ids), sorted(ids)
-    carrier=compile_reversible_gltf(rig,rc)
-    stable=out/'rigged-no-names-stable.gltf'; write(stable,carrier)
-    rback=extract_ir(stable); rscore=score_roundtrip(rc,rback)
-    assert rscore['lossless_reversible']
+    storage=verify_candidate_storage(rig,rc,out/'rigged-no-names-candidate.json')
 
     simple=extract_ir(args.simpleskin)
     st= simple['topology_evidence']
     assert st['kind']=='unknown', st
 
     report={
-      'schema':'model2ir-vrm-topology-regression/v0.6',
+      'schema':'model2ir-vrm-topology-regression/v0.9.2',
       'vrm':vrm_results,
       'unnamed_full_rig':{
         'topology_kind':topo['kind'], 'confidence':topo['confidence'],
-        'side_assignments':topo['side_assignments'], 'roundtrip_exact':rscore['lossless_reversible']
+        'side_assignments':topo['side_assignments'], 'candidate_storage':storage
       },
       'insufficient_simple_skin':{'topology_kind':st['kind'],'reason':st['reason'],'joint_count':st['joint_count']},
       'gate':{
@@ -91,7 +86,8 @@ def main():
         'unnamed_full_rig_body_plan':True,
         'unnamed_side_hallucination_avoided':True,
         'insufficient_rig_unknown':True,
-        'post_stabilization_reversibility':1.0,
+        'candidate_json_roundtrip':1.0,
+        'canonical_embedding_rejected':True,
         'status':'PASS'
       }
     }

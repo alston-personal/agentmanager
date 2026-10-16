@@ -213,18 +213,33 @@ def extract_ir(asset_or_path: Asset | str | Path) -> dict[str, Any]:
 
 
 def _semantic_labels(ir: dict[str, Any]) -> set[str]:
-    if ir.get("schema") == "model2ir-character-ir/v0.1":
-        comps = ir.get("semantic_ir", {}).get("candidates", []) or []
-        return {c.get("semantic_candidate", {}).get("label") for c in comps if c.get("semantic_candidate", {}).get("label") not in (None, "unknown")}
-    parts = ir.get("inferred", {}).get("parts", []) or []
+    # Compare the payload when a carrier contains IR; carrier node names describe
+    # the asset, not necessarily the embedded design intent.
+    canonical = ir.get("canonical_ir")
+    if isinstance(canonical, dict):
+        return _semantic_labels(canonical)
+    if str(ir.get("schema", "")).startswith("model2ir-character-ir/"):
+        semantic = ir.get("semantic_evidence_v03") or {}
+        if isinstance(semantic.get("parts"), dict):
+            parts = list(semantic["parts"])
+        else:
+            comps = (ir.get("semantic_ir") or {}).get("candidates", []) or []
+            parts = [(c.get("semantic_candidate") or {}).get("label")
+                     for c in comps if isinstance(c, dict)]
+    elif isinstance(ir.get("parts"), list):
+        parts = ir["parts"]
+    else:
+        parts = (ir.get("inferred") or {}).get("parts", []) or []
     out: set[str] = set()
     for p in parts:
         if isinstance(p, str):
-            out.add(p)
+            x = p
         elif isinstance(p, dict):
             x = p.get("id") or p.get("part") or p.get("name")
-            if x:
-                out.add(x)
+        else:
+            continue
+        if isinstance(x, str) and x and x != "unknown":
+            out.add(x)
     return out
 
 
@@ -251,7 +266,7 @@ def diff_ir(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
 def reconcile_ir(image_ir: dict[str, Any], model_ir: dict[str, Any]) -> dict[str, Any]:
     img = _semantic_labels(image_ir)
     mdl = _semantic_labels(model_ir)
-    unresolved = model_ir.get("semantic_ir", {}).get("unresolved", []) or []
+    unresolved = (model_ir.get("semantic_ir") or {}).get("unresolved", model_ir.get("unresolved", [])) or []
     return {
         "schema": "model2ir-reconciliation/v0.1",
         "matched": sorted(img & mdl),
