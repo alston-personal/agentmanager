@@ -1,0 +1,54 @@
+name: Mio Vendor Reader Runtime Inventory
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mio-vendor-reader-runtime-inventory.yml'
+permissions:
+  contents: read
+jobs:
+  oracle-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect immutable Vendor release and listener without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY'
+          import json, subprocess, urllib.request
+          from pathlib import Path
+          data={"schema":"agentos.mio-vendor-runtime-inventory/v1","write_performed":False}
+          root=Path("/home/ubuntu/vendor-reputation-service")
+          if (root/".git").exists():
+              p=subprocess.run(["git","-C",str(root),"rev-parse","HEAD"],capture_output=True,text=True,timeout=7)
+              data["vendor_commit"]=p.stdout.strip() if p.returncode==0 else "UNKNOWN"
+          else:
+              data["vendor_commit"]="CHECKOUT_ABSENT"
+          if (root/"compose.yaml").exists():
+              content=(root/"compose.yaml").read_text(encoding="utf-8")
+              data["reader_defined_in_compose"]="threads-reader:" in content
+          try:
+              with urllib.request.urlopen("http://127.0.0.1:18766/healthz",timeout=5) as resp:
+                  value=json.load(resp)
+              data["port_18766_health_http"]=200
+              data["port_18766_health_service"]=str(value.get("service") or "")[:80]
+              data["port_18766_health_ok"]=value.get("ok") is True
+          except Exception as exc:
+              data["port_18766_health_status"]=type(exc).__name__
+          result=subprocess.run(["docker","ps","--format","{{.Names}}|{{.Ports}}"],capture_output=True,text=True,timeout=10)
+          if result.returncode==0:
+              data["listener_container_names"]=[line.split("|",1)[0] for line in result.stdout.splitlines() if "18766" in line]
+          else:
+              data["listener_container_names"]=[]
+          print("mio_vendor_inventory_receipt="+json.dumps(data,sort_keys=True))
+          PY
