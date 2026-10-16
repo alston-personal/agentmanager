@@ -9,6 +9,7 @@ def test_oracle_exec_installer_pins_snapshot_provenance():
     thin_client = (ROOT / "agentos_node/thin_client.py").read_text()
     assert 'PROVENANCE="$RUNTIME/runtime-provenance.json"' in installer
     assert '"schema": "agentos.thin-client-runtime/v0.1"' in installer
+    assert '"status": "observed"' in installer
     assert '"source_commit": os.environ["AGENTOS_PINNED_SHA"]' in installer
     assert '"source_ref": os.environ["AGENTOS_PINNED_REF"]' in installer
     assert 'tmp.replace(target)' in installer
