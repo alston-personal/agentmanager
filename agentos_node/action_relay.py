@@ -1482,7 +1482,19 @@ class ActionRelayWorker:
             supplied = str(capsule.get("digest") or ""); unsigned = dict(capsule); unsigned.pop("digest", None)
             expected = "sha256:" + hashlib.sha256(_canonical(unsigned)).hexdigest()
             if supplied != expected: raise ValueError("capsule digest mismatch")
-            if action == "agentos.project.publish_continuation":
+            # Privileged deployment transitions require a provenance check in
+            # addition to the capsule's self-reported authority and digest.
+            # Read-only status can remain available to authorized relay clients.
+            privileged_actions = {
+                "agentos.realm-fabric.claim_deployment",
+                "agentos.realm-fabric.release_deployment",
+                "agentos.realm-fabric.renew_deployment",
+                "agentos.realm-fabric.advance_deployment",
+                "agentos.realm-fabric.install_release",
+                "agentos.maintenance.issue71_repair_node_registry",
+                "agentos.project.publish_continuation",
+            }
+            if action in privileged_actions:
                 _verify_continuation_capsule_owner(processing)
             result = ACTIONS[action](params)
             # governed_receipt_reserved_fields_v1: the relay owns receipt identity.
