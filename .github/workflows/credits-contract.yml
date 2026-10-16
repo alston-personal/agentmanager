@@ -43,6 +43,8 @@ jobs:
           bash -n scripts/install_systemd_user.sh
           grep -q 'milkcat-credits.service' scripts/install_systemd_user.sh
           grep -q 'MILKCAT_CREDITS_MODE=shadow' scripts/install_systemd_user.sh
-          grep -q '127.0.0.1 --port 8767' scripts/install_systemd_user.sh
+          grep -q 'allocate_port(' scripts/install_systemd_user.sh
+          grep -q 'milkcat_credits.env' scripts/install_systemd_user.sh
+          grep -q 'MILKCAT_CREDITS_URL=http://127.0.0.1:' scripts/install_systemd_user.sh
       - name: Run credits contract tests
         run: python -m pytest -q tests/test_credit_ledger.py tests/test_credit_service.py tests/test_credit_http.py

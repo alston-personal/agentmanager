@@ -29,7 +29,33 @@ if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="$(command -v python3)"
 fi
 
-mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs"
+mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs" "$DATA_ROOT/config"
+
+CREDITS_PORT="$(
+  AGENT_DATA_ROOT="$DATA_ROOT" PYTHONPATH="$LOGIC_ROOT" "$PYTHON_BIN" - <<'PY'
+import contextlib
+import io
+from scripts.core_services.port_manager import allocate_port
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    port = allocate_port(
+        "milkcat-credits",
+        "Milkcat Credits loopback HTTP",
+        start_port=3000,
+        end_port=8999,
+    )
+print(port)
+PY
+)"
+case "$CREDITS_PORT" in
+  ''|*[!0-9]*) echo "Invalid governed Milkcat Credits port: $CREDITS_PORT" >&2; exit 1 ;;
+esac
+CREDITS_ENV="$DATA_ROOT/config/milkcat_credits.env"
+cat > "$CREDITS_ENV" <<EOF
+MILKCAT_CREDITS_PORT=$CREDITS_PORT
+MILKCAT_CREDITS_URL=http://127.0.0.1:$CREDITS_PORT
+EOF
+chmod 600 "$CREDITS_ENV"
 
 cat > "$USER_SYSTEMD_DIR/milkcat-credits.service" <<EOF
 [Unit]
@@ -41,8 +67,9 @@ Type=simple
 WorkingDirectory=$LOGIC_ROOT
 EnvironmentFile=$ENV_FILE
 EnvironmentFile=-%h/.agentos.secrets
+EnvironmentFile=$CREDITS_ENV
 Environment=MILKCAT_CREDITS_MODE=shadow
-ExecStart=$PYTHON_BIN -m agent_core.credit_http --host 127.0.0.1 --port 8767
+ExecStart=$PYTHON_BIN -m agent_core.credit_http --host 127.0.0.1 --port $CREDITS_PORT
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -201,7 +228,7 @@ if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
   systemctl --user restart os-lobster.service
   systemctl --user restart milkcat-credits.service
   for attempt in {1..10}; do
-    if curl -fsS --max-time 2 http://127.0.0.1:8767/healthz | grep -q '"service": "milkcat-credits"'; then
+    if curl -fsS --max-time 2 "http://127.0.0.1:$CREDITS_PORT/healthz" | grep -q '"service": "milkcat-credits"'; then
       break
     fi
     if [ "$attempt" -eq 10 ]; then
