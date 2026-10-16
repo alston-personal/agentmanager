@@ -109,3 +109,5 @@ jobs:
 # Recheck after PR #2013 retired LayoutLab v2 workflow.
 
 # Approved PR 2014 merge verification 2026-10-16.
+
+# PR 2015 append-only architecture note merged 2026-10-16.
