@@ -1,0 +1,90 @@
+name: Mio External Public Observation (read only)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mio-vendor-readonly-observation.yml'
+  schedule:
+    - cron: '37 2 * * *'
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Observe verified external public post and persist immutable evidence on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY'
+          import hashlib, json, os, pathlib, tempfile, urllib.request, urllib.error
+          from datetime import datetime, timezone
+          BASE="http://127.0.0.1:18766"
+          URL="https://www.threads.com/@oursong_alstonhuang/post/DeN9IhomVhn"
+          OUT=pathlib.Path("/home/ubuntu/agent-data/personas/sunlake-milkcat/external_observations")
+          report={"schema":"agentos.mio-external-public-observation/v1","status":"BLOCKED",
+                  "reason":"NOT_EVALUATED","write_performed":False,"reply_allowed":False,
+                  "ir_adoption_allowed":False,"observed_count":0}
+          try:
+              with urllib.request.urlopen(BASE+"/healthz",timeout=7) as r:
+                  health=json.load(r)
+              if health.get("service") not in ("agentos-threads-public-reader","vendor-threads-public-reader") or health.get("ok") is not True:
+                  report["reason"]="READER_IDENTITY_MISMATCH"
+              else:
+                  request=urllib.request.Request(BASE+"/v1/threads/resolve",
+                      data=json.dumps({"url":URL}).encode(),method="POST",
+                      headers={"Content-Type":"application/json"})
+                  with urllib.request.urlopen(request,timeout=60) as r:
+                      body=json.load(r)
+                  post=body.get("source") if isinstance(body,dict) else None
+                  if not (isinstance(body,dict) and body.get("schema")=="agentos.social.threads.public-post/v1"
+                          and body.get("login_bypass_used") is False and body.get("anti_bot_bypass_used") is False
+                          and isinstance(post,dict) and post.get("url")==URL
+                          and str(post.get("username","")).lower()=="oursong_alstonhuang"
+                          and isinstance(post.get("text"),str) and 0<len(post["text"].strip())<=12000):
+                      report["reason"]="CONTENT_PROVENANCE_UNVERIFIED"
+                  else:
+                      observed=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+                      evidence={"schema":"agentos.mio-external-public-observation/v1",
+                          "source":"vendor-public-threads-reader","source_url":URL,
+                          "author":"oursong_alstonhuang","text":post["text"].strip(),
+                          "observed_at":observed,"decision":"UNDECIDED",
+                          "reply_allowed":False,"ir_adoption_allowed":False,"write_performed":False}
+                      digest=hashlib.sha256(URL.encode()).hexdigest()[:24]
+                      OUT.mkdir(parents=True,exist_ok=True)
+                      target=OUT/(digest+".json")
+                      if target.exists():
+                          report.update(status="PASS",reason="ALREADY_OBSERVED",observed_count=1)
+                      else:
+                          fd,tmp=tempfile.mkstemp(prefix=".observation-",dir=str(OUT))
+                          try:
+                              with os.fdopen(fd,"w",encoding="utf-8") as f:
+                                  json.dump(evidence,f,ensure_ascii=False,sort_keys=True)
+                                  f.write("\n")
+                                  f.flush()
+                                  os.fsync(f.fileno())
+                              os.link(tmp,target)
+                              report.update(status="PASS",reason="PUBLIC_OBSERVATION_PERSISTED",observed_count=1)
+                          finally:
+                              os.unlink(tmp)
+          except FileExistsError:
+              report.update(status="PASS",reason="ALREADY_OBSERVED",observed_count=1)
+          except urllib.error.HTTPError as e:
+              report["reason"]="READER_HTTP_"+str(e.code)
+          except (urllib.error.URLError,TimeoutError,ConnectionError):
+              report["reason"]="READER_UNAVAILABLE"
+          except (OSError,ValueError,KeyError,TypeError):
+              report["reason"]="OBSERVATION_ERROR"
+          print("mio_public_observation_receipt="+json.dumps(report,sort_keys=True))
+          assert report["write_performed"] is False
+          PY
