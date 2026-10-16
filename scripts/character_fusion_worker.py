@@ -2137,7 +2137,20 @@ with lock_path.open("a+") as lock:
         return data
 
 
+# Per-worker execution provenance: never infer the renderer from IMAGE_MODEL,
+# which is only the primary configured candidate.
+LAST_RENDER_PROVIDER = "unknown"
+
+
+def _record_render(provider: str, data: bytes) -> bytes:
+    global LAST_RENDER_PROVIDER
+    LAST_RENDER_PROVIDER = provider
+    return data
+
+
 def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | None, strict: bool) -> bytes:
+    global LAST_RENDER_PROVIDER
+    LAST_RENDER_PROVIDER = "unknown"
     parts: list[dict[str, Any]] = [{"text": render_prompt(target_ir, strict=strict)}]
     if main_visual:
         parts.extend([
@@ -2158,7 +2171,7 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
             inline = part.get("inlineData") or {}
             data = inline.get("data")
             if data:
-                return base64.b64decode(data)
+                return _record_render("gemini:" + _image_model, base64.b64decode(data))
         raise RuntimeError("image model returned no image")
     except RuntimeError as exc:
         message = str(exc)
@@ -2174,7 +2187,7 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
         if not any(reason in message for reason in fallback_reasons):
             raise
         try:
-            return _render_image_hf(target_ir, strict=strict)
+            return _record_render("huggingface:flux", _render_image_hf(target_ir, strict=strict))
         except RuntimeError as hf_exc:
             hf_message = str(hf_exc)
             if not any(marker in hf_message for marker in (
@@ -2189,17 +2202,17 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
             )):
                 raise
             try:
-                return _render_image_qwen_reuse(target_ir, person, strict=strict)
+                return _record_render("qwen:gradio-reuse", _render_image_qwen_reuse(target_ir, person, strict=strict))
             except (RuntimeError, subprocess.TimeoutExpired) as qwen_exc:
                 qwen_reason = str(qwen_exc)[:300]
             try:
-                return _render_image_flow(target_ir, strict=strict)
+                return _record_render("flow:web", _render_image_flow(target_ir, strict=strict))
             except RuntimeError as flow_exc:
                 try:
-                    return _render_image_gemini_web(target_ir, strict=strict)
+                    return _record_render("gemini:web", _render_image_gemini_web(target_ir, strict=strict))
                 except RuntimeError as web_exc:
                     try:
-                        return _render_image_chatgpt_web(target_ir, strict=strict)
+                        return _record_render("chatgpt:web", _render_image_chatgpt_web(target_ir, strict=strict))
                     except RuntimeError as chatgpt_exc:
                         raise RuntimeError(
                             "all image fallbacks failed; "
@@ -2335,7 +2348,7 @@ def run(job_id: str) -> None:
                 "serial": serial,
                 "actualIr": final_actual,
                 "acceptance": final_acceptance,
-                "provider": f"gemini:{IMAGE_MODEL}",
+                "provider": LAST_RENDER_PROVIDER,
             },
         )
     except Exception as exc:
