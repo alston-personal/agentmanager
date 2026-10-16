@@ -106,5 +106,33 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         self.assertEqual(len(payload["summary"]["p0_paths"]), 0)
 
 
+    def test_relay_installer_writes_only_local_receipt_and_submits_bounded_actions(self):
+        source = (audit.ROOT / "scripts/install_realm_fabric_via_action_relay.py").read_text(encoding="utf-8")
+        import ast
+        tree = ast.parse(source)
+        # This client script submits named actions; it must never directly replace
+        # shared governance/runtime files. The server-side executor is separately governed.
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)]
+        self.assertFalse(any(isinstance(c.func, ast.Attribute) and c.func.attr in {"replace", "unlink", "chmod", "chown"} for c in calls))
+        self.assertIn("client.submit(CLAIM_ACTION", source)
+        self.assertIn("client.submit(INSTALL_ACTION", source)
+        self.assertIn("receipt.get('executor_user') != 'ubuntu'", source)
+        self.assertIn("OUT = ROOT / '.agentos/evidence/realm-fabric-install-current.json'", source)
+
+    def test_issue71_source_patcher_is_pinned_and_does_not_execute_live_repair(self):
+        source = (audit.ROOT / "scripts/patch_issue71_node_registry_repair_action.py").read_text(encoding="utf-8")
+        import ast
+        ast.parse(source)
+        self.assertIn("path = Path('agentos_node/action_relay.py')", source)
+        self.assertIn("expected_generation = 3", source)
+        self.assertIn("expected_forensic_sha =", source)
+        self.assertIn("compile(text, str(path), 'exec')", source)
+        self.assertNotIn("client.submit(", source)
+        self.assertNotIn("subprocess.run(", source)
+        self.assertNotIn("os.system(", source)
+        # The patcher writes generated source; the embedded runtime action requires
+        # separate executor authorization and cannot be inferred safe from this test.
+
+
 if __name__ == "__main__":
     unittest.main()
