@@ -8,6 +8,7 @@ on:
       - 'scripts/persona_for_you_observation.py'
       - 'scripts/persona_vendor_public_source.py'
       - '.github/workflows/mio-vendor-reader-oracle-acceptance.yml'
+      - '.github/workflows/mio-vendor-readonly-observation.yml'
       - 'scripts/persona_social_discovery_triage.py'
       - 'scripts/persona_keyword_social_runtime_bridge.py'
       - 'scripts/persona_keyword_node_diagnostic.py'
@@ -58,4 +59,16 @@ jobs:
           embedded=textwrap.dedent(source[start:end])
           ast.parse(embedded,filename="mio-vendor-reader-oracle-acceptance[embedded].py")
           print("oracle_vendor_reader_embedded_python=PASS")
+          PY
+      - name: Compile scheduled observation embedded Python
+        run: |
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          import textwrap
+          source=Path(".github/workflows/mio-vendor-readonly-observation.yml").read_text()
+          start=source.index("          import hashlib, json, os, pathlib, tempfile, urllib.request, urllib.error")
+          end=source.index("          PY\n",start)
+          ast.parse(textwrap.dedent(source[start:end]),filename="mio-vendor-readonly-observation[embedded].py")
+          print("mio_observation_embedded_python=PASS")
           PY
