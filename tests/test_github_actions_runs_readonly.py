@@ -7,6 +7,10 @@ from agentos_node.github_actions_runs_readonly import list_runs
 
 
 class GithubActionsRunsReadonlyTests(unittest.TestCase):
+    def test_action_relay_registration_is_read_only(self):
+        from agentos_node.action_relay import ACTIONS
+        self.assertIs(ACTIONS["github.actions.runs.list"], list_runs)
+
     def test_manual_run_discovery(self):
         row = {"databaseId": 321, "url": "https://github.com/alston-personal/agentmanager/actions/runs/321",
                "headSha": "a" * 40, "status": "completed", "conclusion": "success",
