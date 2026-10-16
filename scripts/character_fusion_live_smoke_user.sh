@@ -37,6 +37,26 @@ if spec is None or spec.loader is None:
 mod=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
+# Isolated cross-project renderer proof does not require a first-time VLM.
+# It tests the real Qwen route with the existing reference image and the
+# canonical water-drop preset; it is NOT a full Character IR acceptance.
+probe_target=mod.water_drop_main_ir()
+try:
+    qwen_bytes=mod._render_image_qwen_reuse(probe_target,source,strict=True)
+    import hashlib
+    probe_dir=Path("/home/ubuntu/agent-data/character-fusion/acceptance")
+    probe_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
+    os.chmod(probe_dir,0o700)
+    probe_path=probe_dir/"qwen-isolated-candidate.png"
+    probe_path.write_bytes(qwen_bytes)
+    os.chmod(probe_path,0o600)
+    print(json.dumps({"qwen_isolated_renderer":"PASS","image_bytes":len(qwen_bytes),
+        "sha256":hashlib.sha256(qwen_bytes).hexdigest(),
+        "quality_acceptance":"NOT_EVALUATED"},ensure_ascii=False),flush=True)
+except Exception as exc:
+    print(json.dumps({"qwen_isolated_renderer":"FAILED","error":str(exc)[:900]},
+        ensure_ascii=False),flush=True)
+
 person_ir=mod._cached_person_traits(source)
 target=mod.fuse(mod.water_drop_main_ir(),person_ir)
 image=mod.render_image(target,source,None,strict=True)
