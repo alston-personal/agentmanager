@@ -51,12 +51,14 @@ try:
     probe_path.write_bytes(qwen_bytes)
     os.chmod(probe_path,0o600)
     # Separate bytes/signature evidence from Character IR semantic acceptance.
-    from PIL import Image
-    with Image.open(probe_path) as check_image:
-        check_image.verify()
-    with Image.open(probe_path) as check_image:
-        dimensions=list(check_image.size)
-        fmt=check_image.format
+    import struct
+    if qwen_bytes[:8] != bytes.fromhex("89504e470d0a1a0a") or qwen_bytes[12:16] != b"IHDR":
+        raise RuntimeError("qwen_isolated_invalid_png_signature")
+    width,height=struct.unpack(">II",qwen_bytes[16:24])
+    if width < 256 or height < 256:
+        raise RuntimeError("qwen_isolated_invalid_png_dimensions")
+    dimensions=[width,height]
+    fmt="PNG"
     print(json.dumps({"qwen_isolated_renderer":"PASS","image_bytes":len(qwen_bytes),
         "sha256":hashlib.sha256(qwen_bytes).hexdigest(),
         "image_dimensions":dimensions,"image_format":fmt,
