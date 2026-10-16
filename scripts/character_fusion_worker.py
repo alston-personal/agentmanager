@@ -1179,6 +1179,41 @@ def water_drop_main_ir() -> dict[str, Any]:
     }
 
 
+PERSON_IR_CACHE_VERSION = "person-traits-v1"
+PERSON_IR_CACHE_ROOT = Path(os.environ.get(
+    "AGENTOS_CHARACTER_IR_CACHE_DIR",
+    str(Path.home() / "agent-data" / "character-fusion" / "person-ir-cache"),
+))
+
+
+def _cached_person_traits(path: Path) -> dict[str, Any]:
+    """Reuse verified shape-only person IR for identical source image bytes."""
+    import hashlib
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    cache = PERSON_IR_CACHE_ROOT / (PERSON_IR_CACHE_VERSION + "-" + digest + ".json")
+    if cache.exists():
+        try:
+            candidate = read_json(cache)
+            if (isinstance(candidate, dict)
+                    and candidate.get("evidence_class") == "ip-genome-visual-traits"
+                    and isinstance(candidate.get("identity_traits"), dict)
+                    and candidate["identity_traits"]):
+                return candidate
+        except (OSError, ValueError, TypeError):
+            pass
+    result = extract_person_traits(path)
+    # Never cache a malformed or empty provider response.
+    if (not isinstance(result, dict)
+            or result.get("evidence_class") != "ip-genome-visual-traits"
+            or not isinstance(result.get("identity_traits"), dict)
+            or not result["identity_traits"]):
+        raise RuntimeError("person_ir_invalid_shape")
+    PERSON_IR_CACHE_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(PERSON_IR_CACHE_ROOT, 0o700)
+    atomic_write(cache, result)
+    return result
+
+
 def extract_person_traits(path: Path) -> dict[str, Any]:
     prompt = """
 Analyze this person/reference image for character-design transfer.
@@ -2316,7 +2351,7 @@ def run(job_id: str) -> None:
         else:
             raise RuntimeError("custom preset requires main visual image")
 
-        person_ir = extract_person_traits(person)
+        person_ir = _cached_person_traits(person)
         target_ir = fuse(main_ir, person_ir)
         update_job(job_id, status="rendering", output={"targetIr": target_ir})
 
