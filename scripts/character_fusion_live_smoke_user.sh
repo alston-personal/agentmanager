@@ -8,7 +8,12 @@ test -f "$RELEASE/libs/model2ir/src/model2ir/reconciliation.py"
 
 SOURCE=/tmp/character-fusion-live-smoke.webp
 OUTPUT=/tmp/character-fusion-live-smoke.png
+# The source image is temporary, but a passing generated image is an
+# acceptance artifact and must not disappear when the shell exits.
 trap 'rm -f "$SOURCE" "$OUTPUT"' EXIT
+EVIDENCE_DIR="/home/ubuntu/agent-data/character-fusion/acceptance"
+mkdir -p "$EVIDENCE_DIR"
+chmod 700 "$EVIDENCE_DIR"
 
 curl -fL --retry 3 --max-time 30 \
   https://studio.milkcat.org/personas/mio/mio-base-v2.webp \
@@ -53,4 +58,10 @@ if not acceptance.get("pass"):
     raise SystemExit("character fusion live acceptance failed")
 PY
 
+# Preserve only successful results in the private Oracle evidence store.
+# Do not export the person's source photo or put the generated image on a public URL.
+test -s "$OUTPUT"
+install -m 600 "$OUTPUT" "$EVIDENCE_DIR/last-water-drop-smoke.png"
+sha256sum "$EVIDENCE_DIR/last-water-drop-smoke.png" | awk '{print "character_fusion_image_sha256="$1}'
+stat -c 'character_fusion_image_bytes=%s' "$EVIDENCE_DIR/last-water-drop-smoke.png"
 echo 'character_fusion_live_smoke=PASS'
