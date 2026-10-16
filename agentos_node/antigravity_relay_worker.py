@@ -27,11 +27,16 @@ def _utc_now() -> str:
 
 
 def discover_executor() -> list[str] | None:
+    # Preserve the ubuntu-owned Claude/Antigravity login identity. Claude
+    # `--bare` intentionally bypasses OAuth/keychain subscription auth,
+    # which is incompatible with this relay boundary. `--print` remains
+    # the fixed non-interactive execution mode; capsules still cannot
+    # provide argv, credentials, provider selection, or timeout values.
     explicit = os.environ.get("AGENTOS_ANTIGRAVITY_EXECUTOR")
     if explicit:
         candidate = Path(explicit).expanduser()
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            return [str(candidate), "--bare", "--print", "--output-format", "text", "--effort", "low"]
+            return [str(candidate), "--print", "--output-format", "text", "--effort", "low"]
     patterns = [
         str(Path.home() / ".antigravity-ide-server/extensions/anthropic.claude-code-*-linux-arm64/resources/native-binary/claude"),
         str(Path.home() / ".antigravity-ide-server/extensions/anthropic.claude-code-*/resources/native-binary/claude"),
@@ -42,7 +47,7 @@ def discover_executor() -> list[str] | None:
     for item in sorted(set(matches), reverse=True):
         candidate = Path(item)
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            return [str(candidate), "--bare", "--print", "--output-format", "text", "--effort", "low"]
+            return [str(candidate), "--print", "--output-format", "text", "--effort", "low"]
     return None
 
 
