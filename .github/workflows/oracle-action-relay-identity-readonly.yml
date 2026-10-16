@@ -1,0 +1,74 @@
+name: Oracle Action Relay Identity Readonly Evidence
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/oracle-action-relay-identity-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify readonly scope
+        shell: bash
+        run: |
+          echo 'action_relay_identity_workflow=READONLY'
+          echo 'live_access_requires_explicit_dispatch=YES'
+
+  inspect:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect effective identities and capsule metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import os, pwd, grp, stat
+          from pathlib import Path
+          print("oracle_action_relay_identity_probe=BEGIN")
+          print("observer_uid="+str(os.getuid()))
+          for user in ("ubuntu", "agentos-node"):
+              try:
+                  p=pwd.getpwnam(user)
+                  print("identity="+user+":uid="+str(p.pw_uid)+":gid="+str(p.pw_gid))
+              except KeyError:
+                  print("identity="+user+":MISSING")
+          for p in [Path("/home/ubuntu/agent-data/runtime/action-relay"),
+                    Path("/home/ubuntu/agent-data/runtime/action-relay/inbox"),
+                    Path("/home/ubuntu/agent-data/runtime/action-relay/processing")]:
+              try:
+                  s=p.lstat()
+                  print("path="+p.name+":uid="+str(s.st_uid)+":gid="+str(s.st_gid)+":mode="+oct(stat.S_IMODE(s.st_mode)))
+                  if p.name == "inbox":
+                      samples=sorted(p.glob("action-*.json"))[:3]
+                      for f in samples:
+                          v=f.lstat()
+                          print("capsule_metadata=uid:"+str(v.st_uid)+":gid:"+str(v.st_gid)+":mode:"+oct(stat.S_IMODE(v.st_mode)))
+                      print("capsule_samples="+str(len(samples)))
+              except OSError as exc:
+                  print("path="+p.name+":UNAVAILABLE:"+type(exc).__name__)
+          for entry in Path("/proc").iterdir():
+              if not entry.name.isdigit(): continue
+              try:
+                  cmd=(entry/"cmdline").read_bytes().replace(b"\0",b" ").decode("utf-8","replace")
+                  if "agentos_node.action_relay" not in cmd or "python" not in cmd: continue
+                  status=(entry/"status").read_text(encoding="utf-8",errors="replace")
+                  uid=next((x.split()[1] for x in status.splitlines() if x.startswith("Uid:")),"unknown")
+                  print("relay_worker_uid="+uid)
+              except (OSError,PermissionError): continue
+          print("oracle_action_relay_identity_probe=END")
+          PY
