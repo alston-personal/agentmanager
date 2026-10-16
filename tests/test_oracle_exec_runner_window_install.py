@@ -7,9 +7,9 @@ def test_oracle_exec_install_reuses_governed_existing_action():
     from agent_core.runner_window import resolve_intent
     from agentos_node.bootstrap_control import ACTION_INSTALL_ORACLE_EXEC
     source_commit = "a" * 40
-    result = resolve_intent("node.runtime", "oracle-exec.install", source_commit=source_commit, payload={})
-    assert result["action"] == ACTION_INSTALL_ORACLE_EXEC
-    assert result["params"]["source_commit"] == source_commit
+    intent, params = resolve_intent("node.runtime", "oracle-exec.install", source_commit=source_commit, payload={})
+    assert intent.action == ACTION_INSTALL_ORACLE_EXEC
+    assert params["source_commit"] == source_commit
 
 
 def test_oracle_exec_install_blocks_untrusted_payload():
