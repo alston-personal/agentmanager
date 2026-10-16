@@ -2,17 +2,6 @@ name: Realm Controller Live Acceptance
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/realm-controller-live-acceptance.yml'
-      - 'agent_core/controller_service.py'
-      - 'scripts/patch_realm_controller_dispatch.py'
-      - 'scripts/patch_realm_fabric_deployment_advance.py'
-      - 'scripts/patch_bootstrap_control_controller_probe.py'
-      - 'scripts/controller_surface_inspect_vopc5750.sh'
-      - 'scripts/repair_antigravity_relay_user.sh'
-      - 'tests/test_controller_service.py'
 
 permissions:
   contents: write
