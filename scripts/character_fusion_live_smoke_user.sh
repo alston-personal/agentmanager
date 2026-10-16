@@ -37,7 +37,7 @@ if spec is None or spec.loader is None:
 mod=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
-person_ir=mod.extract_person_traits(source)
+person_ir=mod._cached_person_traits(source)
 target=mod.fuse(mod.water_drop_main_ir(),person_ir)
 image=mod.render_image(target,source,None,strict=True)
 output.write_bytes(image)
