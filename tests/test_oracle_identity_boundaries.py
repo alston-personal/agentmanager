@@ -148,5 +148,21 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         self.assertIn('_verify_continuation_capsule_owner(processing)', source)
 
 
+    def test_capsule_owner_gate_accepts_exact_identity_and_rejects_foreign_owner(self):
+        import stat
+        from types import SimpleNamespace
+        from agentos_node import action_relay as relay
+        good = SimpleNamespace(st_mode=stat.S_IFREG | 0o660, st_uid=1001, st_gid=2222)
+        foreign = SimpleNamespace(st_mode=stat.S_IFREG | 0o660, st_uid=9999, st_gid=2222)
+        with mock.patch.object(relay.pwd, "getpwnam", return_value=SimpleNamespace(pw_uid=1001)), mock.patch.object(
+            relay.grp, "getgrnam", return_value=SimpleNamespace(gr_gid=2222)
+        ):
+            with mock.patch.object(Path, "lstat", return_value=good):
+                relay._verify_continuation_capsule_owner(Path("/tmp/mock-capsule"))
+            with mock.patch.object(Path, "lstat", return_value=foreign):
+                with self.assertRaises(PermissionError):
+                    relay._verify_continuation_capsule_owner(Path("/tmp/mock-capsule"))
+
+
 if __name__ == "__main__":
     unittest.main()
