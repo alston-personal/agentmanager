@@ -1,0 +1,63 @@
+name: Mio Vendor Public Reader Oracle Acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mio-vendor-reader-oracle-acceptance.yml'
+permissions:
+  contents: read
+jobs:
+  oracle-reader:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read-only local Vendor Threads reader acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY'
+          import json, urllib.request, urllib.error
+          from urllib.parse import urlsplit
+          BASE="http://127.0.0.1:18766"
+          result={"schema":"agentos.mio-vendor-reader-oracle-acceptance/v1",
+                  "write_performed":False,"status":"BLOCKED"}
+          try:
+              with urllib.request.urlopen(BASE+"/healthz",timeout=7) as r:
+                  health=json.load(r)
+              if health.get("service")!="agentos-threads-public-reader" or health.get("ok") is not True:
+                  result["reason"]="READER_IDENTITY_MISMATCH"
+              else:
+                  req=urllib.request.Request(BASE+"/v1/threads/resolve",data=json.dumps({
+                    "url":"https://www.threads.com/@oursong_alstonhuang/post/DeN9IhomVhn"
+                  }).encode(),headers={"Content-Type":"application/json"},method="POST")
+                  try:
+                      with urllib.request.urlopen(req,timeout=60) as r:
+                          body=json.load(r)
+                      source=body.get("source") if isinstance(body,dict) else None
+                      if (body.get("schema")=="agentos.social.threads.public-post/v1" and
+                          isinstance(source,dict) and source.get("username","").lower()=="oursong_alstonhuang" and
+                          bool(str(source.get("text") or "").strip())):
+                          result.update(status="PASS",reason="EXTERNAL_PUBLIC_POST_READ",
+                                        source_author_verified=True,has_text=True)
+                      else:
+                          result["reason"]="CONTENT_OR_AUTHOR_UNVERIFIED"
+                  except urllib.error.HTTPError as e:
+                      result["reason"]="READER_HTTP_"+str(e.code)
+                  except (TimeoutError,urllib.error.URLError):
+                      result["reason"]="READER_POST_UNAVAILABLE"
+          except (TimeoutError,urllib.error.URLError,ConnectionError):
+              result["reason"]="READER_SERVICE_UNAVAILABLE"
+          except (ValueError,TypeError,KeyError):
+              result["reason"]="INVALID_READER_RESPONSE"
+          print("mio_vendor_reader_oracle_receipt="+json.dumps(result,sort_keys=True))
+          assert result["write_performed"] is False
+          PY
