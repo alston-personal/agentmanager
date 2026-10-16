@@ -20,10 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "$GITHUB_REF" in
-            refs/heads/main|refs/heads/core/integration) ;;
-            *) echo 'bootstrap_source_ref_not_allowlisted' >&2; exit 4 ;;
-          esac
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
           printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
           mkdir -p .agentos/evidence
           OUT=.agentos/evidence/bootstrap-control-plane.txt
@@ -41,7 +38,7 @@ jobs:
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "runner_identity=$(id)"
             echo "request_id=$REQUEST_ID"
-            echo "source_ref=${GITHUB_REF#refs/heads/}"
+            echo "source_ref=core/integration"
             echo "source_commit=$GITHUB_SHA"
             echo "manual_emergency_invocation=YES"
             python3 -m py_compile agentos_node/bootstrap_control.py scripts/update_scheduler_board.py agentos_node/action_relay.py
