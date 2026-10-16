@@ -31,6 +31,7 @@ jobs:
             --fail-on-new-p0
           cat artifacts/oracle-identity-boundaries.md
       - name: Contract tests
+        if: always()
         run: python3 -m unittest tests.test_oracle_identity_boundaries
       - uses: actions/upload-artifact@v4
         if: always()
