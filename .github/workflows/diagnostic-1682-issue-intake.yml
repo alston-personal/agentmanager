@@ -1,0 +1,28 @@
+name: Diagnostic 1682 Issue Intake Governance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oracle-approved-issue-intake.yml'
+      - '.github/workflows/diagnostic-1682-issue-intake.yml'
+permissions:
+  contents: read
+jobs:
+  static-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded approval and verified close contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('.github/workflows/oracle-approved-issue-intake.yml').read_text()
+          for needle in ('workflow_dispatch:', "cron: '17,47 * * * *'", 'runs-on: ubuntu-latest',
+                         'agentos%3Aapproved', 'receipt_sync_eligibility_mismatch=FAIL',
+                         'agentos:readonly', 'production-change', 'state_reason', 'completed',
+                         'issue_intake_source=github_open_explicitly_approved'):
+              assert needle in s, needle
+          assert '  push:' not in s
+          assert 'self-hosted' not in s
+          print('issue_intake_governance=PASS')
+          PY
