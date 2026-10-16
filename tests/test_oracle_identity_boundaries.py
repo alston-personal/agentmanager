@@ -164,5 +164,12 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
                     relay._verify_continuation_capsule_owner(Path("/tmp/mock-capsule"))
 
 
+    def test_privileged_relay_authority_contract_is_exact(self):
+        source = (audit.ROOT / "agentos_node/action_relay.py").read_text(encoding="utf-8")
+        self.assertIn('if action in privileged_actions:', source)
+        self.assertIn('capsule.get("authority") != {"source": "agentos-node", "target_user": "ubuntu", "arbitrary_shell": False}', source)
+        self.assertIn('raise PermissionError("privileged relay capsule authority contract mismatch")', source)
+
+
 if __name__ == "__main__":
     unittest.main()
