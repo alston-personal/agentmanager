@@ -39,5 +39,14 @@ class DeliveryProbeTests(unittest.TestCase):
         self.assertEqual(receipt.repository, "a/b")
 
 
+    def test_atomic_receipt(self):
+        import tempfile
+        import json
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "receipts" / "github.json"
+            receipt = mod.classify_http("github.repo.read", "a/b", 403)
+            mod.persist_receipt(str(path), receipt)
+            self.assertEqual(json.loads(path.read_text())["outcome"], "AUTH_REQUIRED")
+
 if __name__ == "__main__":
     unittest.main()
