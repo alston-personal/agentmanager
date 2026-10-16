@@ -35,7 +35,7 @@ jobs:
                   health=json.load(r)
               if health.get("service") not in ("agentos-threads-public-reader", "vendor-threads-public-reader") or health.get("ok") is not True:
                   result["reason"]="READER_IDENTITY_MISMATCH"
-              result["observed_service"]=str(health.get("service") or "")[:80]
+                  result["observed_service"]=str(health.get("service") or "")[:80]
               else:
                   req=urllib.request.Request(BASE+"/v1/threads/resolve",data=json.dumps({
                     "url":"https://www.threads.com/@oursong_alstonhuang/post/DeN9IhomVhn"
