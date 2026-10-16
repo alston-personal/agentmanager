@@ -1923,8 +1923,21 @@ async def main():
         })()''')
         if not focused:
             raise RuntimeError("chatgpt_web_composer_not_found")
+        # The preceding VLM fallback may have left an unsent prompt in the
+        # shared ChatGPT composer. Replace rather than append to that text.
+        await call("Input.dispatchKeyEvent",{"type":"keyDown","key":"a","code":"KeyA","modifiers":2,"windowsVirtualKeyCode":65})
+        await call("Input.dispatchKeyEvent",{"type":"keyUp","key":"a","code":"KeyA","modifiers":2,"windowsVirtualKeyCode":65})
         await call("Input.insertText",{"text":prompt})
         await asyncio.sleep(0.5)
+        composer_state=await ev(r'''(() => {
+          const x=[...document.querySelectorAll('#prompt-textarea,#mobile-composer-prompt,[data-testid="composer-input"],textarea,[contenteditable="true"]')]
+            .find(e=>e.offsetParent!==null && !e.disabled);
+          const value=(x?.value??x?.innerText??x?.textContent??'');
+          return {length:value.length,hasRenderPrompt:value.includes('Generate exactly ONE square mascot image'),
+            hasStaleVisionPrompt:value.includes('Analyze this person/reference image')};
+        })()''') or {}
+        if not composer_state.get("hasRenderPrompt") or composer_state.get("hasStaleVisionPrompt"):
+            raise RuntimeError("chatgpt_web_composer_not_replaced; state="+json.dumps(composer_state))
 
         sent=False
         for _ in range(30):
