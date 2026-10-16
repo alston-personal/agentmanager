@@ -20,8 +20,11 @@ class BountyPdcaTests(unittest.TestCase):
         a = BountyCycle("Parabola#18","WAITING_EXTERNAL")
         self.assertEqual(advance_bounty_cycle(a,{"type":"PR_ACCEPTED"}).stage,"CHECK")
         self.assertFalse(cycle_receipt(a)["bountyPaid"])
-        b = advance_bounty_cycle(a,{"type":"VERIFIED_SETTLEMENT"})
-        self.assertTrue(cycle_receipt(b)["bountyPaid"])
+        with self.assertRaises(ValueError):
+            advance_bounty_cycle(a, {"type":"VERIFIED_SETTLEMENT"})
+        b = advance_bounty_cycle(a, {"type":"VERIFIED_SETTLEMENT", "settlement_receipt":{"verified":True,"reference":"test-tx"}})
+        self.assertFalse(cycle_receipt(b)["bountyPaid"])
+        self.assertTrue(cycle_receipt(b)["settlementCheckRequired"])
 
     def test_lesson_returns_plan(self):
         a = advance_bounty_cycle(BountyCycle("Parabola#18","ACT"),{"type":"LESSON_RECORDED"})
