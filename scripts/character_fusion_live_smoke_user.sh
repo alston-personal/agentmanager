@@ -50,6 +50,7 @@ print(json.dumps({
     "smoke_acceptance": acceptance,
     "image_bytes": len(image),
     "image_model": mod.IMAGE_MODEL,
+    "actual_render_provider": mod.LAST_RENDER_PROVIDER,
     "vision_model": mod.VISION_MODEL,
 },ensure_ascii=False))
 if len(image) < 10000:
