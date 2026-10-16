@@ -6,6 +6,7 @@ schedule tasks or perform financial/network operations.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from agent_core.bounty_pdca import BountyCycle, advance_bounty_cycle, cycle_receipt
 
 
@@ -30,4 +31,20 @@ def run_bounty_pdca_wake(store, task, *, node_id: str):
     result["transitionApplied"] = next_cycle.revision > current.revision
     result["previousRevision"] = current.revision
     result["upstreamWriteVerified"] = False
-    return store.update_task(persisted["taskId"], "succeeded", result=result)
+    # Compare-and-swap while holding a SQLite write transaction: a reassigned or
+    # expired lease cannot be completed by the previous Node.
+    with store._connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        changed = db.execute(
+            "UPDATE tasks SET status='succeeded', result_json=?, updated_at=? "
+            "WHERE task_id=? AND status='leased' AND target_node_id=? "
+            "AND lease_until=? AND lease_until>?",
+            (json.dumps(result, sort_keys=True), now, persisted["taskId"],
+             node_id, expiry, now),
+        )
+        if changed.rowcount != 1:
+            raise ValueError("lease changed before committing PDCA wake")
+        row = db.execute("SELECT * FROM tasks WHERE task_id=?", (persisted["taskId"],)).fetchone()
+        db.commit()
+    return store._task_from_row(row)
