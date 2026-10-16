@@ -50,9 +50,25 @@ try:
     probe_path=probe_dir/"qwen-isolated-candidate.png"
     probe_path.write_bytes(qwen_bytes)
     os.chmod(probe_path,0o600)
+    # Separate bytes/signature evidence from Character IR semantic acceptance.
+    from PIL import Image
+    with Image.open(probe_path) as check_image:
+        check_image.verify()
+    with Image.open(probe_path) as check_image:
+        dimensions=list(check_image.size)
+        fmt=check_image.format
     print(json.dumps({"qwen_isolated_renderer":"PASS","image_bytes":len(qwen_bytes),
         "sha256":hashlib.sha256(qwen_bytes).hexdigest(),
-        "quality_acceptance":"NOT_EVALUATED"},ensure_ascii=False),flush=True)
+        "image_dimensions":dimensions,"image_format":fmt,
+        "quality_acceptance":"PENDING"},ensure_ascii=False),flush=True)
+    try:
+        observed=mod.inspect_output(probe_path)
+        verdict=mod.accept("water-drop",probe_target,observed)
+        print(json.dumps({"qwen_isolated_quality":"PASS" if verdict["pass"] else "REJECTED",
+            "actual_ir":observed,"acceptance":verdict},ensure_ascii=False),flush=True)
+    except Exception as quality_exc:
+        print(json.dumps({"qwen_isolated_quality":"UNAVAILABLE",
+            "reason":str(quality_exc)[:900]},ensure_ascii=False),flush=True)
 except Exception as exc:
     print(json.dumps({"qwen_isolated_renderer":"FAILED","error":str(exc)[:900]},
         ensure_ascii=False),flush=True)
