@@ -41,6 +41,10 @@ def advance_bounty_cycle(current: BountyCycle, event: dict[str, Any]) -> BountyC
     key = (current.stage, action)
     if key not in transitions:
         return current  # duplicate wake/event: idempotent
+    if action == "VERIFIED_SETTLEMENT":
+        evidence = event.get("settlement_receipt")
+        if not isinstance(evidence, dict) or evidence.get("verified") is not True or not evidence.get("reference"):
+            raise ValueError("settlement needs verified receipt reference")
     next_stage = transitions[key]
     issue = event.get("issue") if action == "CANDIDATE_SELECTED" else current.issue
     if action == "CANDIDATE_SELECTED" and not issue:
@@ -60,5 +64,7 @@ def plan_next_work(cycles: list[BountyCycle], candidates: list[str]) -> str | No
 def cycle_receipt(cycle: BountyCycle) -> dict[str, Any]:
     result = asdict(cycle)
     result["receiptKind"] = "bounty-pdca-cycle/v1"
-    result["bountyPaid"] = cycle.last_event == "VERIFIED_SETTLEMENT"
+    # A transition alone is not a durable payment ledger; payment proof is external.
+    result["bountyPaid"] = False
+    result["settlementCheckRequired"] = cycle.last_event == "VERIFIED_SETTLEMENT"
     return result
