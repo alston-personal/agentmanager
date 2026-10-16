@@ -113,3 +113,5 @@ jobs:
 # PR 2015 append-only architecture note merged 2026-10-16.
 
 # PR 2016 Completion Controller convergence check 2026-10-16.
+
+# Verify approved protected-main PR 2017.
