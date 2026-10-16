@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -62,10 +64,29 @@ def probe_repository(repository: str, token: str, opener=urllib.request.urlopen)
         return ProbeReceipt("github.repo.read", "RETRYABLE", None, "github_transport_error", repository)
 
 
+def persist_receipt(path: str, receipt: ProbeReceipt) -> None:
+    """Atomically checkpoint one probe receipt without exposing credentials."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent,
+                                         prefix=".bounty-receipt-", delete=False) as handle:
+            temp_name = handle.name
+            handle.write(receipt.to_json() + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, target)
+    finally:
+        if temp_name and os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True, help="owner/repo")
     parser.add_argument("--dry-run", action="store_true", help="emit local token readiness without contacting GitHub")
+    parser.add_argument("--receipt-file", help="optional path to atomic durable JSON receipt")
     args = parser.parse_args()
     if len(args.repo.split("/")) != 2 or not all(args.repo.split("/")):
         parser.error("--repo must be owner/repo")
@@ -75,6 +96,8 @@ def main() -> int:
                      None, "dry_run_no_api_request" if token else "github_token_missing", args.repo)
         if args.dry_run else probe_repository(args.repo, token)
     )
+    if args.receipt_file:
+        persist_receipt(args.receipt_file, receipt)
     print(receipt.to_json())
     return 0 if receipt.outcome in ("READY", "UNVERIFIED") else 2
 
