@@ -14,6 +14,8 @@ from typing import Any, Callable
 import uuid
 from datetime import datetime, timezone
 
+from agentos_node.github_actions_runs_readonly import list_runs as _github_actions_runs_list
+
 ACTION_SCHEMA = "agentos.action-relay/v1"
 RECEIPT_SCHEMA = "agentos.action-receipt/v1"
 SHARED_GROUP = "agentos"
@@ -416,6 +418,7 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "github.repo.ensure_studio_web": _ensure_studio_web_remote,
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
     "github.actions.workflow.dispatch": _github_actions_dispatch,
+    "github.actions.runs.list": _github_actions_runs_list,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
     "agentos.project.publish_continuation": _publish_project_continuation,
