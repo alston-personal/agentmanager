@@ -139,5 +139,14 @@ class OracleIdentityBoundaryAuditTests(unittest.TestCase):
         # separate executor authorization and cannot be inferred safe from this test.
 
 
+    def test_privileged_relay_capsule_owner_check(self):
+        source = (audit.ROOT / "agentos_node/action_relay.py").read_text(encoding="utf-8")
+        self.assertIn('"agentos.realm-fabric.install_release",', source)
+        self.assertIn('"agentos.realm-fabric.advance_deployment",', source)
+        self.assertIn('"agentos.maintenance.issue71_repair_node_registry",', source)
+        self.assertIn('if action in privileged_actions:', source)
+        self.assertIn('_verify_continuation_capsule_owner(processing)', source)
+
+
 if __name__ == "__main__":
     unittest.main()
