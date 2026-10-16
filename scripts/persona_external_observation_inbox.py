@@ -37,7 +37,7 @@ def validate(obj):
     if not isinstance(body, str) or not 0 < len(body.strip()) <= 12000:
         return None
     observed = obj.get("observed_at")
-    if not isinstance(observed, str) or not re.fullmatch(r"20\\d\\d-[01]\\d-[0-3]\\dT.{8,40}Z", observed):
+    if not isinstance(observed, str) or not re.fullmatch(r"20\d\d-[01]\d-[0-3]\dT.{8,40}Z", observed):
         return None
     return {"schema": SCHEMA, "source": obj["source"], "source_url": raw, "author": author,
             "text": body.strip(), "observed_at": observed, "decision": "UNDECIDED",
@@ -73,7 +73,7 @@ def ingest(source_dir, persona_dir, limit=20):
                 continue
             with target.open("x", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, sort_keys=True)
-                f.write("\\n")
+                f.write("\n")
             result["imported"] += 1
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             result["rejected"] += 1
