@@ -1,5 +1,9 @@
 # AgentOS Current Architecture & Reality
 
+## Runtime repair discovery contract
+
+Golden Path development must resolve the existing `agentos.runtime / repair` Runner Window route to the Oracle Bootstrap repair script and independent Action Relay installer before declaring deployment unsupported. The persistent contract and fail-closed checks are in `docs/GOLDEN_PATH_RUNTIME_REPAIR_DISCOVERY.md` and `tests/test_golden_path_runtime_repair_discovery.py`. Existing source and hosted OIDC path are implemented; fresh Oracle installed-release and Node receipts are still required. Do not substitute `node.runtime/converge` or workflow-run acknowledgement for installed Action Relay proof.
+
 **Status date:** 2026-10-02  
 **Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
 
