@@ -1,0 +1,65 @@
+name: Replay Current Mio Oursong DM
+on:
+  push:
+    paths:
+      - '.github/workflows/replay-current-mio-oursong-dm.yml'
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy retry and replay one known DM
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE=/tmp/mio-oursong-dm-replay-$GITHUB_RUN_ID.py
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             scripts/mio_oursong_dm_oracle_cycle_user.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$REMOTE" <<'REMOTE'
+          set -euo pipefail
+          SRC="$1"
+          BIN="$HOME/.local/bin/mio-oursong-dm-oracle-cycle"
+          STATE=/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/oursong-dm-state.json
+          MID=f7bf47d3a5249e74fd9606e1e814c50b
+          FP=f7bf47d3a5249e74fd9606e1
+          install -m 0755 "$SRC" "$BIN"
+          rm -f "$SRC"
+          cp -a "$STATE" "$STATE.replay-backup" 2>/dev/null || true
+          python3 - "$STATE" "$MID" "$FP" <<'PY'
+import json,sys,os
+from pathlib import Path
+p=Path(sys.argv[1]); mid=sys.argv[2]; fp=sys.argv[3]
+d=json.loads(p.read_text(encoding="utf-8"))
+d["processed_message_ids"]=[x for x in (d.get("processed_message_ids") or []) if str(x)!=mid]
+d["processed_fingerprints"]=[x for x in (d.get("processed_fingerprints") or []) if str(x)!=fp]
+tmp=p.with_suffix(".replay.tmp")
+tmp.write_text(json.dumps(d,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+os.chmod(tmp,0o600)
+tmp.replace(p)
+print("mio_dm_replay_requeued=PASS")
+PY
+          systemctl --user reset-failed mio-oursong-dm-autonomous.service || true
+          set +e
+          systemctl --user start mio-oursong-dm-autonomous.service
+          rc=$?
+          set -e
+          echo "mio_dm_replay_run_rc=$rc"
+          systemctl --user --no-pager --full status mio-oursong-dm-autonomous.service 2>&1 || true
+          echo '=== LATEST RECEIPTS ==='
+          find /home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/dm-receipts -maxdepth 1 -type f -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -n 3 | cut -d' ' -f2- | while read f; do
+            echo "--- $f"
+            cat "$f"
+          done
+          echo '=== STATE ==='
+          cat "$STATE"
+          exit "$rc"
+          REMOTE

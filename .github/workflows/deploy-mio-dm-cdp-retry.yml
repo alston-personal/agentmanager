@@ -1,0 +1,44 @@
+name: Deploy Mio DM CDP Retry
+on:
+  push:
+    paths:
+      - '.github/workflows/deploy-mio-dm-cdp-retry.yml'
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy and run Mio DM cycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE=/tmp/mio-oursong-dm-oracle-cycle-$GITHUB_RUN_ID.py
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             scripts/mio_oursong_dm_oracle_cycle_user.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$REMOTE" <<'REMOTE'
+          set -euo pipefail
+          SRC="$1"
+          install -m 0755 "$SRC" "$HOME/.local/bin/mio-oursong-dm-oracle-cycle"
+          rm -f "$SRC"
+          STATE=/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/oursong-dm-state.json
+          cp -a "$STATE" "$STATE.replay-backup" 2>/dev/null || true
+          python3 -c 'import json,os,sys,pathlib; p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text(encoding="utf-8")); d["processed_message_ids"]=[x for x in (d.get("processed_message_ids") or []) if str(x)!="f7bf47d3a5249e74fd9606e1e814c50b"]; d["processed_fingerprints"]=[x for x in (d.get("processed_fingerprints") or []) if str(x)!="f7bf47d3a5249e74fd9606e1"]; tmp=p.with_suffix(".replay.tmp"); tmp.write_text(json.dumps(d,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8"); os.chmod(tmp,0o600); tmp.replace(p); print("mio_dm_replay_requeued=PASS")' "$STATE"
+          systemctl --user reset-failed mio-oursong-dm-autonomous.service || true
+          set +e
+          systemctl --user start mio-oursong-dm-autonomous.service
+          rc=$?
+          set -e
+          systemctl --user --no-pager --full status mio-oursong-dm-autonomous.service 2>&1 || true
+          echo "mio_dm_live_run_rc=$rc"
+          journalctl --user -u mio-oursong-dm-autonomous.service -n 80 --no-pager -o cat 2>&1 || true
+          exit "$rc"
+          REMOTE
