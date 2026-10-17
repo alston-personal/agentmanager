@@ -966,3 +966,10 @@ The `agentos-core` entry has a **recorded** `migration_state: active`,
 2026-10-15 Oracle runtime or production acceptance test. Live equivalence and
 receipt freshness must be revalidated independently before making operational
 claims or promoting deployments.
+
+
+## Oracle identity boundary audit migration candidate (#1682, 2026-10-16)
+
+Draft PR #2029 stages the existing integration Oracle identity boundary policy, static audit implementation, 12 regression tests and GitHub-hosted audit workflow onto main. The workflow is PR/manual-only (integration's push trigger was deliberately omitted); it does not deploy Oracle or change live identity permissions. The copied manifest includes historical 2026-10-06 acceptance references, **not** a current production attestation.
+
+On initial hosted validation, `--fail-on-new-p0` correctly rejected four previously unreviewed main-only paths: `.github/workflows/oracle-repair-governance-shared-boundary.yml`, `.github/workflows/realm-controller-live-acceptance.yml`, `scripts/install_realm_fabric_via_action_relay.py`, and `scripts/patch_issue71_node_registry_repair_action.py`. These are static findings requiring source-level risk disposition or bounded correction; they must not be silently added to policy baselines or overrides. The mainline governance and related CI guards passed, but the identity audit did not; draft PR #2029 remains unmerged pending remediation and verified rerun. Do not equate a documentation update with security acceptance.
