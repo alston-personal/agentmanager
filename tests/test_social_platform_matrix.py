@@ -17,6 +17,12 @@ class SocialPlatformMatrixTests(unittest.TestCase):
         self.assertFalse(platform_supports("facebook", "publish"))
         self.assertIn("publish", platform_capabilities("instagram"))
 
+    def test_x_is_declared_but_not_claimed_live(self):
+        self.assertFalse(platform_supports("x", "status"))
+        self.assertFalse(platform_supports("x", "publish"))
+        self.assertIn("status", platform_capabilities("x"))
+        self.assertIn("publish", platform_capabilities("x"))
+
 
 if __name__ == "__main__":
     unittest.main()
