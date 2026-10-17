@@ -133,6 +133,10 @@ def main() -> int:
                     browser=None
                     context=None
                     page=None
+                    if args.oursong_acceptance:
+                        print("mio_dm_oursong_stage=cdp_attach")
+                        print("mio_dm_oursong_acceptance=CDP_REQUIRED")
+                        return 8
             if page is None:
                 launch_args={"headless":not args.headed,"viewport":{"width":1280,"height":900}}
                 if args.channel:
