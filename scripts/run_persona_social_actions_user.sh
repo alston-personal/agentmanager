@@ -199,8 +199,9 @@ else
   python3 - "$SOCIAL_RECEIPT" "$METRICS_STATUS" "$METRICS_CHANGED" <<'PY'
 import json,sys
 r=json.load(open(sys.argv[1],encoding="utf-8"))
-assert r.get("status") in ("EXECUTED","BLOCKED","AWAITING_READBACK","WRITE_OUTCOME_UNKNOWN"),r
-classification=("PENDING_READBACK" if r.get("status")=="AWAITING_READBACK" else
+assert r.get("status") in ("EXECUTED","BLOCKED","AWAITING_READBACK","WRITE_OUTCOME_UNKNOWN","RECONCILIATION_PENDING","RECONCILED"),r
+classification=("PENDING_READBACK" if r.get("status") in ("AWAITING_READBACK","RECONCILIATION_PENDING") else
+                "PASS" if r.get("status")=="RECONCILED" and r.get("delivery_confirmed") is True else
                 "WRITE_OUTCOME_UNKNOWN" if r.get("status")=="WRITE_OUTCOME_UNKNOWN" else
                 "PASS" if r.get("ok") is True else "BLOCKED")
 print("persona_social_action_runtime="+classification)
