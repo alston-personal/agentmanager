@@ -414,6 +414,20 @@ def reconcile_held_reply(root, state, target, out, base, headers, now):
         target["status"]="in_progress"
         target["reconciliation_required"]=True
         target["next_reconcile_not_before"]=(datetime.fromisoformat(now.replace("Z","+00:00"))+timedelta(minutes=30)).isoformat().replace("+00:00","Z")
+        # Persist the uncertainty in the durable intent ledger as well.
+        # A stale 'candidate' record must not authorize a second send.
+        intent=root/"pdca/reply_intents"/(str(target.get("action_id"))+".json")
+        if intent.exists():
+            try:
+                original=json.loads(intent.read_text(encoding="utf-8"))
+                if (original.get("action_id")==target.get("action_id") and
+                    original.get("capability")=="social.reply.send"):
+                    original.update(status="in_progress",reconciliation_required=True,
+                                    write_replay_allowed=False,
+                                    reconciliation_receipt_ref=str(out.relative_to(root)))
+                    save(intent,original)
+            except (OSError,ValueError,TypeError):
+                pass
     save(root/"pdca/state.json",state)
     return receipt
 
