@@ -1,0 +1,36 @@
+name: Experience Growth Ledger focused tests
+
+on:
+  push:
+    branches:
+      - feat/1768-experience-growth-ledger
+    paths:
+      - 'agent_core/experience*.py'
+      - 'tests/test_experience_growth_ledger.py'
+      - '.github/workflows/experience-growth-ledger-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependency
+        run: python -m pip install pytest
+      - name: Compile Experience modules
+        run: python -m compileall -q agent_core/experience.py agent_core/experience_store.py agent_core/experience_growth_ledger.py tests/test_experience_growth_ledger.py
+      - name: Focused ledger contract tests
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_experience_growth_ledger.py
