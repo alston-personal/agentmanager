@@ -23,6 +23,7 @@ on:
       - 'tests/test_persona_wardrobe_sources.py'
       - 'tests/test_persona_media_fault_isolation.py'
       - 'tests/test_persona_social_selection.py'
+      - 'tests/test_persona_social_reconciliation_fairness.py'
       - 'tests/test_persona_social_observation.py'
       - 'tests/test_persona_post_reasoning.py'
       - 'tests/test_persona_reply_reasoning.py'
@@ -47,6 +48,7 @@ on:
       - 'tests/test_persona_wardrobe_sources.py'
       - 'tests/test_persona_media_fault_isolation.py'
       - 'tests/test_persona_social_selection.py'
+      - 'tests/test_persona_social_reconciliation_fairness.py'
       - 'tests/test_persona_social_observation.py'
       - 'tests/test_persona_post_reasoning.py'
       - 'tests/test_persona_reply_reasoning.py'
@@ -65,6 +67,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test reviewed image delivery without live providers or public writes
-        run: python3 -m unittest tests.test_persona_reference_install tests.test_persona_media_publish tests.test_persona_media_review tests.test_persona_scene_media tests.test_mio_media_ledger_smoke tests.test_persona_post_reasoning tests.test_persona_reply_reasoning tests.test_persona_wardrobe_sources tests.test_persona_media_fault_isolation tests.test_persona_social_selection tests.test_persona_social_observation -v
+        run: python3 -m unittest tests.test_persona_reference_install tests.test_persona_media_publish tests.test_persona_media_review tests.test_persona_scene_media tests.test_mio_media_ledger_smoke tests.test_persona_post_reasoning tests.test_persona_reply_reasoning tests.test_persona_wardrobe_sources tests.test_persona_media_fault_isolation tests.test_persona_social_selection tests.test_persona_social_reconciliation_fairness tests.test_persona_social_observation -v
       - name: Check existing deployment scripts
         run: bash -n scripts/install_persona_pdca_timer_user.sh scripts/run_persona_social_actions_user.sh
