@@ -61,12 +61,12 @@ jobs:
                   return {k:scrub(x) for k,x in v.items() if k.lower() not in {'token','secret','authorization'}}
               if isinstance(v,list):
                   return [scrub(x) for x in v]
-              if isinstance(v,str) and len(v)>1000:
-                  return v[:1000]
+              if isinstance(v,str) and len(v)>5000:
+                  return v[:5000]
               return v
           print(json.dumps(scrub(raw),ensure_ascii=False)[:12000])
           PY
             fi
           done
           echo "character_fusion_smoke_request_probe=PASS"
-          # probe-current-20261013-1415
+          # probe-current-20261013-1425-detail
