@@ -451,6 +451,15 @@ def recover_orphan_reply_intent(root, state):
     return restored
 
 
+def select_reconciliation_fair_action(held, ready, cycle):
+    """Never starve eligible reads or replay held writes; keep readback turns."""
+    due_reads=[x for x in ready if x.get("capability") in
+               ("social.threads.observe","social.reply.review")]
+    if held is not None and due_reads and cycle % 2 == 1:
+        return select_action(due_reads)
+    return held or select_action(ready)
+
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
@@ -481,13 +490,8 @@ def main():
     # A held reply may require repeated READ-ONLY reconciliation for days.
     # Alternate with independently due observation/review so it cannot starve
     # Mio's external awareness. Never replay a held write.
-    due_reads=[x for x in ready if x.get("capability") in
-               ("social.threads.observe","social.reply.review")]
-    cycle=int(state.get("cycle") or 0)
-    if held is not None and due_reads and cycle % 2 == 1:
-        target=select_action(due_reads)
-    else:
-        target=held or select_action(ready)
+    target=select_reconciliation_fair_action(
+        held, ready, int(state.get("cycle") or 0))
     now=now_dt.isoformat().replace("+00:00","Z")
     if not target:
         result={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"NO_ACTION","timestamp":now}
