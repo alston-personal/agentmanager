@@ -24,6 +24,9 @@ def run_bounty_pdca_wake(store, task, *, node_id: str):
     if not expiry or datetime.fromisoformat(expiry.replace("Z","+00:00")) <= datetime.now(timezone.utc):
         raise ValueError("wake lease expired")
     payload = persisted["payload"]
+    cycle_key = payload.get("cycleKey")
+    if not isinstance(cycle_key, str) or not cycle_key:
+        raise ValueError("cycleKey required")
     current = BountyCycle(**payload["cycle"])
     event = payload["event"]
     next_cycle = advance_bounty_cycle(current, event)
@@ -35,6 +38,13 @@ def run_bounty_pdca_wake(store, task, *, node_id: str):
     # expired lease cannot be completed by the previous Node.
     with store._connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        db.execute("CREATE TABLE IF NOT EXISTS bounty_cycles (cycle_key TEXT PRIMARY KEY, revision INTEGER NOT NULL, state_json TEXT NOT NULL)")
+        existing = db.execute("SELECT revision,state_json FROM bounty_cycles WHERE cycle_key=?", (cycle_key,)).fetchone()
+        if existing is None:
+            if current.revision != 0:
+                raise ValueError("missing cycle state")
+        elif existing["revision"] != current.revision or json.loads(existing["state_json"]) != vars(current):
+            raise ValueError("stale PDCA revision")
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         changed = db.execute(
             "UPDATE tasks SET status='succeeded', result_json=?, updated_at=? "
@@ -45,6 +55,13 @@ def run_bounty_pdca_wake(store, task, *, node_id: str):
         )
         if changed.rowcount != 1:
             raise ValueError("lease changed before committing PDCA wake")
+        if existing is None:
+            db.execute("INSERT INTO bounty_cycles VALUES (?,?,?)",
+                       (cycle_key, next_cycle.revision, json.dumps(vars(next_cycle), sort_keys=True)))
+        elif next_cycle.revision != current.revision:
+            db.execute("UPDATE bounty_cycles SET revision=?,state_json=? WHERE cycle_key=? AND revision=?",
+                       (next_cycle.revision, json.dumps(vars(next_cycle), sort_keys=True),
+                        cycle_key, current.revision))
         row = db.execute("SELECT * FROM tasks WHERE task_id=?", (persisted["taskId"],)).fetchone()
         db.commit()
     return store._task_from_row(row)
