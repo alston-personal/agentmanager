@@ -1,0 +1,35 @@
+name: Mio Oracle GUI Worker Session Preflight
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mio-gui-worker-session-preflight.yml'
+      - 'scripts/persona_gui_worker_preflight.py'
+permissions:
+  contents: read
+jobs:
+  read-only-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate GUI preflight fails closed
+        run: python3 -m unittest tests.test_persona_gui_worker_preflight -v
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe existing localhost browser transport without accessing profile data
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          REMOTE_SCRIPT="/tmp/mio-gui-preflight-${GITHUB_RUN_ID}.py"
+          scp -P "$PORT" -o StrictHostKeyChecking=accept-new scripts/persona_gui_worker_preflight.py "$TARGET:$REMOTE_SCRIPT"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "$TARGET" "python3 '$REMOTE_SCRIPT'; rm -f '$REMOTE_SCRIPT'"
