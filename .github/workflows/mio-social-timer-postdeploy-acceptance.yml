@@ -1,0 +1,46 @@
+name: Mio Social Timer Postdeploy Acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mio-social-timer-postdeploy-acceptance.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect recent completed social timer turns without replaying social writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY'
+          import json,subprocess
+          from datetime import datetime,timezone
+          cmd=["journalctl","--user","-u","agentos-persona-social-actions.service",
+               "--since","2026-10-17 16:15:00","--no-pager","-o","cat"]
+          p=subprocess.run(cmd,capture_output=True,text=True,timeout=20)
+          lines=p.stdout.splitlines()[-1500:] if p.returncode==0 else []
+          runtime=[s for s in lines if "persona_social_action_runtime=" in s]
+          errors=[s for s in lines if "AssertionError:" in s]
+          awaiting=[s for s in runtime if "PENDING_READBACK" in s]
+          report={"schema":"agentos.mio-social-timer-postdeploy/v1",
+                  "status":"PASS" if p.returncode==0 and runtime and not errors else "UNVERIFIED",
+                  "reason":"POSTDEPLOY_RUNTIME_CONFIRMED" if runtime and not errors else
+                           "POSTDEPLOY_ASSERTION_ERROR" if errors else "NO_RECENT_RUNTIME_RECEIPT",
+                  "runtime_receipt_count":len(runtime),
+                  "pending_readback_count":len(awaiting),
+                  "assertion_error_count":len(errors),
+                  "social_write_performed":False}
+          print("mio_social_timer_postdeploy_receipt="+json.dumps(report,sort_keys=True))
+          PY
