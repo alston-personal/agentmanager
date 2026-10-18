@@ -38,7 +38,7 @@ async function evaluate(wsUrl, expression, stage='unknown') {
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
       reject(new Error('cdp_runtime_timeout_'+stage));
-    }, 7000);
+    }, 15000);
     const finish = (fn, value) => {
       clearTimeout(timer);
       try { ws.close(); } catch {}
@@ -101,7 +101,21 @@ async function evaluate(wsUrl, expression, stage='unknown') {
     const wsUrl = String(current.webSocketDebuggerUrl || target.webSocketDebuggerUrl || '');
     if (!wsUrl) throw new Error('cdp_target_ws_missing');
 
-    const finalUrl = String(await evaluate(wsUrl, 'location.href', 'location') || '');
+    let finalUrl = '';
+    try {
+      finalUrl = String(await evaluate(wsUrl, 'location.href', 'location') || '');
+    } catch (err) {
+      // Distinguish a stalled Runtime.evaluate from a CDP transport failure.
+      // Read-only /json/list never reveals cookies, passwords or DM contents.
+      const targets = await fetchJson(BASE+'/json/list');
+      const matching = targets.find(x => String(x.id || '') === targetId);
+      const observed = String(matching?.url || '');
+      const stageError = String(err?.message || 'unknown').replace(/[^A-Za-z0-9_.:-]/g,'_').slice(0,100);
+      console.error('threads_web_dm_login_runtime_stage='+stageError);
+      console.error('threads_web_dm_login_target_url_state='+(
+        observed.startsWith('https://www.threads.com/') ? 'THREADS_NAVIGATED' : 'NOT_CONFIRMED'));
+      throw err;
+    }
     const lowUrl = finalUrl.toLowerCase();
 
     let state = 'UNKNOWN';
