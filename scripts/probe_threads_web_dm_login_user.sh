@@ -30,14 +30,14 @@ async function fetchJson(url, options={}) {
   }
 }
 
-async function evaluate(wsUrl, expression) {
+async function evaluate(wsUrl, expression, stage='unknown') {
   if (typeof WebSocket !== 'function') throw new Error('node_websocket_unavailable');
   return await new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
-      reject(new Error('cdp_runtime_timeout'));
+      reject(new Error('cdp_runtime_timeout_'+stage));
     }, 7000);
     const finish = (fn, value) => {
       clearTimeout(timer);
@@ -71,7 +71,7 @@ async function evaluate(wsUrl, expression) {
         }
         const doc = JSON.parse(raw);
         if (doc.id !== 1) return;
-        if (doc.error) return finish(reject, new Error('cdp_runtime_error'));
+        if (doc.error) return finish(reject, new Error('cdp_runtime_error_'+stage));
         const value = doc?.result?.result?.value;
         finish(resolve, value);
       } catch {
@@ -101,7 +101,7 @@ async function evaluate(wsUrl, expression) {
     const wsUrl = String(current.webSocketDebuggerUrl || target.webSocketDebuggerUrl || '');
     if (!wsUrl) throw new Error('cdp_target_ws_missing');
 
-    const finalUrl = String(await evaluate(wsUrl, 'location.href') || '');
+    const finalUrl = String(await evaluate(wsUrl, 'location.href', 'location') || '');
     const lowUrl = finalUrl.toLowerCase();
 
     let state = 'UNKNOWN';
@@ -122,7 +122,7 @@ async function evaluate(wsUrl, expression) {
         + 'a[href]:has(svg[aria-label*="profile" i]), '
         + 'a[href]:has(svg[aria-label*="個人檔案"]), '
         + '[role="navigation"] a[href^="/@"], nav a[href^="/@"]'
-      )).slice(0,20).map(a => a.getAttribute('href') || '')`);
+      )).slice(0,20).map(a => a.getAttribute('href') || '')`, 'profile_nav');
       const accounts = new Set();
       for (const raw of Array.isArray(hrefs) ? hrefs : []) {
         try {
@@ -142,7 +142,7 @@ async function evaluate(wsUrl, expression) {
       for (let i=0; i<4; i++) {
         body = String(await evaluate(
           wsUrl,
-          "(document.body ? document.body.innerText : '').slice(0,12000)",
+          "(document.body ? document.body.innerText : '').slice(0,12000)", 'login_text',
         ) || '');
         if (body.trim()) break;
         await sleep(750);
