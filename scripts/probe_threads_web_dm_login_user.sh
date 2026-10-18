@@ -54,7 +54,7 @@ async function evaluate(wsUrl, expression, stage='unknown', method='Runtime.eval
           expression,
           returnByValue: true,
           awaitPromise: true,
-        } : {url: expression},
+        } : method === 'Page.navigate' ? {url: expression} : {},
       }));
     });
     ws.addEventListener('message', async event => {
@@ -106,6 +106,9 @@ async function evaluate(wsUrl, expression, stage='unknown', method='Runtime.eval
 
     let finalUrl = '';
     try {
+      // Probe renderer target protocol before attempting JavaScript.
+      // A response here but no Runtime.evaluate response isolates Runtime domain.
+      await evaluate(wsUrl, '', 'blank_target', 'Page.getFrameTree');
       const blank = await evaluate(wsUrl, 'location.href', 'blank_runtime');
       if (blank !== 'about:blank') throw new Error('blank_runtime_unexpected_location');
       await evaluate(wsUrl, 'https://www.threads.com/messages', 'navigate', 'Page.navigate');
