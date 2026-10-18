@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_gui_live_home_diagnostic.py'
+      - 'scripts/probe_threads_web_dm_login_user.sh'
       - '.github/workflows/mio-gui-live-home-diagnostic.yml'
 permissions:
   contents: read
@@ -23,13 +24,13 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect Oracle GUI home pages without logging in or publishing
+      - name: Restore historical 9224 Mio account-bound GUI identity receipt
         shell: bash
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
           TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
           PORT="${DEPLOY_SSH_PORT:-22}"
-          REMOTE="/tmp/mio-gui-live-home-${GITHUB_RUN_ID}.py"
-          scp -P "$PORT" -o StrictHostKeyChecking=accept-new scripts/persona_gui_live_home_diagnostic.py "$TARGET:$REMOTE"
-          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "$TARGET" "python3 '$REMOTE'; rm -f '$REMOTE'"
+          REMOTE="/tmp/mio-identity-probe-${GITHUB_RUN_ID}.sh"
+          scp -P "$PORT" -o StrictHostKeyChecking=accept-new scripts/probe_threads_web_dm_login_user.sh "$TARGET:$REMOTE"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "$TARGET" "trap 'rm -f $REMOTE' EXIT; bash '$REMOTE'"
