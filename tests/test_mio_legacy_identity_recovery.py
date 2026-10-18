@@ -35,7 +35,7 @@ class MioLegacyIdentityRecoveryTest(unittest.TestCase):
         self.assertIn("'about:blank'),",source)
         self.assertIn("'blank_runtime'",source)
         self.assertIn("'Page.navigate'",source)
-        self.assertLess(source.index("'blank_runtime'"),source.index("'Page.navigate'"))
+        self.assertLess(source.index("'blank_runtime'"),source.index("await evaluate(wsUrl, 'https://www.threads.com/messages'"))
     def test_cdp_malformed_response_is_not_silently_ignored(self):
         source=Path("scripts/probe_threads_web_dm_login_user.sh").read_text(encoding="utf-8")
         self.assertIn("cdp_response_decode_error_'+stage",source)
