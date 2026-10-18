@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/persona_gui_live_home_diagnostic.py'
       - 'scripts/probe_threads_web_dm_login_user.sh'
+      - 'tests/test_mio_legacy_identity_recovery.py'
       - '.github/workflows/mio-gui-live-home-diagnostic.yml'
 permissions:
   contents: read
@@ -20,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate fail-closed classification
-        run: python3 -m unittest tests.test_persona_gui_live_home_diagnostic -v
+        run: python3 -m unittest tests.test_persona_gui_live_home_diagnostic tests.test_mio_legacy_identity_recovery -v
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
