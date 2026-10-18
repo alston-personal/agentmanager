@@ -73,11 +73,12 @@ async function evaluate(wsUrl, expression, stage='unknown', method='Runtime.eval
         }
         const doc = JSON.parse(raw);
         if (doc.id !== 1) return;
+        if (!doc.result && !doc.error) return finish(reject, new Error('cdp_response_missing_result_'+stage));
         if (doc.error) return finish(reject, new Error('cdp_runtime_error_'+stage));
         const value = method === 'Runtime.evaluate' ? doc?.result?.result?.value : doc?.result;
         finish(resolve, value);
-      } catch {
-        return;
+      } catch (err) {
+        return finish(reject, new Error('cdp_response_decode_error_'+stage));
       }
     });
     ws.addEventListener('error', () => finish(reject, new Error('cdp_websocket_error_'+stage)));
