@@ -61,6 +61,24 @@ jobs:
                   print(f"cdp_{port}_status=REACHABLE")
                   print(f"cdp_{port}_page_count={len(pages)}")
                   print(f"cdp_{port}_blank_count={sum(x.get('url')=='about:blank' for x in pages)}")
+                  if port == 9224:
+                      from urllib.parse import urlsplit
+                      from collections import Counter
+                      def kind(item):
+                          url=str(item.get('url') or '')
+                          if url == 'about:blank': return 'BLANK'
+                          try: parsed=urlsplit(url)
+                          except ValueError: return 'OTHER'
+                          if parsed.hostname not in ('www.threads.com','threads.com'): return 'OTHER'
+                          if parsed.path.rstrip('/') == '/messages': return 'THREADS_MESSAGES'
+                          if parsed.path.rstrip('/') in ('','/'): return 'THREADS_HOME'
+                          if parsed.path.startswith('/@'): return 'THREADS_PROFILE_OR_POST'
+                          return 'THREADS_OTHER'
+                      counts=Counter(kind(item) for item in pages)
+                      for category in ('THREADS_MESSAGES','THREADS_HOME','THREADS_PROFILE_OR_POST','THREADS_OTHER','BLANK','OTHER'):
+                          print(f'mio_9224_tab_class_{category}={counts[category]}')
+                      assert sum(counts.values()) == len(pages)
+
               except Exception:
                   print(f"cdp_{port}_status=UNAVAILABLE")
           PY
