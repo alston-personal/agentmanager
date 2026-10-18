@@ -1,0 +1,35 @@
+name: Mio Oracle Live GUI Threads Home Diagnostic
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/persona_gui_live_home_diagnostic.py'
+      - '.github/workflows/mio-gui-live-home-diagnostic.yml'
+permissions:
+  contents: read
+jobs:
+  browser-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      DEPLOY_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate fail-closed classification
+        run: python3 -m unittest tests.test_persona_gui_live_home_diagnostic -v
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Oracle GUI home pages without logging in or publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          REMOTE="/tmp/mio-gui-live-home-${GITHUB_RUN_ID}.py"
+          scp -P "$PORT" -o StrictHostKeyChecking=accept-new scripts/persona_gui_live_home_diagnostic.py "$TARGET:$REMOTE"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "$TARGET" "python3 '$REMOTE'; rm -f '$REMOTE'"
