@@ -35,3 +35,45 @@ jobs:
           REMOTE="/tmp/mio-identity-probe-${GITHUB_RUN_ID}.sh"
           scp -P "$PORT" -o StrictHostKeyChecking=accept-new scripts/probe_threads_web_dm_login_user.sh "$TARGET:$REMOTE"
           ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "$TARGET" "trap 'rm -f $REMOTE' EXIT; bash '$REMOTE'"
+      - name: Inspect existing 9224 Chromium and Mio supervisor after identity probe
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "$TARGET" 'bash -s' <<'REMOTE'
+          set -u
+          echo "mio_renderer_diagnostic=START"
+          for unit in agentos-gui-browser.service mio-threads-session-supervisor.timer mio-threads-session-supervisor.service; do
+            state="$(systemctl --user is-active "$unit" 2>/dev/null || true)"
+            case "$state" in active|inactive|failed|activating|deactivating) ;; *) state=unknown;; esac
+            echo "unit_${unit//[^a-zA-Z0-9]/_}=$state"
+          done
+          python3 - <<'PY'
+          import json,urllib.request
+          for port in (9222,9223,9224):
+              try:
+                  with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list",timeout=4) as f:
+                      targets=json.load(f)
+                  pages=[x for x in targets if x.get("type")=="page"]
+                  print(f"cdp_{port}_status=REACHABLE")
+                  print(f"cdp_{port}_page_count={len(pages)}")
+                  print(f"cdp_{port}_blank_count={sum(x.get('url')=='about:blank' for x in pages)}")
+              except Exception:
+                  print(f"cdp_{port}_status=UNAVAILABLE")
+          PY
+          STATE=/home/ubuntu/agent-data/runtime/mio-threads-session-supervisor/status.json
+          if test -r "$STATE"; then
+            python3 - "$STATE" <<'PY'
+          import json,sys
+          try:
+              state=json.load(open(sys.argv[1]))
+              status=str(state.get("session_state") or "UNKNOWN")
+              print("mio_supervisor_state="+(status if status in {"AUTHENTICATED","LOGIN_REQUIRED","BLOCKED","UNKNOWN","PROBE_ERROR"} else "OTHER"))
+          except Exception: print("mio_supervisor_state=INVALID")
+          PY
+          else echo 'mio_supervisor_state=NOT_PRESENT'; fi
+          echo "mio_renderer_diagnostic=DONE"
+          REMOTE
