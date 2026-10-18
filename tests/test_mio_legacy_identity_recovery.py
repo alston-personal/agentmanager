@@ -18,7 +18,7 @@ class MioLegacyIdentityRecoveryTest(unittest.TestCase):
         if not shutil.which("node"):
             self.skipTest("node executable unavailable")
         source=Path("scripts/probe_threads_web_dm_login_user.sh").read_text(encoding="utf-8")
-        js=source.split("<<'JS'\\n",1)[1].rsplit("\\nJS",1)[0]
+        js=source.split("<<'JS'\n",1)[1].rsplit("\nJS",1)[0]
         result=subprocess.run(["node","--check"],input=js,text=True,capture_output=True)
         self.assertEqual(result.returncode,0,result.stderr)
     def test_runtime_stall_is_stage_specific_without_cookie_access(self):
