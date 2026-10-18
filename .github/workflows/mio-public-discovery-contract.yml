@@ -10,6 +10,8 @@ on:
       - 'scripts/persona_gui_live_home_diagnostic.py'
       - 'scripts/probe_threads_web_dm_login_user.sh'
       - 'tests/test_mio_legacy_identity_recovery.py'
+      - 'tests/test_mio_9224_tab_classification_workflow.py'
+      - '.github/workflows/mio-gui-live-home-diagnostic.yml'
       - 'tests/test_persona_gui_live_home_diagnostic.py'
       - 'tests/test_persona_gui_identity_gate.py'
       - 'scripts/persona_vendor_public_source.py'
@@ -52,7 +54,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Validate bounded no-write public discovery projection
-        run: python3 -m unittest tests.test_persona_public_discovery_contract tests.test_persona_threads_keyword_probe tests.test_persona_social_discovery_triage tests.test_persona_keyword_social_runtime_bridge tests.test_persona_keyword_node_diagnostic tests.test_persona_keyword_scope_check tests.test_persona_for_you_observation tests.test_persona_gui_identity_gate tests.test_persona_gui_live_home_diagnostic tests.test_mio_legacy_identity_recovery tests.test_persona_vendor_public_source -v
+        run: python3 -m unittest tests.test_persona_public_discovery_contract tests.test_persona_threads_keyword_probe tests.test_persona_social_discovery_triage tests.test_persona_keyword_social_runtime_bridge tests.test_persona_keyword_node_diagnostic tests.test_persona_keyword_scope_check tests.test_persona_for_you_observation tests.test_persona_gui_identity_gate tests.test_persona_gui_live_home_diagnostic tests.test_mio_legacy_identity_recovery tests.test_mio_9224_tab_classification_workflow tests.test_persona_vendor_public_source -v
       - name: Compile Oracle Vendor Reader embedded Python before merge
         run: |
           python3 - <<'PY'
