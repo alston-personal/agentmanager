@@ -40,6 +40,12 @@ class MioLegacyIdentityRecoveryTest(unittest.TestCase):
         source=Path("scripts/probe_threads_web_dm_login_user.sh").read_text(encoding="utf-8")
         self.assertIn("cdp_response_decode_error_'+stage",source)
         self.assertIn("cdp_response_missing_result_'+stage",source)
+    def test_target_protocol_checked_before_runtime(self):
+        source=Path("scripts/probe_threads_web_dm_login_user.sh").read_text(encoding="utf-8")
+        self.assertIn("'Page.getFrameTree'",source)
+        self.assertIn("'blank_target'",source)
+        self.assertLess(source.index("'Page.getFrameTree'"),source.index("'blank_runtime'"))
+        self.assertIn("method === 'Page.navigate' ? {url: expression} : {}",source)
     def test_existing_oracle_workflow_executes_recovered_probe(self):
         workflow=Path(".github/workflows/mio-gui-live-home-diagnostic.yml").read_text(encoding="utf-8")
         self.assertIn("scripts/probe_threads_web_dm_login_user.sh",workflow)
