@@ -30,6 +30,12 @@ class MioLegacyIdentityRecoveryTest(unittest.TestCase):
         self.assertIn("threads_web_dm_login_target_url_state=",source)
         self.assertIn("}, 15000);",source)
         self.assertNotIn("document.cookie",source)
+    def test_blank_target_before_threads_navigation(self):
+        source=Path("scripts/probe_threads_web_dm_login_user.sh").read_text(encoding="utf-8")
+        self.assertIn("'about:blank'),",source)
+        self.assertIn("'blank_runtime'",source)
+        self.assertIn("'Page.navigate'",source)
+        self.assertLess(source.index("'blank_runtime'"),source.index("'Page.navigate'"))
     def test_existing_oracle_workflow_executes_recovered_probe(self):
         workflow=Path(".github/workflows/mio-gui-live-home-diagnostic.yml").read_text(encoding="utf-8")
         self.assertIn("scripts/probe_threads_web_dm_login_user.sh",workflow)
