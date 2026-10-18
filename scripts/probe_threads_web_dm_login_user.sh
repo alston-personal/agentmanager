@@ -35,9 +35,10 @@ async function evaluate(wsUrl, expression, stage='unknown') {
   return await new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
+    let phase = 'CONNECTING';
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
-      reject(new Error('cdp_runtime_timeout_'+stage));
+      reject(new Error('cdp_'+phase.toLowerCase()+'_timeout_'+stage));
     }, 15000);
     const finish = (fn, value) => {
       clearTimeout(timer);
@@ -45,6 +46,7 @@ async function evaluate(wsUrl, expression, stage='unknown') {
       fn(value);
     };
     ws.addEventListener('open', () => {
+      phase = 'AWAITING_RESPONSE';
       ws.send(JSON.stringify({
         id: 1,
         method: 'Runtime.evaluate',
@@ -78,7 +80,8 @@ async function evaluate(wsUrl, expression, stage='unknown') {
         return;
       }
     });
-    ws.addEventListener('error', () => finish(reject, new Error('cdp_websocket_error')));
+    ws.addEventListener('error', () => finish(reject, new Error('cdp_websocket_error_'+stage)));
+    ws.addEventListener('close', () => finish(reject, new Error('cdp_websocket_closed_'+stage)));
   });
 }
 
