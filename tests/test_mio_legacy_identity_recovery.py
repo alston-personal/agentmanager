@@ -23,7 +23,9 @@ class MioLegacyIdentityRecoveryTest(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
     def test_runtime_stall_is_stage_specific_without_cookie_access(self):
         source=Path("scripts/probe_threads_web_dm_login_user.sh").read_text(encoding="utf-8")
-        self.assertIn("cdp_runtime_timeout_'+stage",source)
+        self.assertIn("cdp_'+phase.toLowerCase()+'_timeout_'+stage",source)
+        self.assertIn("phase = 'CONNECTING'",source)
+        self.assertIn("phase = 'AWAITING_RESPONSE'",source)
         self.assertIn("threads_web_dm_login_runtime_stage=",source)
         self.assertIn("threads_web_dm_login_target_url_state=",source)
         self.assertIn("}, 15000);",source)
