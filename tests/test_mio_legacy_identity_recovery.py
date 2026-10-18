@@ -12,6 +12,13 @@ class MioLegacyIdentityRecoveryTest(unittest.TestCase):
         self.assertIn("/json/close/",source)
         for unsafe in ("document.cookie","localStorage.getItem","sendMessage(","textarea.value"):
             self.assertNotIn(unsafe,source)
+    def test_runtime_stall_is_stage_specific_without_cookie_access(self):
+        source=Path("scripts/probe_threads_web_dm_login_user.sh").read_text(encoding="utf-8")
+        self.assertIn("cdp_runtime_timeout_'+stage",source)
+        self.assertIn("threads_web_dm_login_runtime_stage=",source)
+        self.assertIn("threads_web_dm_login_target_url_state=",source)
+        self.assertIn("}, 15000);",source)
+        self.assertNotIn("document.cookie",source)
     def test_existing_oracle_workflow_executes_recovered_probe(self):
         workflow=Path(".github/workflows/mio-gui-live-home-diagnostic.yml").read_text(encoding="utf-8")
         self.assertIn("scripts/probe_threads_web_dm_login_user.sh",workflow)
