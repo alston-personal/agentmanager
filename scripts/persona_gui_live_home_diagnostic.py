@@ -21,6 +21,28 @@ def classify(*, final_url, http_status, page_title, visible_login):
         return "AUTH_REQUIRED","LOGIN_UI_PRESENT"
     return "UNVERIFIED","SIGNED_IN_IDENTITY_UNPROVEN"
 
+
+def classify_profile_nav(hrefs):
+    """A visible dedicated Profile nav is evidence, not proof of account ownership."""
+    import re
+    if not isinstance(hrefs,list):
+        return "IDENTITY_UNVERIFIED",None
+    candidates=set()
+    for href in hrefs[:20]:
+        if not isinstance(href,str):
+            continue
+        parsed=urlsplit(href)
+        if parsed.scheme=="https" and parsed.hostname in ("www.threads.com","threads.com"):
+            m=re.fullmatch(r"/@([A-Za-z0-9._]{1,40})/?",parsed.path)
+            if m:
+                candidates.add(m.group(1).lower())
+    if len(candidates)!=1:
+        return "IDENTITY_UNVERIFIED",None
+    handle=next(iter(candidates))
+    if handle!="mio.milkcat":
+        return "ACCOUNT_MISMATCH",None
+    return "PROFILE_NAV_MATCH_ONLY",handle
+
 async def inspect_one(playwright,port):
     row={"port":port,"status":"BLOCKED","reason":"CDP_OR_NAVIGATION_UNAVAILABLE",
          "http_status":None,"identity_verified":False,"for_you_read_verified":False,
@@ -45,6 +67,29 @@ async def inspect_one(playwright,port):
             page_title="",visible_login=login)
         row.update(status=status,reason=reason,
                    http_status=response.status if response else None)
+        if status=="UNVERIFIED":
+            # Use only visible dedicated Profile/個人檔案 navigation controls.
+            # Never interpret arbitrary post/profile links as signed-in identity.
+            links=await page.locator('a[aria-label="Profile"],a[aria-label="個人檔案"],a[aria-label="個人資料"],a[title="Profile"]').evaluate_all(
+                "(els) => els.slice(0,20).map(a => a.href)")
+            signal,handle=classify_profile_nav(links)
+            row["account_signal"]=signal
+            if signal=="ACCOUNT_MISMATCH":
+                row.update(status="ACCOUNT_MISMATCH",reason="FOREIGN_PROFILE_NAV")
+            elif signal=="PROFILE_NAV_MATCH_ONLY":
+                row.update(status="UNVERIFIED",reason="PROFILE_NAV_MATCH_NEEDS_IDENTITY_RECEIPT")
+                row["mio_profile_nav_seen"]=True
+                # Snapshot external post links only; do not pretend this is an
+                # authenticated for_you.read receipt or authorize interactions.
+                links=await page.locator('a[href*="/post/"]').evaluate_all(
+                    "(els) => els.slice(0,100).map(a => a.href)")
+                import re
+                urls=sorted(set(u for u in links if isinstance(u,str) and
+                    re.fullmatch(r"https://www\\.threads\\.com/@[A-Za-z0-9._]{1,40}/post/[A-Za-z0-9_-]{1,40}",u) and
+                    not u.lower().startswith("https://www.threads.com/@mio.milkcat/")))
+                row["candidate_count"]=min(len(urls),20)
+                row["candidate_urls"]=urls[:20]
+
     except Exception:
         row["reason"]="CDP_OR_NAVIGATION_UNAVAILABLE"
     finally:
