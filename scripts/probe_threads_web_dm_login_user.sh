@@ -30,7 +30,7 @@ async function fetchJson(url, options={}) {
   }
 }
 
-async function evaluate(wsUrl, expression, stage='unknown') {
+async function evaluate(wsUrl, expression, stage='unknown', method='Runtime.evaluate') {
   if (typeof WebSocket !== 'function') throw new Error('node_websocket_unavailable');
   return await new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
@@ -49,12 +49,12 @@ async function evaluate(wsUrl, expression, stage='unknown') {
       phase = 'AWAITING_RESPONSE';
       ws.send(JSON.stringify({
         id: 1,
-        method: 'Runtime.evaluate',
-        params: {
+        method,
+        params: method === 'Runtime.evaluate' ? {
           expression,
           returnByValue: true,
           awaitPromise: true,
-        },
+        } : {url: expression},
       }));
     });
     ws.addEventListener('message', async event => {
@@ -74,7 +74,7 @@ async function evaluate(wsUrl, expression, stage='unknown') {
         const doc = JSON.parse(raw);
         if (doc.id !== 1) return;
         if (doc.error) return finish(reject, new Error('cdp_runtime_error_'+stage));
-        const value = doc?.result?.result?.value;
+        const value = method === 'Runtime.evaluate' ? doc?.result?.result?.value : doc?.result;
         finish(resolve, value);
       } catch {
         return;
@@ -92,13 +92,12 @@ async function evaluate(wsUrl, expression, stage='unknown') {
     if (!meta.webSocketDebuggerUrl) throw new Error('cdp_unavailable');
 
     const target = await fetchJson(
-      BASE+'/json/new?'+encodeURIComponent('https://www.threads.com/messages'),
+      BASE+'/json/new?'+encodeURIComponent('about:blank'),
       {method:'PUT'},
     );
     targetId = String(target.id || '');
     if (!targetId || !target.webSocketDebuggerUrl) throw new Error('cdp_target_create_failed');
 
-    await sleep(3000);
     const items = await fetchJson(BASE+'/json/list');
     const current = items.find(x => String(x.id || '') === targetId) || target;
     const wsUrl = String(current.webSocketDebuggerUrl || target.webSocketDebuggerUrl || '');
@@ -106,6 +105,10 @@ async function evaluate(wsUrl, expression, stage='unknown') {
 
     let finalUrl = '';
     try {
+      const blank = await evaluate(wsUrl, 'location.href', 'blank_runtime');
+      if (blank !== 'about:blank') throw new Error('blank_runtime_unexpected_location');
+      await evaluate(wsUrl, 'https://www.threads.com/messages', 'navigate', 'Page.navigate');
+      await sleep(3000);
       finalUrl = String(await evaluate(wsUrl, 'location.href', 'location') || '');
     } catch (err) {
       // Distinguish a stalled Runtime.evaluate from a CDP transport failure.
