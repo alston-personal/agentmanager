@@ -152,3 +152,35 @@ except ValueError:
                 if p.poll() is None:
                     p.kill()
                     p.wait()
+
+
+def test_expired_lease_reclaim_persists_and_fences_old_executor():
+    """A crashed owner is reclaimed durably; stale owner cannot claim again."""
+    import importlib.util
+    import sys
+    import tempfile
+    import pytest
+    spec = importlib.util.spec_from_file_location("wc_recovery_test", ROOT / "scripts" / "work_completion.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "items.json"
+        module.register(path, work_id="recover", project_id="test", title="Recovery",
+                        owner="role://lobster", next_action="safe inspect", acceptance=["reclaimed"])
+        module.transition(path, work_id="recover", target="in_progress", actor="role://lobster",
+                          expected_owner="role://lobster")
+        with module.locked(path):
+            state = module.load(path)
+            state["items"]["recover"]["lease_expires_at"] = "2020-01-01T00:00:00+00:00"
+            module.save(path, state)
+        assert module.reclaim_stale(path) == ["recover"]
+        item = module.load(path)["items"]["recover"]
+        assert item["owner"] == "role://completion.controller"
+        assert item["owner_generation"] == 2
+        assert item["status"] == "in_progress"
+        assert item["history"][-1]["event"] == "stale_reclaim"
+        with pytest.raises(PermissionError, match="work_item_owner_changed"):
+            module.transition(path, work_id="recover", target="in_progress",
+                              actor="role://lobster", expected_owner="role://lobster")
+        assert module.reclaim_stale(path) == []
