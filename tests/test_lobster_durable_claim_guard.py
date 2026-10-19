@@ -195,3 +195,21 @@ def test_fallback_status_file_path_also_claim_gated():
     guard = fallback.index("if durable_id and work_id != durable_id:")
     execute = fallback.index("run_with_inspector(")
     assert claim < guard < execute
+
+
+def test_uncertain_reclaimed_work_never_becomes_auto_runnable():
+    import importlib.util
+    import sys
+    spec = importlib.util.spec_from_file_location("wc_disposition_test", ROOT / "scripts" / "work_completion.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    item = {"status": "in_progress", "history": [
+        {"event": "registered"}, {"event": "stale_reclaim"}]}
+    assert module.recovery_disposition(item) == "needs_receipt_reconciliation"
+    item["status"] = "verifying"
+    assert module.recovery_disposition(item) == "needs_receipt_reconciliation"
+    item["status"] = "accepted"
+    assert module.recovery_disposition(item) == "eligible_for_governed_dispatch"
+    item["status"] = "blocked"
+    assert module.recovery_disposition(item) == "blocked"
