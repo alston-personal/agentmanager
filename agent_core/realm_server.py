@@ -167,6 +167,15 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     time.sleep(0.05)
                 self._send(200, {'ok': True, 'tasks': tasks, 'waited': wait_seconds > 0})
                 return
+            if parsed.path == '/v1/participants/protocol':
+                self._send(200, {
+                    'ok': True,
+                    'schema': 'agentos.participant-protocol-discovery/v1',
+                    'protocol': 'agentos-participant',
+                    'supported_versions': ['1.0'],
+                    'required_methods': ['describe', 'probe', 'invoke', 'status', 'receipt', 'shutdown'],
+                })
+                return
             if parsed.path == '/v1/participants/describe':
                 query = parse_qs(parsed.query)
                 participant_id = (query.get('participant_id') or [''])[0]
