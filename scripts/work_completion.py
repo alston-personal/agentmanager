@@ -291,14 +291,19 @@ def transition(
     evidence: list[str] | None = None,
     verification: str | None = None,
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    expected_owner: str | None = None,
 ) -> dict[str, Any]:
     with locked(path):
         state = load(path)
         item = state["items"].get(work_id)
         if not item:
             raise KeyError("work_item_not_found")
+        if expected_owner is not None and str(item.get("owner") or "") != expected_owner:
+            raise PermissionError("work_item_owner_changed")
         current = str(item["status"])
         if target == current:
+            if expected_owner is not None and target == "in_progress":
+                raise ValueError("work_item_already_claimed")
             return item
         if target not in ALLOWED.get(current, set()):
             raise ValueError(f"invalid_transition:{current}->{target}")
@@ -609,6 +614,26 @@ def reclaim_stale(
     return reclaimed
 
 
+def recovery_disposition(item: dict[str, Any]) -> str:
+    """Conservative post-reclaim decision; never replay uncertain side effects."""
+    if item.get("status") in TERMINAL:
+        return "terminal"
+    history = item.get("history") or []
+    # A subsequent heartbeat/inspection must not erase the recovery fence.
+    # Only a newly governed lifecycle transition can resolve uncertain work.
+    reclaimed = any(
+        isinstance(event, dict) and event.get("event") == "stale_reclaim"
+        for event in history
+    ) and str(item.get("owner") or "") == "role://completion.controller"
+    if reclaimed and item.get("status") in {"in_progress", "verifying"}:
+        return "needs_receipt_reconciliation"
+    if item.get("status") == "blocked":
+        return "blocked"
+    if item.get("status") == "accepted":
+        return "eligible_for_governed_dispatch"
+    return "not_runnable_without_reconciliation"
+
+
 def next_item(path: Path, *, include_blocked: bool = False) -> dict[str, Any] | None:
     state = load(path)
     candidates = []
@@ -619,6 +644,10 @@ def next_item(path: Path, *, include_blocked: bool = False) -> dict[str, Any] | 
         if status == "waiting_external":
             continue
         if status == "blocked" and not include_blocked:
+            continue
+        # Reclaimed in-flight work may already have side effects. Never offer
+        # it as the next executable item until authoritative receipt review.
+        if recovery_disposition(item) == "needs_receipt_reconciliation":
             continue
         candidates.append(item)
     if not candidates:
