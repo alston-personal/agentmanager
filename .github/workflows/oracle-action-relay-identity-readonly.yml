@@ -68,7 +68,7 @@ jobs:
           for entry in Path("/proc").iterdir():
               if not entry.name.isdigit(): continue
               try:
-                  cmd=(entry/"cmdline").read_bytes().replace(b"\0",b" ").decode("utf-8","replace")
+                  cmd=" ".join(part.decode("utf-8", "replace") for part in (entry/"cmdline").read_bytes().split(b"\0"))
                   if "agentos_node.action_relay" not in cmd or "python" not in cmd: continue
                   status=(entry/"status").read_text(encoding="utf-8",errors="replace")
                   uid=next((x.split()[1] for x in status.splitlines() if x.startswith("Uid:")),"unknown")
