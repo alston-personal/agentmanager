@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - 'libs/model2ir/**'
+      - 'scripts/model2ir_stabilized_import_regression.py'
       - 'scripts/model2ir_vrm_topology_regression.py'
       - '.github/workflows/model2ir-vrm-topology-v06.yml'
   push:
     branches: [main]
     paths:
       - 'libs/model2ir/**'
+      - 'scripts/model2ir_stabilized_import_regression.py'
       - 'scripts/model2ir_vrm_topology_regression.py'
       - '.github/workflows/model2ir-vrm-topology-v06.yml'
   workflow_dispatch:
@@ -73,3 +75,4 @@ jobs:
           path: /tmp/model2ir-v06/
           if-no-files-found: error
           retention-days: 30
+
