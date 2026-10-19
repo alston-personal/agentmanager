@@ -184,3 +184,14 @@ def test_expired_lease_reclaim_persists_and_fences_old_executor():
             module.transition(path, work_id="recover", target="in_progress",
                               actor="role://lobster", expected_owner="role://lobster")
         assert module.reclaim_stale(path) == []
+
+
+def test_fallback_status_file_path_also_claim_gated():
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+    functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    fallback = ast.unparse(functions["process_project"])
+    assert "if '[WI:' in task['text']" in fallback
+    claim = fallback.index("work_id = completion_begin(task['text'])")
+    guard = fallback.index("if durable_id and work_id != durable_id:")
+    execute = fallback.index("run_with_inspector(")
+    assert claim < guard < execute
