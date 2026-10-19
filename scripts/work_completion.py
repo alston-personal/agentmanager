@@ -619,8 +619,12 @@ def recovery_disposition(item: dict[str, Any]) -> str:
     if item.get("status") in TERMINAL:
         return "terminal"
     history = item.get("history") or []
-    reclaimed = bool(history and isinstance(history[-1], dict)
-                     and history[-1].get("event") == "stale_reclaim")
+    # A subsequent heartbeat/inspection must not erase the recovery fence.
+    # Only a newly governed lifecycle transition can resolve uncertain work.
+    reclaimed = any(
+        isinstance(event, dict) and event.get("event") == "stale_reclaim"
+        for event in history
+    ) and str(item.get("owner") or "") == "role://completion.controller"
     if reclaimed and item.get("status") in {"in_progress", "verifying"}:
         return "needs_receipt_reconciliation"
     if item.get("status") == "blocked":
