@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 concurrency:
   group: golden-path-oracle-exec-install-acceptance
@@ -41,6 +42,7 @@ jobs:
           echo "::add-mask::$token"
           printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
       - name: Install pinned oracle-exec runtime via ONE
+        id: install
         shell: bash
         env:
           AGENTOS_DISPATCH_WAIT_SECONDS: '420'
@@ -62,6 +64,7 @@ jobs:
           print('oracle_exec_install_terminal=PASS')
           PY
       - name: Inspect fresh node runtime provenance
+        id: inspect
         shell: bash
         env:
           AGENTOS_DISPATCH_WAIT_SECONDS: '120'
@@ -93,3 +96,23 @@ jobs:
             ${{ runner.temp }}/oracle-inspect.txt
           if-no-files-found: warn
           retention-days: 14
+      - name: Record terminal acceptance on canonical Supervisor issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const install = '${{ steps.install.outcome }}';
+            const inspect = '${{ steps.inspect.outcome }}';
+            const verdict = install === 'success' && inspect === 'success' ? 'PASS' : 'BLOCKED';
+            const text = [
+              'Golden Path oracle-exec pinned runtime acceptance: ' + verdict,
+              'Run: ' + context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId,
+              'Commit: ' + context.sha,
+              'Install step: ' + install,
+              'Independent Node inspect step: ' + inspect,
+              'PASS requires terminal install receipt plus fresh node-reported exact SHA. This does not close A→B→C.',
+            ].join('\\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: 200, body: text,
+            });
