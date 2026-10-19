@@ -61,6 +61,8 @@ EXECUTOR_JOB_RECEIPT_FIELDS = (
     'completion_waiting_count', 'completion_unreconciled_count',
     'completion_target_verified', 'completion_wake_not_before',
     'completion_wake_overdue', 'completion_wait_reason_category',
+    'completion_last_event_category', 'completion_recent_wake_count',
+    'completion_recent_reclaim_count', 'completion_target_reclaimed',
 )
 
 

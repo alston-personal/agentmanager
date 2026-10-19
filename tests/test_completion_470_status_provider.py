@@ -114,3 +114,44 @@ def test_invalid_wait_condition_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(p, "STATE", state)
     result = p.inspect_completion_470(canonical_executor_job_request(p.JOB_TYPE))
     assert result["verdict"] == "FAIL"
+
+
+def test_history_counters_bounded_without_raw_event_leak(tmp_path, monkeypatch):
+    state = tmp_path / "work-items.json"
+    state.write_text(json.dumps({"items": {p.TARGET: {
+        "status": "waiting_external",
+        "wake_condition": {"kind": "time", "not_before": "2030-01-01T00:00:00+00:00"},
+        "history": [
+            {"event": "stale_reclaim", "private": "secret-row"},
+            {"event": "wake", "reason": "private-user-data"},
+            {"event": "wait_external", "reason": "private-provider"},
+        ]
+    }}}))
+    monkeypatch.setattr(p, "STATE", state)
+    req = canonical_executor_job_request(p.JOB_TYPE)
+    result = _sanitize_provider_result(p.inspect_completion_470(req))
+    receipt = project_executor_job_receipt(
+        job_id="action_470_history_probe", request=req,
+        executor_available=True, routable=True, authorized=True,
+        successful=True, result=result,
+    )
+    assert receipt["completion_last_event_category"] == "wait_external"
+    assert receipt["completion_recent_wake_count"] == 1
+    assert receipt["completion_recent_reclaim_count"] == 1
+    assert receipt["completion_target_reclaimed"] is True
+    assert "private" not in json.dumps(receipt)
+    assert "secret-row" not in json.dumps(receipt)
+
+
+def test_ancient_reclaim_not_treated_as_recent(tmp_path, monkeypatch):
+    state = tmp_path / "work-items.json"
+    history = [{"event": "stale_reclaim"}] + [{"event": "heartbeat"} for _ in range(100)]
+    state.write_text(json.dumps({"items": {p.TARGET: {
+        "status": "waiting_external",
+        "wake_condition": {"kind": "time", "not_before": "2030-01-01T00:00:00+00:00"},
+        "history": history,
+    }}}))
+    monkeypatch.setattr(p, "STATE", state)
+    result = p.inspect_completion_470(canonical_executor_job_request(p.JOB_TYPE))
+    assert result["completion_recent_reclaim_count"] == 0
+    assert result["completion_target_reclaimed"] is False
