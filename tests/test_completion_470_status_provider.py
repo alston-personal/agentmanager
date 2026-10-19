@@ -141,3 +141,17 @@ def test_history_counters_bounded_without_raw_event_leak(tmp_path, monkeypatch):
     assert receipt["completion_target_reclaimed"] is True
     assert "private" not in json.dumps(receipt)
     assert "secret-row" not in json.dumps(receipt)
+
+
+def test_ancient_reclaim_not_treated_as_recent(tmp_path, monkeypatch):
+    state = tmp_path / "work-items.json"
+    history = [{"event": "stale_reclaim"}] + [{"event": "heartbeat"} for _ in range(100)]
+    state.write_text(json.dumps({"items": {p.TARGET: {
+        "status": "waiting_external",
+        "wake_condition": {"kind": "time", "not_before": "2030-01-01T00:00:00+00:00"},
+        "history": history,
+    }}}))
+    monkeypatch.setattr(p, "STATE", state)
+    result = p.inspect_completion_470(canonical_executor_job_request(p.JOB_TYPE))
+    assert result["completion_recent_reclaim_count"] == 0
+    assert result["completion_target_reclaimed"] is False
