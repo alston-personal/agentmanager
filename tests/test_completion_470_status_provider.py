@@ -52,3 +52,32 @@ def test_provider_registration():
     registry = ExecutorJobProviderRegistry()
     assert p.register_completion_470_status_provider(registry)
     assert registry.get(p.JOB_TYPE).provider_id == p.PROVIDER_ID
+
+
+def test_one_receipt_roundtrip_preserves_bounded_status(tmp_path, monkeypatch):
+    state = tmp_path / "work-items.json"
+    state.write_text(json.dumps({"items": {
+        p.TARGET: {"status": "waiting_external", "owner": "role://completion.controller",
+                   "owner_generation": 284, "next_action": "PRIVATE ACTION"},
+        "blocked": {"status": "blocked", "workspace": "/private/path"},
+    }}), encoding="utf-8")
+    monkeypatch.setattr(p, "STATE", state)
+    req = canonical_executor_job_request(p.JOB_TYPE)
+    result = _sanitize_provider_result(p.inspect_completion_470(req))
+    receipt = project_executor_job_receipt(
+        job_id="action_470_status_probe",
+        request=req,
+        executor_available=True,
+        routable=True,
+        authorized=True,
+        successful=result["verdict"] == "PASS",
+        result=result,
+    )
+    assert receipt["completion_status"] == "waiting_external"
+    assert receipt["completion_owner_generation"] == 284
+    assert receipt["completion_blocked_count"] == 1
+    assert receipt["completion_waiting_count"] == 1
+    assert receipt["completion_target_verified"] is False
+    serialized = json.dumps(receipt)
+    assert "PRIVATE ACTION" not in serialized
+    assert "/private/path" not in serialized
