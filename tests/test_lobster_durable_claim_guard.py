@@ -55,3 +55,46 @@ def test_completion_begin_behavioral_claim_fencing():
     api.load.return_value = {"items": {}}
     assert begin("[WI:a] missing") is None
     api.transition.assert_not_called()
+
+
+def test_real_ledger_claim_is_single_winner_and_owner_fenced():
+    """Two competing claim attempts must not both transition accepted -> running."""
+    import importlib.util
+    import sys
+    import tempfile
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    spec = importlib.util.spec_from_file_location("work_completion_guard_test", ROOT / "scripts" / "work_completion.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    with tempfile.TemporaryDirectory() as td:
+        ledger = Path(td) / "items.json"
+        module.register(ledger, work_id="race", project_id="test", title="Claim race",
+                        owner="role://lobster", next_action="read-only probe",
+                        acceptance=["one winner"])
+        start = Barrier(2)
+        def attempt():
+            start.wait()
+            try:
+                module.transition(ledger, work_id="race", target="in_progress",
+                                  actor="role://lobster", expected_owner="role://lobster")
+                return "won"
+            except ValueError:
+                return "lost"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(attempt) for _ in range(2)]
+            results = [f.result(timeout=10) for f in futures]
+        assert sorted(results) == ["lost", "won"]
+        assert module.load(ledger)["items"]["race"]["status"] == "in_progress"
+
+        # Simulate an existing owner handoff before an attempted stale claim.
+        ledger2 = Path(td) / "foreign.json"
+        module.register(ledger2, work_id="foreign", project_id="test", title="Foreign",
+                        owner="role://another", next_action="read-only probe",
+                        acceptance=["fenced"])
+        import pytest
+        with pytest.raises(PermissionError, match="work_item_owner_changed"):
+            module.transition(ledger2, work_id="foreign", target="in_progress",
+                              actor="role://lobster", expected_owner="role://lobster")
+        assert module.load(ledger2)["items"]["foreign"]["status"] == "accepted"
