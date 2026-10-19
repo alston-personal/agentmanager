@@ -499,6 +499,8 @@ def project_executor_job_receipt(
             "completion_recent_wake_count",
             "completion_recent_reclaim_count",
             "completion_target_reclaimed",
+    "completion_machine_blocker_kind",
+    "completion_machine_retry_count",
             "completion_wait_reason_category",
         ):
             value = result.get(key)
