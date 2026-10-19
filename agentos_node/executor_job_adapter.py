@@ -103,6 +103,8 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "completion_recent_wake_count",
     "completion_recent_reclaim_count",
     "completion_target_reclaimed",
+    "completion_last_blocker_kind",
+    "completion_machine_retry_count",
     "completion_wait_reason_category",
 )
 _PROVIDER_STATE_FIELDS = (
