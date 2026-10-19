@@ -213,3 +213,33 @@ def test_uncertain_reclaimed_work_never_becomes_auto_runnable():
     assert module.recovery_disposition(item) == "eligible_for_governed_dispatch"
     item["status"] = "blocked"
     assert module.recovery_disposition(item) == "blocked"
+
+
+def test_next_item_skips_uncertain_reclaimed_work_without_starving_safe_candidate():
+    import importlib.util
+    import sys
+    import tempfile
+    spec = importlib.util.spec_from_file_location("wc_select_recovery_test", ROOT / "scripts" / "work_completion.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "ledger.json"
+        for wid in ("uncertain", "safe"):
+            module.register(path, work_id=wid, project_id="test", title=wid,
+                            owner="role://completion.controller", next_action="inspect",
+                            acceptance=["no duplicate side effect"])
+        with module.locked(path):
+            state = module.load(path)
+            item = state["items"]["uncertain"]
+            item["status"] = "in_progress"
+            item["history"].append({"event": "stale_reclaim"})
+            module.save(path, state)
+        assert module.next_item(path)["work_id"] == "safe"
+        with module.locked(path):
+            state = module.load(path)
+            state["items"]["safe"]["status"] = "done"
+            state["items"]["safe"]["evidence"] = ["verified"]
+            state["items"]["safe"]["verification"] = {"status": "passed"}
+            module.save(path, state)
+        assert module.next_item(path) is None
