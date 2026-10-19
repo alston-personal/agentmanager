@@ -99,6 +99,10 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "completion_target_verified",
     "completion_wake_not_before",
     "completion_wake_overdue",
+    "completion_last_event_category",
+    "completion_recent_wake_count",
+    "completion_recent_reclaim_count",
+    "completion_target_reclaimed",
     "completion_wait_reason_category",
 )
 _PROVIDER_STATE_FIELDS = (
