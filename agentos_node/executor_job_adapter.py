@@ -92,6 +92,11 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "completion_status",
     "completion_owner",
     "completion_owner_generation",
+    "completion_active_count",
+    "completion_blocked_count",
+    "completion_waiting_count",
+    "completion_unreconciled_count",
+    "completion_target_verified",
 )
 _PROVIDER_STATE_FIELDS = (
     "executor_available",
