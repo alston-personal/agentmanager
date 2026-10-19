@@ -641,6 +641,10 @@ def next_item(path: Path, *, include_blocked: bool = False) -> dict[str, Any] | 
             continue
         if status == "blocked" and not include_blocked:
             continue
+        # Reclaimed in-flight work may already have side effects. Never offer
+        # it as the next executable item until authoritative receipt review.
+        if recovery_disposition(item) == "needs_receipt_reconciliation":
+            continue
         candidates.append(item)
     if not candidates:
         return None
