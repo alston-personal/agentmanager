@@ -291,12 +291,15 @@ def transition(
     evidence: list[str] | None = None,
     verification: str | None = None,
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    expected_owner: str | None = None,
 ) -> dict[str, Any]:
     with locked(path):
         state = load(path)
         item = state["items"].get(work_id)
         if not item:
             raise KeyError("work_item_not_found")
+        if expected_owner is not None and str(item.get("owner") or "") != expected_owner:
+            raise PermissionError("work_item_owner_changed")
         current = str(item["status"])
         if target == current:
             return item
