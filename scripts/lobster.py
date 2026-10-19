@@ -191,6 +191,20 @@ def verify_local_port_check(task_text: str, output: str) -> tuple[bool, str] | N
         return False, "BLOCKED: independent_port_probe_error"
 
 
+def classify_inspector_failure(reason: str) -> str:
+    """Bounded diagnostic code, never expose raw Inspector output."""
+    text = str(reason or "").casefold()
+    if "實體" in text or "檔案" in text or "physical" in text:
+        return "PHYSICAL_OUTPUT"
+    if "test" in text or "pytest" in text or "測試" in text:
+        return "TEST_FAILURE"
+    if "evidence" in text or "證據" in text:
+        return "EVIDENCE_MISSING"
+    if "accept" in text or "驗收" in text:
+        return "ACCEPTANCE_FAILURE"
+    return "UNCLASSIFIED"
+
+
 def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
     """
     執行任務並用 Inspector 驗證。最多重試 3 次。
@@ -205,6 +219,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
         return False, "SKIP: dry_run_not_verified"
 
     failure_count = 0
+    last_inspector_reason = ""
     for attempt in range(1, 4):
         logger.info(f"  任務嘗試 {attempt}/3: {task_text[:50]}")
         success, output = run_claude_task_wrapper(proj_dir, task_text)
@@ -262,11 +277,15 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
         if result == "SKIP":
             return False, f"SKIP: {reason}"
         # result == "FAIL" → 重試
+        last_inspector_reason = str(reason or "")
         failure_count += 1
         logger.warning(f"  驗證失敗 ({attempt}/3): {reason[:80]}")
 
     # 連續 3 次失敗 → 升級為 BLOCKED，發通知，跳過繼續
     blocked_msg = f"連續 3 次驗證失敗，標記為阻斷，自動跳過繼續下一個任務"
+    # Persist a bounded, deterministic failure class, not raw Inspector text.
+    failure_code = classify_inspector_failure(last_inspector_reason)
+    blocked_msg += f" verification_failure_code={failure_code}"
     send_telegram_alert(
         f"🚫 *Lobster 任務 3 次失敗→BLOCKED*\n\n"
         f"專案: `{proj_dir.name}`\n"
