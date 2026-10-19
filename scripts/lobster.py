@@ -191,6 +191,20 @@ def verify_local_port_check(task_text: str, output: str) -> tuple[bool, str] | N
         return False, "BLOCKED: independent_port_probe_error"
 
 
+def classify_inspector_failure(reason: str) -> str:
+    """Bounded diagnostic code, never expose raw Inspector output."""
+    text = str(reason or "").casefold()
+    if "實體" in text or "檔案" in text or "physical" in text:
+        return "PHYSICAL_OUTPUT"
+    if "test" in text or "pytest" in text or "測試" in text:
+        return "TEST_FAILURE"
+    if "evidence" in text or "證據" in text:
+        return "EVIDENCE_MISSING"
+    if "accept" in text or "驗收" in text:
+        return "ACCEPTANCE_FAILURE"
+    return "UNCLASSIFIED"
+
+
 def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
     """
     執行任務並用 Inspector 驗證。最多重試 3 次。
@@ -270,17 +284,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
     # 連續 3 次失敗 → 升級為 BLOCKED，發通知，跳過繼續
     blocked_msg = f"連續 3 次驗證失敗，標記為阻斷，自動跳過繼續下一個任務"
     # Persist a bounded, deterministic failure class, not raw Inspector text.
-    last_reason = last_inspector_reason.casefold()
-    if "實體" in last_reason or "檔案" in last_reason or "physical" in last_reason:
-        failure_code = "PHYSICAL_OUTPUT"
-    elif "test" in last_reason or "pytest" in last_reason or "測試" in last_reason:
-        failure_code = "TEST_FAILURE"
-    elif "evidence" in last_reason or "證據" in last_reason:
-        failure_code = "EVIDENCE_MISSING"
-    elif "accept" in last_reason or "驗收" in last_reason:
-        failure_code = "ACCEPTANCE_FAILURE"
-    else:
-        failure_code = "UNCLASSIFIED"
+    failure_code = classify_inspector_failure(last_inspector_reason)
     blocked_msg += f" verification_failure_code={failure_code}"
     send_telegram_alert(
         f"🚫 *Lobster 任務 3 次失敗→BLOCKED*\n\n"
