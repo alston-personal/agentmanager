@@ -435,16 +435,19 @@ def completion_begin(task_text: str) -> Optional[str]:
         item = WorkCompletion.load(COMPLETION_STATE)["items"].get(work_id)
         if not item:
             raise KeyError("work_item_not_found")
+        if str(item.get("owner") or "") not in {"role://lobster", "role://completion.controller"}:
+            raise PermissionError("work_item_not_owned_by_lobster")
+        if item["status"] not in {"accepted", "in_progress"}:
+            raise ValueError("work_item_not_runnable")
         if item["status"] == "accepted":
             WorkCompletion.transition(
                 COMPLETION_STATE, work_id=work_id, target="in_progress",
                 actor="role://lobster", next_action=item["next_action"],
             )
-        elif item["status"] == "blocked":
-            WorkCompletion.transition(
-                COMPLETION_STATE, work_id=work_id, target="in_progress",
-                actor="role://lobster", next_action=item["next_action"],
-            )
+        # An in_progress work item is not a fresh claim. Do not execute a
+        # potentially live prior generation without reclaim/lease validation.
+        else:
+            raise ValueError("work_item_already_in_progress")
         return work_id
     except Exception as exc:
         logger.error(f"completion begin failed for {work_id}: {exc}")
