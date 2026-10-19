@@ -1033,17 +1033,29 @@ def _submission_snapshot(page: Any, request_id: str) -> dict[str, Any]:
           textChars: Math.min(20000, (el.innerText || el.textContent || '').length)
         };
       };
+      const requestId = %s;
       const correlatedNodes = [];
       for (const el of Array.from(document.querySelectorAll('main *'))) {
         const text = el.textContent || '';
-        if (!text.includes(%s)) continue;
+        if (!text.includes(requestId)) continue;
+        const childHasRequest = Array.from(el.children || []).some(
+          child => (child.textContent || '').includes(requestId)
+        );
+        if (childHasRequest) continue;
         const chain = [];
         let cur = el;
-        for (let depth = 0; cur && depth < 5; depth++, cur = cur.parentElement) {
+        for (let depth = 0; cur && depth < 6; depth++, cur = cur.parentElement) {
           const shape = nodeShape(cur);
           if (shape) chain.push(shape);
         }
-        correlatedNodes.push({self: nodeShape(el), ancestors: chain});
+        const parent = el.parentElement;
+        const siblings = parent ? Array.from(parent.children).slice(0, 16).map(nodeShape) : [];
+        correlatedNodes.push({
+          self: nodeShape(el),
+          ancestors: chain,
+          siblingIndex: parent ? Array.from(parent.children).indexOf(el) : -1,
+          siblings
+        });
         if (correlatedNodes.length >= 8) break;
       }
 
