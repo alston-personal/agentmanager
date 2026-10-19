@@ -204,8 +204,8 @@ def test_uncertain_reclaimed_work_never_becomes_auto_runnable():
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    item = {"status": "in_progress", "history": [
-        {"event": "registered"}, {"event": "stale_reclaim"}]}
+    item = {"status": "in_progress", "owner": "role://completion.controller", "history": [
+        {"event": "registered"}, {"event": "stale_reclaim"}, {"event": "heartbeat"}]}
     assert module.recovery_disposition(item) == "needs_receipt_reconciliation"
     item["status"] = "verifying"
     assert module.recovery_disposition(item) == "needs_receipt_reconciliation"
