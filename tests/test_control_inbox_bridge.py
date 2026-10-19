@@ -714,3 +714,28 @@ def test_runtime_converge_receipt_projection_preserves_bounded_diagnostics_only(
     rendered = json.dumps(projected)
     assert 'private output' not in rendered
     assert '/home/ubuntu/private' not in rendered
+
+
+def test_470_wake_evidence_survives_final_control_inbox_projection():
+    incoming = {
+        "schema": "agentos.executor-job-receipt/v1",
+        "job_type": "completion.470.status.inspect",
+        "work_id": "agentos-core-470-runtime-completion",
+        "completion_status": "waiting_external",
+        "completion_owner_generation": 446,
+        "completion_waiting_count": 1,
+        "completion_wake_not_before": "2026-10-19T05:00:00+00:00",
+        "completion_wake_overdue": True,
+        "completion_wait_reason_category": "present",
+        "next_action": "DO_NOT_EXPOSE",
+        "blocker": "PRIVATE_REASON",
+    }
+    result = _project_receipt(incoming, "agentos.executor.job")
+    assert result is not None
+    assert result["completion_status"] == "waiting_external"
+    assert result["completion_owner_generation"] == 446
+    assert result["completion_waiting_count"] == 1
+    assert result["completion_wake_overdue"] is True
+    assert result["completion_wake_not_before"] == incoming["completion_wake_not_before"]
+    assert "PRIVATE_REASON" not in json.dumps(result)
+    assert "DO_NOT_EXPOSE" not in json.dumps(result)
