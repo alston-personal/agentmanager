@@ -155,3 +155,25 @@ def test_ancient_reclaim_not_treated_as_recent(tmp_path, monkeypatch):
     result = p.inspect_completion_470(canonical_executor_job_request(p.JOB_TYPE))
     assert result["completion_recent_reclaim_count"] == 0
     assert result["completion_target_reclaimed"] is False
+
+
+def test_bounded_blocker_classification_and_retry_count(tmp_path, monkeypatch):
+    state = tmp_path / "work-items.json"
+    state.write_text(json.dumps({"items": {p.TARGET: {
+        "status": "waiting_external",
+        "wake_condition": {"kind": "time", "not_before": "2030-01-01T00:00:00+00:00"},
+        "last_blocker_kind": "RUNTIME_HEALTH",
+        "machine_retry_count": 7,
+        "blocker": "SECRET RAW PROVIDER ERROR"
+    }}}))
+    monkeypatch.setattr(p, "STATE", state)
+    req = canonical_executor_job_request(p.JOB_TYPE)
+    result = _sanitize_provider_result(p.inspect_completion_470(req))
+    receipt = project_executor_job_receipt(
+        job_id="action_470_blocker_probe", request=req,
+        executor_available=True, routable=True, authorized=True,
+        successful=True, result=result,
+    )
+    assert receipt["completion_last_blocker_kind"] == "RUNTIME_HEALTH"
+    assert receipt["completion_machine_retry_count"] == 7
+    assert "SECRET RAW PROVIDER ERROR" not in json.dumps(receipt)
