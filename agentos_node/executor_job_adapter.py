@@ -97,6 +97,9 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "completion_waiting_count",
     "completion_unreconciled_count",
     "completion_target_verified",
+    "completion_wake_not_before",
+    "completion_wake_overdue",
+    "completion_wait_reason_category",
 )
 _PROVIDER_STATE_FIELDS = (
     "executor_available",

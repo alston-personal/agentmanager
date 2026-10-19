@@ -11,7 +11,7 @@ def test_fixed_scope_ledger_projection(tmp_path, monkeypatch):
     state.write_text(json.dumps({"items": {
         p.TARGET: {"status": "blocked", "owner": "role://lobster", "owner_generation": 283,
                    "next_action": "SECRET", "history": []},
-        "hidden": {"status": "waiting_external"},
+        "hidden": {"status": "waiting_external", "wake_condition": {"kind": "time", "not_before": "2030-01-01T00:00:00+00:00"}},
         "stale": {"status": "in_progress", "history": [{"event": "stale_reclaim"}]},
         "done": {"status": "done", "verification": {"status": "passed"}},
     }}), encoding="utf-8")
@@ -58,7 +58,8 @@ def test_one_receipt_roundtrip_preserves_bounded_status(tmp_path, monkeypatch):
     state = tmp_path / "work-items.json"
     state.write_text(json.dumps({"items": {
         p.TARGET: {"status": "waiting_external", "owner": "role://completion.controller",
-                   "owner_generation": 284, "next_action": "PRIVATE ACTION"},
+                   "owner_generation": 284, "next_action": "PRIVATE ACTION",
+                   "wake_condition": {"kind": "time", "not_before": "2030-01-01T00:00:00+00:00"}},
         "blocked": {"status": "blocked", "workspace": "/private/path"},
     }}), encoding="utf-8")
     monkeypatch.setattr(p, "STATE", state)
@@ -81,3 +82,35 @@ def test_one_receipt_roundtrip_preserves_bounded_status(tmp_path, monkeypatch):
     serialized = json.dumps(receipt)
     assert "PRIVATE ACTION" not in serialized
     assert "/private/path" not in serialized
+
+
+def test_wait_due_time_preserved_and_private_reason_not_exposed(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    not_before = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+    state = tmp_path / "work-items.json"
+    state.write_text(json.dumps({"items": {p.TARGET: {
+        "status": "waiting_external", "owner": "role://completion.controller",
+        "wake_condition": {"kind": "time", "not_before": not_before},
+        "blocker": "private operator token value",
+    }}}))
+    monkeypatch.setattr(p, "STATE", state)
+    req = canonical_executor_job_request(p.JOB_TYPE)
+    result = _sanitize_provider_result(p.inspect_completion_470(req))
+    receipt = project_executor_job_receipt(
+        job_id="action_470_wake_test", request=req, executor_available=True,
+        routable=True, authorized=True, successful=True, result=result,
+    )
+    assert receipt["completion_wake_not_before"] == not_before
+    assert receipt["completion_wake_overdue"] is True
+    assert receipt["completion_wait_reason_category"] == "present"
+    assert "private operator token value" not in json.dumps(receipt)
+
+
+def test_invalid_wait_condition_fails_closed(tmp_path, monkeypatch):
+    state = tmp_path / "work-items.json"
+    state.write_text(json.dumps({"items": {p.TARGET: {
+        "status": "waiting_external", "owner": "role://completion.controller",
+    }}}))
+    monkeypatch.setattr(p, "STATE", state)
+    result = p.inspect_completion_470(canonical_executor_job_request(p.JOB_TYPE))
+    assert result["verdict"] == "FAIL"
