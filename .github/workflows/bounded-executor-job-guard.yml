@@ -14,6 +14,7 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/completion_470_status_provider.py'
       - 'agentos_node/mio_dm_health_provider.py'
       - 'scripts/probe_threads_web_dm_login_user.sh'
       - 'tests/test_mio_dm_health_provider.py'
@@ -42,6 +43,7 @@ on:
       - 'tests/test_executor_job_contract.py'
       - 'tests/test_executor_job_adapter.py'
       - 'tests/test_executor_job_action_relay.py'
+      - 'tests/test_completion_470_status_provider.py'
       - 'tests/test_executor_job_controller_route.py'
       - 'tests/test_executor_job_receipt_facade.py'
       - 'tests/test_executor_job_runtime_installer.py'
@@ -77,6 +79,7 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/completion_470_status_provider.py'
       - 'agentos_node/issue117_experience_provider.py'
       - 'agentos_node/typesafe_skill_install_provider.py'
       - 'agentos_node/gemini_cli_install_provider.py'
@@ -94,6 +97,7 @@ on:
       - 'tests/test_executor_job_contract.py'
       - 'tests/test_executor_job_adapter.py'
       - 'tests/test_executor_job_action_relay.py'
+      - 'tests/test_completion_470_status_provider.py'
       - 'tests/test_executor_job_controller_route.py'
       - 'tests/test_executor_job_receipt_facade.py'
       - 'tests/test_executor_job_runtime_installer.py'
@@ -127,6 +131,7 @@ jobs:
             tests/test_executor_job_contract.py \
             tests/test_executor_job_adapter.py \
             tests/test_executor_job_action_relay.py \
+            tests/test_completion_470_status_provider.py \
             tests/test_executor_job_controller_route.py \
             tests/test_executor_job_receipt_facade.py \
             tests/test_executor_job_runtime_installer.py \
