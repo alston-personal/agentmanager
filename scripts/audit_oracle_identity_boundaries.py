@@ -98,6 +98,12 @@ def _classify(rel: str, text: str, policy: dict[str, Any]) -> dict[str, Any] | N
         "tags": sorted(set(tags)),
         "has_mutation_marker": mutation,
         "has_explicit_group_boundary": bounded_group,
+        "p0_trigger_evidence": ({
+            "shared_runtime_reference": has_shared_data,
+            "mutation_marker_detected": mutation,
+            "node_identity_reference": has_node_identity,
+            "explicit_group_boundary": bounded_group,
+        } if risk == "P0" else None),
     }
 
 
