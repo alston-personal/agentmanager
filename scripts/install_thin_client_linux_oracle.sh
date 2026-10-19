@@ -67,13 +67,13 @@ echo "agentos_oracle_exec_runtime_provenance=PASS"
 ln -sfn "$RUNTIME" "$ROOT/current"
 
 install_pinned_launcher() {
-  cat > "$LAUNCHER" <<EOF
-  #!/bin/bash
-  export AGENTOS_CLIENT_HOME="$STATE"
-  export PYTHONPATH="$ROOT/current"
-  exec /usr/bin/python3 -m agentos_node.client_cli "\$@"
-  EOF
-  chmod 700 "$LAUNCHER"
+cat > "$LAUNCHER" <<EOF
+#!/bin/bash
+export AGENTOS_CLIENT_HOME="$STATE"
+export PYTHONPATH="$ROOT/current"
+exec /usr/bin/python3 -m agentos_node.client_cli "\$@"
+EOF
+chmod 700 "$LAUNCHER"
 }
 install_pinned_launcher
 
