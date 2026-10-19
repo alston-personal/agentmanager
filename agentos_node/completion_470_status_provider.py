@@ -64,7 +64,7 @@ def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
             "completion_last_event_category": last_event,
             "completion_recent_wake_count": sum(e.get("event") == "wake" for e in recent),
             "completion_recent_reclaim_count": sum(e.get("event") == "stale_reclaim" for e in recent),
-            "completion_target_reclaimed": any(e.get("event") == "stale_reclaim" for e in history if isinstance(e, dict)),
+            "completion_target_reclaimed": any(e.get("event") == "stale_reclaim" for e in recent),
             "completion_wake_not_before": raw_due if status == "waiting_external" else "",
             "completion_wake_overdue": wake_due,
             "completion_wait_reason_category": "present" if target and target.get("blocker") else "none",
