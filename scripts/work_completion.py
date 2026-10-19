@@ -614,6 +614,22 @@ def reclaim_stale(
     return reclaimed
 
 
+def recovery_disposition(item: dict[str, Any]) -> str:
+    """Conservative post-reclaim decision; never replay uncertain side effects."""
+    if item.get("status") in TERMINAL:
+        return "terminal"
+    history = item.get("history") or []
+    reclaimed = bool(history and isinstance(history[-1], dict)
+                     and history[-1].get("event") == "stale_reclaim")
+    if reclaimed and item.get("status") in {"in_progress", "verifying"}:
+        return "needs_receipt_reconciliation"
+    if item.get("status") == "blocked":
+        return "blocked"
+    if item.get("status") == "accepted":
+        return "eligible_for_governed_dispatch"
+    return "not_runnable_without_reconciliation"
+
+
 def next_item(path: Path, *, include_blocked: bool = False) -> dict[str, Any] | None:
     state = load(path)
     candidates = []
