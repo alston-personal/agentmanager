@@ -60,7 +60,13 @@ def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
         recent = [e for e in history[-100:] if isinstance(e, dict)]
         last_event = str(recent[-1].get("event") or "") if recent else ""
         last_event = last_event if last_event in safe_events else "other"
+        blocker_kind = str(target.get("last_blocker_kind") or "") if target else ""
+        if blocker_kind not in {"VERIFICATION", "PROVIDER_CAPACITY", "RUNTIME_HEALTH"}:
+            blocker_kind = "UNKNOWN"
+        retry_count = max(0, int(target.get("machine_retry_count") or 0)) if target else 0
         return {
+            "completion_machine_blocker_kind": blocker_kind,
+            "completion_machine_retry_count": min(retry_count, 100000),
             "completion_last_event_category": last_event,
             "completion_recent_wake_count": sum(e.get("event") == "wake" for e in recent),
             "completion_recent_reclaim_count": sum(e.get("event") == "stale_reclaim" for e in recent),
