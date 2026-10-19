@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -40,7 +41,22 @@ def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
         verification = (target.get("verification") or {}) if target else {}
         if not isinstance(verification, dict):
             raise ValueError("invalid_verification")
+        wake = (target.get("wake_condition") or {}) if target else {}
+        if not isinstance(wake, dict):
+            raise ValueError("invalid_wake")
+        raw_due = str(wake.get("not_before") or "")
+        wake_due = False
+        if status == "waiting_external":
+            if wake.get("kind") != "time" or not raw_due:
+                raise ValueError("invalid_wake")
+            due = datetime.fromisoformat(raw_due.replace("Z", "+00:00"))
+            if due.tzinfo is None:
+                raise ValueError("naive_wake")
+            wake_due = due <= datetime.now(timezone.utc)
         return {
+            "completion_wake_not_before": raw_due if status == "waiting_external" else "",
+            "completion_wake_overdue": wake_due,
+            "completion_wait_reason_category": "present" if target and target.get("blocker") else "none",
             "verdict": "PASS",
             "classification": "COMPLETION_470_STATUS_OBSERVED",
             "executor_available": True, "routable": True,
