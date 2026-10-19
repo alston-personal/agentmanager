@@ -27,3 +27,5 @@ def test_oracle_exec_restores_pinned_launcher_after_generic_supervisor():
     assert lifecycle < restored < restart < heartbeat
     assert 'export PYTHONPATH="$ROOT/current"' in source
     assert 'export AGENTOS_CLIENT_HOME="$STATE"' in source
+    assert '\n#!/bin/bash\nexport AGENTOS_CLIENT_HOME="$STATE"' in source
+    assert '\nEOF\nchmod 700 "$LAUNCHER"' in source
