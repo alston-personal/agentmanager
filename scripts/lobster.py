@@ -858,13 +858,20 @@ def process_project(proj_name: str, dry_run: bool = False) -> bool:
     
     logger.info(f"📌 [{proj_name}] 選定任務: {task['text'][:60]}")
     
-    # 標記為進行中
+    # Fallback STATUS.md path must uphold the same durable claim boundary as
+    # the central board. Do not mark progress or execute an unclaimed WorkItem.
+    durable_id = WorkCompletion.item_id_from_task(task["text"]) if WorkCompletion is not None else None
+    if "[WI:" in task["text"] and (WorkCompletion is None or not durable_id):
+        logger.error("durable work item parser/controller unavailable; refusing execution")
+        return False
+    work_id = completion_begin(task["text"])
+    if durable_id and work_id != durable_id:
+        logger.error("durable work item claim failed for %s; refusing execution", durable_id)
+        return False
     if task["status"] == "todo":
         mark_task_in_progress(status_md, task)
         task["raw_line"] = task["raw_line"].replace("[ ]", "[/]", 1)
-    
-    # 執行任務。Durable completion work resumes before ordinary backlog.
-    work_id = completion_begin(task["text"])
+
     success, output = run_with_inspector(completion_workspace(work_id, proj_name), task["text"], dry_run)
     completion_finish(work_id, success, output)
     
