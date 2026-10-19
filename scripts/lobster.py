@@ -443,6 +443,7 @@ def completion_begin(task_text: str) -> Optional[str]:
             WorkCompletion.transition(
                 COMPLETION_STATE, work_id=work_id, target="in_progress",
                 actor="role://lobster", next_action=item["next_action"],
+                expected_owner=str(item["owner"]),
             )
         # An in_progress work item is not a fresh claim. Do not execute a
         # potentially live prior generation without reclaim/lease validation.
