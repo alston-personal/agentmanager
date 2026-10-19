@@ -242,6 +242,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="issue://1200",
         read_only=False,
     ),
+    "completion.470.status.inspect": JobTypeSpec(
+        job_type="completion.470.status.inspect",
+        capability="agentos.completion.work.status.inspect",
+        authority="bounded-read-only",
+        executor_class="completion-controller",
+        project_id="agentos-core",
+        workload_ref="issue://470",
+        read_only=True,
+    ),
     "completion.next.inspect": JobTypeSpec(
         job_type="completion.next.inspect",
         capability="agentos.completion.work.inspect",
@@ -479,6 +488,11 @@ def project_executor_job_receipt(
             "completion_status",
             "completion_owner",
             "completion_owner_generation",
+            "completion_active_count",
+            "completion_blocked_count",
+            "completion_waiting_count",
+            "completion_unreconciled_count",
+            "completion_target_verified",
         ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:
