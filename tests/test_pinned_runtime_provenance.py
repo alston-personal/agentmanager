@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy
+from agent_core.node_registry import NodeRegistry
 
 SCHEMA = "agentos.thin-client-runtime/v0.1"
 SHA = "a" * 40
@@ -63,6 +64,29 @@ class PinnedProvenanceTests(unittest.TestCase):
             module.parent.mkdir(parents=True)
             generic = {"schema": SCHEMA, "status": "observed", "source_commit": "b" * 40}
             self.assertEqual(self._manifest(module, generic), generic)
+
+
+    def test_heartbeat_registry_roundtrip_preserves_pinned_commit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime" / SHA
+            module = root / "agentos_node" / "thin_client.py"
+            module.parent.mkdir(parents=True)
+            (root / "runtime-provenance.json").write_text(json.dumps({
+                "schema": SCHEMA, "status": "observed", "source_commit": SHA,
+            }))
+            client = ThinClient(NodeIdentity("realm-test", "oracle-exec"), ThinClientPolicy())
+            with patch("agentos_node.thin_client.__file__", str(module)), \
+                 patch("agentos_node.thin_client.observe_runtime", return_value={
+                     "schema": SCHEMA, "status": "observed", "source_commit": "b" * 40,
+                 }), \
+                 patch("agentos_node.executor_reconcile.discover_executor_inventory", return_value={}):
+                heartbeat = client.heartbeat()
+            registry = NodeRegistry(Path(td) / "nodes.json")
+            registry.record_heartbeat(heartbeat)
+            node = registry.node_map()["nodes"][0]
+            self.assertEqual(node["runtime"]["status"], "observed")
+            self.assertEqual(node["runtime"]["source_commit"], SHA)
+            self.assertEqual(node["status"], "online")
 
 
 if __name__ == "__main__":
