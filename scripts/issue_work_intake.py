@@ -16,6 +16,8 @@ REQUIRED_LABELS = {"agentos:approved", "agentos:lobster"}
 SAFE_LABEL = "agentos:readonly"
 DISALLOWED = {"blocked", "needs-decision", "needs-approval", "security", "production-change"}
 ALLOWLIST = re.compile(r"^檢查連接埠\s+(\d{1,5})$")
+BOUNTY_ACTION = "盤點公開懸賞候選案"
+BOUNTY_LABEL = "agentos:bounty-readonly"
 URL = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+)/issues/(\d+)$")
 
 
@@ -37,7 +39,9 @@ def eligible(issue: dict, repo: str) -> tuple[bool, str]:
         return False, "contract_missing"
     action = match.group(1).strip()
     port = ALLOWLIST.fullmatch(action)
-    if not port or not (1 <= int(port.group(1)) <= 65535):
+    bounded_port = bool(port and 1 <= int(port.group(1)) <= 65535)
+    bounded_bounty = action == BOUNTY_ACTION and BOUNTY_LABEL in labels
+    if not (bounded_port or bounded_bounty):
         return False, "unsupported_action"
     if not accept.group(1).strip():
         return False, "acceptance_empty"
@@ -58,7 +62,8 @@ def intake(issues: list[dict], *, repo: str, state: Path, workspace: Path) -> li
         action = re.search(r"(?m)^Action:\s*(.+?)\s*$", body).group(1).strip()
         acceptance = re.search(r"(?m)^Acceptance:\s*(.+?)\s*$", body).group(1).strip()
         number = int(issue["number"])
-        work_id = f"gh-issue-{number}-readonly"
+        is_bounty = action == BOUNTY_ACTION
+        work_id = f"gh-issue-{number}-bounty-readonly" if is_bounty else f"gh-issue-{number}-readonly"
         previous = load(state)["items"].get(work_id)
         if previous and previous.get("status") in TERMINAL:
             result.append({"number": number, "status": "already_terminal", "work_id": work_id})
@@ -67,7 +72,10 @@ def intake(issues: list[dict], *, repo: str, state: Path, workspace: Path) -> li
             state, work_id=work_id, project_id="agentos-core",
             title=str(issue.get("title") or work_id)[:160],
             owner="role://lobster", source=issue["html_url"],
-            workspace=str(workspace), next_action=action, acceptance=[acceptance]
+            workspace=str(workspace), next_action=(
+                "唯讀盤點公開 GitHub 懸賞候選案；查核 Issue 開啟狀態、獎金可信度與重複 PR；"
+                "僅回報來源與判斷證據，不得寫入外部倉庫、留言、領取或承諾付款。"
+                if is_bounty else action), acceptance=[acceptance]
         )
         result.append({"number": number, "status": item["status"], "work_id": work_id})
     return result
