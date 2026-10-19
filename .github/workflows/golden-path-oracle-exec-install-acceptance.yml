@@ -1,4 +1,5 @@
 name: Golden Path Oracle Exec Install and Verify
+# 2026-10-19 governed regression wave: verify pinned-launcher repair after failed Run 39180357846
 
 on:
   push:

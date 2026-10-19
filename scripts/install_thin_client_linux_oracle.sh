@@ -66,6 +66,7 @@ fi
 echo "agentos_oracle_exec_runtime_provenance=PASS"
 ln -sfn "$RUNTIME" "$ROOT/current"
 
+install_pinned_launcher() {
 cat > "$LAUNCHER" <<EOF
 #!/bin/bash
 export AGENTOS_CLIENT_HOME="$STATE"
@@ -73,6 +74,8 @@ export PYTHONPATH="$ROOT/current"
 exec /usr/bin/python3 -m agentos_node.client_cli "\$@"
 EOF
 chmod 700 "$LAUNCHER"
+}
+install_pinned_launcher
 
 if [ ! -f "$STATE/policy.json" ]; then
   cat > "$STATE/policy.json" <<EOF
@@ -111,6 +114,13 @@ print(json.dumps(r, ensure_ascii=False))
 if not r.get("supervisor_ready"):
     raise SystemExit(2)
 PY
+# Generic lifecycle installation re-materializes its launcher without the pinned
+# Oracle snapshot PYTHONPATH. Restore the fixed launcher and restart the existing
+# managed service, then require a fresh node-authored heartbeat.
+install_pinned_launcher
+systemctl --user restart agentos-thin-client.service
+systemctl --user is-active --quiet agentos-thin-client.service
+echo "agentos_oracle_exec_pinned_launcher_restored=PASS"
 "$LAUNCHER" health
 "$LAUNCHER" once
 echo "agentos_oracle_exec_install=PASS"
