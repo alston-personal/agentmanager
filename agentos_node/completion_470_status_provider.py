@@ -53,7 +53,18 @@ def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
             if due.tzinfo is None:
                 raise ValueError("naive_wake")
             wake_due = due <= datetime.now(timezone.utc)
+        history = target.get("history") or [] if target else []
+        if not isinstance(history, list):
+            raise ValueError("invalid_history")
+        safe_events = {"wake", "wait_external", "machine_blocker_deferred", "stale_reclaim", "handoff", "transition", "heartbeat"}
+        recent = [e for e in history[-100:] if isinstance(e, dict)]
+        last_event = str(recent[-1].get("event") or "") if recent else ""
+        last_event = last_event if last_event in safe_events else "other"
         return {
+            "completion_last_event_category": last_event,
+            "completion_recent_wake_count": sum(e.get("event") == "wake" for e in recent),
+            "completion_recent_reclaim_count": sum(e.get("event") == "stale_reclaim" for e in recent),
+            "completion_target_reclaimed": any(e.get("event") == "stale_reclaim" for e in history if isinstance(e, dict)),
             "completion_wake_not_before": raw_due if status == "waiting_external" else "",
             "completion_wake_overdue": wake_due,
             "completion_wait_reason_category": "present" if target and target.get("blocker") else "none",
