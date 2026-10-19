@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-SCHEMA = "agentos.pr-reconciliation/v1"
+SCHEMA = "agentos.pr-reconciliation/v2"
 
 
 def _parse_time(value: str) -> datetime:
@@ -86,18 +86,70 @@ def explicit_supersessions(prs: list[dict[str, Any]]) -> dict[int, int]:
     return result
 
 
+def _strip_version_suffix(value: str) -> str:
+    """Normalize an explicit trailing vN version marker, nothing broader."""
+    return re.sub(r"(?i)(?:[\s_-]+v\d+)$", "", value.strip())
+
+
+def merged_supersessions(
+    open_prs: list[dict[str, Any]],
+    merged_prs: list[dict[str, Any]],
+) -> dict[int, int]:
+    """Return old open PR -> merged successor using deliberately narrow evidence.
+
+    A merged PR is considered a successor only when all of these hold:
+    - successor number is newer;
+    - base branch is identical;
+    - title differs only by an explicit trailing vN marker;
+    - head branch differs only by an explicit trailing -vN/_vN marker.
+
+    This intentionally prefers false negatives over false positives.
+    """
+    result: dict[int, int] = {}
+    for old in open_prs:
+        old_number = int(old.get("number"))
+        old_title = str(old.get("title") or "")
+        old_head = str(old.get("head") or "")
+        old_base = str(old.get("base") or "")
+        if not old_title or not old_head or not old_base:
+            continue
+        for newer in merged_prs:
+            newer_number = int(newer.get("number"))
+            if newer_number <= old_number:
+                continue
+            if str(newer.get("base") or "") != old_base:
+                continue
+            newer_title = str(newer.get("title") or "")
+            newer_head = str(newer.get("head") or "")
+            if _strip_version_suffix(newer_title) != _strip_version_suffix(old_title):
+                continue
+            if _strip_version_suffix(newer_head) != _strip_version_suffix(old_head):
+                continue
+            result[old_number] = newer_number
+            break
+    return result
+
+
 def reconcile(snapshot: Any, *, now: datetime, stale_days: int = 7) -> dict[str, Any]:
     prs = snapshot.get("pull_requests", []) if isinstance(snapshot, dict) else snapshot
+    merged_prs = snapshot.get("merged_pull_requests", []) if isinstance(snapshot, dict) else []
     if not isinstance(prs, list):
         raise ValueError("snapshot_must_be_list_or_pull_requests_object")
-    superseded = explicit_supersessions(prs)
+    if not isinstance(merged_prs, list):
+        raise ValueError("merged_pull_requests_must_be_list")
+    explicit = explicit_supersessions(prs)
+    merged = merged_supersessions(prs, merged_prs)
     rows = [classify(pr, now=now, stale_days=stale_days) for pr in prs]
     for row in rows:
         number = int(row["number"])
-        if number in superseded:
+        if number in explicit:
             row["status"] = "SUPERSEDED"
-            row["superseded_by"] = superseded[number]
-            row["reasons"].insert(0, f"explicit_rebased_follow_up=#{superseded[number]}")
+            row["superseded_by"] = explicit[number]
+            row["reasons"].insert(0, f"explicit_rebased_follow_up=#{explicit[number]}")
+        elif number in merged:
+            row["status"] = "SUPERSEDED"
+            row["superseded_by"] = merged[number]
+            row["reasons"].insert(0, f"merged_versioned_successor=#{merged[number]}")
     counts: dict[str, int] = {}
     for row in rows:
         counts[row["status"]] = counts.get(row["status"], 0) + 1
