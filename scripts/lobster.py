@@ -205,6 +205,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
         return False, "SKIP: dry_run_not_verified"
 
     failure_count = 0
+    last_inspector_reason = ""
     for attempt in range(1, 4):
         logger.info(f"  任務嘗試 {attempt}/3: {task_text[:50]}")
         success, output = run_claude_task_wrapper(proj_dir, task_text)
@@ -262,11 +263,25 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
         if result == "SKIP":
             return False, f"SKIP: {reason}"
         # result == "FAIL" → 重試
+        last_inspector_reason = str(reason or "")
         failure_count += 1
         logger.warning(f"  驗證失敗 ({attempt}/3): {reason[:80]}")
 
     # 連續 3 次失敗 → 升級為 BLOCKED，發通知，跳過繼續
     blocked_msg = f"連續 3 次驗證失敗，標記為阻斷，自動跳過繼續下一個任務"
+    # Persist a bounded, deterministic failure class, not raw Inspector text.
+    last_reason = last_inspector_reason.casefold()
+    if "實體" in last_reason or "檔案" in last_reason or "physical" in last_reason:
+        failure_code = "PHYSICAL_OUTPUT"
+    elif "test" in last_reason or "pytest" in last_reason or "測試" in last_reason:
+        failure_code = "TEST_FAILURE"
+    elif "evidence" in last_reason or "證據" in last_reason:
+        failure_code = "EVIDENCE_MISSING"
+    elif "accept" in last_reason or "驗收" in last_reason:
+        failure_code = "ACCEPTANCE_FAILURE"
+    else:
+        failure_code = "UNCLASSIFIED"
+    blocked_msg += f" verification_failure_code={failure_code}"
     send_telegram_alert(
         f"🚫 *Lobster 任務 3 次失敗→BLOCKED*\n\n"
         f"專案: `{proj_dir.name}`\n"
