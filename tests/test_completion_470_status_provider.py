@@ -11,7 +11,7 @@ def test_fixed_scope_ledger_projection(tmp_path, monkeypatch):
     state.write_text(json.dumps({"items": {
         p.TARGET: {"status": "blocked", "owner": "role://lobster", "owner_generation": 283,
                    "next_action": "SECRET", "history": []},
-        "hidden": {"status": "waiting_external"},
+        "hidden": {"status": "waiting_external", "wake_condition": {"kind": "time", "not_before": "2030-01-01T00:00:00+00:00"}},
         "stale": {"status": "in_progress", "history": [{"event": "stale_reclaim"}]},
         "done": {"status": "done", "verification": {"status": "passed"}},
     }}), encoding="utf-8")
@@ -58,7 +58,8 @@ def test_one_receipt_roundtrip_preserves_bounded_status(tmp_path, monkeypatch):
     state = tmp_path / "work-items.json"
     state.write_text(json.dumps({"items": {
         p.TARGET: {"status": "waiting_external", "owner": "role://completion.controller",
-                   "owner_generation": 284, "next_action": "PRIVATE ACTION"},
+                   "owner_generation": 284, "next_action": "PRIVATE ACTION",
+                   "wake_condition": {"kind": "time", "not_before": "2030-01-01T00:00:00+00:00"}},
         "blocked": {"status": "blocked", "workspace": "/private/path"},
     }}), encoding="utf-8")
     monkeypatch.setattr(p, "STATE", state)
