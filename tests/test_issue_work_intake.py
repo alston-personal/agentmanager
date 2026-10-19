@@ -31,18 +31,18 @@ class IssueIntakeTest(unittest.TestCase):
             self.assertEqual(len(json.loads(state.read_text())["items"]),1)
 
     def test_bounty_readonly_requires_separate_scope(self):
-        body="Action: 盤點公開懸賞候選案\\nAcceptance: sourced open issues and evidence"
+        body="Action: 盤點公開懸賞候選案\nAcceptance: sourced open issues and evidence"
         self.assertFalse(eligible(item(APPROVED,body=body),"alston-personal/agentmanager")[0])
         labels=APPROVED+["agentos:bounty-readonly"]
         self.assertTrue(eligible(item(labels,body=body),"alston-personal/agentmanager")[0])
-        self.assertFalse(eligible(item(labels,body="Action: 自動提交 PR\\nAcceptance: ready"),"alston-personal/agentmanager")[0])
+        self.assertFalse(eligible(item(labels,body="Action: 自動提交 PR\nAcceptance: ready"),"alston-personal/agentmanager")[0])
 
     def test_bounty_readonly_registers_bounded_task(self):
         import json
         with tempfile.TemporaryDirectory() as d:
             state=pathlib.Path(d)/"ledger.json"
             labels=APPROVED+["agentos:bounty-readonly"]
-            issue=item(labels,number=2003,body="Action: 盤點公開懸賞候選案\\nAcceptance: evidence and deduplication")
+            issue=item(labels,number=2003,body="Action: 盤點公開懸賞候選案\nAcceptance: evidence and deduplication")
             result=intake([issue],repo="alston-personal/agentmanager",state=state,workspace=pathlib.Path(d))
             self.assertEqual(result[0]["work_id"],"gh-issue-2003-bounty-readonly")
             next_action=json.loads(state.read_text())["items"]["gh-issue-2003-bounty-readonly"]["next_action"]
