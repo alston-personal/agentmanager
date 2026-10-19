@@ -1,0 +1,118 @@
+name: Golden Path Oracle Exec Install and Verify
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/golden-path-oracle-exec-install-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: golden-path-oracle-exec-install-acceptance
+  cancel-in-progress: false
+
+jobs:
+  install-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mint governed Runner Window token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          curl -fsS --max-time 15 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          v=json.load(open(sys.argv[1],encoding='utf-8')).get('value') or ''
+          assert v.count('.') == 2
+          print(v)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+      - name: Install pinned oracle-exec runtime via ONE
+        id: install
+        shell: bash
+        env:
+          AGENTOS_DISPATCH_WAIT_SECONDS: '420'
+        run: |
+          set -euo pipefail
+          bash scripts/agentos_dispatch.sh node.runtime oracle-exec.install "$GITHUB_SHA" \
+            --payload-json '{}' | tee "$RUNNER_TEMP/oracle-install.txt"
+          python3 - "$RUNNER_TEMP/oracle-install.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          lines=open(sys.argv[1],encoding='utf-8').read().splitlines()
+          receipts=[json.loads(x) for x in lines if x.startswith('{') and '"receipt"' in x]
+          assert len(receipts)==1, 'exactly one terminal install receipt required'
+          r=receipts[0]['receipt']
+          evidence=r.get('evidence') or []
+          assert r.get('ok') is True and receipts[0].get('state')=='completed', 'install not terminal successful'
+          assert r.get('source_commit')==sys.argv[2], 'install source commit mismatch'
+          assert 'agentos_oracle_exec_install=PASS' in evidence, 'install PASS evidence absent'
+          assert 'agentos_oracle_exec_runtime_provenance=PASS' in evidence, 'provenance evidence absent'
+          print('oracle_exec_install_terminal=PASS')
+          PY
+      - name: Inspect fresh node runtime provenance
+        id: inspect
+        shell: bash
+        env:
+          AGENTOS_DISPATCH_WAIT_SECONDS: '120'
+        run: |
+          set -euo pipefail
+          bash scripts/agentos_dispatch.sh node.realm inspect "$GITHUB_SHA" \
+            --payload-json '{"node_id":"oracle-exec"}' | tee "$RUNNER_TEMP/oracle-inspect.txt"
+          python3 - "$RUNNER_TEMP/oracle-inspect.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          lines=open(sys.argv[1],encoding='utf-8').read().splitlines()
+          receipts=[json.loads(x) for x in lines if x.startswith('{') and '"receipt"' in x]
+          assert len(receipts)==1, 'exactly one terminal inspect receipt required'
+          result=receipts[0]
+          receipt=result['receipt']
+          evidence=receipt.get('evidence') or []
+          assert result.get('state')=='completed' and receipt.get('ok') is True
+          assert 'realm_node_status=online' in evidence and 'realm_node_inspect=PASS' in evidence
+          assert f'realm_node_runtime_source_commit={sys.argv[2]}' in evidence, 'Node live reported SHA does not match installed source'
+          assert 'realm_node_runtime_status=observed' in evidence, 'Node runtime not observed'
+          print('oracle_exec_generation_and_heartbeat=PASS')
+          PY
+      - name: Upload bounded evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-path-oracle-exec-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/oracle-install.txt
+            ${{ runner.temp }}/oracle-inspect.txt
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Record terminal acceptance on canonical Supervisor issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const install = '${{ steps.install.outcome }}';
+            const inspect = '${{ steps.inspect.outcome }}';
+            const verdict = install === 'success' && inspect === 'success' ? 'PASS' : 'BLOCKED';
+            const text = [
+              'Golden Path oracle-exec pinned runtime acceptance: ' + verdict,
+              'Run: ' + context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId,
+              'Commit: ' + context.sha,
+              'Install step: ' + install,
+              'Independent Node inspect step: ' + inspect,
+              'PASS requires terminal install receipt plus fresh node-reported exact SHA. This does not close A→B→C.',
+            ].join('\\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: 200, body: text,
+            });
