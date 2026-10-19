@@ -28,6 +28,8 @@ AgentOS currently contains, among other components:
 
 The model-independent **Cognitive IR / zero-cost arbitrary model switching** layer is still research unless and until a repeatable benchmark proves it.
 
+External benchmark evidence is normalized through AgentOS rather than reported as an unqualified leaderboard score. For OSWorld-V2.1, `agent_core/osworld_growth_benchmark.py` records pinned benchmark provenance and separates Raw→Cold system uplift from Cold→Experienced growth uplift. A Cold/Experienced Growth Proof comparison must keep the benchmark release, task IDs, model version, runtime image/action space and execution budget comparable, while recording an explicit cognitive snapshot and held-out contamination declaration.
+
 ## Critical constraints
 
 - Preserve Logic/Data separation: mutable user/project state must not be accidentally committed into the logic repository.
