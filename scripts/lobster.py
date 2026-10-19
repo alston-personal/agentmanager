@@ -922,12 +922,19 @@ def main():
                 
                 logger.info(f"📌 [BOARD→{proj_name}] 選定任務: {task['text'][:60]}")
                 
-                # 在 TASK_BOARD 標記為進行中
+                # Durable WorkItems must have an accepted, owned Ledger claim before
+                # any executor side effect. Ordinary board tasks keep legacy flow.
+                durable_id = WorkCompletion.item_id_from_task(task["text"]) if WorkCompletion is not None else None
+                if "[WI:" in task["text"] and (WorkCompletion is None or not durable_id):
+                    logger.error("durable work item parser/controller unavailable; refusing execution")
+                    continue
+                work_id = completion_begin(task["text"])
+                if durable_id and work_id != durable_id:
+                    logger.error("durable work item claim failed for %s; refusing execution", durable_id)
+                    continue
                 if task["status"] == "todo":
                     mark_board_task(proj_name, task["text"], "in_progress", current_status="todo")
-                
-                # 執行任務。Completion Controller 項目先進入 durable in_progress。
-                work_id = completion_begin(task["text"])
+
                 success, output = run_with_inspector(completion_workspace(work_id, proj_name), task["text"], args.dry_run)
                 completion_finish(work_id, success, output)
                 
