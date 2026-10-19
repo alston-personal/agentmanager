@@ -60,7 +60,15 @@ def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
         recent = [e for e in history[-100:] if isinstance(e, dict)]
         last_event = str(recent[-1].get("event") or "") if recent else ""
         last_event = last_event if last_event in safe_events else "other"
+        kind = str(target.get("last_blocker_kind") or "") if target else ""
+        if kind not in {"VERIFICATION", "PROVIDER_CAPACITY", "RUNTIME_HEALTH"}:
+            kind = "UNKNOWN"
+        retries = int(target.get("machine_retry_count") or 0) if target else 0
+        if not 0 <= retries <= 1000000:
+            raise ValueError("invalid_retry_count")
         return {
+            "completion_last_blocker_kind": kind,
+            "completion_machine_retry_count": retries,
             "completion_last_event_category": last_event,
             "completion_recent_wake_count": sum(e.get("event") == "wake" for e in recent),
             "completion_recent_reclaim_count": sum(e.get("event") == "stale_reclaim" for e in recent),
