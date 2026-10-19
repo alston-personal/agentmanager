@@ -302,6 +302,8 @@ def transition(
             raise PermissionError("work_item_owner_changed")
         current = str(item["status"])
         if target == current:
+            if expected_owner is not None and target == "in_progress":
+                raise ValueError("work_item_already_claimed")
             return item
         if target not in ALLOWED.get(current, set()):
             raise ValueError(f"invalid_transition:{current}->{target}")
