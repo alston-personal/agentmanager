@@ -171,9 +171,36 @@ class ThinClient:
         from agentos_node.executor_reconcile import discover_executor_inventory
         executor_inventory = discover_executor_inventory(probe_health=False)
         runtime = observe_runtime()
-        if runtime.get('status') == 'unknown':
+        # A pinned Oracle snapshot must attest its *loaded* generation; generic
+        # metadata from another installation cannot override that identity.
+        module_root = Path(__file__).resolve().parent.parent
+        if (
+            module_root.parent.name == 'runtime'
+            and len(module_root.name) == 40
+            and all(ch in '0123456789abcdef' for ch in module_root.name)
+        ):
+            candidate = module_root / 'runtime-provenance.json'
             try:
-                candidate = Path(__file__).resolve().parent.parent / 'runtime-provenance.json'
+                data = json.loads(candidate.read_text(encoding='utf-8-sig'))
+                if (
+                    isinstance(data, dict)
+                    and data.get('schema') == 'agentos.thin-client-runtime/v0.1'
+                    and data.get('status') == 'observed'
+                    and data.get('source_commit') == module_root.name
+                ):
+                    runtime = dict(data)
+                else:
+                    runtime = {'schema': 'agentos.thin-client-runtime/v0.1',
+                               'status': 'invalid', 'source_commit': '',
+                               'error': 'pinned runtime provenance mismatch'}
+            except (OSError, ValueError):
+                runtime = {'schema': 'agentos.thin-client-runtime/v0.1',
+                           'status': 'invalid', 'source_commit': '',
+                           'error': 'pinned runtime provenance unavailable'}
+        elif runtime.get('status') == 'unknown':
+            # Existing non-snapshot installations retain their old fallback.
+            try:
+                candidate = module_root / 'runtime-provenance.json'
                 if candidate.is_file():
                     data = json.loads(candidate.read_text(encoding='utf-8-sig'))
                     if isinstance(data, dict) and data.get('schema') == 'agentos.thin-client-runtime/v0.1':
