@@ -215,12 +215,32 @@ async function evaluate(wsUrl, expression, stage='unknown', method='Runtime.eval
     console.log('threads_web_dm_login_mio_account_hint='+String(mioHint));
   } finally {
     if (targetId) {
+      // Cleanup only the exact disposable tab ID created by THIS invocation.
+      // Never sweep pre-existing tabs or modify the persistent browser profile.
+      let closeState = 'UNCONFIRMED';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const current = await fetchJson(BASE+'/json/list');
+          if (!current.some(x => String(x.id || '') === targetId)) {
+            closeState = 'ABSENT';
+            break;
+          }
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 3000);
+          try {
+            const response = await fetch(BASE+'/json/close/'+encodeURIComponent(targetId),{signal:controller.signal});
+            if (!response.ok) closeState = 'CLOSE_HTTP_ERROR';
+          } finally { clearTimeout(timer); }
+          await sleep(500);
+        } catch {
+          closeState = 'CLOSE_OR_VERIFY_ERROR';
+        }
+      }
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 3000);
-        await fetch(BASE+'/json/close/'+encodeURIComponent(targetId),{signal:controller.signal});
-        clearTimeout(timer);
+        const remaining = await fetchJson(BASE+'/json/list');
+        if (!remaining.some(x => String(x.id || '') === targetId)) closeState='CONFIRMED_CLOSED';
       } catch {}
+      console.log('threads_web_dm_owned_target_cleanup='+closeState);
     }
   }
 })().catch(err => {
