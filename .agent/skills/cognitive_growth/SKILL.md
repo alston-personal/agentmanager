@@ -4,6 +4,10 @@ description: Turns validated experience into reusable, versioned capability impr
 ---
 # Cognitive Growth Protocol
 
+## Highest-principle status
+
+**AgentOS Growth Proof is a highest-level product principle.** The system should prefer designs that make genuine competence gain observable, attributable, reproducible, transferable, and reversible. A feature that stores experience but cannot later prove useful reuse contributes infrastructure, not demonstrated growth.
+
 AgentOS cognitive growth is **not** the claim that an underlying LLM's weights are being trained during normal use. It is the system-level process by which repeated experience becomes reusable capability that survives executor/model/session changes.
 
 ## Definition
@@ -78,6 +82,24 @@ A continuation failure MAY, however, become a growth event when:
 3. it is validated with a regression test,
 4. the rule is promoted,
 5. a future continuation avoids the same failure.
+
+## Growth Proof control
+
+A longitudinal proof SHOULD hold constant, or explicitly record, major confounders such as model/provider/version, tool set, permissions, hardware class, task dataset, and evaluation method. Compare at least a cold/baseline state against one or more accumulated-experience states. The preferred causal test is an A/B or replay pair where the only intentional difference is availability of the validated cognitive delta.
+
+A strong proof records:
+
+```text
+baseline execution
+  -> experience event
+  -> candidate extraction
+  -> validation/promotion
+  -> later independent execution with delta
+  -> counterfactual/replay without delta where feasible
+  -> measured uplift and regression check
+```
+
+Cross-model, cross-executor, or cross-node transfer is especially valuable because it demonstrates that competence lives in AgentOS rather than only in one model session.
 
 ## Required Metrics
 
