@@ -57,6 +57,10 @@ EXECUTOR_JOB_RECEIPT_FIELDS = (
     'layoutlib_public_http', 'layoutlib_parity',
     'work_id', 'completion_status', 'completion_owner',
     'completion_owner_generation',
+    'completion_active_count', 'completion_blocked_count',
+    'completion_waiting_count', 'completion_unreconciled_count',
+    'completion_target_verified', 'completion_wake_not_before',
+    'completion_wake_overdue', 'completion_wait_reason_category',
 )
 
 
