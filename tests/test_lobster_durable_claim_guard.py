@@ -98,3 +98,57 @@ def test_real_ledger_claim_is_single_winner_and_owner_fenced():
             module.transition(ledger2, work_id="foreign", target="in_progress",
                               actor="role://lobster", expected_owner="role://lobster")
         assert module.load(ledger2)["items"]["foreign"]["status"] == "accepted"
+
+
+def test_separate_processes_only_one_claims_work_item():
+    """fcntl must fence across OS processes, not only threads."""
+    import subprocess
+    import sys
+    import tempfile
+    import json
+    from pathlib import Path
+
+    script = ROOT / "scripts" / "work_completion.py"
+    with tempfile.TemporaryDirectory() as td:
+        ledger = Path(td) / "items.json"
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("work_completion_process_test", script)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        module.register(ledger, work_id="multiproc", project_id="test", title="Race",
+                        owner="role://lobster", next_action="read-only probe",
+                        acceptance=["exactly one winner"])
+        start = Path(td) / "start"
+        worker = """
+import importlib.util, pathlib, sys, time
+spec = importlib.util.spec_from_file_location('wc_child', sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = mod
+spec.loader.exec_module(mod)
+while not pathlib.Path(sys.argv[3]).exists():
+    time.sleep(.005)
+try:
+    mod.transition(pathlib.Path(sys.argv[2]), work_id='multiproc',
+                   target='in_progress', actor='role://lobster',
+                   expected_owner='role://lobster')
+    print('WON')
+except ValueError:
+    print('LOST')
+"""
+        processes = [
+            subprocess.Popen([sys.executable, "-c", worker, str(script), str(ledger), str(start)],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            for _ in range(2)
+        ]
+        try:
+            start.touch()
+            results = [p.communicate(timeout=10) for p in processes]
+            assert sorted(s.strip() for s, _ in results) == ["LOST", "WON"], results
+            assert all(p.returncode == 0 for p in processes), results
+            assert module.load(ledger)["items"]["multiproc"]["status"] == "in_progress"
+        finally:
+            for p in processes:
+                if p.poll() is None:
+                    p.kill()
+                    p.wait()
