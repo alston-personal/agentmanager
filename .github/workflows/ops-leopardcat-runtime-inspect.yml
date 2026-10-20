@@ -1,4 +1,5 @@
 name: Ops LeopardCat Runtime Inspect
+# recovery-probe: 2026-10-20 ocean-current-master read-only runner-claim
 
 on:
   push:
