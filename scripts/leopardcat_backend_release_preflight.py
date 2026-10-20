@@ -45,7 +45,7 @@ def inspect(target):
     unexpected = [p for p in dirty if p not in ALLOW_DIRTY and not any(p.startswith(x) for x in ALLOW_PREFIX)]
     if unexpected:
         raise RuntimeError("unexpected_runtime_dirty_paths")
-    # GitHub's target must already be fetched by the governed caller.
+    # Fetch and verify the target through the existing trusted product remote.\n    command("git", "-C", str(ROOT), "fetch", "--no-tags", "origin", "main")\n    # GitHub's target must be present in the fetched repository.
     ancestor = subprocess.run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", head, target], timeout=15)
     if ancestor.returncode:
         raise RuntimeError("target_not_fast_forward_from_runtime")
