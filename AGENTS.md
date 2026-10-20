@@ -136,3 +136,9 @@ The Growth Auditor must classify conservatively:
 - G5 is longitudinal and must not be inferred from one event.
 
 See `docs/GROWTH_AUDITOR.md` for the runtime contract.
+
+## Quality skills (task-specific)
+
+- For releases, debugging, autonomous continuation, workflow handoffs and completion claims, apply `.agents/skills/anti-slop-delivery/SKILL.md`. A passing CI or merged PR is not user-visible production acceptance.
+- For public copy, reports, UX/UI or frontend tasks, apply `.agents/skills/anti-slop-content/SKILL.md` in addition to delivery acceptance when shipping.
+- Load only relevant skills; use observable proof and preserve existing owner responsibilities. These are quality filters, not authority to bypass protected branches or deployment governance.
