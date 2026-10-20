@@ -1,0 +1,28 @@
+name: LeopardCat backend release preflight contract
+
+on:
+  push:
+    branches: [fix/leopardcat-backend-release-guard-20261020]
+    paths:
+      - scripts/leopardcat_backend_release_preflight.py
+      - tests/test_leopardcat_backend_release_preflight.py
+      - .github/workflows/leopardcat-backend-release-preflight.yml
+  pull_request:
+    paths:
+      - scripts/leopardcat_backend_release_preflight.py
+      - tests/test_leopardcat_backend_release_preflight.py
+      - .github/workflows/leopardcat-backend-release-preflight.yml
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate preflight syntax and contract
+        run: |
+          python3 -m py_compile scripts/leopardcat_backend_release_preflight.py
+          python3 -m unittest discover -s tests -p 'test_leopardcat_backend_release_preflight.py' -v
