@@ -439,6 +439,13 @@ def recover_orphan_reply_intent(root, state):
     """
     pending=state.get("pending_external_actions") or []
     tracked={str(x.get("action_id")) for x in pending if isinstance(x,dict)}
+    # Bound restored uncertainty: a pending held reply must be reconciled or
+    # explicitly classified before another orphan can be promoted. The durable
+    # intent files remain intact; no social write is authorized by this gate.
+    if any(isinstance(x,dict) and x.get("capability")=="social.reply.send"
+           and x.get("status")=="in_progress" and x.get("reconciliation_required") is True
+           for x in pending):
+        return None
     historical=[]
     for path in (root/"pdca/reply_intents").glob("*.json"):
         try:
