@@ -49,6 +49,10 @@ def inspect(target):
     ancestor = subprocess.run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", head, target], timeout=15)
     if ancestor.returncode:
         raise RuntimeError("target_not_fast_forward_from_runtime")
+    # Reject non-main target commits: a product request cannot deploy an arbitrary fork.
+    release_tip = command("git", "-C", str(ROOT), "rev-parse", "refs/remotes/origin/main")
+    if subprocess.run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", target, release_tip], timeout=15).returncode:
+        raise RuntimeError("target_not_on_main_release_lane")
     with urllib.request.urlopen("http://127.0.0.1:8088/api/v1/personas?deck=leopardcat", timeout=8) as res:
         if res.status != 200:
             raise RuntimeError("baseline_persona_api_unhealthy")
