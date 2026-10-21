@@ -15,6 +15,7 @@ on:
       - '.agent/scripts/agentos-employee-worker-host-system.service'
       - 'scripts/install_systemd_user.sh'
       - 'scripts/install_services.py'
+      - 'scripts/work_completion.py'
   workflow_dispatch:
 
 permissions:
