@@ -513,7 +513,8 @@ def defer_machine_blockers(
                 continue
             previous_retries = max(0, int(item.get("machine_retry_count") or 0))
             retry_budget = VERIFICATION_RETRY_LIMIT if kind == "VERIFICATION" else MACHINE_RETRY_BUDGET
-            if previous_retries >= retry_budget:
+            retry_baseline = max(0, int(item.get("repair_retry_baseline") or 0))
+            if previous_retries - retry_baseline >= retry_budget:
                 # Idempotent fail-closed: no extra wake, owner churn or count
                 # inflation on each subsequent watchdog pass.
                 if not any(event.get("event") == "machine_retry_budget_exhausted" for event in item.get("history", [])):
