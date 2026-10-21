@@ -104,6 +104,7 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "completion_recent_reclaim_count",
     "completion_target_reclaimed",
     "completion_last_blocker_kind",
+            "completion_last_verification_failure_code",
     "completion_machine_retry_count",
     "completion_wait_reason_category",
 )
