@@ -67,6 +67,13 @@ def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
         if not 0 <= retries <= 1000000:
             raise ValueError("invalid_retry_count")
         return {
+            "completion_last_verification_failure_code": (
+                str(target.get("last_verification_failure_code") or "")
+                if target and str(target.get("last_verification_failure_code") or "") in {
+                    "INSPECTOR_UNAVAILABLE", "PHYSICAL_OUTPUT", "TEST_FAILURE",
+                    "EVIDENCE_MISSING", "ACCEPTANCE_FAILURE", "UNCLASSIFIED",
+                } else "UNKNOWN"
+            ),
             "completion_last_blocker_kind": kind,
             "completion_machine_retry_count": retries,
             "completion_last_event_category": last_event,
