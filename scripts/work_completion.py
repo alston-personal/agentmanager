@@ -435,7 +435,56 @@ def retry_admission_allowed(item: dict[str, Any]) -> bool:
     limit = VERIFICATION_RETRY_LIMIT if kind == "VERIFICATION" else MACHINE_RETRY_BUDGET
     if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
         return True
-    return max(0, int(item.get("machine_retry_count") or 0)) < limit
+    count = max(0, int(item.get("machine_retry_count") or 0))
+    baseline = max(0, int(item.get("repair_retry_baseline") or 0))
+    return count - baseline < limit
+
+
+
+def resume_after_attested_repair(
+    path: Path, *, work_id: str, actor: str, repair_commit: str,
+    evidence_receipt: str, lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> dict[str, Any]:
+    """Reopen exhausted work only after an independent governed repair attestation.
+
+    This is a library operation, deliberately NOT a public CLI or ONE action.
+    External authority must validate the actor and exact deployed repair SHA +
+    immutable receipt before calling it. It cannot be triggered by a work item.
+    """
+    if actor != "role://completion.controller":
+        raise ValueError("repair_authority_required")
+    if not re.fullmatch(r"[0-9a-f]{40}", repair_commit):
+        raise ValueError("repair_commit_sha_required")
+    if not re.fullmatch(r"[A-Za-z0-9._:/-]{16,200}", evidence_receipt):
+        raise ValueError("repair_receipt_required")
+    with locked(path):
+        state = load(path)
+        item = state["items"].get(work_id)
+        if not item:
+            raise KeyError("work_item_not_found")
+        if item.get("status") != "blocked" or retry_admission_allowed(item):
+            raise ValueError("repair_requires_exhausted_blocked_work")
+        if item.get("last_repair_commit") == repair_commit:
+            raise ValueError("repair_commit_already_applied")
+        count = max(0, int(item.get("machine_retry_count") or 0))
+        item["repair_retry_baseline"] = count
+        item["last_repair_commit"] = repair_commit
+        item["status"] = "accepted"
+        item["blocker"] = None
+        item["wake_condition"] = None
+        item["owner"] = "role://completion.controller"
+        item["lease_expires_at"] = lease_deadline(lease_seconds)
+        item["updated_at"] = now()
+        item.setdefault("history", []).append({
+            "at": now(), "event": "attested_repair_resume", "actor": actor,
+            "repair_commit": repair_commit, "evidence_receipt": evidence_receipt,
+            "retry_baseline": count,
+        })
+        problems = validate_item(item)
+        if problems:
+            raise ValueError(",".join(problems))
+        save(path, state)
+        return item
 
 
 def defer_machine_blockers(
