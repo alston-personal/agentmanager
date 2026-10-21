@@ -522,6 +522,7 @@ def wake_due(
     """Wake due non-human waits so the normal durable queue can resume them."""
     point = at or datetime.now(timezone.utc)
     awakened: list[str] = []
+    exhausted_updated = False
     with locked(path):
         state = load(path)
         for work_id, item in sorted(state["items"].items()):
@@ -538,8 +539,25 @@ def wake_due(
             if due > point:
                 continue
             if not retry_admission_allowed(item):
-                # Keep the durable wait and original evidence intact. Do not
-                # silently requeue exhausted attempts.
+                # An overdue wait with exhausted budget must become a visible,
+                # owned blocker, not remain a misleading perpetual timer.
+                kind = str(item.get("last_blocker_kind") or classify_blocker(item.get("blocker")))
+                item["status"] = "blocked"
+                item["wake_condition"] = None
+                item["blocker"] = f"{kind} retry budget exhausted; governed repair required"
+                item["owner"] = "role://completion.controller"
+                item["lease_expires_at"] = lease_deadline(lease_seconds)
+                item["updated_at"] = now()
+                if not any(e.get("event") == "machine_retry_budget_exhausted" for e in item.get("history", [])):
+                    item.setdefault("history", []).append({
+                        "at": now(), "event": "machine_retry_budget_exhausted",
+                        "actor": actor, "blocker_kind": kind,
+                        "retry_count": int(item.get("machine_retry_count") or 0),
+                    })
+                problems = validate_item(item)
+                if problems:
+                    raise ValueError(",".join(problems))
+                exhausted_updated = True
                 continue
             item["status"] = "accepted"
             item["wake_condition"] = None
@@ -551,7 +569,7 @@ def wake_due(
                 {"at": now(), "event": "wake", "actor": actor, "reason": "time_condition_due"}
             )
             awakened.append(work_id)
-        if awakened:
+        if awakened or exhausted_updated:
             save(path, state)
     return awakened
 
