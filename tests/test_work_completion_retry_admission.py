@@ -133,6 +133,14 @@ class RetryAdmissionTests(unittest.TestCase):
                     actor="role://completion.controller", repair_commit=commit, evidence_receipt=receipt)
             wc.transition(path, work_id="test-470", target="in_progress",
                           actor="role://lobster")
+            wc.transition(path, work_id="test-470", target="blocked",
+                          actor="role://lobster", blocker="verification failed")
+            deferred = wc.defer_machine_blockers(path)
+            self.assertEqual(len(deferred), 1)
+            self.assertEqual(deferred[0]["retry_count"], 365)
+            after = wc.load(path)["items"]["test-470"]
+            self.assertEqual(after["machine_retry_count"], 365)
+            self.assertEqual(after["repair_retry_baseline"], 364)
 
     def test_new_unblocked_work_is_not_impeded(self):
         self.assertTrue(wc.retry_admission_allowed({
