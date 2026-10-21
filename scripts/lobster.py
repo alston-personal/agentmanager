@@ -460,6 +460,17 @@ def completion_begin(task_text: str) -> Optional[str]:
                 actor="role://lobster", next_action=item["next_action"],
             )
         elif item["status"] == "blocked":
+            # Fail closed at the executor boundary too: the watchdog budget
+            # alone cannot stop an independent TASK_BOARD/Lobster activation.
+            blocker_kind = WorkCompletion.classify_blocker(item.get("blocker"))
+            retry_count = max(0, int(item.get("machine_retry_count") or 0))
+            verification_budget = WorkCompletion.VERIFICATION_RETRY_LIMIT
+            if blocker_kind == "VERIFICATION" and retry_count >= verification_budget:
+                logger.warning(
+                    "completion begin prevented: exhausted verification budget work_id=%s retries=%s",
+                    work_id, retry_count,
+                )
+                return None
             WorkCompletion.transition(
                 COMPLETION_STATE, work_id=work_id, target="in_progress",
                 actor="role://lobster", next_action=item["next_action"],
