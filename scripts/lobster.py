@@ -250,7 +250,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
             # Never mark unverified AI output as success. Preserve durable
             # ownership and require an actual verifier before closure.
             logger.error("  Inspector 未載入；無法驗證任務結果")
-            return False, "BLOCKED: inspector_unavailable"
+            return False, "BLOCKED: verification_failure_code=INSPECTOR_UNAVAILABLE"
 
         result, reason = Inspector.inspect(proj_dir, task_text, output, failure_count)
         logger.info(f"  Inspector: {result} — {reason[:80]}")
@@ -261,7 +261,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
             target_dir = get_target_output_path(proj_dir.name, proj_dir)
             if not verify_physical_output(proj_dir, task_text, output, target_dir=target_dir):
                 logger.warning(f"  🚫 物理驗證失敗：任務宣稱完成但無實體檔案產出（幻覺完成）")
-                return False, f"FAIL: 幻覺完成，缺乏實體產出"
+                return False, "BLOCKED: verification_failure_code=PHYSICAL_OUTPUT"
             return True, f"PASS: {reason}"
 
         if result == "BLOCKED":
@@ -273,7 +273,8 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
                 f"原因: {reason[:200]}\n\n"
                 f"請人工介入後在 STATUS.md 或 TASK_BOARD.md 將 `[!]` 改為 `[ ]` 以恢復執行。"
             )
-            return False, f"BLOCKED: {reason}"
+            # Fixed diagnostic enum only; never persist raw Inspector prose.
+            return False, f"BLOCKED: verification_failure_code={classify_inspector_failure(reason)}"
         if result == "SKIP":
             return False, f"SKIP: {reason}"
         # result == "FAIL" → 重試
