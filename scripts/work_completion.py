@@ -302,6 +302,8 @@ def transition(
             return item
         if target not in ALLOWED.get(current, set()):
             raise ValueError(f"invalid_transition:{current}->{target}")
+        if target == "in_progress" and not retry_admission_allowed(item):
+            raise ValueError("machine_retry_budget_exhausted")
         if next_action is not None:
             item["next_action"] = next_action.strip()
         if target in ACTIVE and not str(item.get("next_action") or "").strip():
@@ -414,6 +416,22 @@ VERIFICATION_RETRY_LIMIT = 5
 MACHINE_RETRY_BUDGET = 12
 
 
+def retry_admission_allowed(item: dict[str, Any]) -> bool:
+    """Fail closed for exhausted machine retries across wake and executor paths.
+
+    The kind is durable because wake_due clears the human-readable blocker.
+    Remediation must use a separately governed, evidence-backed resume path;
+    normal wake/board projection must not erase history or bypass this limit.
+    """
+    kind = str(item.get("last_blocker_kind") or "")
+    if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
+        kind = classify_blocker(item.get("blocker"))
+    limit = VERIFICATION_RETRY_LIMIT if kind == "VERIFICATION" else MACHINE_RETRY_BUDGET
+    if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
+        return True
+    return max(0, int(item.get("machine_retry_count") or 0)) < limit
+
+
 def defer_machine_blockers(
     path: Path,
     *,
@@ -518,6 +536,10 @@ def wake_due(
             except ValueError:
                 continue
             if due > point:
+                continue
+            if not retry_admission_allowed(item):
+                # Keep the durable wait and original evidence intact. Do not
+                # silently requeue exhausted attempts.
                 continue
             item["status"] = "accepted"
             item["wake_condition"] = None
@@ -666,6 +688,7 @@ def board_projection(path: Path) -> str:
     active = [
         item for item in state["items"].values()
         if item.get("status") in ACTIVE and str(item.get("owner") or "") in EXECUTION_OWNERS
+        and retry_admission_allowed(item)
     ]
     if not active:
         return ""
