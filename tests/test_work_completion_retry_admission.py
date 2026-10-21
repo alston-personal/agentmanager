@@ -80,6 +80,31 @@ class RetryAdmissionTests(unittest.TestCase):
         self.assertIn("classify_inspector_failure(reason)", lobster)
         self.assertNotIn('return False, f"BLOCKED: {reason}"', lobster)
 
+    def test_bounded_inspector_code_persists_in_real_ledger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "work-items.json"
+            wc.register(path, work_id="test-470", project_id="agentos-core",
+                        title="Inspector diagnosis", owner="role://completion.controller",
+                        next_action="Diagnose inspector", acceptance=["verified evidence"])
+            wc.transition(path, work_id="test-470", target="blocked",
+                          actor="role://lobster",
+                          blocker="BLOCKED: verification_failure_code=EVIDENCE_MISSING")
+            item = wc.load(path)["items"]["test-470"]
+            self.assertEqual(item["last_verification_failure_code"], "EVIDENCE_MISSING")
+            self.assertEqual(item["status"], "blocked")
+
+    def test_unknown_inspector_code_not_persisted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "work-items.json"
+            wc.register(path, work_id="test-470", project_id="agentos-core",
+                        title="Inspector diagnosis", owner="role://completion.controller",
+                        next_action="Diagnose inspector", acceptance=["verified evidence"])
+            wc.transition(path, work_id="test-470", target="blocked",
+                          actor="role://lobster",
+                          blocker="BLOCKED: verification_failure_code=PRIVATE_SECRET")
+            self.assertNotIn("last_verification_failure_code",
+                             wc.load(path)["items"]["test-470"])
+
     def test_new_unblocked_work_is_not_impeded(self):
         self.assertTrue(wc.retry_admission_allowed({
             "status": "accepted", "machine_retry_count": 0,
