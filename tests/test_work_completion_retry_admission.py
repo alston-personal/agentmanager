@@ -32,7 +32,7 @@ class RetryAdmissionTests(unittest.TestCase):
                 "machine_retry_count": wc.MACHINE_RETRY_BUDGET,
             }))
 
-    def test_exhausted_timed_wait_cannot_wake_or_mutate_history(self):
+    def test_exhausted_timed_wait_becomes_owned_blocker_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "work-items.json"
             wc.register(path, work_id="test-470", project_id="agentos-core",
@@ -46,11 +46,17 @@ class RetryAdmissionTests(unittest.TestCase):
             item["wake_condition"] = {"kind": "time",
                 "not_before": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()}
             wc.save(path, state)
-            original = wc.load(path)
             self.assertEqual(wc.wake_due(path), [])
             after = wc.load(path)
-            self.assertEqual(after, original)
-            self.assertEqual(after["items"]["test-470"]["machine_retry_count"], 364)
+            item = after["items"]["test-470"]
+            self.assertEqual(item["status"], "blocked")
+            self.assertIsNone(item["wake_condition"])
+            self.assertEqual(item["owner"], "role://completion.controller")
+            self.assertEqual(item["machine_retry_count"], 364)
+            self.assertEqual(sum(e["event"] == "machine_retry_budget_exhausted"
+                                 for e in item["history"]), 1)
+            self.assertEqual(wc.wake_due(path), [])
+            self.assertEqual(wc.load(path), after)
 
     def test_exhausted_accepted_to_running_is_denied(self):
         with tempfile.TemporaryDirectory() as tmp:
