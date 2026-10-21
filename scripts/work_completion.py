@@ -318,6 +318,12 @@ def transition(
             if not blocker or not blocker.strip():
                 raise ValueError("blocked_reason_required")
             item["blocker"] = blocker.strip()
+            match = re.search(r"verification_failure_code=([A-Z_]+)", blocker)
+            allowed_codes = {"INSPECTOR_UNAVAILABLE", "PHYSICAL_OUTPUT",
+                             "TEST_FAILURE", "EVIDENCE_MISSING",
+                             "ACCEPTANCE_FAILURE", "UNCLASSIFIED"}
+            if match and match.group(1) in allowed_codes:
+                item["last_verification_failure_code"] = match.group(1)
         else:
             item["blocker"] = None
         if target != "waiting_external":
