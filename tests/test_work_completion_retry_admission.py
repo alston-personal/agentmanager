@@ -105,6 +105,35 @@ class RetryAdmissionTests(unittest.TestCase):
             self.assertNotIn("last_verification_failure_code",
                              wc.load(path)["items"]["test-470"])
 
+    def test_attested_repair_epoch_preserves_364_total_retries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "work-items.json"
+            wc.register(path, work_id="test-470", project_id="agentos-core",
+                        title="Repair verification", owner="role://completion.controller",
+                        next_action="Reverify", acceptance=["inspector PASS"])
+            state = wc.load(path)
+            item = state["items"]["test-470"]
+            item.update(status="blocked", blocker="verification failed",
+                        last_blocker_kind="VERIFICATION", machine_retry_count=364)
+            wc.save(path, state)
+            commit = "a" * 40
+            receipt = "receipt://governed/attested-immutable-001"
+            with self.assertRaisesRegex(ValueError, "repair_authority_required"):
+                wc.resume_after_attested_repair(path, work_id="test-470",
+                    actor="role://lobster", repair_commit=commit, evidence_receipt=receipt)
+            resumed = wc.resume_after_attested_repair(path, work_id="test-470",
+                actor="role://completion.controller", repair_commit=commit, evidence_receipt=receipt)
+            self.assertEqual(resumed["status"], "accepted")
+            self.assertEqual(resumed["machine_retry_count"], 364)
+            self.assertEqual(resumed["repair_retry_baseline"], 364)
+            self.assertTrue(wc.retry_admission_allowed(resumed))
+            self.assertEqual(resumed["history"][-1]["event"], "attested_repair_resume")
+            with self.assertRaisesRegex(ValueError, "repair_requires_exhausted_blocked_work"):
+                wc.resume_after_attested_repair(path, work_id="test-470",
+                    actor="role://completion.controller", repair_commit=commit, evidence_receipt=receipt)
+            wc.transition(path, work_id="test-470", target="in_progress",
+                          actor="role://lobster")
+
     def test_new_unblocked_work_is_not_impeded(self):
         self.assertTrue(wc.retry_admission_allowed({
             "status": "accepted", "machine_retry_count": 0,
