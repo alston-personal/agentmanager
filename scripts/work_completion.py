@@ -406,6 +406,10 @@ MACHINE_RETRY_BASE_SECONDS = {
     "PROVIDER_CAPACITY": 900,
 }
 MACHINE_RETRY_MAX_SECONDS = 3600
+# An unchanged machine failure must not consume unlimited retries forever.
+# Exhaustion stays BLOCKED under the same work ID; a verified repair can then
+# be deliberately resumed through existing governed transitions.
+MACHINE_RETRY_BUDGET = 12
 
 
 def defer_machine_blockers(
@@ -425,13 +429,28 @@ def defer_machine_blockers(
     deferred: list[dict[str, Any]] = []
     with locked(path):
         state = load(path)
+        exhausted_updated = False
         for work_id, item in sorted(state["items"].items()):
             if item.get("status") != "blocked":
                 continue
             kind = classify_blocker(item.get("blocker"))
             if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
                 continue
-            retry_count = max(0, int(item.get("machine_retry_count") or 0)) + 1
+            previous_retries = max(0, int(item.get("machine_retry_count") or 0))
+            if previous_retries >= MACHINE_RETRY_BUDGET:
+                # Idempotent fail-closed: no extra wake, owner churn or count
+                # inflation on each subsequent watchdog pass.
+                if not any(event.get("event") == "machine_retry_budget_exhausted" for event in item.get("history", [])):
+                    item.setdefault("history", []).append({
+                        "at": now(), "event": "machine_retry_budget_exhausted",
+                        "actor": actor, "blocker_kind": kind,
+                        "retry_count": previous_retries,
+                    })
+                    item["last_blocker_kind"] = kind
+                    item["updated_at"] = now()
+                    exhausted_updated = True
+                continue
+            retry_count = previous_retries + 1
             base = MACHINE_RETRY_BASE_SECONDS[kind]
             delay = min(MACHINE_RETRY_MAX_SECONDS, base * (2 ** min(retry_count - 1, 4)))
             wake_at = point + timedelta(seconds=delay)
@@ -467,7 +486,7 @@ def defer_machine_blockers(
                 "retry_count": retry_count,
                 "delay_seconds": delay,
             })
-        if deferred:
+        if deferred or exhausted_updated:
             save(path, state)
     return deferred
 
