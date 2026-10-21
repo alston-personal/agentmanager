@@ -302,6 +302,8 @@ def transition(
             return item
         if target not in ALLOWED.get(current, set()):
             raise ValueError(f"invalid_transition:{current}->{target}")
+        if target == "in_progress" and not retry_admission_allowed(item):
+            raise ValueError("machine_retry_budget_exhausted")
         if next_action is not None:
             item["next_action"] = next_action.strip()
         if target in ACTIVE and not str(item.get("next_action") or "").strip():
@@ -316,6 +318,12 @@ def transition(
             if not blocker or not blocker.strip():
                 raise ValueError("blocked_reason_required")
             item["blocker"] = blocker.strip()
+            match = re.search(r"verification_failure_code=([A-Z_]+)", blocker)
+            allowed_codes = {"INSPECTOR_UNAVAILABLE", "PHYSICAL_OUTPUT",
+                             "TEST_FAILURE", "EVIDENCE_MISSING",
+                             "ACCEPTANCE_FAILURE", "UNCLASSIFIED"}
+            if match and match.group(1) in allowed_codes:
+                item["last_verification_failure_code"] = match.group(1)
         else:
             item["blocker"] = None
         if target != "waiting_external":
@@ -414,6 +422,23 @@ VERIFICATION_RETRY_LIMIT = 5
 MACHINE_RETRY_BUDGET = 12
 
 
+def retry_admission_allowed(item: dict[str, Any]) -> bool:
+    """Fail closed for exhausted machine retries across wake and executor paths.
+
+    The kind is durable because wake_due clears the human-readable blocker.
+    Remediation must use a separately governed, evidence-backed resume path;
+    normal wake/board projection must not erase history or bypass this limit.
+    """
+    kind = str(item.get("last_blocker_kind") or "")
+    if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
+        kind = classify_blocker(item.get("blocker"))
+    limit = VERIFICATION_RETRY_LIMIT if kind == "VERIFICATION" else MACHINE_RETRY_BUDGET
+    if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
+        return True
+    return max(0, int(item.get("machine_retry_count") or 0)) < limit
+
+
+
 def defer_machine_blockers(
     path: Path,
     *,
@@ -504,6 +529,7 @@ def wake_due(
     """Wake due non-human waits so the normal durable queue can resume them."""
     point = at or datetime.now(timezone.utc)
     awakened: list[str] = []
+    exhausted_updated = False
     with locked(path):
         state = load(path)
         for work_id, item in sorted(state["items"].items()):
@@ -519,6 +545,27 @@ def wake_due(
                 continue
             if due > point:
                 continue
+            if not retry_admission_allowed(item):
+                # An overdue wait with exhausted budget must become a visible,
+                # owned blocker, not remain a misleading perpetual timer.
+                kind = str(item.get("last_blocker_kind") or classify_blocker(item.get("blocker")))
+                item["status"] = "blocked"
+                item["wake_condition"] = None
+                item["blocker"] = f"{kind} retry budget exhausted; governed repair required"
+                item["owner"] = "role://completion.controller"
+                item["lease_expires_at"] = lease_deadline(lease_seconds)
+                item["updated_at"] = now()
+                if not any(e.get("event") == "machine_retry_budget_exhausted" for e in item.get("history", [])):
+                    item.setdefault("history", []).append({
+                        "at": now(), "event": "machine_retry_budget_exhausted",
+                        "actor": actor, "blocker_kind": kind,
+                        "retry_count": int(item.get("machine_retry_count") or 0),
+                    })
+                problems = validate_item(item)
+                if problems:
+                    raise ValueError(",".join(problems))
+                exhausted_updated = True
+                continue
             item["status"] = "accepted"
             item["wake_condition"] = None
             item["blocker"] = None
@@ -529,7 +576,7 @@ def wake_due(
                 {"at": now(), "event": "wake", "actor": actor, "reason": "time_condition_due"}
             )
             awakened.append(work_id)
-        if awakened:
+        if awakened or exhausted_updated:
             save(path, state)
     return awakened
 
@@ -666,6 +713,7 @@ def board_projection(path: Path) -> str:
     active = [
         item for item in state["items"].values()
         if item.get("status") in ACTIVE and str(item.get("owner") or "") in EXECUTION_OWNERS
+        and retry_admission_allowed(item)
     ]
     if not active:
         return ""
