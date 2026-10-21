@@ -297,8 +297,12 @@ class WorkCompletionTests(unittest.TestCase):
             original = mod.load(path)["items"]["wi-1"].copy()
             self.assertEqual(mod.defer_machine_blockers(path), [])
             actual = mod.load(path)["items"]["wi-1"]
-            self.assertEqual(actual, original)
             self.assertEqual(actual["status"], "blocked")
+            self.assertEqual(actual["machine_retry_count"], original["machine_retry_count"])
+            self.assertEqual(actual["owner"], original["owner"])
+            self.assertEqual(actual["history"][-1]["event"], "machine_retry_budget_exhausted")
+            self.assertEqual(mod.defer_machine_blockers(path), [])
+            self.assertEqual(mod.load(path)["items"]["wi-1"], actual)
 
     def test_human_and_unknown_blockers_stay_blocked(self):
         with tempfile.TemporaryDirectory() as temp:
