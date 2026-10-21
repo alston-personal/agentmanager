@@ -284,6 +284,26 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertEqual(result[0]["retry_count"], 5)
             self.assertEqual(result[0]["delay_seconds"], 3600)
 
+    def test_verification_retry_limit_preserves_blocked_receipt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            self.register(path)
+            state = mod.load(path)
+            item = state["items"]["wi-1"]
+            item["status"] = "blocked"
+            item["blocker"] = "BLOCKED: verification_failure_code=EVIDENCE_MISSING"
+            item["machine_retry_count"] = 361
+            mod.save(path, state)
+            original = mod.load(path)["items"]["wi-1"].copy()
+            self.assertEqual(mod.defer_machine_blockers(path), [])
+            actual = mod.load(path)["items"]["wi-1"]
+            self.assertEqual(actual["status"], "blocked")
+            self.assertEqual(actual["machine_retry_count"], original["machine_retry_count"])
+            self.assertEqual(actual["owner"], original["owner"])
+            self.assertEqual(actual["history"][-1]["event"], "machine_retry_budget_exhausted")
+            self.assertEqual(mod.defer_machine_blockers(path), [])
+            self.assertEqual(mod.load(path)["items"]["wi-1"], actual)
+
     def test_human_and_unknown_blockers_stay_blocked(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)
