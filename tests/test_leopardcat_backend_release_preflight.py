@@ -40,7 +40,7 @@ class PreflightContract(unittest.TestCase):
         values = iter([
             str(preflight.APP), "active",
             "https://github.com/alston-personal/leopardcat-tarot.git",
-            "b" * 40, "main", "", "c" * 40
+            "b" * 40, "main", "", "", "c" * 40
         ])
         ok = subprocess.CompletedProcess([], 0)
         bad = subprocess.CompletedProcess([], 1)
