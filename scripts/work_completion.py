@@ -406,6 +406,8 @@ MACHINE_RETRY_BASE_SECONDS = {
     "PROVIDER_CAPACITY": 900,
 }
 MACHINE_RETRY_MAX_SECONDS = 3600
+# A deterministic verifier failure cannot recover from repeated identical retries.
+VERIFICATION_RETRY_LIMIT = 5
 # An unchanged machine failure must not consume unlimited retries forever.
 # Exhaustion stays BLOCKED under the same work ID; a verified repair can then
 # be deliberately resumed through existing governed transitions.
