@@ -73,6 +73,13 @@ class RetryAdmissionTests(unittest.TestCase):
                               actor="role://lobster")
             self.assertEqual(wc.load(path)["items"]["test-470"]["status"], "accepted")
 
+    def test_inspector_failure_codes_are_bounded_at_source(self):
+        lobster = (Path(__file__).resolve().parents[1] / "scripts" / "lobster.py").read_text()
+        self.assertIn("BLOCKED: verification_failure_code=INSPECTOR_UNAVAILABLE", lobster)
+        self.assertIn("BLOCKED: verification_failure_code=PHYSICAL_OUTPUT", lobster)
+        self.assertIn("classify_inspector_failure(reason)", lobster)
+        self.assertNotIn('return False, f"BLOCKED: {reason}"', lobster)
+
     def test_new_unblocked_work_is_not_impeded(self):
         self.assertTrue(wc.retry_admission_allowed({
             "status": "accepted", "machine_retry_count": 0,
