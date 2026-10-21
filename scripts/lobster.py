@@ -454,6 +454,12 @@ def completion_begin(task_text: str) -> Optional[str]:
         item = WorkCompletion.load(COMPLETION_STATE)["items"].get(work_id)
         if not item:
             raise KeyError("work_item_not_found")
+        if not WorkCompletion.retry_admission_allowed(item):
+            logger.warning("completion begin denied: exhausted machine retry budget work_id=%s", work_id)
+            return None
+        if item["status"] not in {"accepted", "blocked", "in_progress", "verifying"}:
+            logger.warning("completion begin denied: non-executable state work_id=%s status=%s", work_id, item["status"])
+            return None
         if item["status"] == "accepted":
             WorkCompletion.transition(
                 COMPLETION_STATE, work_id=work_id, target="in_progress",
