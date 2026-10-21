@@ -177,3 +177,33 @@ def test_bounded_blocker_classification_and_retry_count(tmp_path, monkeypatch):
     assert receipt["completion_last_blocker_kind"] == "RUNTIME_HEALTH"
     assert receipt["completion_machine_retry_count"] == 7
     assert "SECRET RAW PROVIDER ERROR" not in json.dumps(receipt)
+
+
+def test_fixed_enum_inspector_code_roundtrip_and_private_blocker_redaction(tmp_path, monkeypatch):
+    state = tmp_path / "work-items.json"
+    state.write_text(json.dumps({"items": {p.TARGET: {
+        "status": "blocked", "owner": "role://completion.controller",
+        "last_blocker_kind": "VERIFICATION",
+        "last_verification_failure_code": "EVIDENCE_MISSING",
+        "blocker": "sensitive path /home/private/secret"
+    }}}))
+    monkeypatch.setattr(p, "STATE", state)
+    req = canonical_executor_job_request(p.JOB_TYPE)
+    result = _sanitize_provider_result(p.inspect_completion_470(req))
+    receipt = project_executor_job_receipt(
+        job_id="action_470_enum", request=req, executor_available=True,
+        routable=True, authorized=True, successful=True, result=result,
+    )
+    assert receipt["completion_last_verification_failure_code"] == "EVIDENCE_MISSING"
+    assert "sensitive" not in json.dumps(receipt)
+    assert "/home/private" not in json.dumps(receipt)
+
+
+def test_unknown_inspector_code_is_fail_closed(tmp_path, monkeypatch):
+    state = tmp_path / "work-items.json"
+    state.write_text(json.dumps({"items": {p.TARGET: {
+        "status": "blocked", "last_verification_failure_code": "PRIVATE_SECRET"
+    }}}))
+    monkeypatch.setattr(p, "STATE", state)
+    result = p.inspect_completion_470(canonical_executor_job_request(p.JOB_TYPE))
+    assert result["completion_last_verification_failure_code"] == "UNKNOWN"
