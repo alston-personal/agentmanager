@@ -81,6 +81,8 @@ class RoleRegistry:
             if current.get("status") != "active":
                 raise ValueError(f"upstream role is not active: {current_id}")
             parent_role_id = current.get("parent_role_id")
+            if not parent_role_id and current_id != "core.root":
+                parent_role_id = "core.root"
             if parent_role_id:
                 walk(str(parent_role_id))
             for upstream in current.get("upstream_roles", []) or []:
@@ -106,7 +108,7 @@ class RoleRegistry:
 
         return EffectiveRoleContract(
             role_id=role_id,
-            parent_role_id=str(role.get("parent_role_id")) if role.get("parent_role_id") else None,
+            parent_role_id=str(role.get("parent_role_id") or "core.root") if role_id != "core.root" else None,
             protocols=protocols,
             name=str(role.get("name", role_id)),
             kind=str(role.get("kind", "")),
