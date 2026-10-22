@@ -12,6 +12,8 @@ from agent_core.core_supervisor_service import INTENT_RECORD_SCHEMA
 from agent_core.employee_lifecycle import EmployeeLifecycle
 from agent_core.employee_presence import WAKE_CAPABILITY
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.role_runtime import RoleRegistry
+from agent_core.employee_skills import EmployeeSkillRegistry, EmployeeSkillService
 from agent_core.governed_execution import execute_bound_work_intent
 
 EXPECTED_AUTHORITY_POLICY = "core-supervisor-employee-wake-v1"
@@ -345,6 +347,18 @@ class GovernedProductEmployeeWorker:
         lifecycle = EmployeeLifecycle(runtime)
         employee_id = str(capsule["employee_id"])
         assignment_id = str(capsule["assignment_id"])
+        # Hydrate before claiming the durable lease; invalid root/skill fails closed.
+        source_root = Path(__file__).resolve().parents[1]
+        roles = RoleRegistry(source_root / ".agent/roles/registry.yaml")
+        skills = EmployeeSkillRegistry(source_root / "governance/employee-skills.json")
+        employee = runtime.get_employee(employee_id)
+        expected_scope = SUPPORTED_PRODUCT_RUNNERS[self.runner_kind]
+        if set(employee.role_ids) != expected_scope["role_ids"] or set(employee.skill_ids) != expected_scope["skill_ids"]:
+            raise PermissionError("product_employee_runtime_role_skill_mismatch")
+        effective = roles.hydrate_employee_roles(employee.role_ids)
+        if any(role.protocols.get("pdca") != "root.pdca.v1" for role in effective):
+            raise PermissionError("product_employee_root_pdca_not_hydrated")
+        EmployeeSkillService(runtime, roles, skills).hydrate_employee_skills(employee_id)
         lease_id = f"product-{self.runner_kind}-{wake}-{generation}"
         lease = lifecycle.claim(
             assignment_id,
