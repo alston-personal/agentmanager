@@ -1,0 +1,66 @@
+{
+  "schema": "agentos.employee-bootstrap/v1",
+  "bootstrap_id": "paw-engineering-v1",
+  "employee": {
+    "employee_id": "the-paw",
+    "display_name": "The Paw",
+    "role_ids": [
+      "sector.paw"
+    ],
+    "skill_ids": [
+      "engineering.work.inspect"
+    ]
+  },
+  "initial_work_item": {
+    "schema": "agentos.core-work-item/v1",
+    "work_item_id": "paw-470-inspection-v1",
+    "source_kind": "canonical_state",
+    "source_ref": "core:issue-470:paw",
+    "project_id": "agentos-core",
+    "employee_id": "the-paw",
+    "assignment_id": "paw-470-inspection-v1",
+    "goal": "Inspect existing #470 completion work and emit grounded evidence or explicit blocker; execution and acceptance require separately authorized engineering adapter and Inspector.",
+    "constraints": [
+      "root-pdca-effective-role-required",
+      "existing-completion-controller-is-sole-work-queue",
+      "read-only-inspection-only",
+      "no-protected-branch-write",
+      "no-production-ledger-write",
+      "independent-inspector-required",
+      "no-credential-or-session-output"
+    ],
+    "dependency_refs": [
+      "core:issue-470"
+    ],
+    "required_capabilities": [
+      "engineering.work.inspect"
+    ],
+    "authority_requirements": [
+      "role-contract-must-cover-required-capability",
+      "skill-is-not-executor-authority",
+      "governed-one-wake-and-fixed-adapter-required"
+    ],
+    "source_revision": "paw-engineering-v1",
+    "state": "open"
+  },
+  "initial_thread_head": "engineering:the-paw:470:start",
+  "acceptance_marker": "PAW_AUTONOMOUS_A_TO_B=VERIFIED",
+  "acceptance_requires": [
+    "root_pdca_hydrated",
+    "role_local_memory_scope",
+    "governed_wake_claim",
+    "engineering_output_evidence",
+    "independent_claw_inspector_pass",
+    "ledger_work_a_done",
+    "work_b_claimed_without_human",
+    "ledger_work_b_done",
+    "runtime_source_commit_attested"
+  ],
+  "invariants": [
+    "static_ci_is_not_production_acceptance",
+    "bootstrap_does_not_grant_execution_authority",
+    "do_not_reopen_terminal_assignment",
+    "no_unbounded_retries",
+    "no_second_queue"
+  ]
+}
