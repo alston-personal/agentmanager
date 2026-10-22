@@ -32,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: oracle-core-bundle-immutable-runtime-convergence
@@ -364,3 +365,42 @@ jobs:
           trap - EXIT
           rm -rf "$BACKUP"
           REMOTE
+
+  publish-convergence-receipt:
+    needs: [converge]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      issues: write
+    steps:
+      - name: Publish immutable deploy outcome to existing #470 evidence ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CONVERGE_RESULT: ${{ needs.converge.result }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          case "$CONVERGE_RESULT" in
+            success|failure|cancelled|skipped) ;;
+            *) echo "Unexpected deployment outcome" >&2; exit 2 ;;
+          esac
+          case "$SOURCE_SHA" in
+            *[!0-9a-f]*|'') exit 2 ;;
+          esac
+          test "${#SOURCE_SHA}" = 40
+          # This report describes GitHub's completed deployment job only.
+          # It deliberately does not claim Paw has woken, claimed work, or passed Claw verification.
+          body="agentos.core-immutable-deploy-evidence/v1
+          source_commit=$SOURCE_SHA
+          convergence_result=$CONVERGE_RESULT
+          workflow_run=https://github.com/$GH_REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT
+          oracle_runtime_verified=$([ "$CONVERGE_RESULT" = success ] && echo true || echo false)
+          paw_wake_verified=false
+          paw_claim_verified=false
+          claw_verified=false
+          "
+          gh api "repos/$GH_REPO/issues/470/comments" -f body="$body" >/dev/null
