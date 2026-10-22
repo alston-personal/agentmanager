@@ -79,6 +79,7 @@ jobs:
             os-lobster.service
             agentos-core-supervisor.service
             agentos-employee-worker-host.service
+            agentos-employee-wake-node.service
           )
           SERVICES=(
             os-chronos.service
@@ -88,6 +89,7 @@ jobs:
             os-lobster.service
             agentos-core-supervisor.service
             agentos-employee-worker-host.service
+            agentos-employee-wake-node.service
           )
           mkdir -p "$RELEASE_ROOT" "$RUNTIME_ROOT"
 
@@ -210,6 +212,23 @@ jobs:
           echo "core_bundle_install_services=DONE"
           printf '%s\n' "$INSTALL_JSON"
           printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("mode")=="systemd", d'
+
+          # The wake node has its own enrolled identity. Only adopt an already-active
+          # unit; never bootstrap enrollment or start an unknown inactive node.
+          if grep -Fxq 'agentos-employee-wake-node.service' "$BACKUP/active-services"; then
+            test -f "$BACKUP/agentos-employee-wake-node.service"
+            test -f "$DATA_ROOT/employee-wake-node/client.json"
+            test -f "$RELEASE/.agent/scripts/agentos-employee-wake-node.service"
+            sed "s|WorkingDirectory=/home/ubuntu/agentmanager|WorkingDirectory=$RELEASE|; s|EnvironmentFile=/home/ubuntu/agentmanager/.env|EnvironmentFile=$RELEASE/.env|"               "$RELEASE/.agent/scripts/agentos-employee-wake-node.service" > "$UNIT_DIR/agentos-employee-wake-node.service"
+            systemctl --user daemon-reload
+            systemctl --user restart agentos-employee-wake-node.service
+            systemctl --user is-active --quiet agentos-employee-wake-node.service
+            wake_wd="$(systemctl --user show agentos-employee-wake-node.service -p WorkingDirectory --value)"
+            test "$wake_wd" = "$RELEASE"
+            echo "core_bundle_paw_wake_node=ACTIVE_IMMUTABLE"
+          else
+            echo "core_bundle_paw_wake_node=NOT_PREVIOUSLY_ACTIVE"
+          fi
 
           # Preserve availability: everything that was active before must be active after.
           while read -r unit; do
