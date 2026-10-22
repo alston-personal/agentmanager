@@ -226,7 +226,7 @@ def test_paw_bootstrap_evidence_requires_exact_immutable_release_and_identity(tm
         "schema": "agentos.product-employee-bootstrap-receipt/v1",
         "ok": True,
         "employees": [{"employee_id": "the-paw", "assignment_id": "paw-470-inspection-v1",
-                       "assignment_state": "open"}],
+                       "assignment_state": "pending"}],
     }))
     assert p._paw_bootstrap_evidence() == (True, True, sha)
     receipt.write_text(json.dumps({"schema": "agentos.product-employee-bootstrap-receipt/v1",
