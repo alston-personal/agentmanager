@@ -28,6 +28,7 @@ _GOVERNED_DELIVERY_INDEX_CACHE: dict[
 ] = {}
 
 SUPPORTED_PRODUCT_RUNNERS = {
+    "paw_inspect_v1": {"employee_id": "the-paw", "assignment_id": "paw-470-inspection-v1", "role_ids": {"sector.paw"}, "skill_ids": {"engineering.work.inspect"}},
     "zeus_writer_v1": {
         "employee_id": "zeus-writer",
         "assignment_id": "zeus-writer-continuation-v1",
@@ -379,6 +380,14 @@ class GovernedProductEmployeeWorker:
                 thread_head=lease.thread_head,
                 error_code="product_employee_worker_lease_generation_mismatch",
             )
+
+        if self.runner_kind == "paw_inspect_v1":
+            blocker = "paw_governed_engineering_executor_not_bound"
+            thread_head = f"paw:blocked:{blocker}:{wake}:p{generation}:l{lease.generation}"
+            lease = lifecycle.checkpoint(assignment_id, lease_id, thread_head)
+            lifecycle.finish(assignment_id, lease_id, state="blocked", result_summary={"bounded_stage": "engineering-inspection", "blocker_code": blocker, "mutation_performed": False, "credential_exposed": False})
+            employee = runtime.get_employee(employee_id)
+            return ProductWorkerState(status="blocked", runner_kind=self.runner_kind, employee_id=employee_id, assignment_id=assignment_id, wake_id=wake, presence_generation=generation, lease_generation=lease.generation, thread_head=lease.thread_head, error_code=blocker, executor_provider=employee.executor.provider, executor_model=employee.executor.model)
 
         if self.runner_kind == "youtube_ai_manager_scan_v1":
             blocker = "youtube_governed_read_adapter_unavailable"
