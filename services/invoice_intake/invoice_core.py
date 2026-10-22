@@ -2040,15 +2040,23 @@ class InvoiceStore:
         from services.invoice_intake.gpt_web_provider import from_receipt
 
         normalized = from_receipt(receipt, request_id=request_id)
+        # Require a locally issued binding, not just a model-provided invoice number.
+        binding = receipt.get("invoice_binding")
+        if not isinstance(binding, dict) or binding.get("invoice_id") != invoice_id or binding.get("request_id") != request_id:
+            raise ValueError("GPT_WEB_INVOICE_BINDING_REQUIRED")
+        if not isinstance(binding.get("image_sha256"), str) or len(binding["image_sha256"]) != 64:
+            raise ValueError("GPT_WEB_IMAGE_BINDING_INVALID")
         fields = normalized["fields"]
         now = utcnow()
         with self.connect() as db:
             row = db.execute(
-                "SELECT id, document_id, status FROM invoices WHERE id=? AND deleted_at IS NULL",
+                "SELECT i.id, i.document_id, i.status, d.sha256 FROM invoices i JOIN documents d ON d.id=i.document_id WHERE i.id=? AND i.deleted_at IS NULL",
                 (invoice_id,),
             ).fetchone()
             if row is None:
                 raise KeyError(invoice_id)
+            if row["sha256"] != binding["image_sha256"]:
+                raise ValueError("GPT_WEB_IMAGE_SHA_MISMATCH")
             if row["status"] not in {"needs_review", "recognition_insufficient", "quick_confirm"}:
                 raise ValueError("GPT_WEB_INVOICE_NOT_REVIEWABLE")
             # A bridge retry for the same correlated request must not write twice.
