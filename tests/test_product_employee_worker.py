@@ -519,3 +519,13 @@ def test_worker_host_preserves_trusted_blocked_terminal_result(tmp_path: Path) -
     )
     assert result["status"] == "blocked"
     assert result["error_code"] is None
+
+
+def test_paw_is_registered_with_existing_wake_node_presence():
+    from agentos_node.employee_wake_node import EMPLOYEE_IDS
+    from agentos_node.product_employee_worker import SUPPORTED_PRODUCT_RUNNERS
+    from agentos_node.employee_worker_host_runtime import V2_RUNNER_KINDS
+    assert "the-paw" in EMPLOYEE_IDS
+    assert len(EMPLOYEE_IDS) == len(set(EMPLOYEE_IDS))
+    assert SUPPORTED_PRODUCT_RUNNERS["paw_inspect_v1"]["employee_id"] == "the-paw"
+    assert "paw_inspect_v1" in V2_RUNNER_KINDS
