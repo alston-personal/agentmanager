@@ -16,6 +16,28 @@ TARGET = "agentos-core-470-runtime-completion"
 ACTIVE = {"accepted", "in_progress", "verifying", "blocked", "waiting_external"}
 
 
+
+def _paw_bootstrap_evidence() -> tuple[bool, bool, str]:
+    """Inspect exact immutable release and bounded bootstrap receipt; no secrets."""
+    current = Path("/home/ubuntu/agent-data/runtime/core/current")
+    release = current.resolve(strict=True)
+    release_root = Path("/home/ubuntu/agent-data/releases/core").resolve()
+    if release.parent != release_root or len(release.name) != 40 or any(
+        c not in "0123456789abcdef" for c in release.name
+    ):
+        return False, False, ""
+    receipt_path = Path("/home/ubuntu/agent-data/employee-runtime/bootstrap/product-employees-v1.json")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if receipt.get("schema") != "agentos.product-employee-bootstrap-receipt/v1" or receipt.get("ok") is not True:
+        return True, False, release.name
+    employees = receipt.get("employees")
+    present = isinstance(employees, list) and any(
+        isinstance(e, dict) and e.get("employee_id") == "the-paw"
+        and e.get("assignment_id") == "paw-470-inspection-v1"
+        for e in employees
+    )
+    return True, present, release.name
+
 def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
     spec = validate_executor_job(request)
     if spec.job_type != JOB_TYPE or spec.workload_ref != "issue://470":
@@ -66,7 +88,14 @@ def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
         retries = int(target.get("machine_retry_count") or 0) if target else 0
         if not 0 <= retries <= 1000000:
             raise ValueError("invalid_retry_count")
+        try:
+            release_valid, paw_bootstrapped, source_sha = _paw_bootstrap_evidence()
+        except (OSError, ValueError, TypeError, KeyError):
+            release_valid, paw_bootstrapped, source_sha = False, False, ""
         return {
+            "runtime_source_commit": source_sha,
+            "install_receipt_ok": release_valid,
+            "hydration_receipt_ok": paw_bootstrapped,
             "completion_last_verification_failure_code": (
                 str(target.get("last_verification_failure_code") or "")
                 if target and str(target.get("last_verification_failure_code") or "") in {
