@@ -207,3 +207,37 @@ def test_unknown_inspector_code_is_fail_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(p, "STATE", state)
     result = p.inspect_completion_470(canonical_executor_job_request(p.JOB_TYPE))
     assert result["completion_last_verification_failure_code"] == "UNKNOWN"
+
+
+
+def test_paw_bootstrap_evidence_requires_exact_immutable_release_and_identity(tmp_path, monkeypatch):
+    releases = tmp_path / "releases"
+    releases.mkdir()
+    sha = "a" * 40
+    release = releases / sha
+    release.mkdir()
+    current = tmp_path / "current"
+    current.symlink_to(release, target_is_directory=True)
+    receipt = tmp_path / "bootstrap.json"
+    monkeypatch.setattr(p, "CORE_RELEASES", releases)
+    monkeypatch.setattr(p, "CORE_CURRENT", current)
+    monkeypatch.setattr(p, "PAW_BOOTSTRAP_RECEIPT", receipt)
+    receipt.write_text(json.dumps({
+        "schema": "agentos.product-employee-bootstrap-receipt/v1",
+        "ok": True,
+        "employees": [{"employee_id": "the-paw", "assignment_id": "paw-470-inspection-v1",
+                       "assignment_state": "open"}],
+    }))
+    assert p._paw_bootstrap_evidence() == (True, True, sha)
+    receipt.write_text(json.dumps({"schema": "agentos.product-employee-bootstrap-receipt/v1",
+                                   "ok": True, "employees": [{"employee_id": "wrong"}]}))
+    assert p._paw_bootstrap_evidence() == (True, False, sha)
+    receipt.write_text(json.dumps(["not", "a", "receipt"]))
+    assert p._paw_bootstrap_evidence() == (True, False, sha)
+    current.unlink()
+    current.symlink_to(tmp_path / "outside", target_is_directory=True)
+    (tmp_path / "outside").mkdir()
+    assert p._paw_bootstrap_evidence() == (False, False, "")
+    current.unlink()
+    current.write_text("not a symlink")
+    assert p._paw_bootstrap_evidence() == (False, False, "")
