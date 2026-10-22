@@ -73,6 +73,35 @@ class RetryAdmissionTests(unittest.TestCase):
                               actor="role://lobster")
             self.assertEqual(wc.load(path)["items"]["test-470"]["status"], "accepted")
 
+    def test_exhausted_handoff_does_not_churn_owner_or_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "work-items.json"
+            wc.register(path, work_id="test-470", project_id="agentos-core",
+                        title="Stop handoff churn", owner="role://completion.controller",
+                        next_action="Verify", acceptance=["PASS"])
+            state = wc.load(path)
+            item = state["items"]["test-470"]
+            item["last_blocker_kind"] = "VERIFICATION"
+            item["machine_retry_count"] = 381
+            wc.save(path, state)
+            before = wc.load(path)
+            with self.assertRaisesRegex(ValueError, "machine_retry_budget_exhausted"):
+                wc.handoff(path, work_id="test-470", actor="role://completion.controller",
+                           new_owner="role://lobster", next_action="Retry Inspector")
+            self.assertEqual(wc.load(path), before)
+
+    def test_non_exhausted_handoff_still_works(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "work-items.json"
+            wc.register(path, work_id="test-new", project_id="agentos-core",
+                        title="Normal handoff", owner="role://completion.controller",
+                        next_action="Verify", acceptance=["PASS"])
+            handoff = wc.handoff(path, work_id="test-new",
+                                 actor="role://completion.controller",
+                                 new_owner="role://lobster", next_action="Execute")
+            self.assertEqual(handoff["owner"], "role://lobster")
+            self.assertEqual(handoff["status"], "accepted")
+
     def test_inspector_failure_codes_are_bounded_at_source(self):
         lobster = (Path(__file__).resolve().parents[1] / "scripts" / "lobster.py").read_text()
         self.assertIn("BLOCKED: verification_failure_code=INSPECTOR_UNAVAILABLE", lobster)
