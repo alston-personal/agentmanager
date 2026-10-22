@@ -4,6 +4,7 @@ import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from io import BytesIO
 from PIL import Image
 from services.invoice_intake.invoice_core import InvoiceStore
@@ -145,6 +146,47 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
                     "SELECT COUNT(*) FROM extractions WHERE engine='gpt-web-verified-receipt'",
                 ).fetchone()[0]
             self.assertEqual(total, 1)
+
+    def test_bridge_runner_dispatch_and_consume_with_existing_session(self):
+        from services.invoice_intake.gpt_web_bridge_runner import run_once
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = InvoiceStore(root / "db", data_scope="test")
+            image = Image.new("RGB", (24, 24), "white")
+            buf = BytesIO()
+            image.save(buf, format="PNG")
+            invoice_id = store.ingest(buf.getvalue(), "fixture.png", "image/png")["invoice_id"]
+            with store.connect() as db:
+                db.execute("UPDATE invoices SET status='needs_review' WHERE id=?", (invoice_id,))
+            bridge = root / "bridge"
+            (bridge / "receipts").mkdir(parents=True)
+            (bridge / "sessions.json").write_text(json.dumps({
+                "provider": "gpt-web",
+                "sessions": [{"ready": True, "session_id": "chatgpt-web:test"}],
+            }))
+            original_consume = store.consume_gpt_web_invoice_receipt
+
+            def simulated_bridge(invoice_id, *, request_id, outer_request_id, bridge_root):
+                request_path = bridge / "requests" / (outer_request_id + ".json")
+                dispatched = json.loads(request_path.read_text())
+                self.assertEqual(dispatched["payload"]["request_id"], request_id)
+                self.assertEqual(dispatched["payload"]["capability"], "vision.invoice.extract")
+                parsed = {**DOC, "agentos_request_id": request_id}
+                envelope = {
+                    "schema": "agentos.session-receipt/v0.1",
+                    "provider": "gpt-web", "operation": "invoke",
+                    "request_id": outer_request_id, "ok": True,
+                    "result": {"request_id": request_id,
+                               "assistant_text": json.dumps(parsed)},
+                }
+                (bridge / "receipts" / (outer_request_id + ".json")).write_text(json.dumps(envelope))
+                return original_consume(invoice_id, request_id=request_id,
+                                        outer_request_id=outer_request_id, bridge_root=bridge_root)
+
+            with patch.object(store, "consume_gpt_web_invoice_receipt", side_effect=simulated_bridge):
+                result = run_once(store, invoice_id, bridge_root=bridge, timeout_seconds=2)
+            self.assertEqual(result["fields"]["invoice_number"], "MY04200253")
+            self.assertEqual(store.get_invoice(invoice_id)["status"], "needs_review")
 
     @staticmethod
     def _apply_on_reviewed(store, invoice_id):
