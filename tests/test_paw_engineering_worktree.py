@@ -113,3 +113,11 @@ def test_prepare_then_apply_candidate_without_touching_base(tmp_path):
     assert source.read_text() == "def test_one():\n    assert True\n"
     assert git(repo, "rev-parse", "HEAD") == base_sha
     assert git(repo, "status", "--porcelain") == ""
+    from agentos_node.paw_engineering_commit import commit_verified_paw_candidate
+    local = commit_verified_paw_candidate(prepared, receipt, work_id="a")
+    assert local.schema == "agentos.paw-local-commit-receipt/v1"
+    assert local.commit_sha == git(prepared.path, "rev-parse", "HEAD")
+    assert local.published is False
+    assert local.independent_acceptance_pass is False
+    assert git(repo, "rev-parse", "HEAD") == base_sha
+    assert git(prepared.path, "show", "--pretty=format:", "--name-only", "HEAD") == "tests/test_paw_engineering_worktree.py"
