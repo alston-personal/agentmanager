@@ -2034,6 +2034,38 @@ class InvoiceStore:
         self.prepare_reprocess(invoice_id)
         return self.process(invoice_id)
 
+    def consume_gpt_web_invoice_receipt(
+        self, invoice_id: str, *, request_id: str, bridge_root: Path,
+    ) -> dict[str, Any]:
+        """Consume only an issued, correlated local bridge receipt, without a public API."""
+        if not request_id or len(request_id) > 128 or not request_id.isascii() or not all(
+            ch.isalnum() or ch in "-_" for ch in request_id
+        ):
+            raise ValueError("GPT_WEB_REQUEST_ID_INVALID")
+        with self.connect() as db:
+            binding = db.execute(
+                """SELECT invoice_id,image_sha256 FROM gpt_web_invoice_bindings
+                   WHERE request_id=? AND invoice_id=?""",
+                (request_id, invoice_id),
+            ).fetchone()
+        if not binding:
+            raise ValueError("GPT_WEB_REQUEST_NOT_REGISTERED")
+        root = bridge_root.expanduser().resolve(strict=True)
+        receipt_path = root / "receipts" / f"{request_id}.json"
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise FileNotFoundError("GPT_WEB_RECEIPT_NOT_READY")
+        if receipt_path.stat().st_size > 131072:
+            raise ValueError("GPT_WEB_RECEIPT_TOO_LARGE")
+        data = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if data.get("provider") != "gpt-web" or data.get("operation") != "invoke":
+            raise ValueError("GPT_WEB_RECEIPT_PROVIDER_MISMATCH")
+        if data.get("request_id") != request_id:
+            raise ValueError("GPT_WEB_OUTER_REQUEST_MISMATCH")
+        # Binding is loaded from the local SQLite authority, never from model text.
+        data["invoice_binding"] = dict(binding)
+        data["invoice_binding"]["request_id"] = request_id
+        return self.apply_verified_gpt_web_receipt(invoice_id, data, request_id=request_id)
+
     def register_gpt_web_invoice_request(self, invoice_id: str, *, request_id: str) -> dict[str, str]:
         """Bind a locally issued GPT Web request to the immutable stored document."""
         if not request_id or len(request_id) > 180 or not request_id.isascii():
