@@ -5,6 +5,7 @@ This is an acceptance-candidate receipt, never Claw verification or DONE.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import subprocess
 from dataclasses import dataclass
@@ -14,6 +15,40 @@ from agentos_node.paw_engineering_worktree import PreparedPawWorktree, PawWorktr
 
 _ALLOWED = frozenset({"tests/test_paw_engineering_worktree.py"})
 _MAX_BYTES = 32_768
+
+# Test-only proof: no imports, calls, attributes, decorators, fixtures,
+# assignments, comprehensions or access to builtins. NOT a general code runner.
+_ALLOWED_AST = (
+    ast.Module, ast.FunctionDef, ast.arguments, ast.Assert, ast.Compare,
+    ast.BinOp, ast.Add, ast.Sub, ast.Mult, ast.Eq, ast.NotEq, ast.Lt,
+    ast.LtE, ast.Gt, ast.GtE, ast.Constant, ast.Load, ast.UnaryOp,
+    ast.USub, ast.UAdd, ast.Pass,
+)
+
+
+def _require_pure_assertion_tests(replacement: str) -> None:
+    try:
+        tree = ast.parse(replacement)
+    except SyntaxError as exc:
+        raise PawWorktreeBoundaryError("paw_patch_syntax_invalid") from exc
+    if not tree.body or len(tree.body) > 16:
+        raise PawWorktreeBoundaryError("paw_patch_test_shape_invalid")
+    for node in ast.walk(tree):
+        if type(node) not in _ALLOWED_AST:
+            raise PawWorktreeBoundaryError("paw_patch_executable_syntax_denied")
+        if isinstance(node, ast.Constant) and type(node.value) not in {int, bool, str}:
+            raise PawWorktreeBoundaryError("paw_patch_constant_denied")
+    for node in tree.body:
+        if (
+            not isinstance(node, ast.FunctionDef)
+            or not node.name.startswith("test_")
+            or node.decorator_list or node.returns is not None
+            or node.args.posonlyargs or node.args.args or node.args.kwonlyargs
+            or node.args.vararg is not None or node.args.kwarg is not None
+            or not node.body or len(node.body) > 16
+            or not all(isinstance(expr, (ast.Assert, ast.Pass)) for expr in node.body)
+        ):
+            raise PawWorktreeBoundaryError("paw_patch_test_shape_invalid")
 
 
 @dataclass(frozen=True)
@@ -48,7 +83,7 @@ def apply_bounded_test_candidate(
     if status.stdout.strip():
         raise PawWorktreeBoundaryError("paw_patch_worktree_dirty")
     # Syntax check before making any candidate changes; no shell or model command.
-    compile(replacement, relative_path, "exec")
+    _require_pure_assertion_tests(replacement)
     target.write_text(replacement, encoding="utf-8")
     diff = subprocess.run(["git", "-C", str(root), "diff", "--check"],
                           capture_output=True, text=True, timeout=10)
