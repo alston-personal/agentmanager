@@ -70,3 +70,28 @@ def test_candidate_rejects_executable_python_before_write(tmp_path, malicious):
             replacement=malicious,
         )
     assert p.read_bytes() == initial
+
+
+def test_candidate_never_executes_checkout_conftest(tmp_path):
+    w, p = candidate(tmp_path)
+    trap = w.path / "conftest.py"
+    marker = tmp_path / "pwned.txt"
+    trap.write_text("from pathlib import Path\nPath(" + repr(str(marker)) + ").write_text('executed')\n")
+    # Existing untracked conftest must prevent any patch processing.
+    with pytest.raises(PawWorktreeBoundaryError, match="worktree_dirty"):
+        apply_bounded_test_candidate(
+            w, relative_path="tests/test_paw_engineering_worktree.py",
+            expected_sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
+            replacement="def test_one():\n    assert True\n",
+        )
+    assert not marker.exists()
+
+
+def test_candidate_arithmetic_resource_limits(tmp_path):
+    w, p = candidate(tmp_path)
+    with pytest.raises(PawWorktreeBoundaryError, match="out_of_bounds"):
+        apply_bounded_test_candidate(
+            w, relative_path="tests/test_paw_engineering_worktree.py",
+            expected_sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
+            replacement="def test_one():\n    assert 999999 * 999999 == 1\n",
+        )
