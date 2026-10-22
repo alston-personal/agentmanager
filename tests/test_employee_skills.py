@@ -71,6 +71,20 @@ class EmployeeSkillTests(unittest.TestCase):
                 self.assertEqual([x.skill_id for x in hydrated], [skill_id])
                 self.assertFalse(hydrated[0].mutation_authority)
 
+    def test_paw_employee_hydrates_root_and_bounded_engineering_skill(self):
+        self.runtime.create_employee(
+            "the-paw", "The Paw", role_ids=["sector.paw"],
+            skill_ids=["engineering.work.inspect"],
+        )
+        role = self.roles.resolve("sector.paw")
+        self.assertEqual(role.protocols["pdca"], "root.pdca.v1")
+        self.assertEqual(role.parent_role_id, "core.root")
+        hydrated = self.skills.hydrate_employee_skills("the-paw")
+        self.assertEqual([x.skill_id for x in hydrated], ["engineering.work.inspect"])
+        self.assertFalse(hydrated[0].mutation_authority)
+        with self.assertRaisesRegex(PermissionError, "employee_skill_intent_not_allowed"):
+            self.skills.build_request("the-paw", "engineering.work.inspect", "merge", {})
+
     def test_skill_id_does_not_grant_missing_role_capability(self):
         self.runtime.create_employee(
             "weaver",
