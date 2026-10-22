@@ -16,6 +16,16 @@ on:
       - 'scripts/install_systemd_user.sh'
       - 'scripts/install_services.py'
       - 'scripts/work_completion.py'
+      - '.agent/roles/**'
+      - 'agent_core/role_runtime.py'
+      - 'agent_core/employee_skills.py'
+      - 'agentos_node/product_employee_worker.py'
+      - 'agentos_node/product_employee_worker_cli.py'
+      - 'agentos_node/employee_worker_host_runtime.py'
+      - 'governance/employee-worker-adapters-v2.json'
+      - 'governance/employee-skills.json'
+      - 'governance/paw-employee.json'
+      - 'scripts/bootstrap_product_employees.py'
   workflow_dispatch:
 
 permissions:
