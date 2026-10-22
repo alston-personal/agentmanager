@@ -1235,6 +1235,12 @@ class InvoiceStore:
     def _init_db(self) -> None:
         with self.connect() as db:
             db.executescript("""
+            CREATE TABLE IF NOT EXISTS gpt_web_invoice_bindings(
+              request_id TEXT PRIMARY KEY,
+              invoice_id TEXT NOT NULL,
+              image_sha256 TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS intake_batches(
               id TEXT PRIMARY KEY,
               source_type TEXT NOT NULL,
@@ -2028,6 +2034,27 @@ class InvoiceStore:
         self.prepare_reprocess(invoice_id)
         return self.process(invoice_id)
 
+    def register_gpt_web_invoice_request(self, invoice_id: str, *, request_id: str) -> dict[str, str]:
+        """Bind a locally issued GPT Web request to the immutable stored document."""
+        if not request_id or len(request_id) > 180 or not request_id.isascii():
+            raise ValueError("GPT_WEB_REQUEST_ID_INVALID")
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT i.status,d.sha256 FROM invoices i JOIN documents d
+                   ON i.document_id=d.id WHERE i.id=? AND i.deleted_at IS NULL""",
+                (invoice_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+            if row["status"] not in {"needs_review", "recognition_insufficient", "quick_confirm"}:
+                raise ValueError("GPT_WEB_INVOICE_NOT_REVIEWABLE")
+            db.execute(
+                """INSERT INTO gpt_web_invoice_bindings
+                   (request_id,invoice_id,image_sha256,created_at) VALUES(?,?,?,?)""",
+                (request_id, invoice_id, row["sha256"], utcnow()),
+            )
+            return {"request_id": request_id, "invoice_id": invoice_id, "image_sha256": row["sha256"]}
+
     def apply_verified_gpt_web_receipt(
         self, invoice_id: str, receipt: dict[str, Any], *, request_id: str,
     ) -> dict[str, Any]:
@@ -2055,7 +2082,14 @@ class InvoiceStore:
             ).fetchone()
             if row is None:
                 raise KeyError(invoice_id)
-            if row["sha256"] != binding["image_sha256"]:
+            registered = db.execute(
+                """SELECT image_sha256 FROM gpt_web_invoice_bindings
+                   WHERE request_id=? AND invoice_id=?""",
+                (request_id, invoice_id),
+            ).fetchone()
+            if not registered:
+                raise ValueError("GPT_WEB_REQUEST_NOT_REGISTERED")
+            if row["sha256"] != binding["image_sha256"] or registered["image_sha256"] != row["sha256"]:
                 raise ValueError("GPT_WEB_IMAGE_SHA_MISMATCH")
             if row["status"] not in {"needs_review", "recognition_insufficient", "quick_confirm"}:
                 raise ValueError("GPT_WEB_INVOICE_NOT_REVIEWABLE")
