@@ -91,6 +91,24 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "NOT_REVIEWABLE"):
                 self._apply_on_reviewed(store, invoice_id)
 
+    def test_missing_or_wrong_image_binding_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            image = Image.new("RGB", (24, 24), "white")
+            buf = BytesIO()
+            image.save(buf, format="PNG")
+            invoice_id = store.ingest(buf.getvalue(), "fixture.png", "image/png")["invoice_id"]
+            with store.connect() as db:
+                db.execute("UPDATE invoices SET status='needs_review' WHERE id=?", (invoice_id,))
+            with self.assertRaisesRegex(ValueError, "BINDING_REQUIRED"):
+                store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
+            bound = receipt()
+            bound["invoice_binding"] = {
+                "invoice_id": invoice_id, "request_id": REQ, "image_sha256": "0" * 64,
+            }
+            with self.assertRaisesRegex(ValueError, "IMAGE_SHA_MISMATCH"):
+                store.apply_verified_gpt_web_receipt(invoice_id, bound, request_id=REQ)
+
     @staticmethod
     def _apply_on_reviewed(store, invoice_id):
         with store.connect() as db:
