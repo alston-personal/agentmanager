@@ -20,6 +20,7 @@ on:
       - 'agent_core/role_runtime.py'
       - 'agent_core/employee_skills.py'
       - 'agentos_node/product_employee_worker.py'
+      - 'agentos_node/completion_470_status_provider.py'
       - 'agentos_node/product_employee_worker_cli.py'
       - 'agentos_node/employee_worker_host_runtime.py'
       - 'governance/employee-worker-adapters-v2.json'
