@@ -18,7 +18,7 @@ from agentos_node.employee_wake_inbox import deliver_employee_wake
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport
 
 NODE_ID = "oracle-employee-wake-node"
-EMPLOYEE_IDS = ("zeus-writer", "youtube-ai-manager")
+EMPLOYEE_IDS = ("zeus-writer", "youtube-ai-manager", "the-paw")
 NODE_RECEIPT_SCHEMA = "agentos.node-receipt/v0.1"
 
 
