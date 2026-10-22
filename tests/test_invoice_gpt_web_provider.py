@@ -1,6 +1,11 @@
 """Contract tests for GPT Web receipt ingestion boundary (no browser/DB writes)."""
 import json
+import tempfile
 import unittest
+from pathlib import Path
+from io import BytesIO
+from PIL import Image
+from services.invoice_intake.invoice_core import InvoiceStore
 from services.invoice_intake.gpt_web_provider import from_receipt
 
 REQ = "invoice-roundtrip-my04200253-test"
@@ -54,6 +59,32 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
         result = from_receipt(receipt({**DOC, "total_amount": None}), request_id=REQ)
         self.assertIsNone(result["fields"]["total_amount"])
         self.assertTrue(result["needs_review"])
+
+    def test_sqlite_roundtrip_persists_reviewable_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = InvoiceStore(Path(tmp), data_scope="test")
+            image = Image.new("RGB", (24, 24), "white")
+            buf = BytesIO()
+            image.save(buf, format="PNG")
+            ingested = store.ingest(buf.getvalue(), "fixture.png", "image/png")
+            invoice_id = ingested["invoice_id"]
+            with store.connect() as db:
+                db.execute("UPDATE invoices SET status='needs_review' WHERE id=?", (invoice_id,))
+            persisted = store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
+            self.assertEqual(persisted["invoice_number"], "MY04200253")
+            self.assertEqual(persisted["seller_tax_id"], "82328968")
+            self.assertEqual(persisted["total_amount"], 50)
+            self.assertEqual(persisted["status"], "needs_review")
+            reread = store.get_invoice(invoice_id)
+            self.assertEqual(reread["invoice_date"], "2019-03-23")
+            with self.assertRaisesRegex(ValueError, "NOT_REVIEWABLE"):
+                self._apply_on_reviewed(store, invoice_id)
+
+    @staticmethod
+    def _apply_on_reviewed(store, invoice_id):
+        with store.connect() as db:
+            db.execute("UPDATE invoices SET status='accepted' WHERE id=?", (invoice_id,))
+        return store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
 
     def test_malformed_uncertainty_rejected(self):
         with self.assertRaisesRegex(ValueError, "UNCERTAINTY_INVALID"):
