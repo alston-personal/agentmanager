@@ -196,6 +196,13 @@ jobs:
           # Track the candidate's own appended stderr, not old log errors.
           LOBSTER_LOG="$DATA_ROOT/logs/lobster.log"
           LOBSTER_LOG_OFFSET="$(stat -c %s "$LOBSTER_LOG" 2>/dev/null || echo 0)"
+          # Bootstrap the persistent Paw Employee from THIS exact immutable release
+          # before restarting the governed host. The bootstrap is idempotent and
+          # never creates wakes, dispatches, or an executor privilege grant.
+          PAW_BOOTSTRAP="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/bootstrap_product_employees.py" --runtime-root "$DATA_ROOT/employee-runtime")"
+          printf '%s\n' "$PAW_BOOTSTRAP"
+          printf '%s' "$PAW_BOOTSTRAP" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("schema")=="agentos.product-employee-bootstrap-receipt/v1"; assert any(e.get("employee_id")=="the-paw" for e in d.get("employees",[])), "paw_bootstrap_identity_missing"; assert d.get("executor_bound") is False and d.get("verified_marker_emitted") is False'
+          echo "core_bundle_paw_bootstrap=PASS"
           echo "core_bundle_install_services=START"
           INSTALL_JSON="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
           echo "core_bundle_install_services=DONE"
