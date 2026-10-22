@@ -46,7 +46,7 @@ def commit_verified_paw_candidate(
         raise PawWorktreeBoundaryError("paw_commit_base_mismatch")
     files = _git(root, "status", "--porcelain", "--untracked-files=all").splitlines()
     allowed = "tests/test_paw_engineering_worktree.py"
-    if len(files) != 1 or files[0] != " M " + allowed or candidate.changed_file != allowed:
+    if len(files) != 1 or files[0] != "M " + allowed or candidate.changed_file != allowed:
         raise PawWorktreeBoundaryError("paw_commit_changed_files_not_authorized")
     import hashlib
     actual_hash = hashlib.sha256((root / allowed).read_bytes()).hexdigest()
