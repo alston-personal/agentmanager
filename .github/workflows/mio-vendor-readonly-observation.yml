@@ -1,6 +1,11 @@
 name: Mio External Public Observation (read only)
 on:
   workflow_dispatch:
+    inputs:
+      threads_url:
+        description: 'Public Threads post URL'
+        required: false
+        type: string
   push:
     branches: [main]
     paths:
@@ -14,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
+      THREADS_INPUT_URL: ${{ inputs.threads_url || 'https://www.threads.com/@oursong_alstonhuang/post/DeN9IhomVhn' }}
       DEPLOY_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
@@ -26,16 +32,47 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
-          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY'
-          import hashlib, json, os, pathlib, tempfile, urllib.request, urllib.error
+          URL_B64="$(printf '%s' "$THREADS_INPUT_URL" | base64 -w0)"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" "THREADS_INPUT_B64=$URL_B64 python3 -" <<'PY'
+          import base64, hashlib, json, os, pathlib, re, tempfile, urllib.request, urllib.error
+          from urllib.parse import urlsplit, urlunsplit
           from datetime import datetime, timezone
           BASE="http://127.0.0.1:18766"
-          URL="https://www.threads.com/@oursong_alstonhuang/post/DeN9IhomVhn"
+          URL=""
+          AUTHOR=""
+          ALLOWED={"threads.com","www.threads.com","threads.net","www.threads.net"}
+          POST=re.compile(r"/@([^/]+)/post/([A-Za-z0-9_-]+)/?$")
+          SHARE=re.compile(r"/share/[A-Za-z0-9_-]+/?$")
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):
+                  p=urlsplit(newurl)
+                  if p.scheme!="https" or (p.hostname or "").lower() not in ALLOWED:
+                      raise ValueError("UNSAFE_REDIRECT")
+                  return super().redirect_request(req,fp,code,msg,headers,newurl)
+          def resolve(raw):
+              p=urlsplit(raw)
+              if p.scheme!="https" or (p.hostname or "").lower() not in ALLOWED or p.username or p.password or p.port not in (None,443):
+                  raise ValueError("INVALID_URL")
+              if POST.fullmatch(p.path):
+                  return urlunsplit(("https",p.hostname,p.path,"",""))
+              if not SHARE.fullmatch(p.path):
+                  raise ValueError("INVALID_URL")
+              opener=urllib.request.build_opener(SafeRedirect())
+              with opener.open(urllib.request.Request(raw,headers={"User-Agent":"Mozilla/5.0"}),timeout=12) as response:
+                  final=urlsplit(response.geturl())
+                  response.read(1)
+              if final.scheme!="https" or (final.hostname or "").lower() not in ALLOWED or not POST.fullmatch(final.path):
+                  raise ValueError("UNRESOLVED_SHARE")
+              return urlunsplit(("https",final.hostname,final.path,"",""))
           OUT=pathlib.Path("/home/ubuntu/agent-data/personas/sunlake-milkcat/external_observations")
           report={"schema":"agentos.mio-external-public-observation/v1","status":"BLOCKED",
                   "reason":"NOT_EVALUATED","write_performed":False,"reply_allowed":False,
                   "ir_adoption_allowed":False,"observed_count":0}
           try:
+              raw=base64.b64decode(os.environ["THREADS_INPUT_B64"],validate=True).decode("utf-8")
+              if len(raw)>2048: raise ValueError("URL_TOO_LONG")
+              URL=resolve(raw)
+              AUTHOR=POST.fullmatch(urlsplit(URL).path).group(1)
               with urllib.request.urlopen(BASE+"/healthz",timeout=7) as r:
                   health=json.load(r)
               if health.get("service") not in ("agentos-threads-public-reader","vendor-threads-public-reader") or health.get("ok") is not True:
@@ -50,14 +87,14 @@ jobs:
                   if not (isinstance(body,dict) and body.get("schema")=="agentos.social.threads.public-post/v1"
                           and body.get("login_bypass_used") is False and body.get("anti_bot_bypass_used") is False
                           and isinstance(post,dict) and post.get("url")==URL
-                          and str(post.get("username","")).lower()=="oursong_alstonhuang"
+                          and str(post.get("username","")).lower()==AUTHOR.lower()
                           and isinstance(post.get("text"),str) and 0<len(post["text"].strip())<=12000):
                       report["reason"]="CONTENT_PROVENANCE_UNVERIFIED"
                   else:
                       observed=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
                       evidence={"schema":"agentos.mio-external-public-observation/v1",
                           "source":"vendor-public-threads-reader","source_url":URL,
-                          "author":"oursong_alstonhuang","text":post["text"].strip(),
+                          "author":AUTHOR,"text":post["text"].strip(),
                           "observed_at":observed,"decision":"UNDECIDED",
                           "reply_allowed":False,"ir_adoption_allowed":False,"write_performed":False}
                       digest=hashlib.sha256(URL.encode()).hexdigest()[:24]

@@ -75,7 +75,7 @@ jobs:
           from pathlib import Path
           import textwrap
           source=Path(".github/workflows/mio-vendor-readonly-observation.yml").read_text()
-          start=source.index("          import hashlib, json, os, pathlib, tempfile, urllib.request, urllib.error")
+          start=source.index("          import base64, hashlib, json, os, pathlib, re, tempfile, urllib.request, urllib.error")
           end=source.index("          PY\n",start)
           ast.parse(textwrap.dedent(source[start:end]),filename="mio-vendor-readonly-observation[embedded].py")
           print("mio_observation_embedded_python=PASS")
