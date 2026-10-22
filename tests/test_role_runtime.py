@@ -40,6 +40,16 @@ class RoleRuntimeTest(unittest.TestCase):
         self.assertIn("claim_unverified_side_effects", paw.must_not)
         self.assertNotIn("merge_protected_main", paw.capabilities)
 
+    def test_all_active_roles_inherit_root_pdca_without_extra_privilege(self):
+        registry = RoleRegistry(REGISTRY)
+        for role_id in registry.ids():
+            with self.subTest(role_id=role_id):
+                role = registry.resolve(role_id)
+                self.assertEqual(role.protocols.get("pdca"), "root.pdca.v1")
+                self.assertIn("claim_unverified_side_effects", role.must_not)
+                if role_id != "core.root":
+                    self.assertEqual(role.parent_role_id, "core.root")
+
     def test_missing_parent_or_cycle_fail_closed(self):
         import tempfile
         import yaml
