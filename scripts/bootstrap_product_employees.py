@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATHS = (
     ROOT / "governance" / "zeus-writer-employee.json",
     ROOT / "governance" / "youtube-ai-manager-employee.json",
+    ROOT / "governance" / "paw-employee.json",
 )
 TERMINAL_STATES = {"blocked", "handoff", "completed", "cancelled"}
 

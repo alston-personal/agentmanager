@@ -10,6 +10,8 @@ import yaml
 @dataclass(slots=True)
 class EffectiveRoleContract:
     role_id: str
+    parent_role_id: str | None
+    protocols: dict[str, str]
     name: str
     kind: str
     status: str
@@ -64,19 +66,29 @@ class RoleRegistry:
             raise ValueError(f"role is not active: {role_id}")
 
         visited: set[str] = set()
+        visiting: set[str] = set()
         ordered: list[dict[str, Any]] = []
 
         def walk(current_id: str) -> None:
+            if current_id in visiting:
+                raise ValueError(f"role inheritance cycle: {current_id}")
             if current_id in visited:
                 return
-            visited.add(current_id)
+            visiting.add(current_id)
             current = self._roles.get(current_id)
             if current is None:
                 raise KeyError(f"unknown upstream role: {current_id}")
             if current.get("status") != "active":
                 raise ValueError(f"upstream role is not active: {current_id}")
-            for parent in current.get("upstream_roles", []) or []:
-                walk(str(parent))
+            parent_role_id = current.get("parent_role_id")
+            if not parent_role_id and current_id != "core.root":
+                parent_role_id = "core.root"
+            if parent_role_id:
+                walk(str(parent_role_id))
+            for upstream in current.get("upstream_roles", []) or []:
+                walk(str(upstream))
+            visiting.remove(current_id)
+            visited.add(current_id)
             ordered.append(current)
 
         walk(role_id)
@@ -90,8 +102,14 @@ class RoleRegistry:
                         result.append(value)
             return result
 
+        protocols: dict[str, str] = {}
+        for item in ordered:
+            protocols.update({str(k): str(v) for k, v in (item.get("protocols") or {}).items()})
+
         return EffectiveRoleContract(
             role_id=role_id,
+            parent_role_id=str(role.get("parent_role_id") or "core.root") if role_id != "core.root" else None,
+            protocols=protocols,
             name=str(role.get("name", role_id)),
             kind=str(role.get("kind", "")),
             status=str(role.get("status", "")),

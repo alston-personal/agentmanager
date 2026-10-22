@@ -4,6 +4,13 @@ role_set_version: "2026.09.04.1"
 roles:
   - id: core.root
     name: LeopardCat Root
+    protocols:
+      pdca: root.pdca.v1
+    inheritance_policy:
+      parent_first: true
+      memory: scoped_no_implicit_parent_write
+      skills: declared_interfaces_and_validated_promotions
+      authority: no_privilege_expansion
     status: active
     kind: foundation
     source: .agent/roles/base_role.md
@@ -24,6 +31,19 @@ roles:
 
   - id: sector.paw
     name: The Paw
+    parent_role_id: core.root
+    inherits:
+      - governance
+      - pdca_protocol
+      - memory_scope_policy
+      - skill_contracts
+    autonomy:
+      protocol: root.pdca.v1
+      task_source: existing_completion_controller
+      verifier_role: sector.claw
+      continuation: existing_ledger_next_eligible
+      authority: explicit_runtime_grants_only
+      acceptance: two_real_work_ids_independent_pass_and_auto_claim
     status: active
     kind: executor
     source: .agent/roles/parents/lcs_the_paw.md
@@ -35,6 +55,8 @@ roles:
       - no_arbitrary_privilege_bridge
     upstream_roles:
       - sector.weaver
+    capabilities:
+      - engineering.work.inspect
     outputs:
       - code_change
       - test_result

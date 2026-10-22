@@ -12,7 +12,11 @@ from agent_core.core_supervisor_service import INTENT_RECORD_SCHEMA
 from agent_core.employee_lifecycle import EmployeeLifecycle
 from agent_core.employee_presence import WAKE_CAPABILITY
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.role_runtime import RoleRegistry
+from agent_core.employee_skills import EmployeeSkillRegistry, EmployeeSkillService
 from agent_core.governed_execution import execute_bound_work_intent
+from agent_core.executor_job_contract import canonical_executor_job_request
+from agentos_node.completion_470_status_provider import inspect_completion_470
 
 EXPECTED_AUTHORITY_POLICY = "core-supervisor-employee-wake-v1"
 EXPECTED_TRANSPORT = "one_direct"
@@ -26,6 +30,7 @@ _GOVERNED_DELIVERY_INDEX_CACHE: dict[
 ] = {}
 
 SUPPORTED_PRODUCT_RUNNERS = {
+    "paw_inspect_v1": {"employee_id": "the-paw", "assignment_id": "paw-470-inspection-v1", "role_ids": {"sector.paw"}, "skill_ids": {"engineering.work.inspect"}},
     "zeus_writer_v1": {
         "employee_id": "zeus-writer",
         "assignment_id": "zeus-writer-continuation-v1",
@@ -345,6 +350,18 @@ class GovernedProductEmployeeWorker:
         lifecycle = EmployeeLifecycle(runtime)
         employee_id = str(capsule["employee_id"])
         assignment_id = str(capsule["assignment_id"])
+        # Hydrate before claiming the durable lease; invalid root/skill fails closed.
+        source_root = Path(__file__).resolve().parents[1]
+        roles = RoleRegistry(source_root / ".agent/roles/registry.yaml")
+        skills = EmployeeSkillRegistry(source_root / "governance/employee-skills.json")
+        employee = runtime.get_employee(employee_id)
+        expected_scope = SUPPORTED_PRODUCT_RUNNERS[self.runner_kind]
+        if set(employee.role_ids) != expected_scope["role_ids"] or set(employee.skill_ids) != expected_scope["skill_ids"]:
+            raise PermissionError("product_employee_runtime_role_skill_mismatch")
+        effective = roles.hydrate_employee_roles(employee.role_ids)
+        if any(role.protocols.get("pdca") != "root.pdca.v1" for role in effective):
+            raise PermissionError("product_employee_root_pdca_not_hydrated")
+        EmployeeSkillService(runtime, roles, skills).hydrate_employee_skills(employee_id)
         lease_id = f"product-{self.runner_kind}-{wake}-{generation}"
         lease = lifecycle.claim(
             assignment_id,
@@ -364,6 +381,42 @@ class GovernedProductEmployeeWorker:
                 lease_generation=lease.generation,
                 thread_head=lease.thread_head,
                 error_code="product_employee_worker_lease_generation_mismatch",
+            )
+
+        if self.runner_kind == "paw_inspect_v1":
+            # Paw can do a real, fixed-scope inspection without engineering write
+            # authority. This is a diagnostic, never independent Claw PASS.
+            observation = inspect_completion_470(
+                canonical_executor_job_request("completion.470.status.inspect")
+            )
+            observed = observation.get("verdict") == "PASS"
+            blocker = (
+                "paw_engineering_execution_not_authorized"
+                if observed else "paw_completion_470_inspector_unavailable"
+            )
+            thread_head = f"paw:inspect:{blocker}:{wake}:p{generation}:l{lease.generation}"
+            lease = lifecycle.checkpoint(assignment_id, lease_id, thread_head)
+            lifecycle.finish(
+                assignment_id, lease_id, state="blocked",
+                result_summary={
+                    "bounded_stage": "completion-470-readonly-inspection",
+                    "blocker_code": blocker,
+                    "inspection_verdict": observation.get("verdict"),
+                    "inspection_classification": observation.get("classification"),
+                    "inspected_work_id": observation.get("work_id") if observed else None,
+                    "inspected_status": observation.get("completion_status") if observed else None,
+                    "inspected_retry_count": observation.get("completion_machine_retry_count") if observed else None,
+                    "mutation_performed": False, "independent_acceptance_pass": False,
+                    "credential_exposed": False,
+                },
+            )
+            employee = runtime.get_employee(employee_id)
+            return ProductWorkerState(
+                status="blocked", runner_kind=self.runner_kind, employee_id=employee_id,
+                assignment_id=assignment_id, wake_id=wake, presence_generation=generation,
+                lease_generation=lease.generation, thread_head=lease.thread_head,
+                error_code=blocker, executor_provider=employee.executor.provider,
+                executor_model=employee.executor.model,
             )
 
         if self.runner_kind == "youtube_ai_manager_scan_v1":

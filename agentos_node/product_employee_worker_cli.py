@@ -10,6 +10,7 @@ from agentos_node.product_employee_worker import GovernedProductEmployeeWorker, 
 RESULT_SCHEMAS = {
     "zeus_writer_v1": "agentos.zeus-writer-worker-cli-result/v1",
     "youtube_ai_manager_scan_v1": "agentos.youtube-ai-manager-scan-worker-cli-result/v1",
+    "paw_inspect_v1": "agentos.paw-inspect-worker-cli-result/v1",
 }
 
 

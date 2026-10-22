@@ -7,8 +7,12 @@
       "runner_kind": "spec_steward_o3",
       "employee_id": "agentos-spec-steward",
       "assignment_id": "spec-steward-o3-acceptance-v1",
-      "role_ids": ["governance.spec_steward"],
-      "skill_ids": ["spec.audit"]
+      "role_ids": [
+        "governance.spec_steward"
+      ],
+      "skill_ids": [
+        "spec.audit"
+      ]
     },
     {
       "adapter_id": "zeus-writer-v1",
@@ -16,8 +20,12 @@
       "runner_kind": "zeus_writer_v1",
       "employee_id": "zeus-writer",
       "assignment_id": "zeus-writer-continuation-v1",
-      "role_ids": ["product.zeus_writer"],
-      "skill_ids": ["writing.project.continue"]
+      "role_ids": [
+        "product.zeus_writer"
+      ],
+      "skill_ids": [
+        "writing.project.continue"
+      ]
     },
     {
       "adapter_id": "youtube-ai-manager-scan-v1",
@@ -25,8 +33,25 @@
       "runner_kind": "youtube_ai_manager_scan_v1",
       "employee_id": "youtube-ai-manager",
       "assignment_id": "youtube-ai-manager-scan-v1",
-      "role_ids": ["product.youtube_ai_manager"],
-      "skill_ids": ["youtube.optimization.scan"]
+      "role_ids": [
+        "product.youtube_ai_manager"
+      ],
+      "skill_ids": [
+        "youtube.optimization.scan"
+      ]
+    },
+    {
+      "adapter_id": "paw-inspect-v1",
+      "status": "active",
+      "runner_kind": "paw_inspect_v1",
+      "employee_id": "the-paw",
+      "assignment_id": "paw-470-inspection-v1",
+      "role_ids": [
+        "sector.paw"
+      ],
+      "skill_ids": [
+        "engineering.work.inspect"
+      ]
     }
   ],
   "invariants": [

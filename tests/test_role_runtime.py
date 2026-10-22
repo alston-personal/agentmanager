@@ -31,6 +31,42 @@ class RoleRuntimeTest(unittest.TestCase):
         self.assertIn("architecture_decision", paw.outputs)
         self.assertIn("execution_receipt", paw.outputs)
 
+    def test_paw_inherits_root_pdca_and_safety_policy(self):
+        registry = RoleRegistry(REGISTRY)
+        paw = registry.resolve("sector.paw")
+        self.assertEqual(paw.parent_role_id, "core.root")
+        self.assertEqual(paw.protocols["pdca"], "root.pdca.v1")
+        self.assertIn("truth_provenance", paw.must_obey)
+        self.assertIn("claim_unverified_side_effects", paw.must_not)
+        self.assertNotIn("merge_protected_main", paw.capabilities)
+
+    def test_all_active_roles_inherit_root_pdca_without_extra_privilege(self):
+        registry = RoleRegistry(REGISTRY)
+        for role_id in registry.ids():
+            with self.subTest(role_id=role_id):
+                role = registry.resolve(role_id)
+                self.assertEqual(role.protocols.get("pdca"), "root.pdca.v1")
+                self.assertIn("claim_unverified_side_effects", role.must_not)
+                if role_id != "core.root":
+                    self.assertEqual(role.parent_role_id, "core.root")
+
+    def test_missing_parent_or_cycle_fail_closed(self):
+        import tempfile
+        import yaml
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "roles.yml"
+            p.write_text(yaml.safe_dump({"roles": [
+                {"id": "one", "status": "active", "parent_role_id": "missing"},
+            ]}))
+            with self.assertRaises(KeyError):
+                RoleRegistry(p).resolve("one")
+            p.write_text(yaml.safe_dump({"roles": [
+                {"id": "one", "status": "active", "parent_role_id": "two"},
+                {"id": "two", "status": "active", "parent_role_id": "one"},
+            ]}))
+            with self.assertRaisesRegex(ValueError, "inheritance cycle"):
+                RoleRegistry(p).resolve("one")
+
     def test_spec_steward_capability_is_hydrated(self):
         registry = RoleRegistry(REGISTRY)
         steward = registry.resolve("governance.spec_steward")

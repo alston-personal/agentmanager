@@ -74,6 +74,29 @@
         "authorization_blocker"
       ],
       "mutation_authority": false
+    },
+    "engineering.work.inspect": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Inspect an explicitly assigned engineering work item and return bounded diagnostic evidence; cannot itself mutate repositories or claim Inspector PASS.",
+      "required_capabilities": [
+        "engineering.work.inspect"
+      ],
+      "allowed_intents": [
+        "inspect",
+        "plan"
+      ],
+      "input_fields": [
+        "project_id",
+        "assignment_id",
+        "work_id"
+      ],
+      "output_types": [
+        "engineering_plan",
+        "work_status_evidence",
+        "authorization_blocker"
+      ],
+      "mutation_authority": false
     }
   },
   "invariants": [
