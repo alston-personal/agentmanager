@@ -18,6 +18,7 @@ def candidate(tmp_path):
     p.write_text("def test_one():\n    assert True\n")
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-m", "base"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "checkout", "-b", "paw/470/work-a"], check=True, capture_output=True)
     sha = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], text=True, capture_output=True, check=True).stdout.strip()
     return PreparedPawWorktree(root, "paw/470/work-a", sha), p
 
@@ -95,3 +96,17 @@ def test_candidate_arithmetic_resource_limits(tmp_path):
             expected_sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
             replacement="def test_one():\n    assert 999999 * 999999 == 1\n",
         )
+
+
+def test_candidate_rejects_forged_branch_and_commit(tmp_path):
+    w, p = candidate(tmp_path)
+    original = p.read_bytes()
+    args = dict(relative_path="tests/test_paw_engineering_worktree.py",
+                expected_sha256=hashlib.sha256(original).hexdigest(),
+                replacement="def test_one():\n    assert True\n")
+    from dataclasses import replace
+    with pytest.raises(PawWorktreeBoundaryError, match="branch_mismatch"):
+        apply_bounded_test_candidate(replace(w, branch="paw/470/fake"), **args)
+    with pytest.raises(PawWorktreeBoundaryError, match="head_mismatch"):
+        apply_bounded_test_candidate(replace(w, base_sha="0" * 40), **args)
+    assert p.read_bytes() == original
