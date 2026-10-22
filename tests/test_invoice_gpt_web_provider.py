@@ -77,6 +77,14 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
             self.assertEqual(persisted["status"], "needs_review")
             reread = store.get_invoice(invoice_id)
             self.assertEqual(reread["invoice_date"], "2019-03-23")
+            store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
+            with store.connect() as db:
+                count = db.execute(
+                    "SELECT COUNT(*) FROM extractions WHERE document_id=? AND engine='gpt-web-verified-receipt'",
+                    (ingested["document_id"],),
+                ).fetchone()[0]
+            self.assertEqual(count, 1)  # retry must not duplicate evidence
+
             with self.assertRaisesRegex(ValueError, "NOT_REVIEWABLE"):
                 self._apply_on_reviewed(store, invoice_id)
 
