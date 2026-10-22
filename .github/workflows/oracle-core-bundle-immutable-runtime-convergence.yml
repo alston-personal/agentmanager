@@ -19,6 +19,7 @@ on:
       - '.agent/roles/**'
       - 'agent_core/role_runtime.py'
       - 'agent_core/employee_skills.py'
+      - 'agentos_node/employee_wake_node.py'
       - 'agentos_node/product_employee_worker.py'
       - 'agentos_node/completion_470_status_provider.py'
       - 'agentos_node/product_employee_worker_cli.py'
