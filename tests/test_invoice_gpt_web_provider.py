@@ -72,7 +72,7 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
             with store.connect() as db:
                 db.execute("UPDATE invoices SET status='needs_review' WHERE id=?", (invoice_id,))
             bound = receipt()
-            bound["invoice_binding"] = {"invoice_id": invoice_id, "request_id": REQ, "image_sha256": hashlib.sha256(buf.getvalue()).hexdigest()}
+            bound["invoice_binding"] = store.register_gpt_web_invoice_request(invoice_id, request_id=REQ)
             persisted = store.apply_verified_gpt_web_receipt(invoice_id, bound, request_id=REQ)
             self.assertEqual(persisted["fields"]["invoice_number"], "MY04200253")
             self.assertEqual(persisted["fields"]["seller_tax_id"], "82328968")
@@ -106,6 +106,9 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
             bound["invoice_binding"] = {
                 "invoice_id": invoice_id, "request_id": REQ, "image_sha256": "0" * 64,
             }
+            with self.assertRaisesRegex(ValueError, "REQUEST_NOT_REGISTERED"):
+                store.apply_verified_gpt_web_receipt(invoice_id, bound, request_id=REQ)
+            store.register_gpt_web_invoice_request(invoice_id, request_id=REQ)
             with self.assertRaisesRegex(ValueError, "IMAGE_SHA_MISMATCH"):
                 store.apply_verified_gpt_web_receipt(invoice_id, bound, request_id=REQ)
 
