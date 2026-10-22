@@ -15,6 +15,8 @@ from agent_core.employee_runtime import EmployeeRuntime
 from agent_core.role_runtime import RoleRegistry
 from agent_core.employee_skills import EmployeeSkillRegistry, EmployeeSkillService
 from agent_core.governed_execution import execute_bound_work_intent
+from agent_core.executor_job_contract import canonical_executor_job_request
+from agentos_node.completion_470_status_provider import inspect_completion_470
 
 EXPECTED_AUTHORITY_POLICY = "core-supervisor-employee-wake-v1"
 EXPECTED_TRANSPORT = "one_direct"
@@ -382,12 +384,40 @@ class GovernedProductEmployeeWorker:
             )
 
         if self.runner_kind == "paw_inspect_v1":
-            blocker = "paw_governed_engineering_executor_not_bound"
-            thread_head = f"paw:blocked:{blocker}:{wake}:p{generation}:l{lease.generation}"
+            # Paw can do a real, fixed-scope inspection without engineering write
+            # authority. This is a diagnostic, never independent Claw PASS.
+            observation = inspect_completion_470(
+                canonical_executor_job_request("completion.470.status.inspect")
+            )
+            observed = observation.get("verdict") == "PASS"
+            blocker = (
+                "paw_engineering_execution_not_authorized"
+                if observed else "paw_completion_470_inspector_unavailable"
+            )
+            thread_head = f"paw:inspect:{blocker}:{wake}:p{generation}:l{lease.generation}"
             lease = lifecycle.checkpoint(assignment_id, lease_id, thread_head)
-            lifecycle.finish(assignment_id, lease_id, state="blocked", result_summary={"bounded_stage": "engineering-inspection", "blocker_code": blocker, "mutation_performed": False, "credential_exposed": False})
+            lifecycle.finish(
+                assignment_id, lease_id, state="blocked",
+                result_summary={
+                    "bounded_stage": "completion-470-readonly-inspection",
+                    "blocker_code": blocker,
+                    "inspection_verdict": observation.get("verdict"),
+                    "inspection_classification": observation.get("classification"),
+                    "inspected_work_id": observation.get("work_id") if observed else None,
+                    "inspected_status": observation.get("completion_status") if observed else None,
+                    "inspected_retry_count": observation.get("completion_machine_retry_count") if observed else None,
+                    "mutation_performed": False, "independent_acceptance_pass": False,
+                    "credential_exposed": False,
+                },
+            )
             employee = runtime.get_employee(employee_id)
-            return ProductWorkerState(status="blocked", runner_kind=self.runner_kind, employee_id=employee_id, assignment_id=assignment_id, wake_id=wake, presence_generation=generation, lease_generation=lease.generation, thread_head=lease.thread_head, error_code=blocker, executor_provider=employee.executor.provider, executor_model=employee.executor.model)
+            return ProductWorkerState(
+                status="blocked", runner_kind=self.runner_kind, employee_id=employee_id,
+                assignment_id=assignment_id, wake_id=wake, presence_generation=generation,
+                lease_generation=lease.generation, thread_head=lease.thread_head,
+                error_code=blocker, executor_provider=employee.executor.provider,
+                executor_model=employee.executor.model,
+            )
 
         if self.runner_kind == "youtube_ai_manager_scan_v1":
             blocker = "youtube_governed_read_adapter_unavailable"
