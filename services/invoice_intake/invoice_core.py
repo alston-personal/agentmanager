@@ -2028,6 +2028,68 @@ class InvoiceStore:
         self.prepare_reprocess(invoice_id)
         return self.process(invoice_id)
 
+    def apply_verified_gpt_web_receipt(
+        self, invoice_id: str, receipt: dict[str, Any], *, request_id: str,
+    ) -> dict[str, Any]:
+        """Persist externally verified GPT Web fields for an existing reviewable invoice.
+
+        Never create an invoice from a model response or overwrite a reviewed record.
+        Caller must source receipt from the trusted local bridge receipt directory;
+        this method is deliberately not exposed as a public HTTP endpoint.
+        """
+        from services.invoice_intake.gpt_web_provider import from_receipt
+
+        normalized = from_receipt(receipt, request_id=request_id)
+        fields = normalized["fields"]
+        now = utcnow()
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT id, document_id, status FROM invoices WHERE id=? AND deleted_at IS NULL",
+                (invoice_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(invoice_id)
+            if row["status"] not in {"needs_review", "recognition_insufficient", "quick_confirm"}:
+                raise ValueError("GPT_WEB_INVOICE_NOT_REVIEWABLE")
+            # Keep pre-existing readable values when GPT Web omits a field;
+            # do not synthesize missing amounts or mark human verification complete.
+            existing = db.execute(
+                """SELECT invoice_number, invoice_date, vendor_name, buyer_tax_id,
+                          seller_tax_id, amount_before_tax, tax_amount, total_amount
+                   FROM invoices WHERE id=?""", (invoice_id,),
+            ).fetchone()
+            merged = {
+                k: fields.get(k) if fields.get(k) is not None else existing[k]
+                for k in ("invoice_number", "invoice_date", "vendor_name",
+                          "buyer_tax_id", "seller_tax_id", "amount_before_tax",
+                          "tax_amount", "total_amount")
+            }
+            db.execute(
+                "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                (
+                    str(uuid.uuid4()), row["document_id"], "gpt-web-verified-receipt",
+                    json.dumps({
+                        "engine": "gpt-web",
+                        "request_id": request_id,
+                        "issues": normalized["issues"],
+                        "needs_review": True,
+                    }, ensure_ascii=False),
+                    now,
+                ),
+            )
+            db.execute(
+                """UPDATE invoices SET invoice_number=?,invoice_date=?,vendor_name=?,
+                   buyer_tax_id=?,seller_tax_id=?,amount_before_tax=?,tax_amount=?,
+                   total_amount=?,status='needs_review',updated_at=? WHERE id=?""",
+                (
+                    merged["invoice_number"], merged["invoice_date"],
+                    merged["vendor_name"], merged["buyer_tax_id"], merged["seller_tax_id"],
+                    merged["amount_before_tax"], merged["tax_amount"], merged["total_amount"],
+                    now, invoice_id,
+                ),
+            )
+        return self.get_invoice(invoice_id)
+
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
         with self.connect() as db:
             row = db.execute("""
