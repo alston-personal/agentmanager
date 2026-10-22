@@ -11,7 +11,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentos_node.paw_engineering_worktree import PreparedPawWorktree, PawWorktreeBoundaryError
+from agentos_node.paw_engineering_worktree import (\n    BRANCH_PREFIX, PreparedPawWorktree, PawWorktreeBoundaryError, _git, _SHA, _ID,\n)
 
 _ALLOWED = frozenset({"tests/test_paw_engineering_worktree.py"})
 _MAX_BYTES = 32_768
@@ -125,7 +125,19 @@ def apply_bounded_test_candidate(
         raise PawWorktreeBoundaryError("paw_patch_path_not_authorized")
     if not isinstance(replacement, str) or len(replacement.encode("utf-8")) > _MAX_BYTES:
         raise PawWorktreeBoundaryError("paw_patch_size_invalid")
+    if not _SHA.fullmatch(worktree.base_sha):
+        raise PawWorktreeBoundaryError("paw_candidate_base_invalid")
+    if not worktree.branch.startswith(BRANCH_PREFIX) or not _ID.fullmatch(worktree.branch[len(BRANCH_PREFIX):]):
+        raise PawWorktreeBoundaryError("paw_candidate_branch_invalid")
+    if worktree.path.is_symlink():
+        raise PawWorktreeBoundaryError("paw_candidate_path_symlink")
     root = worktree.path.resolve(strict=True)
+    if _git(root, "rev-parse", "--show-toplevel") != str(root):
+        raise PawWorktreeBoundaryError("paw_candidate_repo_root_mismatch")
+    if _git(root, "symbolic-ref", "--quiet", "--short", "HEAD") != worktree.branch:
+        raise PawWorktreeBoundaryError("paw_candidate_branch_mismatch")
+    if _git(root, "rev-parse", "--verify", "HEAD") != worktree.base_sha:
+        raise PawWorktreeBoundaryError("paw_candidate_head_mismatch")
     target = root / relative_path
     if target.is_symlink() or not target.is_file() or not target.resolve().is_relative_to(root):
         raise PawWorktreeBoundaryError("paw_patch_target_invalid")
