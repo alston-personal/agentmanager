@@ -50,3 +50,23 @@ def test_candidate_failed_test_not_accepted(tmp_path):
                                       replacement="def test_one():\n    assert False\n")
     assert r.test_pass is False
     assert r.independent_acceptance_pass is False
+
+
+@pytest.mark.parametrize("malicious", [
+    "import os\ndef test_one():\n    assert True\n",
+    "def test_one():\n    __import__('os').system('echo escaped')\n",
+    "def test_one():\n    assert open('/etc/passwd')\n",
+    "def test_one():\n    assert (1).__class__\n",
+    "@staticmethod\ndef test_one():\n    assert True\n",
+    "def test_one():\n    assert True\n\nx = 42\n",
+])
+def test_candidate_rejects_executable_python_before_write(tmp_path, malicious):
+    w, p = candidate(tmp_path)
+    initial = p.read_bytes()
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_patch_"):
+        apply_bounded_test_candidate(
+            w, relative_path="tests/test_paw_engineering_worktree.py",
+            expected_sha256=hashlib.sha256(initial).hexdigest(),
+            replacement=malicious,
+        )
+    assert p.read_bytes() == initial
