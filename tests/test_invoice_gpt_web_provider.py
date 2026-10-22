@@ -71,12 +71,12 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
             with store.connect() as db:
                 db.execute("UPDATE invoices SET status='needs_review' WHERE id=?", (invoice_id,))
             persisted = store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
-            self.assertEqual(persisted["invoice_number"], "MY04200253")
-            self.assertEqual(persisted["seller_tax_id"], "82328968")
-            self.assertEqual(persisted["total_amount"], 50)
+            self.assertEqual(persisted["fields"]["invoice_number"], "MY04200253")
+            self.assertEqual(persisted["fields"]["seller_tax_id"], "82328968")
+            self.assertEqual(persisted["fields"]["total_amount"], 50)
             self.assertEqual(persisted["status"], "needs_review")
             reread = store.get_invoice(invoice_id)
-            self.assertEqual(reread["invoice_date"], "2019-03-23")
+            self.assertEqual(reread["fields"]["invoice_date"], "2019-03-23")
             store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
             with store.connect() as db:
                 count = db.execute(
