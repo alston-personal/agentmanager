@@ -1598,12 +1598,22 @@ class InvoiceStore:
                         daemon=True,
                     ).start()
                 elif deep_pending:
-                    threading.Thread(
-                        target=self._deep_enrich_invoice,
-                        args=(invoice_id,),
-                        name=f"invoice-deep-{invoice_id[:8]}",
-                        daemon=True,
-                    ).start()
+                    # Opt-in GPT Web fallback; Gemini Vision remains unchanged.
+                    gpt_bridge = os.environ.get("INVOICE_GPT_WEB_BRIDGE_ROOT", "").strip()
+                    if gpt_bridge:
+                        threading.Thread(
+                            target=self._gpt_web_enrich_invoice,
+                            args=(invoice_id, gpt_bridge),
+                            name=f"invoice-gpt-web-{invoice_id[:8]}",
+                            daemon=True,
+                        ).start()
+                    else:
+                        threading.Thread(
+                            target=self._deep_enrich_invoice,
+                            args=(invoice_id,),
+                            name=f"invoice-deep-{invoice_id[:8]}",
+                            daemon=True,
+                        ).start()
                 return payload
             except Exception as exc:
                 failed_at = utcnow()
@@ -1825,6 +1835,17 @@ class InvoiceStore:
                     f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
                 )
                 return
+
+    def _gpt_web_enrich_invoice(self, invoice_id: str, bridge_root: str) -> None:
+        """Best-effort background bridge, falling back to existing deep OCR."""
+        try:
+            from services.invoice_intake.gpt_web_bridge_runner import run_once
+            run_once(self, invoice_id, bridge_root=Path(bridge_root))
+            print("invoice_gpt_web_enrichment=PASS", flush=True)
+        except Exception as exc:
+            # Authentication, routing, or timeout never bricks the invoice.
+            print(f"invoice_gpt_web_enrichment=FAILED type:{type(exc).__name__}", flush=True)
+            self._deep_enrich_invoice(invoice_id)
 
     def _deep_enrich_invoice(self, invoice_id: str) -> None:
         """Improve an already-visible fast result without blocking the user.
