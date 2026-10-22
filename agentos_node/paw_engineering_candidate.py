@@ -11,7 +11,9 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentos_node.paw_engineering_worktree import (\n    BRANCH_PREFIX, PreparedPawWorktree, PawWorktreeBoundaryError, _git, _SHA, _ID,\n)
+from agentos_node.paw_engineering_worktree import (
+    BRANCH_PREFIX, PreparedPawWorktree, PawWorktreeBoundaryError, _git, _SHA, _ID,
+)
 
 _ALLOWED = frozenset({"tests/test_paw_engineering_worktree.py"})
 _MAX_BYTES = 32_768
