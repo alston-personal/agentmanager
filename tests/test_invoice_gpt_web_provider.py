@@ -112,6 +112,40 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "IMAGE_SHA_MISMATCH"):
                 store.apply_verified_gpt_web_receipt(invoice_id, bound, request_id=REQ)
 
+    def test_consume_registered_real_bridge_receipt_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = InvoiceStore(root / "db", data_scope="test")
+            image = Image.new("RGB", (24, 24), "white")
+            buffer = BytesIO()
+            image.save(buffer, format="PNG")
+            invoice_id = store.ingest(buffer.getvalue(), "fixture.png", "image/png")["invoice_id"]
+            with store.connect() as db:
+                db.execute("UPDATE invoices SET status='needs_review' WHERE id=?", (invoice_id,))
+            store.register_gpt_web_invoice_request(invoice_id, request_id=REQ)
+            bridge = root / "bridge"
+            (bridge / "receipts").mkdir(parents=True)
+            outer = "session-invoice-roundtrip-test"
+            envelope = {
+                **receipt(), "schema": "agentos.session-receipt/v0.1",
+                "request_id": outer, "provider": "gpt-web", "operation": "invoke",
+            }
+            (bridge / "receipts" / f"{outer}.json").write_text(json.dumps(envelope))
+            row = store.consume_gpt_web_invoice_receipt(
+                invoice_id, request_id=REQ, outer_request_id=outer, bridge_root=bridge,
+            )
+            self.assertEqual(row["fields"]["invoice_number"], "MY04200253")
+            self.assertEqual(store.get_invoice(invoice_id)["fields"]["total_amount"], 50)
+            # The exact same bridge receipt is safe to consume again.
+            store.consume_gpt_web_invoice_receipt(
+                invoice_id, request_id=REQ, outer_request_id=outer, bridge_root=bridge,
+            )
+            with store.connect() as db:
+                total = db.execute(
+                    "SELECT COUNT(*) FROM extractions WHERE engine='gpt-web-verified-receipt'",
+                ).fetchone()[0]
+            self.assertEqual(total, 1)
+
     @staticmethod
     def _apply_on_reviewed(store, invoice_id):
         with store.connect() as db:
