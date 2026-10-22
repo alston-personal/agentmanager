@@ -55,6 +55,8 @@ roles:
       - no_arbitrary_privilege_bridge
     upstream_roles:
       - sector.weaver
+    capabilities:
+      - engineering.work.inspect
     outputs:
       - code_change
       - test_result
