@@ -594,6 +594,8 @@ def handoff(
             raise KeyError("work_item_not_found")
         if item.get("status") in TERMINAL:
             raise ValueError("terminal_work_cannot_be_handed_off")
+        if not retry_admission_allowed(item):
+            raise ValueError("machine_retry_budget_exhausted")
         previous = item.get("owner")
         item["owner"] = new_owner.strip()
         item["owner_generation"] = int(item.get("owner_generation") or 0) + 1
