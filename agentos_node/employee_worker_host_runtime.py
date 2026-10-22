@@ -21,12 +21,14 @@ V2_RUNNER_KINDS = {
     "spec_steward_o3",
     "zeus_writer_v1",
     "youtube_ai_manager_scan_v1",
+    "paw_inspect_v1",
 }
-PRODUCT_RUNNER_KINDS = {"zeus_writer_v1", "youtube_ai_manager_scan_v1"}
+PRODUCT_RUNNER_KINDS = {"zeus_writer_v1", "youtube_ai_manager_scan_v1", "paw_inspect_v1"}
 V2_RESULT_SCHEMAS = {
     "spec_steward_o3": "agentos.spec-steward-o3-worker-cli-result/v1",
     "zeus_writer_v1": "agentos.zeus-writer-worker-cli-result/v1",
     "youtube_ai_manager_scan_v1": "agentos.youtube-ai-manager-scan-worker-cli-result/v1",
+    "paw_inspect_v1": "agentos.paw-inspect-worker-cli-result/v1",
 }
 
 
