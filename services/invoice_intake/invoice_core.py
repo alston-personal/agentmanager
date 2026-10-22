@@ -2051,6 +2051,18 @@ class InvoiceStore:
                 raise KeyError(invoice_id)
             if row["status"] not in {"needs_review", "recognition_insufficient", "quick_confirm"}:
                 raise ValueError("GPT_WEB_INVOICE_NOT_REVIEWABLE")
+            # A bridge retry for the same correlated request must not write twice.
+            previous = db.execute(
+                """SELECT payload_json FROM extractions WHERE document_id=?
+                   AND engine='gpt-web-verified-receipt' ORDER BY rowid DESC LIMIT 100""",
+                (row["document_id"],),
+            ).fetchall()
+            for prior in previous:
+                try:
+                    if json.loads(prior["payload_json"]).get("request_id") == request_id:
+                        return self.get_invoice(invoice_id)
+                except (ValueError, TypeError):
+                    raise ValueError("GPT_WEB_PERSISTED_RECEIPT_CORRUPT")
             # Keep pre-existing readable values when GPT Web omits a field;
             # do not synthesize missing amounts or mark human verification complete.
             existing = db.execute(
