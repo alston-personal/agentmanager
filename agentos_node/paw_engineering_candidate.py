@@ -147,7 +147,8 @@ def apply_bounded_test_candidate(
         raise PawWorktreeBoundaryError("paw_patch_diff_check_failed")
     # Never invoke pytest on an untrusted checkout: conftest.py, plugins and
     # repository import hooks can execute code regardless of the AST allowlist.
-    passed = _verify_pure_assertions(replacement)\n    return PawCandidateReceipt(
+    passed = _verify_pure_assertions(replacement)
+    return PawCandidateReceipt(
         branch=worktree.branch, base_sha=worktree.base_sha,
         changed_file=relative_path,
         content_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
