@@ -1,5 +1,6 @@
 """Contract tests for GPT Web receipt ingestion boundary (no browser/DB writes)."""
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,14 +71,16 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
             invoice_id = ingested["invoice_id"]
             with store.connect() as db:
                 db.execute("UPDATE invoices SET status='needs_review' WHERE id=?", (invoice_id,))
-            persisted = store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
+            bound = receipt()
+            bound["invoice_binding"] = {"invoice_id": invoice_id, "request_id": REQ, "image_sha256": hashlib.sha256(buf.getvalue()).hexdigest()}
+            persisted = store.apply_verified_gpt_web_receipt(invoice_id, bound, request_id=REQ)
             self.assertEqual(persisted["fields"]["invoice_number"], "MY04200253")
             self.assertEqual(persisted["fields"]["seller_tax_id"], "82328968")
             self.assertEqual(persisted["fields"]["total_amount"], 50)
             self.assertEqual(persisted["status"], "needs_review")
             reread = store.get_invoice(invoice_id)
             self.assertEqual(reread["fields"]["invoice_date"], "2019-03-23")
-            store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
+            store.apply_verified_gpt_web_receipt(invoice_id, bound, request_id=REQ)
             with store.connect() as db:
                 count = db.execute(
                     "SELECT COUNT(*) FROM extractions WHERE document_id=? AND engine='gpt-web-verified-receipt'",
@@ -92,7 +95,11 @@ class GPTWebInvoiceProviderTest(unittest.TestCase):
     def _apply_on_reviewed(store, invoice_id):
         with store.connect() as db:
             db.execute("UPDATE invoices SET status='accepted' WHERE id=?", (invoice_id,))
-        return store.apply_verified_gpt_web_receipt(invoice_id, receipt(), request_id=REQ)
+        with store.connect() as db:
+            sha = db.execute("SELECT sha256 FROM documents JOIN invoices ON documents.id=invoices.document_id WHERE invoices.id=?", (invoice_id,)).fetchone()[0]
+        bound = receipt()
+        bound["invoice_binding"] = {"invoice_id": invoice_id, "request_id": REQ, "image_sha256": sha}
+        return store.apply_verified_gpt_web_receipt(invoice_id, bound, request_id=REQ)
 
     def test_malformed_uncertainty_rejected(self):
         with self.assertRaisesRegex(ValueError, "UNCERTAINTY_INVALID"):
