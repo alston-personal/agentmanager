@@ -14,7 +14,35 @@ PROVIDER_ID = "completion-470-status-inspect-v1"
 STATE = Path("/home/ubuntu/agent-data/governance/work-items.json")
 TARGET = "agentos-core-470-runtime-completion"
 ACTIVE = {"accepted", "in_progress", "verifying", "blocked", "waiting_external"}
+CORE_CURRENT = Path("/home/ubuntu/agent-data/runtime/core/current")
+CORE_RELEASES = Path("/home/ubuntu/agent-data/releases/core")
+PAW_BOOTSTRAP_RECEIPT = Path("/home/ubuntu/agent-data/employee-runtime/bootstrap/product-employees-v1.json")
 
+
+
+def _paw_bootstrap_evidence() -> tuple[bool, bool, str]:
+    """Inspect exact immutable release and bounded bootstrap receipt; no secrets."""
+    if not CORE_CURRENT.is_symlink():
+        return False, False, ""
+    release = CORE_CURRENT.resolve(strict=True)
+    release_root = CORE_RELEASES.resolve()
+    if release.parent != release_root or len(release.name) != 40 or any(
+        c not in "0123456789abcdef" for c in release.name
+    ):
+        return False, False, ""
+    receipt = json.loads(PAW_BOOTSTRAP_RECEIPT.read_text(encoding="utf-8"))
+    if not isinstance(receipt, dict):
+        return True, False, release.name
+    if receipt.get("schema") != "agentos.product-employee-bootstrap-receipt/v1" or receipt.get("ok") is not True:
+        return True, False, release.name
+    employees = receipt.get("employees")
+    present = isinstance(employees, list) and any(
+        isinstance(e, dict) and e.get("employee_id") == "the-paw"
+        and e.get("assignment_id") == "paw-470-inspection-v1"
+        and e.get("assignment_state") in {"pending", "accepted", "in_progress", "blocked", "completed", "handoff", "cancelled"}
+        for e in employees
+    )
+    return True, present, release.name
 
 def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
     spec = validate_executor_job(request)
@@ -66,7 +94,14 @@ def inspect_completion_470(request: Mapping[str, Any]) -> dict[str, Any]:
         retries = int(target.get("machine_retry_count") or 0) if target else 0
         if not 0 <= retries <= 1000000:
             raise ValueError("invalid_retry_count")
+        try:
+            release_valid, paw_bootstrapped, source_sha = _paw_bootstrap_evidence()
+        except (OSError, ValueError, TypeError, KeyError):
+            release_valid, paw_bootstrapped, source_sha = False, False, ""
         return {
+            "runtime_source_commit": source_sha,
+            "install_receipt_ok": release_valid,
+            "hydration_receipt_ok": paw_bootstrapped,
             "completion_last_verification_failure_code": (
                 str(target.get("last_verification_failure_code") or "")
                 if target and str(target.get("last_verification_failure_code") or "") in {
