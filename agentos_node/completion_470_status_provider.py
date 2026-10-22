@@ -39,7 +39,7 @@ def _paw_bootstrap_evidence() -> tuple[bool, bool, str]:
     present = isinstance(employees, list) and any(
         isinstance(e, dict) and e.get("employee_id") == "the-paw"
         and e.get("assignment_id") == "paw-470-inspection-v1"
-        and e.get("assignment_state") in {"open", "accepted", "in_progress", "blocked", "completed", "handoff"}
+        and e.get("assignment_state") in {"pending", "accepted", "in_progress", "blocked", "completed", "handoff", "cancelled"}
         for e in employees
     )
     return True, present, release.name
