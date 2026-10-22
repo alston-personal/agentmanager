@@ -51,12 +51,12 @@ def prepare_paw_worktree(
         raise PawWorktreeBoundaryError("paw_work_scope_not_authorized")
     if not _SHA.fullmatch(base_sha):
         raise PawWorktreeBoundaryError("paw_base_commit_invalid")
+    if Path(repository).is_symlink() or Path(workspace_root).is_symlink():
+        raise PawWorktreeBoundaryError("paw_symlink_not_authorized")
     repository = Path(repository).resolve(strict=True)
     workspace_root = Path(workspace_root).resolve(strict=True)
     if repository == workspace_root or repository in workspace_root.parents or workspace_root in repository.parents:
         raise PawWorktreeBoundaryError("paw_worktree_root_not_isolated")
-    if workspace_root.is_symlink() or repository.is_symlink():
-        raise PawWorktreeBoundaryError("paw_symlink_not_authorized")
     if _git(repository, "rev-parse", "--is-bare-repository") != "false":
         raise PawWorktreeBoundaryError("paw_repository_invalid")
     if _git(repository, "status", "--porcelain"):
