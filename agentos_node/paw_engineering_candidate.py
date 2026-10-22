@@ -1,4 +1,4 @@
-"""Bounded local Paw patch candidate and deterministic verification.
+"""Bounded local Paw patch candidate and non-executing verification.
 
 Not wired to ONE or model authority. Only fixed test artifacts may be edited.
 This is an acceptance-candidate receipt, never Claw verification or DONE.
@@ -51,6 +51,61 @@ def _require_pure_assertion_tests(replacement: str) -> None:
             raise PawWorktreeBoundaryError("paw_patch_test_shape_invalid")
 
 
+def _literal_value(node: ast.AST) -> object:
+    """Interpret only safe literal arithmetic/comparisons, never Python bytecode."""
+    if isinstance(node, ast.Constant) and type(node.value) in {int, bool, str}:
+        if isinstance(node.value, str) and len(node.value) > 256:
+            raise PawWorktreeBoundaryError("paw_patch_literal_too_large")
+        if isinstance(node.value, int) and abs(node.value) > 1_000_000:
+            raise PawWorktreeBoundaryError("paw_patch_integer_out_of_bounds")
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        n = _literal_value(node.operand)
+        if type(n) is not int:
+            raise PawWorktreeBoundaryError("paw_patch_arithmetic_not_allowed")
+        result = -n if isinstance(node.op, ast.USub) else n
+        if abs(result) > 1_000_000:
+            raise PawWorktreeBoundaryError("paw_patch_integer_out_of_bounds")
+        return result
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult)):
+        left, right = _literal_value(node.left), _literal_value(node.right)
+        if type(left) is not int or type(right) is not int:
+            raise PawWorktreeBoundaryError("paw_patch_arithmetic_not_allowed")
+        result = left + right if isinstance(node.op, ast.Add) else (
+            left - right if isinstance(node.op, ast.Sub) else left * right
+        )
+        if abs(result) > 1_000_000:
+            raise PawWorktreeBoundaryError("paw_patch_integer_out_of_bounds")
+        return result
+    if isinstance(node, ast.Compare) and len(node.ops) == 1:
+        left, right = _literal_value(node.left), _literal_value(node.comparators[0])
+        if type(left) is not type(right):
+            raise PawWorktreeBoundaryError("paw_patch_comparison_type_mismatch")
+        op = node.ops[0]
+        if isinstance(op, ast.Eq):
+            return left == right
+        if isinstance(op, ast.NotEq):
+            return left != right
+        if isinstance(op, ast.Lt):
+            return left < right
+        if isinstance(op, ast.LtE):
+            return left <= right
+        if isinstance(op, ast.Gt):
+            return left > right
+        if isinstance(op, ast.GtE):
+            return left >= right
+    raise PawWorktreeBoundaryError("paw_patch_expression_not_allowed")
+
+
+def _verify_pure_assertions(source: str) -> bool:
+    tree = ast.parse(source)
+    for function in tree.body:
+        for statement in function.body:
+            if isinstance(statement, ast.Assert) and _literal_value(statement.test) is not True:
+                return False
+    return True
+
+
 @dataclass(frozen=True)
 class PawCandidateReceipt:
     branch: str
@@ -90,11 +145,9 @@ def apply_bounded_test_candidate(
     if diff.returncode:
         target.write_bytes(before)
         raise PawWorktreeBoundaryError("paw_patch_diff_check_failed")
-    test = subprocess.run(["python3", "-m", "pytest", "-q", relative_path],
-                          cwd=root, capture_output=True, text=True, timeout=120)
-    return PawCandidateReceipt(
+    # Never invoke pytest on an untrusted checkout: conftest.py, plugins and\n    # repository import hooks can execute code regardless of the AST allowlist.\n    passed = _verify_pure_assertions(replacement)\n    return PawCandidateReceipt(
         branch=worktree.branch, base_sha=worktree.base_sha,
         changed_file=relative_path,
         content_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
-        test_exit_code=test.returncode, test_pass=test.returncode == 0,
+        test_exit_code=0 if passed else 1, test_pass=passed,
     )
