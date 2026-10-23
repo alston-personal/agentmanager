@@ -40,6 +40,15 @@ _CAPABILITIES = (
     PlatformCapability("facebook", "reply", False, None, "adapter_not_implemented"),
     PlatformCapability("facebook", "post.insights.read", False, None, "adapter_not_implemented"),
     PlatformCapability("facebook", "follow", False, None, "adapter_not_implemented"),
+
+    # X: contract surface is registered, but no live transport is accepted yet.
+    # First rollout must be a secret-free auth/entitlement health probe; public
+    # publishing remains fail-closed until an official API transport is accepted.
+    PlatformCapability("x", "status", False, None, "health_probe_not_implemented"),
+    PlatformCapability("x", "identity.read", False, None, "adapter_not_implemented"),
+    PlatformCapability("x", "post.read", False, None, "adapter_not_implemented"),
+    PlatformCapability("x", "publish", False, None, "transport_not_runtime_accepted"),
+    PlatformCapability("x", "reply", False, None, "transport_not_runtime_accepted"),
 )
 
 
