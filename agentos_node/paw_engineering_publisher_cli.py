@@ -52,7 +52,7 @@ def publish_latest(*, runtime_root: Path, workspace_root: Path,
         return {"status": "idle", "reason": "no_receipt"}
     import json
     # Select a real engineering handoff, not merely the newest inspection.
-    for path in sorted(candidates, key=lambda p: p.name):
+    for path in sorted(candidates, key=lambda p: p.name, reverse=True):
         if path.is_symlink():
             raise PawWorktreeBoundaryError('paw_publisher_receipt_symlink')
         try:
