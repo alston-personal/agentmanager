@@ -581,3 +581,85 @@ def test_paw_signed_request_worker_handoff(tmp_path: Path, monkeypatch: pytest.M
     assert receipt["outcome"] == "handoff"
     assert receipt["result_summary"]["independent_acceptance_pass"] is False
     assert receipt["result_summary"]["published"] is False
+
+def test_paw_worker_real_executor_local_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import hashlib
+    import subprocess
+    
+    from agentos_node.paw_engineering_request import issue_paw_request
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+    from agentos_node.paw_engineering_grant import PawEngineeringGrant
+    from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
+    real_root = Path(product_worker.__file__).resolve().parents[1]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for path in (".agent/roles/registry.yaml", "governance/employee-skills.json", "governance/execution-authority.json"):
+        dst = repo / path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes((real_root / path).read_bytes())
+    source = repo / "tests/test_paw_engineering_worktree.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("def test_one():\n    assert True\n")
+    def git(*args):
+        return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+    git("init")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    git("add", ".")
+    git("commit", "-m", "fixture")
+    base = git("rev-parse", "HEAD")
+    runtime_root, wake_root, worker_root = [tmp_path / name for name in ("runtime", "wake", "worker")]
+    for root in (runtime_root, wake_root, worker_root):
+        root.mkdir()
+    runtime = _materialize_product_assignment(
+        runtime_root, employee_id="the-paw", assignment_id="paw-470-inspection-v1",
+        role_id="sector.paw", skill_id="engineering.work.inspect",
+    )
+    capsule = _capsule("the-paw", "paw-470-inspection-v1", "sector.paw", "engineering.work.inspect")
+    capsule["wake_id"] = "wake_" + "a" * 24
+    grant = {
+        "schema": "agentos.paw-engineering-grant/v1",
+        "work_id": "issue-470-real", "assignment_id": "paw-470-inspection-v1",
+        "wake_id": capsule["wake_id"], "presence_generation": 1, "lease_generation": 1,
+        "repository_id": "alston-personal/agentmanager", "base_sha": base,
+        "allowed_path": "tests/test_paw_engineering_worktree.py",
+        "action": "prepare-static-test-candidate",
+    }
+    authority = worker_root / "trusted-engineering-authority"
+    authority.mkdir(mode=0o700)
+    key = b"isolated-test-control-plane-secret-key-00001"
+    key_file = authority / "paw-470-issuer.key"
+    key_file.write_bytes(key)
+    key_file.chmod(0o600)
+    # Issue against a genuinely active lease. Same claim ID is idempotent.
+    lifecycle = EmployeeLifecycle(runtime)
+    lease_id = "product-paw_inspect_v1-" + capsule["wake_id"] + "-1"
+    lifecycle.claim("paw-470-inspection-v1", "the-paw", lease_id, lease_seconds=300)
+    signed = issue_paw_request(
+        grant=grant, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        replacement="def test_one():\n    assert True\n\ndef test_two():\n    assert 2 + 2 == 4\n",
+        issuer_key=key, trusted_assignment_id="paw-470-inspection-v1",
+        trusted_wake_id=capsule["wake_id"], trusted_presence_generation=1,
+        trusted_lease_generation=1, lifecycle=lifecycle, trusted_lease_id=lease_id,
+        registry_path=repo / "governance/execution-authority.json",
+    )
+    request_file = authority / "paw-470-request.json"
+    request_file.write_text(json.dumps(signed))
+    request_file.chmod(0o600)
+    monkeypatch.setattr(product_worker, "__file__", str(repo / "agentos_node/product_employee_worker.py"))
+    monkeypatch.setattr(product_worker, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=runtime_root, wake_root=wake_root, worker_state_root=worker_root,
+        node_id="oracle-core-node", runner_kind="paw_inspect_v1", lease_seconds=300,
+    )
+    monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
+    state = worker.process_exact(wake_id=capsule["wake_id"], presence_generation=1)
+    assert state.status == "handoff"
+    receipt = json.loads((runtime_root / "lifecycle/receipts/paw-470-inspection-v1/000001.json").read_text())
+    commit_sha = receipt["result_summary"]["commit_sha"]
+    assert receipt["result_summary"]["published"] is False
+    assert receipt["result_summary"]["independent_acceptance_pass"] is False
+    assert git("rev-parse", "HEAD") == base
+    result_repo = worker_root / "paw-470-worktrees/issue-470-real"
+    result_head = subprocess.run(["git", "-C", str(result_repo), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
+    assert result_head == commit_sha
