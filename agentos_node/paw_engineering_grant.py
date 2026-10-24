@@ -129,3 +129,29 @@ def require_canonical_paw_authority(
         }
     ):
         raise PawWorktreeBoundaryError("paw_canonical_authority_boundary_invalid")
+
+
+def require_live_paw_lease(
+    grant: PawEngineeringGrant, *,
+    lifecycle: object,
+    expected_lease_id: str,
+) -> None:
+    """Require a currently active exact Paw lease before privileged execution.
+
+    Validating a wake capsule alone does not authorize mutation. The trusted
+    caller must obtain lifecycle from the canonical Employee Runtime, not from
+    untrusted wake input. Repeat this check at each mutation boundary.
+    """
+    lease = lifecycle.get_lease(grant.assignment_id)
+    if (
+        lease is None
+        or lease.assignment_id != grant.assignment_id
+        or lease.employee_id != "the-paw"
+        or lease.lease_id != expected_lease_id
+        or lease.generation != grant.lease_generation
+        or lease.status != "active"
+        or lease.resume_required
+        or lease.prior_execution_state != "known"
+        or lifecycle.lease_expired(lease)
+    ):
+        raise PawWorktreeBoundaryError("paw_live_lease_not_authorized")
