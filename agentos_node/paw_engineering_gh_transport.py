@@ -38,6 +38,12 @@ def publish_with_trusted_gh(
     if any(k.startswith(('GIT_CONFIG_', 'GIT_TRACE', 'GIT_EXEC_PATH')) or k in ('GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_ASKPASS', 'GIT_TEMPLATE_DIR') for k in os.environ):
         raise PawWorktreeBoundaryError('paw_publisher_git_environment_untrusted')
 
+    # Git aliases/remote push URLs are mutable in the worker worktree. Never
+    # let origin.pushurl redirect an authenticated publisher to another host.
+    push_url = _git(root, "remote", "get-url", "--push", "origin")
+    if push_url != "https://github.com/" + REPO + ".git":
+        raise PawWorktreeBoundaryError("paw_publisher_push_target_invalid")
+
     def gh(*args):
         p = subprocess.run(
             ["gh", *args], cwd=root, stdin=subprocess.DEVNULL,
