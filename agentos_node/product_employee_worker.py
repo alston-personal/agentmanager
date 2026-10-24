@@ -389,6 +389,8 @@ class GovernedProductEmployeeWorker:
             authority_dir = self.worker_state_root / "trusted-engineering-authority"
             request_file = authority_dir / "paw-470-request.json"
             key_file = authority_dir / "paw-470-issuer.key"
+            if request_file.exists() != key_file.exists():
+                raise PermissionError("paw_engineering_authority_incomplete")
             if request_file.is_file() and key_file.is_file():
                 import stat
                 from agentos_node.paw_engineering_request import read_authenticated_paw_request
