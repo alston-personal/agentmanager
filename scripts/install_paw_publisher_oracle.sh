@@ -30,6 +30,19 @@ for target in "$RELEASE/.venv/bin/python3" "$RELEASE/agentos_node/paw_engineerin
   runuser -u agentos-publisher -- test -r "$target" || { echo 'paw_publisher_source_access_missing' >&2; exit 2; }
 done
 runuser -u agentos-publisher -- test -w "$DATA_ROOT/employee-runtime" || { echo 'paw_publisher_receipt_write_missing' >&2; exit 2; }
+# Verify execute/traverse access, not just readability of a directory.
+for target in "$RELEASE" "$RELEASE/.venv/bin/python3" "$DATA_ROOT" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" "$DATA_ROOT/employee-worker-state/paw-470-worktrees"; do
+  runuser -u agentos-publisher -- test -x "$target" || { echo "paw_publisher_traversal_access_missing" >&2; exit 2; }
+done
+for executable in /usr/bin/git /usr/bin/gh; do
+  [ -x "$executable" ] && runuser -u agentos-publisher -- test -x "$executable" || { echo "paw_publisher_git_tools_missing" >&2; exit 2; }
+done
+# A read-only worktree does not imply access to its shared Git common-dir.
+# Inspect every existing Paw worktree before activating an authenticated timer.
+for target in "$DATA_ROOT"/employee-worker-state/paw-470-worktrees/*; do
+  [ -d "$target" ] || continue
+  runuser -u agentos-publisher -- git -C "$target" rev-parse --verify HEAD >/dev/null 2>&1 || { echo "paw_publisher_worktree_git_access_missing" >&2; exit 2; }
+done
 src="$RELEASE/.agent/scripts"
 for name in agentos-paw-publisher.service agentos-paw-publisher.timer; do
   [ -f "$src/$name" ] || { echo "paw_publisher_release_asset_missing" >&2; exit 2; }
