@@ -81,7 +81,9 @@ def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worke
     assert all("systemctl --user" not in line for line in installer.splitlines() if not line.lstrip().startswith("#"))
     assert "agentos-paw-publisher" not in activation
     assert "EnvironmentFile=/etc/agentos/paw-publisher.env" in service
-    assert "User=ubuntu" in service
+    assert "User=root" in service
+    assert "ReadWritePaths=/home/ubuntu/agent-data/employee-runtime" in service
+    assert "ReadOnlyPaths=/home/ubuntu/agent-data/employee-runtime" not in service
 
 def test_publisher_lock_prevents_overlapping_passes(tmp_path):
     with cli._publication_lock(tmp_path):
