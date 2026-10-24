@@ -23,6 +23,7 @@ on:
       - 'agentos_node/employee_wake_node.py'
       - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/employee_worker_host_runtime.py'
+      - 'agentos_node/paw_engineering_request.py'
       - 'agentos_node/paw_engineering_executor.py'
       - 'agentos_node/paw_engineering_commit.py'
       - 'agentos_node/paw_engineering_grant.py'
