@@ -192,3 +192,20 @@ def test_signed_request_rejects_forgery_before_any_execution():
         authenticate_paw_request(altered, issuer_key=key)
     with pytest.raises(PawWorktreeBoundaryError, match="authentication_failed"):
         run_signed_paw_candidate(request=altered, issuer_key=key)
+
+def test_trusted_issuer_rejects_absent_lease(tmp_path):
+    from agentos_node.paw_engineering_request import issue_paw_request
+    from pathlib import Path
+    class Missing:
+        def get_lease(self, assignment_id):
+            return None
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_live_lease_not_authorized"):
+        issue_paw_request(
+            grant=grant(), expected_sha256="a" * 64,
+            replacement="def test_x(): pass", issuer_key=b"k" * 32,
+            trusted_assignment_id="paw-470-inspection-v1",
+            trusted_wake_id=grant()["wake_id"],
+            trusted_presence_generation=1, trusted_lease_generation=1,
+            lifecycle=Missing(), trusted_lease_id="missing",
+            registry_path=Path(__file__).resolve().parents[1] / "governance/execution-authority.json",
+        )
