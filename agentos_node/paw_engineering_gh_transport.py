@@ -16,23 +16,29 @@ from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError, _git
 
 def publish_with_trusted_gh(
     local: PawLocalCommitReceipt, *, worktree: Path,
-    authenticated_publisher: bool,
+    authenticated_publisher: bool, bare_repository: bool = False,
 ):
     if not authenticated_publisher:
         raise PawWorktreeBoundaryError("paw_publisher_not_authorized")
     root = Path(worktree).resolve(strict=True)
-    if _git(root, "symbolic-ref", "--quiet", "--short", "HEAD") != local.branch:
-        raise PawWorktreeBoundaryError("paw_publisher_branch_mismatch")
-    if _git(root, "rev-parse", "HEAD") != local.commit_sha:
-        raise PawWorktreeBoundaryError("paw_publisher_head_mismatch")
-    if _git(root, "status", "--porcelain"):
-        raise PawWorktreeBoundaryError("paw_publisher_dirty_checkout")
-    remote = _git(root, "remote", "get-url", "origin")
-    if remote not in (
-        "https://github.com/" + REPO + ".git",
-        "git@github.com:" + REPO + ".git",
-    ):
-        raise PawWorktreeBoundaryError("paw_publisher_remote_mismatch")
+    if bare_repository:
+        if _git(root, "rev-parse", "--is-bare-repository") != "true":
+            raise PawWorktreeBoundaryError("paw_publisher_bare_repository_required")
+        if _git(root, "rev-parse", "refs/heads/" + local.branch) != local.commit_sha:
+            raise PawWorktreeBoundaryError("paw_publisher_head_mismatch")
+    else:
+        if _git(root, "symbolic-ref", "--quiet", "--short", "HEAD") != local.branch:
+            raise PawWorktreeBoundaryError("paw_publisher_branch_mismatch")
+        if _git(root, "rev-parse", "HEAD") != local.commit_sha:
+            raise PawWorktreeBoundaryError("paw_publisher_head_mismatch")
+        if _git(root, "status", "--porcelain"):
+            raise PawWorktreeBoundaryError("paw_publisher_dirty_checkout")
+        remote = _git(root, "remote", "get-url", "origin")
+        if remote not in (
+            "https://github.com/" + REPO + ".git",
+            "git@github.com:" + REPO + ".git",
+        ):
+            raise PawWorktreeBoundaryError("paw_publisher_remote_mismatch")
 
     # Reject injected Git configuration before any network or privileged Git operation.
     if any(k.startswith(('GIT_CONFIG_', 'GIT_TRACE', 'GIT_EXEC_PATH')) or k in ('GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_ASKPASS', 'GIT_TEMPLATE_DIR') for k in os.environ):
@@ -40,7 +46,7 @@ def publish_with_trusted_gh(
 
     # Git aliases/remote push URLs are mutable in the worker worktree. Never
     # let origin.pushurl redirect an authenticated publisher to another host.
-    push_url = _git(root, "remote", "get-url", "--push", "origin")
+    push_url = ("https://github.com/" + REPO + ".git") if bare_repository else _git(root, "remote", "get-url", "--push", "origin")
     if push_url != "https://github.com/" + REPO + ".git":
         raise PawWorktreeBoundaryError("paw_publisher_push_target_invalid")
 
@@ -75,7 +81,7 @@ def publish_with_trusted_gh(
     def push(branch, sha):
         # Exact source and destination; never force-push or target main.
         p = subprocess.run(
-            ["git", "-C", str(root), "-c", "core.hooksPath=/dev/null", "push", "origin",
+            ["git", "-C", str(root), "-c", "core.hooksPath=/dev/null", "push", ("https://github.com/" + REPO + ".git") if bare_repository else "origin",
              sha + ":refs/heads/" + branch],
             stdin=subprocess.DEVNULL, text=True, capture_output=True,
             timeout=60, check=False,
