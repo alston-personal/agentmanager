@@ -13,17 +13,23 @@ esac
 # The user service must be able to read the immutable release and its Python runtime.
 [ -x "$RELEASE/.venv/bin/python3" ] || { echo "paw_publisher_release_python_missing" >&2; exit 2; }
 [ -f "$RELEASE/agentos_node/paw_engineering_publisher_cli.py" ] || { echo "paw_publisher_module_missing" >&2; exit 2; }
+getent passwd agentos-publisher >/dev/null || { echo 'paw_publisher_service_user_missing' >&2; exit 2; }
+[ "$(id -u agentos-publisher)" != "$(id -u ubuntu)" ] || { echo 'paw_publisher_identity_not_isolated' >&2; exit 2; }
 ENV_FILE=/etc/agentos/paw-publisher.env
 [ -f "$ENV_FILE" ] && [ ! -L "$ENV_FILE" ] || {
   echo "paw_publisher_env_missing" >&2; exit 2;
 }
-[ "$(stat -c %u "$ENV_FILE")" -eq 0 ] && [ "$(stat -c %a "$ENV_FILE")" = 600 ] || {
+[ "$(stat -c %u "$ENV_FILE")" -eq 0 ] && [ "$(stat -c %a "$ENV_FILE")" = 640 ] && [ "$(stat -c %G "$ENV_FILE")" = agentos-publisher ] || {
   echo "paw_publisher_env_permissions_invalid" >&2; exit 2;
 }
 # Never source or print secret values in the installer.
 grep -Eq '^(GH_TOKEN|GITHUB_TOKEN)=' "$ENV_FILE" || {
   echo "paw_publisher_credential_not_configured" >&2; exit 2;
 }
+for target in "$RELEASE/.venv/bin/python3" "$RELEASE/agentos_node/paw_engineering_publisher_cli.py" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state/paw-470-worktrees"; do
+  runuser -u agentos-publisher -- test -r "$target" || { echo 'paw_publisher_source_access_missing' >&2; exit 2; }
+done
+runuser -u agentos-publisher -- test -w "$DATA_ROOT/employee-runtime" || { echo 'paw_publisher_receipt_write_missing' >&2; exit 2; }
 src="$RELEASE/.agent/scripts"
 for name in agentos-paw-publisher.service agentos-paw-publisher.timer; do
   [ -f "$src/$name" ] || { echo "paw_publisher_release_asset_missing" >&2; exit 2; }
