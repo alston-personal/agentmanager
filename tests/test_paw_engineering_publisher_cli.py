@@ -91,8 +91,10 @@ def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worke
     assert "NoNewPrivileges=true" in service
     assert "UMask=0077" in service
     assert "RestrictSUIDSGID=true" in service
-    assert "ReadWritePaths=/home/ubuntu/agent-data/employee-runtime" in service
-    assert "ReadOnlyPaths=/home/ubuntu/agent-data/employee-runtime" not in service
+    assert "ReadOnlyPaths=/home/ubuntu/agent-data/employee-runtime" in service
+    assert "StateDirectory=agentos-paw-publisher" in service
+    assert "--publication-root /var/lib/agentos-paw-publisher" in service
+    assert "ReadWritePaths=/home/ubuntu/agent-data/employee-runtime" not in service
 
 def test_publisher_lock_prevents_overlapping_passes(tmp_path):
     with cli._publication_lock(tmp_path):
@@ -151,3 +153,19 @@ def test_publisher_install_preflights_worktree_git_access():
     assert 'paw_publisher_git_tools_missing' in installer
     assert 'paw_publisher_worktree_git_access_missing' in installer
     assert 'runuser -u agentos-publisher -- git -C "$target" rev-parse --verify HEAD' in installer
+
+
+def test_publisher_state_is_separate_from_worker_runtime(tmp_path, monkeypatch):
+    import json
+    runtime = tmp_path / 'worker'
+    publication = tmp_path / 'publisher'
+    publication.mkdir()
+    directory = runtime / 'lifecycle/receipts/paw-470-inspection-v1'
+    directory.mkdir(parents=True)
+    (directory / '000001.json').write_text(json.dumps({'outcome':'handoff','result_summary':{'bounded_stage':'paw-authorized-local-commit','commit_sha':'b'*40}}))
+    monkeypatch.setattr(cli, 'publish_once', lambda **kwargs: {'status':'published_draft','commit_sha':'b'*40})
+    result = cli.publish_latest(runtime_root=runtime, workspace_root=tmp_path, publication_root=publication)
+    assert result['status'] == 'published_draft'
+    assert (publication / 'paw-publications/000001.json').is_file()
+    assert not (runtime / '.paw-publisher.lock').exists()
+    assert not (runtime / 'paw-publications').exists()
