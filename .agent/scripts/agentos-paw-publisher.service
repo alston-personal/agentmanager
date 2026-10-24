@@ -1,0 +1,30 @@
+[Unit]
+Description=AgentOS Paw Draft Publisher (separate credential boundary)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+StateDirectory=agentos-paw-publisher
+StateDirectoryMode=0700
+User=agentos-publisher
+Group=agentos-publisher
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/etc/agentos/paw-publisher.env
+ExecStart=/usr/bin/python3 -m agentos_node.paw_engineering_publisher_cli --runtime-root /home/ubuntu/agent-data/employee-runtime --workspace-root /home/ubuntu/agent-data/employee-worker-state/paw-470-worktrees --publication-root /var/lib/agentos-paw-publisher --latest
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+LockPersonality=true
+RestrictSUIDSGID=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+PrivateDevices=true
+SystemCallArchitectures=native
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/ubuntu/agent-data/employee-runtime
+ReadOnlyPaths=/home/ubuntu/agent-data/employee-worker-state/paw-470-worktrees

@@ -17,20 +17,41 @@ on:
       - '.agent/scripts/agentos-employee-worker-host.service'
       - '.agent/scripts/agentos-product-work-intent-reconciler.service'
       - '.agent/scripts/agentos-product-work-intent-reconciler.timer'
+      - '.agent/scripts/agentos-paw-publisher.service'
+      - '.agent/scripts/agentos-paw-publisher.timer'
       - 'agent_core/node_registry.py'
       - 'agent_core/realm_fabric.py'
       - 'agent_core/governed_execution.py'
       - 'agentos_node/employee_wake_node.py'
       - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/employee_worker_host_runtime.py'
+      - 'agentos_node/paw_engineering_request.py'
+      - 'agentos_node/paw_engineering_publisher_cli.py'
+      - 'agentos_node/paw_engineering_handoff_publisher.py'
+      - 'agentos_node/paw_engineering_gh_transport.py'
+      - 'agentos_node/paw_engineering_publisher.py'
+      - 'agentos_node/paw_engineering_executor.py'
+      - 'agentos_node/paw_engineering_commit.py'
+      - 'agentos_node/paw_engineering_grant.py'
+      - 'agentos_node/paw_engineering_candidate.py'
+      - 'agentos_node/paw_engineering_worktree.py'
+      - 'agentos_node/paw_engineering_bundle.py'
       - 'agentos_node/product_employee_worker.py'
       - 'agentos_node/product_employee_worker_cli.py'
       - 'agentos_node/product_work_intent_reconciler.py'
       - 'scripts/bootstrap_product_employees.py'
       - 'scripts/activate_product_employees_oracle.sh'
+      - 'scripts/install_paw_publisher_oracle.sh'
       - 'scripts/repair_realm_fabric_truncated_tail.py'
       - 'tests/test_product_employee_contracts.py'
       - 'tests/test_product_employee_worker_plan.py'
+      - 'tests/test_paw_engineering_publisher_cli.py'
+      - 'tests/test_paw_engineering_handoff_publisher.py'
+      - 'tests/test_paw_engineering_publisher.py'
+      - 'tests/test_paw_engineering_grant.py'
+      - 'tests/test_paw_engineering_candidate.py'
+      - 'tests/test_paw_engineering_worktree.py'
+      - 'tests/test_paw_engineering_bundle.py'
       - 'tests/test_product_employee_worker.py'
       - 'tests/test_governed_execution.py'
       - 'tests/test_product_employee_activation.py'
@@ -64,6 +85,13 @@ jobs:
           python -m pytest -q
           tests/test_product_employee_contracts.py
           tests/test_product_employee_worker_plan.py
+          tests/test_paw_engineering_publisher_cli.py
+          tests/test_paw_engineering_handoff_publisher.py
+          tests/test_paw_engineering_publisher.py
+          tests/test_paw_engineering_grant.py
+          tests/test_paw_engineering_candidate.py
+          tests/test_paw_engineering_worktree.py
+          tests/test_paw_engineering_bundle.py
           tests/test_product_employee_worker.py
           tests/test_governed_execution.py
           tests/test_product_employee_activation.py
