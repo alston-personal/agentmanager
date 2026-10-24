@@ -1,5 +1,5 @@
 import pytest
-from agentos_node.paw_engineering_grant import validate_paw_engineering_grant
+from agentos_node.paw_engineering_grant import validate_paw_engineering_grant, require_canonical_paw_authority
 from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
 
 
@@ -49,3 +49,23 @@ def test_extra_fields_denied():
     g["shell"] = "sh"
     with pytest.raises(PawWorktreeBoundaryError, match="shape_invalid"):
         validate(g)
+
+
+def test_canonical_authority_admits_only_existing_policy():
+    from pathlib import Path
+    policy = Path(__file__).resolve().parents[1] / "governance/execution-authority.json"
+    candidate = validate(grant())
+    require_canonical_paw_authority(candidate, registry_path=policy)
+    with pytest.raises(RuntimeError, match="source_ref_not_allowed"):
+        require_canonical_paw_authority(candidate, registry_path=policy, source_ref="main")
+
+
+def test_canonical_authority_rejects_policy_without_paw(tmp_path):
+    import json
+    from pathlib import Path
+    policy = json.loads((Path(__file__).resolve().parents[1] / "governance/execution-authority.json").read_text())
+    policy["capabilities"].pop("paw.engineering.candidate.prepare")
+    fixture = tmp_path / "policy.json"
+    fixture.write_text(json.dumps(policy))
+    with pytest.raises(RuntimeError, match="authority_missing"):
+        require_canonical_paw_authority(validate(grant()), registry_path=fixture)
