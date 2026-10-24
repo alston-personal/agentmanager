@@ -31,7 +31,8 @@ done
 # Preserve the system service boundary: this installer never invokes
 # systemctl --user and never adds publishing privileges to the worker.
 install -m 0644 "$src/agentos-paw-publisher.timer" /etc/systemd/system/agentos-paw-publisher.timer
-sed -e "s|/home/ubuntu/agentmanager|$RELEASE|g" \
+sed -e "s|/usr/bin/python3|$RELEASE/.venv/bin/python3|g" \
+    -e "s|/home/ubuntu/agentmanager|$RELEASE|g" \
     -e "s|/home/ubuntu/agent-data|$DATA_ROOT|g" \
     "$src/agentos-paw-publisher.service" \
     > /etc/systemd/system/agentos-paw-publisher.service
