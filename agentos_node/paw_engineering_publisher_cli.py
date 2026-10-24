@@ -6,6 +6,8 @@ entrypoint does not merge, deploy or claim independent acceptance.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import json
 import os
 import sys
@@ -40,9 +42,32 @@ def publish_once(*, runtime_root: Path, workspace_root: Path, generation: int,
     }
 
 
+@contextlib.contextmanager
+def _publication_lock(runtime_root: Path):
+    """Serialize all publisher passes; failed runs release the kernel lock."""
+    if not runtime_root.is_dir() or runtime_root.is_symlink():
+        raise PawWorktreeBoundaryError('paw_publisher_runtime_root_invalid')
+    lock_path = runtime_root / '.paw-publisher.lock'
+    if lock_path.is_symlink():
+        raise PawWorktreeBoundaryError('paw_publisher_lock_invalid')
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise PawWorktreeBoundaryError('paw_publisher_already_running') from exc
+        yield
+    finally:
+        os.close(fd)
 def publish_latest(*, runtime_root: Path, workspace_root: Path,
                    environment: dict[str, str] | None = None) -> dict:
-    """One reconciler pass; process only the latest terminal receipt."""
+    with _publication_lock(runtime_root):
+        return _publish_latest_locked(runtime_root=runtime_root, workspace_root=workspace_root, environment=environment)
+
+
+def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
+                           environment: dict[str, str] | None = None) -> dict:
+    """One locked reconciler pass; select oldest unpublished handoff."""
     import re
     directory = runtime_root / "lifecycle/receipts/paw-470-inspection-v1"
     if not directory.is_dir():
