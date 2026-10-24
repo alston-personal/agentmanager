@@ -104,3 +104,68 @@ def test_executor_denies_without_live_lease_before_worktree_creation(tmp_path):
             replacement="def test_ok():\n    assert True\n",
         )
     assert list(workspace.iterdir()) == []
+
+
+def test_authorized_executor_creates_real_isolated_local_commit(tmp_path):
+    """Exercise full canonical policy + live lease + git worktree + candidate commit."""
+    import hashlib
+    import subprocess
+    from pathlib import Path
+    from types import SimpleNamespace
+    from agentos_node.paw_engineering_executor import run_authorized_static_candidate
+
+    def git(root, *args):
+        return subprocess.run(
+            ["git", "-C", str(root), *args], check=True, text=True,
+            capture_output=True,
+        ).stdout.strip()
+
+    repo = tmp_path / "repository"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.email", "test@example.invalid")
+    git(repo, "config", "user.name", "Fixture")
+    source = repo / "tests/test_paw_engineering_worktree.py"
+    source.parent.mkdir()
+    source.write_text("def test_one():\\n    assert True\\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "fixture")
+    base_sha = git(repo, "rev-parse", "HEAD")
+    payload = grant()
+    payload["base_sha"] = base_sha
+    lease_id = "product-paw_inspect_v1-" + payload["wake_id"] + "-1"
+    lease = SimpleNamespace(
+        assignment_id=payload["assignment_id"], employee_id="the-paw",
+        lease_id=lease_id, generation=1, status="active",
+        resume_required=False, prior_execution_state="known",
+    )
+
+    class Lifecycle:
+        def get_lease(self, assignment_id):
+            return lease
+
+        def lease_expired(self, current):
+            return False
+
+    root = tmp_path / "worktrees"
+    root.mkdir()
+    policy = Path(__file__).resolve().parents[1] / "governance/execution-authority.json"
+    result = run_authorized_static_candidate(
+        grant_payload=payload,
+        trusted_wake_id=payload["wake_id"],
+        trusted_presence_generation=1,
+        trusted_lease_generation=1,
+        trusted_lease_id=lease_id,
+        lifecycle=Lifecycle(),
+        registry_path=policy,
+        repository=repo,
+        workspace_root=root,
+        expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        replacement="def test_one():\\n    assert True\\n\\ndef test_two():\\n    assert 2 + 2 == 4\\n",
+    )
+    assert result.schema == "agentos.paw-local-commit-receipt/v1"
+    assert result.published is False
+    assert result.independent_acceptance_pass is False
+    assert git(repo, "rev-parse", "HEAD") == base_sha
+    assert source.read_text() == "def test_one():\\n    assert True\\n"
+    assert git(root / payload["work_id"], "rev-parse", "HEAD") == result.commit_sha
