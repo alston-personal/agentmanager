@@ -1,5 +1,5 @@
 import pytest
-from agentos_node.paw_engineering_grant import validate_paw_engineering_grant, require_canonical_paw_authority
+from agentos_node.paw_engineering_grant import validate_paw_engineering_grant, require_canonical_paw_authority, require_live_paw_lease
 from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
 
 
@@ -69,3 +69,11 @@ def test_canonical_authority_rejects_policy_without_paw(tmp_path):
     fixture.write_text(json.dumps(policy))
     with pytest.raises(RuntimeError, match="authority_missing"):
         require_canonical_paw_authority(validate(grant()), registry_path=fixture)
+
+
+def test_live_lease_rejects_missing_lifecycle():
+    class MissingLifecycle:
+        def get_lease(self, assignment_id):
+            return None
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_live_lease_not_authorized"):
+        require_live_paw_lease(validate(grant()), lifecycle=MissingLifecycle(), expected_lease_id="absent")
