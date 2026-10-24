@@ -81,7 +81,11 @@ def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worke
     assert all("systemctl --user" not in line for line in installer.splitlines() if not line.lstrip().startswith("#"))
     assert "agentos-paw-publisher" not in activation
     assert "EnvironmentFile=/etc/agentos/paw-publisher.env" in service
-    assert "User=root" in service
+    assert "User=agentos-publisher" in service
+    assert "Group=agentos-publisher" in service
+    assert "User=root" not in service
+    assert "paw_publisher_service_user_missing" in installer
+    assert "paw_publisher_source_access_missing" in installer
     assert "CapabilityBoundingSet=\n" in service
     assert "AmbientCapabilities=\n" in service
     assert "NoNewPrivileges=true" in service
