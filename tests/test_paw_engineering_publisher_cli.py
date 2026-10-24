@@ -104,3 +104,9 @@ def test_publisher_lock_releases_after_failure(tmp_path):
             raise RuntimeError('failure')
     with cli._publication_lock(tmp_path):
         pass
+
+
+def test_publisher_never_executes_repository_push_hooks():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / 'agentos_node/paw_engineering_gh_transport.py').read_text()
+    assert '"-c", "core.hooksPath=/dev/null", "push"' in source
