@@ -35,6 +35,7 @@ on:
       - 'agentos_node/paw_engineering_grant.py'
       - 'agentos_node/paw_engineering_candidate.py'
       - 'agentos_node/paw_engineering_worktree.py'
+      - 'agentos_node/paw_engineering_bundle.py'
       - 'agentos_node/product_employee_worker.py'
       - 'agentos_node/product_employee_worker_cli.py'
       - 'agentos_node/product_work_intent_reconciler.py'
@@ -50,6 +51,7 @@ on:
       - 'tests/test_paw_engineering_grant.py'
       - 'tests/test_paw_engineering_candidate.py'
       - 'tests/test_paw_engineering_worktree.py'
+      - 'tests/test_paw_engineering_bundle.py'
       - 'tests/test_product_employee_worker.py'
       - 'tests/test_governed_execution.py'
       - 'tests/test_product_employee_activation.py'
@@ -89,6 +91,7 @@ jobs:
           tests/test_paw_engineering_grant.py
           tests/test_paw_engineering_candidate.py
           tests/test_paw_engineering_worktree.py
+          tests/test_paw_engineering_bundle.py
           tests/test_product_employee_worker.py
           tests/test_governed_execution.py
           tests/test_product_employee_activation.py
