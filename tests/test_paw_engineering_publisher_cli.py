@@ -82,6 +82,11 @@ def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worke
     assert "agentos-paw-publisher" not in activation
     assert "EnvironmentFile=/etc/agentos/paw-publisher.env" in service
     assert "User=root" in service
+    assert "CapabilityBoundingSet=\n" in service
+    assert "AmbientCapabilities=\n" in service
+    assert "NoNewPrivileges=true" in service
+    assert "UMask=0077" in service
+    assert "RestrictSUIDSGID=true" in service
     assert "ReadWritePaths=/home/ubuntu/agent-data/employee-runtime" in service
     assert "ReadOnlyPaths=/home/ubuntu/agent-data/employee-runtime" not in service
 
