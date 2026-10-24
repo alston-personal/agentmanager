@@ -121,3 +121,20 @@ def test_publisher_rejects_git_environment_injection(tmp_path, monkeypatch):
     local = PawLocalCommitReceipt(schema='agentos.paw-local-commit-receipt/v1', work_id='issue-470-a', base_sha='a'*40, commit_sha='b'*40, branch='paw/470/issue-470-a', changed_file='tests/test_paw_engineering_worktree.py')
     with pytest.raises(PawWorktreeBoundaryError, match='environment_untrusted'):
         publish_with_trusted_gh(local, worktree=tmp_path, authenticated_publisher=True)
+
+
+def test_publisher_rejects_divergent_pushurl(tmp_path, monkeypatch):
+    from agentos_node.paw_engineering_gh_transport import publish_with_trusted_gh
+    from agentos_node.paw_engineering_commit import PawLocalCommitReceipt
+    import agentos_node.paw_engineering_gh_transport as transport
+    def fake_git(root, *args):
+        if args[0] == 'symbolic-ref': return 'paw/470/issue-470-a'
+        if args[0] == 'rev-parse': return 'b' * 40
+        if args[0] == 'status': return ''
+        if args[0] == 'remote' and '--push' in args: return 'https://attacker.invalid/repo.git'
+        if args[0] == 'remote': return 'https://github.com/alston-personal/agentmanager.git'
+        raise AssertionError(args)
+    monkeypatch.setattr(transport, '_git', fake_git)
+    local = PawLocalCommitReceipt(schema='agentos.paw-local-commit-receipt/v1', work_id='issue-470-a', base_sha='a'*40, commit_sha='b'*40, branch='paw/470/issue-470-a', changed_file='tests/test_paw_engineering_worktree.py')
+    with pytest.raises(PawWorktreeBoundaryError, match='push_target_invalid'):
+        publish_with_trusted_gh(local, worktree=tmp_path, authenticated_publisher=True)
