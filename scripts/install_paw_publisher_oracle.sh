@@ -43,6 +43,7 @@ for target in "$DATA_ROOT"/employee-worker-state/paw-470-worktrees/*; do
   [ -d "$target" ] || continue
   runuser -u agentos-publisher -- git -C "$target" rev-parse --verify HEAD >/dev/null 2>&1 || { echo "paw_publisher_worktree_git_access_missing" >&2; exit 2; }
 done
+[ ! -L "$DATA_ROOT/employee-worker-state/paw-470-worktrees" ] || { echo "paw_publisher_worktree_symlink_invalid" >&2; exit 2; }
 src="$RELEASE/.agent/scripts"
 for name in agentos-paw-publisher.service agentos-paw-publisher.timer; do
   [ -f "$src/$name" ] || { echo "paw_publisher_release_asset_missing" >&2; exit 2; }
