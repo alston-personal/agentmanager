@@ -36,7 +36,7 @@ fi
 for target in "$RELEASE/.venv/bin/python3" "$RELEASE/agentos_node/paw_engineering_publisher_cli.py" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state/paw-470-worktrees"; do
   runuser -u agentos-publisher -- test -r "$target" || { echo 'paw_publisher_source_access_missing' >&2; exit 2; }
 done
-runuser -u agentos-publisher -- test -w "$DATA_ROOT/employee-runtime" || { echo 'paw_publisher_receipt_write_missing' >&2; exit 2; }
+runuser -u agentos-publisher -- test ! -w "$DATA_ROOT/employee-runtime" || { echo "paw_publisher_worker_runtime_writable" >&2; exit 2; }
 # Verify execute/traverse access, not just readability of a directory.
 for target in "$RELEASE" "$RELEASE/.venv/bin/python3" "$DATA_ROOT" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" "$DATA_ROOT/employee-worker-state/paw-470-worktrees"; do
   runuser -u agentos-publisher -- test -x "$target" || { echo "paw_publisher_traversal_access_missing" >&2; exit 2; }
