@@ -40,18 +40,34 @@ def publish_once(*, runtime_root: Path, workspace_root: Path, generation: int,
     }
 
 
+def publish_latest(*, runtime_root: Path, workspace_root: Path,
+                   environment: dict[str, str] | None = None) -> dict:
+    """One reconciler pass; process only the latest terminal receipt."""
+    import re
+    directory = runtime_root / "lifecycle/receipts/paw-470-inspection-v1"
+    if not directory.is_dir():
+        return {"status": "idle", "reason": "no_receipt"}
+    candidates = [p for p in directory.iterdir() if re.fullmatch(r"[0-9]{6}\.json", p.name)]
+    if not candidates:
+        return {"status": "idle", "reason": "no_receipt"}
+    generation = int(max(p.name for p in candidates)[:-5])
+    return publish_once(runtime_root=runtime_root, workspace_root=workspace_root,
+                        generation=generation, environment=environment)
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Publish verified Paw handoff as Draft PR")
     parser.add_argument("--runtime-root", type=Path, required=True)
     parser.add_argument("--workspace-root", type=Path, required=True)
-    parser.add_argument("--generation", type=int, required=True)
+    parser.add_argument("--generation", type=int)
+    parser.add_argument("--latest", action="store_true")
     args = parser.parse_args(argv)
     try:
-        result = publish_once(
-            runtime_root=args.runtime_root,
-            workspace_root=args.workspace_root,
-            generation=args.generation,
-        )
+        if args.latest:
+            result = publish_latest(runtime_root=args.runtime_root, workspace_root=args.workspace_root)
+        elif args.generation is not None:
+            result = publish_once(runtime_root=args.runtime_root, workspace_root=args.workspace_root, generation=args.generation)
+        else:
+            raise PawWorktreeBoundaryError("paw_publisher_generation_required")
     except (PawWorktreeBoundaryError, OSError, ValueError):
         print(json.dumps({"status": "blocked", "error_code": "paw_publisher_not_ready"}))
         return 2
