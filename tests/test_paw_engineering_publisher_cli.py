@@ -95,6 +95,8 @@ def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worke
     assert "StateDirectory=agentos-paw-publisher" in service
     assert "--publication-root /var/lib/agentos-paw-publisher" in service
     assert "ReadWritePaths=/home/ubuntu/agent-data/employee-runtime" not in service
+    assert "paw_publisher_worker_runtime_writable" in installer
+    assert "paw_publisher_receipt_write_missing" not in installer
 
 def test_publisher_lock_prevents_overlapping_passes(tmp_path):
     with cli._publication_lock(tmp_path):
