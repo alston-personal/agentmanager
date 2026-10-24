@@ -50,9 +50,23 @@ def publish_latest(*, runtime_root: Path, workspace_root: Path,
     candidates = [p for p in directory.iterdir() if re.fullmatch(r"[0-9]{6}\.json", p.name)]
     if not candidates:
         return {"status": "idle", "reason": "no_receipt"}
-    generation = int(max(p.name for p in candidates)[:-5])
-    return publish_once(runtime_root=runtime_root, workspace_root=workspace_root,
-                        generation=generation, environment=environment)
+    import json
+    # Select a real engineering handoff, not merely the newest inspection.
+    for path in sorted(candidates, key=lambda p: p.name):
+        if path.is_symlink():
+            raise PawWorktreeBoundaryError('paw_publisher_receipt_symlink')
+        try:
+            receipt = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise PawWorktreeBoundaryError('paw_publisher_receipt_invalid') from exc
+        if not isinstance(receipt, dict):
+            raise PawWorktreeBoundaryError('paw_publisher_receipt_invalid')
+        summary = receipt.get('result_summary')
+        if (receipt.get('outcome') == 'handoff' and isinstance(summary, dict)
+                and summary.get('bounded_stage') == 'paw-authorized-local-commit'):
+            return publish_once(runtime_root=runtime_root, workspace_root=workspace_root,
+                                generation=int(path.name[:-5]), environment=environment)
+    return {'status': 'idle', 'reason': 'no_engineering_handoff'}
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Publish verified Paw handoff as Draft PR")
