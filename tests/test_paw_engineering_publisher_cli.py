@@ -142,3 +142,12 @@ def test_publisher_rejects_divergent_pushurl(tmp_path, monkeypatch):
     local = PawLocalCommitReceipt(schema='agentos.paw-local-commit-receipt/v1', work_id='issue-470-a', base_sha='a'*40, commit_sha='b'*40, branch='paw/470/issue-470-a', changed_file='tests/test_paw_engineering_worktree.py')
     with pytest.raises(PawWorktreeBoundaryError, match='push_target_invalid'):
         publish_with_trusted_gh(local, worktree=tmp_path, authenticated_publisher=True)
+
+
+def test_publisher_install_preflights_worktree_git_access():
+    root = Path(__file__).resolve().parents[1]
+    installer = (root / 'scripts/install_paw_publisher_oracle.sh').read_text()
+    assert 'paw_publisher_traversal_access_missing' in installer
+    assert 'paw_publisher_git_tools_missing' in installer
+    assert 'paw_publisher_worktree_git_access_missing' in installer
+    assert 'runuser -u agentos-publisher -- git -C "$target" rev-parse --verify HEAD' in installer
