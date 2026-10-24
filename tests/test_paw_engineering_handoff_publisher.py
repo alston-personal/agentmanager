@@ -27,16 +27,19 @@ def test_durable_handoff_publisher_reads_real_receipt_and_delegates(tmp_path, mo
         },
     }
     target = directory / "000001.json"
+    receipt["result_summary"]["bundle_path"] = str(tmp_path / "paw-470-bundles" / "issue-470-a.bundle")
     target.write_text(json.dumps(receipt))
     import agentos_node.paw_engineering_handoff_publisher as module
     seen = []
-    def publisher(local, *, worktree, authenticated_publisher):
+    def publisher(local, *, worktree, authenticated_publisher, bare_repository=False):
         seen.append((local, worktree, authenticated_publisher))
         return "draft-pr-receipt"
     monkeypatch.setattr(module, "publish_with_trusted_gh", publisher)
+    monkeypatch.setattr(__import__("agentos_node.paw_engineering_bundle", fromlist=["import_paw_bundle"]), "import_paw_bundle", lambda **kw: kw["destination"])
     assert publish_durable_paw_handoff(
         runtime_root=runtime, workspace_root=worktrees,
         generation=1, authenticated_publisher=True,
+        publication_root=tmp_path / "publisher",
     ) == "draft-pr-receipt"
     assert len(seen) == 1
     assert seen[0][0].commit_sha == "b" * 40
