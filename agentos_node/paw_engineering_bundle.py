@@ -41,3 +41,36 @@ def import_paw_bundle(*, bundle: Path, destination: Path, work_id: str, commit_s
     if actual != commit_sha:
         raise PawWorktreeBoundaryError("paw_bundle_head_mismatch")
     return destination
+
+
+def export_paw_bundle(*, worktree: Path, destination: Path, work_id: str, commit_sha: str) -> Path:
+    """Write a single scoped branch bundle before durable Worker handoff."""
+    if not isinstance(work_id, str) or not _ID.fullmatch(work_id):
+        raise PawWorktreeBoundaryError("paw_bundle_work_id_invalid")
+    if not isinstance(commit_sha, str) or not _SHA.fullmatch(commit_sha):
+        raise PawWorktreeBoundaryError("paw_bundle_commit_invalid")
+    worktree = Path(worktree)
+    destination = Path(destination)
+    if (not worktree.is_absolute() or worktree.is_symlink()
+            or not worktree.is_dir() or not destination.is_absolute()
+            or destination.is_symlink() or destination.exists()):
+        raise PawWorktreeBoundaryError("paw_bundle_paths_invalid")
+    ref = BRANCH_PREFIX + work_id
+    def git(*args):
+        try:
+            return subprocess.run(
+                ["git", "-C", str(worktree), *args], check=True,
+                capture_output=True, text=True, timeout=60,
+                stdin=subprocess.DEVNULL,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise PawWorktreeBoundaryError("paw_bundle_export_failed") from exc
+    if git("symbolic-ref", "--quiet", "--short", "HEAD") != ref:
+        raise PawWorktreeBoundaryError("paw_bundle_branch_mismatch")
+    if git("rev-parse", "HEAD") != commit_sha or git("status", "--porcelain"):
+        raise PawWorktreeBoundaryError("paw_bundle_source_mismatch")
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    git("bundle", "create", str(destination), "refs/heads/" + ref)
+    if not destination.is_file() or destination.is_symlink():
+        raise PawWorktreeBoundaryError("paw_bundle_export_failed")
+    return destination
