@@ -26,6 +26,13 @@ ENV_FILE=/etc/agentos/paw-publisher.env
 grep -Eq '^(GH_TOKEN|GITHUB_TOKEN)=' "$ENV_FILE" || {
   echo "paw_publisher_credential_not_configured" >&2; exit 2;
 }
+# The installer deliberately does NOT mutate Employee Worker ACLs.
+# Provision an explicit read-only named-user ACL on the private workspace
+# (and its Git common-dir) through a separately reviewed Oracle change.
+# This is checked before the timer can be enabled.
+if command -v getfacl >/dev/null 2>&1; then
+  getfacl -cp "$DATA_ROOT/employee-worker-state/paw-470-worktrees" >/dev/null || { echo "paw_publisher_acl_inspection_failed" >&2; exit 2; }
+fi
 for target in "$RELEASE/.venv/bin/python3" "$RELEASE/agentos_node/paw_engineering_publisher_cli.py" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state/paw-470-worktrees"; do
   runuser -u agentos-publisher -- test -r "$target" || { echo 'paw_publisher_source_access_missing' >&2; exit 2; }
 done
