@@ -570,6 +570,8 @@ def test_paw_signed_request_worker_handoff(tmp_path: Path, monkeypatch: pytest.M
         return SimpleNamespace(work_id="issue-470-a", base_sha="a" * 40, changed_file="tests/test_paw_engineering_worktree.py", commit_sha="b" * 40, branch="paw/470/issue-470-a")
     import agentos_node.paw_engineering_executor as paw_exec
     monkeypatch.setattr(paw_exec, "run_signed_paw_candidate", executor)
+    import agentos_node.paw_engineering_bundle as paw_bundle
+    monkeypatch.setattr(paw_bundle, "export_paw_bundle", lambda **kwargs: kwargs["destination"])
     monkeypatch.setattr(product_worker, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
     monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
     state = worker.process_exact(wake_id=capsule["wake_id"], presence_generation=1)
