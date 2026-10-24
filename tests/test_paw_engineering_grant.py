@@ -77,3 +77,30 @@ def test_live_lease_rejects_missing_lifecycle():
             return None
     with pytest.raises(PawWorktreeBoundaryError, match="paw_live_lease_not_authorized"):
         require_live_paw_lease(validate(grant()), lifecycle=MissingLifecycle(), expected_lease_id="absent")
+
+def test_executor_denies_without_live_lease_before_worktree_creation(tmp_path):
+    from pathlib import Path
+    from agentos_node.paw_engineering_executor import run_authorized_static_candidate
+
+    class NoLease:
+        def get_lease(self, assignment_id):
+            return None
+
+    workspace = tmp_path / "isolated"
+    workspace.mkdir()
+    policy = Path(__file__).resolve().parents[1] / "governance/execution-authority.json"
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_live_lease_not_authorized"):
+        run_authorized_static_candidate(
+            grant_payload=grant(),
+            trusted_wake_id=grant()["wake_id"],
+            trusted_presence_generation=1,
+            trusted_lease_generation=1,
+            trusted_lease_id="no-valid-lease",
+            lifecycle=NoLease(),
+            registry_path=policy,
+            repository=tmp_path / "does-not-exist",
+            workspace_root=workspace,
+            expected_sha256="0" * 64,
+            replacement="def test_ok():\n    assert True\n",
+        )
+    assert list(workspace.iterdir()) == []
