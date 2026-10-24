@@ -18,7 +18,8 @@ from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
 
 
 def publish_once(*, runtime_root: Path, workspace_root: Path, generation: int,
-                 environment: dict[str, str] | None = None) -> dict:
+                 environment: dict[str, str] | None = None,
+                 publication_root: Path | None = None) -> dict:
     env = os.environ if environment is None else environment
     # GH_TOKEN must be injected only into the standalone publisher process.
     # Presence of a token is a prerequisite, not proof of remote permission.
@@ -29,6 +30,7 @@ def publish_once(*, runtime_root: Path, workspace_root: Path, generation: int,
     receipt = publish_durable_paw_handoff(
         runtime_root=runtime_root, workspace_root=workspace_root,
         generation=generation, authenticated_publisher=True,
+        publication_root=publication_root,
     )
     return {
         "schema": receipt.schema,
@@ -108,7 +110,8 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
             continue
         generation = int(path.name[:-5])
         result = publish_once(runtime_root=runtime_root, workspace_root=workspace_root,
-                              generation=generation, environment=environment)
+                              generation=generation, environment=environment,
+                              publication_root=publication_root)
         if result.get('status') != 'published_draft' or result.get('commit_sha') != summary.get('commit_sha'):
             raise PawWorktreeBoundaryError('paw_publisher_remote_receipt_mismatch')
         published.mkdir(parents=True, exist_ok=True)
@@ -133,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.latest:
             result = publish_latest(runtime_root=args.runtime_root, workspace_root=args.workspace_root, publication_root=args.publication_root)
         elif args.generation is not None:
-            result = publish_once(runtime_root=args.runtime_root, workspace_root=args.workspace_root, generation=args.generation)
+            result = publish_once(runtime_root=args.runtime_root, workspace_root=args.workspace_root, generation=args.generation, publication_root=args.publication_root)
         else:
             raise PawWorktreeBoundaryError("paw_publisher_generation_required")
     except (PawWorktreeBoundaryError, OSError, ValueError):
