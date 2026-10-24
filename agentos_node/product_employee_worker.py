@@ -391,7 +391,7 @@ class GovernedProductEmployeeWorker:
             )
             observed = observation.get("verdict") == "PASS"
             blocker = (
-                "paw_engineering_execution_not_authorized"
+                "paw_trusted_engineering_request_missing"
                 if observed else "paw_completion_470_inspector_unavailable"
             )
             thread_head = f"paw:inspect:{blocker}:{wake}:p{generation}:l{lease.generation}"
