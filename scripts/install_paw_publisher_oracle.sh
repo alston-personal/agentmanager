@@ -10,6 +10,9 @@ case "$RELEASE" in "$DATA_ROOT"/releases/core/*) ;; *)
   echo "paw_publisher_accepted_immutable_core_required" >&2; exit 2;;
 esac
 [ -d "$RELEASE" ] || { echo "paw_publisher_release_missing" >&2; exit 2; }
+# The user service must be able to read the immutable release and its Python runtime.
+[ -x "$RELEASE/.venv/bin/python3" ] || { echo "paw_publisher_release_python_missing" >&2; exit 2; }
+[ -f "$RELEASE/agentos_node/paw_engineering_publisher_cli.py" ] || { echo "paw_publisher_module_missing" >&2; exit 2; }
 ENV_FILE=/etc/agentos/paw-publisher.env
 [ -f "$ENV_FILE" ] && [ ! -L "$ENV_FILE" ] || {
   echo "paw_publisher_env_missing" >&2; exit 2;
