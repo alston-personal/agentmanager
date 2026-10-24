@@ -529,3 +529,55 @@ def test_paw_is_registered_with_existing_wake_node_presence():
     assert len(EMPLOYEE_IDS) == len(set(EMPLOYEE_IDS))
     assert SUPPORTED_PRODUCT_RUNNERS["paw_inspect_v1"]["employee_id"] == "the-paw"
     assert "paw_inspect_v1" in V2_RUNNER_KINDS
+
+def test_paw_signed_request_worker_handoff(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import hashlib
+    import hmac
+    import os
+    from agentos_node.paw_engineering_request import SCHEMA, canonical_payload
+    runtime_root, wake_root, worker_root = [tmp_path / name for name in ("runtime", "wake", "worker")]
+    for root in (runtime_root, wake_root, worker_root):
+        root.mkdir()
+    runtime = _materialize_product_assignment(
+        runtime_root, employee_id="the-paw", assignment_id="paw-470-inspection-v1",
+        role_id="sector.paw", skill_id="engineering.work.inspect",
+    )
+    capsule = _capsule("the-paw", "paw-470-inspection-v1", "sector.paw", "engineering.work.inspect")
+    capsule["wake_id"] = "wake_" + "a" * 24
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=runtime_root, wake_root=wake_root, worker_state_root=worker_root,
+        node_id="oracle-core-node", runner_kind="paw_inspect_v1",
+    )
+    authority = worker_root / "trusted-engineering-authority"
+    authority.mkdir(mode=0o700)
+    key = b"trusted-paw-issuer-key-with-sufficient-length"
+    key_file = authority / "paw-470-issuer.key"
+    key_file.write_bytes(key)
+    key_file.chmod(0o600)
+    request = {
+        "schema": SCHEMA, "grant": {"work_id": "issue-470-a"},
+        "expected_sha256": "a" * 64, "replacement": "def test_x(): pass",
+        "signature": "",
+    }
+    request["signature"] = hmac.new(key, canonical_payload(request), hashlib.sha256).hexdigest()
+    request_file = authority / "paw-470-request.json"
+    request_file.write_text(json.dumps(request))
+    request_file.chmod(0o600)
+    observed = {}
+    def executor(**kwargs):
+        observed.update(kwargs)
+        from types import SimpleNamespace
+        return SimpleNamespace(commit_sha="b" * 40, branch="paw/470/issue-470-a")
+    import agentos_node.paw_engineering_executor as paw_exec
+    monkeypatch.setattr(paw_exec, "run_signed_paw_candidate", executor)
+    monkeypatch.setattr(product_worker, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
+    monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
+    state = worker.process_exact(wake_id=capsule["wake_id"], presence_generation=1)
+    assert state.status == "handoff"
+    assert observed["trusted_lease_generation"] == 1
+    assert observed["trusted_wake_id"] == capsule["wake_id"]
+    assert observed["request"]["signature"] == request["signature"]
+    receipt = json.loads((runtime_root / "lifecycle" / "receipts" / "paw-470-inspection-v1" / "000001.json").read_text())
+    assert receipt["outcome"] == "handoff"
+    assert receipt["result_summary"]["independent_acceptance_pass"] is False
+    assert receipt["result_summary"]["published"] is False
