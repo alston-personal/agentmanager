@@ -17,6 +17,8 @@ on:
       - '.agent/scripts/agentos-employee-worker-host.service'
       - '.agent/scripts/agentos-product-work-intent-reconciler.service'
       - '.agent/scripts/agentos-product-work-intent-reconciler.timer'
+      - '.agent/scripts/agentos-paw-publisher.service'
+      - '.agent/scripts/agentos-paw-publisher.timer'
       - 'agent_core/node_registry.py'
       - 'agent_core/realm_fabric.py'
       - 'agent_core/governed_execution.py'
