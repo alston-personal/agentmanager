@@ -82,3 +82,18 @@ def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worke
     assert "agentos-paw-publisher" not in activation
     assert "EnvironmentFile=/etc/agentos/paw-publisher.env" in service
     assert "User=ubuntu" in service
+
+def test_publisher_lock_prevents_overlapping_passes(tmp_path):
+    with cli._publication_lock(tmp_path):
+        with pytest.raises(PawWorktreeBoundaryError, match='already_running'):
+            with cli._publication_lock(tmp_path):
+                pass
+    with cli._publication_lock(tmp_path):
+        pass
+
+def test_publisher_lock_releases_after_failure(tmp_path):
+    with pytest.raises(RuntimeError, match='failure'):
+        with cli._publication_lock(tmp_path):
+            raise RuntimeError('failure')
+    with cli._publication_lock(tmp_path):
+        pass
