@@ -40,6 +40,7 @@ on:
       - 'agentos_node/product_work_intent_reconciler.py'
       - 'scripts/bootstrap_product_employees.py'
       - 'scripts/activate_product_employees_oracle.sh'
+      - 'scripts/install_paw_publisher_oracle.sh'
       - 'scripts/repair_realm_fabric_truncated_tail.py'
       - 'tests/test_product_employee_contracts.py'
       - 'tests/test_product_employee_worker_plan.py'
