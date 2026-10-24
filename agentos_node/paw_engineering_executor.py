@@ -66,3 +66,15 @@ def run_authorized_static_candidate(
     return commit_verified_paw_candidate(
         prepared, candidate, work_id=grant.work_id,
     )
+
+
+def run_signed_paw_candidate(*, request: dict, issuer_key: bytes, **trusted_context):
+    """Authenticate issuer before any policy, lease, git or file operation."""
+    from agentos_node.paw_engineering_request import authenticate_paw_request
+    verified = authenticate_paw_request(request, issuer_key=issuer_key)
+    return run_authorized_static_candidate(
+        grant_payload=verified["grant"],
+        expected_sha256=verified["expected_sha256"],
+        replacement=verified["replacement"],
+        **trusted_context,
+    )
