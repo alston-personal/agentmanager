@@ -53,3 +53,38 @@ def read_authenticated_paw_request(path: Path, *, issuer_key: bytes) -> dict[str
     except (OSError, ValueError, UnicodeError) as exc:
         raise PawWorktreeBoundaryError("paw_signed_request_file_invalid") from exc
     return authenticate_paw_request(data, issuer_key=issuer_key)
+
+def issue_paw_request(
+    *, grant: Mapping[str, Any], expected_sha256: str,
+    replacement: str, issuer_key: bytes,
+    trusted_assignment_id: str, trusted_wake_id: str,
+    trusted_presence_generation: int, trusted_lease_generation: int,
+    lifecycle: object, trusted_lease_id: str, registry_path: Path,
+) -> dict[str, Any]:
+    """Trusted control-plane entry; caller owns key and live lifecycle."""
+    from agentos_node.paw_engineering_grant import (
+        validate_paw_engineering_grant, require_canonical_paw_authority,
+        require_live_paw_lease,
+    )
+    if trusted_assignment_id != "paw-470-inspection-v1":
+        raise PawWorktreeBoundaryError("paw_issuer_assignment_invalid")
+    validated = validate_paw_engineering_grant(
+        dict(grant), expected_assignment_id=trusted_assignment_id,
+        expected_wake_id=trusted_wake_id,
+        expected_presence_generation=trusted_presence_generation,
+        expected_lease_generation=trusted_lease_generation,
+    )
+    require_canonical_paw_authority(validated, registry_path=registry_path)
+    require_live_paw_lease(validated, lifecycle=lifecycle, expected_lease_id=trusted_lease_id)
+    request = {
+        "schema": SCHEMA, "grant": dict(grant),
+        "expected_sha256": expected_sha256, "replacement": replacement,
+        "signature": "",
+    }
+    if not isinstance(issuer_key, bytes) or len(issuer_key) < 32:
+        raise PawWorktreeBoundaryError("paw_signed_request_issuer_unavailable")
+    request["signature"] = hmac.new(
+        issuer_key, canonical_payload(request), hashlib.sha256,
+    ).hexdigest()
+    authenticate_paw_request(request, issuer_key=issuer_key)
+    return request
