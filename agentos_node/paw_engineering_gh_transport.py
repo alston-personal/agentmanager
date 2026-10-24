@@ -5,6 +5,7 @@ GitHub App identity. Do not invoke from wake capsules or untrusted model input.
 """
 from __future__ import annotations
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -32,6 +33,10 @@ def publish_with_trusted_gh(
         "git@github.com:" + REPO + ".git",
     ):
         raise PawWorktreeBoundaryError("paw_publisher_remote_mismatch")
+
+    # Reject injected Git configuration before any network or privileged Git operation.
+    if any(k.startswith(('GIT_CONFIG_', 'GIT_TRACE', 'GIT_EXEC_PATH')) or k in ('GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_ASKPASS', 'GIT_TEMPLATE_DIR') for k in os.environ):
+        raise PawWorktreeBoundaryError('paw_publisher_git_environment_untrusted')
 
     def gh(*args):
         p = subprocess.run(
