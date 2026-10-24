@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=ubuntu
+User=root
 WorkingDirectory=/home/ubuntu/agentmanager
 EnvironmentFile=/etc/agentos/paw-publisher.env
 ExecStart=/usr/bin/python3 -m agentos_node.paw_engineering_publisher_cli --runtime-root /home/ubuntu/agent-data/employee-runtime --workspace-root /home/ubuntu/agent-data/employee-worker-state/paw-470-worktrees --latest
@@ -13,5 +13,5 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadOnlyPaths=/home/ubuntu/agent-data/employee-runtime
+ReadWritePaths=/home/ubuntu/agent-data/employee-runtime
 ReadWritePaths=/home/ubuntu/agent-data/employee-worker-state/paw-470-worktrees
