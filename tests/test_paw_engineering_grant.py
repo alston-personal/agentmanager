@@ -127,7 +127,7 @@ def test_authorized_executor_creates_real_isolated_local_commit(tmp_path):
     git(repo, "config", "user.name", "Fixture")
     source = repo / "tests/test_paw_engineering_worktree.py"
     source.parent.mkdir()
-    source.write_text("def test_one():\\n    assert True\\n")
+    source.write_text("def test_one():\n    assert True\n")
     git(repo, "add", ".")
     git(repo, "commit", "-m", "fixture")
     base_sha = git(repo, "rev-parse", "HEAD")
@@ -161,11 +161,11 @@ def test_authorized_executor_creates_real_isolated_local_commit(tmp_path):
         repository=repo,
         workspace_root=root,
         expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
-        replacement="def test_one():\\n    assert True\\n\\ndef test_two():\\n    assert 2 + 2 == 4\\n",
+        replacement="def test_one():\n    assert True\n\ndef test_two():\n    assert 2 + 2 == 4\n",
     )
     assert result.schema == "agentos.paw-local-commit-receipt/v1"
     assert result.published is False
     assert result.independent_acceptance_pass is False
     assert git(repo, "rev-parse", "HEAD") == base_sha
-    assert source.read_text() == "def test_one():\\n    assert True\\n"
+    assert source.read_text() == "def test_one():\n    assert True\n"
     assert git(root / payload["work_id"], "rev-parse", "HEAD") == result.commit_sha
