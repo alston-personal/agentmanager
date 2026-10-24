@@ -83,3 +83,60 @@ def test_existing_wrong_head_fails_closed_without_duplication():
             local(), lookup_pr=existing, publish_branch=forbid,
             create_draft_pr=forbid, authenticated_publisher=True,
         )
+
+
+def test_remote_pr_created_then_local_receipt_write_crashes_retry_reuses_pr():
+    """A crash after GitHub creation must not create a second remote PR."""
+    remote = {"pr": None, "push_count": 0, "create_count": 0}
+
+    def lookup(repo, branch):
+        return remote["pr"]
+
+    def push(branch, sha):
+        remote["push_count"] += 1
+
+    def create(repo, head, base):
+        remote["create_count"] += 1
+        remote["pr"] = {
+            "repo": repo, "head": head, "base": base,
+            "head_sha": local().commit_sha, "draft": True,
+            "merged": False, "number": 2099,
+            "url": "https://github.com/alston-personal/agentmanager/pull/2099",
+        }
+        return remote["pr"]
+
+    first = publish_paw_draft(
+        local(), lookup_pr=lookup, publish_branch=push,
+        create_draft_pr=create, authenticated_publisher=True,
+    )
+    assert first.pr_number == 2099
+    # Simulate a process crash before the caller persisted the publication receipt.
+    recovered = publish_paw_draft(
+        local(), lookup_pr=lookup, publish_branch=push,
+        create_draft_pr=create, authenticated_publisher=True,
+    )
+    assert recovered == first
+    assert remote["push_count"] == 1
+    assert remote["create_count"] == 1
+
+
+def test_crashed_publish_recovery_rejects_changed_remote_head():
+    remote = {
+        "repo": "alston-personal/agentmanager",
+        "head": local().branch,
+        "base": "core/integration",
+        "head_sha": "c" * 40,
+        "draft": True, "merged": False,
+        "number": 2099,
+        "url": "https://github.com/alston-personal/agentmanager/pull/2099",
+    }
+
+    def forbidden(*args):
+        raise AssertionError("remote mutation forbidden on head mismatch")
+
+    with pytest.raises(PawWorktreeBoundaryError, match="remote_receipt_invalid"):
+        publish_paw_draft(
+            local(), lookup_pr=lambda *args: remote,
+            publish_branch=forbidden, create_draft_pr=forbidden,
+            authenticated_publisher=True,
+        )
