@@ -169,3 +169,26 @@ def test_authorized_executor_creates_real_isolated_local_commit(tmp_path):
     assert git(repo, "rev-parse", "HEAD") == base_sha
     assert source.read_text() == "def test_one():\n    assert True\n"
     assert git(root / payload["work_id"], "rev-parse", "HEAD") == result.commit_sha
+
+def test_signed_request_rejects_forgery_before_any_execution():
+    import hashlib
+    import hmac
+    from agentos_node.paw_engineering_request import (
+        SCHEMA, authenticate_paw_request, canonical_payload,
+    )
+    from agentos_node.paw_engineering_executor import run_signed_paw_candidate
+    key = b"control-plane-authority-key-at-least-32-bytes"
+    request = {
+        "schema": SCHEMA, "grant": grant(),
+        "expected_sha256": "a" * 64,
+        "replacement": "def test_ok():\\n    assert True\\n",
+        "signature": "",
+    }
+    request["signature"] = hmac.new(key, canonical_payload(request), hashlib.sha256).hexdigest()
+    assert authenticate_paw_request(request, issuer_key=key)["grant"] == grant()
+    altered = dict(request)
+    altered["replacement"] = "def test_bad():\\n    assert False\\n"
+    with pytest.raises(PawWorktreeBoundaryError, match="authentication_failed"):
+        authenticate_paw_request(altered, issuer_key=key)
+    with pytest.raises(PawWorktreeBoundaryError, match="authentication_failed"):
+        run_signed_paw_candidate(request=altered, issuer_key=key)
