@@ -65,3 +65,17 @@ def test_latest_publisher_uses_highest_generation(tmp_path, monkeypatch):
     result = cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)
     assert result["status"] == "published_draft"
     assert generations == [10]
+
+
+def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worker():
+    root = Path(__file__).resolve().parents[1]
+    installer = (root / "scripts/install_paw_publisher_oracle.sh").read_text()
+    service = (root / ".agent/scripts/agentos-paw-publisher.service").read_text()
+    activation = (root / "scripts/activate_product_employees_oracle.sh").read_text()
+    assert 'paw_publisher_release_python_missing' in installer
+    assert 's|/usr/bin/python3|$RELEASE/.venv/bin/python3|g' in installer
+    assert 'systemctl enable --now agentos-paw-publisher.timer' in installer
+    assert "systemctl --user" not in installer
+    assert "agentos-paw-publisher" not in activation
+    assert "EnvironmentFile=/etc/agentos/paw-publisher.env" in service
+    assert "User=ubuntu" in service
