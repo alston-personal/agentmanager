@@ -110,3 +110,14 @@ def test_publisher_never_executes_repository_push_hooks():
     root = Path(__file__).resolve().parents[1]
     source = (root / 'agentos_node/paw_engineering_gh_transport.py').read_text()
     assert '"-c", "core.hooksPath=/dev/null", "push"' in source
+
+
+def test_publisher_rejects_git_environment_injection(tmp_path, monkeypatch):
+    from agentos_node.paw_engineering_gh_transport import publish_with_trusted_gh
+    from agentos_node.paw_engineering_commit import PawLocalCommitReceipt
+    import agentos_node.paw_engineering_gh_transport as transport
+    monkeypatch.setattr(transport, '_git', lambda *args: {'symbolic-ref': 'paw/470/issue-470-a', 'rev-parse': 'b' * 40, 'status': '', 'remote': 'https://github.com/alston-personal/agentmanager.git'}[args[1]])
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    local = PawLocalCommitReceipt(schema='agentos.paw-local-commit-receipt/v1', work_id='issue-470-a', base_sha='a'*40, commit_sha='b'*40, branch='paw/470/issue-470-a', changed_file='tests/test_paw_engineering_worktree.py')
+    with pytest.raises(PawWorktreeBoundaryError, match='environment_untrusted'):
+        publish_with_trusted_gh(local, worktree=tmp_path, authenticated_publisher=True)
