@@ -43,11 +43,11 @@ def publish_once(*, runtime_root: Path, workspace_root: Path, generation: int,
 
 
 @contextlib.contextmanager
-def _publication_lock(runtime_root: Path):
+def _publication_lock(state_root: Path):
     """Serialize all publisher passes; failed runs release the kernel lock."""
-    if not runtime_root.is_dir() or runtime_root.is_symlink():
+    if not state_root.is_dir() or state_root.is_symlink():
         raise PawWorktreeBoundaryError('paw_publisher_runtime_root_invalid')
-    lock_path = runtime_root / '.paw-publisher.lock'
+    lock_path = state_root / '.paw-publisher.lock'
     if lock_path.is_symlink():
         raise PawWorktreeBoundaryError('paw_publisher_lock_invalid')
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -60,13 +60,16 @@ def _publication_lock(runtime_root: Path):
     finally:
         os.close(fd)
 def publish_latest(*, runtime_root: Path, workspace_root: Path,
-                   environment: dict[str, str] | None = None) -> dict:
-    with _publication_lock(runtime_root):
-        return _publish_latest_locked(runtime_root=runtime_root, workspace_root=workspace_root, environment=environment)
+                   environment: dict[str, str] | None = None,
+                   publication_root: Path | None = None) -> dict:
+    state_root = publication_root if publication_root is not None else runtime_root
+    with _publication_lock(state_root):
+        return _publish_latest_locked(runtime_root=runtime_root, workspace_root=workspace_root, environment=environment, publication_root=state_root)
 
 
 def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
-                           environment: dict[str, str] | None = None) -> dict:
+                           environment: dict[str, str] | None = None,
+                           publication_root: Path | None = None) -> dict:
     """One locked reconciler pass; select oldest unpublished handoff."""
     import re
     directory = runtime_root / "lifecycle/receipts/paw-470-inspection-v1"
@@ -77,7 +80,7 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
         return {"status": "idle", "reason": "no_receipt"}
     import json
     # Durable publish receipts are separate from immutable employee receipts.
-    published = runtime_root / 'paw-publications'
+    published = (publication_root if publication_root is not None else runtime_root) / 'paw-publications'
     for path in sorted(candidates, key=lambda p: p.name):
         if path.is_symlink():
             raise PawWorktreeBoundaryError('paw_publisher_receipt_symlink')
@@ -124,10 +127,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workspace-root", type=Path, required=True)
     parser.add_argument("--generation", type=int)
     parser.add_argument("--latest", action="store_true")
+    parser.add_argument("--publication-root", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.latest:
-            result = publish_latest(runtime_root=args.runtime_root, workspace_root=args.workspace_root)
+            result = publish_latest(runtime_root=args.runtime_root, workspace_root=args.workspace_root, publication_root=args.publication_root)
         elif args.generation is not None:
             result = publish_once(runtime_root=args.runtime_root, workspace_root=args.workspace_root, generation=args.generation)
         else:
