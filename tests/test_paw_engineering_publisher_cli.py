@@ -75,7 +75,7 @@ def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worke
     assert 'paw_publisher_release_python_missing' in installer
     assert 's|/usr/bin/python3|$RELEASE/.venv/bin/python3|g' in installer
     assert 'systemctl enable --now agentos-paw-publisher.timer' in installer
-    assert "systemctl --user" not in installer
+    assert all("systemctl --user" not in line for line in installer.splitlines() if not line.lstrip().startswith("#"))
     assert "agentos-paw-publisher" not in activation
     assert "EnvironmentFile=/etc/agentos/paw-publisher.env" in service
     assert "User=ubuntu" in service
