@@ -74,3 +74,58 @@ def validate_paw_engineering_grant(
         wake_id=expected_wake_id, presence_generation=pg, lease_generation=lg,
         repository_id=REPOSITORY, base_sha=sha, allowed_path=_SCOPE, action=_ACTION,
     )
+
+
+def require_canonical_paw_authority(
+    grant: PawEngineeringGrant, *,
+    registry_path: str | "Path",
+    source_ref: str = "core/integration",
+) -> None:
+    """Require the existing canonical authority resolver, not the wake transport.
+
+    This checks policy admission only. An authenticated issuer, live ONE lease,
+    sandbox and independent acceptance remain separate mandatory gates.
+    """
+    import json
+    from pathlib import Path
+    from agent_core.governed_execution import (
+        REQUEST_SCHEMA, RECEIPT_SCHEMA, resolve_authority,
+    )
+
+    registry = json.loads(Path(registry_path).read_text(encoding="utf-8"))
+    request = {
+        "schema": REQUEST_SCHEMA,
+        "request_id": "paw-470-" + grant.work_id,
+        "project_id": "agentos-core",
+        "repository": grant.repository_id,
+        "source_ref": source_ref,
+        "source_sha": grant.base_sha,
+        "capability": "paw.engineering.candidate.prepare",
+        "environment": "isolated-worktree",
+        "parameters": {
+            "work_id": grant.work_id,
+            "wake_id": grant.wake_id,
+            "presence_generation": grant.presence_generation,
+            "lease_generation": grant.lease_generation,
+            "allowed_path": grant.allowed_path,
+            "action": grant.action,
+        },
+        "replay_policy": "idempotent",
+        "expected_result": RECEIPT_SCHEMA,
+    }
+    project, capability = resolve_authority(request, registry)
+    if (
+        project.get("employee_binding") != {
+            "employee_id": "the-paw",
+            "assignment_id": grant.assignment_id,
+        }
+        or capability.get("adapter") != "paw_engineering_candidate"
+        or capability.get("runtime") != {
+            "mutation_scope": "isolated-worktree-only",
+            "merge_allowed": False,
+            "deploy_allowed": False,
+            "ledger_done_allowed": False,
+            "independent_claw_required": True,
+        }
+    ):
+        raise PawWorktreeBoundaryError("paw_canonical_authority_boundary_invalid")
