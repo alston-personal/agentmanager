@@ -56,7 +56,7 @@ def test_latest_publisher_uses_highest_generation(tmp_path, monkeypatch):
     directory = tmp_path / "lifecycle/receipts/paw-470-inspection-v1"
     directory.mkdir(parents=True)
     for name in ("000002.json", "000010.json", "invalid.json"):
-        (directory / name).write_text("{}")
+        (directory / name).write_text(__import__("json").dumps({"outcome": "handoff", "result_summary": {"bounded_stage": "paw-authorized-local-commit"}}))
     generations = []
     def publish(**kwargs):
         generations.append(kwargs["generation"])
