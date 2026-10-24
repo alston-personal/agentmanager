@@ -18,7 +18,7 @@ ASSIGNMENT = "paw-470-inspection-v1"
 
 def publish_durable_paw_handoff(
     *, runtime_root: Path, workspace_root: Path, generation: int,
-    authenticated_publisher: bool,
+    authenticated_publisher: bool, publication_root: Path | None = None,
 ):
     if not authenticated_publisher:
         raise PawWorktreeBoundaryError("paw_handoff_publisher_not_authorized")
@@ -64,17 +64,24 @@ def publish_durable_paw_handoff(
         or receipt.get("thread_head") != "paw:local-commit:" + head
     ):
         raise PawWorktreeBoundaryError("paw_handoff_provenance_invalid")
-    root = Path(workspace_root)
-    if root.is_symlink() or not root.is_dir():
-        raise PawWorktreeBoundaryError("paw_handoff_workspace_invalid")
-    worktree = root / work_id
-    if worktree.is_symlink() or not worktree.is_dir():
-        raise PawWorktreeBoundaryError("paw_handoff_workspace_invalid")
+    if publication_root is None or not Path(publication_root).is_absolute():
+        raise PawWorktreeBoundaryError("paw_bundle_publication_root_required")
+    bundle = summary.get("bundle_path")
+    expected = Path(workspace_root).parent / "paw-470-bundles" / (work_id + ".bundle")
+    if not isinstance(bundle, str) or bundle != str(expected):
+        raise PawWorktreeBoundaryError("paw_bundle_handoff_path_invalid")
+    from agentos_node.paw_engineering_bundle import import_paw_bundle
     local = PawLocalCommitReceipt(
         schema="agentos.paw-local-commit-receipt/v1",
         work_id=work_id, base_sha=base, commit_sha=head,
         branch=branch, changed_file=summary["changed_file"],
     )
+    destination = Path(publication_root) / "repositories" / (work_id + ".git")
+    repository = import_paw_bundle(
+        bundle=expected, destination=destination,
+        work_id=work_id, commit_sha=head,
+    )
     return publish_with_trusted_gh(
-        local, worktree=worktree, authenticated_publisher=True,
+        local, worktree=repository, authenticated_publisher=True,
+        bare_repository=True,
     )
