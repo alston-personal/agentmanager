@@ -43,7 +43,7 @@ def test_durable_handoff_publisher_reads_real_receipt_and_delegates(tmp_path, mo
     ) == "draft-pr-receipt"
     assert len(seen) == 1
     assert seen[0][0].commit_sha == "b" * 40
-    assert seen[0][1] == worktrees / "issue-470-a"
+    assert seen[0][1] == tmp_path / "publisher/repositories/issue-470-a.git"
     assert seen[0][2] is True
 
     receipt["result_summary"]["published"] = True
