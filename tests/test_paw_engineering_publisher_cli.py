@@ -52,19 +52,22 @@ def test_publisher_cli_requires_absolute_roots(tmp_path):
 def test_latest_publisher_idle_without_terminal_receipt(tmp_path):
     assert cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)["status"] == "idle"
 
-def test_latest_publisher_uses_latest_engineering_handoff(tmp_path, monkeypatch):
+def test_latest_publisher_advances_after_persisting_publication(tmp_path, monkeypatch):
     directory = tmp_path / "lifecycle/receipts/paw-470-inspection-v1"
     directory.mkdir(parents=True)
     for name in ("000002.json", "000010.json", "invalid.json"):
-        (directory / name).write_text(__import__("json").dumps({"outcome": "handoff", "result_summary": {"bounded_stage": "paw-authorized-local-commit"}}))
+        (directory / name).write_text(__import__("json").dumps({"outcome": "handoff", "result_summary": {"bounded_stage": "paw-authorized-local-commit", "commit_sha": "b" * 40}}))
     generations = []
     def publish(**kwargs):
         generations.append(kwargs["generation"])
-        return {"status": "published_draft"}
+        return {"status": "published_draft", "commit_sha": "b" * 40}
     monkeypatch.setattr(cli, "publish_once", publish)
     result = cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)
     assert result["status"] == "published_draft"
-    assert generations == [10]
+    assert generations == [2]
+    assert (tmp_path / "paw-publications/000002.json").is_file()
+    cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)
+    assert generations == [2, 10]
 
 
 def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worker():
