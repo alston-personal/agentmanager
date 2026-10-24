@@ -428,6 +428,12 @@ class GovernedProductEmployeeWorker:
                     repository=git_root,
                     workspace_root=isolated_root,
                 )
+                from agentos_node.paw_engineering_bundle import export_paw_bundle
+                bundle_path = export_paw_bundle(
+                    worktree=isolated_root / commit.work_id,
+                    destination=self.worker_state_root / "paw-470-bundles" / (commit.work_id + ".bundle"),
+                    work_id=commit.work_id, commit_sha=commit.commit_sha,
+                )
                 thread_head = "paw:local-commit:" + commit.commit_sha
                 lifecycle.checkpoint(assignment_id, lease_id, thread_head)
                 lifecycle.finish(
@@ -437,6 +443,7 @@ class GovernedProductEmployeeWorker:
                         "work_id": commit.work_id,
                         "base_sha": commit.base_sha,
                         "commit_sha": commit.commit_sha,
+                        "bundle_path": str(bundle_path),
                         "branch": commit.branch,
                         "changed_file": commit.changed_file,
                         "published": False,
