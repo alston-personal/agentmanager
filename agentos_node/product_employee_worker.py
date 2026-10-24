@@ -384,6 +384,71 @@ class GovernedProductEmployeeWorker:
             )
 
         if self.runner_kind == "paw_inspect_v1":
+            # Separately owned engineering authority directory; never derive
+            # execution authority, a file path or key from the wake capsule.
+            authority_dir = self.worker_state_root / "trusted-engineering-authority"
+            request_file = authority_dir / "paw-470-request.json"
+            key_file = authority_dir / "paw-470-issuer.key"
+            if request_file.is_file() and key_file.is_file():
+                import stat
+                from agentos_node.paw_engineering_request import read_authenticated_paw_request
+                from agentos_node.paw_engineering_executor import run_signed_paw_candidate
+                from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
+
+                def trusted_regular(path: Path) -> bool:
+                    meta = path.lstat()
+                    return (
+                        stat.S_ISREG(meta.st_mode)
+                        and meta.st_uid == os.geteuid()
+                        and not (meta.st_mode & 0o077)
+                        and meta.st_nlink == 1
+                    )
+
+                if not all(
+                    (path.exists() and not path.is_symlink() and trusted_regular(path))
+                    for path in (request_file, key_file)
+                ):
+                    raise PawWorktreeBoundaryError("paw_issuer_file_not_trusted")
+                issuer_key = key_file.read_bytes()
+                signed = read_authenticated_paw_request(request_file, issuer_key=issuer_key)
+                git_root = source_root
+                isolated_root = self.worker_state_root / "paw-470-worktrees"
+                # The signed request is checked before any git mutation.
+                isolated_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+                commit = run_signed_paw_candidate(
+                    request=signed, issuer_key=issuer_key,
+                    trusted_wake_id=wake,
+                    trusted_presence_generation=generation,
+                    trusted_lease_generation=lease.generation,
+                    trusted_lease_id=lease_id,
+                    lifecycle=lifecycle,
+                    registry_path=source_root / "governance/execution-authority.json",
+                    repository=git_root,
+                    workspace_root=isolated_root,
+                )
+                thread_head = "paw:local-commit:" + commit.commit_sha
+                lifecycle.checkpoint(assignment_id, lease_id, thread_head)
+                lifecycle.finish(
+                    assignment_id, lease_id, state="handoff",
+                    result_summary={
+                        "bounded_stage": "paw-authorized-local-commit",
+                        "commit_sha": commit.commit_sha,
+                        "branch": commit.branch,
+                        "published": False,
+                        "independent_acceptance_pass": False,
+                        "mutation_performed": True,
+                        "credential_exposed": False,
+                    },
+                )
+                employee = runtime.get_employee(employee_id)
+                return ProductWorkerState(
+                    status="handoff", runner_kind=self.runner_kind,
+                    employee_id=employee_id, assignment_id=assignment_id,
+                    wake_id=wake, presence_generation=generation,
+                    lease_generation=lease.generation, thread_head=thread_head,
+                    executor_provider=employee.executor.provider,
+                    executor_model=employee.executor.model,
+                )
             # Paw can do a real, fixed-scope inspection without engineering write
             # authority. This is a diagnostic, never independent Claw PASS.
             observation = inspect_completion_470(
