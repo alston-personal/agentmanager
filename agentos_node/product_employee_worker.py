@@ -434,8 +434,11 @@ class GovernedProductEmployeeWorker:
                     assignment_id, lease_id, state="handoff",
                     result_summary={
                         "bounded_stage": "paw-authorized-local-commit",
+                        "work_id": commit.work_id,
+                        "base_sha": commit.base_sha,
                         "commit_sha": commit.commit_sha,
                         "branch": commit.branch,
+                        "changed_file": commit.changed_file,
                         "published": False,
                         "independent_acceptance_pass": False,
                         "mutation_performed": True,
