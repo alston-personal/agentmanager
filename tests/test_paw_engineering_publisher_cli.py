@@ -52,7 +52,7 @@ def test_publisher_cli_requires_absolute_roots(tmp_path):
 def test_latest_publisher_idle_without_terminal_receipt(tmp_path):
     assert cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)["status"] == "idle"
 
-def test_latest_publisher_uses_highest_generation(tmp_path, monkeypatch):
+def test_latest_publisher_uses_oldest_pending_handoff(tmp_path, monkeypatch):
     directory = tmp_path / "lifecycle/receipts/paw-470-inspection-v1"
     directory.mkdir(parents=True)
     for name in ("000002.json", "000010.json", "invalid.json"):
@@ -64,7 +64,7 @@ def test_latest_publisher_uses_highest_generation(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "publish_once", publish)
     result = cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)
     assert result["status"] == "published_draft"
-    assert generations == [10]
+    assert generations == [2]
 
 
 def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worker():
