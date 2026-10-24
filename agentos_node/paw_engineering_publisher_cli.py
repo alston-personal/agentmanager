@@ -51,8 +51,9 @@ def publish_latest(*, runtime_root: Path, workspace_root: Path,
     if not candidates:
         return {"status": "idle", "reason": "no_receipt"}
     import json
-    # Select a real engineering handoff, not merely the newest inspection.
-    for path in sorted(candidates, key=lambda p: p.name, reverse=True):
+    # Durable publish receipts are separate from immutable employee receipts.
+    published = runtime_root / 'paw-publications'
+    for path in sorted(candidates, key=lambda p: p.name):
         if path.is_symlink():
             raise PawWorktreeBoundaryError('paw_publisher_receipt_symlink')
         try:
@@ -62,10 +63,34 @@ def publish_latest(*, runtime_root: Path, workspace_root: Path,
         if not isinstance(receipt, dict):
             raise PawWorktreeBoundaryError('paw_publisher_receipt_invalid')
         summary = receipt.get('result_summary')
-        if (receipt.get('outcome') == 'handoff' and isinstance(summary, dict)
+        if not (receipt.get('outcome') == 'handoff' and isinstance(summary, dict)
                 and summary.get('bounded_stage') == 'paw-authorized-local-commit'):
-            return publish_once(runtime_root=runtime_root, workspace_root=workspace_root,
-                                generation=int(path.name[:-5]), environment=environment)
+            continue
+        marker = published / path.name
+        if marker.exists():
+            if marker.is_symlink():
+                raise PawWorktreeBoundaryError('paw_publisher_marker_invalid')
+            try:
+                record = json.loads(marker.read_text(encoding='utf-8'))
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise PawWorktreeBoundaryError('paw_publisher_marker_invalid') from exc
+            if (not isinstance(record, dict) or record.get('status') != 'published_draft'
+                    or record.get('commit_sha') != summary.get('commit_sha')):
+                raise PawWorktreeBoundaryError('paw_publisher_marker_invalid')
+            continue
+        generation = int(path.name[:-5])
+        result = publish_once(runtime_root=runtime_root, workspace_root=workspace_root,
+                              generation=generation, environment=environment)
+        if result.get('status') != 'published_draft' or result.get('commit_sha') != summary.get('commit_sha'):
+            raise PawWorktreeBoundaryError('paw_publisher_remote_receipt_mismatch')
+        published.mkdir(parents=True, exist_ok=True)
+        tmp = published / (path.name + '.tmp')
+        with tmp.open('x', encoding='utf-8') as handle:
+            json.dump(result, handle, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, marker)
+        return result
     return {'status': 'idle', 'reason': 'no_engineering_handoff'}
 
 def main(argv: list[str] | None = None) -> int:
