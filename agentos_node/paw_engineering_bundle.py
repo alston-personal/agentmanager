@@ -19,10 +19,14 @@ def import_paw_bundle(*, bundle: Path, destination: Path, work_id: str, commit_s
     bundle = Path(bundle)
     destination = Path(destination)
     if (not bundle.is_absolute() or bundle.is_symlink() or not bundle.is_file()
-            or not destination.is_absolute() or destination.exists() or destination.is_symlink()):
+            or not destination.is_absolute() or destination.is_symlink()):
         raise PawWorktreeBoundaryError("paw_bundle_paths_invalid")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.mkdir(mode=0o700)
+    existed = destination.exists()
+    if existed and (not destination.is_dir() or destination.is_symlink()):
+        raise PawWorktreeBoundaryError("paw_bundle_paths_invalid")
+    if not existed:
+        destination.mkdir(mode=0o700)
     def git(*args):
         try:
             p = subprocess.run(
@@ -33,6 +37,13 @@ def import_paw_bundle(*, bundle: Path, destination: Path, work_id: str, commit_s
         except (OSError, subprocess.SubprocessError) as exc:
             raise PawWorktreeBoundaryError("paw_bundle_import_failed") from exc
         return p.stdout.strip()
+    if existed:
+        if git("rev-parse", "--is-bare-repository") != "true":
+            raise PawWorktreeBoundaryError("paw_bundle_existing_repository_invalid")
+        current = git("rev-parse", "--verify", "refs/heads/" + BRANCH_PREFIX + work_id)
+        if current != commit_sha:
+            raise PawWorktreeBoundaryError("paw_bundle_existing_head_mismatch")
+        return destination
     git("init", "--bare", "-q")
     ref = BRANCH_PREFIX + work_id
     git("bundle", "verify", str(bundle))
