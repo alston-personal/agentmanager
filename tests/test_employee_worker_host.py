@@ -178,6 +178,27 @@ class EmployeeWorkerHostTests(unittest.TestCase):
             self.assertEqual(result["evidence"]["independent_review_verdict"], "NOT_REVIEWED")
             self.assertFalse(result["verified_marker_emitted"])
 
+    def test_claw_target_requires_canonical_verified_author_receipt(self):
+        from agentos_node.claw_review_readonly_cli import inspect_governed_review_target
+        from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+        from agent_core.employee_runtime import EmployeeRuntime
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            runtime = EmployeeRuntime(path)
+            runtime.create_employee("paw", "Paw", role_ids=["sector.paw"],
+                                    skill_ids=["engineering.work.inspect"])
+            runtime.create_assignment("paw-a", "paw", "Implement A")
+            store = WorkItemStore(runtime)
+            store.persist({"schema": WORK_ITEM_SCHEMA, "work_item_id": "a",
+                           "source_kind": "github_issue",
+                           "source_ref": "github:alston-personal/agentmanager#470",
+                           "project_id": "agentos-core", "employee_id": "paw",
+                           "assignment_id": "paw-a", "goal": "Implement A",
+                           "authority_requirements": ["independent_review_required"],
+                           "state": "open"})
+            with self.assertRaisesRegex(PermissionError, "claw_author_not_completed"):
+                inspect_governed_review_target(path, path, "a")
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,
