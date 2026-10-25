@@ -74,7 +74,7 @@ def inspect_governed_review_target(runtime_root: Path, repository: Path, work_it
     if "independent_review_required" not in item.authority_requirements:
         raise PermissionError("claw_review_not_required")
     assignment = runtime.get_assignment(item.assignment_id)
-    if assignment.employee_id != item.employee_id or assignment.state != "completed":
+    if assignment.employee_id != item.employee_id or assignment.state not in {"completed", "handoff"}:
         raise PermissionError("claw_author_not_completed")
     result = assignment.result
     if not isinstance(result, dict):
@@ -85,7 +85,7 @@ def inspect_governed_review_target(runtime_root: Path, repository: Path, work_it
     lifecycle = EmployeeLifecycle(runtime)
     path = lifecycle._receipt_path(item.assignment_id, generation)
     lease = lifecycle.get_lease(item.assignment_id)
-    if (not lease or lease.generation != generation or lease.status != "completed"
+    if (not lease or lease.generation != generation or lease.status != assignment.state
             or result.get("receipt") != str(path.relative_to(runtime.root))
             or result.get("schema") != "agentos.employee-assignment-receipt/v1"):
         raise PermissionError("claw_author_receipt_unverified")
@@ -95,7 +95,7 @@ def inspect_governed_review_target(runtime_root: Path, repository: Path, work_it
             or receipt.get("employee_id") != item.employee_id
             or receipt.get("lease_id") != lease.lease_id
             or receipt.get("generation") != generation
-            or receipt.get("outcome") != "completed"
+            or receipt.get("outcome") != assignment.state
             or not isinstance(summary, dict)):
         raise PermissionError("claw_author_receipt_unverified")
     sha = summary.get("commit_sha")
