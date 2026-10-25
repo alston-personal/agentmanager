@@ -168,6 +168,14 @@ def build_service(
     return service
 
 
+def _receipt_notice_revision(service: CoreSupervisorService) -> int:
+    """Cheap hint only; reconciliation still verifies authoritative receipts."""
+    try:
+        return (service.runtime.root / "supervisor" / "receipt-events").stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
 def run_persistent(
     service: CoreSupervisorService,
     *,
@@ -192,8 +200,9 @@ def run_persistent(
     while not stopper.is_set():
         receipt = service.run_cycle(leader.generation)
         remaining = int(receipt.next_poll_seconds)
+        notices_seen = _receipt_notice_revision(service)
         while remaining > 0 and not stopper.is_set():
-            step = _heartbeat_step(remaining, leader_lease_seconds)
+            step = min(1, _heartbeat_step(remaining, leader_lease_seconds))
             if stopper.wait(step):
                 return
             remaining -= step
@@ -201,6 +210,8 @@ def run_persistent(
                 leader.generation,
                 lease_seconds=leader_lease_seconds,
             )
+            if _receipt_notice_revision(service) != notices_seen:
+                break
 
 
 def _parser() -> argparse.ArgumentParser:
