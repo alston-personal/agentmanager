@@ -52,6 +52,7 @@ on:
       - 'tests/test_paw_engineering_candidate.py'
       - 'tests/test_paw_engineering_worktree.py'
       - 'tests/test_paw_engineering_bundle.py'
+      - 'tests/test_paw_publisher_git_object_security.py'
       - 'tests/paw_bundle_multi_uid_acl.sh'
       - 'tests/test_product_employee_worker.py'
       - 'tests/test_governed_execution.py'
@@ -93,6 +94,7 @@ jobs:
           tests/test_paw_engineering_candidate.py
           tests/test_paw_engineering_worktree.py
           tests/test_paw_engineering_bundle.py
+          tests/test_paw_publisher_git_object_security.py
           tests/test_product_employee_worker.py
           tests/test_governed_execution.py
           tests/test_product_employee_activation.py
