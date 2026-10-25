@@ -39,7 +39,7 @@ def inspect_local_commit(repository: Path, commit_sha: str) -> dict[str, object]
     actual = git("rev-parse", "--verify", commit_sha + "^{commit}").strip().decode("ascii")
     if actual != commit_sha:
         raise ValueError("claw_commit_identity_mismatch")
-    manifest = git("diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", commit_sha)
+    manifest = git("diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "--no-renames", commit_sha)
     return {"commit_sha": commit_sha, "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
             "changed_entries": len(manifest.splitlines())}
 
