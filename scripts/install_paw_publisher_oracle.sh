@@ -26,31 +26,29 @@ ENV_FILE=/etc/agentos/paw-publisher.env
 grep -Eq '^(GH_TOKEN|GITHUB_TOKEN)=' "$ENV_FILE" || {
   echo "paw_publisher_credential_not_configured" >&2; exit 2;
 }
-# The installer deliberately does NOT mutate Employee Worker ACLs.
-# Provision an explicit read-only named-user ACL on the private workspace
-# (and its Git common-dir) through a separately reviewed Oracle change.
-# This is checked before the timer can be enabled.
-if command -v getfacl >/dev/null 2>&1; then
-  getfacl -cp "$DATA_ROOT/employee-worker-state/paw-470-worktrees" >/dev/null || { echo "paw_publisher_acl_inspection_failed" >&2; exit 2; }
-fi
-for target in "$RELEASE/.venv/bin/python3" "$RELEASE/agentos_node/paw_engineering_publisher_cli.py" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state/paw-470-worktrees"; do
-  runuser -u agentos-publisher -- test -r "$target" || { echo 'paw_publisher_source_access_missing' >&2; exit 2; }
+# Only the sealed Bundle ingress needs publisher read access. Never grant
+# publisher access to the worker's private Git worktrees or common Git dir.
+BUNDLES="$DATA_ROOT/employee-worker-state/paw-470-bundles"
+[ -d "$BUNDLES" ] && [ ! -L "$BUNDLES" ] || {
+  echo "paw_publisher_bundle_ingress_missing" >&2; exit 2;
+}
+for target in "$RELEASE/.venv/bin/python3" "$RELEASE/agentos_node/paw_engineering_publisher_cli.py" "$DATA_ROOT/employee-runtime"; do
+  runuser -u agentos-publisher -- test -r "$target" || { echo "paw_publisher_source_access_missing" >&2; exit 2; }
 done
 runuser -u agentos-publisher -- test ! -w "$DATA_ROOT/employee-runtime" || { echo "paw_publisher_worker_runtime_writable" >&2; exit 2; }
-# Verify execute/traverse access, not just readability of a directory.
-for target in "$RELEASE" "$RELEASE/.venv/bin/python3" "$DATA_ROOT" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" "$DATA_ROOT/employee-worker-state/paw-470-worktrees"; do
+for target in "$RELEASE" "$RELEASE/.venv/bin/python3" "$DATA_ROOT" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" "$BUNDLES"; do
   runuser -u agentos-publisher -- test -x "$target" || { echo "paw_publisher_traversal_access_missing" >&2; exit 2; }
+done
+runuser -u agentos-publisher -- test ! -w "$BUNDLES" || { echo "paw_publisher_bundle_ingress_writable" >&2; exit 2; }
+for target in "$BUNDLES"/*.bundle; do
+  [ -e "$target" ] || continue
+  [ -f "$target" ] && [ ! -L "$target" ] && runuser -u agentos-publisher -- test -r "$target" || {
+    echo "paw_publisher_bundle_access_invalid" >&2; exit 2;
+  }
 done
 for executable in /usr/bin/git /usr/bin/gh; do
   [ -x "$executable" ] && runuser -u agentos-publisher -- test -x "$executable" || { echo "paw_publisher_git_tools_missing" >&2; exit 2; }
 done
-# A read-only worktree does not imply access to its shared Git common-dir.
-# Inspect every existing Paw worktree before activating an authenticated timer.
-for target in "$DATA_ROOT"/employee-worker-state/paw-470-worktrees/*; do
-  [ -d "$target" ] || continue
-  runuser -u agentos-publisher -- git -C "$target" rev-parse --verify HEAD >/dev/null 2>&1 || { echo "paw_publisher_worktree_git_access_missing" >&2; exit 2; }
-done
-[ ! -L "$DATA_ROOT/employee-worker-state/paw-470-worktrees" ] || { echo "paw_publisher_worktree_symlink_invalid" >&2; exit 2; }
 src="$RELEASE/.agent/scripts"
 for name in agentos-paw-publisher.service agentos-paw-publisher.timer; do
   [ -f "$src/$name" ] || { echo "paw_publisher_release_asset_missing" >&2; exit 2; }
