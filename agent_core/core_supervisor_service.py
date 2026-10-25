@@ -366,6 +366,64 @@ class CoreSupervisorService:
                 result.add(item.assignment_id)
         return result
 
+    def _project_authorized_claw_reviews(self) -> int:
+        """Project pre-authorized Claw review WorkItems after author handoff.
+
+        A completed Paw receipt reveals eligible work but does not grant Claw
+        authority. Only an existing, explicitly approved WorkItem is projected.
+        """
+        if not self.work_items.root.exists():
+            return 0
+        count = 0
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+                if (item.state != "open"
+                        or "claw.review.readonly" not in item.required_capabilities
+                        or "one-governed-dispatch" not in item.authority_requirements
+                        or not item.assignment_id.startswith("claw-review-")):
+                    continue
+                reviewer = self.runtime.get_employee(item.employee_id)
+                if "sector.claw" not in reviewer.role_ids:
+                    continue
+                parent_id = item.assignment_id[len("claw-review-"):]
+                parent_item = self.work_items.get(parent_id)
+                if ("independent_review_required" not in parent_item.authority_requirements
+                        or parent_item.employee_id == item.employee_id):
+                    continue
+                parent = self.runtime.get_assignment(parent_item.assignment_id)
+                if parent.state != "completed":
+                    continue
+                # The original terminal receipt must be valid; merely setting
+                # assignment.state=completed is not a review handoff.
+                result = parent.result
+                if not isinstance(result, dict):
+                    continue
+                generation = result.get("generation")
+                if type(generation) is not int or generation < 1:
+                    continue
+                receipt_path = self.lifecycle._receipt_path(parent.assignment_id, generation)
+                lease = self.lifecycle.get_lease(parent.assignment_id)
+                receipt = _read(receipt_path)
+                if (not lease or not receipt or lease.status != "completed"
+                        or lease.generation != generation
+                        or result.get("receipt") != str(receipt_path.relative_to(self.runtime.root))
+                        or result.get("outcome") != "completed"
+                        or receipt.get("assignment_id") != parent.assignment_id
+                        or receipt.get("employee_id") != parent.employee_id
+                        or receipt.get("generation") != generation
+                        or receipt.get("lease_id") != lease.lease_id
+                        or receipt.get("outcome") != "completed"):
+                    continue
+                try:
+                    self.runtime.get_assignment(item.assignment_id)
+                except FileNotFoundError:
+                    self.work_items.project_pending_assignment(item.work_item_id)
+                    count += 1
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError):
+                continue
+        return count
+
     def _reconcile_failed_claw_reviews(self) -> int:
         """Feed verified Claw FAIL back to existing WorkItem queue, once.
 
@@ -406,6 +464,7 @@ class CoreSupervisorService:
         leader = self._require_leader(leader_generation, now=current)
         previous = _read(self.state_path) or {}
         cycle_generation = int(previous.get("cycle_generation") or 0) + 1
+        self._project_authorized_claw_reviews()
         self._reconcile_failed_claw_reviews()
         blocked = self._blocked_assignments(self._verified_dependency_states() if dependency_states is None else dependency_states)
         persisted = self._persisted_reconcile_ids()
