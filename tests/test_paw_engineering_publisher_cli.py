@@ -239,7 +239,10 @@ def test_publication_recovers_stale_tmp_after_remote_reverification(tmp_path, mo
     calls = []
     def verified_remote(**kwargs):
         calls.append(kwargs["generation"])
-        return {"status": "published_draft", "commit_sha": "b" * 40,
+        return {"schema": "agentos.paw-draft-publication-receipt/v1",
+                "status": "published_draft", "work_id": "issue-470-a",
+                "commit_sha": "b" * 40, "merged": False,
+                "independent_acceptance_pass": False,
                 "pr_number": 2099, "pr_url": "https://github.com/alston-personal/agentmanager/pull/2099"}
     monkeypatch.setattr(cli, "publish_once", verified_remote)
     result = cli.publish_latest(runtime_root=runtime, workspace_root=tmp_path,
