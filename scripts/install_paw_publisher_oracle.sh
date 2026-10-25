@@ -32,6 +32,23 @@ BUNDLES="$DATA_ROOT/employee-worker-state/paw-470-bundles"
 [ -d "$BUNDLES" ] && [ ! -L "$BUNDLES" ] || {
   echo "paw_publisher_bundle_ingress_missing" >&2; exit 2;
 }
+# An explicit root-run installer may grant only traversal through Worker state,
+# and read access to sealed Bundle files. No Git worktree or secret ACL changes.
+command -v setfacl >/dev/null 2>&1 || { echo "paw_publisher_setfacl_missing" >&2; exit 2; }
+command -v getfacl >/dev/null 2>&1 || { echo "paw_publisher_getfacl_missing" >&2; exit 2; }
+for target in "$DATA_ROOT" "$DATA_ROOT/employee-worker-state"; do
+  [ -d "$target" ] && [ ! -L "$target" ] || { echo "paw_publisher_parent_invalid" >&2; exit 2; }
+  setfacl -m u:agentos-publisher:--x "$target"
+done
+setfacl -m u:agentos-publisher:r-x "$BUNDLES"
+# Default ACL means subsequent Worker-created bundles remain readable even
+# when the Worker process has a restrictive umask.
+setfacl -d -m u:agentos-publisher:r-x "$BUNDLES"
+for target in "$BUNDLES"/*.bundle; do
+  [ -e "$target" ] || continue
+  [ -f "$target" ] && [ ! -L "$target" ] || { echo "paw_publisher_bundle_access_invalid" >&2; exit 2; }
+  setfacl -m u:agentos-publisher:r-- "$target"
+done
 for target in "$RELEASE/.venv/bin/python3" "$RELEASE/agentos_node/paw_engineering_publisher_cli.py" "$DATA_ROOT/employee-runtime"; do
   runuser -u agentos-publisher -- test -r "$target" || { echo "paw_publisher_source_access_missing" >&2; exit 2; }
 done
