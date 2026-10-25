@@ -199,7 +199,7 @@ class WorkItemStore:
         review_id = "claw-review-" + original.work_item_id
         review = self.runtime.get_assignment(review_id)
         reviewer = self.runtime.get_employee(review.employee_id)
-        if (author.state != "completed" or review.state != "completed"
+        if (author.state not in {"completed", "handoff"} or review.state != "completed"
                 or author.employee_id != original.employee_id
                 or review.employee_id == author.employee_id
                 or "sector.claw" not in reviewer.role_ids):
@@ -214,9 +214,9 @@ class WorkItemStore:
                 raise PermissionError("receipt_generation_invalid")
             path = lifecycle._receipt_path(assignment.assignment_id, generation)
             lease = lifecycle.get_lease(assignment.assignment_id)
-            if (not lease or lease.generation != generation or lease.status != "completed"
+            if (not lease or lease.generation != generation or lease.status != assignment.state
                     or result.get("schema") != "agentos.employee-assignment-receipt/v1"
-                    or result.get("outcome") != "completed"
+                    or result.get("outcome") != assignment.state
                     or result.get("receipt") != str(path.relative_to(self.runtime.root))):
                 raise PermissionError("terminal_receipt_unverified")
             receipt = json.loads(path.read_text(encoding="utf-8"))
@@ -224,7 +224,7 @@ class WorkItemStore:
                     or receipt.get("employee_id") != assignment.employee_id
                     or receipt.get("lease_id") != lease.lease_id
                     or receipt.get("generation") != generation
-                    or receipt.get("outcome") != "completed"):
+                    or receipt.get("outcome") != assignment.state):
                 raise PermissionError("terminal_receipt_unverified")
             return generation, receipt
         author_generation, _ = terminal(author)
