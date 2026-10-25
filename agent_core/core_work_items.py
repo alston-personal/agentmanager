@@ -188,6 +188,70 @@ class WorkItemStore:
             raise RuntimeError("work_item_assignment_conflict")
         return existing
 
+
+    def repair_from_failed_claw_review(self, work_item_id: str) -> WorkItem:
+        """Create one repair per verified FAIL generation; never dispatch."""
+        from agent_core.employee_lifecycle import EmployeeLifecycle
+        original = self.get(work_item_id)
+        if "independent_review_required" not in original.authority_requirements:
+            raise PermissionError("review_not_required")
+        author = self.runtime.get_assignment(original.assignment_id)
+        review_id = "claw-review-" + original.work_item_id
+        review = self.runtime.get_assignment(review_id)
+        reviewer = self.runtime.get_employee(review.employee_id)
+        if (author.state != "completed" or review.state != "completed"
+                or author.employee_id != original.employee_id
+                or review.employee_id == author.employee_id
+                or "sector.claw" not in reviewer.role_ids):
+            raise PermissionError("review_not_independent")
+        lifecycle = EmployeeLifecycle(self.runtime)
+        def terminal(assignment):
+            result = assignment.result
+            if not isinstance(result, dict):
+                raise PermissionError("receipt_missing")
+            generation = result.get("generation")
+            if type(generation) is not int or generation < 1:
+                raise PermissionError("receipt_generation_invalid")
+            path = lifecycle._receipt_path(assignment.assignment_id, generation)
+            lease = lifecycle.get_lease(assignment.assignment_id)
+            if (not lease or lease.generation != generation or lease.status != "completed"
+                    or result.get("schema") != "agentos.employee-assignment-receipt/v1"
+                    or result.get("outcome") != "completed"
+                    or result.get("receipt") != str(path.relative_to(self.runtime.root))):
+                raise PermissionError("terminal_receipt_unverified")
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+            if (receipt.get("assignment_id") != assignment.assignment_id
+                    or receipt.get("employee_id") != assignment.employee_id
+                    or receipt.get("lease_id") != lease.lease_id
+                    or receipt.get("generation") != generation
+                    or receipt.get("outcome") != "completed"):
+                raise PermissionError("terminal_receipt_unverified")
+            return generation, receipt
+        author_generation, _ = terminal(author)
+        review_generation, receipt = terminal(review)
+        summary = receipt.get("result_summary")
+        if (not isinstance(summary, dict)
+                or summary.get("schema") != "agentos.independent-claw-review/v1"
+                or summary.get("target_assignment_id") != original.assignment_id
+                or summary.get("target_generation") != author_generation
+                or summary.get("verdict") != "FAIL"):
+            raise PermissionError("no_verified_claw_failure")
+        repair_id = f"repair-{original.work_item_id}-g{author_generation}-r{review_generation}"
+        return self.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": repair_id,
+            "source_kind": "canonical_state", "source_ref": f"repair:{repair_id}",
+            "project_id": original.project_id, "employee_id": original.employee_id,
+            "assignment_id": repair_id,
+            "goal": f"Repair failed Claw review of {original.work_item_id}",
+            "constraints": [f"parent_work_item={original.work_item_id}",
+                            f"review_assignment={review_id}",
+                            "independent_review_required"],
+            "authority_requirements": list(original.authority_requirements),
+            "required_capabilities": list(original.required_capabilities),
+            "source_revision": f"{author_generation}:{review_generation}",
+            "state": "open",
+        })
+
     def dependencies_ready(self, work_item_id: str, dependency_states: Mapping[str, str]) -> bool:
         item = self.get(work_item_id)
         return all(str(dependency_states.get(ref) or "") == "completed" for ref in item.dependency_refs)
