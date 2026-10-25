@@ -97,6 +97,25 @@ class CoreSupervisorDaemonTests(unittest.TestCase):
         self.assertEqual(stop.waits, [15, 15, 15])
         self.assertEqual(service.heartbeats, 2)
 
+
+    def test_receipt_notice_during_cycle_forces_immediate_reconcile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            notices = root / "supervisor" / "receipt-events"
+            notices.mkdir(parents=True)
+            class Service(_FakeService):
+                runtime = type("Runtime", (), {"root": root})()
+                def run_cycle(self, generation):
+                    result = super().run_cycle(generation)
+                    if self.cycles == 1:
+                        (notices / "first.json").write_text("{}")
+                    return result
+            service = Service()
+            stop = _StopAfterWaits(1)
+            run_persistent(service, stop_event=stop, leader_lease_seconds=30)
+            self.assertEqual(service.cycles, 2)
+            self.assertEqual(stop.waits, [1])
+
     def test_process_lock_is_held_for_daemon_lifetime(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
