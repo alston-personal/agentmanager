@@ -233,6 +233,34 @@ class EmployeeWorkerHostTests(unittest.TestCase):
             self.assertEqual(result["error_code"], "claw_commit_evidence_unavailable")
             self.assertFalse(result["verified_marker_emitted"])
 
+    def test_claw_blocker_never_claims_without_governed_delivery(self):
+        from agentos_node.claw_review_readonly_cli import finish_governed_claw_blocker
+        from agent_core.employee_runtime import EmployeeRuntime
+        from agent_core.core_work_items import WorkItemStore, WORK_ITEM_SCHEMA
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            runtime = EmployeeRuntime(path)
+            runtime.create_employee("paw", "Paw", role_ids=["sector.paw"],
+                                    skill_ids=["engineering.work.inspect"])
+            runtime.create_employee("claw", "Claw", role_ids=["sector.claw"],
+                                    skill_ids=["security.audit"])
+            runtime.create_assignment("author", "paw", "Implement")
+            runtime.create_assignment("claw-review-parent", "claw", "Inspect")
+            WorkItemStore(runtime).persist({
+                "schema": WORK_ITEM_SCHEMA, "work_item_id": "parent",
+                "source_kind": "canonical_state", "source_ref": "task:parent",
+                "project_id": "agentos-core", "employee_id": "paw",
+                "assignment_id": "author", "goal": "Implement",
+                "authority_requirements": ["independent_review_required"],
+                "state": "open",
+            })
+            with self.assertRaisesRegex(PermissionError, "claw_review_governed_delivery_missing"):
+                finish_governed_claw_blocker(path, "parent", wake_id="wake",
+                    presence_generation=1, evidence={
+                        "assignment_generation": 1, "commit_sha": "a" * 40,
+                        "patch_sha256": "b" * 64})
+            self.assertEqual(runtime.get_assignment("claw-review-parent").state, "pending")
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,
