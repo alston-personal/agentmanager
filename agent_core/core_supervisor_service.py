@@ -275,7 +275,9 @@ class CoreSupervisorService:
             try:
                 assignment = self.runtime.get_assignment(item.assignment_id)
                 result = assignment.result
-                if assignment.employee_id != item.employee_id or assignment.state != "completed" or not isinstance(result, dict):
+                if assignment.employee_id != item.employee_id or not isinstance(result, dict):
+                    continue
+                if assignment.state not in ({"completed", "handoff"} if "independent_review_required" in item.authority_requirements else {"completed"}):
                     continue
                 # Paw engineering completion is only a handoff to independent Claw
                 # review, not permission to unblock a dependent assignment.
@@ -287,7 +289,7 @@ class CoreSupervisorService:
                 expected = self.lifecycle._receipt_path(item.assignment_id, generation)
                 if result.get("receipt") != str(expected.relative_to(self.runtime.root)):
                     continue
-                if result.get("schema") != "agentos.employee-assignment-receipt/v1" or result.get("outcome") != "completed":
+                if result.get("schema") != "agentos.employee-assignment-receipt/v1" or result.get("outcome") != assignment.state:
                     continue
                 receipt = _read(expected)
                 lease = self.lifecycle.get_lease(item.assignment_id)
@@ -297,10 +299,10 @@ class CoreSupervisorService:
                     or receipt.get("assignment_id") != item.assignment_id
                     or receipt.get("employee_id") != item.employee_id
                     or receipt.get("generation") != generation
-                    or receipt.get("outcome") != "completed"
+                    or receipt.get("outcome") != assignment.state
                     or receipt.get("lease_id") != lease.lease_id
                     or lease.generation != generation
-                    or lease.status != "completed"
+                    or lease.status != assignment.state
                 ):
                     continue
                 if review_required:
@@ -392,7 +394,7 @@ class CoreSupervisorService:
                         or parent_item.employee_id == item.employee_id):
                     continue
                 parent = self.runtime.get_assignment(parent_item.assignment_id)
-                if parent.state != "completed":
+                if parent.state not in {"completed", "handoff"}:
                     continue
                 # The original terminal receipt must be valid; merely setting
                 # assignment.state=completed is not a review handoff.
@@ -405,15 +407,15 @@ class CoreSupervisorService:
                 receipt_path = self.lifecycle._receipt_path(parent.assignment_id, generation)
                 lease = self.lifecycle.get_lease(parent.assignment_id)
                 receipt = _read(receipt_path)
-                if (not lease or not receipt or lease.status != "completed"
+                if (not lease or not receipt or lease.status != parent.state
                         or lease.generation != generation
                         or result.get("receipt") != str(receipt_path.relative_to(self.runtime.root))
-                        or result.get("outcome") != "completed"
+                        or result.get("outcome") != parent.state
                         or receipt.get("assignment_id") != parent.assignment_id
                         or receipt.get("employee_id") != parent.employee_id
                         or receipt.get("generation") != generation
                         or receipt.get("lease_id") != lease.lease_id
-                        or receipt.get("outcome") != "completed"):
+                        or receipt.get("outcome") != parent.state):
                     continue
                 try:
                     self.runtime.get_assignment(item.assignment_id)
