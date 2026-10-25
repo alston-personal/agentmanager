@@ -40,12 +40,21 @@ def import_paw_bundle(*, bundle: Path, destination: Path, work_id: str, commit_s
     if existed:
         if git("rev-parse", "--is-bare-repository") != "true":
             raise PawWorktreeBoundaryError("paw_bundle_existing_repository_invalid")
-        current = git("rev-parse", "--verify", "refs/heads/" + BRANCH_PREFIX + work_id)
-        if current != commit_sha:
-            raise PawWorktreeBoundaryError("paw_bundle_existing_head_mismatch")
-        return destination
-    git("init", "--bare", "-q")
+    else:
+        git("init", "--bare", "-q")
     ref = BRANCH_PREFIX + work_id
+    if existed:
+        # An initialized repository without the requested ref is an interrupted
+        # import. Re-fetch the immutable bundle; never overwrite another head.
+        probe = subprocess.run(
+            ["git", "rev-parse", "--verify", "refs/heads/" + ref],
+            cwd=destination, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+        if probe.returncode == 0:
+            if probe.stdout.strip() != commit_sha:
+                raise PawWorktreeBoundaryError("paw_bundle_existing_head_mismatch")
+            return destination
     git("bundle", "verify", str(bundle))
     git("fetch", "--no-tags", str(bundle), "refs/heads/" + ref + ":refs/heads/" + ref)
     actual = git("rev-parse", "refs/heads/" + ref)
