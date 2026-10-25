@@ -118,9 +118,10 @@ class EmployeeLifecycleTests(unittest.TestCase):
         self.assertNotIn("authority", notice)
         self.assertNotIn("dispatch", notice)
         original = event.read_bytes()
-        again = self.lifecycle.finish("audit-001", "lease-a", now=T0 + timedelta(seconds=2))
-        self.assertEqual(again.lease_id, receipt.lease_id)
+        with self.assertRaisesRegex(RuntimeError, "active_lease_required"):
+            self.lifecycle.finish("audit-001", "lease-a", now=T0 + timedelta(seconds=2))
         self.assertEqual(event.read_bytes(), original)
+        self.assertEqual(self.lifecycle._receipt_path("audit-001", 1).is_file(), True)
 
     def test_heartbeat_extends_current_lease(self):
         lease = self.lifecycle.claim(
