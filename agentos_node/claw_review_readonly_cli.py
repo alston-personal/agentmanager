@@ -43,8 +43,20 @@ def inspect_local_commit(repository: Path, commit_sha: str) -> dict[str, object]
     if actual != commit_sha:
         raise ValueError("claw_commit_identity_mismatch")
     manifest = git("diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "--no-renames", commit_sha)
-    return {"commit_sha": commit_sha, "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
-            "changed_entries": len(manifest.splitlines())}
+    # A filename manifest is not sufficient review evidence. Bind the exact
+    # patch bytes too, with a strict size ceiling. Never infer PASS from it.
+    patch = git("show", "--format=", "--no-ext-diff", "--no-renames",
+                "--root", "--binary", commit_sha)
+    if len(patch) > 2_000_000:
+        raise ValueError("claw_patch_exceeds_bounded_review")
+    return {
+        "commit_sha": commit_sha,
+        "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
+        "patch_sha256": hashlib.sha256(patch).hexdigest(),
+        "patch_bytes": len(patch),
+        "changed_entries": len(manifest.splitlines()),
+        "independent_review_verdict": "NOT_REVIEWED",
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
