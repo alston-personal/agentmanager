@@ -61,7 +61,15 @@ class CoreSupervisorServiceTests(unittest.TestCase):
         self.lifecycle.finish("paw-470-test", "lease-paw", now=T0 + timedelta(seconds=1))
         service = self.service()
         self.assertNotIn(source, service._verified_dependency_states())
-        self.assertFalse(store.dependencies_ready("paw-review-gated", {}))
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "dependent-on-paw",
+            "source_kind": "github_issue",
+            "source_ref": "github:alston-personal/agentmanager#471",
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "dependent-471", "goal": "Dependent work",
+            "dependency_refs": [source], "state": "open",
+        })
+        self.assertFalse(store.dependencies_ready("dependent-on-paw", service._verified_dependency_states()))
 
     def test_singleton_leader_rejects_competing_live_owner(self):
         a = self.service("supervisor-a")
