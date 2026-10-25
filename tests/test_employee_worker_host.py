@@ -109,6 +109,25 @@ class EmployeeWorkerHostTests(unittest.TestCase):
         self.assertEqual(matches[0]["status"], "disabled")
         self.assertEqual(matches[0]["role_ids"], ["sector.claw"])
 
+    def test_claw_cli_is_runnable_but_fails_closed_without_executor(self):
+        from agentos_node.claw_review_readonly_cli import main
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            output = StringIO()
+            with redirect_stdout(output):
+                code = main([
+                    "--runtime-root", root, "--wake-root", root,
+                    "--worker-state-root", root, "--node-id", "test-node",
+                    "--wake-id", "wake-test", "--presence-generation", "1", "--once",
+                ])
+        result = json.loads(output.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["error_code"], "claw_independent_review_executor_unavailable")
+        self.assertFalse(result["verified_marker_emitted"])
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,
