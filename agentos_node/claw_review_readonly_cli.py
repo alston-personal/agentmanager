@@ -59,6 +59,52 @@ def inspect_local_commit(repository: Path, commit_sha: str) -> dict[str, object]
     }
 
 
+def inspect_governed_review_target(runtime_root: Path, repository: Path, work_item_id: str) -> dict[str, object]:
+    """Resolve the exact target from canonical WorkItem and Paw terminal receipt.
+
+    Wake metadata cannot select a repository, commit, or review result.
+    This is evidence collection only and does not issue a PASS.
+    """
+    from agent_core.core_work_items import WorkItemStore
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+
+    runtime = EmployeeRuntime(runtime_root)
+    item = WorkItemStore(runtime).get(work_item_id)
+    if "independent_review_required" not in item.authority_requirements:
+        raise PermissionError("claw_review_not_required")
+    assignment = runtime.get_assignment(item.assignment_id)
+    if assignment.employee_id != item.employee_id or assignment.state != "completed":
+        raise PermissionError("claw_author_not_completed")
+    result = assignment.result
+    if not isinstance(result, dict):
+        raise PermissionError("claw_author_receipt_missing")
+    generation = result.get("generation")
+    if type(generation) is not int or generation < 1:
+        raise PermissionError("claw_author_generation_invalid")
+    lifecycle = EmployeeLifecycle(runtime)
+    path = lifecycle._receipt_path(item.assignment_id, generation)
+    lease = lifecycle.get_lease(item.assignment_id)
+    if (not lease or lease.generation != generation or lease.status != "completed"
+            or result.get("receipt") != str(path.relative_to(runtime.root))
+            or result.get("schema") != "agentos.employee-assignment-receipt/v1"):
+        raise PermissionError("claw_author_receipt_unverified")
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    summary = receipt.get("result_summary")
+    if (receipt.get("assignment_id") != item.assignment_id
+            or receipt.get("employee_id") != item.employee_id
+            or receipt.get("lease_id") != lease.lease_id
+            or receipt.get("generation") != generation
+            or receipt.get("outcome") != "completed"
+            or not isinstance(summary, dict)):
+        raise PermissionError("claw_author_receipt_unverified")
+    sha = summary.get("commit_sha")
+    if not isinstance(sha, str) or not SHA.fullmatch(sha):
+        raise PermissionError("claw_author_commit_not_pinned")
+    evidence = inspect_local_commit(repository, sha)
+    return {"work_item_id": item.work_item_id, "assignment_id": item.assignment_id,
+            "assignment_generation": generation, **evidence}
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="claw-review-readonly")
     parser.add_argument("--runtime-root", type=_absolute, required=True)
