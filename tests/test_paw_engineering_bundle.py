@@ -31,9 +31,11 @@ def test_bundle_import_into_publisher_owned_bare_repo(tmp_path):
     )
     assert result == target
     assert git(target, "rev-parse", "refs/heads/" + branch) == head
-    with pytest.raises(PawWorktreeBoundaryError, match="paths_invalid"):
+    assert import_paw_bundle(bundle=bundle, destination=target,
+                             work_id="issue-470-a", commit_sha=head) == target
+    with pytest.raises(PawWorktreeBoundaryError, match="existing_head_mismatch"):
         import_paw_bundle(bundle=bundle, destination=target,
-                          work_id="issue-470-a", commit_sha=head)
+                          work_id="issue-470-a", commit_sha="a" * 40)
 
 
 def test_bundle_import_rejects_wrong_commit(tmp_path):
