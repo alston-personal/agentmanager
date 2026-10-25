@@ -105,7 +105,16 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
             except (OSError, UnicodeError, ValueError) as exc:
                 raise PawWorktreeBoundaryError('paw_publisher_marker_invalid') from exc
             if (not isinstance(record, dict) or record.get('status') != 'published_draft'
-                    or record.get('commit_sha') != summary.get('commit_sha')):
+                    or record.get('schema') != 'agentos.paw-draft-publication-receipt/v1'
+                    or record.get('commit_sha') != summary.get('commit_sha')
+                    or record.get('work_id') != summary.get('work_id')
+                    or record.get('merged') is not False
+                    or record.get('independent_acceptance_pass') is not False
+                    or type(record.get('pr_number')) is not int or record['pr_number'] < 1
+                    or record.get('pr_url') != (
+                        'https://github.com/alston-personal/agentmanager/pull/'
+                        + str(record['pr_number'])
+                    )):
                 raise PawWorktreeBoundaryError('paw_publisher_marker_invalid')
             continue
         generation = int(path.name[:-5])
