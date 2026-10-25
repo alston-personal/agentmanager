@@ -68,9 +68,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wake-id", required=True)
     parser.add_argument("--presence-generation", type=int, required=True)
     parser.add_argument("--once", action="store_true", required=True)
+    parser.add_argument("--inspect-commit", help="Exact pinned SHA for evidence-only inspection")
+    parser.add_argument("--repository", type=_absolute, help="Explicit local repository for evidence-only inspection")
     args = parser.parse_args(argv)
     if args.presence_generation < 1 or not args.wake_id.strip() or not args.node_id.strip():
         parser.error("invalid_exact_claw_wake")
+    if bool(args.inspect_commit) != bool(args.repository):
+        parser.error("claw_repository_and_commit_required_together")
+    if args.inspect_commit:
+        # Evidence-only mode; intentionally never writes lifecycle receipts or
+        # turns observation into a Claw PASS. Host dispatch does not supply these
+        # options, so a wake alone cannot self-authorize Git inspection.
+        try:
+            evidence = inspect_local_commit(args.repository, args.inspect_commit)
+        except (ValueError, OSError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            print(json.dumps({"schema": SCHEMA, "status": "blocked",
+                              "work_performed": False,
+                              "error_code": "claw_commit_evidence_unavailable",
+                              "credential_exposed": False,
+                              "session_identity_exposed": False,
+                              "verified_marker_emitted": False}, sort_keys=True))
+            return 2
+        print(json.dumps({"schema": SCHEMA, "status": "blocked",
+                          "work_performed": True,
+                          "error_code": "claw_review_not_performed",
+                          "evidence": evidence,
+                          "credential_exposed": False,
+                          "session_identity_exposed": False,
+                          "verified_marker_emitted": False}, sort_keys=True))
+        return 2
     print(json.dumps({
         "schema": SCHEMA, "status": "blocked", "work_performed": False,
         "error_code": "claw_independent_review_executor_unavailable",
