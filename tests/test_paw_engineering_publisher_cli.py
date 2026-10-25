@@ -217,3 +217,37 @@ def test_publisher_bare_git_provenance_checks_are_mandatory():
     assert '"diff-tree", "--no-commit-id", "--name-only", "-r", local.commit_sha' in source
     assert 'paw_publisher_parent_mismatch' in source
     assert 'paw_publisher_object_scope_invalid' in source
+
+
+def test_publication_recovers_stale_tmp_after_remote_reverification(tmp_path, monkeypatch):
+    import json
+    runtime = tmp_path / "worker"
+    publication = tmp_path / "publisher"
+    publication.mkdir()
+    receipts = runtime / "lifecycle/receipts/paw-470-inspection-v1"
+    receipts.mkdir(parents=True)
+    (receipts / "000001.json").write_text(json.dumps({
+        "outcome": "handoff",
+        "result_summary": {
+            "bounded_stage": "paw-authorized-local-commit",
+            "commit_sha": "b" * 40,
+        },
+    }))
+    markers = publication / "paw-publications"
+    markers.mkdir()
+    (markers / "000001.json.tmp").write_text('{"partial":')
+    calls = []
+    def verified_remote(**kwargs):
+        calls.append(kwargs["generation"])
+        return {"status": "published_draft", "commit_sha": "b" * 40,
+                "pr_number": 2099, "pr_url": "https://github.com/alston-personal/agentmanager/pull/2099"}
+    monkeypatch.setattr(cli, "publish_once", verified_remote)
+    result = cli.publish_latest(runtime_root=runtime, workspace_root=tmp_path,
+                                publication_root=publication)
+    assert calls == [1]
+    assert result["status"] == "published_draft"
+    assert json.loads((markers / "000001.json").read_text())["pr_number"] == 2099
+    assert not (markers / "000001.json.tmp").exists()
+    assert cli.publish_latest(runtime_root=runtime, workspace_root=tmp_path,
+                              publication_root=publication)["status"] == "idle"
+    assert calls == [1]
