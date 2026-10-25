@@ -116,6 +116,15 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
             raise PawWorktreeBoundaryError('paw_publisher_remote_receipt_mismatch')
         published.mkdir(parents=True, exist_ok=True)
         tmp = published / (path.name + '.tmp')
+        # An interrupted write may leave an incomplete temporary receipt.
+        # The remote publication has already been reverified by publish_once.
+        # Under the exclusive publisher lock, never trust or reuse the stale tmp.
+        if tmp.is_symlink():
+            raise PawWorktreeBoundaryError('paw_publisher_marker_tmp_invalid')
+        if tmp.exists():
+            if not tmp.is_file():
+                raise PawWorktreeBoundaryError('paw_publisher_marker_tmp_invalid')
+            tmp.unlink()
         with tmp.open('x', encoding='utf-8') as handle:
             json.dump(result, handle, sort_keys=True)
             handle.flush()
