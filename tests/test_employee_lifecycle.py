@@ -103,6 +103,25 @@ class EmployeeLifecycleTests(unittest.TestCase):
             "ir-checkpoint-1",
         )
 
+
+    def test_terminal_receipt_emits_durable_non_authoritative_notice_once(self):
+        self.lifecycle.claim("audit-001", "spec-steward", "lease-a", now=T0)
+        receipt = self.lifecycle.finish("audit-001", "lease-a", now=T0 + timedelta(seconds=1))
+        event = self.root / "supervisor/receipt-events/audit-001.000001.completed.json"
+        self.assertTrue(event.is_file())
+        notice = json.loads(event.read_text())
+        self.assertEqual(notice["schema"], "agentos.supervisor-receipt-notice/v1")
+        self.assertEqual(notice["assignment_id"], "audit-001")
+        self.assertEqual(notice["generation"], 1)
+        self.assertEqual(notice["outcome"], "completed")
+        self.assertEqual(notice["receipt"], "lifecycle/receipts/audit-001/000001.json")
+        self.assertNotIn("authority", notice)
+        self.assertNotIn("dispatch", notice)
+        original = event.read_bytes()
+        again = self.lifecycle.finish("audit-001", "lease-a", now=T0 + timedelta(seconds=2))
+        self.assertEqual(again.lease_id, receipt.lease_id)
+        self.assertEqual(event.read_bytes(), original)
+
     def test_heartbeat_extends_current_lease(self):
         lease = self.lifecycle.claim(
             "audit-001",
