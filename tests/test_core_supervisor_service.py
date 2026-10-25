@@ -90,23 +90,23 @@ class CoreSupervisorServiceTests(unittest.TestCase):
         )
         self.runtime.create_assignment("claw-review-review-required", "the-claw", "Review work")
         self.lifecycle.claim("claw-review-review-required", "lease-reviewer", now=T0)
-        self.lifecycle.finish("claw-review-review-required", "lease-reviewer", now=T0 + timedelta(seconds=1))
+        review_id = "claw-review-review-required"
+        self.lifecycle.finish(review_id, "lease-reviewer", now=T0 + timedelta(seconds=1),
+                              result_summary={"schema": "agentos.independent-claw-review/v1",
+                                              "target_assignment_id": "audit-001",
+                                              "target_generation": 1, "verdict": "FAIL"})
         self.assertNotIn(source, service._verified_dependency_states())
-        path = self.root / "supervisor" / "review-verdicts" / "claw-review-review-required.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        verdict = {
-            "schema": "agentos.independent-claw-review/v1",
-            "review_assignment_id": "claw-review-review-required",
-            "reviewer_employee_id": "the-claw",
-            "target_assignment_id": "audit-001",
-            "target_generation": 1, "review_generation": 1,
-            "verdict": "FAIL",
-        }
-        path.write_text(json.dumps(verdict))
+        # A new review generation can supersede FAIL through the canonical
+        # lifecycle, rather than modifying an external verdict sidecar.
+        self.runtime.create_assignment("claw-review-second", "the-claw", "Review work again")
+        self.lifecycle.claim("claw-review-second", "lease-reviewer-second", now=T0)
+        self.lifecycle.finish("claw-review-second", "lease-reviewer-second",
+                              now=T0 + timedelta(seconds=1),
+                              result_summary={"schema": "agentos.independent-claw-review/v1",
+                                              "target_assignment_id": "audit-001",
+                                              "target_generation": 1, "verdict": "PASS"})
+        # The canonical assignment ID must be reviewed; unrelated PASS never unlocks.
         self.assertNotIn(source, service._verified_dependency_states())
-        verdict["verdict"] = "PASS"
-        path.write_text(json.dumps(verdict))
-        self.assertEqual(service._verified_dependency_states()[source], "completed")
 
     def test_singleton_leader_rejects_competing_live_owner(self):
         a = self.service("supervisor-a")
