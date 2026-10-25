@@ -274,6 +274,22 @@ class EmployeeLifecycle:
         lease.status = state
         lease.expires_at = _iso(current)
         _atomic_json_write(self._lease_path(assignment_id), asdict(lease))
+        # Notification is only a hint to the existing Supervisor, never execution
+        # authority. A failure here cannot undo or block the committed receipt:
+        # the persistent reconciliation poll remains the recovery sweep.
+        try:
+            event_dir = self.runtime.root / "supervisor" / "receipt-events"
+            event_dir.mkdir(parents=True, exist_ok=True)
+            event_key = f"{assignment_id}.{lease.generation:06d}.{state}"
+            _atomic_json_write(event_dir / (event_key + ".json"), {
+                "schema": "agentos.supervisor-receipt-notice/v1",
+                "assignment_id": assignment_id,
+                "generation": lease.generation,
+                "outcome": state,
+                "receipt": str(receipt_path.relative_to(self.runtime.root)),
+            })
+        except OSError:
+            pass
         return receipt
 
     def next_assignment(
