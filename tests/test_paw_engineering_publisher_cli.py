@@ -204,7 +204,7 @@ def test_gh_git_credential_helper_is_invoked_by_real_git(tmp_path):
     env = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ["PATH"])
     result = subprocess.run(
         ["git", "-c", "credential.helper=!gh auth git-credential", "credential", "fill"],
-        input="protocol=https\\nhost=github.com\\n\\n", capture_output=True,
+        input="protocol=https\nhost=github.com\n\n", capture_output=True,
         text=True, env=env, timeout=10, check=True,
     )
     assert "username=ci-publisher" in result.stdout
