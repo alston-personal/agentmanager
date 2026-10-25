@@ -171,6 +171,17 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
             raise RuntimeError("employee_worker_exact_candidate_missing")
         if adapter.runner_kind == "spec_steward_o3":
             command = EmployeeWorkerHost._child_command(self, adapter)
+        elif adapter.runner_kind == "claw_review_readonly_v1":
+            # Fixed module only. The adapter remains disabled until a real,
+            # independently evidenced reviewer implementation is accepted.
+            command = [
+                sys.executable, "-m", "agentos_node.claw_review_readonly_cli",
+                "--runtime-root", str(self.runtime_root),
+                "--wake-root", str(self.wake_root),
+                "--worker-state-root", str(self.worker_state_root),
+                "--node-id", self.node_id,
+                "--once",
+            ]
         elif adapter.runner_kind in PRODUCT_RUNNER_KINDS:
             command = [
                 sys.executable,
