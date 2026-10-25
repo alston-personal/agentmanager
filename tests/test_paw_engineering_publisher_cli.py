@@ -156,8 +156,9 @@ def test_publisher_install_preflights_worktree_git_access():
     installer = (root / 'scripts/install_paw_publisher_oracle.sh').read_text()
     assert 'paw_publisher_traversal_access_missing' in installer
     assert 'paw_publisher_git_tools_missing' in installer
-    assert 'paw_publisher_worktree_git_access_missing' in installer
-    assert 'runuser -u agentos-publisher -- git -C "$target" rev-parse --verify HEAD' in installer
+    assert 'paw_publisher_bundle_access_invalid' in installer
+    assert 'paw_publisher_worktree_git_access_missing' not in installer
+    assert 'paw-470-worktrees' not in installer
 
 
 def test_publisher_state_is_separate_from_worker_runtime(tmp_path, monkeypatch):
