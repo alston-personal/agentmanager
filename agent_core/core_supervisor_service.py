@@ -280,8 +280,7 @@ class CoreSupervisorService:
                 # Paw engineering completion is only a handoff to independent Claw
                 # review, not permission to unblock a dependent assignment.
                 # Fail closed until a separate reviewer-verified state is wired in.
-                if "independent_review_required" in item.authority_requirements:
-                    continue
+                review_required = "independent_review_required" in item.authority_requirements
                 generation = result.get("generation")
                 if type(generation) is not int or generation < 1:
                     continue
@@ -304,8 +303,57 @@ class CoreSupervisorService:
                     or lease.status != "completed"
                 ):
                     continue
+                if review_required:
+                    # Independent reviewer must be a separately registered Employee
+                    # with inherited Claw role, and finish its own durable lease.
+                    review_id = "claw-review-" + item.work_item_id
+                    review_assignment = self.runtime.get_assignment(review_id)
+                    reviewer = self.runtime.get_employee(review_assignment.employee_id)
+                    if (
+                        review_assignment.employee_id == assignment.employee_id
+                        or "sector.claw" not in reviewer.role_ids
+                        or review_assignment.state != "completed"
+                        or not isinstance(review_assignment.result, dict)
+                    ):
+                        continue
+                    review_result = review_assignment.result
+                    reviewer_generation = review_result.get("generation")
+                    if type(reviewer_generation) is not int or reviewer_generation < 1:
+                        continue
+                    reviewer_receipt_path = self.lifecycle._receipt_path(review_id, reviewer_generation)
+                    reviewer_receipt = _read(reviewer_receipt_path)
+                    reviewer_lease = self.lifecycle.get_lease(review_id)
+                    if (
+                        review_result.get("schema") != "agentos.employee-assignment-receipt/v1"
+                        or review_result.get("outcome") != "completed"
+                        or review_result.get("receipt") != str(reviewer_receipt_path.relative_to(self.runtime.root))
+                        or not reviewer_receipt or not reviewer_lease
+                        or reviewer_receipt.get("assignment_id") != review_id
+                        or reviewer_receipt.get("employee_id") != review_assignment.employee_id
+                        or reviewer_receipt.get("generation") != reviewer_generation
+                        or reviewer_receipt.get("lease_id") != reviewer_lease.lease_id
+                        or reviewer_receipt.get("outcome") != "completed"
+                        or reviewer_lease.generation != reviewer_generation
+                        or reviewer_lease.status != "completed"
+                    ):
+                        continue
+                    # Terminal lifecycle receipt alone does not assert an
+                    # independent verdict. Review artifacts must be attested
+                    # and provenance-bound by the governed verifier.
+                    verdict_path = self.runtime.root / "supervisor" / "review-verdicts" / (review_id + ".json")
+                    verdict = _read(verdict_path)
+                    if (
+                        not verdict or verdict.get("schema") != "agentos.independent-claw-review/v1"
+                        or verdict.get("review_assignment_id") != review_id
+                        or verdict.get("reviewer_employee_id") != review_assignment.employee_id
+                        or verdict.get("target_assignment_id") != item.assignment_id
+                        or verdict.get("target_generation") != generation
+                        or verdict.get("review_generation") != reviewer_generation
+                        or verdict.get("verdict") != "PASS"
+                    ):
+                        continue
                 verified[ref] = "completed"
-            except (OSError, ValueError, KeyError, TypeError):
+            except (OSError, ValueError, KeyError, TypeError, FileNotFoundError):
                 continue
         return verified
 
