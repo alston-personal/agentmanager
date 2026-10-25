@@ -175,3 +175,9 @@ def test_publisher_state_is_separate_from_worker_runtime(tmp_path, monkeypatch):
     assert (publication / 'paw-publications/000001.json').is_file()
     assert not (runtime / '.paw-publisher.lock').exists()
     assert not (runtime / 'paw-publications').exists()
+
+
+def test_installer_provisions_bundle_default_acl():
+    source = (Path(__file__).resolve().parents[1] / 'scripts/install_paw_publisher_oracle.sh').read_text()
+    assert 'setfacl -d -m u:agentos-publisher:r-x' in source
+    assert 'setfacl -m u:agentos-publisher:r--' in source
