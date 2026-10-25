@@ -81,7 +81,7 @@ class CoreSupervisorServiceTests(unittest.TestCase):
             "assignment_id": "audit-001", "goal": "Audit closure gaps",
             "authority_requirements": ["independent_review_required"], "state": "open",
         })
-        self.lifecycle.claim("audit-001", "lease-author", now=T0)
+        self.lifecycle.claim("audit-001", "spec-steward", "lease-author", now=T0)
         self.lifecycle.finish("audit-001", "lease-author", now=T0 + timedelta(seconds=1))
         service = self.service()
         self.assertNotIn(source, service._verified_dependency_states())
@@ -89,7 +89,7 @@ class CoreSupervisorServiceTests(unittest.TestCase):
             "the-claw", "The Claw", role_ids=["sector.claw"], skill_ids=["security.audit"]
         )
         self.runtime.create_assignment("claw-review-review-required", "the-claw", "Review work")
-        self.lifecycle.claim("claw-review-review-required", "lease-reviewer", now=T0)
+        self.lifecycle.claim("claw-review-review-required", "the-claw", "lease-reviewer", now=T0)
         review_id = "claw-review-review-required"
         self.lifecycle.finish(review_id, "lease-reviewer", now=T0 + timedelta(seconds=1),
                               result_summary={"schema": "agentos.independent-claw-review/v1",
@@ -99,7 +99,7 @@ class CoreSupervisorServiceTests(unittest.TestCase):
         # A new review generation can supersede FAIL through the canonical
         # lifecycle, rather than modifying an external verdict sidecar.
         self.runtime.create_assignment("claw-review-second", "the-claw", "Review work again")
-        self.lifecycle.claim("claw-review-second", "lease-reviewer-second", now=T0)
+        self.lifecycle.claim("claw-review-second", "the-claw", "lease-reviewer-second", now=T0)
         self.lifecycle.finish("claw-review-second", "lease-reviewer-second",
                               now=T0 + timedelta(seconds=1),
                               result_summary={"schema": "agentos.independent-claw-review/v1",
