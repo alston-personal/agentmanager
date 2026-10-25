@@ -366,6 +366,35 @@ class CoreSupervisorService:
                 result.add(item.assignment_id)
         return result
 
+    def _reconcile_failed_claw_reviews(self) -> int:
+        """Feed verified Claw FAIL back to existing WorkItem queue, once.
+
+        Invalid or incomplete review receipts are not work authorization.
+        """
+        if not self.work_items.root.exists():
+            return 0
+        new_repairs = 0
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+                if item.state != "open" or "independent_review_required" not in item.authority_requirements:
+                    continue
+                # Do not recursively interpret repair work as a new failed
+                # review of the parent; repair needs a fresh review after execution.
+                if item.source_kind == "canonical_state" and item.source_ref.startswith("repair:"):
+                    continue
+                review = self.runtime.get_assignment("claw-review-" + item.work_item_id)
+                if review.state != "completed":
+                    continue
+                repair = self.work_items.repair_from_failed_claw_review(item.work_item_id)
+                self.work_items.project_pending_assignment(repair.work_item_id)
+                new_repairs += 1
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError):
+                # Incomplete/non-FAIL review is not a trigger. Idempotent
+                # projection is retried by the next supervisor cycle.
+                continue
+        return new_repairs
+
     def run_cycle(
         self,
         leader_generation: int,
@@ -377,6 +406,7 @@ class CoreSupervisorService:
         leader = self._require_leader(leader_generation, now=current)
         previous = _read(self.state_path) or {}
         cycle_generation = int(previous.get("cycle_generation") or 0) + 1
+        self._reconcile_failed_claw_reviews()
         blocked = self._blocked_assignments(self._verified_dependency_states() if dependency_states is None else dependency_states)
         persisted = self._persisted_reconcile_ids()
         plan = self.reconciler.reconcile(
