@@ -97,6 +97,29 @@
         "authorization_blocker"
       ],
       "mutation_authority": false
+    },
+    "security.audit": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Perform scoped, evidence-based independent code and security review without granting write, merge, deployment or self-approval authority.",
+      "required_capabilities": [
+        "claw.review.readonly"
+      ],
+      "allowed_intents": [
+        "review",
+        "inspect"
+      ],
+      "input_fields": [
+        "assignment_id",
+        "target_assignment_id",
+        "target_commit_sha"
+      ],
+      "output_types": [
+        "validation_report",
+        "blocking_finding",
+        "risk_assessment"
+      ],
+      "mutation_authority": false
     }
   },
   "invariants": [
