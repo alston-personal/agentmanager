@@ -124,6 +124,57 @@ def inspect_governed_review_target(runtime_root: Path, repository: Path, work_it
     return {"work_item_id": item.work_item_id, "assignment_id": item.assignment_id,
             "assignment_generation": generation, **evidence}
 
+def finish_governed_claw_blocker(
+    runtime_root: Path, work_item_id: str, *, wake_id: str,
+    presence_generation: int, evidence: dict[str, object],
+) -> dict[str, object]:
+    """Write an honest blocked lifecycle receipt, never an independent verdict.
+
+    Only an already projected, separately owned Claw assignment can finish.
+    An S4 delivered wake is required before claim; a local capsule is insufficient.
+    """
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agent_core.core_work_items import WorkItemStore
+    from agentos_node.product_employee_worker import _governed_delivery_index
+
+    runtime = EmployeeRuntime(runtime_root)
+    work = WorkItemStore(runtime).get(work_item_id)
+    review_id = "claw-review-" + work_item_id
+    review = runtime.get_assignment(review_id)
+    reviewer = runtime.get_employee(review.employee_id)
+    if (review.employee_id == work.employee_id
+            or "sector.claw" not in reviewer.role_ids
+            or "security.audit" not in reviewer.skill_ids
+            or review.state != "pending"):
+        raise PermissionError("claw_review_independence_or_state_invalid")
+    # Require the immutable ONE delivery ledger for this exact pending assignment.
+    deliveries = [
+        x for group in _governed_delivery_index(runtime_root).values()
+        for x in group
+        if x.get("employee_id") == review.employee_id
+        and x.get("assignment_id") == review_id
+        and x.get("wake_id") == wake_id
+        and x.get("presence_generation") == presence_generation
+    ]
+    if len(deliveries) != 1:
+        raise PermissionError("claw_review_governed_delivery_missing")
+    lifecycle = EmployeeLifecycle(runtime)
+    lease_id = f"claw-review-{wake_id}-p{presence_generation}"
+    lease = lifecycle.claim(review_id, review.employee_id, lease_id)
+    summary = {
+        "schema": "agentos.claw-review-blocker/v1",
+        "target_assignment_id": work.assignment_id,
+        "target_generation": evidence["assignment_generation"],
+        "commit_sha": evidence["commit_sha"],
+        "patch_sha256": evidence["patch_sha256"],
+        "reason": "independent_review_executor_unavailable",
+        "verdict": "NOT_REVIEWED",
+    }
+    receipt = lifecycle.finish(review_id, lease_id, state="blocked", result_summary=summary)
+    return {"assignment_id": review_id, "generation": lease.generation,
+            "receipt_outcome": receipt.outcome, "verdict": "NOT_REVIEWED"}
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="claw-review-readonly")
     parser.add_argument("--runtime-root", type=_absolute, required=True)
