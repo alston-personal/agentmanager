@@ -200,7 +200,7 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
         )
         return command
 
-    def _parse_child_result(self, stdout: str) -> dict[str, Any] | None:
+    def _parse_child_result(self, stdout: str, *, runner_kind: str = "spec_steward_o3") -> dict[str, Any] | None:
         candidate = self._pinned_candidate
         if candidate is None:
             return None
@@ -213,7 +213,7 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
             return None
         if not isinstance(payload, dict) or set(payload) - SAFE_CHILD_RESULT_KEYS:
             return None
-        if payload.get("schema") != V2_RESULT_SCHEMAS.get(candidate.adapter.runner_kind):
+        if runner_kind != candidate.adapter.runner_kind or payload.get("schema") != V2_RESULT_SCHEMAS.get(runner_kind):
             return None
         if payload.get("credential_exposed") is not False:
             return None
