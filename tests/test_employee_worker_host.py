@@ -151,6 +151,33 @@ class EmployeeWorkerHostTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 inspect_local_commit(path, "f" * 40)
 
+    def test_claw_cli_evidence_mode_does_not_claim_pass(self):
+        from agentos_node.claw_review_readonly_cli import main
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import subprocess
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            subprocess.run(["git", "init", "-q", str(path)], check=True)
+            (path / "evidence.txt").write_text("review content", encoding="utf-8")
+            subprocess.run(["git", "-C", str(path), "add", "evidence.txt"], check=True)
+            subprocess.run(["git", "-C", str(path), "-c", "user.name=CI",
+                            "-c", "user.email=ci@example.invalid",
+                            "commit", "-qm", "evidence fixture"], check=True)
+            sha = subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
+            output = StringIO()
+            with redirect_stdout(output):
+                status = main(["--runtime-root", root, "--wake-root", root,
+                               "--worker-state-root", root, "--node-id", "node",
+                               "--wake-id", "wake", "--presence-generation", "1",
+                               "--once", "--repository", root, "--inspect-commit", sha])
+            result = json.loads(output.getvalue())
+            self.assertEqual(status, 2)
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["evidence"]["commit_sha"], sha)
+            self.assertEqual(result["evidence"]["independent_review_verdict"], "NOT_REVIEWED")
+            self.assertFalse(result["verified_marker_emitted"])
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,
