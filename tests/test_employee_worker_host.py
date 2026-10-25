@@ -199,6 +199,38 @@ class EmployeeWorkerHostTests(unittest.TestCase):
             with self.assertRaisesRegex(PermissionError, "claw_author_not_completed"):
                 inspect_governed_review_target(path, path, "a")
 
+    def test_claw_canonical_cli_refuses_unfinished_author(self):
+        from agentos_node.claw_review_readonly_cli import main
+        from agent_core.core_work_items import WorkItemStore, WORK_ITEM_SCHEMA
+        from agent_core.employee_runtime import EmployeeRuntime
+        from contextlib import redirect_stdout
+        from io import StringIO
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            runtime = EmployeeRuntime(path)
+            runtime.create_employee("paw", "Paw", role_ids=["sector.paw"],
+                                    skill_ids=["engineering.work.inspect"])
+            runtime.create_assignment("author-a", "paw", "Implement A")
+            WorkItemStore(runtime).persist({
+                "schema": WORK_ITEM_SCHEMA, "work_item_id": "work-a",
+                "source_kind": "canonical_state", "source_ref": "task:work-a",
+                "project_id": "agentos-core", "employee_id": "paw",
+                "assignment_id": "author-a", "goal": "Implement A",
+                "authority_requirements": ["independent_review_required"],
+                "state": "open",
+            })
+            output = StringIO()
+            with redirect_stdout(output):
+                status = main(["--runtime-root", root, "--wake-root", root,
+                               "--worker-state-root", root, "--node-id", "node",
+                               "--wake-id", "wake", "--presence-generation", "1",
+                               "--once", "--repository", root,
+                               "--work-item-id", "work-a"])
+            self.assertEqual(status, 2)
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["error_code"], "claw_commit_evidence_unavailable")
+            self.assertFalse(result["verified_marker_emitted"])
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,
