@@ -56,7 +56,7 @@ def test_latest_publisher_advances_after_persisting_publication(tmp_path, monkey
     directory = tmp_path / "lifecycle/receipts/paw-470-inspection-v1"
     directory.mkdir(parents=True)
     for name in ("000002.json", "000010.json", "invalid.json"):
-        (directory / name).write_text(__import__("json").dumps({"outcome": "handoff", "result_summary": {"bounded_stage": "paw-authorized-local-commit", "commit_sha": "b" * 40}}))
+        (directory / name).write_text(__import__("json").dumps({"outcome": "handoff", "result_summary": {"bounded_stage": "paw-authorized-local-commit", "work_id": "issue-470-a", "commit_sha": "b" * 40}}))
     generations = []
     def publish(**kwargs):
         generations.append(kwargs["generation"])
@@ -169,7 +169,7 @@ def test_publisher_state_is_separate_from_worker_runtime(tmp_path, monkeypatch):
     publication.mkdir()
     directory = runtime / 'lifecycle/receipts/paw-470-inspection-v1'
     directory.mkdir(parents=True)
-    (directory / '000001.json').write_text(json.dumps({'outcome':'handoff','result_summary':{'bounded_stage':'paw-authorized-local-commit','commit_sha':'b'*40}}))
+    (directory / '000001.json').write_text(json.dumps({'outcome':'handoff','result_summary':{'bounded_stage':'paw-authorized-local-commit','work_id':'issue-470-a','commit_sha':'b'*40}}))
     monkeypatch.setattr(cli, 'publish_once', lambda **kwargs: {'status':'published_draft','commit_sha':'b'*40})
     result = cli.publish_latest(runtime_root=runtime, workspace_root=tmp_path, publication_root=publication)
     assert result['status'] == 'published_draft'
@@ -230,6 +230,7 @@ def test_publication_recovers_stale_tmp_after_remote_reverification(tmp_path, mo
         "outcome": "handoff",
         "result_summary": {
             "bounded_stage": "paw-authorized-local-commit",
+            "work_id": "issue-470-a",
             "commit_sha": "b" * 40,
         },
     }))
