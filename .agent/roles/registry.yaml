@@ -74,6 +74,8 @@ roles:
     kind: assurance
     source: .agent/roles/parents/lcs_the_claw.md
     purpose: "以 adversarial/QA/security 視角驗證安全、失敗模式與合規性。"
+    capabilities:
+      - claw.review.readonly
     must_obey:
       - governance_scales_with_capability
       - truth_provenance
