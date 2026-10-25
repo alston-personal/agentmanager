@@ -205,7 +205,9 @@ def run_persistent(
         remaining = int(receipt.next_poll_seconds)
         notices_seen = _receipt_notice_revision(service)
         while remaining > 0 and not stopper.is_set():
-            step = min(1, _heartbeat_step(remaining, leader_lease_seconds))
+            step = _heartbeat_step(remaining, leader_lease_seconds)
+            if hasattr(service, 'runtime'):
+                step = min(step, 1)
             if stopper.wait(step):
                 return
             remaining -= step
