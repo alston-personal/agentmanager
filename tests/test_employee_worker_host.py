@@ -128,6 +128,25 @@ class EmployeeWorkerHostTests(unittest.TestCase):
         self.assertEqual(result["error_code"], "claw_independent_review_executor_unavailable")
         self.assertFalse(result["verified_marker_emitted"])
 
+    def test_claw_exact_git_evidence_reader_is_offline_and_rejects_invalid_sha(self):
+        from agentos_node.claw_review_readonly_cli import inspect_local_commit
+        import subprocess
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            subprocess.run(["git", "init", "-q", str(path)], check=True)
+            (path / "a.txt").write_text("review this", encoding="utf-8")
+            subprocess.run(["git", "-C", str(path), "add", "a.txt"], check=True)
+            subprocess.run(["git", "-C", str(path), "-c", "user.name=CI",
+                            "-c", "user.email=ci@example.invalid", "commit", "-qm", "fixture"], check=True)
+            sha = subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
+            report = inspect_local_commit(path, sha)
+            self.assertEqual(report["commit_sha"], sha)
+            self.assertEqual(report["changed_entries"], 1)
+            with self.assertRaises(ValueError):
+                inspect_local_commit(path, "HEAD")
+            with self.assertRaises(ValueError):
+                inspect_local_commit(path, "f" * 40)
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,
