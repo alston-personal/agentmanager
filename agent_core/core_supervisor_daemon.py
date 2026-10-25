@@ -170,8 +170,11 @@ def build_service(
 
 def _receipt_notice_revision(service: CoreSupervisorService) -> int:
     """Cheap hint only; reconciliation still verifies authoritative receipts."""
+    runtime = getattr(service, "runtime", None)
+    if runtime is None:
+        return 0
     try:
-        return (service.runtime.root / "supervisor" / "receipt-events").stat().st_mtime_ns
+        return (runtime.root / "supervisor" / "receipt-events").stat().st_mtime_ns
     except OSError:
         return 0
 
