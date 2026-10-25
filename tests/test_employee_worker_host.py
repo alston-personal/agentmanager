@@ -98,6 +98,17 @@ class EmployeeWorkerHostTests(unittest.TestCase):
         self.assertIsNone(EmployeeWorkerHost._parse_child_result(
             serialized, runner_kind="claw_review_readonly"))
 
+    def test_claw_review_runner_is_registered_but_disabled_until_verified(self):
+        from agentos_node.employee_worker_host_runtime import (
+            ProductEmployeeWorkerAdapterRegistry, V2_RUNNER_KINDS,
+        )
+        self.assertIn("claw_review_readonly_v1", V2_RUNNER_KINDS)
+        registry = ProductEmployeeWorkerAdapterRegistry()
+        matches = [x for x in registry.projection() if x["adapter_id"] == "claw-review-readonly-v1"]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["status"], "disabled")
+        self.assertEqual(matches[0]["role_ids"], ["sector.claw"])
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,
