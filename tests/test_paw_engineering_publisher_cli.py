@@ -209,3 +209,11 @@ def test_gh_git_credential_helper_is_invoked_by_real_git(tmp_path):
     )
     assert "username=ci-publisher" in result.stdout
     assert "password=ci-secret" in result.stdout
+
+
+def test_publisher_bare_git_provenance_checks_are_mandatory():
+    source = (Path(__file__).resolve().parents[1] / "agentos_node/paw_engineering_gh_transport.py").read_text()
+    assert '"rev-list", "--parents", "-n", "1", local.commit_sha' in source
+    assert '"diff-tree", "--no-commit-id", "--name-only", "-r", local.commit_sha' in source
+    assert 'paw_publisher_parent_mismatch' in source
+    assert 'paw_publisher_object_scope_invalid' in source
