@@ -36,7 +36,10 @@ def inspect_local_commit(repository: Path, commit_sha: str) -> dict[str, object]
                  "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"},
         )
         return result.stdout
-    actual = git("rev-parse", "--verify", commit_sha + "^{commit}").strip().decode("ascii")
+    try:
+        actual = git("rev-parse", "--verify", commit_sha + "^{commit}").strip().decode("ascii")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("claw_commit_not_available_locally") from exc
     if actual != commit_sha:
         raise ValueError("claw_commit_identity_mismatch")
     manifest = git("diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "--no-renames", commit_sha)
