@@ -50,6 +50,18 @@ class RoleRuntimeTest(unittest.TestCase):
                 if role_id != "core.root":
                     self.assertEqual(role.parent_role_id, "core.root")
 
+    def test_claw_inherits_root_without_self_approval_authority(self):
+        registry = RoleRegistry(REGISTRY)
+        claw = registry.resolve("sector.claw")
+        self.assertEqual(claw.parent_role_id, "core.root")
+        self.assertEqual(claw.protocols["pdca"], "root.pdca.v1")
+        self.assertIn("truth_provenance", claw.must_obey)
+        self.assertIn("receipts_over_claims", claw.must_obey)
+        self.assertIn("claim_unverified_side_effects", claw.must_not)
+        self.assertIn("validation_report", claw.outputs)
+        self.assertNotIn("merge_protected_main", claw.capabilities)
+        self.assertNotIn("deploy_production", claw.capabilities)
+
     def test_missing_parent_or_cycle_fail_closed(self):
         import tempfile
         import yaml
