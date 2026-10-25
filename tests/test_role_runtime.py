@@ -59,6 +59,7 @@ class RoleRuntimeTest(unittest.TestCase):
         self.assertIn("receipts_over_claims", claw.must_obey)
         self.assertIn("claim_unverified_side_effects", claw.must_not)
         self.assertIn("validation_report", claw.outputs)
+        self.assertIn("claw.review.readonly", claw.capabilities)
         self.assertNotIn("merge_protected_main", claw.capabilities)
         self.assertNotIn("deploy_production", claw.capabilities)
 
