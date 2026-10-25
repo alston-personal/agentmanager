@@ -277,6 +277,11 @@ class CoreSupervisorService:
                 result = assignment.result
                 if assignment.employee_id != item.employee_id or assignment.state != "completed" or not isinstance(result, dict):
                     continue
+                # Paw engineering completion is only a handoff to independent Claw
+                # review, not permission to unblock a dependent assignment.
+                # Fail closed until a separate reviewer-verified state is wired in.
+                if "independent_review_required" in item.authority_requirements:
+                    continue
                 generation = result.get("generation")
                 if type(generation) is not int or generation < 1:
                     continue
