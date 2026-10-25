@@ -26,6 +26,14 @@ def publish_with_trusted_gh(
             raise PawWorktreeBoundaryError("paw_publisher_bare_repository_required")
         if _git(root, "rev-parse", "refs/heads/" + local.branch) != local.commit_sha:
             raise PawWorktreeBoundaryError("paw_publisher_head_mismatch")
+        # Independently inspect objects received from the unprivileged Worker.
+        # A claimed path in a JSON receipt is not Git object provenance.
+        lineage = _git(root, "rev-list", "--parents", "-n", "1", local.commit_sha).split()
+        if lineage != [local.commit_sha, local.base_sha]:
+            raise PawWorktreeBoundaryError("paw_publisher_parent_mismatch")
+        names = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", local.commit_sha).splitlines()
+        if names != ["tests/test_paw_engineering_worktree.py"]:
+            raise PawWorktreeBoundaryError("paw_publisher_object_scope_invalid")
     else:
         if _git(root, "symbolic-ref", "--quiet", "--short", "HEAD") != local.branch:
             raise PawWorktreeBoundaryError("paw_publisher_branch_mismatch")
