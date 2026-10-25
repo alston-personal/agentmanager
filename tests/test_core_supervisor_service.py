@@ -108,6 +108,35 @@ class CoreSupervisorServiceTests(unittest.TestCase):
         # The canonical assignment ID must be reviewed; unrelated PASS never unlocks.
         self.assertNotIn(source, service._verified_dependency_states())
 
+    def test_supervisor_reconciles_claw_fail_without_duplicate_repair(self):
+        source = "github:alston-personal/agentmanager#470"
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "review-required",
+            "source_kind": "github_issue", "source_ref": source,
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "audit-001", "goal": "Audit closure gaps",
+            "authority_requirements": ["independent_review_required"], "state": "open",
+        })
+        self.lifecycle.claim("audit-001", "spec-steward", "lease-author", now=T0)
+        self.lifecycle.finish("audit-001", "lease-author", now=T0 + timedelta(seconds=1))
+        self.runtime.create_employee("the-claw", "The Claw", role_ids=["sector.claw"], skill_ids=["security.audit"])
+        review_id = "claw-review-review-required"
+        self.runtime.create_assignment(review_id, "the-claw", "Review work")
+        self.lifecycle.claim(review_id, "the-claw", "lease-reviewer", now=T0)
+        self.lifecycle.finish(review_id, "lease-reviewer", now=T0 + timedelta(seconds=1),
+            result_summary={"schema": "agentos.independent-claw-review/v1",
+                            "target_assignment_id": "audit-001",
+                            "target_generation": 1, "verdict": "FAIL"})
+        service = self.service()
+        lease = service.claim_leader(now=T0)
+        service.run_cycle(lease.generation, now=T0 + timedelta(seconds=2))
+        repair = store.get("repair-review-required-g1-r1")
+        self.assertEqual(repair.employee_id, "spec-steward")
+        self.assertEqual(self.runtime.get_assignment(repair.assignment_id).state, "pending")
+        service.run_cycle(lease.generation, now=T0 + timedelta(seconds=3))
+        self.assertEqual(len(list(store.root.glob("repair-*.json"))), 1)
+
     def test_singleton_leader_rejects_competing_live_owner(self):
         a = self.service("supervisor-a")
         b = self.service("supervisor-b")
