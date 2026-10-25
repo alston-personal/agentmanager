@@ -49,6 +49,23 @@ def inspect_local_commit(repository: Path, commit_sha: str) -> dict[str, object]
                 "--root", "--binary", commit_sha)
     if len(patch) > 2_000_000:
         raise ValueError("claw_patch_exceeds_bounded_review")
+    # A deterministic reviewer can report a concrete blocking defect without
+    # pretending that a clean whitespace check constitutes full approval.
+    # git show --check exits nonzero for whitespace errors but must not be
+    # allowed to execute external diff drivers.
+    check = subprocess.run(
+        ["git", "-C", str(repository), "--no-optional-locks",
+         "-c", "core.hooksPath=/dev/null",
+         "show", "--check", "--format=", "--no-ext-diff", commit_sha],
+        capture_output=True, timeout=15,
+        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent",
+             "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+             "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1",
+             "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if check.returncode not in {0, 2}:
+        raise ValueError("claw_static_check_unavailable")
+    static_result = "FAIL" if check.returncode == 2 else "NO_FINDINGS"
     return {
         "commit_sha": commit_sha,
         "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
@@ -56,6 +73,8 @@ def inspect_local_commit(repository: Path, commit_sha: str) -> dict[str, object]
         "patch_bytes": len(patch),
         "changed_entries": len(manifest.splitlines()),
         "independent_review_verdict": "NOT_REVIEWED",
+        "static_check": static_result,
+        "static_diagnostic_sha256": hashlib.sha256(check.stdout + check.stderr).hexdigest(),
     }
 
 
