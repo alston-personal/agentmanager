@@ -188,3 +188,24 @@ def test_git_push_uses_explicit_gh_credential_helper_without_token_in_argv():
     source = (Path(__file__).resolve().parents[1] / 'agentos_node/paw_engineering_gh_transport.py').read_text()
     assert 'credential.helper=!gh auth git-credential' in source
     assert 'GH_TOKEN' not in source.split('def push(branch, sha):')[1].split('def create(')[0]
+
+
+def test_gh_git_credential_helper_is_invoked_by_real_git(tmp_path):
+    """Exercise actual Git credential machinery, without secrets or network."""
+    import os
+    import subprocess
+    fake = tmp_path / "gh"
+    fake.write_text(
+        '#!/bin/sh\n'
+        'test "$1" = auth && test "$2" = git-credential && test "$3" = get || exit 7\n'
+        'printf "username=ci-publisher\\npassword=ci-secret\\n"\n'
+    )
+    fake.chmod(0o700)
+    env = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ["PATH"])
+    result = subprocess.run(
+        ["git", "-c", "credential.helper=!gh auth git-credential", "credential", "fill"],
+        input="protocol=https\\nhost=github.com\\n\\n", capture_output=True,
+        text=True, env=env, timeout=10, check=True,
+    )
+    assert "username=ci-publisher" in result.stdout
+    assert "password=ci-secret" in result.stdout
