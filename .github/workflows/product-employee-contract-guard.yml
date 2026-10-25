@@ -22,6 +22,8 @@ on:
       - 'agent_core/node_registry.py'
       - 'agent_core/realm_fabric.py'
       - 'agent_core/governed_execution.py'
+      - 'agent_core/employee_lifecycle.py'
+      - 'agent_core/core_supervisor_daemon.py'
       - 'agentos_node/employee_wake_node.py'
       - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/employee_worker_host_runtime.py'
