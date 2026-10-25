@@ -169,7 +169,7 @@ class CoreSupervisorServiceTests(unittest.TestCase):
         service = self.service()
         self.assertEqual(service._project_authorized_claw_reviews(), 0)
         self.lifecycle.claim("audit-001", "spec-steward", "author-lease", now=T0)
-        self.lifecycle.finish("audit-001", "author-lease", now=T0 + timedelta(seconds=1))
+        self.lifecycle.finish("audit-001", "author-lease", state="handoff", now=T0 + timedelta(seconds=1))
         self.assertEqual(service._project_authorized_claw_reviews(), 1)
         self.assertEqual(service._project_authorized_claw_reviews(), 0)
         self.assertEqual(self.runtime.get_assignment("claw-review-task-a").state, "pending")
