@@ -201,9 +201,11 @@ def run_persistent(
         return
 
     while not stopper.is_set():
+        notices_seen = _receipt_notice_revision(service)
         receipt = service.run_cycle(leader.generation)
         remaining = int(receipt.next_poll_seconds)
-        notices_seen = _receipt_notice_revision(service)
+        if _receipt_notice_revision(service) != notices_seen:
+            remaining = 0
         while remaining > 0 and not stopper.is_set():
             step = _heartbeat_step(remaining, leader_lease_seconds)
             if hasattr(service, 'runtime'):
