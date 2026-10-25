@@ -86,6 +86,9 @@ def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worke
     assert "User=root" not in service
     assert "paw_publisher_service_user_missing" in installer
     assert "paw_publisher_source_access_missing" in installer
+    assert "paw_publisher_bundle_ingress_missing" in installer
+    assert "paw_publisher_bundle_ingress_writable" in installer
+    assert "ReadOnlyPaths=/home/ubuntu/agent-data/employee-worker-state/paw-470-bundles" in service
     assert "CapabilityBoundingSet=\n" in service
     assert "AmbientCapabilities=\n" in service
     assert "NoNewPrivileges=true" in service
