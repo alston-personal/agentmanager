@@ -71,6 +71,43 @@ class CoreSupervisorServiceTests(unittest.TestCase):
         })
         self.assertFalse(store.dependencies_ready("dependent-on-paw", service._verified_dependency_states()))
 
+    def test_reviewed_dependency_requires_separate_claw_pass(self):
+        source = "github:alston-personal/agentmanager#470"
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "review-required",
+            "source_kind": "github_issue", "source_ref": source,
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "audit-001", "goal": "Audit closure gaps",
+            "authority_requirements": ["independent_review_required"], "state": "open",
+        })
+        self.lifecycle.claim("audit-001", "lease-author", now=T0)
+        self.lifecycle.finish("audit-001", "lease-author", now=T0 + timedelta(seconds=1))
+        service = self.service()
+        self.assertNotIn(source, service._verified_dependency_states())
+        self.runtime.create_employee(
+            "the-claw", "The Claw", role_ids=["sector.claw"], skill_ids=["security.audit"]
+        )
+        self.runtime.create_assignment("claw-review-review-required", "the-claw", "Review work")
+        self.lifecycle.claim("claw-review-review-required", "lease-reviewer", now=T0)
+        self.lifecycle.finish("claw-review-review-required", "lease-reviewer", now=T0 + timedelta(seconds=1))
+        self.assertNotIn(source, service._verified_dependency_states())
+        path = self.root / "supervisor" / "review-verdicts" / "claw-review-review-required.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        verdict = {
+            "schema": "agentos.independent-claw-review/v1",
+            "review_assignment_id": "claw-review-review-required",
+            "reviewer_employee_id": "the-claw",
+            "target_assignment_id": "audit-001",
+            "target_generation": 1, "review_generation": 1,
+            "verdict": "FAIL",
+        }
+        path.write_text(json.dumps(verdict))
+        self.assertNotIn(source, service._verified_dependency_states())
+        verdict["verdict"] = "PASS"
+        path.write_text(json.dumps(verdict))
+        self.assertEqual(service._verified_dependency_states()[source], "completed")
+
     def test_singleton_leader_rejects_competing_live_owner(self):
         a = self.service("supervisor-a")
         b = self.service("supervisor-b")
