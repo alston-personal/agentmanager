@@ -81,7 +81,8 @@ def publish_with_trusted_gh(
     def push(branch, sha):
         # Exact source and destination; never force-push or target main.
         p = subprocess.run(
-            ["git", "-C", str(root), "-c", "core.hooksPath=/dev/null", "push", ("https://github.com/" + REPO + ".git") if bare_repository else "origin",
+            ["git", "-C", str(root), "-c", "core.hooksPath=/dev/null",
+             "-c", "credential.helper=!gh auth git-credential", "push", ("https://github.com/" + REPO + ".git") if bare_repository else "origin",
              sha + ":refs/heads/" + branch],
             stdin=subprocess.DEVNULL, text=True, capture_output=True,
             timeout=60, check=False,
