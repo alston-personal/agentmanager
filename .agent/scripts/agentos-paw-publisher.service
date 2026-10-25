@@ -27,4 +27,4 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadOnlyPaths=/home/ubuntu/agent-data/employee-runtime
-ReadOnlyPaths=/home/ubuntu/agent-data/employee-worker-state/paw-470-worktrees
+ReadOnlyPaths=/home/ubuntu/agent-data/employee-worker-state/paw-470-bundles
