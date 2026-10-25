@@ -143,6 +143,8 @@ class EmployeeWorkerHostTests(unittest.TestCase):
             self.assertEqual(report["commit_sha"], sha)
             self.assertEqual(report["changed_entries"], 1)
             self.assertEqual(report["independent_review_verdict"], "NOT_REVIEWED")
+            self.assertEqual(report["static_check"], "NO_FINDINGS")
+            self.assertEqual(len(report["static_diagnostic_sha256"]), 64)
             self.assertEqual(len(report["patch_sha256"]), 64)
             self.assertGreater(report["patch_bytes"], 0)
             self.assertEqual(report, inspect_local_commit(path, sha))
