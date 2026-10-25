@@ -64,6 +64,12 @@ roles:
 
   - id: sector.claw
     name: The Claw
+    parent_role_id: core.root
+    inherits:
+      - governance
+      - pdca_protocol
+      - memory_scope_policy
+      - skill_contracts
     status: active
     kind: assurance
     source: .agent/roles/parents/lcs_the_claw.md
