@@ -120,7 +120,8 @@ def test_publisher_lock_releases_after_failure(tmp_path):
 def test_publisher_never_executes_repository_push_hooks():
     root = Path(__file__).resolve().parents[1]
     source = (root / 'agentos_node/paw_engineering_gh_transport.py').read_text()
-    assert '"-c", "core.hooksPath=/dev/null", "push"' in source
+    assert '"-c", "core.hooksPath=/dev/null",' in source
+    assert '"credential.helper=!gh auth git-credential", "push"' in source
 
 
 def test_publisher_rejects_git_environment_injection(tmp_path, monkeypatch):
