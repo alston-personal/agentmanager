@@ -181,3 +181,9 @@ def test_installer_provisions_bundle_default_acl():
     source = (Path(__file__).resolve().parents[1] / 'scripts/install_paw_publisher_oracle.sh').read_text()
     assert 'setfacl -d -m u:agentos-publisher:r-x' in source
     assert 'setfacl -m u:agentos-publisher:r--' in source
+
+
+def test_git_push_uses_explicit_gh_credential_helper_without_token_in_argv():
+    source = (Path(__file__).resolve().parents[1] / 'agentos_node/paw_engineering_gh_transport.py').read_text()
+    assert 'credential.helper=!gh auth git-credential' in source
+    assert 'GH_TOKEN' not in source.split('def push(branch, sha):')[1].split('def create(')[0]
