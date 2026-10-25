@@ -116,18 +116,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", required=True)
     parser.add_argument("--inspect-commit", help="Exact pinned SHA for evidence-only inspection")
     parser.add_argument("--repository", type=_absolute, help="Explicit local repository for evidence-only inspection")
+    parser.add_argument("--work-item-id", help="Resolve pinned commit from canonical Paw receipt")
     args = parser.parse_args(argv)
     if args.presence_generation < 1 or not args.wake_id.strip() or not args.node_id.strip():
         parser.error("invalid_exact_claw_wake")
-    if bool(args.inspect_commit) != bool(args.repository):
-        parser.error("claw_repository_and_commit_required_together")
-    if args.inspect_commit:
+    if args.work_item_id and args.inspect_commit:
+        parser.error("claw_review_target_modes_mutually_exclusive")
+    if bool(args.inspect_commit or args.work_item_id) != bool(args.repository):
+        parser.error("claw_repository_and_target_required_together")
+    if args.inspect_commit or args.work_item_id:
         # Evidence-only mode; intentionally never writes lifecycle receipts or
         # turns observation into a Claw PASS. Host dispatch does not supply these
         # options, so a wake alone cannot self-authorize Git inspection.
         try:
-            evidence = inspect_local_commit(args.repository, args.inspect_commit)
-        except (ValueError, OSError, subprocess.CalledProcessError,
+            evidence = (inspect_governed_review_target(args.runtime_root, args.repository, args.work_item_id)
+                        if args.work_item_id else inspect_local_commit(args.repository, args.inspect_commit))
+        except (ValueError, PermissionError, KeyError, OSError, subprocess.CalledProcessError,
                 subprocess.TimeoutExpired):
             print(json.dumps({"schema": SCHEMA, "status": "blocked",
                               "work_performed": False,
