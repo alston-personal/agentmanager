@@ -85,6 +85,19 @@ class EmployeeWorkerHostTests(unittest.TestCase):
         projection = registry.projection()
         self.assertEqual(projection[0]["runner_kind"], "spec_steward_o3")
 
+    def test_unknown_runner_cannot_reuse_spec_steward_receipt(self):
+        from agentos_node.employee_worker_host import EmployeeWorkerHost
+        payload = {
+            "schema": "agentos.spec-steward-o3-worker-cli-result/v1",
+            "status": "checkpointed", "credential_exposed": False,
+            "session_identity_exposed": False, "verified_marker_emitted": False,
+        }
+        serialized = json.dumps(payload)
+        self.assertIsNotNone(EmployeeWorkerHost._parse_child_result(
+            serialized, runner_kind="spec_steward_o3"))
+        self.assertIsNone(EmployeeWorkerHost._parse_child_result(
+            serialized, runner_kind="claw_review_readonly"))
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,
