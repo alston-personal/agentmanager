@@ -181,6 +181,8 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
                 "--worker-state-root", str(self.worker_state_root),
                 "--node-id", self.node_id,
                 "--once",
+                "--repository", str(ROOT),
+                "--work-item-id", adapter.assignment_id.removeprefix("claw-review-"),
             ]
         elif adapter.runner_kind in PRODUCT_RUNNER_KINDS:
             command = [
