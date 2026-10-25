@@ -45,6 +45,24 @@ class CoreSupervisorServiceTests(unittest.TestCase):
             max_poll_seconds=16,
         )
 
+    def test_paw_completion_does_not_unlock_independent_review_dependency(self):
+        source = "github:alston-personal/agentmanager#470"
+        self.runtime.create_assignment("paw-470-test", "spec-steward", "Paw implementation")
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "paw-review-gated",
+            "source_kind": "github_issue", "source_ref": source,
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "paw-470-test", "goal": "Paw implementation",
+            "authority_requirements": ["independent_review_required"],
+            "state": "open",
+        })
+        lease = self.lifecycle.claim("paw-470-test", "spec-steward", "lease-paw", now=T0)
+        self.lifecycle.finish("paw-470-test", "lease-paw", now=T0 + timedelta(seconds=1))
+        service = self.service()
+        self.assertNotIn(source, service._verified_dependency_states())
+        self.assertFalse(store.dependencies_ready("paw-review-gated", {}))
+
     def test_singleton_leader_rejects_competing_live_owner(self):
         a = self.service("supervisor-a")
         b = self.service("supervisor-b")
