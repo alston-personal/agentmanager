@@ -60,7 +60,7 @@ def test_latest_publisher_advances_after_persisting_publication(tmp_path, monkey
     generations = []
     def publish(**kwargs):
         generations.append(kwargs["generation"])
-        return {"status": "published_draft", "commit_sha": "b" * 40}
+        return {"schema": "agentos.paw-draft-publication-receipt/v1", "status": "published_draft", "work_id": "issue-470-a", "commit_sha": "b" * 40, "merged": False, "independent_acceptance_pass": False, "pr_number": 2099, "pr_url": "https://github.com/alston-personal/agentmanager/pull/2099"}
     monkeypatch.setattr(cli, "publish_once", publish)
     result = cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)
     assert result["status"] == "published_draft"
