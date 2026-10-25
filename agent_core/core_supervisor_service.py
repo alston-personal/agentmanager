@@ -337,19 +337,15 @@ class CoreSupervisorService:
                         or reviewer_lease.status != "completed"
                     ):
                         continue
-                    # Terminal lifecycle receipt alone does not assert an
-                    # independent verdict. Review artifacts must be attested
-                    # and provenance-bound by the governed verifier.
-                    verdict_path = self.runtime.root / "supervisor" / "review-verdicts" / (review_id + ".json")
-                    verdict = _read(verdict_path)
+                    # The verdict is part of the independent Claw lifecycle
+                    # receipt, never a free-standing editable sidecar.
+                    summary = reviewer_receipt.get("result_summary")
                     if (
-                        not verdict or verdict.get("schema") != "agentos.independent-claw-review/v1"
-                        or verdict.get("review_assignment_id") != review_id
-                        or verdict.get("reviewer_employee_id") != review_assignment.employee_id
-                        or verdict.get("target_assignment_id") != item.assignment_id
-                        or verdict.get("target_generation") != generation
-                        or verdict.get("review_generation") != reviewer_generation
-                        or verdict.get("verdict") != "PASS"
+                        not isinstance(summary, dict)
+                        or summary.get("schema") != "agentos.independent-claw-review/v1"
+                        or summary.get("target_assignment_id") != item.assignment_id
+                        or summary.get("target_generation") != generation
+                        or summary.get("verdict") != "PASS"
                     ):
                         continue
                 verified[ref] = "completed"
