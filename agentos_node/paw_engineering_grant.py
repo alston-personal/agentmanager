@@ -65,8 +65,7 @@ def validate_paw_engineering_grant(
         or pg != expected_presence_generation or lg != expected_lease_generation
     ):
         raise PawWorktreeBoundaryError("paw_grant_lease_mismatch")
-    if (not isinstance(expected_assignment_id, str)
-            or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", expected_assignment_id)):
+    if not isinstance(expected_assignment_id, str) or expected_assignment_id != "paw-470-inspection-v1":
         raise PawWorktreeBoundaryError("paw_grant_assignment_invalid")
     if not isinstance(expected_wake_id, str) or not re.fullmatch(r"wake_[a-f0-9]{24}", expected_wake_id):
         raise PawWorktreeBoundaryError("paw_grant_wake_invalid")
