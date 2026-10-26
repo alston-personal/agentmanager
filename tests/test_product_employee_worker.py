@@ -760,7 +760,6 @@ def test_paw_dependent_b_requires_verified_author_receipt(tmp_path: Path) -> Non
         "required_capabilities": ["engineering.work.inspect"],
         "authority_requirements": ["one-governed-dispatch"], "state": "open",
     })
-    store.project_pending_assignment("b")
     registry = ProductEmployeeWorkerAdapterRegistry(runtime_root=tmp_path)
     capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
     assert registry.resolve(capsule) is None
@@ -768,5 +767,22 @@ def test_paw_dependent_b_requires_verified_author_receipt(tmp_path: Path) -> Non
     lifecycle.claim("paw-a", "the-paw", "lease-a")
     lifecycle.finish("paw-a", "lease-a", state="completed",
                      result_summary={"test": "verified-a"})
+    from agent_core.core_supervisor_service import CoreSupervisorService
+    supervisor = CoreSupervisorService(lifecycle, owner_id="test-supervisor")
+    leader = supervisor.claim_leader()
+    supervisor.run_cycle(leader.generation)
+    assert runtime.get_assignment("paw-b").state == "pending"
     assert registry.resolve(capsule) is not None
     assert _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)
+    _materialize_governed_delivery(tmp_path, capsule)
+    worker_root = tmp_path / "worker"
+    worker_root.mkdir()
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=tmp_path, wake_root=tmp_path / "wakes",
+        worker_state_root=worker_root, node_id="oracle-core-node",
+        runner_kind="paw_inspect_v1",
+    )
+    worker._capsules = lambda: [(Path("wake.json"), capsule)]
+    result = worker.process_exact(wake_id="wake-1", presence_generation=1)
+    assert result is not None and result.assignment_id == "paw-b"
+    assert (tmp_path / "lifecycle/receipts/paw-b/000001.json").is_file()
