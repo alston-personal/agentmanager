@@ -45,6 +45,39 @@ class CoreSupervisorServiceTests(unittest.TestCase):
             max_poll_seconds=16,
         )
 
+    def test_authorized_independent_paw_b_projects_once_without_claw_pass(self):
+        self.runtime.create_employee(
+            "the-paw", "Paw", role_ids=["sector.paw"],
+            skill_ids=["engineering.work.inspect"],
+        )
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "b-independent",
+            "source_kind": "canonical_state", "source_ref": "task:b-independent",
+            "project_id": "agentos-core", "employee_id": "the-paw",
+            "assignment_id": "paw-b", "goal": "Implement independent B",
+            "authority_requirements": ["one-governed-dispatch"],
+            "required_capabilities": ["engineering.work.inspect"],
+            "state": "open",
+        })
+        service = self.service()
+        self.assertEqual(service._project_authorized_paw_continuations({}), 1)
+        self.assertEqual(self.runtime.get_assignment("paw-b").state, "pending")
+        self.assertEqual(service._project_authorized_paw_continuations({}), 0)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "b-dependent",
+            "source_kind": "canonical_state", "source_ref": "task:b-dependent",
+            "project_id": "agentos-core", "employee_id": "the-paw",
+            "assignment_id": "paw-b-dependent", "goal": "Needs A",
+            "dependency_refs": ["task:a"],
+            "authority_requirements": ["one-governed-dispatch"],
+            "required_capabilities": ["engineering.work.inspect"],
+            "state": "open",
+        })
+        self.assertEqual(service._project_authorized_paw_continuations({}), 0)
+        with self.assertRaises(FileNotFoundError):
+            self.runtime.get_assignment("paw-b-dependent")
+
     def test_paw_completion_does_not_unlock_independent_review_dependency(self):
         source = "github:alston-personal/agentmanager#470"
         self.runtime.create_assignment("paw-470-test", "spec-steward", "Paw implementation")
