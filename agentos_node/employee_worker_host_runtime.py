@@ -299,6 +299,24 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
             return None
         return payload
 
+    def status(self) -> dict[str, Any]:
+        """Expose B tasks blocked at the child scope, without dispatching them."""
+        state = super().status()
+        blocked: set[str] = set()
+        if self.wake_root.is_dir():
+            for path in (self.wake_root / "the-paw").glob("*.json"):
+                capsule = self._read_capsule(path)
+                if capsule is None:
+                    continue
+                adapter = self.registry.resolve(capsule)
+                if (adapter is not None and adapter.runner_kind == "paw_inspect_v1"
+                        and adapter.assignment_id != "paw-470-inspection-v1"
+                        and not self._read_dispatch(capsule)):
+                    blocked.add(adapter.assignment_id)
+        state["paw_dynamic_pending_child_scope_count"] = len(blocked)
+        state["paw_dynamic_child_scope_ready"] = False
+        return state
+
     def process_one(self) -> dict[str, Any] | None:
         self._pinned_candidate = None
         try:
