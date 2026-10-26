@@ -432,6 +432,8 @@ class GovernedProductEmployeeWorker:
                     trusted_lease_id=lease_id,
                     lifecycle=lifecycle,
                     registry_path=source_root / "governance/execution-authority.json",
+                    trusted_assignment_id=assignment_id,
+                    trusted_runtime=runtime,
                     repository=git_root,
                     workspace_root=isolated_root,
                 )
