@@ -667,8 +667,34 @@ def test_paw_worker_real_executor_local_commit(tmp_path: Path, monkeypatch: pyte
     assert result_head == commit_sha
 
 
-def test_dynamic_paw_continuation_remains_blocked_at_child_boundary(tmp_path: Path) -> None:
+def test_dynamic_paw_b_requires_canonical_projection_and_governed_delivery(tmp_path: Path) -> None:
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee(
+        "the-paw", "Paw", role_ids=["sector.paw"],
+        skill_ids=["engineering.work.inspect"],
+    )
     capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
     with pytest.raises(PermissionError, match="product_employee_worker_scope_mismatch"):
-        _require_runner_scope("paw_inspect_v1", capsule)
+        _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "b-independent",
+        "source_kind": "canonical_state", "source_ref": "task:b-independent",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Inspect independent B",
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    with pytest.raises(PermissionError):
+        _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)
+    store.project_pending_assignment("b-independent")
+    assert _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)["employee_id"] == "the-paw"
+    with pytest.raises(PermissionError):
+        product_worker.require_governed_product_delivery(tmp_path, "paw_inspect_v1", capsule)
+    _materialize_governed_delivery(tmp_path, capsule)
+    assert product_worker.require_governed_product_delivery(tmp_path, "paw_inspect_v1", capsule)
+    forged = dict(capsule, assignment_id="paw-b-forged")
+    with pytest.raises(PermissionError):
+        _require_runner_scope("paw_inspect_v1", forged, runtime_root=tmp_path)
 
