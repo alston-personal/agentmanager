@@ -260,3 +260,27 @@ def test_dynamic_paw_binding_requires_exact_canonical_work_item(tmp_path):
             assignment_id="paw-470-inspection-v1", work_item_id="paw-b-work",
             runtime=runtime,
         )
+
+
+def test_dynamic_paw_binding_denies_unverified_dependency(tmp_path):
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    from agentos_node.paw_engineering_grant import require_dynamic_paw_assignment_binding
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "dependent-b",
+        "source_kind": "canonical_state", "source_ref": "task:dependent-b",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Do B",
+        "dependency_refs": ["task:not-yet-done"],
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    store.project_pending_assignment("dependent-b")
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_dynamic_dependency_not_verified"):
+        require_dynamic_paw_assignment_binding(
+            assignment_id="paw-b", work_item_id="dependent-b", runtime=runtime,
+        )
