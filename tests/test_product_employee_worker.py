@@ -785,4 +785,14 @@ def test_paw_dependent_b_requires_verified_author_receipt(tmp_path: Path) -> Non
     worker._capsules = lambda: [(Path("wake.json"), capsule)]
     result = worker.process_exact(wake_id="wake-1", presence_generation=1)
     assert result is not None and result.assignment_id == "paw-b"
-    assert (tmp_path / "lifecycle/receipts/paw-b/000001.json").is_file()
+    assert result.status == "blocked"  # Claim/receipt is NOT engineering completion.
+    path = tmp_path / "lifecycle/receipts/paw-b/000001.json"
+    assert path.is_file()
+    receipt = json.loads(path.read_text())
+    assert receipt["outcome"] == "blocked"
+    assert receipt["result_summary"]["bounded_stage"] == "completion-470-readonly-inspection"
+    assert receipt["result_summary"]["blocker_code"] in {
+        "paw_engineering_execution_not_authorized",
+        "paw_completion_470_inspector_unavailable",
+    }
+    assert runtime.get_assignment("paw-b").state == "blocked"
