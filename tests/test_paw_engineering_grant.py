@@ -357,3 +357,42 @@ def test_dynamic_b_requires_explicit_trusted_runtime_opt_in():
     forged = dict(b, assignment_id="paw-a")
     with pytest.raises(PawWorktreeBoundaryError, match="paw_grant_wake_mismatch"):
         validate_paw_engineering_grant(forged, allow_dynamic_assignment=True, **kwargs)
+
+
+def test_dynamic_b_signed_request_requires_verified_workitem_and_own_lease(tmp_path):
+    """Real signed B request through existing runtime, policy and lifecycle gates."""
+    from pathlib import Path
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+    from agent_core.core_work_items import WorkItemStore, WORK_ITEM_SCHEMA
+    from agentos_node.paw_engineering_request import issue_paw_request, authenticate_paw_request
+
+    runtime = EmployeeRuntime(tmp_path / "runtime")
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "work-b",
+        "source_kind": "canonical_state", "source_ref": "task:b",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Independent B",
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    store.project_pending_assignment("work-b")
+    lifecycle = EmployeeLifecycle(runtime)
+    lease = lifecycle.claim("paw-b", "the-paw", "lease-b", lease_seconds=300)
+    b = dict(grant(), assignment_id="paw-b", work_id="issue-470-b")
+    registry = Path(__file__).resolve().parents[1] / "governance/execution-authority.json"
+    args = dict(grant=b, expected_sha256="a" * 64, replacement="safe",
+                issuer_key=b"test-trusted-issuer-key-longer-than-32-bytes",
+                trusted_assignment_id="paw-b", trusted_wake_id=b["wake_id"],
+                trusted_presence_generation=1, trusted_lease_generation=lease.generation,
+                lifecycle=lifecycle, trusted_lease_id="lease-b", registry_path=registry,
+                trusted_runtime=runtime)
+    signed = issue_paw_request(**args)
+    assert authenticate_paw_request(signed, issuer_key=args["issuer_key"])["grant"]["assignment_id"] == "paw-b"
+    with pytest.raises(PawWorktreeBoundaryError):
+        issue_paw_request(**dict(args, trusted_lease_id="lease-a"))
+    with pytest.raises(PawWorktreeBoundaryError):
+        issue_paw_request(**dict(args, trusted_runtime=None))
