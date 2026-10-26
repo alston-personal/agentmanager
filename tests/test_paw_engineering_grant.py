@@ -233,3 +233,30 @@ def test_dynamic_paw_b_cannot_reuse_fixed_a_engineering_grant(tmp_path):
             trusted_presence_generation=1, trusted_lease_generation=1,
             lifecycle=object(), trusted_lease_id="lease-b", registry_path=policy,
         )
+
+
+def test_dynamic_paw_binding_requires_exact_canonical_work_item(tmp_path):
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    from agentos_node.paw_engineering_grant import require_dynamic_paw_assignment_binding
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "paw-b-work",
+        "source_kind": "canonical_state", "source_ref": "task:paw-b-work",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Inspect B",
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    store.project_pending_assignment("paw-b-work")
+    require_dynamic_paw_assignment_binding(
+        assignment_id="paw-b", work_item_id="paw-b-work", runtime=runtime,
+    )
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_dynamic_binding_not_authorized"):
+        require_dynamic_paw_assignment_binding(
+            assignment_id="paw-470-inspection-v1", work_item_id="paw-b-work",
+            runtime=runtime,
+        )
