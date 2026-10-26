@@ -70,15 +70,22 @@ def _same_wake(left: Any, right: Any) -> bool:
     return isinstance(left, dict) and isinstance(right, dict) and left == right
 
 
-def _require_runner_scope(runner_kind: str, capsule: dict[str, Any]) -> dict[str, Any]:
+def _require_runner_scope(runner_kind: str, capsule: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
     scope = SUPPORTED_PRODUCT_RUNNERS.get(str(runner_kind or "").strip())
     if scope is None:
         raise PermissionError("product_employee_runner_kind_not_allowed")
     wake = capsule.get("wake_intent")
     if not isinstance(wake, dict):
         raise PermissionError("product_employee_worker_wake_missing")
-    if capsule.get("employee_id") != scope["employee_id"] or capsule.get("assignment_id") != scope["assignment_id"]:
+    if capsule.get("employee_id") != scope["employee_id"]:
         raise PermissionError("product_employee_worker_scope_mismatch")
+    if capsule.get("assignment_id") != scope["assignment_id"]:
+        if runner_kind != "paw_inspect_v1" or runtime_root is None:
+            raise PermissionError("product_employee_worker_scope_mismatch")
+        from agentos_node.employee_worker_host_runtime import ProductEmployeeWorkerAdapterRegistry
+        adapter = ProductEmployeeWorkerAdapterRegistry(runtime_root=runtime_root).resolve(capsule)
+        if adapter is None or adapter.assignment_id != capsule.get("assignment_id"):
+            raise PermissionError("product_employee_worker_scope_mismatch")
     if set(wake.get("role_ids") or []) != scope["role_ids"]:
         raise PermissionError("product_employee_worker_role_scope_mismatch")
     if set(wake.get("skill_ids") or []) != scope["skill_ids"]:
@@ -221,7 +228,7 @@ def require_governed_product_delivery(
     reconcile JSON on every poll. Atomic evidence replacement changes directory
     metadata and invalidates the cache.
     """
-    _require_runner_scope(runner_kind, capsule)
+    _require_runner_scope(runner_kind, capsule, runtime_root=runtime_root)
     root = Path(runtime_root).expanduser().resolve()
     wake = capsule.get("wake_intent")
     key = _delivery_index_key(
@@ -324,7 +331,7 @@ class GovernedProductEmployeeWorker:
             if not payload or payload.get("node_id") != self.node_id:
                 continue
             try:
-                _require_runner_scope(self.runner_kind, payload)
+                _require_runner_scope(self.runner_kind, payload, runtime_root=self.runtime_root)
             except PermissionError:
                 continue
             result.append((path, payload))
