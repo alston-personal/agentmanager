@@ -394,7 +394,8 @@ class GovernedProductEmployeeWorker:
             # Separately owned engineering authority directory; never derive
             # execution authority, a file path or key from the wake capsule.
             authority_dir = self.worker_state_root / "trusted-engineering-authority"
-            request_file = authority_dir / "paw-470-request.json"
+            from agentos_node.paw_engineering_request import trusted_request_filename
+            request_file = authority_dir / trusted_request_filename(assignment_id)
             key_file = authority_dir / "paw-470-issuer.key"
             if request_file.exists() != key_file.exists():
                 raise PermissionError("paw_engineering_authority_incomplete")
