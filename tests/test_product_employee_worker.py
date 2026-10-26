@@ -550,16 +550,25 @@ def test_paw_signed_request_worker_handoff(tmp_path: Path, monkeypatch: pytest.M
     )
     authority = worker_root / "trusted-engineering-authority"
     authority.mkdir(mode=0o700)
-    key = b"trusted-paw-issuer-key-with-sufficient-length"
-    key_file = authority / "paw-470-issuer.key"
-    key_file.write_bytes(key)
-    key_file.chmod(0o600)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    from agentos_node.paw_engineering_public_signature import sign_paw_public_request
+    private = Ed25519PrivateKey.generate()
+    private_bytes = private.private_bytes(
+        serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    public_file = authority / "paw-470-issuer.pub"
+    public_file.write_bytes(private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+    ))
+    public_file.chmod(0o600)
     request = {
         "schema": SCHEMA, "grant": {"work_id": "issue-470-a"},
         "expected_sha256": "a" * 64, "replacement": "def test_x(): pass",
         "signature": "",
     }
-    request["signature"] = hmac.new(key, canonical_payload(request), hashlib.sha256).hexdigest()
+    request = sign_paw_public_request(request, private_key=private_bytes)
     request_file = authority / "paw-470-request.json"
     request_file.write_text(json.dumps(request))
     request_file.chmod(0o600)
@@ -569,7 +578,7 @@ def test_paw_signed_request_worker_handoff(tmp_path: Path, monkeypatch: pytest.M
         from types import SimpleNamespace
         return SimpleNamespace(work_id="issue-470-a", base_sha="a" * 40, changed_file="tests/test_paw_engineering_worktree.py", commit_sha="b" * 40, branch="paw/470/issue-470-a")
     import agentos_node.paw_engineering_executor as paw_exec
-    monkeypatch.setattr(paw_exec, "run_signed_paw_candidate", executor)
+    monkeypatch.setattr(paw_exec, "run_authorized_static_candidate", executor)
     import agentos_node.paw_engineering_bundle as paw_bundle
     monkeypatch.setattr(paw_bundle, "export_paw_bundle", lambda **kwargs: kwargs["destination"])
     monkeypatch.setattr(product_worker, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
@@ -578,7 +587,7 @@ def test_paw_signed_request_worker_handoff(tmp_path: Path, monkeypatch: pytest.M
     assert state.status == "handoff"
     assert observed["trusted_lease_generation"] == 1
     assert observed["trusted_wake_id"] == capsule["wake_id"]
-    assert observed["request"]["signature"] == request["signature"]
+    assert observed["grant_payload"] == request["grant"]
     receipt = json.loads((runtime_root / "lifecycle" / "receipts" / "paw-470-inspection-v1" / "000001.json").read_text())
     assert receipt["outcome"] == "handoff"
     assert receipt["result_summary"]["independent_acceptance_pass"] is False
@@ -630,9 +639,19 @@ def test_paw_worker_real_executor_local_commit(tmp_path: Path, monkeypatch: pyte
     authority = worker_root / "trusted-engineering-authority"
     authority.mkdir(mode=0o700)
     key = b"isolated-test-control-plane-secret-key-00001"
-    key_file = authority / "paw-470-issuer.key"
-    key_file.write_bytes(key)
-    key_file.chmod(0o600)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    from agentos_node.paw_engineering_public_signature import sign_paw_public_request
+    private = Ed25519PrivateKey.generate()
+    private_bytes = private.private_bytes(
+        serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    public_file = authority / "paw-470-issuer.pub"
+    public_file.write_bytes(private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+    ))
+    public_file.chmod(0o600)
     # Issue against a genuinely active lease. Same claim ID is idempotent.
     lifecycle = EmployeeLifecycle(runtime)
     lease_id = "product-paw_inspect_v1-" + capsule["wake_id"] + "-1"
@@ -645,6 +664,7 @@ def test_paw_worker_real_executor_local_commit(tmp_path: Path, monkeypatch: pyte
         trusted_lease_generation=1, lifecycle=lifecycle, trusted_lease_id=lease_id,
         registry_path=repo / "governance/execution-authority.json",
     )
+    signed = sign_paw_public_request(signed, private_key=private_bytes)
     request_file = authority / "paw-470-request.json"
     request_file.write_text(json.dumps(signed))
     request_file.chmod(0o600)
