@@ -45,6 +45,7 @@ def run_authorized_static_candidate(
         expected_wake_id=trusted_wake_id,
         expected_presence_generation=trusted_presence_generation,
         expected_lease_generation=trusted_lease_generation,
+        allow_dynamic_assignment=trusted_runtime is not None,
     )
     require_canonical_paw_authority(grant, registry_path=registry_path, runtime=trusted_runtime)
     require_live_paw_lease(
