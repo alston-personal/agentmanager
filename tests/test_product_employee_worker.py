@@ -671,3 +671,14 @@ def test_dynamic_paw_continuation_remains_blocked_at_child_boundary(tmp_path: Pa
     capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
     with pytest.raises(PermissionError, match="product_employee_worker_scope_mismatch"):
         _require_runner_scope("paw_inspect_v1", capsule)
+
+
+def test_dynamic_paw_wake_never_launches_until_child_scope_is_supported() -> None:
+    from types import SimpleNamespace
+    from agentos_node.employee_worker_host_runtime import ExactEmployeeWorkerHost
+    capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
+    candidate = SimpleNamespace(
+        adapter=SimpleNamespace(runner_kind="paw_inspect_v1"),
+        capsule=capsule,
+    )
+    assert ExactEmployeeWorkerHost._product_preclaim_ready(object(), candidate) is False
