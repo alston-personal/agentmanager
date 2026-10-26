@@ -155,40 +155,75 @@ def issue_paw_request(
     return request
 
 
-def issue_and_publish_trusted_paw_request(
+def issue_and_publish_trusted_paw_public_request(
     *, authority_dir: Path, assignment_id: str,
     grant: Mapping[str, Any], expected_sha256: str, replacement: str,
-    issuer_key: bytes, trusted_wake_id: str, trusted_presence_generation: int,
-    trusted_lease_generation: int, trusted_lease_id: str,
-    lifecycle: object, registry_path: Path, trusted_runtime: object,
+    issuer_private_key: bytes, trusted_wake_id: str,
+    trusted_presence_generation: int, trusted_lease_generation: int,
+    trusted_lease_id: str, lifecycle: object, registry_path: Path,
+    trusted_runtime: object,
 ) -> Path:
-    """Control-plane only: authorize against live lease, then publish once.
-
-    This is NOT a worker entrypoint and never derives trust from a wake capsule.
-    A separate privileged caller must own the issuer key and exact lifecycle.
-    """
-    signed = issue_paw_request(
-        grant=grant, expected_sha256=expected_sha256, replacement=replacement,
-        issuer_key=issuer_key, trusted_assignment_id=assignment_id,
-        trusted_wake_id=trusted_wake_id,
-        trusted_presence_generation=trusted_presence_generation,
-        trusted_lease_generation=trusted_lease_generation,
-        trusted_lease_id=trusted_lease_id,
-        lifecycle=lifecycle, registry_path=registry_path,
-        trusted_runtime=trusted_runtime,
-    )
+    """Issuer-only admission and Ed25519 publication for one live Paw lease."""
+    import os
+    import tempfile
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
     from agentos_node.paw_engineering_grant import (
-        validate_paw_engineering_grant, require_live_paw_lease,
+        validate_paw_engineering_grant, require_canonical_paw_authority,
+        require_live_paw_lease,
+    )
+    from agentos_node.paw_engineering_public_signature import (
+        sign_paw_public_request, verify_paw_public_signature,
     )
     validated = validate_paw_engineering_grant(
-        grant, expected_assignment_id=assignment_id,
+        dict(grant), expected_assignment_id=assignment_id,
         expected_wake_id=trusted_wake_id,
         expected_presence_generation=trusted_presence_generation,
         expected_lease_generation=trusted_lease_generation,
         allow_dynamic_assignment=True,
     )
+    require_canonical_paw_authority(validated, registry_path=registry_path, runtime=trusted_runtime)
     require_live_paw_lease(validated, lifecycle=lifecycle, expected_lease_id=trusted_lease_id)
-    return publish_trusted_paw_request(
-        authority_dir, assignment_id=assignment_id,
-        signed_request=signed, issuer_key=issuer_key,
+    request = {
+        "schema": SCHEMA, "grant": dict(grant),
+        "expected_sha256": expected_sha256, "replacement": replacement,
+        "signature": "",
+    }
+    signed = sign_paw_public_request(request, private_key=issuer_private_key)
+    public_key = Ed25519PrivateKey.from_private_bytes(issuer_private_key).public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
     )
+    verify_paw_public_signature(signed, public_key=public_key)
+    directory = Path(authority_dir)
+    if directory.is_symlink() or not directory.is_dir():
+        raise PawWorktreeBoundaryError("paw_issuer_directory_not_trusted")
+    meta = directory.stat()
+    if meta.st_uid != os.geteuid() or meta.st_mode & 0o077:
+        raise PawWorktreeBoundaryError("paw_issuer_directory_not_trusted")
+    path = directory / trusted_request_filename(assignment_id)
+    payload = json.dumps(signed, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if len(payload) > MAX_BYTES:
+        raise PawWorktreeBoundaryError("paw_signed_request_too_large")
+    require_live_paw_lease(validated, lifecycle=lifecycle, expected_lease_id=trusted_lease_id)
+    tmp: Path | None = None
+    try:
+        fd, name = tempfile.mkstemp(prefix=".paw-public-", dir=directory)
+        tmp = Path(name)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        try:
+            os.link(tmp, path, follow_symlinks=False)
+        except FileExistsError as exc:
+            raise PawWorktreeBoundaryError("paw_issuer_request_already_exists") from exc
+        dirfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(dirfd)
+        finally:
+            os.close(dirfd)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+    return path
