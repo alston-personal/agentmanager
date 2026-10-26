@@ -147,3 +147,42 @@ def issue_paw_request(
     ).hexdigest()
     authenticate_paw_request(request, issuer_key=issuer_key)
     return request
+
+
+def issue_and_publish_trusted_paw_request(
+    *, authority_dir: Path, assignment_id: str,
+    grant: Mapping[str, Any], expected_sha256: str, replacement: str,
+    issuer_key: bytes, trusted_wake_id: str, trusted_presence_generation: int,
+    trusted_lease_generation: int, trusted_lease_id: str,
+    lifecycle: object, registry_path: Path, trusted_runtime: object,
+) -> Path:
+    """Control-plane only: authorize against live lease, then publish once.
+
+    This is NOT a worker entrypoint and never derives trust from a wake capsule.
+    A separate privileged caller must own the issuer key and exact lifecycle.
+    """
+    signed = issue_paw_request(
+        grant=grant, expected_sha256=expected_sha256, replacement=replacement,
+        issuer_key=issuer_key, trusted_assignment_id=assignment_id,
+        trusted_wake_id=trusted_wake_id,
+        trusted_presence_generation=trusted_presence_generation,
+        trusted_lease_generation=trusted_lease_generation,
+        trusted_lease_id=trusted_lease_id,
+        lifecycle=lifecycle, registry_path=registry_path,
+        trusted_runtime=trusted_runtime,
+    )
+    from agentos_node.paw_engineering_grant import (
+        validate_paw_engineering_grant, require_live_paw_lease,
+    )
+    validated = validate_paw_engineering_grant(
+        grant, expected_assignment_id=assignment_id,
+        expected_wake_id=trusted_wake_id,
+        expected_presence_generation=trusted_presence_generation,
+        expected_lease_generation=trusted_lease_generation,
+        allow_dynamic_assignment=True,
+    )
+    require_live_paw_lease(validated, lifecycle=lifecycle, expected_lease_id=trusted_lease_id)
+    return publish_trusted_paw_request(
+        authority_dir, assignment_id=assignment_id,
+        signed_request=signed, issuer_key=issuer_key,
+    )
