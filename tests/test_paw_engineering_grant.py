@@ -319,3 +319,27 @@ def test_dynamic_paw_binding_allows_receipt_verified_dependency(tmp_path):
     require_dynamic_paw_assignment_binding(
         assignment_id="paw-b", work_item_id="dependent-b", runtime=runtime,
     )
+
+
+def test_dynamic_paw_binding_rejects_duplicate_assignment_work_items(tmp_path):
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    from agentos_node.paw_engineering_grant import require_dynamic_paw_assignment_binding
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    store = WorkItemStore(runtime)
+    for work_item_id in ("paw-b-one", "paw-b-two"):
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": work_item_id,
+            "source_kind": "canonical_state", "source_ref": "task:" + work_item_id,
+            "project_id": "agentos-core", "employee_id": "the-paw",
+            "assignment_id": "paw-b", "goal": "Inspect B",
+            "required_capabilities": ["engineering.work.inspect"],
+            "authority_requirements": ["one-governed-dispatch"], "state": "open",
+        })
+    store.project_pending_assignment("paw-b-one")
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_dynamic_binding_ambiguous"):
+        require_dynamic_paw_assignment_binding(
+            assignment_id="paw-b", work_item_id="paw-b-one", runtime=runtime,
+        )
