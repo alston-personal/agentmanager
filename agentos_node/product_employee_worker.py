@@ -420,6 +420,8 @@ class GovernedProductEmployeeWorker:
                 ):
                     raise PawWorktreeBoundaryError("paw_issuer_file_not_trusted")
                 public_key = public_file.read_bytes()
+                if request_file.stat().st_size > 65536:
+                    raise PawWorktreeBoundaryError("paw_signed_request_too_large")
                 signed = verify_paw_public_signature(json.loads(request_file.read_text(encoding="utf-8")), public_key=public_key)
                 git_root = source_root
                 isolated_root = self.worker_state_root / "paw-470-worktrees"
