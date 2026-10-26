@@ -192,6 +192,13 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
         self._pinned_candidate: WorkerHostCandidate | None = None
 
     def _product_preclaim_ready(self, candidate: WorkerHostCandidate) -> bool:
+        # A dynamic Paw assignment may be projected but the child currently
+        # accepts only its fixed inspection assignment. Until both sides share
+        # the same authorized scope, do not launch a guaranteed-failing child
+        # or write a misleading dispatch attempt.
+        if (candidate.adapter.runner_kind == "paw_inspect_v1"
+                and candidate.capsule.get("assignment_id") != "paw-470-inspection-v1"):
+            return False
         if candidate.adapter.runner_kind not in PRODUCT_RUNNER_KINDS:
             return True
         try:
