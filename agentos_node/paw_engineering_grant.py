@@ -144,6 +144,16 @@ def require_dynamic_paw_assignment_binding(
         employee = runtime.get_employee("the-paw")
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise PawWorktreeBoundaryError("paw_dynamic_binding_not_authorized") from exc
+    if item.dependency_refs:
+        from agent_core.core_supervisor_service import CoreSupervisorService
+        from agent_core.employee_lifecycle import EmployeeLifecycle
+        supervisor = CoreSupervisorService(
+            EmployeeLifecycle(runtime), owner_id="paw-binding-readonly"
+        )
+        if not WorkItemStore(runtime).dependencies_ready(
+            item.work_item_id, supervisor._verified_dependency_states()
+        ):
+            raise PawWorktreeBoundaryError("paw_dynamic_dependency_not_verified")
     if (
         item.assignment_id != assignment_id
         or item.employee_id != "the-paw"
