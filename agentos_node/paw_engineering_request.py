@@ -68,6 +68,49 @@ def trusted_request_filename(assignment_id: str) -> str:
         return "paw-470-request.json"
     return "paw-request-" + hashlib.sha256(assignment_id.encode("utf-8")).hexdigest() + ".json"
 
+def publish_trusted_paw_request(
+    authority_dir: Path, *, assignment_id: str, signed_request: Mapping[str, Any],
+    issuer_key: bytes,
+) -> Path:
+    """Issuer-side, immutable delivery of an authenticated request.
+
+    Call ONLY after issue_paw_request validated the live lease and policy.
+    The worker reads this artifact; it must never invoke this publisher.
+    """
+    import os
+    import stat
+    directory = Path(authority_dir)
+    if directory.is_symlink() or not directory.is_dir():
+        raise PawWorktreeBoundaryError("paw_issuer_directory_not_trusted")
+    mode = directory.stat()
+    if mode.st_uid != os.geteuid() or mode.st_mode & 0o077:
+        raise PawWorktreeBoundaryError("paw_issuer_directory_not_trusted")
+    verified = authenticate_paw_request(signed_request, issuer_key=issuer_key)
+    if verified["grant"].get("assignment_id") != assignment_id:
+        raise PawWorktreeBoundaryError("paw_issuer_assignment_invalid")
+    path = directory / trusted_request_filename(assignment_id)
+    payload = json.dumps(verified, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    if len(payload) > MAX_BYTES:
+        raise PawWorktreeBoundaryError("paw_signed_request_too_large")
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except FileExistsError as exc:
+        raise PawWorktreeBoundaryError("paw_issuer_request_already_exists") from exc
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        dirfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(dirfd)
+        finally:
+            os.close(dirfd)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return path
+
 def issue_paw_request(
     *, grant: Mapping[str, Any], expected_sha256: str,
     replacement: str, issuer_key: bytes,
