@@ -134,9 +134,20 @@ class ProductEmployeeWorkerAdapterRegistry:
         item = eligible[0]
         if (item.state != "open" or item.employee_id != employee_id
                 or "one-governed-dispatch" not in item.authority_requirements
-                or "engineering.work.inspect" not in item.required_capabilities
-                or item.dependency_refs):
+                or "engineering.work.inspect" not in item.required_capabilities):
             return None
+        if item.dependency_refs:
+            # Reuse Supervisor's receipt-verified dependency projection.
+            # A pending Assignment by itself is not completion authority.
+            from agent_core.core_supervisor_service import CoreSupervisorService
+            from agent_core.employee_lifecycle import EmployeeLifecycle
+            supervisor = CoreSupervisorService(
+                EmployeeLifecycle(runtime), owner_id="paw-dependency-readonly"
+            )
+            if not store.dependencies_ready(
+                item.work_item_id, supervisor._verified_dependency_states()
+            ):
+                return None
         try:
             assignment = runtime.get_assignment(assignment_id)
             employee = runtime.get_employee(employee_id)
