@@ -54,6 +54,20 @@ def read_authenticated_paw_request(path: Path, *, issuer_key: bytes) -> dict[str
         raise PawWorktreeBoundaryError("paw_signed_request_file_invalid") from exc
     return authenticate_paw_request(data, issuer_key=issuer_key)
 
+
+def trusted_request_filename(assignment_id: str) -> str:
+    """Separate signed request envelopes for independently authorized assignments.
+
+    The original A keeps its legacy name. New WorkItems use an opaque filename,
+    never a user-supplied path. This lookup does NOT issue execution authority.
+    """
+    from agentos_node.paw_engineering_worktree import _ID
+    if not isinstance(assignment_id, str) or not _ID.fullmatch(assignment_id):
+        raise PawWorktreeBoundaryError("paw_issuer_assignment_invalid")
+    if assignment_id == "paw-470-inspection-v1":
+        return "paw-470-request.json"
+    return "paw-request-" + hashlib.sha256(assignment_id.encode("utf-8")).hexdigest() + ".json"
+
 def issue_paw_request(
     *, grant: Mapping[str, Any], expected_sha256: str,
     replacement: str, issuer_key: bytes,
