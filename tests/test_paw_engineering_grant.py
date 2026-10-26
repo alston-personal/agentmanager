@@ -424,3 +424,44 @@ def test_trusted_request_filename_separates_assignments_and_rejects_paths():
     for unsafe in ("../evil", "paw/a", "", "A" * 200):
         with pytest.raises(PawWorktreeBoundaryError):
             trusted_request_filename(unsafe)
+
+
+def test_trusted_issuer_publishes_once_without_overwriting(tmp_path):
+    import hashlib
+    import hmac
+    import json
+    import os
+    from agentos_node.paw_engineering_request import (
+        canonical_payload, publish_trusted_paw_request, read_authenticated_paw_request,
+    )
+    directory = tmp_path / "issuer"
+    directory.mkdir(mode=0o700)
+    key = b"k" * 32
+    body = {
+        "schema": "agentos.paw-engineering-request/v1",
+        "grant": grant(), "expected_sha256": hashlib.sha256(b"test").hexdigest(),
+        "replacement": "test", "signature": "",
+    }
+    body["signature"] = hmac.new(key, canonical_payload(body), hashlib.sha256).hexdigest()
+    path = publish_trusted_paw_request(
+        directory, assignment_id="paw-470-inspection-v1",
+        signed_request=body, issuer_key=key,
+    )
+    assert read_authenticated_paw_request(path, issuer_key=key) == body
+    assert path.stat().st_mode & 0o077 == 0
+    with pytest.raises(PawWorktreeBoundaryError, match="already_exists"):
+        publish_trusted_paw_request(
+            directory, assignment_id="paw-470-inspection-v1",
+            signed_request=body, issuer_key=key,
+        )
+    assert read_authenticated_paw_request(path, issuer_key=key) == body
+    with pytest.raises(PawWorktreeBoundaryError, match="assignment_invalid"):
+        publish_trusted_paw_request(
+            directory, assignment_id="paw-b", signed_request=body, issuer_key=key,
+        )
+    os.chmod(directory, 0o755)
+    with pytest.raises(PawWorktreeBoundaryError, match="directory_not_trusted"):
+        publish_trusted_paw_request(
+            directory, assignment_id="paw-470-inspection-v1",
+            signed_request=body, issuer_key=key,
+        )
