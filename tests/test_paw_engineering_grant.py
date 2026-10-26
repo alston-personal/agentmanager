@@ -284,3 +284,38 @@ def test_dynamic_paw_binding_denies_unverified_dependency(tmp_path):
         require_dynamic_paw_assignment_binding(
             assignment_id="paw-b", work_item_id="dependent-b", runtime=runtime,
         )
+
+
+def test_dynamic_paw_binding_allows_receipt_verified_dependency(tmp_path):
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    from agentos_node.paw_engineering_grant import require_dynamic_paw_assignment_binding
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    runtime.create_assignment("paw-a", "the-paw", "Do A")
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "dependency-a",
+        "source_kind": "canonical_state", "source_ref": "task:dependency-a",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-a", "goal": "Do A", "state": "open",
+    })
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "dependent-b",
+        "source_kind": "canonical_state", "source_ref": "task:dependent-b",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Do B",
+        "dependency_refs": ["task:dependency-a"],
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    store.project_pending_assignment("dependent-b")
+    lifecycle = EmployeeLifecycle(runtime)
+    lifecycle.claim("paw-a", "the-paw", "lease-a")
+    lifecycle.finish("paw-a", "lease-a", state="completed",
+                     result_summary={"test": "completed"})
+    require_dynamic_paw_assignment_binding(
+        assignment_id="paw-b", work_item_id="dependent-b", runtime=runtime,
+    )
