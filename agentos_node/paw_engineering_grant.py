@@ -138,9 +138,12 @@ def require_dynamic_paw_assignment_binding(
     from agent_core.core_work_items import WorkItemStore
     if not assignment_id or not work_item_id:
         raise PawWorktreeBoundaryError("paw_dynamic_binding_missing")
-    item = WorkItemStore(runtime).get(work_item_id)
-    assignment = runtime.get_assignment(assignment_id)
-    employee = runtime.get_employee("the-paw")
+    try:
+        item = WorkItemStore(runtime).get(work_item_id)
+        assignment = runtime.get_assignment(assignment_id)
+        employee = runtime.get_employee("the-paw")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise PawWorktreeBoundaryError("paw_dynamic_binding_not_authorized") from exc
     if (
         item.assignment_id != assignment_id
         or item.employee_id != "the-paw"
