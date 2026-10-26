@@ -60,13 +60,14 @@ def issue_paw_request(
     trusted_assignment_id: str, trusted_wake_id: str,
     trusted_presence_generation: int, trusted_lease_generation: int,
     lifecycle: object, trusted_lease_id: str, registry_path: Path,
+    trusted_runtime: object | None = None,
 ) -> dict[str, Any]:
     """Trusted control-plane entry; caller owns key and live lifecycle."""
     from agentos_node.paw_engineering_grant import (
         validate_paw_engineering_grant, require_canonical_paw_authority,
         require_live_paw_lease,
     )
-    if trusted_assignment_id != "paw-470-inspection-v1":
+    if trusted_assignment_id != "paw-470-inspection-v1" and trusted_runtime is None:
         raise PawWorktreeBoundaryError("paw_issuer_assignment_invalid")
     validated = validate_paw_engineering_grant(
         dict(grant), expected_assignment_id=trusted_assignment_id,
@@ -74,7 +75,7 @@ def issue_paw_request(
         expected_presence_generation=trusted_presence_generation,
         expected_lease_generation=trusted_lease_generation,
     )
-    require_canonical_paw_authority(validated, registry_path=registry_path)
+    require_canonical_paw_authority(validated, registry_path=registry_path, runtime=trusted_runtime)
     require_live_paw_lease(validated, lifecycle=lifecycle, expected_lease_id=trusted_lease_id)
     request = {
         "schema": SCHEMA, "grant": dict(grant),
