@@ -144,6 +144,18 @@ def require_dynamic_paw_assignment_binding(
         employee = runtime.get_employee("the-paw")
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise PawWorktreeBoundaryError("paw_dynamic_binding_not_authorized") from exc
+    # A trusted caller must not choose one favorable WorkItem among duplicate
+    # claims for the same Assignment.
+    store = WorkItemStore(runtime)
+    try:
+        matches = [
+            store.get(path.stem) for path in store.root.glob("*.json")
+            if store.get(path.stem).assignment_id == assignment_id
+        ]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise PawWorktreeBoundaryError("paw_dynamic_binding_not_authorized") from exc
+    if len(matches) != 1 or matches[0].work_item_id != work_item_id:
+        raise PawWorktreeBoundaryError("paw_dynamic_binding_ambiguous")
     if item.dependency_refs:
         from agent_core.core_supervisor_service import CoreSupervisorService
         from agent_core.employee_lifecycle import EmployeeLifecycle
