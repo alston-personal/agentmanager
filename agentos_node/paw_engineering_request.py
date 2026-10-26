@@ -78,7 +78,6 @@ def publish_trusted_paw_request(
     The worker reads this artifact; it must never invoke this publisher.
     """
     import os
-    import stat
     directory = Path(authority_dir)
     if directory.is_symlink() or not directory.is_dir():
         raise PawWorktreeBoundaryError("paw_issuer_directory_not_trusted")
@@ -92,23 +91,30 @@ def publish_trusted_paw_request(
     payload = json.dumps(verified, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     if len(payload) > MAX_BYTES:
         raise PawWorktreeBoundaryError("paw_signed_request_too_large")
+    # Stage privately and make the destination visible only after a full fsync.
+    # Hard-link publication is atomic and refuses overwriting an old lease request.
+    import tempfile
+    temporary: Path | None = None
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    except FileExistsError as exc:
-        raise PawWorktreeBoundaryError("paw_issuer_request_already_exists") from exc
-    try:
+        fd, name = tempfile.mkstemp(prefix=".paw-request-", suffix=".tmp", dir=directory)
+        temporary = Path(name)
+        os.fchmod(fd, 0o600)
         with os.fdopen(fd, "wb") as output:
             output.write(payload)
             output.flush()
             os.fsync(output.fileno())
+        try:
+            os.link(temporary, path, follow_symlinks=False)
+        except FileExistsError as exc:
+            raise PawWorktreeBoundaryError("paw_issuer_request_already_exists") from exc
         dirfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         try:
             os.fsync(dirfd)
         finally:
             os.close(dirfd)
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return path
 
 def issue_paw_request(
