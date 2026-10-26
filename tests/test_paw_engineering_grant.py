@@ -410,3 +410,17 @@ def test_dynamic_b_signed_request_requires_verified_workitem_and_own_lease(tmp_p
         issue_paw_request(**dict(args, trusted_lease_id="lease-a"))
     with pytest.raises(PawWorktreeBoundaryError):
         issue_paw_request(**dict(args, trusted_runtime=None))
+
+
+def test_trusted_request_filename_separates_assignments_and_rejects_paths():
+    from agentos_node.paw_engineering_request import trusted_request_filename
+    assert trusted_request_filename("paw-470-inspection-v1") == "paw-470-request.json"
+    first = trusted_request_filename("paw-work-a")
+    second = trusted_request_filename("paw-work-b")
+    assert first != second
+    assert first.startswith("paw-request-") and first.endswith(".json")
+    assert "/" not in first and "\\\\" not in first
+    assert trusted_request_filename("paw-work-a") == first
+    for unsafe in ("../evil", "paw/a", "", "A" * 200):
+        with pytest.raises(PawWorktreeBoundaryError):
+            trusted_request_filename(unsafe)
