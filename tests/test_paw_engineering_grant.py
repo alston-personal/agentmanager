@@ -343,3 +343,17 @@ def test_dynamic_paw_binding_rejects_duplicate_assignment_work_items(tmp_path):
         require_dynamic_paw_assignment_binding(
             assignment_id="paw-b", work_item_id="paw-b-one", runtime=runtime,
         )
+
+
+def test_dynamic_b_requires_explicit_trusted_runtime_opt_in():
+    b = grant()
+    b["assignment_id"] = "paw-b"
+    kwargs = dict(expected_assignment_id="paw-b", expected_wake_id=b["wake_id"],
+                  expected_presence_generation=1, expected_lease_generation=1)
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_grant_assignment_invalid"):
+        validate_paw_engineering_grant(b, **kwargs)
+    validated = validate_paw_engineering_grant(b, allow_dynamic_assignment=True, **kwargs)
+    assert validated.assignment_id == "paw-b"
+    forged = dict(b, assignment_id="paw-a")
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_grant_wake_mismatch"):
+        validate_paw_engineering_grant(forged, allow_dynamic_assignment=True, **kwargs)
