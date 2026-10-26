@@ -371,11 +371,21 @@ def test_dynamic_b_signed_request_requires_verified_workitem_and_own_lease(tmp_p
     runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
                             skill_ids=["engineering.work.inspect"])
     store = WorkItemStore(runtime)
+    source_a = "task:a"
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "work-a",
+        "source_kind": "canonical_state", "source_ref": source_a,
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-a", "goal": "Complete A",
+        "state": "open",
+    })
+    store.project_pending_assignment("work-a")
     store.persist({
         "schema": WORK_ITEM_SCHEMA, "work_item_id": "work-b",
         "source_kind": "canonical_state", "source_ref": "task:b",
         "project_id": "agentos-core", "employee_id": "the-paw",
-        "assignment_id": "paw-b", "goal": "Independent B",
+        "assignment_id": "paw-b", "goal": "B after A",
+        "dependency_refs": [source_a],
         "required_capabilities": ["engineering.work.inspect"],
         "authority_requirements": ["one-governed-dispatch"], "state": "open",
     })
@@ -390,6 +400,10 @@ def test_dynamic_b_signed_request_requires_verified_workitem_and_own_lease(tmp_p
                 trusted_presence_generation=1, trusted_lease_generation=lease.generation,
                 lifecycle=lifecycle, trusted_lease_id="lease-b", registry_path=registry,
                 trusted_runtime=runtime)
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_dynamic_dependency_not_verified"):
+        issue_paw_request(**args)
+    lifecycle.claim("paw-a", "the-paw", "lease-a", lease_seconds=300)
+    lifecycle.finish("paw-a", "lease-a", state="completed")
     signed = issue_paw_request(**args)
     assert authenticate_paw_request(signed, issuer_key=args["issuer_key"])["grant"]["assignment_id"] == "paw-b"
     with pytest.raises(PawWorktreeBoundaryError):
