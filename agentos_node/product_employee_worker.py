@@ -396,13 +396,13 @@ class GovernedProductEmployeeWorker:
             authority_dir = self.worker_state_root / "trusted-engineering-authority"
             from agentos_node.paw_engineering_request import trusted_request_filename
             request_file = authority_dir / trusted_request_filename(assignment_id)
-            key_file = authority_dir / "paw-470-issuer.key"
-            if request_file.exists() != key_file.exists():
+            public_file = authority_dir / "paw-470-issuer.pub"
+            if request_file.exists() != public_file.exists():
                 raise PermissionError("paw_engineering_authority_incomplete")
-            if request_file.is_file() and key_file.is_file():
+            if request_file.is_file() and public_file.is_file():
                 import stat
-                from agentos_node.paw_engineering_request import read_authenticated_paw_request
-                from agentos_node.paw_engineering_executor import run_signed_paw_candidate
+                from agentos_node.paw_engineering_public_signature import verify_paw_public_signature
+                from agentos_node.paw_engineering_executor import run_authorized_static_candidate
                 from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
 
                 def trusted_regular(path: Path) -> bool:
@@ -416,17 +416,19 @@ class GovernedProductEmployeeWorker:
 
                 if not all(
                     (path.exists() and not path.is_symlink() and trusted_regular(path))
-                    for path in (request_file, key_file)
+                    for path in (request_file, public_file)
                 ):
                     raise PawWorktreeBoundaryError("paw_issuer_file_not_trusted")
-                issuer_key = key_file.read_bytes()
-                signed = read_authenticated_paw_request(request_file, issuer_key=issuer_key)
+                public_key = public_file.read_bytes()
+                signed = verify_paw_public_signature(json.loads(request_file.read_text(encoding="utf-8")), public_key=public_key)
                 git_root = source_root
                 isolated_root = self.worker_state_root / "paw-470-worktrees"
                 # The signed request is checked before any git mutation.
                 isolated_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-                commit = run_signed_paw_candidate(
-                    request=signed, issuer_key=issuer_key,
+                commit = run_authorized_static_candidate(
+                    grant_payload=signed["grant"],
+                    expected_sha256=signed["expected_sha256"],
+                    replacement=signed["replacement"],
                     trusted_wake_id=wake,
                     trusted_presence_generation=generation,
                     trusted_lease_generation=lease.generation,
