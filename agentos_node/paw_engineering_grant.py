@@ -131,6 +131,30 @@ def require_canonical_paw_authority(
         raise PawWorktreeBoundaryError("paw_canonical_authority_boundary_invalid")
 
 
+def require_dynamic_paw_assignment_binding(
+    *, assignment_id: str, work_item_id: str, runtime: object,
+) -> None:
+    """Read-only binding check; does not grant engineering execution authority."""
+    from agent_core.core_work_items import WorkItemStore
+    if not assignment_id or not work_item_id:
+        raise PawWorktreeBoundaryError("paw_dynamic_binding_missing")
+    item = WorkItemStore(runtime).get(work_item_id)
+    assignment = runtime.get_assignment(assignment_id)
+    employee = runtime.get_employee("the-paw")
+    if (
+        item.assignment_id != assignment_id
+        or item.employee_id != "the-paw"
+        or item.state != "open"
+        or assignment.employee_id != "the-paw"
+        or assignment.state not in {"pending", "active"}
+        or "engineering.work.inspect" not in item.required_capabilities
+        or "one-governed-dispatch" not in item.authority_requirements
+        or "sector.paw" not in employee.role_ids
+        or "engineering.work.inspect" not in employee.skill_ids
+    ):
+        raise PawWorktreeBoundaryError("paw_dynamic_binding_not_authorized")
+
+
 def require_live_paw_lease(
     grant: PawEngineeringGrant, *,
     lifecycle: object,
