@@ -735,3 +735,38 @@ def test_dynamic_paw_b_claims_and_writes_real_blocked_receipt(tmp_path: Path, mo
     receipt = json.loads(receipt_path.read_text())
     assert receipt["assignment_id"] == "paw-b"
     assert receipt["outcome"] == runtime.get_assignment("paw-b").state
+
+
+def test_paw_dependent_b_requires_verified_author_receipt(tmp_path: Path) -> None:
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    runtime.create_assignment("paw-a", "the-paw", "Complete A")
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "a",
+        "source_kind": "canonical_state", "source_ref": "task:a",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-a", "goal": "Complete A", "state": "open",
+    })
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "b",
+        "source_kind": "canonical_state", "source_ref": "task:b",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Complete B",
+        "dependency_refs": ["task:a"],
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    store.project_pending_assignment("b")
+    registry = ProductEmployeeWorkerAdapterRegistry(runtime_root=tmp_path)
+    capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
+    assert registry.resolve(capsule) is None
+    lifecycle = EmployeeLifecycle(runtime)
+    lifecycle.claim("paw-a", "the-paw", "lease-a")
+    lifecycle.finish("paw-a", "lease-a", state="completed",
+                     result_summary={"test": "verified-a"})
+    assert registry.resolve(capsule) is not None
+    assert _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)
