@@ -209,3 +209,27 @@ def test_trusted_issuer_rejects_absent_lease(tmp_path):
             lifecycle=Missing(), trusted_lease_id="missing",
             registry_path=Path(__file__).resolve().parents[1] / "governance/execution-authority.json",
         )
+
+
+def test_dynamic_paw_b_cannot_reuse_fixed_a_engineering_grant(tmp_path):
+    """A's signed engineering identity cannot be substituted with B's assignment."""
+    from pathlib import Path
+    from agentos_node.paw_engineering_request import issue_paw_request
+    payload = grant()
+    payload["assignment_id"] = "paw-b"
+    policy = Path(__file__).resolve().parents[1] / "governance/execution-authority.json"
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_grant_assignment_invalid"):
+        validate_paw_engineering_grant(
+            payload, expected_assignment_id="paw-b",
+            expected_wake_id=payload["wake_id"],
+            expected_presence_generation=1, expected_lease_generation=1,
+        )
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_issuer_assignment_invalid"):
+        issue_paw_request(
+            grant=payload, expected_sha256="0" * 64,
+            replacement="def test_ok(): pass", issuer_key=b"x" * 32,
+            trusted_assignment_id="paw-b",
+            trusted_wake_id=payload["wake_id"],
+            trusted_presence_generation=1, trusted_lease_generation=1,
+            lifecycle=object(), trusted_lease_id="lease-b", registry_path=policy,
+        )
