@@ -698,3 +698,40 @@ def test_dynamic_paw_b_requires_canonical_projection_and_governed_delivery(tmp_p
     with pytest.raises(PermissionError):
         _require_runner_scope("paw_inspect_v1", forged, runtime_root=tmp_path)
 
+
+
+def test_dynamic_paw_b_claims_and_writes_real_blocked_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    runtime_root, wake_root, worker_root = [tmp_path / name for name in ("runtime", "wake", "worker")]
+    for root in (runtime_root, wake_root, worker_root):
+        root.mkdir()
+    runtime = EmployeeRuntime(runtime_root)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "independent-b",
+        "source_kind": "canonical_state", "source_ref": "task:independent-b",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Inspect B",
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    store.project_pending_assignment("independent-b")
+    capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
+    _materialize_governed_delivery(runtime_root, capsule)
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=runtime_root, wake_root=wake_root,
+        worker_state_root=worker_root, node_id="oracle-core-node",
+        runner_kind="paw_inspect_v1",
+    )
+    monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
+    state = worker.process_exact(wake_id="wake-1", presence_generation=1)
+    assert state is not None
+    assert state.assignment_id == "paw-b"
+    assert runtime.get_assignment("paw-b").state in {"blocked", "handoff"}
+    receipt_path = runtime_root / "lifecycle/receipts/paw-b/000001.json"
+    assert receipt_path.is_file()
+    receipt = json.loads(receipt_path.read_text())
+    assert receipt["assignment_id"] == "paw-b"
+    assert receipt["outcome"] == runtime.get_assignment("paw-b").state
