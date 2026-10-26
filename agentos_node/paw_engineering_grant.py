@@ -35,6 +35,7 @@ def validate_paw_engineering_grant(
     expected_wake_id: str,
     expected_presence_generation: int,
     expected_lease_generation: int,
+    allow_dynamic_assignment: bool = False,
 ) -> PawEngineeringGrant:
     """Compare all authoritative values to the existing governed wake/lease.
 
@@ -65,7 +66,9 @@ def validate_paw_engineering_grant(
         or pg != expected_presence_generation or lg != expected_lease_generation
     ):
         raise PawWorktreeBoundaryError("paw_grant_lease_mismatch")
-    if not isinstance(expected_assignment_id, str) or not _ID.fullmatch(expected_assignment_id):
+    if (not isinstance(expected_assignment_id, str)
+            or not _ID.fullmatch(expected_assignment_id)
+            or (expected_assignment_id != "paw-470-inspection-v1" and allow_dynamic_assignment is not True)):
         raise PawWorktreeBoundaryError("paw_grant_assignment_invalid")
     if not isinstance(expected_wake_id, str) or not re.fullmatch(r"wake_[a-f0-9]{24}", expected_wake_id):
         raise PawWorktreeBoundaryError("paw_grant_wake_invalid")
