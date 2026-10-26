@@ -665,3 +665,9 @@ def test_paw_worker_real_executor_local_commit(tmp_path: Path, monkeypatch: pyte
     result_repo = worker_root / "paw-470-worktrees/issue-470-real"
     result_head = subprocess.run(["git", "-C", str(result_repo), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
     assert result_head == commit_sha
+
+
+def test_dynamic_paw_continuation_remains_blocked_at_child_boundary(tmp_path: Path) -> None:
+    capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
+    with pytest.raises(PermissionError, match="product_employee_worker_scope_mismatch"):
+        _require_runner_scope("paw_inspect_v1", capsule)
