@@ -31,6 +31,8 @@ def run_authorized_static_candidate(
     workspace_root: Path,
     expected_sha256: str,
     replacement: str,
+    trusted_assignment_id: str = "paw-470-inspection-v1",
+    trusted_runtime: object | None = None,
 ):
     """Perform only the narrow static test candidate authorized in policy.
 
@@ -39,12 +41,12 @@ def run_authorized_static_candidate(
     """
     grant = validate_paw_engineering_grant(
         grant_payload,
-        expected_assignment_id="paw-470-inspection-v1",
+        expected_assignment_id=trusted_assignment_id,
         expected_wake_id=trusted_wake_id,
         expected_presence_generation=trusted_presence_generation,
         expected_lease_generation=trusted_lease_generation,
     )
-    require_canonical_paw_authority(grant, registry_path=registry_path)
+    require_canonical_paw_authority(grant, registry_path=registry_path, runtime=trusted_runtime)
     require_live_paw_lease(
         grant, lifecycle=lifecycle, expected_lease_id=trusted_lease_id,
     )
