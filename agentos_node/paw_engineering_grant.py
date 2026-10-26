@@ -65,7 +65,7 @@ def validate_paw_engineering_grant(
         or pg != expected_presence_generation or lg != expected_lease_generation
     ):
         raise PawWorktreeBoundaryError("paw_grant_lease_mismatch")
-    if not isinstance(expected_assignment_id, str) or expected_assignment_id != "paw-470-inspection-v1":
+    if not isinstance(expected_assignment_id, str) or not _ID.fullmatch(expected_assignment_id):
         raise PawWorktreeBoundaryError("paw_grant_assignment_invalid")
     if not isinstance(expected_wake_id, str) or not re.fullmatch(r"wake_[a-f0-9]{24}", expected_wake_id):
         raise PawWorktreeBoundaryError("paw_grant_wake_invalid")
@@ -80,6 +80,7 @@ def require_canonical_paw_authority(
     grant: PawEngineeringGrant, *,
     registry_path: str | "Path",
     source_ref: str = "core/integration",
+    runtime: object | None = None,
 ) -> None:
     """Require the existing canonical authority resolver, not the wake transport.
 
@@ -114,12 +115,17 @@ def require_canonical_paw_authority(
         "expected_result": RECEIPT_SCHEMA,
     }
     project, capability = resolve_authority(request, registry)
+    canonical_assignment = project.get("employee_binding") == {
+        "employee_id": "the-paw", "assignment_id": grant.assignment_id,
+    }
+    if not canonical_assignment:
+        if runtime is None:
+            raise PawWorktreeBoundaryError("paw_dynamic_binding_missing")
+        require_dynamic_paw_assignment_binding(assignment_id=grant.assignment_id, runtime=runtime)
+        if project.get("employee_binding", {}).get("employee_id") != "the-paw":
+            raise PawWorktreeBoundaryError("paw_canonical_authority_boundary_invalid")
     if (
-        project.get("employee_binding") != {
-            "employee_id": "the-paw",
-            "assignment_id": grant.assignment_id,
-        }
-        or capability.get("adapter") != "paw_engineering_candidate"
+        capability.get("adapter") != "paw_engineering_candidate"
         or capability.get("runtime") != {
             "mutation_scope": "isolated-worktree-only",
             "merge_allowed": False,
@@ -132,14 +138,13 @@ def require_canonical_paw_authority(
 
 
 def require_dynamic_paw_assignment_binding(
-    *, assignment_id: str, work_item_id: str, runtime: object,
+    *, assignment_id: str, runtime: object, work_item_id: str | None = None,
 ) -> None:
     """Read-only binding check; does not grant engineering execution authority."""
     from agent_core.core_work_items import WorkItemStore
-    if not assignment_id or not work_item_id:
+    if not assignment_id:
         raise PawWorktreeBoundaryError("paw_dynamic_binding_missing")
     try:
-        item = WorkItemStore(runtime).get(work_item_id)
         assignment = runtime.get_assignment(assignment_id)
         employee = runtime.get_employee("the-paw")
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -154,8 +159,9 @@ def require_dynamic_paw_assignment_binding(
         ]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise PawWorktreeBoundaryError("paw_dynamic_binding_not_authorized") from exc
-    if len(matches) != 1 or matches[0].work_item_id != work_item_id:
+    if len(matches) != 1 or (work_item_id is not None and matches[0].work_item_id != work_item_id):
         raise PawWorktreeBoundaryError("paw_dynamic_binding_ambiguous")
+    item = matches[0]
     if item.dependency_refs:
         from agent_core.core_supervisor_service import CoreSupervisorService
         from agent_core.employee_lifecycle import EmployeeLifecycle
