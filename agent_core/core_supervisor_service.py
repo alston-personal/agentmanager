@@ -426,6 +426,37 @@ class CoreSupervisorService:
                 continue
         return count
 
+    def _project_authorized_paw_continuations(self, dependency_states: Mapping[str, str]) -> int:
+        """Project independently authorized Paw B while A awaits Claw review.
+
+        The Supervisor only materializes existing, explicitly governed WorkItems.
+        It never infers a new assignment or execution authority from a handoff.
+        """
+        if not self.work_items.root.exists():
+            return 0
+        count = 0
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+                if (item.state != "open"
+                        or item.assignment_id == "paw-470-inspection-v1"
+                        or "one-governed-dispatch" not in item.authority_requirements
+                        or "engineering.work.inspect" not in item.required_capabilities
+                        or not self.work_items.dependencies_ready(item.work_item_id, dependency_states)):
+                    continue
+                employee = self.runtime.get_employee(item.employee_id)
+                if ("sector.paw" not in employee.role_ids
+                        or "engineering.work.inspect" not in employee.skill_ids):
+                    continue
+                try:
+                    self.runtime.get_assignment(item.assignment_id)
+                except FileNotFoundError:
+                    self.work_items.project_pending_assignment(item.work_item_id)
+                    count += 1
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError):
+                continue
+        return count
+
     def _reconcile_failed_claw_reviews(self) -> int:
         """Feed verified Claw FAIL back to existing WorkItem queue, once.
 
@@ -468,7 +499,9 @@ class CoreSupervisorService:
         cycle_generation = int(previous.get("cycle_generation") or 0) + 1
         self._project_authorized_claw_reviews()
         self._reconcile_failed_claw_reviews()
-        blocked = self._blocked_assignments(self._verified_dependency_states() if dependency_states is None else dependency_states)
+        verified_dependencies = self._verified_dependency_states() if dependency_states is None else dependency_states
+        self._project_authorized_paw_continuations(verified_dependencies)
+        blocked = self._blocked_assignments(verified_dependencies)
         persisted = self._persisted_reconcile_ids()
         plan = self.reconciler.reconcile(
             blocked_assignment_ids=blocked,
