@@ -12,6 +12,8 @@ from agentos_node.employee_worker_host import (
     WorkerHostCandidate,
 )
 from agentos_node.product_employee_worker import require_governed_product_delivery
+from agent_core.core_work_items import WorkItemStore
+from agent_core.employee_runtime import EmployeeRuntime
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,7 +39,8 @@ V2_RESULT_SCHEMAS = {
 class ProductEmployeeWorkerAdapterRegistry:
     """V2 source-controlled registry for fixed bounded Employee runner kinds."""
 
-    def __init__(self, path: str | Path = V2_ADAPTER_REGISTRY) -> None:
+    def __init__(self, path: str | Path = V2_ADAPTER_REGISTRY, *, runtime_root: str | Path | None = None) -> None:
+        self.runtime_root = Path(runtime_root).resolve() if runtime_root is not None else None
         self.path = Path(path).expanduser().resolve()
         payload = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict) or payload.get("schema") != V2_REGISTRY_SCHEMA:
@@ -100,7 +103,56 @@ class ProductEmployeeWorkerAdapterRegistry:
         ]
         if len(matches) > 1:
             raise RuntimeError("employee_worker_adapter_v2_resolution_ambiguous")
-        return matches[0] if matches else None
+        if matches:
+            return matches[0]
+        # No dynamic assignment is admitted without its canonical WorkItem,
+        # projected pending assignment, and an active Paw runner template.
+        if self.runtime_root is None or not isinstance(assignment_id, str) or not assignment_id:
+            return None
+        templates = [
+            a for a in self._adapters
+            if a.status == "active" and a.runner_kind == "paw_inspect_v1"
+            and a.employee_id == employee_id and a.assignment_id != assignment_id
+            and set(a.role_ids) == role_ids and set(a.skill_ids) == skill_ids
+        ]
+        if len(templates) != 1:
+            return None
+        runtime = EmployeeRuntime(self.runtime_root)
+        store = WorkItemStore(runtime)
+        if not store.root.is_dir():
+            return None
+        eligible = []
+        for path in store.root.glob("*.json"):
+            try:
+                item = store.get(path.stem)
+                if item.assignment_id == assignment_id:
+                    eligible.append(item)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        if len(eligible) != 1:
+            return None
+        item = eligible[0]
+        if (item.state != "open" or item.employee_id != employee_id
+                or "one-governed-dispatch" not in item.authority_requirements
+                or "engineering.work.inspect" not in item.required_capabilities
+                or item.dependency_refs):
+            return None
+        try:
+            assignment = runtime.get_assignment(assignment_id)
+            employee = runtime.get_employee(employee_id)
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        if (assignment.state != "pending" or assignment.employee_id != employee_id
+                or "sector.paw" not in employee.role_ids
+                or "engineering.work.inspect" not in employee.skill_ids):
+            return None
+        template = templates[0]
+        return EmployeeWorkerAdapter(
+            adapter_id=template.adapter_id, status=template.status,
+            runner_kind=template.runner_kind, employee_id=employee_id,
+            assignment_id=assignment_id, role_ids=template.role_ids,
+            skill_ids=template.skill_ids,
+        )
 
     def projection(self) -> list[dict[str, Any]]:
         return [
@@ -136,7 +188,7 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
         # so all original validation and host setup remain unchanged. Runtime selection
         # is then replaced with the stricter v2 fixed-runner registry.
         super().__init__(**kwargs)
-        self.registry = ProductEmployeeWorkerAdapterRegistry()
+        self.registry = ProductEmployeeWorkerAdapterRegistry(runtime_root=self.runtime_root)
         self._pinned_candidate: WorkerHostCandidate | None = None
 
     def _product_preclaim_ready(self, candidate: WorkerHostCandidate) -> bool:
