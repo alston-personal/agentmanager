@@ -29,6 +29,7 @@ on:
       - 'agentos_node/employee_worker_host_runtime.py'
       - 'agentos_node/paw_engineering_request.py'
       - 'agentos_node/paw_engineering_public_signature.py'
+      - 'agentos_node/paw_trusted_issuer_eligibility.py'
       - 'agentos_node/paw_engineering_publisher_cli.py'
       - 'agentos_node/paw_engineering_handoff_publisher.py'
       - 'agentos_node/paw_engineering_gh_transport.py'
@@ -53,6 +54,7 @@ on:
       - 'tests/test_paw_engineering_publisher.py'
       - 'tests/test_paw_engineering_grant.py'
       - 'tests/test_paw_engineering_public_signature.py'
+      - 'tests/test_paw_trusted_issuer_eligibility.py'
       - 'tests/test_paw_engineering_candidate.py'
       - 'tests/test_paw_engineering_worktree.py'
       - 'tests/test_paw_engineering_bundle.py'
@@ -97,6 +99,7 @@ jobs:
           tests/test_paw_engineering_publisher.py
           tests/test_paw_engineering_grant.py
           tests/test_paw_engineering_public_signature.py
+          tests/test_paw_trusted_issuer_eligibility.py
           tests/test_paw_engineering_candidate.py
           tests/test_paw_engineering_worktree.py
           tests/test_paw_engineering_bundle.py
