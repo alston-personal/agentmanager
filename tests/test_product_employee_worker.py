@@ -816,3 +816,19 @@ def test_paw_dependent_b_requires_verified_author_receipt(tmp_path: Path) -> Non
         "paw_completion_470_inspector_unavailable",
     }
     assert runtime.get_assignment("paw-b").state == "blocked"
+
+
+def test_post_claim_issuer_rendezvous_never_creates_request(tmp_path):
+    from agentos_node.product_employee_worker import _await_paw_request_after_claim
+    authority = tmp_path / "trusted-engineering-authority"
+    authority.mkdir()
+    request = authority / "paw-request.json"
+    public = authority / "paw.pub"
+    _await_paw_request_after_claim(request, public, timeout_seconds=0)
+    assert not request.exists()
+    public.write_bytes(b"x" * 32)
+    _await_paw_request_after_claim(request, public, timeout_seconds=0)
+    assert not request.exists()
+    request.write_text("{}")
+    _await_paw_request_after_claim(request, public, timeout_seconds=0)
+    assert request.read_text() == "{}"
