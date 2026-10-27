@@ -20,6 +20,15 @@ def verify_paw_public_signature(request: Mapping[str, Any], *, public_key: bytes
         raise PawWorktreeBoundaryError("paw_public_signature_invalid")
     if set(request) != {"schema", "grant", "expected_sha256", "replacement", "signature"}:
         raise PawWorktreeBoundaryError("paw_signed_request_shape_invalid")
+    from agentos_node.paw_engineering_request import SCHEMA, MAX_BYTES
+    digest = request["expected_sha256"]
+    if (request["schema"] != SCHEMA or not isinstance(request["grant"], dict)
+            or not isinstance(request["replacement"], str)
+            or not isinstance(digest, str) or len(digest) != 64
+            or any(ch not in "0123456789abcdef" for ch in digest)):
+        raise PawWorktreeBoundaryError("paw_signed_request_payload_invalid")
+    if len(canonical_payload(request)) > MAX_BYTES:
+        raise PawWorktreeBoundaryError("paw_signed_request_too_large")
     try:
         signature = base64.b64decode(request["signature"], validate=True)
         if len(signature) != 64:
