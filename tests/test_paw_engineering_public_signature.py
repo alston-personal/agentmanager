@@ -78,3 +78,31 @@ def test_trusted_public_issuer_publishes_and_cannot_overwrite(tmp_path, monkeypa
     assert leases_checked == ["lease-b", "lease-b"]
     with pytest.raises(PawWorktreeBoundaryError, match="already_exists"):
         issue_and_publish_trusted_paw_public_request(**args)
+
+
+def test_public_verifier_rejects_signed_but_invalid_envelope():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    private = Ed25519PrivateKey.generate()
+    raw = private.private_bytes(
+        serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    public = private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+    )
+    base = {
+        "schema": "agentos.paw-engineering-request/v1",
+        "grant": {"assignment_id": "paw-b"},
+        "expected_sha256": "a" * 64, "replacement": "ok", "signature": "",
+    }
+    for mutation in (
+        {"schema": "unknown"},
+        {"grant": "bad"},
+        {"expected_sha256": "not-a-sha"},
+        {"replacement": 42},
+        {"replacement": "x" * 70000},
+    ):
+        signed = sign_paw_public_request({**base, **mutation}, private_key=raw)
+        with pytest.raises(PawWorktreeBoundaryError):
+            verify_paw_public_signature(signed, public_key=public)
