@@ -18,6 +18,20 @@ from agent_core.governed_execution import execute_bound_work_intent
 from agent_core.executor_job_contract import canonical_executor_job_request
 from agentos_node.completion_470_status_provider import inspect_completion_470
 
+def _await_paw_request_after_claim(request_file: Path, public_file: Path, *, timeout_seconds: float = 8.0) -> None:
+    """Bounded rendezvous with an independent issuer after claim.
+
+    No request is synthesized or signed here. An absent issuer fails closed,
+    preserving the ordinary blocked outcome. The issuer publishes atomically.
+    """
+    import time
+    if not public_file.is_file() or request_file.exists():
+        return
+    deadline = time.monotonic() + max(0.0, min(float(timeout_seconds), 8.0))
+    while not request_file.exists() and time.monotonic() < deadline:
+        time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
+
+
 EXPECTED_AUTHORITY_POLICY = "core-supervisor-employee-wake-v1"
 EXPECTED_TRANSPORT = "one_direct"
 ELIGIBLE_PRECLAIM_DELIVERY_STATES = {"awaiting_claim"}
@@ -397,6 +411,7 @@ class GovernedProductEmployeeWorker:
             from agentos_node.paw_engineering_request import trusted_request_filename
             request_file = authority_dir / trusted_request_filename(assignment_id)
             public_file = authority_dir / "paw-470-issuer.pub"
+            _await_paw_request_after_claim(request_file, public_file)
             if request_file.exists() != public_file.exists():
                 raise PermissionError("paw_engineering_authority_incomplete")
             if request_file.is_file() and public_file.is_file():
