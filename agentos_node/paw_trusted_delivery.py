@@ -85,3 +85,33 @@ def receive_authorized_paw_request(*, signed_source: Path, authority_dir: Path,
         if temp is not None:
             temp.unlink(missing_ok=True)
     return dest
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Explicit, bounded delivery entrypoint for the independent control service.
+
+    No signing material, free-form shell command or worker-side issuer shortcut.
+    The service manager must independently authenticate the signed ingress.
+    """
+    import argparse
+    parser = argparse.ArgumentParser(description="Deliver one pre-signed Paw grant")
+    parser.add_argument("--signed-source", type=Path, required=True)
+    parser.add_argument("--authority-dir", type=Path, required=True)
+    parser.add_argument("--runtime-root", type=Path, required=True)
+    parser.add_argument("--assignment-id", required=True)
+    parser.add_argument("--lease-id", required=True)
+    parser.add_argument("--wake-id", required=True)
+    parser.add_argument("--presence-generation", type=int, required=True)
+    parser.add_argument("--registry-path", type=Path, required=True)
+    args = parser.parse_args(argv)
+    receive_authorized_paw_request(
+        signed_source=args.signed_source, authority_dir=args.authority_dir,
+        runtime_root=args.runtime_root, assignment_id=args.assignment_id,
+        lease_id=args.lease_id, wake_id=args.wake_id,
+        presence_generation=args.presence_generation, registry_path=args.registry_path,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
