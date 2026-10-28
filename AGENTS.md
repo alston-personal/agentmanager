@@ -36,7 +36,6 @@ The model-independent **Cognitive IR / zero-cost arbitrary model switching** lay
 - Evidence and tool results do not silently rewrite user intent.
 - Claims in documentation must be backed by implementation paths; verified claims also need tests/evidence.
 - **Capability does not imply authority.** A tool being available or a PR being mergeable does not authorize a protected-branch mutation.
-- **Production runtime truth is node-authoritative.** For runtime parity/health claims, consume the runtime node's `agentos.execution-receipt/v1`. A ChatGPT/container sandbox DNS or HTTP probe must never override or substitute for Oracle/runtime-node evidence. DNS failure, local-service failure, source mismatch, and public HTTP failure must remain distinguishable in the receipt.
 
 ## Protected Branch Authority Rule
 
@@ -81,58 +80,15 @@ python3 scripts/documentation_reality_guard.py
 
 CI enforces the same rule. Treat a documentation-drift failure as an architecture regression, not optional cleanup.
 
-## Public Web Surface Machine-Readability Rule
-
-Web surfaces created or materially changed by AgentOS MUST be classified before implementation as one of:
-
-1. **public-discoverable** — intended to be found, shared, indexed, summarized, or understood by humans, search engines, link previewers, or AI agents;
-2. **public-noindex** — publicly reachable but intentionally excluded from discovery/indexing;
-3. **private/authenticated** — user-specific, administrative, sensitive, or access-controlled.
-
-The reusable implementation owner is **`capability://web.static-index.render`**. Public web generators MUST resolve and invoke that capability; they MUST NOT independently embed another project-specific crawler/AI static-index implementation into application code.
-
-For **public-discoverable** routes:
-
-- Produce an `agentos.web-static-index/v1` input from the page/result's already-authorized public data and invoke `capability://web.static-index.render`.
-- Serve the generated semantic HTML as the initial representation of the public route, or as a deterministic public summary/share route included in the product's discovery strategy. Client JavaScript may enhance the page but must not be the only source of its purpose or primary result.
-- The static representation must contain a descriptive `<title>`, one meaningful `<h1>`, a concise textual summary, canonical URL, share metadata, correct robots intent, stable URLs, and correct HTTP status codes.
-- Product code supplies page-specific data; the shared capability owns escaping, base semantic markup, crawler-facing metadata, and its render receipt. Do not fork/copy its template merely to customize a product.
-- Structured data may be supplied only when it accurately represents the public page. Keep `robots.txt`, sitemap, canonical/noindex behavior, and route intent consistent.
-- Do not expose private inputs, hidden state, account data, secrets, or internal diagnostics merely to improve discoverability.
-
-For **public-noindex** routes, the same capability may be invoked with an explicit `noindex` robots policy when a machine-readable/shareable representation is useful. For **private/authenticated** routes, access control wins: do not create a public index artifact from private data.
-
-**AI-friendly does not mean blanket training permission.** Content machine-readability and crawler authorization are separate controls. Search, archival, and AI-training crawlers may be allowed or denied independently through deployment policy. Optional conventions such as `llms.txt` may be added as hints, but they do not replace the static-index capability, semantic HTML, access control, or robots directives.
-
-Acceptance for a public-discoverable route requires both the `agentos.web-static-index-receipt/v1` render receipt and a no-JavaScript fetch/inspection proving that a crawler can recover the route's title, primary heading, concise summary, canonical URL, and intended indexability.
-
 ## Useful verification
 
 ```bash
 python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
 python3 -m unittest tests.test_protected_branch_authority -v
-python3 -m unittest tests.test_production_parity_receipt -v
 python3 scripts/documentation_reality_guard.py
 ```
 
 ## Git reporting
 
 After pushing changes, report the remote/branch and latest commit hash.
-
-
-## Growth Proof ownership
-
-AgentOS has a fixed **Growth Auditor** responsibility. Executors perform work; the Closure Owner / Atlast keeps goals moving through execution -> acceptance -> close -> next work; the Growth Auditor independently evaluates whether accumulated validated experience caused later execution to improve.
-
-Architecture-sensitive runtimes that reuse prior experience SHOULD emit Growth Auditor observations after acceptance. Mutable proof evidence belongs in `$AGENT_DATA_ROOT/growth-proof/ledger.json`; do not commit live evidence into this repository.
-
-The Growth Auditor must classify conservatively:
-
-- persistence/source experience alone is not self-growth;
-- independent later reuse may qualify as G2;
-- causal/measured before-vs-after uplift is required for G3;
-- cross-boundary measured transfer may qualify as G4;
-- G5 is longitudinal and must not be inferred from one event.
-
-See `docs/GROWTH_AUDITOR.md` for the runtime contract.
