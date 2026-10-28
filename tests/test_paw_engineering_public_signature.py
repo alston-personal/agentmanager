@@ -62,6 +62,9 @@ def test_trusted_public_issuer_publishes_and_cannot_overwrite(tmp_path, monkeypa
     )
     directory = tmp_path / "trusted"
     directory.mkdir(mode=0o700)
+    verifier = directory / "paw-470-issuer.pub"
+    verifier.write_bytes(public)
+    verifier.chmod(0o600)
     grant = {"assignment_id": "paw-work-b", "wake_id": "wake_" + "a" * 24}
     args = dict(
         authority_dir=directory, assignment_id="paw-work-b", grant=grant,
@@ -71,6 +74,15 @@ def test_trusted_public_issuer_publishes_and_cannot_overwrite(tmp_path, monkeypa
         trusted_lease_id="lease-b", lifecycle=object(),
         registry_path=tmp_path / "policy.json", trusted_runtime=object(),
     )
+    verifier.unlink()
+    with pytest.raises(PawWorktreeBoundaryError, match="public_key_not_provisioned"):
+        issue_and_publish_trusted_paw_public_request(**args)
+    verifier.write_bytes(b"x" * 32)
+    verifier.chmod(0o600)
+    with pytest.raises(PawWorktreeBoundaryError, match="public_key_mismatch"):
+        issue_and_publish_trusted_paw_public_request(**args)
+    verifier.write_bytes(public)
+    verifier.chmod(0o600)
     result = issue_and_publish_trusted_paw_public_request(**args)
     assert result.name == trusted_request_filename("paw-work-b")
     import json
