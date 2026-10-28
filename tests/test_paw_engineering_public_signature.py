@@ -87,7 +87,8 @@ def test_trusted_public_issuer_publishes_and_cannot_overwrite(tmp_path, monkeypa
     assert result.name == trusted_request_filename("paw-work-b")
     import json
     assert verify_paw_public_signature(json.loads(result.read_text()), public_key=public)["grant"] == grant
-    assert leases_checked == ["lease-b", "lease-b"]
+    # Two rejected attempts each validate admission once; successful publish validates twice.
+    assert leases_checked == ["lease-b"] * 4
     with pytest.raises(PawWorktreeBoundaryError, match="already_exists"):
         issue_and_publish_trusted_paw_public_request(**args)
 
