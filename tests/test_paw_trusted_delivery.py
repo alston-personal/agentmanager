@@ -72,3 +72,25 @@ def test_delivery_requires_fresh_lease_and_rejects_duplicate(tmp_path, monkeypat
     assert output.stat().st_mode & 0o077 == 0
     with pytest.raises(PawWorktreeBoundaryError, match="paw_delivery_already_exists"):
         delivery.receive_authorized_paw_request(**opts)
+
+
+@pytest.mark.parametrize("invalid", ["malformed", "world_writable", "symlink"])
+def test_delivery_rejects_untrusted_source_before_lease(tmp_path, invalid):
+    source, dest, body = _fixtures(tmp_path)
+    if invalid == "malformed":
+        source.write_text("{broken json")
+    elif invalid == "world_writable":
+        source.chmod(0o666)
+    else:
+        source.unlink()
+        actual = tmp_path / "target.json"
+        actual.write_text("{}")
+        source.symlink_to(actual)
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_delivery_source_invalid"):
+        delivery.receive_authorized_paw_request(
+            signed_source=source, authority_dir=dest, runtime_root=tmp_path,
+            assignment_id="paw-b", lease_id="lease-b",
+            wake_id=body["grant"]["wake_id"], presence_generation=1,
+            registry_path=tmp_path / "policy.json",
+        )
+    assert not (dest / delivery.trusted_request_filename("paw-b")).exists()
