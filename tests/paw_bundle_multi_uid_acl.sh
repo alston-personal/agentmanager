@@ -15,6 +15,9 @@ setfacl -m "u:$p:--x" "$root/worker"
 setfacl -m "u:$p:r-x" "$root/worker/paw-470-bundles"
 setfacl -d -m "u:$p:r-x" "$root/worker/paw-470-bundles"
 runuser -u "$w" -- sh -c 'printf "test-bundle" > "$1"' -- "$root/worker/paw-470-bundles/test.bundle"
+# Production publication grants read-only access to the exact completed bundle.
+# Do not rely on the creator umask or inherited default ACL to authorize the publisher.
+setfacl -m "u:$p:r--" "$root/worker/paw-470-bundles/test.bundle"
 runuser -u "$p" -- test -r "$root/worker/paw-470-bundles/test.bundle"
 runuser -u "$p" -- test ! -w "$root/worker/paw-470-bundles/test.bundle"
 runuser -u "$p" -- test ! -w "$root/worker/paw-470-bundles"
