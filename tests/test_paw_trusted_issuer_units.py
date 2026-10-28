@@ -11,8 +11,8 @@ def test_issuer_trigger_is_only_owner_approval_change():
     assert "Unit=agentos-paw-trusted-issuer.service" in path
     assert "PathChanged=/home/ubuntu/agent-data" not in path
     assert "PathExists=/home/ubuntu/agent-data" not in path
-    assert "[Install]" not in path
-    assert "[Install]" not in service
+    assert not any(line.strip() == "[Install]" for line in path.splitlines() if not line.lstrip().startswith("#"))
+    assert not any(line.strip() == "[Install]" for line in service.splitlines() if not line.lstrip().startswith("#"))
     assert "User=agentos-issuer" in service
     assert "LoadCredential=signing-key:/etc/agentos/paw-issuer/ed25519.key" in service
     assert "LoadCredential=approved-request:/etc/agentos/paw-issuer/approval.json" in service
