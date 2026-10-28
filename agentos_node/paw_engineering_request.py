@@ -200,6 +200,18 @@ def issue_and_publish_trusted_paw_public_request(
     meta = directory.stat()
     if meta.st_uid != os.geteuid() or meta.st_mode & 0o077:
         raise PawWorktreeBoundaryError("paw_issuer_directory_not_trusted")
+    # The independent issuer's public key must already be provisioned by its
+    # trusted owner. Never let this request publisher replace the verifier key.
+    import stat
+    public_file = directory / "paw-470-issuer.pub"
+    if public_file.is_symlink() or not public_file.is_file():
+        raise PawWorktreeBoundaryError("paw_issuer_public_key_not_provisioned")
+    public_meta = public_file.stat()
+    if (not stat.S_ISREG(public_meta.st_mode) or public_meta.st_uid != os.geteuid()
+            or public_meta.st_mode & 0o077 or public_meta.st_nlink != 1):
+        raise PawWorktreeBoundaryError("paw_issuer_public_key_not_trusted")
+    if public_file.read_bytes() != public_key:
+        raise PawWorktreeBoundaryError("paw_issuer_public_key_mismatch")
     path = directory / trusted_request_filename(assignment_id)
     payload = json.dumps(signed, sort_keys=True, separators=(",", ":")).encode("utf-8")
     if len(payload) > MAX_BYTES:
