@@ -18,7 +18,12 @@ runuser -u "$w" -- sh -c 'printf "test-bundle" > "$1"' -- "$root/worker/paw-470-
 # Production publication grants read-only access to the exact completed bundle.
 # Do not rely on the creator umask or inherited default ACL to authorize the publisher.
 setfacl -m "u:$p:r--" "$root/worker/paw-470-bundles/test.bundle"
-runuser -u "$p" -- test -r "$root/worker/paw-470-bundles/test.bundle"
+if ! runuser -u "$p" -- test -r "$root/worker/paw-470-bundles/test.bundle"; then
+  echo "paw_publisher_bundle_read_denied" >&2
+  namei -l "$root/worker/paw-470-bundles/test.bundle" >&2
+  getfacl -p "$root" "$root/worker" "$root/worker/paw-470-bundles" "$root/worker/paw-470-bundles/test.bundle" >&2
+  exit 1
+fi
 runuser -u "$p" -- test ! -w "$root/worker/paw-470-bundles/test.bundle"
 runuser -u "$p" -- test ! -w "$root/worker/paw-470-bundles"
 runuser -u "$p" -- test ! -r "$root/worker/private-key"
