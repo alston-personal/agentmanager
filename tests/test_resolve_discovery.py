@@ -184,6 +184,26 @@ class TestResolveDiscovery(unittest.TestCase):
         self.assertTrue(result["discovery"]["performed"])
         self.assertEqual(result["discovery"]["rediscovery_reasons"], ["stale"])
 
+    def test_reuse_does_not_elevate_authority_or_change_continuation(self) -> None:
+        # Reuse is advice/evidence, not permission to mutate or to replace the IR.
+        result = resolve_continuation(
+            "石虎塔羅",
+            governance_path=self.gov,
+            data_root=self.root,
+        )
+        self.assertEqual(result["schema"], "agentos.resolve/v1")
+        self.assertEqual(result["intent"], "continue")
+        self.assertEqual(result["active_goal"], "continue LeopardCat Tarot work")
+        self.assertEqual(result["next_action"], "continue")
+        self.assertEqual(result["continuation"]["ir_id"], "ir_tarot")
+        self.assertEqual(
+            result["mutation_allowed"],
+            bool(result["project"]["integrity"].get("mutation_allowed")),
+        )
+        self.assertFalse(result["availability"]["last_receipt"])
+        self.assertEqual(result["provenance"]["last_receipt"], "not-yet-project-indexed")
+        self.assertFalse(result["discovery"]["performed"])
+
     def test_sensitive_material_in_continuation_is_redacted(self) -> None:
         write_json(
             self.project_dir / "continuity" / "latest.json",
