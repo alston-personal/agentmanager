@@ -1,0 +1,24 @@
+name: Oracle GDrive Read Acceptance Contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/oracle_gdrive_acceptance.sh'
+      - 'tests/test_oracle_gdrive_acceptance.py'
+      - '.github/workflows/oracle-gdrive-read-acceptance-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and nine hermetic acceptance scenarios
+        run: |
+          set -euo pipefail
+          bash -n scripts/oracle_gdrive_acceptance.sh
+          python3 tests/test_oracle_gdrive_acceptance.py
