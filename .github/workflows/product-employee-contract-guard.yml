@@ -32,6 +32,9 @@ on:
       - 'agentos_node/paw_trusted_delivery.py'
       - 'agentos_node/paw_trusted_issuer_cli.py'
       - 'tests/test_paw_trusted_issuer_cli.py'
+      - '.agent/scripts/agentos-paw-trusted-issuer.service'
+      - '.agent/scripts/agentos-paw-trusted-issuer.path'
+      - 'tests/test_paw_trusted_issuer_units.py'
       - 'tests/test_paw_trusted_delivery.py'
       - 'agentos_node/paw_trusted_issuer_eligibility.py'
       - 'agentos_node/paw_engineering_publisher_cli.py'
@@ -106,6 +109,7 @@ jobs:
           tests/test_paw_trusted_issuer_eligibility.py
           tests/test_paw_trusted_delivery.py
           tests/test_paw_trusted_issuer_cli.py
+          tests/test_paw_trusted_issuer_units.py
           tests/test_paw_engineering_candidate.py
           tests/test_paw_engineering_worktree.py
           tests/test_paw_engineering_bundle.py
