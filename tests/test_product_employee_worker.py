@@ -832,3 +832,24 @@ def test_post_claim_issuer_rendezvous_never_creates_request(tmp_path):
     request.write_text("{}")
     _await_paw_request_after_claim(request, public, timeout_seconds=0)
     assert request.read_text() == "{}"
+
+
+def test_post_claim_issuer_rendezvous_accepts_late_public_key(tmp_path):
+    import threading
+    import time
+    from agentos_node.product_employee_worker import _await_paw_request_after_claim
+
+    request = tmp_path / "paw-request.json"
+    public = tmp_path / "paw-470-issuer.pub"
+    request.write_text("{}")
+    def provision():
+        time.sleep(0.03)
+        public.write_bytes(b"x" * 32)
+    thread = threading.Thread(target=provision)
+    thread.start()
+    try:
+        _await_paw_request_after_claim(request, public, timeout_seconds=0.5)
+        assert public.is_file()
+        assert request.read_text() == "{}"
+    finally:
+        thread.join()
