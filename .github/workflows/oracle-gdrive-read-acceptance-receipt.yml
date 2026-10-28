@@ -1,6 +1,12 @@
 name: Oracle GDrive Read Acceptance Receipt
 
 on:
+  # One-shot acceptance on the reviewed workflow change landing on main.
+  # No schedule, external event or generic dispatch; path filter limits recurrence.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-gdrive-read-acceptance-receipt.yml'
   workflow_dispatch:
 
 permissions:
