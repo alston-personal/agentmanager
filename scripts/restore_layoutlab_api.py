@@ -33,7 +33,8 @@ WantedBy=default.target
 if unit.exists() and unit.read_text()!=contents:raise RuntimeError('existing unit conflict; no overwrite')
 if not unit.exists():
  unit.write_text(contents)
- unit.chown(u.pw_uid,u.pw_gid)
+import os
+os.chown(unit,u.pw_uid,u.pw_gid)
 base=['runuser','-u','agentos-node','--','env',f'XDG_RUNTIME_DIR=/run/user/{u.pw_uid}',f'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{u.pw_uid}/bus','systemctl','--user']
 for args in [base+['daemon-reload'],base+['enable','--now','layoutlab-api.service']]:
  rc,out=run(args)
