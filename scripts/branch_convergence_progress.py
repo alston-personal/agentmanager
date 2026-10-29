@@ -11,8 +11,11 @@ REPO = "alston-personal/agentmanager"
 TRACKED = ((1921, "governance"), (1923, "continuation-publisher"), (2029, "identity-audit"))
 
 def remote_refs():
-    result = subprocess.run(["git", "ls-remote", "--heads", "origin"], check=True,
-                            capture_output=True, text=True, timeout=120)
+    command = ["git", "ls-remote", "--heads", "origin"]
+    result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=120)
+    verification = subprocess.run(command, check=True, capture_output=True, text=True, timeout=120)
+    if result.stdout != verification.stdout:
+        raise ValueError("remote refs changed during snapshot; retry instead of accepting mixed generations")
     rows = {}
     for line in result.stdout.splitlines():
         sha, ref = line.split("\t", 1)
