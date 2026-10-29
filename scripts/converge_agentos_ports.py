@@ -28,7 +28,10 @@ def main():
   rc,out=run(base+(['enable','--now',unit] if v=='disabled' else ['start',unit]),timeout=25)
   rc2,listener=run(['ss','-ltnH',f'sport = :{port}'])
   if rc==0 and listener:result['started'].append({'port':port,'unit':unit})
-  else:result['held'].append({'port':port,'reason':'start_failed_or_no_listener'})
+  else:
+   _,state=run(base+['show',unit,'-p','ActiveState','-p','SubState','-p','Result','-p','ExecMainStatus'])
+   _,logs=run(['journalctl','--user','-u',unit,'-n','8','--no-pager'])
+   result['held'].append({'port':port,'reason':'start_failed_or_no_listener','service_state':state[:400],'journal_tail':logs[-800:],'start_rc':rc})
  # Other registered ports: no guessing. Start only unit explicitly tied to port and current registry project.
  for port,project in [(3005,'if-tv-station'),(8766,'layoutlib-web'),(8800,'layoutlab-api')]:
   if registry.get(str(port),{}).get('project')!=project:continue
