@@ -54,5 +54,30 @@ def main():
     result["version"]["oracle_checkout_head"]=p["stdout"].strip() if p["rc"]==0 else None
     p=cmd(["systemctl","--user","show","agentos-dashboard.service","-p","FragmentPath","-p","ActiveState","-p","ExecStart","-p","Environment"])
     result["version"]["dashboard_unit"]=p["stdout"][:1600] if p["rc"]==0 else "unavailable"
+    # Reboot persistence and blue/green launch authority (read-only).
+    probes={
+      "system_services": ["systemctl","list-unit-files","--no-pager","--no-legend"],
+      "user_services": ["runuser","-u","ubuntu","--","systemctl","--user","list-unit-files","--no-pager","--no-legend"],
+      "service_processes": ["ps","-eo","pid,user,args"],
+      "boot_timestamp": ["uptime","-s"],
+    }
+    result["boot_recovery"]={}
+    for key,args in probes.items():
+        p=cmd(args)
+        lines=p["stdout"].splitlines()
+        if key=="system_services" or key=="user_services":
+            lines=[x for x in lines if any(k in x.lower() for k in ("dashboard","blue","green","milkcat","gateway","agentos"))]
+        elif key=="service_processes":
+            lines=[x[:300] for x in lines if any(k in x.lower() for k in ("next-server","dashboard","blue","green")) and "audit_agentos_ports" not in x]
+        result["boot_recovery"][key]={"rc":p["rc"],"lines":lines[:100]}
+    roots=["/home/ubuntu/.config/systemd/user","/etc/systemd/system"]
+    result["boot_recovery"]["matching_unit_files"]=[]
+    for root in roots:
+        d=Path(root)
+        if d.exists():
+            for x in d.glob("*dashboard*"):
+                if x.is_file():
+                    content=x.read_text(errors="replace")
+                    result["boot_recovery"]["matching_unit_files"].append({"path":str(x),"contents":[line for line in content.splitlines() if any(k in line for k in ("ExecStart","Restart=","WantedBy=","Environment=","WorkingDirectory="))][:20]})
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
