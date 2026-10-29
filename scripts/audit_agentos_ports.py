@@ -79,5 +79,12 @@ def main():
                 if x.is_file():
                     content=x.read_text(errors="replace")
                     result["boot_recovery"]["matching_unit_files"].append({"path":str(x),"contents":[line for line in content.splitlines() if any(k in line for k in ("ExecStart","Restart=","WantedBy=","Environment=","WorkingDirectory="))][:20]})
+    result["slot_health"]={}
+    for port in [3000,3040,3041]:
+        for path in ["/dashboard/api/agentos/v1/health","/dashboard/api/auth/session"]:
+            x=cmd(["curl","-sS","--max-time","5","-o","/dev/null","-w","%{http_code}",f"http://127.0.0.1:{port}{path}"])
+            result["slot_health"][f"{port}:{path}"]={"code":x["stdout"].strip(),"rc":x["rc"]}
+    pub=cmd(["curl","-sS","--max-time","7","-o","/dev/null","-w","%{http_code}","https://studio.milkcat.org/dashboard/api/agentos/v1/health"])
+    result["slot_health"]["public_one_health"]={"code":pub["stdout"].strip(),"rc":pub["rc"]}
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
