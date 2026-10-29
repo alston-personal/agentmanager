@@ -53,6 +53,31 @@ def shared_head_groups(refs):
             for sha, names in sorted(by_sha.items())
             if len(names) > 1]
 
+def classify_reachable_history(refs):
+    """Conservative ancestor evidence from locally fetched main/integration history."""
+    subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none", "origin",
+                    "main", "core/integration"], check=True, capture_output=True,
+                   text=True, timeout=180)
+    result = []
+    anchors = {"main": refs["main"], "core/integration": refs["core/integration"]}
+    for branch, sha in sorted(refs.items()):
+        available = subprocess.run(["git", "cat-file", "-e", sha + "^{commit}"],
+                                   capture_output=True, timeout=10).returncode == 0
+        included = []
+        if available:
+            for target, tip in anchors.items():
+                status = subprocess.run(["git", "merge-base", "--is-ancestor", sha, tip],
+                                        capture_output=True, timeout=15).returncode
+                if status == 0:
+                    included.append(target)
+                elif status != 1:
+                    raise RuntimeError("ancestry query failed")
+        result.append({"branch": branch, "sha": sha, "ancestor_of": included,
+                       "history_state": "ANCESTOR_PROVEN" if included else "UNKNOWN",
+                       "commit_object_available": available,
+                       "consumer_status": "UNKNOWN", "retirement_allowed": False})
+    return result
+
 def get_pr(number):
     req = urllib.request.Request(
         f"https://api.github.com/repos/{REPO}/pulls/{number}",
@@ -75,6 +100,10 @@ def main():
         json.dumps({"schema": "agentos.branch-shared-heads/v1",
                     "manifest_sha256": digest, "groups": aliases}, indent=2) + "\n",
         encoding="utf-8")
+    history = classify_reachable_history(refs)
+    Path("branch-ancestry.json").write_text(
+        json.dumps({"schema": "agentos.branch-ancestry/v1", "manifest_sha256": digest,
+                    "entries": history}, indent=2) + "\n", encoding="utf-8")
     rows = []
     for number, capability in TRACKED:
         pr = get_pr(number)
@@ -88,6 +117,7 @@ def main():
                                    "path": "branch-heads.tsv", "classification_path": "branch-classification.json",
                                    "shared_head_path": "branch-shared-heads.json",
                                    "shared_head_groups": len(aliases),
+                                   "ancestry_path": "branch-ancestry.json",
                                    "main_sha": refs["main"], "integration_sha": refs["core/integration"]},
                "tracked_prs": rows, "effective_capability_total": None,
                "runtime_accepted_count": None,
