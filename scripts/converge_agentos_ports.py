@@ -32,8 +32,26 @@ def main():
    _,state=run(base+['show',unit,'-p','ActiveState','-p','SubState','-p','Result','-p','ExecMainStatus'])
    _,logs=run(['journalctl','--user','-u',unit,'-n','8','--no-pager'])
    result['held'].append({'port':port,'reason':'start_failed_or_no_listener','service_state':state[:400],'journal_tail':logs[-800:],'start_rc':rc})
+ # Recover the verified existing LayoutLib Web unit under its actual owner, agentos-node.
+ if registry.get('8766',{}).get('project')=='layoutlib-web':
+  rc,listen=run(['ss','-ltnH','sport = :8766'])
+  if not listen:
+   import pwd
+   u=pwd.getpwnam('agentos-node')
+   uid=u.pw_uid
+   unit=Path(u.pw_dir)/'.config/systemd/user/layoutlib-web.service'
+   if unit.is_file() and '--port 8766' in unit.read_text() and (Path(u.pw_dir)/'projects/layoutlib/web_demo/server.py').is_file():
+    base=['runuser','-u','agentos-node','--','env',f'XDG_RUNTIME_DIR=/run/user/{uid}',f'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus','systemctl','--user']
+    rc,out=run(base+['enable','--now','layoutlib-web.service'],timeout=28)
+    rc2,listen=run(['ss','-ltnH','sport = :8766'])
+    if rc==0 and listen:
+     result['started'].append({'port':8766,'unit':'layoutlib-web.service','user':'agentos-node'})
+    else:
+     result['held'].append({'port':8766,'reason':'existing_unit_start_failed','status':out[-250:]})
+   else:
+    result['held'].append({'port':8766,'reason':'existing_unit_or_runtime_missing'})
  # Other registered ports: no guessing. Start only unit explicitly tied to port and current registry project.
- for port,project in [(3005,'if-tv-station'),(8766,'layoutlib-web'),(8800,'layoutlab-api')]:
+ for port,project in [(3005,'if-tv-station'),(8800,'layoutlab-api')]:
   if registry.get(str(port),{}).get('project')!=project:continue
   rc,listener=run(['ss','-ltnH',f'sport = :{port}'])
   if listener:continue
