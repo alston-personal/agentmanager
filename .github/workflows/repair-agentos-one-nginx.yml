@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/repair-agentos-one-nginx.yml'
       - 'scripts/audit_agentos_ports.py'
+      - 'scripts/converge_agentos_ports.py'
       - 'scripts/failover_agentos_gateway.py'
 permissions:
   contents: read
@@ -39,3 +40,29 @@ jobs:
           path: port-runtime-audit.json
           retention-days: 7
 
+
+  converge:
+    needs: audit
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Reconcile registered services through existing systemd units
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@127.0.0.1" \
+            'sudo -n python3 -' < scripts/converge_agentos_ports.py | tee converge-receipt.json
+          python3 -m json.tool converge-receipt.json >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentos-port-convergence
+          path: converge-receipt.json
+          retention-days: 7
