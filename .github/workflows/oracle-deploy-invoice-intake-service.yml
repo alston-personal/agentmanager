@@ -53,6 +53,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install OCR runtime
         run: |
           sudo apt-get update -qq
@@ -60,7 +63,7 @@ jobs:
 
       - name: Validate invoice service
         run: |
-          python3 -m venv /tmp/invoice-intake-validate
+          python -m venv /tmp/invoice-intake-validate
           /tmp/invoice-intake-validate/bin/pip install --disable-pip-version-check -q -r services/invoice_intake/requirements.txt
           /tmp/invoice-intake-validate/bin/python -m py_compile \
             services/invoice_intake/app.py \
@@ -126,6 +129,7 @@ jobs:
           PY
           PYTHONPATH=. /tmp/invoice-intake-validate/bin/python -m unittest \
             tests.test_invoice_intake_db \
+            tests.test_invoice_gpt_web_provider \
             tests.test_invoice_real_user_regression \
             tests.test_invoice_vision \
             tests.test_invoice_model_benchmark \
