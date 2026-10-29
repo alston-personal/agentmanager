@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
-SERVICE = "milkcat-leopardcat-analytics.service"
+SERVICE = "leopardcat-tarot.service"
 ROOT = Path("/home/ubuntu/leopardcat-tarot")
 APP = ROOT / "website"
 ALLOW_DIRTY = {"website/stats.json", "website/dist/index.html"}
