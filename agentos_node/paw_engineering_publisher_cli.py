@@ -89,7 +89,7 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
         if assignment != "paw-470-inspection-v1":
             try:
                 require_dynamic_paw_assignment_binding(
-                    assignment_id=assignment, runtime=EmployeeRuntime(runtime_root),
+                    assignment_id=assignment, runtime=EmployeeRuntime(runtime_root), terminal_publication=True,
                 )
             except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError, PawWorktreeBoundaryError):
                 continue
