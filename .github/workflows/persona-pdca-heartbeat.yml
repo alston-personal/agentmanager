@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_pdca_tick.py'
+      - 'scripts/persona_external_observation_inbox.py'
       - 'scripts/persona_social_executor.py'
       - 'scripts/persona_media_request_worker.py'
       - 'scripts/persona_media_asset.py'
@@ -59,6 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f scripts/persona_pdca_tick.py
+          test -f scripts/persona_external_observation_inbox.py
           test -f scripts/persona_social_executor.py
           test -f scripts/persona_internal_activity_executor.py
           test -f scripts/persona_reply_intent_generator.py
@@ -73,6 +75,8 @@ jobs:
         run: |
           set -euo pipefail
           REMOTE_TICK="/tmp/persona_pdca_tick-install-$GITHUB_RUN_ID.py"
+          REMOTE_EXTERNAL_INBOX="/tmp/persona_external_observation_inbox-$GITHUB_RUN_ID.py"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/persona_external_observation_inbox.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_EXTERNAL_INBOX"
           REMOTE_RUNNER="/tmp/run_persona_pdca_heartbeat-$GITHUB_RUN_ID.sh"
           REMOTE_SOCIAL_EXECUTOR="/tmp/persona_social_executor-install-$GITHUB_RUN_ID.py"
           REMOTE_INTERNAL_EXECUTOR="/tmp/persona_internal_activity_executor-install-$GITHUB_RUN_ID.py"
@@ -187,6 +191,9 @@ jobs:
           test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
           test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 
+          python3 /tmp/persona_external_observation_inbox-$RUN_ID.py \
+            --oracle-dir "/home/ubuntu/agent-data/personas/sunlake-milkcat/external_observations" \
+            --persona-dir "$DATA_REPO/$PERSONA_PATH"
           python3 "$SCRIPT" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT" --trigger workflow_dispatch
           python3 -m json.tool "$RECEIPT" >/dev/null
           python3 "$INTERNAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
