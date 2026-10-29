@@ -122,5 +122,21 @@ def main():
         result["missing_service_sources"][str(port)]={"units":found}
     check=cmd(["curl","-sS","--max-time","6","-o","/dev/null","-w","%{http_code}","http://127.0.0.1:8766/api/health"])
     result["layoutlib_8766_health"]={"http":check["stdout"].strip(),"rc":check["rc"]}
+    # Distinguish retired/stale allocations from live services by reverse-proxy use and installed runtime.
+    result["remaining_ports_authority"]={}
+    for port in (3005,8800):
+        references=[]
+        for root in (Path("/etc/nginx/sites-enabled"), Path("/etc/nginx/conf.d")):
+            if root.exists():
+                for file in root.iterdir():
+                    if not file.is_file() or ".pre-bg-" in file.name or ".bak" in file.name: continue
+                    try: txt=file.read_text(errors="replace")
+                    except Exception: continue
+                    if re.search(r"(?<![0-9])"+str(port)+r"(?![0-9])",txt):
+                        references.append(str(file))
+        result["remaining_ports_authority"][str(port)]={"nginx_active_file_references":references}
+    for key,service in (("3005","if-tv-station"),("8800","layoutlab-api")):
+        c=cmd(["systemctl","list-units","--all","--no-pager","--plain"])
+        result["remaining_ports_authority"][key]["systemd_mentions"]=[x for x in c["stdout"].splitlines() if service in x.lower()][:10]
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
