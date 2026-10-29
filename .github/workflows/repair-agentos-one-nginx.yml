@@ -44,6 +44,7 @@ jobs:
 
 
   converge:
+    if: github.event_name == 'workflow_dispatch'
     needs: audit
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
@@ -70,6 +71,7 @@ jobs:
           retention-days: 7
 
   restore-iftv:
+    if: github.event_name == 'workflow_dispatch'
     needs: audit
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
@@ -89,6 +91,7 @@ jobs:
             'sudo -n python3 -' < scripts/restore_if_tv_station.py
 
   restore-layoutlab-api:
+    if: github.event_name == 'workflow_dispatch'
     needs: audit
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
