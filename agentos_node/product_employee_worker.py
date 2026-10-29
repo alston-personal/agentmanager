@@ -18,7 +18,7 @@ from agent_core.governed_execution import execute_bound_work_intent
 from agent_core.executor_job_contract import canonical_executor_job_request
 from agentos_node.completion_470_status_provider import inspect_completion_470
 
-def _await_paw_request_after_claim(request_file: Path, public_file: Path, *, timeout_seconds: float = 8.0) -> None:
+def _await_paw_request_after_claim(request_file: Path, public_file: Path, *, timeout_seconds: float = 60.0, lease_still_active=None) -> None:
     """Bounded rendezvous with an independent issuer after claim.
 
     No request is synthesized or signed here. An absent issuer fails closed,
@@ -27,8 +27,10 @@ def _await_paw_request_after_claim(request_file: Path, public_file: Path, *, tim
     import time
     # The verifier may be provisioned just after a fresh Lease is claimed.
     # Wait for both independently owned artifacts; the worker never creates either.
-    deadline = time.monotonic() + max(0.0, min(float(timeout_seconds), 8.0))
+    deadline = time.monotonic() + max(0.0, min(float(timeout_seconds), 60.0))
     while not (request_file.is_file() and public_file.is_file()) and time.monotonic() < deadline:
+        if lease_still_active is not None and not lease_still_active():
+            return
         time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
 
 
@@ -411,7 +413,17 @@ class GovernedProductEmployeeWorker:
             from agentos_node.paw_engineering_request import trusted_request_filename
             request_file = authority_dir / trusted_request_filename(assignment_id)
             public_file = authority_dir / "paw-470-issuer.pub"
-            _await_paw_request_after_claim(request_file, public_file)
+            def active_paw_lease() -> bool:
+                current = lifecycle.get_lease(assignment_id)
+                return bool(current and current.lease_id == lease_id
+                            and current.generation == lease.generation
+                            and current.status == "active"
+                            and not lifecycle.lease_expired(current))
+            _await_paw_request_after_claim(
+                request_file, public_file,
+                timeout_seconds=min(60.0, float(self.lease_seconds)),
+                lease_still_active=active_paw_lease,
+            )
             if request_file.exists() != public_file.exists():
                 raise PermissionError("paw_engineering_authority_incomplete")
             if request_file.is_file() and public_file.is_file():
