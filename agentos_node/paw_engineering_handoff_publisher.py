@@ -19,14 +19,25 @@ ASSIGNMENT = "paw-470-inspection-v1"
 def publish_durable_paw_handoff(
     *, runtime_root: Path, workspace_root: Path, generation: int,
     authenticated_publisher: bool, publication_root: Path | None = None,
+    assignment_id: str = ASSIGNMENT,
 ):
     if not authenticated_publisher:
         raise PawWorktreeBoundaryError("paw_handoff_publisher_not_authorized")
     if type(generation) is not int or generation < 1:
         raise PawWorktreeBoundaryError("paw_handoff_generation_invalid")
+    if assignment_id != ASSIGNMENT:
+        # A future Paw B must be a uniquely bound, governed WorkItem. Never
+        # discover new publishing authority from a receipt file alone.
+        from agent_core.employee_runtime import EmployeeRuntime
+        from agentos_node.paw_engineering_grant import require_dynamic_paw_assignment_binding
+        if not isinstance(assignment_id, str) or not _ID.fullmatch(assignment_id):
+            raise PawWorktreeBoundaryError("paw_handoff_assignment_invalid")
+        require_dynamic_paw_assignment_binding(
+            assignment_id=assignment_id, runtime=EmployeeRuntime(runtime_root),
+        )
     receipt_path = (
         Path(runtime_root) / "lifecycle" / "receipts" /
-        ASSIGNMENT / f"{generation:06d}.json"
+        assignment_id / f"{generation:06d}.json"
     )
     if receipt_path.is_symlink() or not receipt_path.is_file():
         raise PawWorktreeBoundaryError("paw_handoff_receipt_missing")
@@ -36,7 +47,7 @@ def publish_durable_paw_handoff(
         raise PawWorktreeBoundaryError("paw_handoff_receipt_invalid") from exc
     if not isinstance(receipt, dict) or (
         receipt.get("schema") != "agentos.employee-assignment-receipt/v1"
-        or receipt.get("assignment_id") != ASSIGNMENT
+        or receipt.get("assignment_id") != assignment_id
         or receipt.get("employee_id") != "the-paw"
         or receipt.get("generation") != generation
         or receipt.get("outcome") != "handoff"
