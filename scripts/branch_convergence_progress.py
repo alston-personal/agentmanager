@@ -70,7 +70,7 @@ def main():
     aliases = shared_head_groups(refs)
     Path("branch-shared-heads.json").write_text(
         json.dumps({"schema": "agentos.branch-shared-heads/v1",
-                    "manifest_sha256": digest, "groups": aliases}, indent=2) + "\\n",
+                    "manifest_sha256": digest, "groups": aliases}, indent=2) + "\n",
         encoding="utf-8")
     rows = []
     for number, capability in TRACKED:
