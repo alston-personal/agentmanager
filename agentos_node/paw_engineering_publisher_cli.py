@@ -131,7 +131,7 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
         if result.get('status') != 'published_draft' or result.get('commit_sha') != summary.get('commit_sha'):
             raise PawWorktreeBoundaryError('paw_publisher_remote_receipt_mismatch')
         published.mkdir(parents=True, exist_ok=True)
-        tmp = published / (path.name + '.tmp')
+        tmp = published / (assignment_id + '--' + path.name + '.tmp')
         # An interrupted write may leave an incomplete temporary receipt.
         # The remote publication has already been reverified by publish_once.
         # Under the exclusive publisher lock, never trust or reuse the stale tmp.
