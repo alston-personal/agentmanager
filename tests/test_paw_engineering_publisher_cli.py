@@ -65,7 +65,7 @@ def test_latest_publisher_advances_after_persisting_publication(tmp_path, monkey
     result = cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)
     assert result["status"] == "published_draft"
     assert generations == [2]
-    assert (tmp_path / "paw-publications/000002.json").is_file()
+    assert (tmp_path / "paw-publications/paw-470-inspection-v1--000002.json").is_file()
     cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path)
     assert generations == [2, 10]
 
@@ -173,7 +173,7 @@ def test_publisher_state_is_separate_from_worker_runtime(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, 'publish_once', lambda **kwargs: {'status':'published_draft','commit_sha':'b'*40})
     result = cli.publish_latest(runtime_root=runtime, workspace_root=tmp_path, publication_root=publication)
     assert result['status'] == 'published_draft'
-    assert (publication / 'paw-publications/000001.json').is_file()
+    assert (publication / 'paw-publications/paw-470-inspection-v1--000001.json').is_file()
     assert not (runtime / '.paw-publisher.lock').exists()
     assert not (runtime / 'paw-publications').exists()
 
@@ -236,7 +236,7 @@ def test_publication_recovers_stale_tmp_after_remote_reverification(tmp_path, mo
     }))
     markers = publication / "paw-publications"
     markers.mkdir()
-    (markers / "000001.json.tmp").write_text('{"partial":')
+    (markers / "paw-470-inspection-v1--000001.json.tmp").write_text('{"partial":')
     calls = []
     def verified_remote(**kwargs):
         calls.append(kwargs["generation"])
@@ -250,8 +250,8 @@ def test_publication_recovers_stale_tmp_after_remote_reverification(tmp_path, mo
                                 publication_root=publication)
     assert calls == [1]
     assert result["status"] == "published_draft"
-    assert json.loads((markers / "000001.json").read_text())["pr_number"] == 2099
-    assert not (markers / "000001.json.tmp").exists()
+    assert json.loads((markers / "paw-470-inspection-v1--000001.json").read_text())["pr_number"] == 2099
+    assert not (markers / "paw-470-inspection-v1--000001.json.tmp").exists()
     assert cli.publish_latest(runtime_root=runtime, workspace_root=tmp_path,
                               publication_root=publication)["status"] == "idle"
     assert calls == [1]
