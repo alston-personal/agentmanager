@@ -25,6 +25,10 @@ def _await_paw_request_after_claim(request_file: Path, public_file: Path, *, tim
     preserving the ordinary blocked outcome. The issuer publishes atomically.
     """
     import time
+    # No provisioned authority directory means the independent issuer is not
+    # installed: fail closed immediately, leaving time for a blocked Receipt.
+    if not request_file.parent.is_dir():
+        return
     # The verifier may be provisioned just after a fresh Lease is claimed.
     # Wait for both independently owned artifacts; the worker never creates either.
     deadline = time.monotonic() + max(0.0, min(float(timeout_seconds), 60.0))
