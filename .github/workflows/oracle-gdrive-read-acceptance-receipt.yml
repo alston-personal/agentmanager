@@ -1,0 +1,84 @@
+name: Oracle GDrive Read Acceptance Receipt
+
+on:
+  # One-shot acceptance on the reviewed workflow change landing on main.
+  # No schedule, external event or generic dispatch; path filter limits recurrence.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-gdrive-read-acceptance-receipt.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: oracle-gdrive-read-acceptance
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate read-only source and deployment boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/oracle_gdrive_acceptance.sh
+          python3 tests/test_oracle_gdrive_acceptance.py
+          test "${DEPLOY_USER}" = ubuntu
+          [[ "${DEPLOY_PORT:-22}" =~ ^[0-9]{1,5}$ ]]
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Execute exact reviewed read-only script on Oracle
+        id: oracle_read
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Run the checked-out source over stdin: no Oracle checkout change or installation.
+          timeout 120s ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' \
+            < scripts/oracle_gdrive_acceptance.sh \
+            | tee "${RUNNER_TEMP}/oracle-gdrive-read-receipt.txt"
+          grep -qx 'oracle_gdrive_read_acceptance=PASS' "${RUNNER_TEMP}/oracle-gdrive-read-receipt.txt"
+      - name: Upload receipt even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-gdrive-read-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/oracle-gdrive-read-receipt.txt
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Publish terminal run and receipt locator to canonical #1682
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const observed = '${{ steps.oracle_read.outcome }}';
+            const accepted = observed === 'success';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const lines = [
+              'Oracle GDrive read-only acceptance: ' + (accepted ? 'PASS' : 'NOT_VERIFIED'),
+              'Run: ' + runUrl,
+              'Source commit: ' + context.sha,
+              'Event: ' + context.eventName,
+              'Oracle read-only step: ' + observed,
+              'Receipt artifact: oracle-gdrive-read-receipt-' + context.runId,
+              'Artifact may be absent on early failure. PASS requires the checked Oracle step and exact receipt marker; this notice does not prove underlay writer protection or AgentOS #470 autonomous continuation.',
+            ];
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1682,
+              body: lines.join('\\n'),
+            });

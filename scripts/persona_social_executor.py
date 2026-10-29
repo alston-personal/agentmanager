@@ -414,6 +414,20 @@ def reconcile_held_reply(root, state, target, out, base, headers, now):
         target["status"]="in_progress"
         target["reconciliation_required"]=True
         target["next_reconcile_not_before"]=(datetime.fromisoformat(now.replace("Z","+00:00"))+timedelta(minutes=30)).isoformat().replace("+00:00","Z")
+        # Persist the uncertainty in the durable intent ledger as well.
+        # A stale 'candidate' record must not authorize a second send.
+        intent=root/"pdca/reply_intents"/(str(target.get("action_id"))+".json")
+        if intent.exists():
+            try:
+                original=json.loads(intent.read_text(encoding="utf-8"))
+                if (original.get("action_id")==target.get("action_id") and
+                    original.get("capability")=="social.reply.send"):
+                    original.update(status="in_progress",reconciliation_required=True,
+                                    write_replay_allowed=False,
+                                    reconciliation_receipt_ref=str(out.relative_to(root)))
+                    save(intent,original)
+            except (OSError,ValueError,TypeError):
+                pass
     save(root/"pdca/state.json",state)
     return receipt
 
@@ -451,6 +465,15 @@ def recover_orphan_reply_intent(root, state):
     return restored
 
 
+def select_reconciliation_fair_action(held, ready, cycle):
+    """Never starve eligible reads or replay held writes; keep readback turns."""
+    due_reads=[x for x in ready if x.get("capability") in
+               ("social.threads.observe","social.reply.review")]
+    if held is not None and due_reads and cycle % 2 == 1:
+        return select_action(due_reads)
+    return held or select_action(ready)
+
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir",required=True)
@@ -478,9 +501,11 @@ def main():
          (x.get("media_intent") or {}).get("mode") in ("generate","existing_verified"))) and due(x) and x.get("capability") in (
         "social.threads.observe","social.reply.review","social.reply.send","social.post.publish"
     )]
-    # Due reads retain priority; an optional image hold must not consume every
-    # execution turn while an independently authorized reply is already due.
-    target=held or select_action(ready)
+    # A held reply may require repeated READ-ONLY reconciliation for days.
+    # Alternate with independently due observation/review so it cannot starve
+    # Mio's external awareness. Never replay a held write.
+    target=select_reconciliation_fair_action(
+        held, ready, int(state.get("cycle") or 0))
     now=now_dt.isoformat().replace("+00:00","Z")
     if not target:
         result={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"NO_ACTION","timestamp":now}
