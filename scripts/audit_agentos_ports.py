@@ -111,5 +111,14 @@ def main():
         result["unregistered_identity"].append({"port":port,"pid":pid,"command":cmdline})
     d=cmd(["docker","ps","--format","{{.Names}} {{.Ports}}"])
     result["docker_port_map"]={"rc":d["rc"],"lines":d["stdout"].splitlines()[:45]}
+    result["missing_service_sources"]={}
+    for port,label in [(3005,"if-tv-station"),(8766,"layoutlib-web"),(8800,"layoutlab-api")]:
+        found=[]
+        for root in [Path("/etc/systemd/system"),Path("/home/ubuntu/.config/systemd/user"),Path("/home/agentos-node/.config/systemd/user")]:
+            if not root.exists(): continue
+            for unit in root.glob("*.service"):
+                if label in unit.name.lower() or str(port) in unit.read_text(errors="replace"):
+                    found.append({"file":str(unit),"relevant_lines":[line[:200] for line in unit.read_text(errors="replace").splitlines() if any(k in line for k in ("ExecStart","WorkingDirectory","Environment=PORT","Restart="))][:8]})
+        result["missing_service_sources"][str(port)]={"units":found}
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
