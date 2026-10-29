@@ -70,6 +70,40 @@ def test_latest_publisher_advances_after_persisting_publication(tmp_path, monkey
     assert generations == [2, 10]
 
 
+
+def test_latest_publisher_reuses_legacy_a_marker_without_republishing(tmp_path, monkeypatch):
+    import json
+    receipts = tmp_path / "lifecycle/receipts/paw-470-inspection-v1"
+    receipts.mkdir(parents=True)
+    (receipts / "000001.json").write_text(json.dumps({
+        "outcome": "handoff",
+        "result_summary": {
+            "bounded_stage": "paw-authorized-local-commit",
+            "work_id": "issue-470-a",
+            "commit_sha": "b" * 40,
+        },
+    }))
+    published = tmp_path / "paw-publications"
+    published.mkdir()
+    (published / "000001.json").write_text(json.dumps({
+        "schema": "agentos.paw-draft-publication-receipt/v1",
+        "status": "published_draft",
+        "work_id": "issue-470-a",
+        "commit_sha": "b" * 40,
+        "merged": False,
+        "independent_acceptance_pass": False,
+        "pr_number": 2099,
+        "pr_url": "https://github.com/alston-personal/agentmanager/pull/2099",
+    }))
+    def forbidden(**kwargs):
+        raise AssertionError("legacy A receipt must not be republished")
+    monkeypatch.setattr(cli, "publish_once", forbidden)
+    assert cli.publish_latest(runtime_root=tmp_path, workspace_root=tmp_path) == {
+        "status": "idle", "reason": "no_engineering_handoff",
+    }
+    assert not (published / "paw-470-inspection-v1--000001.json").exists()
+
+
 def test_oracle_publisher_installer_uses_accepted_venv_and_never_activates_worker():
     root = Path(__file__).resolve().parents[1]
     installer = (root / "scripts/install_paw_publisher_oracle.sh").read_text()
