@@ -2071,7 +2071,11 @@ class InvoiceStore:
             ).fetchone()
         if not binding:
             raise ValueError("GPT_WEB_REQUEST_NOT_REGISTERED")
-        if not outer_request_id or len(outer_request_id) > 128 or not all(\n            ch.isalnum() or ch in "-_" for ch in outer_request_id\n        ):\n            raise ValueError("GPT_WEB_OUTER_REQUEST_ID_INVALID")\n        root = bridge_root.expanduser().resolve(strict=True)
+        if not outer_request_id or len(outer_request_id) > 128 or not all(
+            ch.isalnum() or ch in "-_" for ch in outer_request_id
+        ):
+            raise ValueError("GPT_WEB_OUTER_REQUEST_ID_INVALID")
+        root = bridge_root.expanduser().resolve(strict=True)
         receipt_path = root / "receipts" / f"{outer_request_id}.json"
         if receipt_path.is_symlink() or not receipt_path.is_file():
             raise FileNotFoundError("GPT_WEB_RECEIPT_NOT_READY")
