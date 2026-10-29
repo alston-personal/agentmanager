@@ -19,7 +19,8 @@ from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
 
 def publish_once(*, runtime_root: Path, workspace_root: Path, generation: int,
                  environment: dict[str, str] | None = None,
-                 publication_root: Path | None = None) -> dict:
+                 publication_root: Path | None = None,
+                 assignment_id: str = "paw-470-inspection-v1") -> dict:
     env = os.environ if environment is None else environment
     # GH_TOKEN must be injected only into the standalone publisher process.
     # Presence of a token is a prerequisite, not proof of remote permission.
@@ -31,6 +32,7 @@ def publish_once(*, runtime_root: Path, workspace_root: Path, generation: int,
         runtime_root=runtime_root, workspace_root=workspace_root,
         generation=generation, authenticated_publisher=True,
         publication_root=publication_root,
+        **({"assignment_id": assignment_id} if assignment_id != "paw-470-inspection-v1" else {}),
     )
     return {
         "schema": receipt.schema,
@@ -74,16 +76,31 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
                            publication_root: Path | None = None) -> dict:
     """One locked reconciler pass; select oldest unpublished handoff."""
     import re
-    directory = runtime_root / "lifecycle/receipts/paw-470-inspection-v1"
-    if not directory.is_dir():
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agentos_node.paw_engineering_grant import require_dynamic_paw_assignment_binding
+    receipt_root = runtime_root / "lifecycle/receipts"
+    if not receipt_root.is_dir():
         return {"status": "idle", "reason": "no_receipt"}
-    candidates = [p for p in directory.iterdir() if re.fullmatch(r"[0-9]{6}\.json", p.name)]
+    candidates = []
+    for directory in sorted(receipt_root.iterdir()):
+        if not directory.is_dir() or directory.is_symlink():
+            continue
+        assignment = directory.name
+        if assignment != "paw-470-inspection-v1":
+            try:
+                require_dynamic_paw_assignment_binding(
+                    assignment_id=assignment, runtime=EmployeeRuntime(runtime_root),
+                )
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError, PawWorktreeBoundaryError):
+                continue
+        candidates.extend((assignment, p) for p in directory.iterdir()
+                          if re.fullmatch(r"[0-9]{6}\\.json", p.name))
     if not candidates:
         return {"status": "idle", "reason": "no_receipt"}
     import json
     # Durable publish receipts are separate from immutable employee receipts.
     published = (publication_root if publication_root is not None else runtime_root) / 'paw-publications'
-    for path in sorted(candidates, key=lambda p: p.name):
+    for assignment_id, path in sorted(candidates, key=lambda item: (item[0], item[1].name)):
         if path.is_symlink():
             raise PawWorktreeBoundaryError('paw_publisher_receipt_symlink')
         try:
@@ -99,10 +116,9 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
         # Namespace publication markers by the trusted receipt assignment.
         # Preserve historical A markers for replay compatibility; future B
         # assignments must never alias A's generation-only receipt filename.
-        assignment_id = "paw-470-inspection-v1"
         marker = published / (assignment_id + "--" + path.name)
         legacy_marker = published / path.name
-        if legacy_marker.exists():
+        if assignment_id == "paw-470-inspection-v1" and legacy_marker.exists():
             marker = legacy_marker
         if marker.exists():
             if marker.is_symlink():
@@ -127,7 +143,8 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
         generation = int(path.name[:-5])
         result = publish_once(runtime_root=runtime_root, workspace_root=workspace_root,
                               generation=generation, environment=environment,
-                              publication_root=publication_root)
+                              publication_root=publication_root,
+                              **({"assignment_id": assignment_id} if assignment_id != "paw-470-inspection-v1" else {}))
         if result.get('status') != 'published_draft' or result.get('commit_sha') != summary.get('commit_sha'):
             raise PawWorktreeBoundaryError('paw_publisher_remote_receipt_mismatch')
         published.mkdir(parents=True, exist_ok=True)
