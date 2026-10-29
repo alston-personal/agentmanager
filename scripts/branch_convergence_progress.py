@@ -1,12 +1,31 @@
-"""Emit honest PR-gated convergence progress, never infer runtime acceptance."""
+"""Read-only SHA-pinned branch convergence snapshot. Never infer runtime acceptance."""
+import hashlib
 import json
 import os
+import subprocess
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = "alston-personal/agentmanager"
-TRACKED = ((1921, "governance"), (1923, "continuation-publisher"))
+TRACKED = ((1921, "governance"), (1923, "continuation-publisher"), (2029, "identity-audit"))
+
+def remote_refs():
+    result = subprocess.run(["git", "ls-remote", "--heads", "origin"], check=True,
+                            capture_output=True, text=True, timeout=120)
+    rows = {}
+    for line in result.stdout.splitlines():
+        sha, ref = line.split("\t", 1)
+        if not ref.startswith("refs/heads/") or len(sha) != 40 or any(c not in "0123456789abcdef" for c in sha.lower()):
+            raise ValueError("invalid branch ref")
+        name = ref[len("refs/heads/"):]
+        if name in rows:
+            raise ValueError("duplicate branch name")
+        rows[name] = sha
+    if not {"main", "core/integration"}.issubset(rows):
+        raise ValueError("missing mandatory branch refs")
+    lines = "".join(f"{rows[name]}\trefs/heads/{name}\n" for name in sorted(rows))
+    return rows, lines, hashlib.sha256(lines.encode()).hexdigest()
 
 def get_pr(number):
     req = urllib.request.Request(
@@ -18,36 +37,38 @@ def get_pr(number):
         return json.load(reply)
 
 def main():
+    refs, manifest, digest = remote_refs()
+    Path("branch-heads.tsv").write_text(manifest, encoding="utf-8")
     rows = []
-    for number, lane in TRACKED:
+    for number, capability in TRACKED:
         pr = get_pr(number)
-        merged = bool(pr.get("merged_at"))
-        rows.append({"pr": number, "lane": lane,
-                     "stage": "MERGED" if merged else "DRAFT" if pr.get("draft") else "OPEN_REVIEW",
-                     "merged": merged, "merged_at": pr.get("merged_at"),
-                     "url": pr["html_url"], "head_sha": pr["head"]["sha"],
-                     "runtime_accepted": False})
-    snapshot = {"schema": "agentos.branch-convergence-progress/v1",
-                "observed_at": datetime.now(timezone.utc).isoformat(),
-                "tracked_prs": rows, "merged_prs": sum(x["merged"] for x in rows),
-                "runtime_accepted_count": 0,
-                "runtime_count_note": "Not inferred from PR or CI; requires explicit receipt"}
-    Path("progress.json").write_text(json.dumps(snapshot, indent=2))
-    report = ["## Branch convergence — evidence-based PR progress",
-              "", "> Historical ahead/behind is not progress. Unknown effective-capability denominator: no global percentage.",
-              "", "| Lane | PR | Stage | Runtime accepted |", "|---|---|---|---|"]
-    for x in rows:
-        report.append(f"| {x['lane']} | [#{x['pr']}]({x['url']}) | {x['stage']} | not established |")
-    report += ["", f"**Merged tracked PRs: {snapshot['merged_prs']} / {len(rows)}** (not all effective capability gaps)",
-               "", "**Runtime accepted:** not established from these sources.",
-               "", f"Observed UTC: {snapshot['observed_at']}",
-               "", "Canonical work coordination: https://github.com/alston-personal/agentmanager/issues/1682"]
-    summary = "\n".join(report)+"\n"
-    Path("progress.md").write_text(summary)
+        rows.append({"pr": number, "capability": capability, "url": pr["html_url"],
+                     "head_sha": pr["head"]["sha"],
+                     "code_state": "MERGED" if pr.get("merged_at") else ("DRAFT" if pr.get("draft") else pr["state"].upper()),
+                     "runtime_acceptance": "UNKNOWN"})
+    observed = datetime.now(timezone.utc).isoformat()
+    payload = {"schema": "agentos.branch-convergence-progress/v2", "observed_at": observed,
+               "branch_manifest": {"count": len(refs), "sha256": digest, "complete": True,
+                                   "path": "branch-heads.tsv",
+                                   "main_sha": refs["main"], "integration_sha": refs["core/integration"]},
+               "tracked_prs": rows, "effective_capability_total": None,
+               "runtime_accepted_count": None,
+               "note": "Historical commits and branch count are not capability counts. Runtime requires independent receipts."}
+    Path("progress.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    lines = ["## Branch convergence — SHA-pinned source snapshot", "",
+             f"UTC: {observed}", f"Remote branches: {len(refs)}",
+             f"Manifest SHA256: `{digest}`", "",
+             "| Capability | PR | Code state | Runtime |", "|---|---|---|---|"]
+    for row in rows:
+        lines.append(f"| {row['capability']} | [#{row['pr']}]({row['url']}) | {row['code_state']} | UNKNOWN |")
+    lines.extend(["", "Global convergence percentage: UNKNOWN; runtime acceptance not inferred.",
+                  "No branch deletion, merging, deployment, or consumer-state inference."])
+    report = "\n".join(lines) + "\n"
+    Path("progress.md").write_text(report, encoding="utf-8")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
-            f.write(summary)
-    print(summary)
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
+            stream.write(report)
+    print(report)
 
 if __name__ == "__main__":
     main()
