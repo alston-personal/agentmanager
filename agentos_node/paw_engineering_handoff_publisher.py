@@ -33,7 +33,7 @@ def publish_durable_paw_handoff(
         if not isinstance(assignment_id, str) or not _ID.fullmatch(assignment_id):
             raise PawWorktreeBoundaryError("paw_handoff_assignment_invalid")
         require_dynamic_paw_assignment_binding(
-            assignment_id=assignment_id, runtime=EmployeeRuntime(runtime_root),
+            assignment_id=assignment_id, runtime=EmployeeRuntime(runtime_root), terminal_publication=True,
         )
     receipt_path = (
         Path(runtime_root) / "lifecycle" / "receipts" /
