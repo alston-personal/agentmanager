@@ -30,7 +30,7 @@ def main():
         m=re.search(r":(\d+)$",address)
         if not m: continue
         port=m.group(1)
-        listeners.setdefault(port,[]).append({"bind":address,"process":parts[5][:200] if len(parts)>5 else "unavailable"})
+        listeners.setdefault(port,[]).append({"bind":address,"process":line.split("users:",1)[1][:180] if "users:" in line else "unavailable"})
     for port,rows in sorted(listeners.items(),key=lambda p:int(p[0])):
         result["listeners"].append({"port":int(port),"owners":rows,"registry_project":result["registry"].get(port,{}).get("project")})
         if port not in result["registry"]: result["unregistered_listeners"].append(int(port))
@@ -158,5 +158,24 @@ def main():
                 except Exception:result["if_tv_runtime"]["package_read"]="invalid"
             else: result["if_tv_runtime"][name]="present"
         result["if_tv_runtime"]["build_exists"]=(p/".next").exists()
+    # Resolve owners from full ss lines (redacted process identity only, no arguments).
+    result["unregistered_owner_summary"]=[]
+    for line in ss["stdout"].splitlines():
+        parts=line.split()
+        if len(parts)<5: continue
+        match=re.search(r":(\\d+)$",parts[3])
+        if not match: continue
+        port=int(match.group(1))
+        if str(port) in result["registry"]:continue
+        pids=sorted(set(int(x) for x in re.findall(r"pid=(\\d+)",line)))
+        owners=[]
+        for pid in pids[:3]:
+            try:
+                exe=Path(f"/proc/{pid}/exe").resolve().name
+                cg=Path(f"/proc/{pid}/cgroup").read_text(errors="replace")
+                services=re.findall(r"[a-zA-Z0-9_.@-]+\\.service",cg)
+                owners.append({"executable":exe,"unit":services[-1] if services else None})
+            except Exception:owners.append({"executable":"unknown","unit":None})
+        result["unregistered_owner_summary"].append({"port":port,"bind":parts[3],"owners":owners})
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
