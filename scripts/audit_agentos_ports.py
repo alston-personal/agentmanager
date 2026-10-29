@@ -120,5 +120,7 @@ def main():
                 if label in unit.name.lower() or str(port) in unit.read_text(errors="replace"):
                     found.append({"file":str(unit),"relevant_lines":[line[:200] for line in unit.read_text(errors="replace").splitlines() if any(k in line for k in ("ExecStart","WorkingDirectory","Environment=PORT","Restart="))][:8]})
         result["missing_service_sources"][str(port)]={"units":found}
+    check=cmd(["curl","-sS","--max-time","6","-o","/dev/null","-w","%{http_code}","http://127.0.0.1:8766/api/health"])
+    result["layoutlib_8766_health"]={"http":check["stdout"].strip(),"rc":check["rc"]}
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
