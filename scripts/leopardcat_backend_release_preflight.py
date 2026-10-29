@@ -29,10 +29,10 @@ def command(*args):
 def inspect(target):
     if not SHA.fullmatch(target):
         raise ValueError("target_sha_not_exact")
-    cwd = command("sudo", "-n", "systemctl", "show", SERVICE, "-p", "WorkingDirectory", "--value")
+    cwd = command("systemctl", "--user", "show", SERVICE, "-p", "WorkingDirectory", "--value")
     if cwd != str(APP):
         raise RuntimeError("unexpected_service_working_directory")
-    if command("sudo", "-n", "systemctl", "is-active", SERVICE) != "active":
+    if command("systemctl", "--user", "is-active", SERVICE) != "active":
         raise RuntimeError("service_not_active")
     remote = command("git", "-C", str(ROOT), "remote", "get-url", "origin")
     if remote != "https://github.com/alston-personal/leopardcat-tarot.git":
