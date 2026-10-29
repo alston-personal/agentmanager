@@ -295,6 +295,22 @@ def test_terminal_paw_publication_requires_committed_handoff_receipt(tmp_path):
         require_dynamic_paw_assignment_binding(
             assignment_id="paw-b", work_item_id="wrong-work", runtime=runtime,
             terminal_publication=True)
+    import json
+    receipt = lifecycle._receipt_path("paw-b", 1)
+    original = receipt.read_text(encoding="utf-8")
+    forged = json.loads(original)
+    forged["lease_id"] = "forged-lease"
+    receipt.write_text(json.dumps(forged), encoding="utf-8")
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_terminal_publication_receipt_invalid"):
+        require_dynamic_paw_assignment_binding(
+            assignment_id="paw-b", runtime=runtime, terminal_publication=True)
+    forged["lease_id"] = "lease-b"
+    forged["employee_id"] = "foreign-employee"
+    receipt.write_text(json.dumps(forged), encoding="utf-8")
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_terminal_publication_receipt_invalid"):
+        require_dynamic_paw_assignment_binding(
+            assignment_id="paw-b", runtime=runtime, terminal_publication=True)
+    receipt.write_text(original, encoding="utf-8")
     receipt = lifecycle._receipt_path("paw-b", 1)
     receipt.unlink()
     with pytest.raises(PawWorktreeBoundaryError, match="paw_terminal_publication_receipt_invalid"):
