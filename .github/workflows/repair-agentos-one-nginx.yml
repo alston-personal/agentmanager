@@ -1,0 +1,37 @@
+name: Repair AgentOS ONE Nginx Upstream
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/reconcile_agentos_one_nginx.py
+      - .github/workflows/repair-agentos-one-nginx.yml
+permissions:
+  contents: read
+concurrency:
+  group: oracle-one-nginx-reconcile
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Safely reconcile only dedicated ONE Nginx upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          python3 -m py_compile scripts/reconcile_agentos_one_nginx.py
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@127.0.0.1" \
+            'sudo -n python3 -' < scripts/reconcile_agentos_one_nginx.py
+      - name: Verify public ONE Health
+        run: |
+          curl -fsS --max-time 10 https://studio.milkcat.org/dashboard/api/agentos/v1/health |
+            python3 -c 'import json,sys; j=json.load(sys.stdin); assert j.get("ok") is True and j.get("realm_id")=="realm-alston"'
