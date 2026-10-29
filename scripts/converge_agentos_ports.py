@@ -42,6 +42,10 @@ def main():
    unit=Path(u.pw_dir)/'.config/systemd/user/layoutlib-web.service'
    if unit.is_file() and '--port 8766' in unit.read_text() and (Path(u.pw_dir)/'projects/layoutlib/web_demo/server.py').is_file():
     base=['runuser','-u','agentos-node','--','env',f'XDG_RUNTIME_DIR=/run/user/{uid}',f'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus','systemctl','--user']
+    if not Path('/run/user/'+str(uid)+'/bus').exists():
+     # Restore canonical systemd user manager, not a detached ad hoc process.
+     run(['loginctl','enable-linger','agentos-node'])
+     run(['systemctl','start',f'user@{uid}.service'],timeout=25)
     rc,out=run(base+['enable','--now','layoutlib-web.service'],timeout=28)
     rc2,listen=run(['ss','-ltnH','sport = :8766'])
     if rc==0 and listen:
