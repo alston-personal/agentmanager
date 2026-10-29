@@ -142,8 +142,9 @@ def require_canonical_paw_authority(
 
 def require_dynamic_paw_assignment_binding(
     *, assignment_id: str, runtime: object, work_item_id: str | None = None,
+    terminal_publication: bool = False,
 ) -> None:
-    """Read-only binding check; does not grant engineering execution authority."""
+    """Read-only binding check; terminal publication never grants execution."""
     from agent_core.core_work_items import WorkItemStore
     if not assignment_id:
         raise PawWorktreeBoundaryError("paw_dynamic_binding_missing")
@@ -165,6 +166,33 @@ def require_dynamic_paw_assignment_binding(
     if len(matches) != 1 or (work_item_id is not None and matches[0].work_item_id != work_item_id):
         raise PawWorktreeBoundaryError("paw_dynamic_binding_ambiguous")
     item = matches[0]
+    if terminal_publication:
+        from agent_core.employee_lifecycle import EmployeeLifecycle
+        lifecycle = EmployeeLifecycle(runtime)
+        lease = lifecycle.get_lease(assignment_id)
+        result = assignment.result if isinstance(assignment.result, dict) else {}
+        if (lease is None or lease.employee_id != "the-paw"
+                or lease.assignment_id != assignment_id or lease.status != "handoff"
+                or result.get("schema") != "agentos.employee-assignment-receipt/v1"
+                or result.get("generation") != lease.generation
+                or result.get("outcome") != "handoff"):
+            raise PawWorktreeBoundaryError("paw_terminal_publication_receipt_invalid")
+        receipt_path = lifecycle._receipt_path(assignment_id, lease.generation)
+        if (receipt_path.is_symlink() or not receipt_path.is_file()
+                or result.get("receipt") != str(receipt_path.relative_to(runtime.root))):
+            raise PawWorktreeBoundaryError("paw_terminal_publication_receipt_invalid")
+        try:
+            import json
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError) as exc:
+            raise PawWorktreeBoundaryError("paw_terminal_publication_receipt_invalid") from exc
+        if (not isinstance(receipt, dict) or receipt.get("schema") != result["schema"]
+                or receipt.get("assignment_id") != assignment_id
+                or receipt.get("employee_id") != "the-paw"
+                or receipt.get("generation") != lease.generation
+                or receipt.get("lease_id") != lease.lease_id
+                or receipt.get("outcome") != "handoff"):
+            raise PawWorktreeBoundaryError("paw_terminal_publication_receipt_invalid")
     if item.dependency_refs:
         from agent_core.core_supervisor_service import CoreSupervisorService
         from agent_core.employee_lifecycle import EmployeeLifecycle
@@ -180,7 +208,7 @@ def require_dynamic_paw_assignment_binding(
         or item.employee_id != "the-paw"
         or item.state != "open"
         or assignment.employee_id != "the-paw"
-        or assignment.state not in {"pending", "active"}
+        or assignment.state not in ({"handoff"} if terminal_publication else {"pending", "active"})
         or "engineering.work.inspect" not in item.required_capabilities
         or "one-governed-dispatch" not in item.authority_requirements
         or "sector.paw" not in employee.role_ids
