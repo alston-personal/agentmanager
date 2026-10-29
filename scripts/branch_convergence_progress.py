@@ -54,27 +54,24 @@ def shared_head_groups(refs):
             if len(names) > 1]
 
 def classify_reachable_history(refs):
-    """Conservative ancestor evidence from locally fetched main/integration history."""
-    subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none", "origin",
-                    "main", "core/integration"], check=True, capture_output=True,
-                   text=True, timeout=180)
-    result = []
+    """Bounded history proof: absence from fetched history is UNKNOWN, never negative."""
     anchors = {"main": refs["main"], "core/integration": refs["core/integration"]}
+    subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none",
+                    "--depth=300", "origin",
+                    "+refs/heads/main:refs/remotes/origin/main",
+                    "+refs/heads/core/integration:refs/remotes/origin/core/integration"],
+                   check=True, capture_output=True, text=True, timeout=90)
+    history = {}
+    for name in anchors:
+        result = subprocess.run(["git", "rev-list", "refs/remotes/origin/" + name],
+                                check=True, capture_output=True, text=True, timeout=30)
+        history[name] = set(result.stdout.splitlines())
+    result = []
     for branch, sha in sorted(refs.items()):
-        available = subprocess.run(["git", "cat-file", "-e", sha + "^{commit}"],
-                                   capture_output=True, timeout=10).returncode == 0
-        included = []
-        if available:
-            for target, tip in anchors.items():
-                status = subprocess.run(["git", "merge-base", "--is-ancestor", sha, tip],
-                                        capture_output=True, timeout=15).returncode
-                if status == 0:
-                    included.append(target)
-                elif status != 1:
-                    raise RuntimeError("ancestry query failed")
+        included = [name for name in anchors if sha in history[name]]
         result.append({"branch": branch, "sha": sha, "ancestor_of": included,
                        "history_state": "ANCESTOR_PROVEN" if included else "UNKNOWN",
-                       "commit_object_available": available,
+                       "history_scope": "bounded_last_300_commits_per_canonical_branch",
                        "consumer_status": "UNKNOWN", "retirement_allowed": False})
     return result
 
