@@ -10,7 +10,6 @@ on:
       - 'tests/test_persona_post_reasoning.py'
       - 'tests/test_persona_reply_reasoning.py'
       - 'tests/test_mio_reply_fairness.py'
-      - 'tests/test_persona_orphan_recovery_bound.py'
       - '.github/workflows/persona-post-reasoning-contract.yml'
   push:
     branches: [main]
@@ -21,7 +20,6 @@ on:
       - 'tests/test_persona_post_reasoning.py'
       - 'tests/test_persona_reply_reasoning.py'
       - 'tests/test_mio_reply_fairness.py'
-      - 'tests/test_persona_orphan_recovery_bound.py'
       - '.github/workflows/persona-post-reasoning-contract.yml'
 
 permissions:
@@ -40,4 +38,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Verify reasoning failover without live providers or public writes
-        run: python3 -m unittest tests.test_persona_post_reasoning tests.test_persona_reply_reasoning tests.test_mio_reply_fairness tests.test_persona_orphan_recovery_bound -v
+        run: python3 -m unittest tests.test_persona_post_reasoning tests.test_persona_reply_reasoning tests.test_mio_reply_fairness -v

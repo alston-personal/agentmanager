@@ -1235,6 +1235,12 @@ class InvoiceStore:
     def _init_db(self) -> None:
         with self.connect() as db:
             db.executescript("""
+            CREATE TABLE IF NOT EXISTS gpt_web_invoice_bindings(
+              request_id TEXT PRIMARY KEY,
+              invoice_id TEXT NOT NULL,
+              image_sha256 TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS intake_batches(
               id TEXT PRIMARY KEY,
               source_type TEXT NOT NULL,
@@ -1592,12 +1598,22 @@ class InvoiceStore:
                         daemon=True,
                     ).start()
                 elif deep_pending:
-                    threading.Thread(
-                        target=self._deep_enrich_invoice,
-                        args=(invoice_id,),
-                        name=f"invoice-deep-{invoice_id[:8]}",
-                        daemon=True,
-                    ).start()
+                    # Opt-in GPT Web fallback; Gemini Vision remains unchanged.
+                    gpt_bridge = os.environ.get("INVOICE_GPT_WEB_BRIDGE_ROOT", "").strip()
+                    if gpt_bridge:
+                        threading.Thread(
+                            target=self._gpt_web_enrich_invoice,
+                            args=(invoice_id, gpt_bridge),
+                            name=f"invoice-gpt-web-{invoice_id[:8]}",
+                            daemon=True,
+                        ).start()
+                    else:
+                        threading.Thread(
+                            target=self._deep_enrich_invoice,
+                            args=(invoice_id,),
+                            name=f"invoice-deep-{invoice_id[:8]}",
+                            daemon=True,
+                        ).start()
                 return payload
             except Exception as exc:
                 failed_at = utcnow()
@@ -1820,6 +1836,17 @@ class InvoiceStore:
                 )
                 return
 
+    def _gpt_web_enrich_invoice(self, invoice_id: str, bridge_root: str) -> None:
+        """Best-effort background bridge, falling back to existing deep OCR."""
+        try:
+            from services.invoice_intake.gpt_web_bridge_runner import run_once
+            run_once(self, invoice_id, bridge_root=Path(bridge_root))
+            print("invoice_gpt_web_enrichment=PASS", flush=True)
+        except Exception as exc:
+            # Authentication, routing, or timeout never bricks the invoice.
+            print(f"invoice_gpt_web_enrichment=FAILED type:{type(exc).__name__}", flush=True)
+            self._deep_enrich_invoice(invoice_id)
+
     def _deep_enrich_invoice(self, invoice_id: str) -> None:
         """Improve an already-visible fast result without blocking the user.
 
@@ -2027,6 +2054,152 @@ class InvoiceStore:
         """Synchronous compatibility helper for tests/admin code."""
         self.prepare_reprocess(invoice_id)
         return self.process(invoice_id)
+
+    def consume_gpt_web_invoice_receipt(
+        self, invoice_id: str, *, request_id: str, outer_request_id: str, bridge_root: Path,
+    ) -> dict[str, Any]:
+        """Consume only an issued, correlated local bridge receipt, without a public API."""
+        if not request_id or len(request_id) > 128 or not request_id.isascii() or not all(
+            ch.isalnum() or ch in "-_" for ch in request_id
+        ):
+            raise ValueError("GPT_WEB_REQUEST_ID_INVALID")
+        with self.connect() as db:
+            binding = db.execute(
+                """SELECT invoice_id,image_sha256 FROM gpt_web_invoice_bindings
+                   WHERE request_id=? AND invoice_id=?""",
+                (request_id, invoice_id),
+            ).fetchone()
+        if not binding:
+            raise ValueError("GPT_WEB_REQUEST_NOT_REGISTERED")
+        if not outer_request_id or len(outer_request_id) > 128 or not all(
+            ch.isalnum() or ch in "-_" for ch in outer_request_id
+        ):
+            raise ValueError("GPT_WEB_OUTER_REQUEST_ID_INVALID")
+        root = bridge_root.expanduser().resolve(strict=True)
+        receipt_path = root / "receipts" / f"{outer_request_id}.json"
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise FileNotFoundError("GPT_WEB_RECEIPT_NOT_READY")
+        if receipt_path.stat().st_size > 131072:
+            raise ValueError("GPT_WEB_RECEIPT_TOO_LARGE")
+        data = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if data.get("provider") != "gpt-web" or data.get("operation") != "invoke":
+            raise ValueError("GPT_WEB_RECEIPT_PROVIDER_MISMATCH")
+        if data.get("request_id") != outer_request_id:
+            raise ValueError("GPT_WEB_OUTER_REQUEST_MISMATCH")
+        # Binding is loaded from the local SQLite authority, never from model text.
+        data["invoice_binding"] = dict(binding)
+        data["invoice_binding"]["request_id"] = request_id
+        return self.apply_verified_gpt_web_receipt(invoice_id, data, request_id=request_id)
+
+    def register_gpt_web_invoice_request(self, invoice_id: str, *, request_id: str) -> dict[str, str]:
+        """Bind a locally issued GPT Web request to the immutable stored document."""
+        if not request_id or len(request_id) > 180 or not request_id.isascii():
+            raise ValueError("GPT_WEB_REQUEST_ID_INVALID")
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT i.status,d.sha256 FROM invoices i JOIN documents d
+                   ON i.document_id=d.id WHERE i.id=? AND i.deleted_at IS NULL""",
+                (invoice_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+            if row["status"] not in {"needs_review", "recognition_insufficient", "quick_confirm"}:
+                raise ValueError("GPT_WEB_INVOICE_NOT_REVIEWABLE")
+            db.execute(
+                """INSERT INTO gpt_web_invoice_bindings
+                   (request_id,invoice_id,image_sha256,created_at) VALUES(?,?,?,?)""",
+                (request_id, invoice_id, row["sha256"], utcnow()),
+            )
+            return {"request_id": request_id, "invoice_id": invoice_id, "image_sha256": row["sha256"]}
+
+    def apply_verified_gpt_web_receipt(
+        self, invoice_id: str, receipt: dict[str, Any], *, request_id: str,
+    ) -> dict[str, Any]:
+        """Persist externally verified GPT Web fields for an existing reviewable invoice.
+
+        Never create an invoice from a model response or overwrite a reviewed record.
+        Caller must source receipt from the trusted local bridge receipt directory;
+        this method is deliberately not exposed as a public HTTP endpoint.
+        """
+        from services.invoice_intake.gpt_web_provider import from_receipt
+
+        normalized = from_receipt(receipt, request_id=request_id)
+        # Require a locally issued binding, not just a model-provided invoice number.
+        binding = receipt.get("invoice_binding")
+        if not isinstance(binding, dict) or binding.get("invoice_id") != invoice_id or binding.get("request_id") != request_id:
+            raise ValueError("GPT_WEB_INVOICE_BINDING_REQUIRED")
+        if not isinstance(binding.get("image_sha256"), str) or len(binding["image_sha256"]) != 64:
+            raise ValueError("GPT_WEB_IMAGE_BINDING_INVALID")
+        fields = normalized["fields"]
+        now = utcnow()
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT i.id, i.document_id, i.status, d.sha256 FROM invoices i JOIN documents d ON d.id=i.document_id WHERE i.id=? AND i.deleted_at IS NULL",
+                (invoice_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(invoice_id)
+            registered = db.execute(
+                """SELECT image_sha256 FROM gpt_web_invoice_bindings
+                   WHERE request_id=? AND invoice_id=?""",
+                (request_id, invoice_id),
+            ).fetchone()
+            if not registered:
+                raise ValueError("GPT_WEB_REQUEST_NOT_REGISTERED")
+            if row["sha256"] != binding["image_sha256"] or registered["image_sha256"] != row["sha256"]:
+                raise ValueError("GPT_WEB_IMAGE_SHA_MISMATCH")
+            if row["status"] not in {"needs_review", "recognition_insufficient", "quick_confirm"}:
+                raise ValueError("GPT_WEB_INVOICE_NOT_REVIEWABLE")
+            # A bridge retry for the same correlated request must not write twice.
+            previous = db.execute(
+                """SELECT payload_json FROM extractions WHERE document_id=?
+                   AND engine='gpt-web-verified-receipt' ORDER BY rowid DESC LIMIT 100""",
+                (row["document_id"],),
+            ).fetchall()
+            for prior in previous:
+                try:
+                    if json.loads(prior["payload_json"]).get("request_id") == request_id:
+                        return self.get_invoice(invoice_id)
+                except (ValueError, TypeError):
+                    raise ValueError("GPT_WEB_PERSISTED_RECEIPT_CORRUPT")
+            # Keep pre-existing readable values when GPT Web omits a field;
+            # do not synthesize missing amounts or mark human verification complete.
+            existing = db.execute(
+                """SELECT invoice_number, invoice_date, vendor_name, buyer_tax_id,
+                          seller_tax_id, amount_before_tax, tax_amount, total_amount
+                   FROM invoices WHERE id=?""", (invoice_id,),
+            ).fetchone()
+            merged = {
+                k: fields.get(k) if fields.get(k) is not None else existing[k]
+                for k in ("invoice_number", "invoice_date", "vendor_name",
+                          "buyer_tax_id", "seller_tax_id", "amount_before_tax",
+                          "tax_amount", "total_amount")
+            }
+            db.execute(
+                "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                (
+                    str(uuid.uuid4()), row["document_id"], "gpt-web-verified-receipt",
+                    json.dumps({
+                        "engine": "gpt-web",
+                        "request_id": request_id,
+                        "issues": normalized["issues"],
+                        "needs_review": True,
+                    }, ensure_ascii=False),
+                    now,
+                ),
+            )
+            db.execute(
+                """UPDATE invoices SET invoice_number=?,invoice_date=?,vendor_name=?,
+                   buyer_tax_id=?,seller_tax_id=?,amount_before_tax=?,tax_amount=?,
+                   total_amount=?,status='needs_review',updated_at=? WHERE id=?""",
+                (
+                    merged["invoice_number"], merged["invoice_date"],
+                    merged["vendor_name"], merged["buyer_tax_id"], merged["seller_tax_id"],
+                    merged["amount_before_tax"], merged["tax_amount"], merged["total_amount"],
+                    now, invoice_id,
+                ),
+            )
+        return self.get_invoice(invoice_id)
 
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
         with self.connect() as db:

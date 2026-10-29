@@ -812,6 +812,27 @@ Google Flow and Google Vids are now represented as governed AgentOS media provid
 The current probe command is carried by `.agentos/commands/realm-desktop-inspect.json`; this reuses an existing governed desktop lane instead of adding another direct Oracle workflow.
 
 
+## GPT Web invoice-to-SQLite integration (PR #2091, candidate only)
+
+The optional `INVOICE_GPT_WEB_BRIDGE_ROOT` enables a background GPT Web
+invoice extraction attempt after the fast OCR path detects a need for further
+recognition. The worker uses the existing local session-request bridge queue,
+matches the outer bridge receipt ID separately from the inner model correlation
+ID, and applies fields only to a previously archived, reviewable invoice.
+The SQLite `gpt_web_invoice_bindings` table binds the issued request ID to
+the invoice ID and archived image SHA-256; an unregistered or mismatched receipt
+is rejected. Receipt retries do not create duplicate extraction evidence.
+Model output cannot mark an invoice human-accepted. A failed, missing, or timed-out
+bridge attempt falls back to existing local deep recognition. No public receipt
+injection endpoint is provided.
+
+Verification is limited to `tests/test_invoice_gpt_web_provider.py` and the
+invoice validation job in GitHub Actions Run #40823092825, which passed on
+2026-10-29. This proves the simulated queue/receipt-to-SQLite contract, **not**
+a live browser handoff or Oracle deployment. The PR is draft; the new env var
+has not been enabled on Oracle and a production upload-to-UI-readback receipt
+is still required before declaring end-to-end success.
+
 ## Invoice whole-image comparison candidate
 
 `services/invoice_intake/vision_ocr.py` extends the existing financial-intake reader
