@@ -25,8 +25,8 @@ class BranchSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError): target.remote_refs()
     @patch.object(target.subprocess, "run")
     def test_mutating_remote_snapshot_fails_closed(self, run):
-        first = "a"*40+"\\trefs/heads/main\\n"+"b"*40+"\\trefs/heads/core/integration\\n"
-        second = "c"*40+"\\trefs/heads/main\\n"+"b"*40+"\\trefs/heads/core/integration\\n"
+        first = "a"*40+"\trefs/heads/main\n"+"b"*40+"\trefs/heads/core/integration\n"
+        second = "c"*40+"\trefs/heads/main\n"+"b"*40+"\trefs/heads/core/integration\n"
         run.side_effect = [mocked(first), mocked(second)]
         with self.assertRaises(ValueError): target.remote_refs()
 
