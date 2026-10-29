@@ -56,15 +56,13 @@ def shared_head_groups(refs):
 def classify_reachable_history(refs):
     """Bounded history proof: absence from fetched history is UNKNOWN, never negative."""
     anchors = {"main": refs["main"], "core/integration": refs["core/integration"]}
-    subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none",
-                    "--depth=300", "origin",
-                    "+refs/heads/main:refs/remotes/origin/main",
-                    "+refs/heads/core/integration:refs/remotes/origin/core/integration"],
-                   check=True, capture_output=True, text=True, timeout=90)
     history = {}
     for name in anchors:
-        result = subprocess.run(["git", "rev-list", "refs/remotes/origin/" + name],
-                                check=True, capture_output=True, text=True, timeout=30)
+        subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none",
+                        "--depth=300", "origin", name],
+                       check=True, capture_output=True, text=True, timeout=90)
+        result = subprocess.run(["git", "rev-list", "FETCH_HEAD"], check=True,
+                                capture_output=True, text=True, timeout=30)
         history[name] = set(result.stdout.splitlines())
     result = []
     for branch, sha in sorted(refs.items()):
