@@ -484,7 +484,7 @@ def select_reconciliation_fair_action(held, ready, cycle):
     due_posts=[x for x in ready if x.get("capability")=="social.post.publish"
                and x.get("status")=="candidate"
                and (x.get("media_intent") or {}).get("mode","none")=="none"]
-    if due_posts:
+    if held is not None and due_posts and not due_reads:
         return due_posts[0]
     return held or select_action(ready)
 
