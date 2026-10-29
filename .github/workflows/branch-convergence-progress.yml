@@ -34,5 +34,6 @@ jobs:
             progress.json
             progress.md
             branch-heads.tsv
+            branch-classification.json
           if-no-files-found: error
           retention-days: 90
