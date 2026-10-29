@@ -23,6 +23,15 @@ class BranchSnapshotTests(unittest.TestCase):
     def test_duplicate_fails(self, run):
         run.return_value = mocked(("b"*40+"\trefs/heads/main\n")*2+"c"*40+"\trefs/heads/core/integration\n")
         with self.assertRaises(ValueError): target.remote_refs()
+    def test_shared_heads_are_only_identity_aliases(self):
+        refs = {"main": "a"*40, "core/integration": "b"*40,
+                "legacy": "a"*40, "different": "c"*40}
+        groups = target.shared_head_groups(refs)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]["branches"], ["legacy", "main"])
+        self.assertFalse(groups[0]["retirement_allowed"])
+        self.assertEqual(groups[0]["consumer_status"], "UNKNOWN")
+
     def test_exact_tip_only_and_no_retirement(self):
         refs = {"main": "a"*40, "core/integration": "b"*40,
                 "old": "a"*40, "unverified": "c"*40}
