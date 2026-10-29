@@ -23,6 +23,14 @@ class BranchSnapshotTests(unittest.TestCase):
     def test_duplicate_fails(self, run):
         run.return_value = mocked(("b"*40+"\trefs/heads/main\n")*2+"c"*40+"\trefs/heads/core/integration\n")
         with self.assertRaises(ValueError): target.remote_refs()
+    def test_exact_tip_only_and_no_retirement(self):
+        refs = {"main": "a"*40, "core/integration": "b"*40,
+                "old": "a"*40, "unverified": "c"*40}
+        rows = {x["branch"]: x for x in target.classify_exact_tips(refs)}
+        self.assertEqual(rows["old"]["exact_tip_matches"], ["main"])
+        self.assertEqual(rows["unverified"]["content_disposition"], "UNKNOWN")
+        self.assertFalse(any(x["retirement_allowed"] for x in rows.values()))
+
     @patch.object(target.subprocess, "run")
     def test_invalid_sha_fails(self, run):
         run.return_value = mocked("bad\trefs/heads/main\n"+"c"*40+"\trefs/heads/core/integration\n")
