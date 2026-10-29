@@ -138,5 +138,12 @@ def main():
     for key,service in (("3005","if-tv-station"),("8800","layoutlab-api")):
         c=cmd(["systemctl","list-units","--all","--no-pager","--plain"])
         result["remaining_ports_authority"][key]["systemd_mentions"]=[x for x in c["stdout"].splitlines() if service in x.lower()][:10]
+    result["if_tv_active_nginx_context"]=[]
+    canonical=Path("/etc/nginx/sites-enabled/studio.milkcat.org")
+    if canonical.is_file():
+        lines=canonical.read_text(errors="replace").splitlines()
+        for i,line in enumerate(lines):
+            if re.search(r"(?<![0-9])3005(?![0-9])",line):
+                result["if_tv_active_nginx_context"].append({"line":i+1,"context":[x.strip()[:150] for x in lines[max(0,i-6):min(len(lines),i+4)]]})
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
