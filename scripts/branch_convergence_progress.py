@@ -27,6 +27,19 @@ def remote_refs():
     lines = "".join(f"{rows[name]}\trefs/heads/{name}\n" for name in sorted(rows))
     return rows, lines, hashlib.sha256(lines.encode()).hexdigest()
 
+def classify_exact_tips(refs):
+    """Exact commit identity only; never infer retirement or live use."""
+    anchors = {"main": refs["main"], "core/integration": refs["core/integration"]}
+    result = []
+    for branch in sorted(refs):
+        matches = [name for name, sha in anchors.items() if refs[branch] == sha]
+        result.append({"branch": branch, "head_sha": refs[branch],
+                       "exact_tip_matches": matches,
+                       "content_disposition": "EXACT_TIP" if matches else "UNKNOWN",
+                       "consumer_status": "UNKNOWN",
+                       "retirement_allowed": False})
+    return result
+
 def get_pr(number):
     req = urllib.request.Request(
         f"https://api.github.com/repos/{REPO}/pulls/{number}",
@@ -39,6 +52,11 @@ def get_pr(number):
 def main():
     refs, manifest, digest = remote_refs()
     Path("branch-heads.tsv").write_text(manifest, encoding="utf-8")
+    classified = classify_exact_tips(refs)
+    Path("branch-classification.json").write_text(
+        json.dumps({"schema": "agentos.branch-exact-tip-triage/v1",
+                    "manifest_sha256": digest,
+                    "entries": classified}, indent=2) + "\n", encoding="utf-8")
     rows = []
     for number, capability in TRACKED:
         pr = get_pr(number)
@@ -49,7 +67,7 @@ def main():
     observed = datetime.now(timezone.utc).isoformat()
     payload = {"schema": "agentos.branch-convergence-progress/v2", "observed_at": observed,
                "branch_manifest": {"count": len(refs), "sha256": digest, "complete": True,
-                                   "path": "branch-heads.tsv",
+                                   "path": "branch-heads.tsv", "classification_path": "branch-classification.json",
                                    "main_sha": refs["main"], "integration_sha": refs["core/integration"]},
                "tracked_prs": rows, "effective_capability_total": None,
                "runtime_accepted_count": None,
