@@ -36,5 +36,6 @@ jobs:
             branch-heads.tsv
             branch-classification.json
             branch-shared-heads.json
+            branch-ancestry.json
           if-no-files-found: error
           retention-days: 90
