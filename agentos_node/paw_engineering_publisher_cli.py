@@ -96,8 +96,7 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
         if not (receipt.get('outcome') == 'handoff' and isinstance(summary, dict)
                 and summary.get('bounded_stage') == 'paw-authorized-local-commit'):
             continue
-        marker = published / path.name
-        if marker.exists():
+        # Namespace publication markers by the trusted receipt assignment.\n        # Preserve historical A markers for replay compatibility; future B\n        # assignments must never alias A's generation-only receipt filename.\n        assignment_id = "paw-470-inspection-v1"\n        marker = published / (assignment_id + "--" + path.name)\n        legacy_marker = published / path.name\n        if legacy_marker.exists():\n            marker = legacy_marker\n        if marker.exists():
             if marker.is_symlink():
                 raise PawWorktreeBoundaryError('paw_publisher_marker_invalid')
             try:
