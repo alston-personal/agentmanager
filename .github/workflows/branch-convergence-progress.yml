@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/branch_convergence_progress.py'
+      - 'tests/test_branch_convergence_progress.py'
       - '.github/workflows/branch-convergence-progress.yml'
 permissions:
   contents: read
@@ -17,6 +18,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Test fail-closed branch manifest
+        env:
+          PYTHONPATH: scripts
+        run: python3 -m unittest discover -s tests -p 'test_branch_convergence_progress.py' -v
       - name: Produce verifiable convergence progress summary
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -28,4 +33,6 @@ jobs:
           path: |
             progress.json
             progress.md
+            branch-heads.tsv
+          if-no-files-found: error
           retention-days: 90
