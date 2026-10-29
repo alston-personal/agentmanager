@@ -478,6 +478,14 @@ def select_reconciliation_fair_action(held, ready, cycle):
                ("social.threads.observe","social.reply.review")]
     if held is not None and due_reads and cycle % 2 == 1:
         return select_action(due_reads)
+    # A reconciled historical reply is read-only maintenance, not a global
+    # write lock: a due, independently authorized post must eventually run.
+    # Preserve its action_id for the existing idempotent publish adapter.
+    due_posts=[x for x in ready if x.get("capability")=="social.post.publish"
+               and x.get("status")=="candidate"
+               and (x.get("media_intent") or {}).get("mode","none")=="none"]
+    if due_posts:
+        return due_posts[0]
     return held or select_action(ready)
 
 
