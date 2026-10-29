@@ -262,6 +262,46 @@ def test_dynamic_paw_binding_requires_exact_canonical_work_item(tmp_path):
         )
 
 
+def test_terminal_paw_publication_requires_committed_handoff_receipt(tmp_path):
+    from agent_core.employee_runtime import EmployeeRuntime
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    from agentos_node.paw_engineering_grant import require_dynamic_paw_assignment_binding
+
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "work-b",
+        "source_kind": "canonical_state", "source_ref": "task:work-b",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Inspect B",
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    store.project_pending_assignment("work-b")
+    lifecycle = EmployeeLifecycle(runtime)
+    with pytest.raises(PawWorktreeBoundaryError):
+        require_dynamic_paw_assignment_binding(
+            assignment_id="paw-b", runtime=runtime, terminal_publication=True)
+    lifecycle.claim("paw-b", "the-paw", "lease-b")
+    lifecycle.finish("paw-b", "lease-b", state="handoff")
+    require_dynamic_paw_assignment_binding(
+        assignment_id="paw-b", runtime=runtime, terminal_publication=True)
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_dynamic_binding_not_authorized"):
+        require_dynamic_paw_assignment_binding(assignment_id="paw-b", runtime=runtime)
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_dynamic_binding_ambiguous"):
+        require_dynamic_paw_assignment_binding(
+            assignment_id="paw-b", work_item_id="wrong-work", runtime=runtime,
+            terminal_publication=True)
+    receipt = lifecycle._receipt_path("paw-b", 1)
+    receipt.unlink()
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_terminal_publication_receipt_invalid"):
+        require_dynamic_paw_assignment_binding(
+            assignment_id="paw-b", runtime=runtime, terminal_publication=True)
+
+
 def test_dynamic_paw_binding_denies_unverified_dependency(tmp_path):
     from agent_core.employee_runtime import EmployeeRuntime
     from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
