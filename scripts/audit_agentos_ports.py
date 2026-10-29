@@ -145,5 +145,18 @@ def main():
         for i,line in enumerate(lines):
             if re.search(r"(?<![0-9])3005(?![0-9])",line):
                 result["if_tv_active_nginx_context"].append({"line":i+1,"context":[x.strip()[:150] for x in lines[max(0,i-6):min(len(lines),i+4)]]})
+    p=Path("/home/ubuntu/if-tv-station")
+    result["if_tv_runtime"]={"directory_exists":p.is_dir()}
+    if p.is_dir():
+        for name in ("package.json","ecosystem.config.js","ecosystem.config.cjs","next.config.js"):
+            f=p/name
+            if not f.is_file():continue
+            if name=="package.json":
+                try:
+                    obj=json.loads(f.read_text())
+                    result["if_tv_runtime"]["package"]={"name":obj.get("name"),"scripts":obj.get("scripts"),"dependencies_next":(obj.get("dependencies") or {}).get("next")}
+                except Exception:result["if_tv_runtime"]["package_read"]="invalid"
+            else: result["if_tv_runtime"][name]="present"
+        result["if_tv_runtime"]["build_exists"]=(p/".next").exists()
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
