@@ -21,10 +21,11 @@ def main():
   if listener:
    result['held'].append({'port':port,'reason':'already_listening'});continue
   # System manager uses ubuntu's user bus; never launch under root.
-  rc,v=run(['runuser','-u','ubuntu','--','env','XDG_RUNTIME_DIR=/run/user/1001','DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus','systemctl','--user','is-enabled',unit])
-  if rc!=0:
-   result['held'].append({'port':port,'reason':'user_unit_not_enabled_or_unreachable'});continue
-  rc,_=run(['runuser','-u','ubuntu','--','systemctl','--user','start',unit],timeout=25)
+  base=['runuser','-u','ubuntu','--','env','XDG_RUNTIME_DIR=/run/user/1001','DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus','systemctl','--user']
+  rc,v=run(base+['is-enabled',unit])
+  if rc!=0 and v not in ('disabled','static'):
+   result['held'].append({'port':port,'reason':'user_unit_unreachable','state':v});continue
+  rc,out=run(base+(['enable','--now',unit] if v=='disabled' else ['start',unit]),timeout=25)
   rc2,listener=run(['ss','-ltnH',f'sport = :{port}'])
   if rc==0 and listener:result['started'].append({'port':port,'unit':unit})
   else:result['held'].append({'port':port,'reason':'start_failed_or_no_listener'})
