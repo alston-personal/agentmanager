@@ -8,6 +8,7 @@ on:
       - 'scripts/audit_agentos_ports.py'
       - 'scripts/converge_agentos_ports.py'
       - 'scripts/restore_if_tv_station.py'
+      - 'scripts/restore_layoutlab_api.py'
       - 'scripts/failover_agentos_gateway.py'
 permissions:
   contents: read
@@ -86,3 +87,22 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@127.0.0.1" \
             'sudo -n python3 -' < scripts/restore_if_tv_station.py
+
+  restore-layoutlab-api:
+    needs: audit
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Restore registered LayoutLab API 8800 without public routing change
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@127.0.0.1" \
+            'sudo -n python3 -' < scripts/restore_layoutlab_api.py
