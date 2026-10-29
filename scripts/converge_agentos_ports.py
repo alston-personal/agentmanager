@@ -38,6 +38,23 @@ def main():
   rc,listener=run(['ss','-ltnH',f'sport = :{port}'])
   if listener:continue
   result['held'].append({'port':port,'project':project,'reason':'no_confirmed_owner_service_unit'})
+ # Register only verified persistent Docker service port mappings.
+ rc,docker=run(['docker','ps','--format','{{.Names}} {{.Ports}}'])
+ known={18765:('vendor-reputation-service-api-1','vendor-reputation-api'),
+        18766:('vendor-reputation-service-threads-reader-1','vendor-threads-reader'),
+        8080:('vaultwarden','vaultwarden')}
+ if rc==0:
+  for port,(container,project) in known.items():
+   matches=[line for line in docker.splitlines() if line.startswith(container+' ') and f':{port}->' in line]
+   if len(matches)!=1:
+    result['held'].append({'port':port,'reason':'container_mapping_not_confirmed'});continue
+   existing=registry.get(str(port))
+   if existing is not None:
+    if existing.get('project')!=project:result['held'].append({'port':port,'reason':'registry_owner_conflict'})
+    continue
+   rc,out=run(['python3','/home/ubuntu/agentmanager/scripts/core_services/port_manager.py','register',str(port),project,'--desc','Verified persistent Docker port: '+container])
+   if rc==0:result['registered'].append({'port':port,'project':project})
+   else:result['held'].append({'port':port,'reason':'registration_failed'})
  # Never force-register unknown listening ports. Classify common persistent services for later reconciliation.
  rc,ss=run(['ss','-ltnpH'])
  for row in ss.splitlines():
