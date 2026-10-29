@@ -42,6 +42,17 @@ def receive_authorized_paw_request(*, signed_source: Path, authority_dir: Path,
     if (not stat.S_ISREG(key_stat.st_mode) or key_stat.st_uid != os.geteuid()
             or key_stat.st_mode & 0o077 or key_stat.st_nlink != 1):
         raise PawWorktreeBoundaryError("paw_delivery_public_key_untrusted")
+    if source.is_symlink() or not source.is_file():
+        raise PawWorktreeBoundaryError("paw_delivery_source_invalid")
+    source_stat = source.stat()
+    if (not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1
+            or source_stat.st_size > 65536 or source_stat.st_mode & 0o022):
+        raise PawWorktreeBoundaryError("paw_delivery_source_invalid")
+    try:
+        raw_request = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise PawWorktreeBoundaryError("paw_delivery_source_invalid") from exc
+    request = verify_paw_public_signature(raw_request, public_key=key_file.read_bytes())
     # Production delivery must pin the issuer public key to a separate,
     # root-managed trust anchor. A worker-owned verifier is not itself trust.
     if trust_anchor_path is not None:
@@ -56,17 +67,6 @@ def receive_authorized_paw_request(*, signed_source: Path, authority_dir: Path,
             raise PawWorktreeBoundaryError("paw_delivery_trust_anchor_mismatch")
     else:
         raise PawWorktreeBoundaryError("paw_delivery_trust_anchor_required")
-    if source.is_symlink() or not source.is_file():
-        raise PawWorktreeBoundaryError("paw_delivery_source_invalid")
-    source_stat = source.stat()
-    if (not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1
-            or source_stat.st_size > 65536 or source_stat.st_mode & 0o022):
-        raise PawWorktreeBoundaryError("paw_delivery_source_invalid")
-    try:
-        raw_request = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError) as exc:
-        raise PawWorktreeBoundaryError("paw_delivery_source_invalid") from exc
-    request = verify_paw_public_signature(raw_request, public_key=key_file.read_bytes())
     runtime = EmployeeRuntime(runtime_root)
     lifecycle = EmployeeLifecycle(runtime)
     lease = lifecycle.get_lease(assignment_id)
