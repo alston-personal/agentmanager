@@ -1,6 +1,11 @@
 name: Audit AgentOS Port Registry and Runtime
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/one-nginx-upstream-3041]
+    paths:
+      - '.github/workflows/repair-agentos-one-nginx.yml'
+      - 'scripts/audit_agentos_ports.py'
 permissions:
   contents: read
 concurrency:
