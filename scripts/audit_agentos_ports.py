@@ -97,5 +97,19 @@ def main():
         result["boot_persistence"][unit]={"rc":status["rc"],"state":status["stdout"][:600]}
     linger=cmd(["loginctl","show-user","ubuntu","-p","Linger","-p","State"])
     result["boot_persistence"]["user_linger"]={"rc":linger["rc"],"state":linger["stdout"][:200]}
+    result["unregistered_identity"]=[]
+    for row in result["listeners"]:
+        port=row["port"]
+        if str(port) in result["registry"] or port not in [3030,8765,8767,18765,18766,18767,18791,8080,8090,8095,8099]:
+            continue
+        process=row["owners"][0].get("process","")
+        m=re.search(r"pid=(\\d+)",process)
+        pid=m.group(1) if m else None
+        argv=Path("/proc/"+pid+"/cmdline") if pid else None
+        try: cmdline=argv.read_bytes().replace(b"\\x00",b" ").decode(errors="replace")[:280] if argv else None
+        except Exception: cmdline=None
+        result["unregistered_identity"].append({"port":port,"pid":pid,"command":cmdline})
+    d=cmd(["docker","ps","--format","{{.Names}} {{.Ports}}"])
+    result["docker_port_map"]={"rc":d["rc"],"lines":d["stdout"].splitlines()[:45]}
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
