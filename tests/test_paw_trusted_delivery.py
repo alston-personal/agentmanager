@@ -62,7 +62,20 @@ def test_delivery_requires_fresh_lease_and_rejects_duplicate(tmp_path, monkeypat
     opts = dict(signed_source=source, authority_dir=dest,
                 runtime_root=tmp_path, assignment_id="paw-b",
                 lease_id="lease-b", wake_id=body["grant"]["wake_id"],
-                presence_generation=1, registry_path=tmp_path / "policy.json")
+                presence_generation=1, registry_path=tmp_path / "policy.json",
+                trust_anchor_path=tmp_path / "issuer-root-anchor.pub")
+    anchor = tmp_path / "issuer-root-anchor.pub"
+    anchor.write_bytes((dest / "paw-470-issuer.pub").read_bytes())
+    original_stat = Path.stat
+    def stat_with_root_anchor(path, *args, **kwargs):
+        result = original_stat(path, *args, **kwargs)
+        if str(path) == str(anchor):
+            values = list(result)
+            values[4] = 0  # Trusted root ownership in isolated test fixture.
+            return os.stat_result(values)
+        return result
+    import os
+    monkeypatch.setattr(Path, "stat", stat_with_root_anchor)
     holder["lease"] = None
     with pytest.raises(PawWorktreeBoundaryError, match="paw_delivery_lease_missing"):
         delivery.receive_authorized_paw_request(**opts)
