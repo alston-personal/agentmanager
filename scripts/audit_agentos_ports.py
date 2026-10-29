@@ -86,5 +86,16 @@ def main():
             result["slot_health"][f"{port}:{path}"]={"code":x["stdout"].strip(),"rc":x["rc"]}
     pub=cmd(["curl","-sS","--max-time","7","-o","/dev/null","-w","%{http_code}","https://studio.milkcat.org/dashboard/api/agentos/v1/health"])
     result["slot_health"]["public_one_health"]={"code":pub["stdout"].strip(),"rc":pub["rc"]}
+    result["service_ownership"]={}
+    for port in [3005,8766,8800,3040,3041,3030,8765,8767,18765,18766,18767,18791]:
+        row=next((r for r in result["listeners"] if r["port"]==port),None)
+        result["service_ownership"][str(port)]={"listener":row,"registry":result["registry"].get(str(port))}
+    result["boot_persistence"]={}
+    for unit in ["agentos-dashboard-blue.service","agentos-dashboard-green.service","agentos-dashboard.service"]:
+        base=["runuser","-u","ubuntu","--","env","XDG_RUNTIME_DIR=/run/user/1001","DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus","systemctl","--user"]
+        status=cmd(base+["show",unit,"-p","UnitFileState","-p","ActiveState","-p","SubState","-p","Result","-p","FragmentPath"])
+        result["boot_persistence"][unit]={"rc":status["rc"],"state":status["stdout"][:600]}
+    linger=cmd(["loginctl","show-user","ubuntu","-p","Linger","-p","State"])
+    result["boot_persistence"]["user_linger"]={"rc":linger["rc"],"state":linger["stdout"][:200]}
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
