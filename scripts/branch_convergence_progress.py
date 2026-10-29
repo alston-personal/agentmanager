@@ -40,6 +40,16 @@ def classify_exact_tips(refs):
                        "retirement_allowed": False})
     return result
 
+def shared_head_groups(refs):
+    """Group exact commit-tip aliases; no patch equivalence or retirement inference."""
+    by_sha = {}
+    for name, sha in refs.items():
+        by_sha.setdefault(sha, []).append(name)
+    return [{"sha": sha, "branches": sorted(names), "size": len(names),
+             "consumer_status": "UNKNOWN", "retirement_allowed": False}
+            for sha, names in sorted(by_sha.items())
+            if len(names) > 1]
+
 def get_pr(number):
     req = urllib.request.Request(
         f"https://api.github.com/repos/{REPO}/pulls/{number}",
@@ -57,6 +67,11 @@ def main():
         json.dumps({"schema": "agentos.branch-exact-tip-triage/v1",
                     "manifest_sha256": digest,
                     "entries": classified}, indent=2) + "\n", encoding="utf-8")
+    aliases = shared_head_groups(refs)
+    Path("branch-shared-heads.json").write_text(
+        json.dumps({"schema": "agentos.branch-shared-heads/v1",
+                    "manifest_sha256": digest, "groups": aliases}, indent=2) + "\\n",
+        encoding="utf-8")
     rows = []
     for number, capability in TRACKED:
         pr = get_pr(number)
@@ -68,6 +83,8 @@ def main():
     payload = {"schema": "agentos.branch-convergence-progress/v2", "observed_at": observed,
                "branch_manifest": {"count": len(refs), "sha256": digest, "complete": True,
                                    "path": "branch-heads.tsv", "classification_path": "branch-classification.json",
+                                   "shared_head_path": "branch-shared-heads.json",
+                                   "shared_head_groups": len(aliases),
                                    "main_sha": refs["main"], "integration_sha": refs["core/integration"]},
                "tracked_prs": rows, "effective_capability_total": None,
                "runtime_accepted_count": None,
