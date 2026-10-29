@@ -6,7 +6,7 @@ P=Path('/home/ubuntu/agent-data/config/port_registry.json')
 def run(args,timeout=14):
  try:
   p=subprocess.run(args,text=True,capture_output=True,timeout=timeout)
-  return p.returncode,p.stdout.strip()
+  return p.returncode,(p.stdout+'\n'+p.stderr).strip()
  except Exception:return 99,''
 def main():
  registry=json.loads(P.read_text())
@@ -47,7 +47,7 @@ def main():
     if rc==0 and listen:
      result['started'].append({'port':8766,'unit':'layoutlib-web.service','user':'agentos-node'})
     else:
-     _,state=run(base+['show','layoutlib-web.service','-p','UnitFileState','-p','ActiveState','-p','SubState','-p','Result','-p','ExecMainStatus']); _,journal=run(['journalctl','_UID='+str(uid),'--user-unit=layoutlib-web.service','-n','12','--no-pager']); result['held'].append({'port':8766,'reason':'existing_unit_start_failed','status':out[-250:],'unit_state':state[-550:],'journal':journal[-1100:]})
+     _,state=run(base+['show','layoutlib-web.service','-p','UnitFileState','-p','ActiveState','-p','SubState','-p','Result','-p','ExecMainStatus']); _,journal=run(['journalctl','_UID='+str(uid),'--user-unit=layoutlib-web.service','-n','12','--no-pager']); result['held'].append({'port':8766,'reason':'existing_unit_start_failed','status':out[-250:],'unit_state':state[-550:],'journal':journal[-1100:],'runtime_dir_present':Path('/run/user/'+str(uid)+'/bus').exists()})
    else:
     result['held'].append({'port':8766,'reason':'existing_unit_or_runtime_missing'})
  # Other registered ports: no guessing. Start only unit explicitly tied to port and current registry project.
