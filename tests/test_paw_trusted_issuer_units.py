@@ -16,5 +16,6 @@ def test_issuer_trigger_is_only_owner_approval_change():
     assert "User=agentos-issuer" in service
     assert "LoadCredential=signing-key:/etc/agentos/paw-issuer/ed25519.key" in service
     assert "LoadCredential=approved-request:/etc/agentos/paw-issuer/approval.json" in service
-    assert "paw_trusted_issuer_cli" in service
+    assert "ExecStart=/home/ubuntu/agent-data/runtime/core/current/.venv/bin/python3 -m agentos_node.paw_trusted_issuer_cli" in service
+    assert "ExecStart=/usr/bin/python3" not in service
     assert "paw_trusted_delivery" not in service
