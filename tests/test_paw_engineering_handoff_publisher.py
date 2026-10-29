@@ -62,3 +62,19 @@ def test_durable_handoff_publisher_does_not_read_without_authority(tmp_path):
             runtime_root=tmp_path, workspace_root=tmp_path,
             generation=1, authenticated_publisher=False,
         )
+
+
+def test_dynamic_paw_b_requires_governed_assignment_before_receipt(tmp_path, monkeypatch):
+    import agentos_node.paw_engineering_handoff_publisher as module
+    from agentos_node.paw_engineering_grant import PawWorktreeBoundaryError
+    def reject(**kwargs):
+        raise PawWorktreeBoundaryError("paw_dynamic_binding_not_authorized")
+    monkeypatch.setattr(
+        "agentos_node.paw_engineering_grant.require_dynamic_paw_assignment_binding", reject,
+    )
+    with pytest.raises(PawWorktreeBoundaryError, match="paw_dynamic_binding_not_authorized"):
+        module.publish_durable_paw_handoff(
+            runtime_root=tmp_path, workspace_root=tmp_path,
+            generation=1, authenticated_publisher=True,
+            assignment_id="paw-b", publication_root=tmp_path,
+        )
