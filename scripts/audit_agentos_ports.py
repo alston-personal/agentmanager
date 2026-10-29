@@ -39,7 +39,11 @@ def main():
     # Inspect effective configuration; emit only routing lines, not the full file.
     ngx=cmd(["nginx","-T"])
     if ngx["rc"] != 0: result["warnings"].append("nginx_T_unavailable")
+    active_file = ""
     for line in ngx["stdout"].splitlines():
+        if line.startswith("# configuration file "): active_file = line[21:].split(":",1)[0]
+        if "3041" in line or "3040" in line:
+            result.setdefault("upstream_definitions",[]).append({"file":active_file,"directive":line.strip()[:240]})
         s=line.strip()
         if (s.startswith("location ") and ("agentos" in s or "dashboard" in s)) or (s.startswith("proxy_pass ") and re.search(r"(?<!\d)(3000|3041|8780)(?!\d)",s)):
             result["nginx_agentos_routes"].append(s[:250])
