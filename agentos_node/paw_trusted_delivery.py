@@ -26,7 +26,8 @@ def receive_authorized_paw_request(*, signed_source: Path, authority_dir: Path,
                                    runtime_root: Path, assignment_id: str,
                                    lease_id: str, wake_id: str,
                                    presence_generation: int,
-                                   registry_path: Path) -> Path:
+                                   registry_path: Path,
+                                   trust_anchor_path: Path | None = None) -> Path:
     """Transport an independently signed, exact-lease grant; never sign it."""
     directory = Path(authority_dir)
     source = Path(signed_source)
@@ -41,6 +42,20 @@ def receive_authorized_paw_request(*, signed_source: Path, authority_dir: Path,
     if (not stat.S_ISREG(key_stat.st_mode) or key_stat.st_uid != os.geteuid()
             or key_stat.st_mode & 0o077 or key_stat.st_nlink != 1):
         raise PawWorktreeBoundaryError("paw_delivery_public_key_untrusted")
+    # Production delivery must pin the issuer public key to a separate,
+    # root-managed trust anchor. A worker-owned verifier is not itself trust.
+    if trust_anchor_path is not None:
+        anchor = Path(trust_anchor_path)
+        if anchor.is_symlink() or not anchor.is_file():
+            raise PawWorktreeBoundaryError("paw_delivery_trust_anchor_missing")
+        anchor_meta = anchor.stat()
+        if (not stat.S_ISREG(anchor_meta.st_mode) or anchor_meta.st_uid != 0
+                or anchor_meta.st_mode & 0o022 or anchor_meta.st_nlink != 1):
+            raise PawWorktreeBoundaryError("paw_delivery_trust_anchor_untrusted")
+        if anchor.read_bytes() != key_file.read_bytes():
+            raise PawWorktreeBoundaryError("paw_delivery_trust_anchor_mismatch")
+    else:
+        raise PawWorktreeBoundaryError("paw_delivery_trust_anchor_required")
     if source.is_symlink() or not source.is_file():
         raise PawWorktreeBoundaryError("paw_delivery_source_invalid")
     source_stat = source.stat()
@@ -109,12 +124,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wake-id", required=True)
     parser.add_argument("--presence-generation", type=int, required=True)
     parser.add_argument("--registry-path", type=Path, required=True)
+    parser.add_argument("--trust-anchor", type=Path, required=True)
     args = parser.parse_args(argv)
     receive_authorized_paw_request(
         signed_source=args.signed_source, authority_dir=args.authority_dir,
         runtime_root=args.runtime_root, assignment_id=args.assignment_id,
         lease_id=args.lease_id, wake_id=args.wake_id,
         presence_generation=args.presence_generation, registry_path=args.registry_path,
+        trust_anchor_path=args.trust_anchor,
     )
     return 0
 
