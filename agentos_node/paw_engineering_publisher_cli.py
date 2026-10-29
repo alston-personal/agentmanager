@@ -94,7 +94,7 @@ def _publish_latest_locked(*, runtime_root: Path, workspace_root: Path,
             except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError, PawWorktreeBoundaryError):
                 continue
         candidates.extend((assignment, p) for p in directory.iterdir()
-                          if re.fullmatch(r"[0-9]{6}\\.json", p.name))
+                          if re.fullmatch(r"[0-9]{6}\.json", p.name))
     if not candidates:
         return {"status": "idle", "reason": "no_receipt"}
     import json
