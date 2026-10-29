@@ -853,3 +853,29 @@ def test_post_claim_issuer_rendezvous_accepts_late_public_key(tmp_path):
         assert request.read_text() == "{}"
     finally:
         thread.join()
+
+
+def test_paw_wait_stops_when_lease_becomes_inactive(tmp_path):
+    from agentos_node.product_employee_worker import _await_paw_request_after_claim
+    seen = []
+    def no_live_lease():
+        seen.append(True)
+        return False
+    _await_paw_request_after_claim(
+        tmp_path / "missing-request", tmp_path / "missing-key",
+        timeout_seconds=60, lease_still_active=no_live_lease,
+    )
+    assert len(seen) == 1
+
+
+def test_paw_wait_checks_lease_even_when_no_authority_arrives(tmp_path):
+    from agentos_node.product_employee_worker import _await_paw_request_after_claim
+    seen = []
+    def checking():
+        seen.append(True)
+        return len(seen) < 3
+    _await_paw_request_after_claim(
+        tmp_path / "missing-request", tmp_path / "missing-key",
+        timeout_seconds=60, lease_still_active=checking,
+    )
+    assert len(seen) == 3
