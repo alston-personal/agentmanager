@@ -2084,7 +2084,7 @@ class InvoiceStore:
         data = json.loads(receipt_path.read_text(encoding="utf-8"))
         if data.get("provider") != "gpt-web" or data.get("operation") != "invoke":
             raise ValueError("GPT_WEB_RECEIPT_PROVIDER_MISMATCH")
-        if data.get("request_id") != request_id:
+        if data.get("request_id") != outer_request_id:
             raise ValueError("GPT_WEB_OUTER_REQUEST_MISMATCH")
         # Binding is loaded from the local SQLite authority, never from model text.
         data["invoice_binding"] = dict(binding)
