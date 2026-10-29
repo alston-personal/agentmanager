@@ -23,6 +23,13 @@ class BranchSnapshotTests(unittest.TestCase):
     def test_duplicate_fails(self, run):
         run.return_value = mocked(("b"*40+"\trefs/heads/main\n")*2+"c"*40+"\trefs/heads/core/integration\n")
         with self.assertRaises(ValueError): target.remote_refs()
+    @patch.object(target.subprocess, "run")
+    def test_mutating_remote_snapshot_fails_closed(self, run):
+        first = "a"*40+"\\trefs/heads/main\\n"+"b"*40+"\\trefs/heads/core/integration\\n"
+        second = "c"*40+"\\trefs/heads/main\\n"+"b"*40+"\\trefs/heads/core/integration\\n"
+        run.side_effect = [mocked(first), mocked(second)]
+        with self.assertRaises(ValueError): target.remote_refs()
+
     def test_shared_heads_are_only_identity_aliases(self):
         refs = {"main": "a"*40, "core/integration": "b"*40,
                 "legacy": "a"*40, "different": "c"*40}
