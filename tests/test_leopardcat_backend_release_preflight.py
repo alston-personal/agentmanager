@@ -21,6 +21,15 @@ class PreflightContract(unittest.TestCase):
                 preflight.inspect("main")
             command.assert_not_called()
 
+    def test_preflight_checks_user_scoped_tarot_service(self):
+        with patch.object(preflight, "command", return_value="/unexpected"):
+            with self.assertRaisesRegex(RuntimeError, "unexpected_service_working_directory"):
+                preflight.inspect(VALID_SHA)
+            preflight.command.assert_called_once_with(
+                "systemctl", "--user", "show", "leopardcat-tarot.service",
+                "-p", "WorkingDirectory", "--value"
+            )
+
     def test_rejects_wrong_systemd_workdir(self):
         with patch.object(preflight, "command", return_value="/tmp/untrusted"):
             with self.assertRaisesRegex(RuntimeError, "unexpected_service_working_directory"):
