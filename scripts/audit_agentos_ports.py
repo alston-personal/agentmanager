@@ -186,5 +186,17 @@ def main():
             unit=o.get("unit")
             o["class"]="system" if unit in ("cron.service","nginx.service","docker.service") else ("persistent_unit" if unit else "unverified")
         result["priority_unregistered_identity"].append(row)
+    expected={3005:"if-tv-station",3040:"agentos-dashboard-blue",3041:"agentos-dashboard-green",8766:"layoutlib-web",8800:"layoutlab-api",8080:"vaultwarden",18765:"vendor-reputation-api",18766:"vendor-threads-reader",18767:"invoice-intake",18791:"openclaw-gateway",8095:"stitch-craft",8000:"agentos-chatgpt-mcp",6080:"agentos-gui-novnc",5901:"agentos-gui-vnc",3030:"root-nexus",8765:"agentos-control-plane",8767:"layoutlib-capability-gateway",8771:"agentos-social-runtime",8775:"agentos-provider-bridge",8868:"milkcat-fengshui",8876:"anime-meme-studio",11434:"ollama",25565:"minecraft"}
+    result["final_convergence"]={"verified":[], "missing":[]}
+    listening={x["port"] for x in result["listeners"]}
+    for port,project in expected.items():
+        owner=result["registry"].get(str(port),{}).get("project")
+        item={"port":port,"project":project}
+        if owner==project and port in listening: result["final_convergence"]["verified"].append(item)
+        else: result["final_convergence"]["missing"].append({**item,"registry_owner":owner,"listening":port in listening})
+    for port,path in [(3005,"/iftv"),(8766,"/api/health"),(8800,"/healthz")]:
+        h=cmd(["curl","-sS","--max-time","5","-o","/dev/null","-w","%{http_code}",f"http://127.0.0.1:{port}{path}"])
+        result["final_convergence"][f"http_{port}"]=h["stdout"].strip()
+    result["final_convergence"]["complete"]=not result["final_convergence"]["missing"] and all(result["final_convergence"].get(f"http_{p}")=="200" for p in (3005,8766,8800))
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
