@@ -2,7 +2,7 @@ name: Character Fusion Runner Window Rollout
 
 # trigger-current: 2026-10-15T14:00+08:00 character-fusion current rollout
 
-# trigger: 2026-10-13 Character Fusion rollout after immutable-converge fix 0820
+# trigger: 2026-10-30 deploy current Character Fusion core
 
 on:
   pull_request:
