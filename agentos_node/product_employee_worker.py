@@ -18,6 +18,26 @@ from agent_core.governed_execution import execute_bound_work_intent
 from agent_core.executor_job_contract import canonical_executor_job_request
 from agentos_node.completion_470_status_provider import inspect_completion_470
 
+def _await_paw_request_after_claim(request_file: Path, public_file: Path, *, timeout_seconds: float = 60.0, lease_still_active=None) -> None:
+    """Bounded rendezvous with an independent issuer after claim.
+
+    No request is synthesized or signed here. An absent issuer fails closed,
+    preserving the ordinary blocked outcome. The issuer publishes atomically.
+    """
+    import time
+    # No provisioned authority directory means the independent issuer is not
+    # installed: fail closed immediately, leaving time for a blocked Receipt.
+    if not request_file.parent.is_dir():
+        return
+    # The verifier may be provisioned just after a fresh Lease is claimed.
+    # Wait for both independently owned artifacts; the worker never creates either.
+    deadline = time.monotonic() + max(0.0, min(float(timeout_seconds), 60.0))
+    while not (request_file.is_file() and public_file.is_file()) and time.monotonic() < deadline:
+        if lease_still_active is not None and not lease_still_active():
+            return
+        time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
+
+
 EXPECTED_AUTHORITY_POLICY = "core-supervisor-employee-wake-v1"
 EXPECTED_TRANSPORT = "one_direct"
 ELIGIBLE_PRECLAIM_DELIVERY_STATES = {"awaiting_claim"}
@@ -70,15 +90,22 @@ def _same_wake(left: Any, right: Any) -> bool:
     return isinstance(left, dict) and isinstance(right, dict) and left == right
 
 
-def _require_runner_scope(runner_kind: str, capsule: dict[str, Any]) -> dict[str, Any]:
+def _require_runner_scope(runner_kind: str, capsule: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
     scope = SUPPORTED_PRODUCT_RUNNERS.get(str(runner_kind or "").strip())
     if scope is None:
         raise PermissionError("product_employee_runner_kind_not_allowed")
     wake = capsule.get("wake_intent")
     if not isinstance(wake, dict):
         raise PermissionError("product_employee_worker_wake_missing")
-    if capsule.get("employee_id") != scope["employee_id"] or capsule.get("assignment_id") != scope["assignment_id"]:
+    if capsule.get("employee_id") != scope["employee_id"]:
         raise PermissionError("product_employee_worker_scope_mismatch")
+    if capsule.get("assignment_id") != scope["assignment_id"]:
+        if runner_kind != "paw_inspect_v1" or runtime_root is None:
+            raise PermissionError("product_employee_worker_scope_mismatch")
+        from agentos_node.employee_worker_host_runtime import ProductEmployeeWorkerAdapterRegistry
+        adapter = ProductEmployeeWorkerAdapterRegistry(runtime_root=runtime_root).resolve(capsule)
+        if adapter is None or adapter.assignment_id != capsule.get("assignment_id"):
+            raise PermissionError("product_employee_worker_scope_mismatch")
     if set(wake.get("role_ids") or []) != scope["role_ids"]:
         raise PermissionError("product_employee_worker_role_scope_mismatch")
     if set(wake.get("skill_ids") or []) != scope["skill_ids"]:
@@ -221,7 +248,7 @@ def require_governed_product_delivery(
     reconcile JSON on every poll. Atomic evidence replacement changes directory
     metadata and invalidates the cache.
     """
-    _require_runner_scope(runner_kind, capsule)
+    _require_runner_scope(runner_kind, capsule, runtime_root=runtime_root)
     root = Path(runtime_root).expanduser().resolve()
     wake = capsule.get("wake_intent")
     key = _delivery_index_key(
@@ -324,7 +351,7 @@ class GovernedProductEmployeeWorker:
             if not payload or payload.get("node_id") != self.node_id:
                 continue
             try:
-                _require_runner_scope(self.runner_kind, payload)
+                _require_runner_scope(self.runner_kind, payload, runtime_root=self.runtime_root)
             except PermissionError:
                 continue
             result.append((path, payload))
@@ -384,6 +411,101 @@ class GovernedProductEmployeeWorker:
             )
 
         if self.runner_kind == "paw_inspect_v1":
+            # Separately owned engineering authority directory; never derive
+            # execution authority, a file path or key from the wake capsule.
+            authority_dir = self.worker_state_root / "trusted-engineering-authority"
+            from agentos_node.paw_engineering_request import trusted_request_filename
+            request_file = authority_dir / trusted_request_filename(assignment_id)
+            public_file = authority_dir / "paw-470-issuer.pub"
+            def active_paw_lease() -> bool:
+                current = lifecycle.get_lease(assignment_id)
+                return bool(current and current.lease_id == lease_id
+                            and current.generation == lease.generation
+                            and current.status == "active"
+                            and not lifecycle.lease_expired(current))
+            _await_paw_request_after_claim(
+                request_file, public_file,
+                timeout_seconds=min(60.0, float(self.lease_seconds)),
+                lease_still_active=active_paw_lease,
+            )
+            if request_file.exists() != public_file.exists():
+                raise PermissionError("paw_engineering_authority_incomplete")
+            if request_file.is_file() and public_file.is_file():
+                import stat
+                from agentos_node.paw_engineering_public_signature import verify_paw_public_signature
+                from agentos_node.paw_engineering_executor import run_authorized_static_candidate
+                from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
+
+                def trusted_regular(path: Path) -> bool:
+                    meta = path.lstat()
+                    return (
+                        stat.S_ISREG(meta.st_mode)
+                        and meta.st_uid == os.geteuid()
+                        and not (meta.st_mode & 0o077)
+                        and meta.st_nlink == 1
+                    )
+
+                if not all(
+                    (path.exists() and not path.is_symlink() and trusted_regular(path))
+                    for path in (request_file, public_file)
+                ):
+                    raise PawWorktreeBoundaryError("paw_issuer_file_not_trusted")
+                public_key = public_file.read_bytes()
+                if request_file.stat().st_size > 65536:
+                    raise PawWorktreeBoundaryError("paw_signed_request_too_large")
+                signed = verify_paw_public_signature(json.loads(request_file.read_text(encoding="utf-8")), public_key=public_key)
+                git_root = source_root
+                isolated_root = self.worker_state_root / "paw-470-worktrees"
+                # The signed request is checked before any git mutation.
+                isolated_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+                commit = run_authorized_static_candidate(
+                    grant_payload=signed["grant"],
+                    expected_sha256=signed["expected_sha256"],
+                    replacement=signed["replacement"],
+                    trusted_wake_id=wake,
+                    trusted_presence_generation=generation,
+                    trusted_lease_generation=lease.generation,
+                    trusted_lease_id=lease_id,
+                    lifecycle=lifecycle,
+                    registry_path=source_root / "governance/execution-authority.json",
+                    trusted_assignment_id=assignment_id,
+                    trusted_runtime=runtime,
+                    repository=git_root,
+                    workspace_root=isolated_root,
+                )
+                from agentos_node.paw_engineering_bundle import export_paw_bundle
+                bundle_path = export_paw_bundle(
+                    worktree=isolated_root / commit.work_id,
+                    destination=self.worker_state_root / "paw-470-bundles" / (commit.work_id + ".bundle"),
+                    work_id=commit.work_id, commit_sha=commit.commit_sha,
+                )
+                thread_head = "paw:local-commit:" + commit.commit_sha
+                lifecycle.checkpoint(assignment_id, lease_id, thread_head)
+                lifecycle.finish(
+                    assignment_id, lease_id, state="handoff",
+                    result_summary={
+                        "bounded_stage": "paw-authorized-local-commit",
+                        "work_id": commit.work_id,
+                        "base_sha": commit.base_sha,
+                        "commit_sha": commit.commit_sha,
+                        "bundle_path": str(bundle_path),
+                        "branch": commit.branch,
+                        "changed_file": commit.changed_file,
+                        "published": False,
+                        "independent_acceptance_pass": False,
+                        "mutation_performed": True,
+                        "credential_exposed": False,
+                    },
+                )
+                employee = runtime.get_employee(employee_id)
+                return ProductWorkerState(
+                    status="handoff", runner_kind=self.runner_kind,
+                    employee_id=employee_id, assignment_id=assignment_id,
+                    wake_id=wake, presence_generation=generation,
+                    lease_generation=lease.generation, thread_head=thread_head,
+                    executor_provider=employee.executor.provider,
+                    executor_model=employee.executor.model,
+                )
             # Paw can do a real, fixed-scope inspection without engineering write
             # authority. This is a diagnostic, never independent Claw PASS.
             observation = inspect_completion_470(

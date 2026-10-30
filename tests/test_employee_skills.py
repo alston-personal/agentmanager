@@ -51,6 +51,21 @@ class EmployeeSkillTests(unittest.TestCase):
         )
         self.assertFalse(hydrated[0].mutation_authority)
 
+    def test_claw_inherits_base_and_hydrates_readonly_security_audit(self):
+        self.runtime.create_employee(
+            "the-claw", "The Claw", role_ids=["sector.claw"],
+            skill_ids=["security.audit"],
+        )
+        claw = self.roles.resolve("sector.claw")
+        self.assertEqual(claw.parent_role_id, "core.root")
+        self.assertEqual(claw.protocols["pdca"], "root.pdca.v1")
+        self.assertIn("claw.review.readonly", claw.capabilities)
+        self.assertNotIn("deploy_production", claw.capabilities)
+        skills = self.skills.hydrate_employee_skills("the-claw")
+        self.assertEqual([x.skill_id for x in skills], ["security.audit"])
+        self.assertEqual(skills[0].required_capabilities, ("claw.review.readonly",))
+        self.assertFalse(skills[0].mutation_authority)
+
     def test_existing_product_employees_hydrate_root_pdca_and_own_skills(self):
         for employee_id, role_id, skill_id in (
             ("zeus-writer", "product.zeus_writer", "writing.project.continue"),

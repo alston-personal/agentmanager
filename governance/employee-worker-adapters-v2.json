@@ -52,6 +52,19 @@
       "skill_ids": [
         "engineering.work.inspect"
       ]
+    },
+    {
+      "adapter_id": "claw-review-readonly-v1",
+      "status": "disabled",
+      "runner_kind": "claw_review_readonly_v1",
+      "employee_id": "the-claw",
+      "assignment_id": "claw-review-review-required",
+      "role_ids": [
+        "sector.claw"
+      ],
+      "skill_ids": [
+        "security.audit"
+      ]
     }
   ],
   "invariants": [

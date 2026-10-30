@@ -45,6 +45,169 @@ class CoreSupervisorServiceTests(unittest.TestCase):
             max_poll_seconds=16,
         )
 
+    def test_authorized_independent_paw_b_projects_once_without_claw_pass(self):
+        self.runtime.create_employee(
+            "the-paw", "Paw", role_ids=["sector.paw"],
+            skill_ids=["engineering.work.inspect"],
+        )
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "b-independent",
+            "source_kind": "canonical_state", "source_ref": "task:b-independent",
+            "project_id": "agentos-core", "employee_id": "the-paw",
+            "assignment_id": "paw-b", "goal": "Implement independent B",
+            "authority_requirements": ["one-governed-dispatch"],
+            "required_capabilities": ["engineering.work.inspect"],
+            "state": "open",
+        })
+        service = self.service()
+        self.assertEqual(service._project_authorized_paw_continuations({}), 1)
+        self.assertEqual(self.runtime.get_assignment("paw-b").state, "pending")
+        self.assertEqual(service._project_authorized_paw_continuations({}), 0)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "b-dependent",
+            "source_kind": "canonical_state", "source_ref": "task:b-dependent",
+            "project_id": "agentos-core", "employee_id": "the-paw",
+            "assignment_id": "paw-b-dependent", "goal": "Needs A",
+            "dependency_refs": ["task:a"],
+            "authority_requirements": ["one-governed-dispatch"],
+            "required_capabilities": ["engineering.work.inspect"],
+            "state": "open",
+        })
+        self.assertEqual(service._project_authorized_paw_continuations({}), 0)
+        with self.assertRaises(FileNotFoundError):
+            self.runtime.get_assignment("paw-b-dependent")
+
+    def test_paw_completion_does_not_unlock_independent_review_dependency(self):
+        source = "github:alston-personal/agentmanager#470"
+        self.runtime.create_assignment("paw-470-test", "spec-steward", "Paw implementation")
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "paw-review-gated",
+            "source_kind": "github_issue", "source_ref": source,
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "paw-470-test", "goal": "Paw implementation",
+            "authority_requirements": ["independent_review_required"],
+            "state": "open",
+        })
+        lease = self.lifecycle.claim("paw-470-test", "spec-steward", "lease-paw", now=T0)
+        self.lifecycle.finish("paw-470-test", "lease-paw", now=T0 + timedelta(seconds=1))
+        service = self.service()
+        self.assertNotIn(source, service._verified_dependency_states())
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "dependent-on-paw",
+            "source_kind": "github_issue",
+            "source_ref": "github:alston-personal/agentmanager#471",
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "dependent-471", "goal": "Dependent work",
+            "dependency_refs": [source], "state": "open",
+        })
+        self.assertFalse(store.dependencies_ready("dependent-on-paw", service._verified_dependency_states()))
+
+    def test_reviewed_dependency_requires_separate_claw_pass(self):
+        source = "github:alston-personal/agentmanager#470"
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "review-required",
+            "source_kind": "github_issue", "source_ref": source,
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "audit-001", "goal": "Audit closure gaps",
+            "authority_requirements": ["independent_review_required"], "state": "open",
+        })
+        self.lifecycle.claim("audit-001", "spec-steward", "lease-author", now=T0)
+        self.lifecycle.finish("audit-001", "lease-author", now=T0 + timedelta(seconds=1))
+        service = self.service()
+        self.assertNotIn(source, service._verified_dependency_states())
+        self.runtime.create_employee(
+            "the-claw", "The Claw", role_ids=["sector.claw"], skill_ids=["security.audit"]
+        )
+        self.runtime.create_assignment("claw-review-review-required", "the-claw", "Review work")
+        self.lifecycle.claim("claw-review-review-required", "the-claw", "lease-reviewer", now=T0)
+        review_id = "claw-review-review-required"
+        self.lifecycle.finish(review_id, "lease-reviewer", now=T0 + timedelta(seconds=1),
+                              result_summary={"schema": "agentos.independent-claw-review/v1",
+                                              "target_assignment_id": "audit-001",
+                                              "target_generation": 1, "verdict": "FAIL"})
+        self.assertNotIn(source, service._verified_dependency_states())
+        # A new review generation can supersede FAIL through the canonical
+        # lifecycle, rather than modifying an external verdict sidecar.
+        self.runtime.create_assignment("claw-review-second", "the-claw", "Review work again")
+        self.lifecycle.claim("claw-review-second", "the-claw", "lease-reviewer-second", now=T0)
+        self.lifecycle.finish("claw-review-second", "lease-reviewer-second",
+                              now=T0 + timedelta(seconds=1),
+                              result_summary={"schema": "agentos.independent-claw-review/v1",
+                                              "target_assignment_id": "audit-001",
+                                              "target_generation": 1, "verdict": "PASS"})
+        # The canonical assignment ID must be reviewed; unrelated PASS never unlocks.
+        self.assertNotIn(source, service._verified_dependency_states())
+
+    def test_supervisor_reconciles_claw_fail_without_duplicate_repair(self):
+        source = "github:alston-personal/agentmanager#470"
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "review-required",
+            "source_kind": "github_issue", "source_ref": source,
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "audit-001", "goal": "Audit closure gaps",
+            "authority_requirements": ["independent_review_required"], "state": "open",
+        })
+        self.lifecycle.claim("audit-001", "spec-steward", "lease-author", now=T0)
+        self.lifecycle.finish("audit-001", "lease-author", now=T0 + timedelta(seconds=1))
+        self.runtime.create_employee("the-claw", "The Claw", role_ids=["sector.claw"], skill_ids=["security.audit"])
+        review_id = "claw-review-review-required"
+        self.runtime.create_assignment(review_id, "the-claw", "Review work")
+        self.lifecycle.claim(review_id, "the-claw", "lease-reviewer", now=T0)
+        self.lifecycle.finish(review_id, "lease-reviewer", now=T0 + timedelta(seconds=1),
+            result_summary={"schema": "agentos.independent-claw-review/v1",
+                            "target_assignment_id": "audit-001",
+                            "target_generation": 1, "verdict": "FAIL"})
+        service = self.service()
+        lease = service.claim_leader(now=T0)
+        service.run_cycle(lease.generation, now=T0 + timedelta(seconds=2))
+        repair = store.get("repair-review-required-g1-r1")
+        self.assertEqual(repair.employee_id, "spec-steward")
+        self.assertEqual(self.runtime.get_assignment(repair.assignment_id).state, "pending")
+        service.run_cycle(lease.generation, now=T0 + timedelta(seconds=3))
+        self.assertEqual(len(list(store.root.glob("repair-*.json"))), 1)
+
+    def test_authorized_claw_review_handoff_keeps_independent_paw_work(self):
+        store = WorkItemStore(self.runtime)
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "task-a",
+            "source_kind": "github_issue",
+            "source_ref": "github:alston-personal/agentmanager#470",
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "audit-001", "goal": "Audit closure gaps",
+            "authority_requirements": ["independent_review_required"], "state": "open",
+        })
+        self.runtime.create_employee("the-claw", "Claw",
+            role_ids=["sector.claw"], skill_ids=["security.audit"])
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "claw-a",
+            "source_kind": "canonical_state", "source_ref": "review:task-a",
+            "project_id": "agentos-core", "employee_id": "the-claw",
+            "assignment_id": "claw-review-task-a", "goal": "Review task A",
+            "required_capabilities": ["claw.review.readonly"],
+            "authority_requirements": ["one-governed-dispatch"], "state": "open",
+        })
+        store.persist({
+            "schema": WORK_ITEM_SCHEMA, "work_item_id": "task-b",
+            "source_kind": "github_issue",
+            "source_ref": "github:alston-personal/agentmanager#471",
+            "project_id": "agentos-core", "employee_id": "spec-steward",
+            "assignment_id": "task-b", "goal": "Independent next work",
+            "state": "open",
+        })
+        store.project_pending_assignment("task-b")
+        service = self.service()
+        self.assertEqual(service._project_authorized_claw_reviews(), 0)
+        self.lifecycle.claim("audit-001", "spec-steward", "author-lease", now=T0)
+        self.lifecycle.finish("audit-001", "author-lease", state="handoff", now=T0 + timedelta(seconds=1))
+        self.assertEqual(service._project_authorized_claw_reviews(), 1)
+        self.assertEqual(service._project_authorized_claw_reviews(), 0)
+        self.assertEqual(self.runtime.get_assignment("claw-review-task-a").state, "pending")
+        self.assertEqual(self.runtime.get_assignment("task-b").state, "pending")
+
     def test_singleton_leader_rejects_competing_live_owner(self):
         a = self.service("supervisor-a")
         b = self.service("supervisor-b")

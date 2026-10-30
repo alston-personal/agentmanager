@@ -12,6 +12,8 @@ from agentos_node.employee_worker_host import (
     WorkerHostCandidate,
 )
 from agentos_node.product_employee_worker import require_governed_product_delivery
+from agent_core.core_work_items import WorkItemStore
+from agent_core.employee_runtime import EmployeeRuntime
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,6 +24,7 @@ V2_RUNNER_KINDS = {
     "zeus_writer_v1",
     "youtube_ai_manager_scan_v1",
     "paw_inspect_v1",
+    "claw_review_readonly_v1",
 }
 PRODUCT_RUNNER_KINDS = {"zeus_writer_v1", "youtube_ai_manager_scan_v1", "paw_inspect_v1"}
 V2_RESULT_SCHEMAS = {
@@ -29,13 +32,15 @@ V2_RESULT_SCHEMAS = {
     "zeus_writer_v1": "agentos.zeus-writer-worker-cli-result/v1",
     "youtube_ai_manager_scan_v1": "agentos.youtube-ai-manager-scan-worker-cli-result/v1",
     "paw_inspect_v1": "agentos.paw-inspect-worker-cli-result/v1",
+    "claw_review_readonly_v1": "agentos.claw-review-readonly-worker-cli-result/v1",
 }
 
 
 class ProductEmployeeWorkerAdapterRegistry:
     """V2 source-controlled registry for fixed bounded Employee runner kinds."""
 
-    def __init__(self, path: str | Path = V2_ADAPTER_REGISTRY) -> None:
+    def __init__(self, path: str | Path = V2_ADAPTER_REGISTRY, *, runtime_root: str | Path | None = None) -> None:
+        self.runtime_root = Path(runtime_root).resolve() if runtime_root is not None else None
         self.path = Path(path).expanduser().resolve()
         payload = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict) or payload.get("schema") != V2_REGISTRY_SCHEMA:
@@ -98,7 +103,67 @@ class ProductEmployeeWorkerAdapterRegistry:
         ]
         if len(matches) > 1:
             raise RuntimeError("employee_worker_adapter_v2_resolution_ambiguous")
-        return matches[0] if matches else None
+        if matches:
+            return matches[0]
+        # No dynamic assignment is admitted without its canonical WorkItem,
+        # projected pending assignment, and an active Paw runner template.
+        if self.runtime_root is None or not isinstance(assignment_id, str) or not assignment_id:
+            return None
+        templates = [
+            a for a in self._adapters
+            if a.status == "active" and a.runner_kind == "paw_inspect_v1"
+            and a.employee_id == employee_id and a.assignment_id != assignment_id
+            and set(a.role_ids) == role_ids and set(a.skill_ids) == skill_ids
+        ]
+        if len(templates) != 1:
+            return None
+        runtime = EmployeeRuntime(self.runtime_root)
+        store = WorkItemStore(runtime)
+        if not store.root.is_dir():
+            return None
+        eligible = []
+        for path in store.root.glob("*.json"):
+            try:
+                item = store.get(path.stem)
+                if item.assignment_id == assignment_id:
+                    eligible.append(item)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        if len(eligible) != 1:
+            return None
+        item = eligible[0]
+        if (item.state != "open" or item.employee_id != employee_id
+                or "one-governed-dispatch" not in item.authority_requirements
+                or "engineering.work.inspect" not in item.required_capabilities):
+            return None
+        if item.dependency_refs:
+            # Reuse Supervisor's receipt-verified dependency projection.
+            # A pending Assignment by itself is not completion authority.
+            from agent_core.core_supervisor_service import CoreSupervisorService
+            from agent_core.employee_lifecycle import EmployeeLifecycle
+            supervisor = CoreSupervisorService(
+                EmployeeLifecycle(runtime), owner_id="paw-dependency-readonly"
+            )
+            if not store.dependencies_ready(
+                item.work_item_id, supervisor._verified_dependency_states()
+            ):
+                return None
+        try:
+            assignment = runtime.get_assignment(assignment_id)
+            employee = runtime.get_employee(employee_id)
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        if (assignment.state != "pending" or assignment.employee_id != employee_id
+                or "sector.paw" not in employee.role_ids
+                or "engineering.work.inspect" not in employee.skill_ids):
+            return None
+        template = templates[0]
+        return EmployeeWorkerAdapter(
+            adapter_id=template.adapter_id, status=template.status,
+            runner_kind=template.runner_kind, employee_id=employee_id,
+            assignment_id=assignment_id, role_ids=template.role_ids,
+            skill_ids=template.skill_ids,
+        )
 
     def projection(self) -> list[dict[str, Any]]:
         return [
@@ -134,7 +199,7 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
         # so all original validation and host setup remain unchanged. Runtime selection
         # is then replaced with the stricter v2 fixed-runner registry.
         super().__init__(**kwargs)
-        self.registry = ProductEmployeeWorkerAdapterRegistry()
+        self.registry = ProductEmployeeWorkerAdapterRegistry(runtime_root=self.runtime_root)
         self._pinned_candidate: WorkerHostCandidate | None = None
 
     def _product_preclaim_ready(self, candidate: WorkerHostCandidate) -> bool:
@@ -169,6 +234,19 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
             raise RuntimeError("employee_worker_exact_candidate_missing")
         if adapter.runner_kind == "spec_steward_o3":
             command = EmployeeWorkerHost._child_command(self, adapter)
+        elif adapter.runner_kind == "claw_review_readonly_v1":
+            # Fixed module only. The adapter remains disabled until a real,
+            # independently evidenced reviewer implementation is accepted.
+            command = [
+                sys.executable, "-m", "agentos_node.claw_review_readonly_cli",
+                "--runtime-root", str(self.runtime_root),
+                "--wake-root", str(self.wake_root),
+                "--worker-state-root", str(self.worker_state_root),
+                "--node-id", self.node_id,
+                "--once",
+                "--repository", str(ROOT),
+                "--work-item-id", adapter.assignment_id.removeprefix("claw-review-"),
+            ]
         elif adapter.runner_kind in PRODUCT_RUNNER_KINDS:
             command = [
                 sys.executable,
@@ -200,7 +278,7 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
         )
         return command
 
-    def _parse_child_result(self, stdout: str) -> dict[str, Any] | None:
+    def _parse_child_result(self, stdout: str, *, runner_kind: str | None = None) -> dict[str, Any] | None:
         candidate = self._pinned_candidate
         if candidate is None:
             return None
@@ -213,6 +291,8 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
             return None
         if not isinstance(payload, dict) or set(payload) - SAFE_CHILD_RESULT_KEYS:
             return None
+        if runner_kind is not None and runner_kind != candidate.adapter.runner_kind:
+            return None
         if payload.get("schema") != V2_RESULT_SCHEMAS.get(candidate.adapter.runner_kind):
             return None
         if payload.get("credential_exposed") is not False:
@@ -222,6 +302,24 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
         if payload.get("verified_marker_emitted") is not False:
             return None
         return payload
+
+    def status(self) -> dict[str, Any]:
+        """Expose B tasks blocked at the child scope, without dispatching them."""
+        state = super().status()
+        blocked: set[str] = set()
+        if self.wake_root.is_dir():
+            for path in (self.wake_root / "the-paw").glob("*.json"):
+                capsule = self._read_capsule(path)
+                if capsule is None:
+                    continue
+                adapter = self.registry.resolve(capsule)
+                if (adapter is not None and adapter.runner_kind == "paw_inspect_v1"
+                        and adapter.assignment_id != "paw-470-inspection-v1"
+                        and not self._read_dispatch(capsule)):
+                    blocked.add(adapter.assignment_id)
+        state["paw_dynamic_pending_child_scope_count"] = len(blocked)
+        state["paw_dynamic_child_scope_ready"] = True
+        return state
 
     def process_one(self) -> dict[str, Any] | None:
         self._pinned_candidate = None

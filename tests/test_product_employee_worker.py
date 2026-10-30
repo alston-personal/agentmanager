@@ -529,3 +529,353 @@ def test_paw_is_registered_with_existing_wake_node_presence():
     assert len(EMPLOYEE_IDS) == len(set(EMPLOYEE_IDS))
     assert SUPPORTED_PRODUCT_RUNNERS["paw_inspect_v1"]["employee_id"] == "the-paw"
     assert "paw_inspect_v1" in V2_RUNNER_KINDS
+
+def test_paw_signed_request_worker_handoff(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import hashlib
+    import hmac
+    import os
+    from agentos_node.paw_engineering_request import SCHEMA, canonical_payload
+    runtime_root, wake_root, worker_root = [tmp_path / name for name in ("runtime", "wake", "worker")]
+    for root in (runtime_root, wake_root, worker_root):
+        root.mkdir()
+    runtime = _materialize_product_assignment(
+        runtime_root, employee_id="the-paw", assignment_id="paw-470-inspection-v1",
+        role_id="sector.paw", skill_id="engineering.work.inspect",
+    )
+    capsule = _capsule("the-paw", "paw-470-inspection-v1", "sector.paw", "engineering.work.inspect")
+    capsule["wake_id"] = "wake_" + "a" * 24
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=runtime_root, wake_root=wake_root, worker_state_root=worker_root,
+        node_id="oracle-core-node", runner_kind="paw_inspect_v1",
+    )
+    authority = worker_root / "trusted-engineering-authority"
+    authority.mkdir(mode=0o700)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    from agentos_node.paw_engineering_public_signature import sign_paw_public_request
+    private = Ed25519PrivateKey.generate()
+    private_bytes = private.private_bytes(
+        serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    public_file = authority / "paw-470-issuer.pub"
+    public_file.write_bytes(private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+    ))
+    public_file.chmod(0o600)
+    request = {
+        "schema": SCHEMA, "grant": {"work_id": "issue-470-a"},
+        "expected_sha256": "a" * 64, "replacement": "def test_x(): pass",
+        "signature": "",
+    }
+    request = sign_paw_public_request(request, private_key=private_bytes)
+    request_file = authority / "paw-470-request.json"
+    request_file.write_text(json.dumps(request))
+    request_file.chmod(0o600)
+    observed = {}
+    def executor(**kwargs):
+        observed.update(kwargs)
+        from types import SimpleNamespace
+        return SimpleNamespace(work_id="issue-470-a", base_sha="a" * 40, changed_file="tests/test_paw_engineering_worktree.py", commit_sha="b" * 40, branch="paw/470/issue-470-a")
+    import agentos_node.paw_engineering_executor as paw_exec
+    monkeypatch.setattr(paw_exec, "run_authorized_static_candidate", executor)
+    import agentos_node.paw_engineering_bundle as paw_bundle
+    monkeypatch.setattr(paw_bundle, "export_paw_bundle", lambda **kwargs: kwargs["destination"])
+    monkeypatch.setattr(product_worker, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
+    monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
+    state = worker.process_exact(wake_id=capsule["wake_id"], presence_generation=1)
+    assert state.status == "handoff"
+    assert observed["trusted_lease_generation"] == 1
+    assert observed["trusted_wake_id"] == capsule["wake_id"]
+    assert observed["grant_payload"] == request["grant"]
+    receipt = json.loads((runtime_root / "lifecycle" / "receipts" / "paw-470-inspection-v1" / "000001.json").read_text())
+    assert receipt["outcome"] == "handoff"
+    assert receipt["result_summary"]["independent_acceptance_pass"] is False
+    assert receipt["result_summary"]["published"] is False
+
+def test_paw_worker_real_executor_local_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import hashlib
+    import subprocess
+    
+    from agentos_node.paw_engineering_request import issue_paw_request
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+    from agentos_node.paw_engineering_grant import PawEngineeringGrant
+    from agentos_node.paw_engineering_worktree import PawWorktreeBoundaryError
+    real_root = Path(product_worker.__file__).resolve().parents[1]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for path in (".agent/roles/registry.yaml", "governance/employee-skills.json", "governance/execution-authority.json"):
+        dst = repo / path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes((real_root / path).read_bytes())
+    source = repo / "tests/test_paw_engineering_worktree.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("def test_one():\n    assert True\n")
+    def git(*args):
+        return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+    git("init")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    git("add", ".")
+    git("commit", "-m", "fixture")
+    base = git("rev-parse", "HEAD")
+    runtime_root, wake_root, worker_root = [tmp_path / name for name in ("runtime", "wake", "worker")]
+    for root in (runtime_root, wake_root, worker_root):
+        root.mkdir()
+    runtime = _materialize_product_assignment(
+        runtime_root, employee_id="the-paw", assignment_id="paw-470-inspection-v1",
+        role_id="sector.paw", skill_id="engineering.work.inspect",
+    )
+    capsule = _capsule("the-paw", "paw-470-inspection-v1", "sector.paw", "engineering.work.inspect")
+    capsule["wake_id"] = "wake_" + "a" * 24
+    grant = {
+        "schema": "agentos.paw-engineering-grant/v1",
+        "work_id": "issue-470-real", "assignment_id": "paw-470-inspection-v1",
+        "wake_id": capsule["wake_id"], "presence_generation": 1, "lease_generation": 1,
+        "repository_id": "alston-personal/agentmanager", "base_sha": base,
+        "allowed_path": "tests/test_paw_engineering_worktree.py",
+        "action": "prepare-static-test-candidate",
+    }
+    authority = worker_root / "trusted-engineering-authority"
+    authority.mkdir(mode=0o700)
+    key = b"isolated-test-control-plane-secret-key-00001"
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    from agentos_node.paw_engineering_public_signature import sign_paw_public_request
+    private = Ed25519PrivateKey.generate()
+    private_bytes = private.private_bytes(
+        serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    public_file = authority / "paw-470-issuer.pub"
+    public_file.write_bytes(private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+    ))
+    public_file.chmod(0o600)
+    # Issue against a genuinely active lease. Same claim ID is idempotent.
+    lifecycle = EmployeeLifecycle(runtime)
+    lease_id = "product-paw_inspect_v1-" + capsule["wake_id"] + "-1"
+    lifecycle.claim("paw-470-inspection-v1", "the-paw", lease_id, lease_seconds=300)
+    signed = issue_paw_request(
+        grant=grant, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        replacement="def test_one():\n    assert True\n\ndef test_two():\n    assert 2 + 2 == 4\n",
+        issuer_key=key, trusted_assignment_id="paw-470-inspection-v1",
+        trusted_wake_id=capsule["wake_id"], trusted_presence_generation=1,
+        trusted_lease_generation=1, lifecycle=lifecycle, trusted_lease_id=lease_id,
+        registry_path=repo / "governance/execution-authority.json",
+    )
+    signed = sign_paw_public_request(signed, private_key=private_bytes)
+    request_file = authority / "paw-470-request.json"
+    request_file.write_text(json.dumps(signed))
+    request_file.chmod(0o600)
+    monkeypatch.setattr(product_worker, "__file__", str(repo / "agentos_node/product_employee_worker.py"))
+    monkeypatch.setattr(product_worker, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=runtime_root, wake_root=wake_root, worker_state_root=worker_root,
+        node_id="oracle-core-node", runner_kind="paw_inspect_v1", lease_seconds=300,
+    )
+    monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
+    state = worker.process_exact(wake_id=capsule["wake_id"], presence_generation=1)
+    assert state.status == "handoff"
+    receipt = json.loads((runtime_root / "lifecycle/receipts/paw-470-inspection-v1/000001.json").read_text())
+    commit_sha = receipt["result_summary"]["commit_sha"]
+    assert receipt["result_summary"]["published"] is False
+    assert receipt["result_summary"]["independent_acceptance_pass"] is False
+    assert git("rev-parse", "HEAD") == base
+    result_repo = worker_root / "paw-470-worktrees/issue-470-real"
+    result_head = subprocess.run(["git", "-C", str(result_repo), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
+    assert result_head == commit_sha
+
+
+def test_dynamic_paw_b_requires_canonical_projection_and_governed_delivery(tmp_path: Path) -> None:
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee(
+        "the-paw", "Paw", role_ids=["sector.paw"],
+        skill_ids=["engineering.work.inspect"],
+    )
+    capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
+    with pytest.raises(PermissionError, match="product_employee_worker_scope_mismatch"):
+        _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "b-independent",
+        "source_kind": "canonical_state", "source_ref": "task:b-independent",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Inspect independent B",
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    with pytest.raises(PermissionError):
+        _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)
+    store.project_pending_assignment("b-independent")
+    assert _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)["employee_id"] == "the-paw"
+    with pytest.raises(PermissionError):
+        product_worker.require_governed_product_delivery(tmp_path, "paw_inspect_v1", capsule)
+    _materialize_governed_delivery(tmp_path, capsule)
+    assert product_worker.require_governed_product_delivery(tmp_path, "paw_inspect_v1", capsule)
+    forged = dict(capsule, assignment_id="paw-b-forged")
+    with pytest.raises(PermissionError):
+        _require_runner_scope("paw_inspect_v1", forged, runtime_root=tmp_path)
+
+
+
+def test_dynamic_paw_b_claims_and_writes_real_blocked_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    runtime_root, wake_root, worker_root = [tmp_path / name for name in ("runtime", "wake", "worker")]
+    for root in (runtime_root, wake_root, worker_root):
+        root.mkdir()
+    runtime = EmployeeRuntime(runtime_root)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "independent-b",
+        "source_kind": "canonical_state", "source_ref": "task:independent-b",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Inspect B",
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    store.project_pending_assignment("independent-b")
+    capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
+    _materialize_governed_delivery(runtime_root, capsule)
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=runtime_root, wake_root=wake_root,
+        worker_state_root=worker_root, node_id="oracle-core-node",
+        runner_kind="paw_inspect_v1",
+    )
+    monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
+    state = worker.process_exact(wake_id="wake-1", presence_generation=1)
+    assert state is not None
+    assert state.assignment_id == "paw-b"
+    assert runtime.get_assignment("paw-b").state in {"blocked", "handoff"}
+    receipt_path = runtime_root / "lifecycle/receipts/paw-b/000001.json"
+    assert receipt_path.is_file()
+    receipt = json.loads(receipt_path.read_text())
+    assert receipt["assignment_id"] == "paw-b"
+    assert receipt["outcome"] == runtime.get_assignment("paw-b").state
+
+
+def test_paw_dependent_b_requires_verified_author_receipt(tmp_path: Path) -> None:
+    from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+    from agent_core.employee_lifecycle import EmployeeLifecycle
+    runtime = EmployeeRuntime(tmp_path)
+    runtime.create_employee("the-paw", "Paw", role_ids=["sector.paw"],
+                            skill_ids=["engineering.work.inspect"])
+    runtime.create_assignment("paw-a", "the-paw", "Complete A")
+    store = WorkItemStore(runtime)
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "a",
+        "source_kind": "canonical_state", "source_ref": "task:a",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-a", "goal": "Complete A", "state": "open",
+    })
+    store.persist({
+        "schema": WORK_ITEM_SCHEMA, "work_item_id": "b",
+        "source_kind": "canonical_state", "source_ref": "task:b",
+        "project_id": "agentos-core", "employee_id": "the-paw",
+        "assignment_id": "paw-b", "goal": "Complete B",
+        "dependency_refs": ["task:a"],
+        "required_capabilities": ["engineering.work.inspect"],
+        "authority_requirements": ["one-governed-dispatch"], "state": "open",
+    })
+    registry = ProductEmployeeWorkerAdapterRegistry(runtime_root=tmp_path)
+    capsule = _capsule("the-paw", "paw-b", "sector.paw", "engineering.work.inspect")
+    assert registry.resolve(capsule) is None
+    lifecycle = EmployeeLifecycle(runtime)
+    lifecycle.claim("paw-a", "the-paw", "lease-a")
+    lifecycle.finish("paw-a", "lease-a", state="completed",
+                     result_summary={"test": "verified-a"})
+    from agent_core.core_supervisor_service import CoreSupervisorService
+    supervisor = CoreSupervisorService(lifecycle, owner_id="test-supervisor")
+    leader = supervisor.claim_leader()
+    supervisor.run_cycle(leader.generation)
+    assert runtime.get_assignment("paw-b").state == "pending"
+    assert registry.resolve(capsule) is not None
+    assert _require_runner_scope("paw_inspect_v1", capsule, runtime_root=tmp_path)
+    _materialize_governed_delivery(tmp_path, capsule)
+    worker_root = tmp_path / "worker"
+    worker_root.mkdir()
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=tmp_path, wake_root=tmp_path / "wakes",
+        worker_state_root=worker_root, node_id="oracle-core-node",
+        runner_kind="paw_inspect_v1",
+    )
+    worker._capsules = lambda: [(Path("wake.json"), capsule)]
+    result = worker.process_exact(wake_id="wake-1", presence_generation=1)
+    assert result is not None and result.assignment_id == "paw-b"
+    assert result.status == "blocked"  # Claim/receipt is NOT engineering completion.
+    path = tmp_path / "lifecycle/receipts/paw-b/000001.json"
+    assert path.is_file()
+    receipt = json.loads(path.read_text())
+    assert receipt["outcome"] == "blocked"
+    assert receipt["result_summary"]["bounded_stage"] == "completion-470-readonly-inspection"
+    assert receipt["result_summary"]["blocker_code"] in {
+        "paw_engineering_execution_not_authorized",
+        "paw_completion_470_inspector_unavailable",
+    }
+    assert runtime.get_assignment("paw-b").state == "blocked"
+
+
+def test_post_claim_issuer_rendezvous_never_creates_request(tmp_path):
+    from agentos_node.product_employee_worker import _await_paw_request_after_claim
+    authority = tmp_path / "trusted-engineering-authority"
+    authority.mkdir()
+    request = authority / "paw-request.json"
+    public = authority / "paw.pub"
+    _await_paw_request_after_claim(request, public, timeout_seconds=0)
+    assert not request.exists()
+    public.write_bytes(b"x" * 32)
+    _await_paw_request_after_claim(request, public, timeout_seconds=0)
+    assert not request.exists()
+    request.write_text("{}")
+    _await_paw_request_after_claim(request, public, timeout_seconds=0)
+    assert request.read_text() == "{}"
+
+
+def test_post_claim_issuer_rendezvous_accepts_late_public_key(tmp_path):
+    import threading
+    import time
+    from agentos_node.product_employee_worker import _await_paw_request_after_claim
+
+    request = tmp_path / "paw-request.json"
+    public = tmp_path / "paw-470-issuer.pub"
+    request.write_text("{}")
+    def provision():
+        time.sleep(0.03)
+        public.write_bytes(b"x" * 32)
+    thread = threading.Thread(target=provision)
+    thread.start()
+    try:
+        _await_paw_request_after_claim(request, public, timeout_seconds=0.5)
+        assert public.is_file()
+        assert request.read_text() == "{}"
+    finally:
+        thread.join()
+
+
+def test_paw_wait_stops_when_lease_becomes_inactive(tmp_path):
+    from agentos_node.product_employee_worker import _await_paw_request_after_claim
+    seen = []
+    def no_live_lease():
+        seen.append(True)
+        return False
+    _await_paw_request_after_claim(
+        tmp_path / "missing-request", tmp_path / "missing-key",
+        timeout_seconds=60, lease_still_active=no_live_lease,
+    )
+    assert len(seen) == 1
+
+
+def test_paw_wait_checks_lease_even_when_no_authority_arrives(tmp_path):
+    from agentos_node.product_employee_worker import _await_paw_request_after_claim
+    seen = []
+    def checking():
+        seen.append(True)
+        return len(seen) < 3
+    _await_paw_request_after_claim(
+        tmp_path / "missing-request", tmp_path / "missing-key",
+        timeout_seconds=60, lease_still_active=checking,
+    )
+    assert len(seen) == 3

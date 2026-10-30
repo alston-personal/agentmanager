@@ -58,7 +58,7 @@ SAFE_CHILD_RESULT_KEYS = {
     "session_identity_exposed",
     "verified_marker_emitted",
 }
-CHILD_RESULT_SCHEMA = "agentos.spec-steward-o3-worker-cli-result/v1"
+CHILD_RESULT_SCHEMAS = {"spec_steward_o3": "agentos.spec-steward-o3-worker-cli-result/v1"}
 
 
 def _utc_now() -> str:
@@ -472,7 +472,7 @@ class EmployeeWorkerHost:
         return env
 
     @staticmethod
-    def _parse_child_result(stdout: str) -> dict[str, Any] | None:
+    def _parse_child_result(stdout: str, *, runner_kind: str = "spec_steward_o3") -> dict[str, Any] | None:
         lines = [line.strip() for line in str(stdout or "").splitlines() if line.strip()]
         if not lines:
             return None
@@ -482,7 +482,8 @@ class EmployeeWorkerHost:
             return None
         if not isinstance(payload, dict) or set(payload) - SAFE_CHILD_RESULT_KEYS:
             return None
-        if payload.get("schema") != CHILD_RESULT_SCHEMA:
+        expected_schema = CHILD_RESULT_SCHEMAS.get(runner_kind)
+        if expected_schema is None or payload.get("schema") != expected_schema:
             return None
         if payload.get("credential_exposed") is not False:
             return None
@@ -504,7 +505,7 @@ class EmployeeWorkerHost:
         returncode: int,
         stdout: str,
     ) -> dict[str, Any]:
-        child = self._parse_child_result(stdout)
+        child = self._parse_child_result(stdout, runner_kind=candidate.adapter.runner_kind)
         if child is None:
             state["status"] = "unknown"
             state["error_code"] = "employee_worker_child_result_untrusted"

@@ -40,6 +40,16 @@
         "source_ref": "main",
         "execution_user": "ubuntu"
       }
+    },
+    "agentos-core": {
+      "repository": "alston-personal/agentmanager",
+      "allowed_source_refs": [
+        "core/integration"
+      ],
+      "employee_binding": {
+        "employee_id": "the-paw",
+        "assignment_id": "paw-470-inspection-v1"
+      }
     }
   },
   "capabilities": {
@@ -106,6 +116,49 @@
         "allowed_dirty_prefixes": [
           ".claude/"
         ]
+      }
+    },
+    "paw.engineering.candidate.prepare": {
+      "project_id": "agentos-core",
+      "environment": "isolated-worktree",
+      "adapter": "paw_engineering_candidate",
+      "parameter_policy": {
+        "work_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "wake_id": {
+          "type": "string",
+          "pattern": "^wake_[a-f0-9]{24}$"
+        },
+        "presence_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lease_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "allowed_path": {
+          "type": "string",
+          "enum": [
+            "tests/test_paw_engineering_worktree.py"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "prepare-static-test-candidate"
+          ]
+        }
+      },
+      "replay_policy": "idempotent",
+      "runtime": {
+        "mutation_scope": "isolated-worktree-only",
+        "merge_allowed": false,
+        "deploy_allowed": false,
+        "ledger_done_allowed": false,
+        "independent_claw_required": true
       }
     }
   }

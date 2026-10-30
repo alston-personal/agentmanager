@@ -85,6 +85,182 @@ class EmployeeWorkerHostTests(unittest.TestCase):
         projection = registry.projection()
         self.assertEqual(projection[0]["runner_kind"], "spec_steward_o3")
 
+    def test_unknown_runner_cannot_reuse_spec_steward_receipt(self):
+        from agentos_node.employee_worker_host import EmployeeWorkerHost
+        payload = {
+            "schema": "agentos.spec-steward-o3-worker-cli-result/v1",
+            "status": "checkpointed", "credential_exposed": False,
+            "session_identity_exposed": False, "verified_marker_emitted": False,
+        }
+        serialized = json.dumps(payload)
+        self.assertIsNotNone(EmployeeWorkerHost._parse_child_result(
+            serialized, runner_kind="spec_steward_o3"))
+        self.assertIsNone(EmployeeWorkerHost._parse_child_result(
+            serialized, runner_kind="claw_review_readonly"))
+
+    def test_claw_review_runner_is_registered_but_disabled_until_verified(self):
+        from agentos_node.employee_worker_host_runtime import (
+            ProductEmployeeWorkerAdapterRegistry, V2_RUNNER_KINDS,
+        )
+        self.assertIn("claw_review_readonly_v1", V2_RUNNER_KINDS)
+        registry = ProductEmployeeWorkerAdapterRegistry()
+        matches = [x for x in registry.projection() if x["adapter_id"] == "claw-review-readonly-v1"]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["status"], "disabled")
+        self.assertEqual(matches[0]["role_ids"], ["sector.claw"])
+
+    def test_claw_cli_is_runnable_but_fails_closed_without_executor(self):
+        from agentos_node.claw_review_readonly_cli import main
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            output = StringIO()
+            with redirect_stdout(output):
+                code = main([
+                    "--runtime-root", root, "--wake-root", root,
+                    "--worker-state-root", root, "--node-id", "test-node",
+                    "--wake-id", "wake-test", "--presence-generation", "1", "--once",
+                ])
+        result = json.loads(output.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["error_code"], "claw_independent_review_executor_unavailable")
+        self.assertFalse(result["verified_marker_emitted"])
+
+    def test_claw_exact_git_evidence_reader_is_offline_and_rejects_invalid_sha(self):
+        from agentos_node.claw_review_readonly_cli import inspect_local_commit
+        import subprocess
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            subprocess.run(["git", "init", "-q", str(path)], check=True)
+            (path / "a.txt").write_text("review this", encoding="utf-8")
+            subprocess.run(["git", "-C", str(path), "add", "a.txt"], check=True)
+            subprocess.run(["git", "-C", str(path), "-c", "user.name=CI",
+                            "-c", "user.email=ci@example.invalid", "commit", "-qm", "fixture"], check=True)
+            sha = subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
+            report = inspect_local_commit(path, sha)
+            self.assertEqual(report["commit_sha"], sha)
+            self.assertEqual(report["changed_entries"], 1)
+            self.assertEqual(report["independent_review_verdict"], "NOT_REVIEWED")
+            self.assertEqual(report["static_check"], "NO_FINDINGS")
+            self.assertEqual(len(report["static_diagnostic_sha256"]), 64)
+            self.assertEqual(len(report["patch_sha256"]), 64)
+            self.assertGreater(report["patch_bytes"], 0)
+            self.assertEqual(report, inspect_local_commit(path, sha))
+            with self.assertRaises(ValueError):
+                inspect_local_commit(path, "HEAD")
+            with self.assertRaises(ValueError):
+                inspect_local_commit(path, "f" * 40)
+
+    def test_claw_cli_evidence_mode_does_not_claim_pass(self):
+        from agentos_node.claw_review_readonly_cli import main
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import subprocess
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            subprocess.run(["git", "init", "-q", str(path)], check=True)
+            (path / "evidence.txt").write_text("review content", encoding="utf-8")
+            subprocess.run(["git", "-C", str(path), "add", "evidence.txt"], check=True)
+            subprocess.run(["git", "-C", str(path), "-c", "user.name=CI",
+                            "-c", "user.email=ci@example.invalid",
+                            "commit", "-qm", "evidence fixture"], check=True)
+            sha = subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
+            output = StringIO()
+            with redirect_stdout(output):
+                status = main(["--runtime-root", root, "--wake-root", root,
+                               "--worker-state-root", root, "--node-id", "node",
+                               "--wake-id", "wake", "--presence-generation", "1",
+                               "--once", "--repository", root, "--inspect-commit", sha])
+            result = json.loads(output.getvalue())
+            self.assertEqual(status, 2)
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["evidence"]["commit_sha"], sha)
+            self.assertEqual(result["evidence"]["independent_review_verdict"], "NOT_REVIEWED")
+            self.assertFalse(result["verified_marker_emitted"])
+
+    def test_claw_target_requires_canonical_verified_author_receipt(self):
+        from agentos_node.claw_review_readonly_cli import inspect_governed_review_target
+        from agent_core.core_work_items import WORK_ITEM_SCHEMA, WorkItemStore
+        from agent_core.employee_runtime import EmployeeRuntime
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            runtime = EmployeeRuntime(path)
+            runtime.create_employee("paw", "Paw", role_ids=["sector.paw"],
+                                    skill_ids=["engineering.work.inspect"])
+            runtime.create_assignment("paw-a", "paw", "Implement A")
+            store = WorkItemStore(runtime)
+            store.persist({"schema": WORK_ITEM_SCHEMA, "work_item_id": "a",
+                           "source_kind": "github_issue",
+                           "source_ref": "github:alston-personal/agentmanager#470",
+                           "project_id": "agentos-core", "employee_id": "paw",
+                           "assignment_id": "paw-a", "goal": "Implement A",
+                           "authority_requirements": ["independent_review_required"],
+                           "state": "open"})
+            with self.assertRaisesRegex(PermissionError, "claw_author_not_completed"):
+                inspect_governed_review_target(path, path, "a")
+
+    def test_claw_canonical_cli_refuses_unfinished_author(self):
+        from agentos_node.claw_review_readonly_cli import main
+        from agent_core.core_work_items import WorkItemStore, WORK_ITEM_SCHEMA
+        from agent_core.employee_runtime import EmployeeRuntime
+        from contextlib import redirect_stdout
+        from io import StringIO
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            runtime = EmployeeRuntime(path)
+            runtime.create_employee("paw", "Paw", role_ids=["sector.paw"],
+                                    skill_ids=["engineering.work.inspect"])
+            runtime.create_assignment("author-a", "paw", "Implement A")
+            WorkItemStore(runtime).persist({
+                "schema": WORK_ITEM_SCHEMA, "work_item_id": "work-a",
+                "source_kind": "canonical_state", "source_ref": "task:work-a",
+                "project_id": "agentos-core", "employee_id": "paw",
+                "assignment_id": "author-a", "goal": "Implement A",
+                "authority_requirements": ["independent_review_required"],
+                "state": "open",
+            })
+            output = StringIO()
+            with redirect_stdout(output):
+                status = main(["--runtime-root", root, "--wake-root", root,
+                               "--worker-state-root", root, "--node-id", "node",
+                               "--wake-id", "wake", "--presence-generation", "1",
+                               "--once", "--repository", root,
+                               "--work-item-id", "work-a"])
+            self.assertEqual(status, 2)
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["error_code"], "claw_commit_evidence_unavailable")
+            self.assertFalse(result["verified_marker_emitted"])
+
+    def test_claw_blocker_never_claims_without_governed_delivery(self):
+        from agentos_node.claw_review_readonly_cli import finish_governed_claw_blocker
+        from agent_core.employee_runtime import EmployeeRuntime
+        from agent_core.core_work_items import WorkItemStore, WORK_ITEM_SCHEMA
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            runtime = EmployeeRuntime(path)
+            runtime.create_employee("paw", "Paw", role_ids=["sector.paw"],
+                                    skill_ids=["engineering.work.inspect"])
+            runtime.create_employee("claw", "Claw", role_ids=["sector.claw"],
+                                    skill_ids=["security.audit"])
+            runtime.create_assignment("author", "paw", "Implement")
+            runtime.create_assignment("claw-review-parent", "claw", "Inspect")
+            WorkItemStore(runtime).persist({
+                "schema": WORK_ITEM_SCHEMA, "work_item_id": "parent",
+                "source_kind": "canonical_state", "source_ref": "task:parent",
+                "project_id": "agentos-core", "employee_id": "paw",
+                "assignment_id": "author", "goal": "Implement",
+                "authority_requirements": ["independent_review_required"],
+                "state": "open",
+            })
+            with self.assertRaisesRegex(PermissionError, "claw_review_governed_delivery_missing"):
+                finish_governed_claw_blocker(path, "parent", wake_id="wake",
+                    presence_generation=1, evidence={
+                        "assignment_generation": 1, "commit_sha": "a" * 40,
+                        "patch_sha256": "b" * 64})
+            self.assertEqual(runtime.get_assignment("claw-review-parent").state, "pending")
+
     def test_child_environment_drops_host_credentials(self):
         with patch.dict(
             os.environ,

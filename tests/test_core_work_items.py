@@ -140,6 +140,36 @@ class CoreWorkItemTests(unittest.TestCase):
             )
         )
 
+    def test_verified_claw_fail_creates_one_bounded_repair(self):
+        from agent_core.employee_lifecycle import EmployeeLifecycle
+        from datetime import datetime, timezone
+        when = datetime(2026, 10, 25, tzinfo=timezone.utc)
+        original = self.payload()
+        original["dependency_refs"] = []
+        original["authority_requirements"] = ["independent_review_required"]
+        original["assignment_id"] = "paw-task"
+        original["goal"] = "Paw work"
+        self.store.persist(original)
+        self.runtime.create_assignment("paw-task", "spec-steward", "Paw work")
+        self.runtime.create_employee("claw", "Claw", role_ids=["sector.claw"], skill_ids=["security.audit"])
+        review_id = "claw-review-work-200-1"
+        self.runtime.create_assignment(review_id, "claw", "Independent review")
+        lifecycle = EmployeeLifecycle(self.runtime)
+        lifecycle.claim("paw-task", "spec-steward", "paw-lease", now=when)
+        lifecycle.finish("paw-task", "paw-lease", now=when)
+        lifecycle.claim(review_id, "claw", "claw-lease", now=when)
+        lifecycle.finish(review_id, "claw-lease", now=when, result_summary={
+            "schema": "agentos.independent-claw-review/v1",
+            "target_assignment_id": "paw-task",
+            "target_generation": 1, "verdict": "FAIL",
+        })
+        first = self.store.repair_from_failed_claw_review("work-200-1")
+        second = self.store.repair_from_failed_claw_review("work-200-1")
+        self.assertEqual(first, second)
+        self.assertEqual(first.employee_id, "spec-steward")
+        self.assertIn("parent_work_item=work-200-1", first.constraints)
+        self.assertEqual(self.store.project_pending_assignment(first.work_item_id).state, "pending")
+
     def test_closed_work_item_cannot_project_new_assignment(self):
         payload = self.payload()
         payload["state"] = "completed"

@@ -1,0 +1,13 @@
+[Unit]
+Description=AgentOS Paw issuer trigger for independently approved requests
+ConditionPathIsDirectory=/etc/agentos/paw-issuer
+
+[Path]
+# Only the owner-controlled approval-file change can wake the issuer.
+# Never watch the employee's Wake, Lease, or Worker directories: those are
+# evidence of work, not independent engineering authorization.
+PathChanged=/etc/agentos/paw-issuer/approval.json
+Unit=agentos-paw-trusted-issuer.service
+
+# Deliberately no [Install]. Explicit owner/deployment governance must
+# provision service account, protected keys and approval source before start.

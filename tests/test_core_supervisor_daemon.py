@@ -97,6 +97,51 @@ class CoreSupervisorDaemonTests(unittest.TestCase):
         self.assertEqual(stop.waits, [15, 15, 15])
         self.assertEqual(service.heartbeats, 2)
 
+
+    def test_receipt_notice_during_cycle_forces_immediate_reconcile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            notices = root / "supervisor" / "receipt-events"
+            notices.mkdir(parents=True)
+            class Service(_FakeService):
+                runtime = type("Runtime", (), {"root": root})()
+                def run_cycle(self, generation):
+                    result = super().run_cycle(generation)
+                    if self.cycles == 1:
+                        (notices / "first.json").write_text("{}")
+                    return result
+            service = Service()
+            stop = _StopAfterWaits(1)
+            run_persistent(service, stop_event=stop, leader_lease_seconds=30)
+            self.assertEqual(service.cycles, 2)
+            self.assertEqual(stop.waits, [1])
+
+
+    def test_receipt_during_idle_wait_wakes_supervisor_without_duplicate_cycles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            notices = root / "supervisor" / "receipt-events"
+            notices.mkdir(parents=True)
+            class Service(_FakeService):
+                runtime = type("Runtime", (), {"root": root})()
+            class WaitUntilSecondCycle:
+                def __init__(self, service):
+                    self.service = service
+                    self.waits = []
+                def is_set(self):
+                    return self.service.cycles >= 2
+                def wait(self, seconds):
+                    self.waits.append(seconds)
+                    if len(self.waits) == 1:
+                        (notices / "completed.json").write_text("{}")
+                    return False
+            service = Service()
+            stop = WaitUntilSecondCycle(service)
+            run_persistent(service, stop_event=stop, leader_lease_seconds=30)
+            self.assertEqual(service.cycles, 2)
+            self.assertEqual(service.claims, 1)
+            self.assertEqual(stop.waits, [1])
+
     def test_process_lock_is_held_for_daemon_lifetime(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
