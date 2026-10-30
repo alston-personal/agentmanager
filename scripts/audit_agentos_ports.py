@@ -103,7 +103,7 @@ def main():
         if str(port) in result["registry"] or port not in [3030,8765,8767,18765,18766,18767,18791,8080,8090,8095,8099]:
             continue
         process=row["owners"][0].get("process","")
-        m=re.search(r"pid=(\\d+)",process)
+        m=re.search(r"pid=(\d+)",process)
         pid=m.group(1) if m else None
         argv=Path("/proc/"+pid+"/cmdline") if pid else None
         try: cmdline=argv.read_bytes().replace(b"\\x00",b" ").decode(errors="replace")[:280] if argv else None
@@ -163,7 +163,7 @@ def main():
     for line in ss["stdout"].splitlines():
         parts=line.split()
         if len(parts)<5: continue
-        match=re.search(r":(\\d+)$",parts[3])
+        match=re.search(r":(\d+)$",parts[3])
         if not match: continue
         port=int(match.group(1))
         if str(port) in result["registry"]:continue
@@ -173,7 +173,7 @@ def main():
             try:
                 exe=Path(f"/proc/{pid}/exe").resolve().name
                 cg=Path(f"/proc/{pid}/cgroup").read_text(errors="replace")
-                services=re.findall(r"[a-zA-Z0-9_.@-]+\\.service",cg)
+                services=re.findall(r"[a-zA-Z0-9_.@-]+\.service",cg)
                 owners.append({"executable":exe,"unit":services[-1] if services else None})
             except Exception:owners.append({"executable":"unknown","unit":None})
         result["unregistered_owner_summary"].append({"port":port,"bind":parts[3],"owners":owners})
