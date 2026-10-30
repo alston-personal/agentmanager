@@ -167,7 +167,7 @@ def main():
         if not match: continue
         port=int(match.group(1))
         if str(port) in result["registry"]:continue
-        pids=sorted(set(int(x) for x in re.findall(r"pid=(\\d+)",line)))
+        pids=sorted(set(int(x) for x in re.findall(r"pid=(\d+)",line)))
         owners=[]
         for pid in pids[:3]:
             try:
