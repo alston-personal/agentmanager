@@ -11,6 +11,15 @@ verified={
  8000:('agentos-chatgpt-mcp','agentos-chatgpt-mcp.service'),
  6080:('agentos-gui-novnc','agentos-gui-novnc.service'),
  5901:('agentos-gui-vnc','agentos-gui-vnc.service'),
+ 3030:('root-nexus','root-nexus.service'),
+ 8765:('agentos-control-plane','agentos-control-plane.service'),
+ 8767:('layoutlib-capability-gateway','layoutlib-capability-gateway.service'),
+ 8771:('agentos-social-runtime','agentos-social-runtime.service'),
+ 8775:('agentos-provider-bridge','agentos-provider-bridge.service'),
+ 8868:('milkcat-fengshui','milkcat-fengshui.service'),
+ 8876:('anime-meme-studio','anime-meme-studio.service'),
+ 11434:('ollama','ollama.service'),
+ 25565:('minecraft','minecraft.service'),
 }
 p=subprocess.run(['ss','-ltnpH'],capture_output=True,text=True,check=True)
 observed={}
