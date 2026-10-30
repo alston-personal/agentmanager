@@ -1,5 +1,7 @@
 name: Character Fusion Runner Window Deploy
 
+# trigger: 2026-10-30 direct Character Fusion deploy current core
+
 on:
   pull_request:
     branches: [core/integration]
