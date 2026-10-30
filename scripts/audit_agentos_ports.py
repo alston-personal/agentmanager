@@ -177,5 +177,14 @@ def main():
                 owners.append({"executable":exe,"unit":services[-1] if services else None})
             except Exception:owners.append({"executable":"unknown","unit":None})
         result["unregistered_owner_summary"].append({"port":port,"bind":parts[3],"owners":owners})
+    result["priority_unregistered_identity"]=[]
+    for row in result["unregistered_owner_summary"]:
+        if row["port"] not in (3030,8765,8767,8090,8771,8775,8868,8876,11434,25565):continue
+        row=dict(row)
+        # No commandline leakage. Service unit, cgroup, working directory basename only.
+        for o in row["owners"]:
+            unit=o.get("unit")
+            o["class"]="system" if unit in ("cron.service","nginx.service","docker.service") else ("persistent_unit" if unit else "unverified")
+        result["priority_unregistered_identity"].append(row)
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
