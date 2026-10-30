@@ -439,6 +439,13 @@ def recover_orphan_reply_intent(root, state):
     """
     pending=state.get("pending_external_actions") or []
     tracked={str(x.get("action_id")) for x in pending if isinstance(x,dict)}
+    # Bound restored uncertainty: a pending held reply must be reconciled or
+    # explicitly classified before another orphan can be promoted. The durable
+    # intent files remain intact; no social write is authorized by this gate.
+    if any(isinstance(x,dict) and x.get("capability")=="social.reply.send"
+           and x.get("status")=="in_progress" and x.get("reconciliation_required") is True
+           for x in pending):
+        return None
     historical=[]
     for path in (root/"pdca/reply_intents").glob("*.json"):
         try:
@@ -471,6 +478,14 @@ def select_reconciliation_fair_action(held, ready, cycle):
                ("social.threads.observe","social.reply.review")]
     if held is not None and due_reads and cycle % 2 == 1:
         return select_action(due_reads)
+    # A reconciled historical reply is read-only maintenance, not a global
+    # write lock: a due, independently authorized post must eventually run.
+    # Preserve its action_id for the existing idempotent publish adapter.
+    due_posts=[x for x in ready if x.get("capability")=="social.post.publish"
+               and x.get("status")=="candidate"
+               and (x.get("media_intent") or {}).get("mode","none")=="none"]
+    if held is not None and due_posts and (not due_reads or cycle % 2 == 0):
+        return due_posts[0]
     return held or select_action(ready)
 
 
