@@ -794,7 +794,25 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
     fetch = _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'fetch', 'origin', source_commit], cwd=repo, timeout=120)
     steps.append({'step': 'fetch_source_commit', **fetch})
     if fetch['returncode'] != 0:
+        _deployment_guard.close()
         return {'ok': False, 'stage': 'fetch_source_commit', 'source_commit': source_commit, 'steps': steps}
+
+    observed_commit = _observed_realm_commit()
+    if observed_commit and observed_commit != source_commit:
+        has_observed = _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'cat-file', '-e', f'{observed_commit}^{{commit}}'], cwd=repo, timeout=20)
+        if has_observed['returncode'] == 0:
+            ancestry = _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'merge-base', '--is-ancestor', observed_commit, source_commit], cwd=repo, timeout=20)
+            steps.append({'step': 'verify_fast_forward_ancestry', **ancestry})
+            if ancestry['returncode'] != 0:
+                _deployment_guard.close()
+                return {
+                    'ok': False,
+                    'deployment_status': 'rejected_non_fast_forward',
+                    'stage': 'verify_fast_forward_ancestry',
+                    'observed_core_commit': observed_commit,
+                    'source_commit': source_commit,
+                    'steps': steps,
+                }
 
     with _rf_tempfile.TemporaryDirectory(prefix='realm-fabric-release-') as td:
         checkout = Path(td) / 'source'

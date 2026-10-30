@@ -1131,6 +1131,21 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 self.fabric.authenticate(node_id, token)
                 node_context = bootstrap_snapshot(self.fabric, node_id, token)
+                selection = str(body.get('selection') or 'project').strip()
+                if selection not in {'project', 'active'}:
+                    raise ValueError('selection must be project or active')
+                if selection == 'active':
+                    active = resolve_active_continuation()
+                    selector = dict(active.get('selector') or {})
+                    result = dict(active.get('resolution') or {})
+                    result['node_context'] = node_context
+                    self._send(200, {
+                        'ok': True,
+                        **result,
+                        'active_selector': selector,
+                        'selection_source': 'ONE_ACTIVE_CONTINUATION',
+                    })
+                    return
                 project_query = str(body.get('project') or body.get('query') or '').strip()
                 if not project_query:
                     raise ValueError('project query is required')

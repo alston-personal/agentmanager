@@ -1,3 +1,7 @@
+---
+name: antigravity_cli
+description: 說明如何使用 Antigravity CLI (agy) 對系統專案進行自主程式碼修改、Bug 修復、單元測試與專案分析。
+---
 # 🧩 Antigravity CLI (agy) 開發輔助技能
 
 本技能說明了如何使用 Antigravity CLI (`agy`) 來對本系統的所有專案進行自主程式碼修改、Bug 修復、單元測試執行與專案分析。

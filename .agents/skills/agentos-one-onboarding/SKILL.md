@@ -1,3 +1,7 @@
+---
+name: agentos-one-onboarding
+description: Onboards Antigravity executors to AgentOS ONE with canonical IR continuation and executor identity fencing.
+---
 # AgentOS ONE Onboarding for Antigravity executors
 
 Use this skill for the actual executor/session running inside the Antigravity IDE surface. Built-in Gemini and built-in Codex are distinct executor identities even when they share the same IDE and ONE adapter.
