@@ -970,3 +970,19 @@ The `agentos-core` entry has a **recorded** `migration_state: active`,
 2026-10-15 Oracle runtime or production acceptance test. Live equivalence and
 receipt freshness must be revalidated independently before making operational
 claims or promoting deployments.
+
+## Unified Realm Fabric active-resolve, fast-forward deployment guard, and Canonical IR CLI (2026-10-30)
+
+`agent_core/realm_server.py` supports both project-scoped and active-selector
+(`selection == "active"`, `ONE_ACTIVE_CONTINUATION`) resolution on `POST /v1/resolve`
+alongside all 22 declarative `agentos.executor.job` contracts on
+`POST /v1/controller/dispatch`.
+
+`agentos_node/action_relay.py` (`_install_realm_fabric_release`) enforces a
+fast-forward git ancestry guard (`git merge-base --is-ancestor`) when an existing
+observed Core commit is present on `agentos-realm-fabric.service`, rejecting
+older unmerged branch commits with `rejected_non_fast_forward`.
+
+`scripts/advance_ir_cli.py` (verified by `tests/test_advance_ir_cli.py`) provides
+a standard CLI to inspect and advance `agentos-core` Canonical IR generations
+with CAS parent checks and atomic `active-continuation.json` activation.
