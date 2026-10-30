@@ -1,5 +1,7 @@
 name: Character Fusion Runner Window Smoke
 
+# trigger-current: 2026-10-30 final Character Fusion smoke after AgentOS recovery
+
 # trigger-current: 2026-10-15 Character Fusion smoke after PR 1993 submit-proof deploy
 
 # trigger: 2026-10-13 Character Fusion final smoke after ChatGPT Web image renderer 1249
