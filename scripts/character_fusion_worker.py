@@ -1446,10 +1446,15 @@ prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
 output = Path(sys.argv[2])
 lock_path = Path("/home/ubuntu/agent-data/runtime/locks/oracle-gui-profile.lock")
 lock_path.parent.mkdir(parents=True, exist_ok=True)
-PORTS = (9222, 9223, 9224, 9225, 9226)
+PORTS = (9225, 9223, 9222, 9224, 9226)
+FLOW_PROJECT_URL = os.environ.get(
+    "AGENTOS_FLOW_PROJECT_URL",
+    "https://flow.google.com/project/7c7d201a-ee6f-40e1-aa4c-2309c9543237",
+).strip()
 
 def discover_flow_target():
     observed=[]
+    fallback=None
     for port in PORTS:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as r:
@@ -1463,11 +1468,17 @@ def discover_flow_target():
             if url.startswith(("http://","https://")):
                 observed.append((port,url[:220]))
             if "flow.google.com/project/" in url:
-                return port,row
+                return port,row,False
+            if fallback is None and port in (9225,9223):
+                ws=str(row.get("webSocketDebuggerUrl") or "")
+                if ws:
+                    fallback=(port,row)
+    if fallback:
+        return fallback[0],fallback[1],True
     hosts=sorted({u.split("/")[2] for _,u in observed if "://" in u})
     raise RuntimeError("flow_project_session_not_found; observed_hosts="+",".join(hosts[:20]))
 
-PORT,target = discover_flow_target()
+PORT,target,needs_navigation = discover_flow_target()
 ws_url=str(target.get("webSocketDebuggerUrl") or "")
 if not ws_url:
     raise RuntimeError("flow_project_ws_missing")
@@ -1492,6 +1503,22 @@ async def main():
                 "awaitPromise":True,
             })
             return (r.get("result") or {}).get("value")
+
+        if needs_navigation:
+            if not FLOW_PROJECT_URL.startswith("https://flow.google.com/project/"):
+                raise RuntimeError("flow_project_url_invalid")
+            await call("Page.navigate",{"url":FLOW_PROJECT_URL})
+            deadline=time.monotonic()+25
+            landed=""
+            while time.monotonic()<deadline:
+                await asyncio.sleep(0.5)
+                landed=str(await evaluate("location.href") or "")
+                if "flow.google.com/project/" in landed:
+                    break
+                if "accounts.google.com" in landed:
+                    raise RuntimeError("flow_auth_required; landed="+landed[:220])
+            if "flow.google.com/project/" not in landed:
+                raise RuntimeError("flow_project_navigation_failed; landed="+landed[:220])
 
         # Flow project zero-state must explicitly enter the still-image
         # "Generate concept art" tool before the prompt's Generate button can
