@@ -2226,6 +2226,11 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
         except RuntimeError as hf_exc:
             hf_message = str(hf_exc)
             if not any(marker in hf_message for marker in (
+                "401 Client Error",
+                "401 Unauthorized",
+                "Unauthorized",
+                "expired",
+                "RepositoryNotFoundError",
                 "402 Payment Required",
                 "Purchase pre-paid credits",
                 "included credits",
