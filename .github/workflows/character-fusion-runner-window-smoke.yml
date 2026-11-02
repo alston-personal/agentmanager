@@ -1,0 +1,127 @@
+name: Character Fusion Runner Window Smoke
+
+# trigger-current: 2026-10-30 Flow session self-heal smoke
+
+# trigger-current: 2026-10-30 final Character Fusion smoke after AgentOS recovery
+
+# trigger-current: 2026-10-15 Character Fusion smoke after PR 1993 submit-proof deploy
+
+# trigger: 2026-10-13 Character Fusion final smoke after ChatGPT Web image renderer 1249
+
+on:
+  # Reuse this governed entrypoint for durable task-controller retries; do not create a parallel workflow.
+  workflow_dispatch:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/bootstrap_control.py'
+      - 'agent_core/runner_window.py'
+      - 'scripts/character_fusion_live_smoke_user.sh'
+      - 'scripts/character_fusion_worker.py'
+      - 'tests/test_runner_window.py'
+      - '.github/workflows/character-fusion-runner-window-smoke.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/bootstrap_control.py'
+      - 'agent_core/runner_window.py'
+      - 'scripts/character_fusion_live_smoke_user.sh'
+      - 'scripts/character_fusion_worker.py'
+      - 'tests/test_runner_window.py'
+      - '.github/workflows/character-fusion-runner-window-smoke.yml'
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      runtime_changed: ${{ steps.diff.outputs.runtime_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "runtime_changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only HEAD^ HEAD || true)"
+          if printf '%s\n' "$files" | grep -Eq '^(agentos_node/|agent_core/runner_window.py|scripts/character_fusion_(worker|live_smoke_user)\.py|scripts/character_fusion_live_smoke_user\.sh|libs/model2ir/)'; then
+            echo "runtime_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "runtime_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check pytest
+      - run: |
+          set -euo pipefail
+          python3 -m py_compile agentos_node/bootstrap_control.py agent_core/runner_window.py scripts/character_fusion_worker.py
+          python3 -m pytest -q tests/test_runner_window.py
+          bash -n scripts/character_fusion_live_smoke_user.sh
+
+  converge:
+    if: github.event_name != 'pull_request' && needs.changes.outputs.runtime_changed == 'true'
+    needs: [validate, changes]
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.runtime
+      operation: converge
+      payload_json: '{}'
+
+  wait_for_dashboard_deploy:
+    if: github.event_name != 'pull_request'
+    needs: [validate, changes]
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Wait for matching dashboard release when worker changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = workflow_dispatch ] || ! git diff --name-only HEAD^ HEAD | grep -Fxq 'scripts/character_fusion_worker.py'; then
+            echo 'character_fusion_worker_unchanged=PASS'
+            exit 0
+          fi
+          for n in $(seq 1 72); do
+            conclusion=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/oracle-deploy-character-fusion-dashboard.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=20" --jq '[.workflow_runs[] | select(.head_sha == env.GITHUB_SHA) | .conclusion][0] // ""')
+            if [ "$conclusion" = success ]; then
+              echo 'matching_character_fusion_dashboard_deploy=PASS'
+              exit 0
+            fi
+            if [ "$conclusion" = failure ] || [ "$conclusion" = cancelled ]; then
+              echo "matching_character_fusion_dashboard_deploy=$conclusion"
+              exit 1
+            fi
+            sleep 10
+          done
+          echo 'matching_character_fusion_dashboard_deploy=TIMEOUT'
+          exit 1
+
+  smoke:
+    if: github.event_name != 'pull_request' && always() && needs.validate.result == 'success' && needs.wait_for_dashboard_deploy.result == 'success' && (needs.converge.result == 'success' || needs.converge.result == 'skipped')
+    needs: [validate, converge, wait_for_dashboard_deploy]
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: studio.character-fusion
+      operation: smoke
+      payload_json: '{}'
+      wait_seconds: 900
