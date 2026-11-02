@@ -46,6 +46,12 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Model-independent Cognitive IR | Research | operational handoff envelopes exist, but general sufficiency is not canonical | requires repeatable cross-model continuity benchmark |
 | Zero-cost model switch with only `continue` | Target / not yet proven generally | depends on portable working-state + canonical resolution layer | continuity benchmark still required |
 
+### Character Fusion governed Runner Window entrypoint (2026-11-02 migration candidate)
+
+Protected `main` is gaining the existing Character Fusion dispatch entrypoint as a bounded #1682 capability migration rather than by merging `core/integration` wholesale. The candidate adds the reusable `agentos-dispatch.yml`, the Character Fusion runner-window smoke workflow, its dispatch/smoke scripts, `agent_core/runner_window.py`, and the runner-window regression tests. Existing `main` copies of `scripts/character_fusion_worker.py` and `agentos_node/bootstrap_control.py` are intentionally not overwritten; their branch differences remain subject to RECONCILE if hosted validation finds an incompatible contract.
+
+This source migration only makes the default branch capable of exposing the governed execution entrypoint. It does **not** prove a successful production image, deployment, or browser-facing demo. #1438 remains open until a post-merge workflow dispatch yields an Oracle receipt for `studio.character-fusion/smoke`, a real accepted PNG with SHA-256 and renderer provenance, and a successful browser-facing `/drop/` acceptance. No new scheduler or parallel Character Fusion architecture is introduced.
+
 ## Canonical Project Identity contract
 
 ### Mio public reply continuity (2026-10-12 candidate)
