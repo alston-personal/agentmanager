@@ -131,6 +131,7 @@ jobs:
             tests.test_invoice_intake_db \
             tests.test_invoice_gpt_web_provider \
             tests.test_invoice_real_user_regression \
+            tests.test_invoice_fast_first_result \
             tests.test_invoice_vision \
             tests.test_invoice_model_benchmark \
             tests.test_invoice_ocr_failure_diff \
