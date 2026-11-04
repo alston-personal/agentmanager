@@ -804,93 +804,104 @@ def extract_legacy_invoice(
 
     timings_ms["stamp_detect_match_ms"] = float(stamp_result.get("latency_ms") or 0.0)
 
-    # Legacy crops remain as a recovery path only.
-    fallback_started = time.perf_counter()
-    invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
-    date_crop = crop_rel(image, (0.43, 0.11, 0.79, 0.30))
-    amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
-    # Baseline seller fallback owns its own crop and never depends on stamp assist.
-    stamp_crop = crop_rel(image, (0.60, 0.38, 0.98, 0.96))
-
-    if not fields["invoice_number"]:
-        invoice_texts = [
-            ocr_image(invoice_crop, psm=7, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
-            ocr_image(invoice_crop, psm=11, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
-        ]
-        value = next((normalize_invoice_number(x) for x in invoice_texts if normalize_invoice_number(x)), None)
-        if value:
-            fields["invoice_number"] = value
-            confidence["invoice_number"] = 0.95
-        raw["invoice_texts"] = invoice_texts
-        raw["fallback_used"].append("invoice_number")
-
-    if not fields["invoice_date"]:
-        date_texts = [
-            ocr_image(date_crop, psm=6, whitelist="0123456789/-"),
-        ]
-        value = next((normalize_roc_date(x) for x in date_texts if normalize_roc_date(x)), None)
-        if value:
-            fields["invoice_date"] = value
-            confidence["invoice_date"] = 0.90
-        raw["date_texts"] = date_texts
-        raw["fallback_used"].append("invoice_date")
-
-    if any(fields[k] is None for k in ("amount_before_tax", "tax_amount", "total_amount")):
-        amount_regions = [
-            amount_crop,
-            crop_rel(image, (0.18, 0.24, 0.95, 0.90)),
-        ]
-        amount_texts = []
-        for region in amount_regions:
-            amount_texts.extend([
-                ocr_image(region, psm=6, whitelist="0123456789,.-"),
-                ocr_image(region, psm=11, whitelist="0123456789,.-"),
-            ])
-        subtotal, tax, total, amount_conf = choose_amounts(amount_texts)
-        fallback_amounts = {
-            "amount_before_tax": subtotal,
-            "tax_amount": tax,
-            "total_amount": total,
-        }
-        for key, value in fallback_amounts.items():
-            if fields[key] is None and value is not None:
-                fields[key] = value
-                confidence[key] = amount_conf
-        raw["amount_texts"] = amount_texts
-        raw["fallback_used"].append("amounts")
-
-    if not fields["seller_tax_id"]:
-        # Bounded fallback: one focused Tesseract pass only. Never fan out into
-        # many variants/PSMs on the synchronous recognition path.
-        stamp_text = ocr_image(stamp_crop, psm=6, whitelist="0123456789", lang="eng")
-        tax_ids: list[str] = []
-        for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text)):
-            if candidate not in tax_ids:
-                tax_ids.append(candidate)
-        valid = [x for x in tax_ids if valid_tax_id(x)]
-        chosen = valid[0] if len(valid) == 1 else None
-        if chosen:
-            fields["seller_tax_id"] = chosen
-            confidence["seller_tax_id"] = 0.86
-        raw["stamp_texts"] = [stamp_text] if stamp_text else []
-        raw["fallback_used"].append("seller_tax_id_bounded")
-
-    if not fields["vendor_name"]:
-        seller_text = seller_region_text(rapid.get("raw_text") or "")
-        vendor_texts = [seller_text] if seller_text else []
-        vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
-        if not vendor:
-            vendor_stamp_text = ocr_image(stamp_crop, psm=6, lang="chi_tra+eng")
-            if vendor_stamp_text:
-                vendor_texts.append(vendor_stamp_text)
-                vendor = normalize_vendor_name(vendor_stamp_text)
-        if vendor:
-            fields["vendor_name"] = vendor
-            confidence["vendor_name"] = 0.78
-        raw["vendor_texts"] = vendor_texts
-        raw["fallback_used"].append("vendor_name_bounded")
-
-    timings_ms["fallback_ocr_ms"] = round((time.perf_counter() - fallback_started) * 1000, 1)
+    # Keep the proven synchronous fallback as a rollback option. In deferred
+    # mode, the already-existing deep/vision worker owns missing-field recovery;
+    # the user-visible first result must not wait for Tesseract subprocesses.
+    fast_fallback_mode = os.environ.get("INVOICE_FAST_FALLBACK_MODE", "legacy").strip().lower()
+    if fast_fallback_mode not in {"legacy", "deferred"}:
+        fast_fallback_mode = "legacy"
+    raw["fast_fallback_mode"] = fast_fallback_mode
+    if fast_fallback_mode == "deferred":
+        raw["fallback_deferred"] = True
+        timings_ms["fallback_ocr_ms"] = 0.0
+    else:
+        # Legacy crops remain as a recovery path only.
+        fallback_started = time.perf_counter()
+        invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
+        date_crop = crop_rel(image, (0.43, 0.11, 0.79, 0.30))
+        amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
+        # Baseline seller fallback owns its own crop and never depends on stamp assist.
+        stamp_crop = crop_rel(image, (0.60, 0.38, 0.98, 0.96))
+    
+        if not fields["invoice_number"]:
+            invoice_texts = [
+                ocr_image(invoice_crop, psm=7, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+                ocr_image(invoice_crop, psm=11, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+            ]
+            value = next((normalize_invoice_number(x) for x in invoice_texts if normalize_invoice_number(x)), None)
+            if value:
+                fields["invoice_number"] = value
+                confidence["invoice_number"] = 0.95
+            raw["invoice_texts"] = invoice_texts
+            raw["fallback_used"].append("invoice_number")
+    
+        if not fields["invoice_date"]:
+            date_texts = [
+                ocr_image(date_crop, psm=6, whitelist="0123456789/-"),
+            ]
+            value = next((normalize_roc_date(x) for x in date_texts if normalize_roc_date(x)), None)
+            if value:
+                fields["invoice_date"] = value
+                confidence["invoice_date"] = 0.90
+            raw["date_texts"] = date_texts
+            raw["fallback_used"].append("invoice_date")
+    
+        if any(fields[k] is None for k in ("amount_before_tax", "tax_amount", "total_amount")):
+            amount_regions = [
+                amount_crop,
+                crop_rel(image, (0.18, 0.24, 0.95, 0.90)),
+            ]
+            amount_texts = []
+            for region in amount_regions:
+                amount_texts.extend([
+                    ocr_image(region, psm=6, whitelist="0123456789,.-"),
+                    ocr_image(region, psm=11, whitelist="0123456789,.-"),
+                ])
+            subtotal, tax, total, amount_conf = choose_amounts(amount_texts)
+            fallback_amounts = {
+                "amount_before_tax": subtotal,
+                "tax_amount": tax,
+                "total_amount": total,
+            }
+            for key, value in fallback_amounts.items():
+                if fields[key] is None and value is not None:
+                    fields[key] = value
+                    confidence[key] = amount_conf
+            raw["amount_texts"] = amount_texts
+            raw["fallback_used"].append("amounts")
+    
+        if not fields["seller_tax_id"]:
+            # Bounded fallback: one focused Tesseract pass only. Never fan out into
+            # many variants/PSMs on the synchronous recognition path.
+            stamp_text = ocr_image(stamp_crop, psm=6, whitelist="0123456789", lang="eng")
+            tax_ids: list[str] = []
+            for candidate in re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text)):
+                if candidate not in tax_ids:
+                    tax_ids.append(candidate)
+            valid = [x for x in tax_ids if valid_tax_id(x)]
+            chosen = valid[0] if len(valid) == 1 else None
+            if chosen:
+                fields["seller_tax_id"] = chosen
+                confidence["seller_tax_id"] = 0.86
+            raw["stamp_texts"] = [stamp_text] if stamp_text else []
+            raw["fallback_used"].append("seller_tax_id_bounded")
+    
+        if not fields["vendor_name"]:
+            seller_text = seller_region_text(rapid.get("raw_text") or "")
+            vendor_texts = [seller_text] if seller_text else []
+            vendor = next((normalize_vendor_name(t) for t in vendor_texts if normalize_vendor_name(t)), None)
+            if not vendor:
+                vendor_stamp_text = ocr_image(stamp_crop, psm=6, lang="chi_tra+eng")
+                if vendor_stamp_text:
+                    vendor_texts.append(vendor_stamp_text)
+                    vendor = normalize_vendor_name(vendor_stamp_text)
+            if vendor:
+                fields["vendor_name"] = vendor
+                confidence["vendor_name"] = 0.78
+            raw["vendor_texts"] = vendor_texts
+            raw["fallback_used"].append("vendor_name_bounded")
+    
+        timings_ms["fallback_ocr_ms"] = round((time.perf_counter() - fallback_started) * 1000, 1)
 
     # Human-confirmed correction memory runs after ordinary OCR/stamp extraction
     # and before review classification. Strong context may correct an exact repeated
@@ -1834,6 +1845,14 @@ class InvoiceStore:
                     f"error type:{type(exc).__name__} "
                     f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
                 )
+                # A crashed Vision worker must not strand a deferred fast result.
+                if original_status in {"recognition_insufficient", "needs_review"}:
+                    threading.Thread(
+                        target=self._deep_enrich_invoice,
+                        args=(invoice_id,),
+                        name=f"invoice-deep-{invoice_id[:8]}",
+                        daemon=True,
+                    ).start()
                 return
 
     def _gpt_web_enrich_invoice(self, invoice_id: str, bridge_root: str) -> None:

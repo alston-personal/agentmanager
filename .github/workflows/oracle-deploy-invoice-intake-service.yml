@@ -131,6 +131,7 @@ jobs:
             tests.test_invoice_intake_db \
             tests.test_invoice_gpt_web_provider \
             tests.test_invoice_real_user_regression \
+            tests.test_invoice_fast_first_result \
             tests.test_invoice_vision \
             tests.test_invoice_model_benchmark \
             tests.test_invoice_ocr_failure_diff \
@@ -180,6 +181,7 @@ jobs:
           test -n "${GEMINI_API_KEY:-}" || { echo 'invoice_vision_secret=MISSING'; exit 1; }
           {
             printf '%s\n' 'INVOICE_VISION_MODE=primary'
+            printf '%s\n' 'INVOICE_FAST_FALLBACK_MODE=deferred'
             printf 'GEMINI_INVOICE_MODEL=%s\n' "${GEMINI_INVOICE_MODEL}"
             printf 'GEMINI_INVOICE_FALLBACK_MODELS=%s\n' "${GEMINI_INVOICE_FALLBACK_MODELS}"
             printf 'GEMINI_API_KEY=%s\n' "${GEMINI_API_KEY}"
