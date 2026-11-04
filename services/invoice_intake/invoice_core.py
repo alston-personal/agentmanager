@@ -1845,6 +1845,14 @@ class InvoiceStore:
                     f"error type:{type(exc).__name__} "
                     f"elapsed_ms:{round((time.perf_counter()-started)*1000,1)}"
                 )
+                # A crashed Vision worker must not strand a deferred fast result.
+                if original_status in {"recognition_insufficient", "needs_review"}:
+                    threading.Thread(
+                        target=self._deep_enrich_invoice,
+                        args=(invoice_id,),
+                        name=f"invoice-deep-{invoice_id[:8]}",
+                        daemon=True,
+                    ).start()
                 return
 
     def _gpt_web_enrich_invoice(self, invoice_id: str, bridge_root: str) -> None:
