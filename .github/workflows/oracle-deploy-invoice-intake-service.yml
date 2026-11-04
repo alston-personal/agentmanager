@@ -181,6 +181,7 @@ jobs:
           test -n "${GEMINI_API_KEY:-}" || { echo 'invoice_vision_secret=MISSING'; exit 1; }
           {
             printf '%s\n' 'INVOICE_VISION_MODE=primary'
+            printf '%s\n' 'INVOICE_FAST_FALLBACK_MODE=deferred'
             printf 'GEMINI_INVOICE_MODEL=%s\n' "${GEMINI_INVOICE_MODEL}"
             printf 'GEMINI_INVOICE_FALLBACK_MODELS=%s\n' "${GEMINI_INVOICE_FALLBACK_MODELS}"
             printf 'GEMINI_API_KEY=%s\n' "${GEMINI_API_KEY}"
