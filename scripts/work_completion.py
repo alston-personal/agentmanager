@@ -569,6 +569,87 @@ def heartbeat(
         return item
 
 
+
+def assert_execution_fence(
+    path: Path, *, work_id: str, owner: str, generation: int
+) -> dict[str, Any]:
+    """Fail closed for a cooperating executor before a new side effect.
+
+    This only validates the durable Completion Controller lease; GitHub writes
+    and Oracle commands must ALSO enforce the same fence at their authority
+    boundary. This function is not itself a GitHub permission barrier.
+    """
+    item = load(path)["items"].get(work_id)
+    if not item:
+        raise KeyError("work_item_not_found")
+    if item.get("status") not in ACTIVE:
+        raise ValueError("execution_fence_terminal")
+    if item.get("owner") != owner or int(item.get("owner_generation") or 0) != generation:
+        raise ValueError("execution_fence_stale_generation")
+    if lease_expired(item):
+        raise ValueError("execution_fence_lease_expired")
+    return item
+
+
+def recover_provider_failure(
+    path: Path, *, work_id: str, actor: str,
+    failed_owner: str, expected_generation: int,
+    failure_receipt: str, failure_reason: str,
+    next_action: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> dict[str, Any]:
+    """Model-free, atomic recovery after a runtime-observed provider failure.
+
+    A trusted Completion Controller must validate the actual runtime receipt
+    before calling this method; the receipt identifier is stored for audit.
+    This does not rerun unknown side effects and does not forcibly kill or
+    revoke permissions belonging to the old executor.
+    """
+    if actor != "role://completion.controller":
+        raise ValueError("provider_recovery_controller_required")
+    if not failed_owner.strip() or not failure_receipt.strip() or not next_action.strip():
+        raise ValueError("provider_recovery_required_fields_missing")
+    if classify_blocker(failure_reason) != "PROVIDER_CAPACITY":
+        raise ValueError("provider_recovery_not_capacity_failure")
+    if expected_generation < 1:
+        raise ValueError("provider_recovery_generation_invalid")
+    with locked(path):
+        state = load(path)
+        item = state["items"].get(work_id)
+        if not item:
+            raise KeyError("work_item_not_found")
+        if item.get("status") not in ACTIVE:
+            raise ValueError("provider_recovery_terminal")
+        if (str(item.get("owner")) != failed_owner
+                or int(item.get("owner_generation") or 0) != expected_generation):
+            raise ValueError("provider_recovery_stale_generation")
+        if failed_owner == actor:
+            raise ValueError("provider_recovery_no_owner_change")
+        stamp = now()
+        item["owner"] = actor
+        item["owner_generation"] = expected_generation + 1
+        item["lease_expires_at"] = lease_deadline(lease_seconds)
+        item["next_action"] = next_action.strip()
+        # Keep running work in progress; controller must inspect unacknowledged
+        # side effects before dispatching a replacement executor.
+        item["status"] = "blocked"
+        item["blocker"] = "provider_capacity_recovery_pending_reconciliation"
+        item["wake_condition"] = None
+        item["updated_at"] = stamp
+        item.setdefault("history", []).append({
+            "at": stamp, "event": "provider_failure_recovery",
+            "actor": actor, "from_owner": failed_owner,
+            "to_owner": actor, "owner_generation": item["owner_generation"],
+            "reason_kind": "PROVIDER_CAPACITY",
+            "failure_receipt": failure_receipt.strip(),
+        })
+        problems = validate_item(item)
+        if problems:
+            raise ValueError(",".join(problems))
+        save(path, state)
+        return item
+
+
 def reclaim_stale(
     path: Path, *, actor: str = "role://completion.watchdog",
     new_owner: str = "role://completion.controller",
