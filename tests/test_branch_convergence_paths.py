@@ -6,6 +6,7 @@ class BranchConvergencePathRiskTest(unittest.TestCase):
         self.assertEqual(classify(".agent/CONSTITUTION.yaml"), "RED")
         self.assertEqual(classify(".github/workflows/deploy.yml"), "RED")
         self.assertEqual(classify("scripts/deploy_core.sh"), "RED")
+        self.assertEqual(classify("runtime_core/canonical_ir.py"), "RED")
 
     def test_content_continues(self):
         self.assertEqual(classify("stories/chapter.md"), "GREEN")

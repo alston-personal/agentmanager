@@ -80,6 +80,16 @@
       "lock": "production/completion-executor",
       "migration_state": "active",
       "live_receipt": "github-actions:36130001931"
+    },
+    "agentos-control-plane": {
+      "owner": "role://release-controller.core",
+      "release_root": "/home/ubuntu/agent-data/releases/control-plane",
+      "lock": "production/agentos-control-plane",
+      "migration_state": "candidate",
+      "runtime_controller": "scripts/deploy_distributed_control_plane.sh",
+      "service": "agentos-control-plane.service",
+      "acceptance": "scripts/inspect_distributed_control_plane.py",
+      "live_pointer": "/home/ubuntu/.config/systemd/user/agentos-control-plane.service.d/90-agentmanager-release.conf"
     }
   },
   "invariants": [
