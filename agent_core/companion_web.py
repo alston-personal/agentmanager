@@ -250,6 +250,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   <script>
     const API_BASE = window.location.pathname.startsWith('/agentos') ? '/agentos' : '';
+    const AUTH_TOKEN = "__AGENTOS_AUTH_TOKEN__";
+
+    function getHeaders() {
+      const h = { 'Content-Type': 'application/json' };
+      if (AUTH_TOKEN && AUTH_TOKEN !== '__AGENTOS_' + 'AUTH_TOKEN__') {
+        h['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+      }
+      return h;
+    }
 
     function showToast(msg) {
       const toast = document.getElementById('toast');
@@ -260,7 +269,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     async function loadApprovals() {
       try {
-        const resp = await fetch(API_BASE + '/v1/approvals');
+        const resp = await fetch(API_BASE + '/v1/approvals', { headers: getHeaders() });
         if (!resp.ok) return;
         const data = await resp.json();
         
@@ -329,7 +338,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         const resp = await fetch(API_BASE + '/v1/approvals/decide', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getHeaders(),
           body: JSON.stringify({
             id: id,
             decision: decision,
@@ -368,7 +377,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       try {
         const resp = await fetch(API_BASE + '/v1/tasks', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getHeaders(),
           body: JSON.stringify({
             project_id: 'agentmanager',
             goal: goal,
@@ -419,6 +428,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def render_companion_html() -> str:
-    """Render the full responsive HTML for the AgentOS Mobile Companion."""
-    return HTML_TEMPLATE
+def render_companion_html(auth_token: str = "") -> str:
+    """Render the full responsive HTML for the AgentOS Mobile Companion with injected token."""
+    return HTML_TEMPLATE.replace("__AGENTOS_AUTH_TOKEN__", auth_token)
+

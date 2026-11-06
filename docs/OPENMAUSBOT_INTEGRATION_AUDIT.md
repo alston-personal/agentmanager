@@ -112,3 +112,4 @@
    - `scripts/agentos_remote_control.py` (整合 approvals 子指令)
 2. **運行服務**：
    - 更新並重啟 `agentos-control-plane.service`，所有端點經由公網 HTTPS 驗證通過。
+
