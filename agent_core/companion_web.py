@@ -1,10 +1,12 @@
-"""AgentOS Mobile Companion Web Interface.
+"""AgentOS Mobile Companion & Web Console Interface.
 
-Provides a clean, touch-friendly, mobile-first Web Companion for AgentOS.
+Provides a clean, touch-friendly, mobile-first Web Console for AgentOS.
 Allows remote operators (via phone, tablet, or browser) to:
 1. Inspect and resolve interactive Approval Cards (OptionCards) with one tap.
-2. Monitor live system health, task queues, and all 21 active role workers.
-3. Dispatch new tasks directly to Oracle local executors without opening the IDE.
+2. Approve Device / Node Enrollment Codes (e.g. DBG9-9H4R) directly on screen.
+3. Monitor Live Realm Node Map (online/offline nodes, OS, agents, heartbeats).
+4. Monitor live system health, task queues, and all 21 active role workers.
+5. Dispatch new tasks directly to Oracle local executors without opening the IDE.
 """
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AgentOS Mobile Companion</title>
+  <title>AgentOS Web Console & Companion</title>
   <style>
     :root {
       --bg: #090d16;
@@ -107,10 +109,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       background: var(--card-bg);
       border: 1px dashed var(--card-border);
       border-radius: 12px;
-      padding: 24px;
+      padding: 20px;
       text-align: center;
       color: var(--muted);
-      font-size: 0.9rem;
+      font-size: 0.85rem;
     }
     .form-group { margin-bottom: 12px; }
     label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
@@ -166,15 +168,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <header>
       <div class="brand">
         <span class="badge-pulse"></span>
-        AgentOS Companion
+        AgentOS Console
       </div>
-      <div class="host-tag">Oracle ARM64 | :8765</div>
+      <div class="host-tag">agentos.milkcat.org | Oracle Core</div>
     </header>
+
+    <!-- SECTION: NODE JOIN APPROVAL -->
+    <div class="section">
+      <h2>Approve Node Join (節點設備配對審批)</h2>
+      <div class="card">
+        <div class="form-group">
+          <label>Device User Code (輸入終端機顯示的 8 碼配對碼)</label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="node-join-code" placeholder="e.g. DBG9-9H4R" style="text-transform:uppercase; font-size:1.1rem; letter-spacing:2px; font-weight:700;">
+            <button class="btn-approve" style="white-space:nowrap; padding:10px 16px;" id="btn-approve-node" onclick="approveNodeCode()">
+              🛡️ Approve
+            </button>
+          </div>
+        </div>
+        <div id="node-approve-result" style="display:none; margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <!-- SECTION: REALM NODE MAP -->
+    <div class="section">
+      <h2>
+        <span>Realm Node Map (節點拓撲圖)</span>
+        <span id="node-online-count" style="font-size:0.8rem; color:var(--success);">0 online</span>
+      </h2>
+      <div id="nodes-container">
+        <div class="empty-state">Loading node topology...</div>
+      </div>
+    </div>
 
     <!-- SECTION: APPROVAL CARDS -->
     <div class="section">
       <h2>
-        <span>Pending Approvals (OptionCard)</span>
+        <span>Governance Approvals (OptionCard)</span>
         <span id="approval-count" style="font-size:0.8rem; color:var(--warning)">0</span>
       </h2>
       <div id="approvals-container">
@@ -330,6 +360,106 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
     }
 
+    async function loadNodeMap() {
+      try {
+        const resp = await fetch(API_BASE + '/v1/nodes', { headers: getHeaders() });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const nodes = data.nodes || [];
+        const onlineCount = nodes.filter(n => n.status === 'online').length;
+        document.getElementById('node-online-count').innerText = `${onlineCount} / ${nodes.length} online`;
+
+        const container = document.getElementById('nodes-container');
+        if (nodes.length === 0) {
+          container.innerHTML = '<div class="empty-state">No registered nodes found.</div>';
+          return;
+        }
+
+        container.innerHTML = nodes.map(n => {
+          const isOnline = n.status === 'online';
+          const osIcon = n.platform === 'Linux' ? '🐧' : (n.platform === 'Windows' ? '🪟' : (n.platform === 'Darwin' ? '🍎' : '💻'));
+          const surfaces = (n.surface_inventory && n.surface_inventory.surfaces || []).map(s => s.provider).filter(Boolean);
+          const surfaceTags = surfaces.length > 0 ? surfaces.map(s => `<span style="font-size:0.7rem; background:#1e293b; padding:2px 6px; border-radius:4px; margin-right:4px;">${s}</span>`).join('') : '<span style="font-size:0.7rem; color:var(--muted);">no agents</span>';
+          const heartbeatSec = n.heartbeat_age_seconds !== null && n.heartbeat_age_seconds !== undefined ? `${n.heartbeat_age_seconds}s ago` : 'never';
+
+          return `
+            <div class="card" style="padding:12px 14px; margin-bottom:8px; border-left: 4px solid ${isOnline ? 'var(--success)' : 'var(--danger)'};">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <div style="font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
+                  <span>${osIcon}</span>
+                  <span>${n.node_id}</span>
+                  <span style="font-size:0.75rem; font-weight:400; color:var(--muted);">(${n.hostname || 'unknown'})</span>
+                </div>
+                <span style="font-size:0.75rem; font-weight:700; color:${isOnline ? 'var(--success)' : 'var(--danger)'};">
+                  ${isOnline ? '🟢 ONLINE' : '🔴 OFFLINE'}
+                </span>
+              </div>
+              <div style="font-size:0.75rem; color:var(--muted); margin-bottom:6px;">
+                Role: <strong>${n.role || 'client'}</strong> | Heartbeat: <span style="color:#e2e8f0;">${heartbeatSec}</span> | OS: ${n.platform || 'Unknown'}
+              </div>
+              <div style="margin-top:4px;">${surfaceTags}</div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Failed to load node map:', err);
+      }
+    }
+
+    async function approveNodeCode() {
+      const input = document.getElementById('node-join-code');
+      const code = input.value.trim().toUpperCase();
+      const resDiv = document.getElementById('node-approve-result');
+      const btn = document.getElementById('btn-approve-node');
+
+      if (!code) {
+        alert('Please enter a User Code.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = 'Approving Node...';
+      resDiv.style.display = 'none';
+
+      try {
+        const resp = await fetch(API_BASE + '/v1/nodes/approve', {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({ code: code })
+        });
+        const data = await resp.json();
+        resDiv.style.display = 'block';
+        if (resp.ok && data.success) {
+          resDiv.innerHTML = `
+            <div style="background:#064e3b; border:1px solid #059669; padding:10px; border-radius:8px; font-size:0.85rem;">
+              ✅ <strong>Node Approved!</strong><br>
+              Node ID: <code>${data.node_id}</code><br>
+              Code: <code>${data.user_code}</code>
+            </div>
+          `;
+          input.value = '';
+          showToast(`Node ${data.node_id} approved!`);
+          loadNodeMap();
+        } else {
+          resDiv.innerHTML = `
+            <div style="background:#7f1d1d; border:1px solid #dc2626; padding:10px; border-radius:8px; font-size:0.85rem;">
+              ❌ Approval failed: ${data.error || 'Unknown error'}
+            </div>
+          `;
+        }
+      } catch (err) {
+        resDiv.style.display = 'block';
+        resDiv.innerHTML = `
+          <div style="background:#7f1d1d; border:1px solid #dc2626; padding:10px; border-radius:8px; font-size:0.85rem;">
+            ❌ Network error: ${err.message}
+          </div>
+        `;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '🛡️ Approve';
+      }
+    }
+
     async function decideApproval(id, decision) {
       try {
         const btn = event.target;
@@ -389,12 +519,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const data = await resp.json();
         resDiv.style.display = 'block';
         if (resp.status === 200 || resp.status === 202) {
-          const taskId = data.task ? data.task.id : 'submitted';
+          const taskId = data.task ? (data.task.taskId || data.task.id) : 'submitted';
           resDiv.innerHTML = `
             <div style="background:#064e3b; border:1px solid #059669; padding:10px; border-radius:8px; font-size:0.85rem;">
               ✅ <strong>Task Dispatched!</strong><br>
               Task ID: <code>${taskId}</code><br>
-              Status: <code>${data.task ? data.task.state : 'submitted'}</code>
+              Status: <code>${data.task ? (data.task.status || data.task.state) : 'submitted'}</code>
             </div>
           `;
           document.getElementById('task-goal').value = '';
@@ -421,7 +551,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     // Initial load and periodic polling
     loadApprovals();
-    setInterval(loadApprovals, 5000);
+    loadNodeMap();
+    setInterval(() => {
+      loadApprovals();
+      loadNodeMap();
+    }, 5000);
   </script>
 </body>
 </html>
@@ -429,6 +563,5 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 
 def render_companion_html(auth_token: str = "") -> str:
-    """Render the full responsive HTML for the AgentOS Mobile Companion with injected token."""
+    """Render the full responsive HTML for the AgentOS Web Console with injected token."""
     return HTML_TEMPLATE.replace("__AGENTOS_AUTH_TOKEN__", auth_token)
-

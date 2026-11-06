@@ -60,3 +60,4 @@ echo "============================================================"
 echo "✅ agentos_linux_install=PASS"
 echo "Node ID: $NODE_ID is online and joined to realm-alston!"
 echo "============================================================"
+
