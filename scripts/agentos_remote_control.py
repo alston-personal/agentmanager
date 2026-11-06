@@ -175,6 +175,16 @@ def main():
     p_exec.add_argument("--goal", required=True, help="Task goal")
     p_exec.add_argument("--capability", default="system.audit", help="Capability")
 
+    p_app = sub.add_parser("approvals", help="Inspect and resolve interactive OptionCard approvals")
+    p_app_sub = p_app.add_subparsers(dest="app_cmd")
+    p_app_sub.add_parser("list", help="List all pending approvals and recent history")
+    
+    p_app_decide = p_app_sub.add_parser("decide", help="Decide an approval card")
+    p_app_decide.add_argument("--id", required=True, help="Approval ID")
+    p_app_decide.add_argument("--action", required=True, choices=["approve", "reject"], help="Decision action")
+    p_app_decide.add_argument("--approver", default="CLI-operator", help="Approver identity")
+    p_app_decide.add_argument("--reason", default="", help="Optional decision rationale")
+
     args = parser.parse_args()
 
     if args.cmd == "doctor":
@@ -200,6 +210,32 @@ def main():
         res = execute_oracle_local(args.goal, capability=args.capability)
         print("\n⚡ Oracle Local Gemini Execution Receipt:")
         print(json.dumps(res, indent=2, ensure_ascii=False))
+
+    elif args.cmd == "approvals":
+        if args.app_cmd == "list":
+            res = make_request("/v1/approvals")
+            print(f"\n📋 Pending Approvals ({res.get('pending_count', 0)} total):")
+            for c in res.get("cards", []):
+                print(f" • [{c['id']}] {c['title']}")
+                print(f"   {c['subtitle']} | Action: {c.get('action_type')}")
+                if c.get("next_unblocked_task"):
+                    print(f"   Next Task: {c['next_unblocked_task']}")
+            if not res.get("cards"):
+                print("   (No pending approvals)")
+            if res.get("history"):
+                print(f"\n📜 Recent History ({len(res['history'])} items):")
+                for h in res["history"][:5]:
+                    print(f" • [{h['id']}] {h['status']} by {h.get('resolved_by')} ({h.get('resolved_at', '')[:19]})")
+        elif args.app_cmd == "decide":
+            res = make_request("/v1/approvals/decide", method="POST", data={
+                "id": args.id,
+                "decision": args.action,
+                "approver": args.approver,
+                "reason": args.reason,
+            })
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+        else:
+            p_app.print_help()
 
     else:
         parser.print_help()
