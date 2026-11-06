@@ -390,5 +390,59 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertEqual(mod.audit(path), ([], []))
 
 
+
+    def test_provider_quota_recovery_is_model_free_and_fenced(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            mod.register(
+                path, work_id="quota-1", project_id="agentmanager",
+                title="recover after provider exhaustion",
+                owner="executor://oracle-gemini",
+                next_action="run the remaining checks",
+                acceptance=["receipt and tests"],
+            )
+            recovered = mod.recover_provider_failure(
+                path, work_id="quota-1", actor="role://completion.controller",
+                failed_owner="executor://oracle-gemini", expected_generation=1,
+                failure_receipt="runtime://quota-001", failure_reason="provider quota exhausted",
+                next_action="inspect local and remote Git SHA and any unacknowledged tool calls",
+            )
+            self.assertEqual(recovered["owner_generation"], 2)
+            self.assertEqual(recovered["status"], "blocked")
+            self.assertIsNone(mod.next_item(path))
+            with self.assertRaisesRegex(ValueError, "stale_generation"):
+                mod.assert_execution_fence(
+                    path, work_id="quota-1", owner="executor://oracle-gemini", generation=1,
+                )
+            with self.assertRaisesRegex(ValueError, "stale_generation"):
+                mod.recover_provider_failure(
+                    path, work_id="quota-1", actor="role://completion.controller",
+                    failed_owner="executor://oracle-gemini", expected_generation=1,
+                    failure_receipt="runtime://quota-001", failure_reason="provider quota exhausted",
+                    next_action="resume",
+                )
+
+    def test_provider_quota_recovery_rejects_untrusted_actor_and_wrong_error_kind(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            mod.register(
+                path, work_id="quota-2", project_id="agentmanager",
+                title="preserve ownership", owner="executor://oracle-gemini",
+                next_action="finish safely", acceptance=["receipt"],
+            )
+            for actor, reason in [
+                ("executor://other-model", "provider quota exhausted"),
+                ("role://completion.controller", "human login required"),
+            ]:
+                with self.assertRaises(ValueError):
+                    mod.recover_provider_failure(
+                        path, work_id="quota-2", actor=actor,
+                        failed_owner="executor://oracle-gemini", expected_generation=1,
+                        failure_receipt="runtime://quota-002", failure_reason=reason,
+                        next_action="inspect",
+                    )
+            self.assertEqual(mod.load(path)["items"]["quota-2"]["owner_generation"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

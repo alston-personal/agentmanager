@@ -92,7 +92,9 @@ def persist_reply_receipt(root,state,status,reason,now,**evidence):
     report={"schema":"agentos.persona-reply-reasoning-receipt/v1","cycle":state.get("cycle"),
         "status":status,"reason":reason,"generator_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "reasoning_runtime_sha256":hashlib.sha256(Path(reasoning.__file__).read_bytes()).hexdigest(),
-        "diagnostic_contract":"sanitized-failure-class/v1","publication_acceptance":"NOT_OBSERVED",**evidence}
+        "diagnostic_contract":"sanitized-failure-class/v1",
+        "reasoning_availability":reasoning.reasoning_availability(evidence.get("attempts") or []),
+        "publication_acceptance":"NOT_OBSERVED",**evidence}
     # Unchanged non-provider defers do not create a receipt every five minutes.
     old_ref=state.get("last_reply_reasoning_receipt")
     if old_ref and not report.get("attempts"):

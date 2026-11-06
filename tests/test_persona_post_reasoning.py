@@ -27,6 +27,38 @@ DECISION = {"should_post": True, "human_required": False,
 
 
 class PostReasoningTests(unittest.TestCase):
+    def test_all_reasoning_providers_exhausted_preserves_consider_and_classifies_capacity(self):
+        results=[
+            subprocess.CompletedProcess("claude",1,"","rate limit quota exhausted"),
+            subprocess.CompletedProcess("gemini",1,json.dumps({"error":{"code":429,"message":"RESOURCE_EXHAUSTED"}}),""),
+            subprocess.CompletedProcess("codex",1,"","too many requests"),
+        ]
+        output,state,receipt,actions,calls=self.run_generator(
+            results,claude=True,gemini=True,codex=True,
+        )
+        self.assertEqual(output["status"],"DEFER")
+        self.assertEqual(output["reason"],"persona_reasoning_exhausted")
+        self.assertEqual(receipt["reasoning_availability"]["status"],"PROVIDER_CAPACITY")
+        self.assertEqual(receipt["reasoning_availability"]["next_action"],"retry_or_switch_available_provider")
+        self.assertEqual([x["failure_class"] for x in receipt["attempts"]],["RATE_LIMITED"]*3)
+        self.assertEqual(actions,[])
+        self.assertEqual(state["pending_external_actions"][0]["status"],"candidate")
+        self.assertNotIn("post_no_publish_streak",state)
+        self.assertEqual(len(calls),3)
+
+    def test_reasoning_availability_distinguishes_auth_transport_and_valid_no_post(self):
+        self.assertEqual(generator.reasoning_availability([])["status"],"NO_PROVIDER_AVAILABLE")
+        self.assertEqual(generator.reasoning_availability([{"status":"NONZERO","failure_class":"AUTH_REQUIRED"}])["status"],"PROVIDER_AUTH")
+        self.assertEqual(generator.reasoning_availability([{"status":"TIMEOUT","failure_class":"TIMEOUT"}])["status"],"PROVIDER_TRANSPORT")
+        self.assertEqual(generator.reasoning_availability([{"status":"PASS"}])["status"],"AVAILABLE")
+        no_post={**DECISION,"should_post":False,"post_text":""}
+        output,_,receipt,actions,_=self.run_generator(
+            [subprocess.CompletedProcess("claude",0,json.dumps(no_post),"")],gemini=False,
+        )
+        self.assertEqual(output["status"],"NO_POST")
+        self.assertEqual(receipt["reasoning_availability"]["status"],"AVAILABLE")
+        self.assertEqual(actions,[])
+
     def test_recent_compact_platform_post_does_not_trigger_false_liveness(self):
         out,_,_,actions,calls=self.run_generator([],consider=False,events=[{
             'type':'post.sent','object_id':'recent','text':'今天的新觀察',
