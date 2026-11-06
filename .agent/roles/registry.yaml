@@ -83,7 +83,7 @@ roles:
   - risk_assessment
 - id: sector.weaver
   name: Weaver
-  status: proposed
+  status: active
   kind: specification
   source: .agent/roles/parents/lcs_weaver.md
   purpose: 把目標與模糊需求收斂為 IR、spec、constraints 與 acceptance criteria。
@@ -98,7 +98,7 @@ roles:
   - architecture_decision
 - id: sector.whisperer
   name: Whisperer
-  status: proposed
+  status: active
   kind: ideation
   source: .agent/roles/parents/lcs_whisperer.md
   purpose: 探索需求、UX、創意空間與候選方向；不把探索結果誤標為正式規格。
@@ -112,7 +112,7 @@ roles:
   - prototype_direction
 - id: governance.spec_steward
   name: Spec Steward
-  status: proposed
+  status: active
   kind: governance
   source: .agent/roles/instances/agentos_spec_steward.md
   purpose: 持續追蹤正式規格是否有 owner、target、implementation evidence 與 closure。
@@ -128,7 +128,7 @@ roles:
   - closure_gap
 - id: governance.keeper
   name: Constitution Keeper
-  status: proposed
+  status: active
   kind: governance
   source: .agent/CONSTITUTION.yaml
   purpose: 守護 AgentOS constitution、角色契約與 runtime policy attestation，阻止核心原則靜默漂移。
@@ -146,7 +146,7 @@ roles:
   - blocked_change
 - id: system.cartographer
   name: Cartographer
-  status: proposed
+  status: active
   kind: world_model
   source: docs/RESOURCE_REGISTRY.md
   purpose: 維護 declared/observed/verified 的環境世界模型；先 query、stale 才 targeted verify。
@@ -184,7 +184,7 @@ roles:
   - closure_handoff
 - id: system.port_window_steward
   name: 歐諾彌亞 Eunomia (Port & Window Steward / 通訊埠與調度視窗總管)
-  status: proposed
+  status: active
   kind: infrastructure_governance
   source: .agent/roles/instances/port_window_steward.md
   purpose: 奧林匹斯金門時序女神：掌管全生態伺服器連接埠劃分、防衝突審查、本地監聽安全守門，以及定時排程執行視窗 (Window Slots) 與維護窗口調度避峰。
@@ -203,7 +203,7 @@ roles:
   - execution_window_plan
 - id: system.dns_steward
   name: 伊里斯 Iris (DNS & Traffic Steward / 網域名稱與解析總管)
-  status: proposed
+  status: active
   kind: infrastructure_governance
   source: .agent/roles/instances/dns_steward.md
   purpose: 奧林匹斯彩虹信使：掌管全生態頂級網域與動態子網域的生命週期、Cloudflare DNS API 自動化調度、實體 IP 綁定防漂移與安全防護。
@@ -239,7 +239,7 @@ roles:
   - gateway_health_receipt
 - id: system.memory_archivist
   name: 摩涅莫緒涅 Mnemosyne (Memory & Meditation Archivist / 記憶之母與冥想總管)
-  status: proposed
+  status: active
   kind: memory_governance
   source: .agent/roles/instances/memory_archivist.md
   purpose: 奧林匹斯記憶泰坦女神：掌管每日半夜深度內省 (Daily Meditation)、長短期記憶固化、破爛架構 (Shabby Architecture) 痛點檢測與 Data Layer 冷存檔歸檔。
@@ -259,7 +259,7 @@ roles:
   - shabby_architecture_report
 - id: product.zeus_writer
   name: Zeus Writer
-  status: proposed
+  status: active
   kind: product_employee
   source: governance/zeus-writer-employee.json
   purpose: 持續維護被指派的寫作專案與可發表正文狀態；角色本身不取得 protected branch 或外部發表權限。
@@ -277,7 +277,7 @@ roles:
   - editorial_blocker
 - id: product.youtube_ai_manager
   name: YouTube AI Manager
-  status: proposed
+  status: active
   kind: product_employee
   source: governance/youtube-ai-manager-employee.json
   purpose: 持續掃描已授權 YouTube 內容並產生有根據的優化候選；角色身分不自動授予外部 API 寫入權限。
@@ -297,7 +297,7 @@ roles:
   - authorization_blocker
 - id: governance.arbiter
   name: Arbiter
-  status: proposed
+  status: active
   kind: governance
   source: null
   purpose: 處理角色、規格、風險與優先序衝突；不自行執行實作。
@@ -310,7 +310,7 @@ roles:
   - escalation
 - id: knowledge.chronicler
   name: Chronicler
-  status: proposed
+  status: active
   kind: knowledge
   source: null
   purpose: 將已驗證事件、決策與演化寫入 Chronicle，避免知識只存在於 session 或過時角色文件。
@@ -351,7 +351,7 @@ roles:
   - observer_projection
 - id: system.academic_researcher
   name: 泰勒斯 Thales (Academic Researcher / 論文作者與學術實驗總管)
-  status: proposed
+  status: active
   kind: academic_research
   source: .agent/roles/instances/academic_researcher.md
   purpose: 實證探索與學術先驅：掌管 AgentOS 頂級學術論文、LCCB 認知實驗基準推進、變因控制與學術發表。
@@ -370,7 +370,7 @@ roles:
   - benchmark_summary
 - id: system.aesthetic_director_venus
   name: 維納斯 Venus (Aesthetic Director / 美學與體驗總監)
-  status: proposed
+  status: active
   kind: design_governance
   source: .agent/roles/instances/aesthetic_director_venus.md
   purpose: 審美統裁與介面品質捍衛者：全面掌控全域 Web 面向、標題列導覽分組、登入認證元件標準化、3D 與內容層級視覺美感。

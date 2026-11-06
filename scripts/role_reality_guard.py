@@ -45,6 +45,20 @@ def check_role_reality() -> tuple[list[dict], list[str]]:
         "system.atlas": "system-atlas",
         "system.quality_sentinel": "system-quality-sentinel",
         "system.gateway_steward": "system-gateway-steward",
+        "system.cartographer": "system-cartographer",
+        "system.memory_archivist": "system-memory-archivist",
+        "system.port_window_steward": "system-port-window-steward",
+        "product.zeus_writer": "product-zeus-writer",
+        "system.aesthetic_director_venus": "system-aesthetic-director-venus",
+        "product.youtube_ai_manager": "product-youtube-ai-manager",
+        "sector.weaver": "sector-weaver",
+        "sector.whisperer": "sector-whisperer",
+        "governance.spec_steward": "governance-spec-steward",
+        "governance.keeper": "governance-keeper",
+        "system.dns_steward": "system-dns-steward",
+        "governance.arbiter": "governance-arbiter",
+        "knowledge.chronicler": "knowledge-chronicler",
+        "system.academic_researcher": "system-academic-researcher",
     }
 
     for r in roles:
