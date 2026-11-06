@@ -167,6 +167,20 @@ class ReplyReasoningTests(unittest.TestCase):
         self.assertEqual(state['pending_external_actions'][0]['reasoning_executor'],'gemini_cli')
         self.assertEqual(receipt['attempts'][0]['status'],'INVALID_OUTPUT')
 
+    def test_all_providers_quota_exhausted_keeps_reply_pending_without_no_reply(self):
+        result=[
+            subprocess.CompletedProcess("claude",1,"","rate limit quota exhausted"),
+            subprocess.CompletedProcess("gemini",1,json.dumps({"error":{"code":429,"message":"RESOURCE_EXHAUSTED"}}),""),
+            subprocess.CompletedProcess("codex",1,"","too many requests"),
+        ]
+        out,state,receipt,calls=self.execute(result,providers=(True,True,True))
+        self.assertEqual(out["status"],"DEFER")
+        self.assertEqual(receipt["reasoning_availability"]["status"],"PROVIDER_CAPACITY")
+        self.assertEqual(receipt["reason"],"persona_reasoning_exhausted")
+        self.assertEqual(state["pending_external_actions"],[])
+        self.assertNotIn("reply_decisions",state)
+        self.assertEqual(len(calls),3)
+
     def test_all_providers_fail_holds_comment_without_template_or_terminal_decision(self):
         out,state,receipt,_=self.execute([subprocess.TimeoutExpired('claude',45)])
         self.assertEqual(out['status'],'DEFER')
