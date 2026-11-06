@@ -1,0 +1,80 @@
+"""Project-scoped read model for Distributed AgentOS continuity."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .distributed_control_plane import DistributedControlPlane
+
+
+ACTIVE_TASK_STATES = {"submitted", "leased", "running"}
+PROJECT_STATE_SCAN_LIMIT = 100
+
+
+def read_project_state(store: DistributedControlPlane, project_id: str) -> dict[str, Any]:
+    """Return the latest durable Distributed AgentOS task and resumable Canonical IR."""
+    project_id = str(project_id or "").strip()
+    if not project_id:
+        raise ValueError("project_id is required")
+
+    with store._connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM tasks
+            WHERE project_id=?
+            ORDER BY updated_at DESC, created_at DESC, task_id DESC
+            LIMIT ?
+            """,
+            (project_id, PROJECT_STATE_SCAN_LIMIT),
+        ).fetchall()
+
+    selected_task = None
+    input_ir = None
+    ignored = 0
+    for row in rows:
+        task = store._task_from_row(row)
+        try:
+            candidate_ir = store._ir_from_task(task)
+        except ValueError:
+            ignored += 1
+            continue
+        selected_task = task
+        input_ir = candidate_ir
+        break
+
+    if selected_task is None or input_ir is None:
+        return {
+            "projectId": project_id,
+            "latestTask": None,
+            "currentIR": None,
+            "currentSource": None,
+            "recommendedAction": "start",
+            "ignoredNonDistributedTasks": ignored,
+        }
+
+    continuation = store.load_continuation_ir(selected_task["taskId"])
+    if continuation is not None:
+        current_ir = continuation
+        current_source = "task_continuation"
+    else:
+        current_ir = input_ir
+        current_source = "task_input"
+
+    status = selected_task["status"]
+    if status in ACTIVE_TASK_STATES:
+        action = "wait"
+    elif status == "succeeded":
+        action = "continue"
+    elif status in {"failed", "cancelled", "expired"}:
+        action = "retry_or_continue"
+    else:
+        action = "continue"
+
+    return {
+        "projectId": project_id,
+        "latestTask": selected_task,
+        "currentIR": current_ir.to_dict(),
+        "currentSource": current_source,
+        "recommendedAction": action,
+        "ignoredNonDistributedTasks": ignored,
+    }

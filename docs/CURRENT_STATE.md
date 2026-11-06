@@ -993,3 +993,35 @@ The `agentos-core` entry has a **recorded** `migration_state: active`,
 2026-10-15 Oracle runtime or production acceptance test. Live equivalence and
 receipt freshness must be revalidated independently before making operational
 claims or promoting deployments.
+
+## Distributed Control Plane source convergence (2026-11-06 candidate)
+
+`agent_core/distributed_gateway.py`, `client_auth.py`, and
+`distributed_control_plane.py` now live beside their canonical context, dispatch,
+continuity mirror, and portable IR dependencies in this repository. This change
+ports the legacy gateway and its existing tests; PR #2113's Character Fusion /
+runner window consolidation did not contain these modules. It does not promote
+the older distributed execution model to the ONE active-continuation authority.
+
+The gateway reuses this repository's NodeRegistry and RealmFabricStore for
+`GET /v1/nodes` and `POST /v1/nodes/approve`. The companion shell is
+**public-noindex**, contains no server credentials, and requires the operator's
+browser credential for private APIs. The data APIs remain **private/authenticated**.
+The imported approval broker records decisions; it does not itself authorize or
+perform protected-branch merges.
+
+`scripts/deploy_distributed_control_plane.sh` pins only the user control-plane
+service to an immutable agentmanager commit, with a service lock and rollback on
+failed acceptance. It preserves the existing environment files, database and port;
+it does not switch the Realm Fabric generation or other services.
+`scripts/inspect_distributed_control_plane.py` emits a sanitized node-local
+`agentos.execution-receipt/v1` with separate source, local HTTP, public HTTP and
+DNS/transport results. Empty-code rejection is the non-mutating live approval
+probe; successful approval and authorization are exercised in isolated stores by
+`tests/test_control_plane_convergence.py`. Runtime receipts belong in
+`$AGENT_DATA_ROOT/runtime/control-plane/`, not in this repository.
+
+The former copy-based workaround is not synchronization. Remove its copied
+modules only after live release acceptance, retaining a data-layer rollback
+archive and checking other legacy consumers. Source tests and a PR alone do not
+prove live deployment or mainline merge.
