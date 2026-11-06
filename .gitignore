@@ -55,3 +55,4 @@ scratch/
 # Runtime-installed project Agent Skills
 .agents/skills/typesafe-ai/
 skills-lock.json
+web/role-island/data.json
