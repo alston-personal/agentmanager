@@ -233,6 +233,28 @@ def safe_liveness_fallback(growth, state, current_ir=None):
     cycle=int(state.get("cycle") or 0)
     return options[cycle % len(options)]
 
+
+def reasoning_availability(attempts):
+    """Sanitized, model-free classification for the existing fallback chain.
+
+    A quota outage must not consume a persona posting/reply decision. This
+    diagnostic is NOT a posting authorization or automatic provider switch.
+    """
+    if not attempts:
+        return {"status":"NO_PROVIDER_AVAILABLE","next_action":"inspect_executor_discovery"}
+    if any(a.get("status")=="PASS" for a in attempts):
+        return {"status":"AVAILABLE","next_action":"none"}
+    classes={str(a.get("failure_class") or "") for a in attempts}
+    classes.update(str(a.get("failure_hint") or "") for a in attempts)
+    if "RATE_LIMITED" in classes:
+        return {"status":"PROVIDER_CAPACITY","next_action":"retry_or_switch_available_provider"}
+    if "OAUTH_CLIENT_UNSUPPORTED" in classes or "AUTH_REQUIRED" in classes:
+        return {"status":"PROVIDER_AUTH","next_action":"inspect_provider_authorization"}
+    if "NETWORK" in classes or "TIMEOUT" in classes:
+        return {"status":"PROVIDER_TRANSPORT","next_action":"inspect_runtime_connectivity"}
+    return {"status":"PROVIDER_UNAVAILABLE","next_action":"inspect_sanitized_attempt_receipts"}
+
+
 def persist_reasoning_receipt(root, state, attempts, status, now, *, fallback_used=False, planning_source=None, history_context=None, ir_context=None):
     ref=f"pdca/post_reasoning/{now.strftime('%Y-%m-%d')}/{now.strftime('%H%M%S')}.json"
     receipt={
@@ -241,6 +263,7 @@ def persist_reasoning_receipt(root, state, attempts, status, now, *, fallback_us
       "cycle":state.get("cycle"),
       "status":status,
       "attempts":attempts,
+      "reasoning_availability":reasoning_availability(attempts),
       "fallback_used":bool(fallback_used),
       "generator_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
       "diagnostic_contract":"sanitized-failure-class/v1"
