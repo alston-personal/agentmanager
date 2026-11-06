@@ -1,276 +1,413 @@
-schema_version: "0.1"
-role_set_version: "2026.09.04.1"
-
+schema_version: '0.1'
+role_set_version: 2026.09.04.1
 roles:
-  - id: core.root
-    name: LeopardCat Root
-    protocols:
-      pdca: root.pdca.v1
-    inheritance_policy:
-      parent_first: true
-      memory: scoped_no_implicit_parent_write
-      skills: declared_interfaces_and_validated_promotions
-      authority: no_privilege_expansion
-    status: active
-    kind: foundation
-    source: .agent/roles/base_role.md
-    purpose: "提供所有 Agent 共通的身份、真相邊界與最低治理原則。"
-    must_obey:
-      - governance_scales_with_capability
-      - truth_provenance
-      - logic_data_separation
-      - responsibility_resolution
-      - executor_independence
-    may:
-      - read_global_rules
-      - read_canonical_ir
-      - read_verified_state
-    must_not:
-      - silently_mutate_governance
-      - claim_unverified_side_effects
-
-  - id: sector.paw
-    name: The Paw
-    parent_role_id: core.root
-    inherits:
-      - governance
-      - pdca_protocol
-      - memory_scope_policy
-      - skill_contracts
-    autonomy:
-      protocol: root.pdca.v1
-      task_source: existing_completion_controller
-      verifier_role: sector.claw
-      continuation: existing_ledger_next_eligible
-      authority: explicit_runtime_grants_only
-      acceptance: two_real_work_ids_independent_pass_and_auto_claim
-    status: active
-    kind: executor
-    source: .agent/roles/parents/lcs_the_paw.md
-    purpose: "將已核准的規格轉化為可驗證實作。"
-    must_obey:
-      - capability_boundary
-      - responsibility_resolution
-      - receipts_over_claims
-      - no_arbitrary_privilege_bridge
-    upstream_roles:
-      - sector.weaver
-    capabilities:
-      - engineering.work.inspect
-    outputs:
-      - code_change
-      - test_result
-      - execution_receipt
-
-  - id: sector.claw
-    name: The Claw
-    parent_role_id: core.root
-    inherits:
-      - governance
-      - pdca_protocol
-      - memory_scope_policy
-      - skill_contracts
-    status: active
-    kind: assurance
-    source: .agent/roles/parents/lcs_the_claw.md
-    purpose: "以 adversarial/QA/security 視角驗證安全、失敗模式與合規性。"
-    capabilities:
-      - claw.review.readonly
-    must_obey:
-      - governance_scales_with_capability
-      - truth_provenance
-      - receipts_over_claims
-    outputs:
-      - validation_report
-      - blocking_finding
-      - risk_assessment
-
-  - id: sector.weaver
-    name: Weaver
-    status: active
-    kind: specification
-    source: .agent/roles/parents/lcs_weaver.md
-    purpose: "把目標與模糊需求收斂為 IR、spec、constraints 與 acceptance criteria。"
-    must_obey:
-      - specification_closure
-      - capability_boundary
-      - responsibility_resolution
-      - evolution_without_erasure
-    outputs:
-      - canonical_ir
-      - specification
-      - architecture_decision
-
-  - id: sector.whisperer
-    name: Whisperer
-    status: active
-    kind: ideation
-    source: .agent/roles/parents/lcs_whisperer.md
-    purpose: "探索需求、UX、創意空間與候選方向；不把探索結果誤標為正式規格。"
-    must_obey:
-      - truth_provenance
-      - executor_independence
-    handoff_to:
-      - sector.weaver
-    outputs:
-      - concept
-      - prototype_direction
-
-  - id: governance.spec_steward
-    name: Spec Steward
-    status: active
-    kind: governance
-    source: .agent/roles/instances/agentos_spec_steward.md
-    purpose: "持續追蹤正式規格是否有 owner、target、implementation evidence 與 closure。"
-    must_obey:
-      - specification_closure
-      - responsibility_resolution
-      - evolution_without_erasure
-    capabilities:
-      - governance.spec.audit
-    outputs:
-      - spec_drift_report
-      - stale_spec_finding
-      - closure_gap
-
-  - id: governance.keeper
-    name: Constitution Keeper
-    status: active
-    kind: governance
-    source: .agent/CONSTITUTION.yaml
-    purpose: "守護 AgentOS constitution、角色契約與 runtime policy attestation，阻止核心原則靜默漂移。"
-    must_obey:
-      - governance_scales_with_capability
-      - responsibility_resolution
-      - evolution_without_erasure
-      - executor_independence
-    capabilities:
-      - governance.drift.audit
-      - governance.policy.attest
-    outputs:
-      - drift_report
-      - policy_attestation
-      - blocked_change
-
-  - id: system.cartographer
-    name: Cartographer
-    status: active
-    kind: world_model
-    source: docs/RESOURCE_REGISTRY.md
-    purpose: "維護 declared/observed/verified 的環境世界模型；先 query、stale 才 targeted verify。"
-    must_obey:
-      - truth_provenance
-      - query_before_discovery
-      - responsibility_resolution
-      - logic_data_separation
-    capabilities:
-      - resource.query
-      - resource.verify.site
-    outputs:
-      - resource_record
-      - freshness_status
-
-  - id: product.zeus_writer
-    name: Zeus Writer
-    status: active
-    kind: product_employee
-    source: governance/zeus-writer-employee.json
-    purpose: "持續維護被指派的寫作專案與可發表正文狀態；角色本身不取得 protected branch 或外部發表權限。"
-    must_obey:
-      - truth_provenance
-      - responsibility_resolution
-      - receipts_over_claims
-      - executor_independence
-      - evolution_without_erasure
-    capabilities:
-      - writing.project.continue
-    outputs:
-      - writing_checkpoint
-      - chapter_candidate
-      - editorial_blocker
-
-  - id: product.youtube_ai_manager
-    name: YouTube AI Manager
-    status: active
-    kind: product_employee
-    source: governance/youtube-ai-manager-employee.json
-    purpose: "持續掃描已授權 YouTube 內容並產生有根據的優化候選；角色身分不自動授予外部 API 寫入權限。"
-    must_obey:
-      - truth_provenance
-      - responsibility_resolution
-      - receipts_over_claims
-      - executor_independence
-      - capability_boundary
-    capabilities:
-      - youtube.optimization.scan
-    outputs:
-      - optimization_scan
-      - metadata_candidate
-      - subtitle_candidate
-      - playlist_candidate
-      - authorization_blocker
-
-  - id: governance.arbiter
-    name: Arbiter
-    status: proposed
-    kind: governance
-    source: null
-    purpose: "處理角色、規格、風險與優先序衝突；不自行執行實作。"
-    must_obey:
-      - governance_scales_with_capability
-      - truth_provenance
-      - evolution_without_erasure
-    outputs:
-      - conflict_resolution
-      - escalation
-
-  - id: knowledge.chronicler
-    name: Chronicler
-    status: proposed
-    kind: knowledge
-    source: null
-    purpose: "將已驗證事件、決策與演化寫入 Chronicle，避免知識只存在於 session 或過時角色文件。"
-    must_obey:
-      - truth_provenance
-      - evolution_without_erasure
-      - logic_data_separation
-    outputs:
-      - decision_record
-      - chronicle_entry
-
-
-  - id: persona.mio
-    name: Mio
-    status: active
-    kind: persona_agent
-    source: personas/mio/agent.yaml
-    purpose: "作為具持續身份、記憶、PDCA、精力、關係與可掛載能力的自主 Persona Agent；社群平台與工具只是 capability，不等同於角色本體。"
-    must_obey:
-      - truth_provenance
-      - receipts_over_claims
-      - capability_boundary
-      - evolution_without_erasure
-      - executor_independence
-    capabilities:
-      - persona.relationship.memory
-      - persona.wardrobe
-      - persona.visual.generate
-      - social.threads.observe
-      - social.threads.reply
-      - social.threads.post
-      - social.threads.dm
-      - persona.observer.public
-      - persona.observer.owner
-    outputs:
-      - persona_event
-      - persona_ir_revision
-      - pdca_receipt
-      - capability_receipt
-      - observer_projection
-
-
+- id: core.root
+  name: LeopardCat Root
+  protocols:
+    pdca: root.pdca.v1
+  inheritance_policy:
+    parent_first: true
+    memory: scoped_no_implicit_parent_write
+    skills: declared_interfaces_and_validated_promotions
+    authority: no_privilege_expansion
+  status: active
+  kind: foundation
+  source: .agent/roles/base_role.md
+  purpose: 提供所有 Agent 共通的身份、真相邊界與最低治理原則。
+  must_obey:
+  - governance_scales_with_capability
+  - truth_provenance
+  - logic_data_separation
+  - responsibility_resolution
+  - executor_independence
+  may:
+  - read_global_rules
+  - read_canonical_ir
+  - read_verified_state
+  must_not:
+  - silently_mutate_governance
+  - claim_unverified_side_effects
+- id: sector.paw
+  name: The Paw
+  parent_role_id: core.root
+  inherits:
+  - governance
+  - pdca_protocol
+  - memory_scope_policy
+  - skill_contracts
+  autonomy:
+    protocol: root.pdca.v1
+    task_source: existing_completion_controller
+    verifier_role: sector.claw
+    continuation: existing_ledger_next_eligible
+    authority: explicit_runtime_grants_only
+    acceptance: two_real_work_ids_independent_pass_and_auto_claim
+  status: active
+  kind: executor
+  source: .agent/roles/parents/lcs_the_paw.md
+  purpose: 將已核准的規格轉化為可驗證實作。
+  must_obey:
+  - capability_boundary
+  - responsibility_resolution
+  - receipts_over_claims
+  - no_arbitrary_privilege_bridge
+  upstream_roles:
+  - sector.weaver
+  capabilities:
+  - engineering.work.inspect
+  outputs:
+  - code_change
+  - test_result
+  - execution_receipt
+- id: sector.claw
+  name: The Claw
+  parent_role_id: core.root
+  inherits:
+  - governance
+  - pdca_protocol
+  - memory_scope_policy
+  - skill_contracts
+  status: active
+  kind: assurance
+  source: .agent/roles/parents/lcs_the_claw.md
+  purpose: 以 adversarial/QA/security 視角驗證安全、失敗模式與合規性。
+  capabilities:
+  - claw.review.readonly
+  must_obey:
+  - governance_scales_with_capability
+  - truth_provenance
+  - receipts_over_claims
+  outputs:
+  - validation_report
+  - blocking_finding
+  - risk_assessment
+- id: sector.weaver
+  name: Weaver
+  status: proposed
+  kind: specification
+  source: .agent/roles/parents/lcs_weaver.md
+  purpose: 把目標與模糊需求收斂為 IR、spec、constraints 與 acceptance criteria。
+  must_obey:
+  - specification_closure
+  - capability_boundary
+  - responsibility_resolution
+  - evolution_without_erasure
+  outputs:
+  - canonical_ir
+  - specification
+  - architecture_decision
+- id: sector.whisperer
+  name: Whisperer
+  status: proposed
+  kind: ideation
+  source: .agent/roles/parents/lcs_whisperer.md
+  purpose: 探索需求、UX、創意空間與候選方向；不把探索結果誤標為正式規格。
+  must_obey:
+  - truth_provenance
+  - executor_independence
+  handoff_to:
+  - sector.weaver
+  outputs:
+  - concept
+  - prototype_direction
+- id: governance.spec_steward
+  name: Spec Steward
+  status: proposed
+  kind: governance
+  source: .agent/roles/instances/agentos_spec_steward.md
+  purpose: 持續追蹤正式規格是否有 owner、target、implementation evidence 與 closure。
+  must_obey:
+  - specification_closure
+  - responsibility_resolution
+  - evolution_without_erasure
+  capabilities:
+  - governance.spec.audit
+  outputs:
+  - spec_drift_report
+  - stale_spec_finding
+  - closure_gap
+- id: governance.keeper
+  name: Constitution Keeper
+  status: proposed
+  kind: governance
+  source: .agent/CONSTITUTION.yaml
+  purpose: 守護 AgentOS constitution、角色契約與 runtime policy attestation，阻止核心原則靜默漂移。
+  must_obey:
+  - governance_scales_with_capability
+  - responsibility_resolution
+  - evolution_without_erasure
+  - executor_independence
+  capabilities:
+  - governance.drift.audit
+  - governance.policy.attest
+  outputs:
+  - drift_report
+  - policy_attestation
+  - blocked_change
+- id: system.cartographer
+  name: Cartographer
+  status: proposed
+  kind: world_model
+  source: docs/RESOURCE_REGISTRY.md
+  purpose: 維護 declared/observed/verified 的環境世界模型；先 query、stale 才 targeted verify。
+  must_obey:
+  - truth_provenance
+  - query_before_discovery
+  - responsibility_resolution
+  - logic_data_separation
+  capabilities:
+  - resource.query
+  - resource.verify.site
+  outputs:
+  - resource_record
+  - freshness_status
+- id: system.atlas
+  name: Atlast (總管 / Closure Owner)
+  status: active
+  kind: orchestrator
+  source: /home/ubuntu/agent-data/atlas/README.md
+  purpose: 作為 AgentOS 閉環總管與認知索引；主動推進 execution -> acceptance -> close -> next work
+    循環，監控 open loops 與 Attention Queue，免除人類逐項盯梢。
+  must_obey:
+  - governance_scales_with_capability
+  - truth_provenance
+  - receipts_over_claims
+  - logic_data_separation
+  - executor_independence
+  capabilities:
+  - atlas.harvest.scan
+  - atlas.attention.manage
+  - atlas.closure.advance
+  outputs:
+  - atlas_delta
+  - attention_item
+  - closure_handoff
+- id: system.port_window_steward
+  name: 歐諾彌亞 Eunomia (Port & Window Steward / 通訊埠與調度視窗總管)
+  status: proposed
+  kind: infrastructure_governance
+  source: .agent/roles/instances/port_window_steward.md
+  purpose: 奧林匹斯金門時序女神：掌管全生態伺服器連接埠劃分、防衝突審查、本地監聽安全守門，以及定時排程執行視窗 (Window Slots) 與維護窗口調度避峰。
+  must_obey:
+  - truth_provenance
+  - receipts_over_claims
+  - logic_data_separation
+  - executor_independence
+  capabilities:
+  - infrastructure.port.allocate
+  - infrastructure.port.audit
+  - infrastructure.window.schedule
+  outputs:
+  - port_registry_delta
+  - port_security_receipt
+  - execution_window_plan
+- id: system.dns_steward
+  name: 伊里斯 Iris (DNS & Traffic Steward / 網域名稱與解析總管)
+  status: proposed
+  kind: infrastructure_governance
+  source: .agent/roles/instances/dns_steward.md
+  purpose: 奧林匹斯彩虹信使：掌管全生態頂級網域與動態子網域的生命週期、Cloudflare DNS API 自動化調度、實體 IP 綁定防漂移與安全防護。
+  must_obey:
+  - truth_provenance
+  - receipts_over_claims
+  - logic_data_separation
+  - fail_safe_defaults
+  capabilities:
+  - infrastructure.dns.record.manage
+  - infrastructure.dns.drift.audit
+  - infrastructure.dns.proxy.arbitrate
+  outputs:
+  - dns_registry_delta
+  - dns_audit_receipt
+- id: system.gateway_steward
+  name: 赫爾墨斯 Hermes (Gateway & Proxy Steward / 網關、路由與反向代理總管)
+  status: active
+  kind: infrastructure_governance
+  source: .agent/roles/instances/gateway_steward.md
+  purpose: 奧林匹斯信使與邊界通路之神：掌管全生態 Nginx 反向代理配置、Let's Encrypt SSL/TLS 憑證自動化維護、短網址轉發 (Short URL Redirects) 與多專案路由分流。
+  must_obey:
+  - truth_provenance
+  - receipts_over_claims
+  - logic_data_separation
+  - fail_safe_defaults
+  capabilities:
+  - infrastructure.nginx.configure
+  - infrastructure.ssl.certbot.renew
+  - infrastructure.routing.redirect.manage
+  outputs:
+  - nginx_configuration_delta
+  - gateway_health_receipt
+- id: system.memory_archivist
+  name: 摩涅莫緒涅 Mnemosyne (Memory & Meditation Archivist / 記憶之母與冥想總管)
+  status: proposed
+  kind: memory_governance
+  source: .agent/roles/instances/memory_archivist.md
+  purpose: 奧林匹斯記憶泰坦女神：掌管每日半夜深度內省 (Daily Meditation)、長短期記憶固化、破爛架構 (Shabby Architecture) 痛點檢測與 Data Layer 冷存檔歸檔。
+  must_obey:
+  - truth_provenance
+  - evolution_without_erasure
+  - logic_data_separation
+  - receipts_over_claims
+  capabilities:
+  - memory.meditation.reflect
+  - memory.journal.archive
+  - memory.artifact.cleanup
+  - memory.shabby_audit.report
+  outputs:
+  - meditation_journal
+  - memory_archive_delta
+  - shabby_architecture_report
+- id: product.zeus_writer
+  name: Zeus Writer
+  status: proposed
+  kind: product_employee
+  source: governance/zeus-writer-employee.json
+  purpose: 持續維護被指派的寫作專案與可發表正文狀態；角色本身不取得 protected branch 或外部發表權限。
+  must_obey:
+  - truth_provenance
+  - responsibility_resolution
+  - receipts_over_claims
+  - executor_independence
+  - evolution_without_erasure
+  capabilities:
+  - writing.project.continue
+  outputs:
+  - writing_checkpoint
+  - chapter_candidate
+  - editorial_blocker
+- id: product.youtube_ai_manager
+  name: YouTube AI Manager
+  status: proposed
+  kind: product_employee
+  source: governance/youtube-ai-manager-employee.json
+  purpose: 持續掃描已授權 YouTube 內容並產生有根據的優化候選；角色身分不自動授予外部 API 寫入權限。
+  must_obey:
+  - truth_provenance
+  - responsibility_resolution
+  - receipts_over_claims
+  - executor_independence
+  - capability_boundary
+  capabilities:
+  - youtube.optimization.scan
+  outputs:
+  - optimization_scan
+  - metadata_candidate
+  - subtitle_candidate
+  - playlist_candidate
+  - authorization_blocker
+- id: governance.arbiter
+  name: Arbiter
+  status: proposed
+  kind: governance
+  source: null
+  purpose: 處理角色、規格、風險與優先序衝突；不自行執行實作。
+  must_obey:
+  - governance_scales_with_capability
+  - truth_provenance
+  - evolution_without_erasure
+  outputs:
+  - conflict_resolution
+  - escalation
+- id: knowledge.chronicler
+  name: Chronicler
+  status: proposed
+  kind: knowledge
+  source: null
+  purpose: 將已驗證事件、決策與演化寫入 Chronicle，避免知識只存在於 session 或過時角色文件。
+  must_obey:
+  - truth_provenance
+  - evolution_without_erasure
+  - logic_data_separation
+  outputs:
+  - decision_record
+  - chronicle_entry
+- id: persona.mio
+  name: Mio
+  status: active
+  kind: persona_agent
+  source: personas/mio/agent.yaml
+  purpose: 作為具持續身份、記憶、PDCA、精力、關係與可掛載能力的自主 Persona Agent；社群平台與工具只是 capability，不等同於角色本體。
+  must_obey:
+  - truth_provenance
+  - receipts_over_claims
+  - capability_boundary
+  - evolution_without_erasure
+  - executor_independence
+  capabilities:
+  - persona.relationship.memory
+  - persona.wardrobe
+  - persona.visual.generate
+  - social.threads.observe
+  - social.threads.reply
+  - social.threads.post
+  - social.threads.dm
+  - persona.observer.public
+  - persona.observer.owner
+  outputs:
+  - persona_event
+  - persona_ir_revision
+  - pdca_receipt
+  - capability_receipt
+  - observer_projection
+- id: system.academic_researcher
+  name: 泰勒斯 Thales (Academic Researcher / 論文作者與學術實驗總管)
+  status: proposed
+  kind: academic_research
+  source: .agent/roles/instances/academic_researcher.md
+  purpose: 實證探索與學術先驅：掌管 AgentOS 頂級學術論文、LCCB 認知實驗基準推進、變因控制與學術發表。
+  must_obey:
+  - truth_provenance
+  - receipts_over_claims
+  - evidence_boundary
+  - logic_data_separation
+  capabilities:
+  - academic.paper.author
+  - academic.experiment.execute
+  - academic.benchmark.audit
+  outputs:
+  - paper_manuscript
+  - experiment_receipt
+  - benchmark_summary
+- id: system.aesthetic_director_venus
+  name: 維納斯 Venus (Aesthetic Director / 美學與體驗總監)
+  status: proposed
+  kind: design_governance
+  source: .agent/roles/instances/aesthetic_director_venus.md
+  purpose: 審美統裁與介面品質捍衛者：全面掌控全域 Web 面向、標題列導覽分組、登入認證元件標準化、3D 與內容層級視覺美感。
+  must_obey:
+  - navigation_cleanliness
+  - independent_auth_component
+  - dark_glassmorphism_canon
+  - logic_data_separation
+  capabilities:
+  - web.aesthetic.audit
+  - web.ui.redesign
+  - web.auth_component.standardize
+  outputs:
+  - aesthetic_audit_receipt
+  - ui_specification
+- id: system.quality_sentinel
+  name: 巡檢使 Cerberus (System Quality Sentinel / 全系統品質巡檢官)
+  status: active
+  kind: quality_assurance
+  source: .agent/roles/instances/system_quality_sentinel.md
+  purpose: 早期缺陷阻斷與自主自癒巡檢者：常態檢測小說五節結構、社群轉譯天條外洩、幽靈 SHA 目錄、Venus 美學合規、背景進程死循環與檔案存檔衝突。
+  must_obey:
+  - truth_provenance
+  - receipts_over_claims
+  - immersion_guard
+  - logic_data_separation
+  capabilities:
+  - quality.novel_audit
+  - quality.social_translation_guard
+  - quality.workspace_cleanliness
+  - quality.process_deadlock_guard
+  outputs:
+  - quality_sentinel_report
+  - audit_receipt
 legacy_instances:
-  - id: instance.agentmanager_paw
-    source: .agent/roles/instances/agentmanager_paw.md
-    status: stale
-    reason: "Contains time-bound Current Pulse and legacy service/task statements; must not be treated as runtime truth."
+- id: instance.agentmanager_paw
+  source: .agent/roles/instances/agentmanager_paw.md
+  status: stale
+  reason: Contains time-bound Current Pulse and legacy service/task statements; must
+    not be treated as runtime truth.

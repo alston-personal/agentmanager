@@ -201,7 +201,9 @@ def main() -> int:
     root = Path(tempfile.mkdtemp(prefix="mio-persona-ir-"))
     work = root / "work"
     try:
-        run(["git", "worktree", "add", "--detach", str(work), ref])
+        run(["git", "worktree", "add", "--no-checkout", "--detach", str(work), ref])
+        run(["git", "sparse-checkout", "set", "personas/sunlake-milkcat/ir"], cwd=work)
+        run(["git", "checkout"], cwd=work)
         out = work / IR_REL
         out.parent.mkdir(parents=True, exist_ok=True)
         history = work / IR_HISTORY_DIR / (str(nxt["ir_id"]) + ".json")

@@ -63,7 +63,7 @@ export async function GET() {
 
 function getAgentOSStatus() {
   try {
-    const projectRoot = path.join(process.cwd(), '..');
+    const projectRoot = process.env.AGENT_PROJECT_ROOT || '/home/ubuntu/agentmanager';
     const scriptPath = path.join(projectRoot, 'scripts', 'agentos_status.py');
     const output = execFileSync('python3', [scriptPath, '--json'], {
       cwd: projectRoot,

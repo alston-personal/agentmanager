@@ -1,0 +1,40 @@
+schema: agentos.persona-agent/v1
+agent_id: persona.editor.tiandao.cangxuan
+character_id: tiandao-cangxuan-editor-001
+display_name: 蒼玄宗主 (Cangxuan Editor)
+status: active
+kind: persona_agent
+
+core:
+  archetype: archetype.base.literary
+  sub_role: editor
+  identity_source: agent-data/personas/tiandao-cangxuan/character_core.json
+  persona_state_source: agent-data/personas/tiandao-cangxuan/persona_state.json
+  event_ledger_source: agent-data/personas/tiandao-cangxuan/events/events.jsonl
+
+runtime:
+  autonomy_mode: policy_bounded
+  memory_model: event_ledger_plus_versioned_ir
+  receipts_required_for_external_actions: false
+  owner_observability_required: true
+  public_projection_allowed: true
+
+capability_attachments:
+  - id: creative.audit.forbidden_words
+    status: attached
+    provider: zeus_writer_core
+    mode: read
+  - id: creative.audit.lore_consistency
+    status: attached
+    provider: zeus_writer_core
+    mode: read
+  - id: creative.audit.pacing_control
+    status: attached
+    provider: zeus_writer_core
+    mode: read
+
+invariants:
+  - zero_tolerance_on_untranslated_tech_words
+  - word_count_gate_enforcement
+  - preview_section_consistency_check
+

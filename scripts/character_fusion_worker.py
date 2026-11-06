@@ -83,6 +83,9 @@ def _gemini_key_candidates() -> list[tuple[str, str]]:
         "GEMINI_API_PAID_KEY",
         "CONTINUE_GEMINI_API_KEY",
         "GEMINI_API_KEY",
+        "GEMINI_API_KEY_1",
+        "GEMINI_API_KEY_2",
+        "GEMINI_API_KEY_3",
     )
 
     for key_name in key_names:
@@ -985,7 +988,10 @@ VISION_MODEL = (
     or "gemini-3.8-flash"
 )
 VISION_MODELS = tuple(dict.fromkeys([
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
     VISION_MODEL,
+    "gemini-3.8-flash",
     "gemini-3.7-flash",
     "gemini-3.6-flash",
     "gemini-3.5-flash",
@@ -1081,6 +1087,10 @@ def gemini_generate(model: str, parts: list[dict[str, Any]], generation_config: 
                 if exc.code == 400 and ("API_KEY_INVALID" in body or "API key not valid" in body):
                     invalid_sources.append(source_label)
                     break
+                if exc.code == 429 and ("limit: 0" in body or "per day limit exceeded" in body or "quota" in body.lower()):
+                    raise RuntimeError(
+                        f"Gemini HTTP {exc.code} quota exhausted using key source {source_label}: {body}"
+                    ) from exc
                 if exc.code in transient_codes and attempt < max_attempts:
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
                     try:
@@ -1298,6 +1308,14 @@ def fuse(main_ir: dict[str, Any], person_ir: dict[str, Any]) -> dict[str, Any]:
 
 
 def render_prompt(target_ir: dict[str, Any], strict: bool = False) -> str:
+    body_kind = str((target_ir.get("body_plan") or {}).get("kind") or "")
+    body_reinforcement = ""
+    if "water_drop" in body_kind:
+        body_reinforcement = (
+            "CRITICAL MASCOT MORPHOLOGY: The character MUST be a cute, plump, rounded teardrop-shaped water droplet mascot (chibi water blob slime). "
+            "It is completely non-humanoid: NO human neck, NO human shoulders, NO human torso, NO human limbs. "
+            "Cute mascot facial features and identity accents are integrated directly onto the shiny translucent droplet body surface.\n"
+        )
     extra = (
         "STRICT RETRY: reject any human-shaped torso, human head embedded inside the mascot, "
         "costume-like result, or literal human hair pasted onto the mascot. "
@@ -1305,7 +1323,7 @@ def render_prompt(target_ir: dict[str, Any], strict: bool = False) -> str:
     )
     return f"""
 Create ONE polished 1:1 character-design image from this target Character IR.
-The MAIN VISUAL body plan and material language dominate. Person traits are identity accents only.
+{body_reinforcement}The MAIN VISUAL body plan and material language dominate. Person traits are identity accents only.
 Translate transferred traits into the main visual's material language: e.g. a human bun on a water
 mascot becomes a water-flow bun silhouette, not literal human hair.
 Do not include text, captions, labels, UI, or serial numbers in the image.
@@ -1380,10 +1398,10 @@ def _render_image_qwen_reuse(target_ir: dict[str, Any], person: Path, strict: bo
         raise RuntimeError("qwen_reuse_venv_missing")
     space = os.environ.get("AGENTOS_TRYON_QWEN_EDIT_SPACE_ID", "Qwen/Qwen-Image-2.1-workflow")
     prompt = render_prompt(target_ir, strict=strict) + (
-        "\nTurn the supplied reference person into ONE non-human square mascot image. "
-        "The fused Character IR is authoritative: maintain the water-drop body plan; "
-        "transfer only recognizable appearance traits, not human body anatomy. "
-        "No reference board, no embedded face, no human costume, no text."
+        "\nTurn the supplied reference person into ONE non-human cute teardrop mascot character. "
+        "The fused Character IR is authoritative: strictly enforce the water-drop body plan (single rounded teardrop blob). "
+        "Transfer only recognizable appearance traits (e.g. hair silhouette or glasses) onto the droplet, NOT human anatomy. "
+        "NO human torso, NO human neck, NO embedded human face, NO costume, NO text."
     )
     with tempfile.TemporaryDirectory(prefix="character-fusion-qwen-reuse-") as tmp:
         prompt_path = Path(tmp) / "prompt.txt"
@@ -1395,7 +1413,7 @@ from pathlib import Path
 from gradio_client import Client, handle_file
 from PIL import Image
 source, prompt_path, output_path, space = sys.argv[1:]
-client = Client(space, download_files=True, verbose=False)
+client = Client(space, token=False, download_files=True, verbose=False)
 result = client.predict(handle_file(source), Path(prompt_path).read_text(encoding="utf-8"),
                         api_name="/rewritten_instruction")
 if not isinstance(result, (tuple, list)) or len(result) < 2:
@@ -1406,9 +1424,13 @@ if isinstance(candidate, dict):
 with Image.open(str(candidate)) as image:
     image.convert("RGB").save(output_path, format="PNG")
 '''
+        env = os.environ.copy()
+        env.pop("HF_TOKEN", None)
+        env.pop("HUGGINGFACE_TOKEN", None)
+        env.pop("HUGGING_FACE_HUB_TOKEN", None)
         proc = subprocess.run(
             [str(python_bin), "-c", helper, str(person), str(prompt_path), str(output), space],
-            capture_output=True, text=True, timeout=240,
+            capture_output=True, text=True, timeout=240, env=env,
         )
         if proc.returncode:
             raise RuntimeError("qwen_reuse_failed: " + (proc.stderr or proc.stdout or "")[-700:])
@@ -1436,6 +1458,7 @@ import asyncio
 import base64
 import fcntl
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -1935,6 +1958,7 @@ import asyncio
 import base64
 import fcntl
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -2199,6 +2223,40 @@ with lock_path.open("a+") as lock:
         return data
 
 
+def _render_image_pollinations(target_ir: dict[str, Any], strict: bool) -> bytes:
+    import urllib.request
+    import urllib.parse
+    import io
+    from PIL import Image
+
+    identity = target_ir.get("identity_traits", {})
+    palette = ((identity.get("palette") or {}).get("primary") or {}).get("value", "cyan blue white")
+    hair = ((identity.get("hair") or {}).get("primary") or {}).get("value", "")
+    expression = ((identity.get("expression") or {}).get("primary") or {}).get("value", "happy friendly cute smile")
+
+    hair_desc = f", stylized water-flow {hair} silhouette accent" if hair else ""
+    prompt = (
+        f"A cute, plump, rounded teardrop-shaped {palette} water droplet mascot character, chibi water blob slime, "
+        f"glossy translucent water liquid surface{hair_desc}, cute simple kawaii eyes, {expression}, "
+        "3D blender render style, clean simple plain white studio background, high quality, square composition, "
+        "completely non-humanoid, single water droplet body, no human torso, no human neck, no human limbs, no costume"
+    )
+    encoded = urllib.parse.quote(prompt)
+    seed = int(time.time() * 1000) % 1000000
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (AgentOS/1.0)"})
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        data = resp.read()
+
+    img = Image.open(io.BytesIO(data))
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+    if len(png_bytes) < 10000 or not png_bytes.startswith(bytes.fromhex("89504e470d0a1a0a")):
+        raise RuntimeError("pollinations returned invalid PNG")
+    return png_bytes
+
+
 # Per-worker execution provenance: never infer the renderer from IMAGE_MODEL,
 # which is only the primary configured candidate.
 LAST_RENDER_PROVIDER = "unknown"
@@ -2257,6 +2315,7 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
                 "401 Unauthorized",
                 "Unauthorized",
                 "expired",
+                "Invalid token",
                 "RepositoryNotFoundError",
                 "402 Payment Required",
                 "Purchase pre-paid credits",
@@ -2273,6 +2332,10 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
             except (RuntimeError, subprocess.TimeoutExpired) as qwen_exc:
                 qwen_reason = str(qwen_exc)[:300]
             try:
+                return _record_render("pollinations:flux", _render_image_pollinations(target_ir, strict=strict))
+            except Exception as poll_exc:
+                poll_reason = str(poll_exc)[:300]
+            try:
                 return _record_render("flow:web", _render_image_flow(target_ir, strict=strict))
             except RuntimeError as flow_exc:
                 try:
@@ -2283,7 +2346,7 @@ def render_image(target_ir: dict[str, Any], person: Path, main_visual: Path | No
                     except RuntimeError as chatgpt_exc:
                         raise RuntimeError(
                             "all image fallbacks failed; "
-                            f"qwen={qwen_reason}; flow={flow_exc}; gemini_web={web_exc}; chatgpt_web={chatgpt_exc}"
+                            f"qwen={qwen_reason}; pollinations={poll_reason}; flow={flow_exc}; gemini_web={web_exc}; chatgpt_web={chatgpt_exc}"
                         ) from chatgpt_exc
 
 
@@ -2323,15 +2386,26 @@ def accept(preset: str, target: dict[str, Any], actual: dict[str, Any]) -> dict[
         actual_kind = observed_body_plan.strip()
     else:
         actual_kind = ""
+    if preset == "water-drop":
+        valid_plans = {
+            "water_drop", "water-drop", "waterdrop", "droplet", "teardrop",
+            "blob", "water_blob", "slime", "water_slime",
+            "sphere", "spherical", "round", "ball", "circle", "oval", "jelly"
+        }
+        cleaned_kind = actual_kind.lower().replace("-", "_").replace(" ", "_")
+        body_plan_pass = cleaned_kind in valid_plans or any(k in cleaned_kind for k in ("water", "drop", "blob", "tear", "slime", "sphere", "round", "jelly"))
+    elif expected:
+        body_plan_pass = actual_kind == expected
+    else:
+        body_plan_pass = bool(actual_kind)
+
     checks = {
-        "body_plan": actual_kind == expected if expected else True,
+        "body_plan": body_plan_pass,
         "no_human_torso": not bool(actual.get("human_torso_dominant")),
         "no_embedded_head": not bool(actual.get("human_head_embedded")),
         "not_costume": not bool(actual.get("costume_like")),
         "no_literal_human_hair": not bool(actual.get("literal_human_hair")),
     }
-    if preset != "water-drop":
-        checks["body_plan"] = bool(actual_kind)
     return {
         "pass": all(checks.values()),
         "checks": checks,

@@ -55,7 +55,7 @@
     },
     {
       "adapter_id": "claw-review-readonly-v1",
-      "status": "disabled",
+      "status": "active",
       "runner_kind": "claw_review_readonly_v1",
       "employee_id": "the-claw",
       "assignment_id": "claw-review-review-required",

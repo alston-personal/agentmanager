@@ -425,9 +425,13 @@ class GovernedProductEmployeeWorker:
                             and not lifecycle.lease_expired(current))
             _await_paw_request_after_claim(
                 request_file, public_file,
-                timeout_seconds=min(60.0, float(self.lease_seconds)),
+                timeout_seconds=min(30.0, max(5.0, float(self.lease_seconds) - 20.0)),
                 lease_still_active=active_paw_lease,
             )
+            try:
+                lease = lifecycle.heartbeat(assignment_id, lease_id, lease_seconds=self.lease_seconds)
+            except Exception:
+                pass
             if request_file.exists() != public_file.exists():
                 raise PermissionError("paw_engineering_authority_incomplete")
             if request_file.is_file() and public_file.is_file():

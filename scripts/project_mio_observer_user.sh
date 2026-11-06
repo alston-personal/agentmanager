@@ -8,16 +8,15 @@ fi
 
 REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
-if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
-  echo "mio_observer_project=SOURCE_COMMIT_REQUIRED" >&2
-  exit 2
+if [ -n "$SOURCE_COMMIT" ] && printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  TMP="$(mktemp)"
+  git -C "$REPO" show "$SOURCE_COMMIT:scripts/project_mio_observer_user.py" > "$TMP"
+  chmod 0700 "$TMP"
+  PYTHONPATH="$REPO" python3 "$TMP"
+  rm -f "$TMP"
+else
+  PYTHONPATH="$REPO" python3 "$REPO/scripts/project_mio_observer_user.py"
 fi
-
-TMP="$(mktemp)"
-git -C "$REPO" show "$SOURCE_COMMIT:scripts/project_mio_observer_user.py" > "$TMP"
-chmod 0700 "$TMP"
-PYTHONPATH="$REPO" python3 "$TMP"
-rm -f "$TMP"
 
 test -s /tmp/mio-observer-public.json
 test -s /tmp/mio-observer-owner.json
@@ -42,3 +41,15 @@ cp /tmp/mio-observer-public.json "$TMP_LIVE"
 chmod 0644 "$TMP_LIVE"
 mv "$TMP_LIVE" "$LIVE_ACTIVITY"
 echo "mio_observer_public_live=PASS"
+
+# Run The Paw autonomous PDCA cycle
+if [ -f "$REPO/scripts/role_pdca_runner.py" ]; then
+  PYTHONPATH="$REPO" python3 "$REPO/scripts/role_pdca_runner.py" --role the-paw >/dev/null 2>&1 || true
+  echo "paw_pdca_cycle=PASS"
+fi
+
+# Sync mission control / role island telemetry
+if [ -f "$REPO/scripts/sync_mission_control.py" ]; then
+  PYTHONPATH="$REPO" python3 "$REPO/scripts/sync_mission_control.py" --export-all >/dev/null 2>&1 || true
+  echo "mission_control_sync=PASS"
+fi

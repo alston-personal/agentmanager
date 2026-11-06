@@ -47,31 +47,37 @@ export default function KnowledgePage() {
           <p style={{ color: 'var(--color-text-secondary)', fontSize: '1.2rem' }}>The crystallized consciousness of AgentOS.</p>
         </div>
 
-        {Object.entries(categories).map(([category, catItems]) => (
-          <section key={category} style={{ marginBottom: 'var(--spacing-3xl)' }}>
-            <h2 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: 'var(--spacing-xl)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
-              <span style={{ width: '4px', height: '1.75rem', background: 'var(--color-primary)', borderRadius: '2px' }}></span>
-              {category.toUpperCase()}
-            </h2>
-            <div className="grid grid-cols-2" style={{ gap: 'var(--spacing-xl)' }}>
-              {catItems.map((item) => (
-                <div key={item.slug} className="card clickable" onClick={() => router.push(`/knowledge/${item.slug}`)} style={{ transition: 'transform 0.2s', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: 'linear-gradient(90deg, var(--color-primary), var(--color-secondary))' }}></div>
-                  <div style={{ marginBottom: 'var(--spacing-md)' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>📅 {item.lastUpdated}</span>
+        {Object.keys(categories).length === 0 ? (
+          <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+            <p style={{ fontSize: '1.2rem', marginBottom: '1rem' }}>📭 知識庫目前尚無文件或正在同步中</p>
+          </div>
+        ) : (
+          Object.entries(categories).map(([category, catItems]) => (
+            <section key={category} style={{ marginBottom: 'var(--spacing-3xl)' }}>
+              <h2 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: 'var(--spacing-xl)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
+                <span style={{ width: '4px', height: '1.75rem', background: 'var(--color-primary)', borderRadius: '2px' }}></span>
+                {category.toUpperCase()}
+              </h2>
+              <div className="grid grid-cols-2" style={{ gap: 'var(--spacing-xl)' }}>
+                {catItems.map((item) => (
+                  <div key={item.slug} className="card clickable" onClick={() => router.push(`/knowledge/${item.slug}`)} style={{ transition: 'transform 0.2s', position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: 'linear-gradient(90deg, var(--color-primary), var(--color-secondary))' }}></div>
+                    <div style={{ marginBottom: 'var(--spacing-md)' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>📅 {item.lastUpdated || '基準存檔'}</span>
+                    </div>
+                    <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 'var(--spacing-sm)', color: 'var(--color-text-primary)' }}>{item.title}</h3>
+                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', lineHeight: '1.5', marginBottom: 'var(--spacing-md)' }}>{item.excerpt}</p>
+                    <div style={{ display: 'flex', gap: 'var(--spacing-xs)', flexWrap: 'wrap' }}>
+                      {item.tags.map(tag => (
+                        <span key={tag} className="badge" style={{ fontSize: '0.7rem', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)' }}>#{tag}</span>
+                      ))}
+                    </div>
                   </div>
-                  <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 'var(--spacing-sm)', color: 'var(--color-text-primary)' }}>{item.title}</h3>
-                  <p style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', lineHeight: '1.5', marginBottom: 'var(--spacing-md)' }}>{item.excerpt}</p>
-                  <div style={{ display: 'flex', gap: 'var(--spacing-xs)', flexWrap: 'wrap' }}>
-                    {item.tags.map(tag => (
-                      <span key={tag} className="badge" style={{ fontSize: '0.7rem', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)' }}>#{tag}</span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
+                ))}
+              </div>
+            </section>
+          ))
+        )}
       </div>
     </main>
   );

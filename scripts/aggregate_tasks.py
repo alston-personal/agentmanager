@@ -38,6 +38,15 @@ def parse_metadata(content):
                     meta["category"] = v
     return meta
 
+def is_task_qualified(content: str) -> bool:
+    """Check if task conforms to TASK_SPECIFICATION_STANDARD.md (has verification command)."""
+    if "驗收:" in content or "verify:" in content:
+        return True
+    # Match backticked executable shell commands
+    if re.search(r"`[^`]*(?:pytest|python3|npm|test|curl|node|ss|chmod|git|bash)[^`]*`", content):
+        return True
+    return False
+
 def aggregate_tasks():
     all_tasks = []
     status_files = glob.glob(os.path.join(PROJECTS_DIR, "*", "STATUS.md"))
@@ -62,40 +71,79 @@ def aggregate_tasks():
             for task in tasks:
                 t_strip = task.strip()
                 if t_strip.startswith("- [ ]") or t_strip.startswith("- [x]"):
-                    # 加上專案標籤與優先級以便視覺化
+                    is_done = "[x]" in t_strip
+                    qualified = is_task_qualified(t_strip) if not is_done else True
                     labeled_task = {
                         "content": f"{t_strip} `[{project_name}]` {priority_label} {cat_label}",
                         "priority": meta["priority"],
                         "category": meta["category"],
                         "project": project_name,
-                        "is_done": "[x]" in t_strip
+                        "is_done": is_done,
+                        "is_qualified": qualified,
                     }
                     all_tasks.append(labeled_task)
                     
     # Sorting: Priority DESC, then Project NAME
     all_tasks.sort(key=lambda x: (x["priority"], x["project"]), reverse=True)
 
+    # Build new content
+    lines = ["# 📋 Global Agent OS Todo Hub (Ranked)\n"]
+    lines.append(f"*Last Updated: {os.popen('date').read().strip()}*\n\n")
+    
+    qualified_pending = [t for t in all_tasks if not t["is_done"] and t["is_qualified"]]
+    unqualified_pending = [t for t in all_tasks if not t["is_done"] and not t["is_qualified"]]
+    completed = [t for t in all_tasks if t["is_done"]]
+    
+    lines.append("## 🎯 Qualified Executable Tasks (合格可執行隊列 - 滿足五大要件)\n")
+    lines.append("> 依據 `TASK_SPECIFICATION_STANDARD.md`，僅有具備明確驗收指令的條目允許執行器 (The Paw / Lobster) 接單執行。\n\n")
+    if not qualified_pending:
+        lines.append("- (None - 尚無合格可執行任務)\n")
+    else:
+        current_p = -1
+        for t in qualified_pending:
+            if t["priority"] != current_p:
+                current_p = t["priority"]
+                lines.append(f"\n### [Priority {current_p}]\n")
+            lines.append(f"{t['content']}\n")
+
+    lines.append("\n---\n")
+    lines.append("## ⚠️ Blocked / Needs Breakdown (缺少驗收要件草案 - 執行器禁領)\n")
+    lines.append("> 這些任務屬於抽象空話或缺少驗收命令，已遭物理門禁阻斷。架構師必須補齊【目標、邊界、依賴、驗收命令、交付物】後方可解鎖。\n\n")
+    if not unqualified_pending:
+        lines.append("- (None - 無不合規草案)\n")
+    else:
+        current_p = -1
+        for t in unqualified_pending:
+            if t["priority"] != current_p:
+                current_p = t["priority"]
+                lines.append(f"\n### [Draft Priority {current_p} - 禁領]\n")
+            lines.append(f"{t['content']}\n")
+    
+    lines.append("\n---\n")
+    lines.append("## ✅ Completed Tasks\n")
+    if not completed:
+        lines.append("- (None)\n")
+    for t in completed:
+        lines.append(f"{t['content']}\n")
+
+    new_content = "".join(lines)
+
+    # Check if content actually changed (ignoring Last Updated timestamp)
+    if os.path.exists(OUTPUT_FILE):
+        try:
+            with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
+                old_content = f.read()
+            # Strip the timestamp line for comparison
+            def strip_timestamp(text):
+                return re.sub(r"\*Last Updated:.*?\*\n+", "", text)
+            if strip_timestamp(old_content) == strip_timestamp(new_content):
+                print(f"ℹ️ Tasks unchanged, skipping write to {OUTPUT_FILE} to avoid file lock conflict.")
+                return
+        except Exception:
+            pass
+
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        f.write("# 📋 Global Agent OS Todo Hub (Ranked)\n")
-        f.write(f"*Last Updated: {os.popen('date').read().strip()}*\n\n")
-        
-        pending = [t for t in all_tasks if not t["is_done"]]
-        completed = [t for t in all_tasks if t["is_done"]]
-        
-        f.write("## 🔥 Top Priority & Pending\n")
-        if not pending: f.write("- (None)\n")
-        else:
-            current_p = -1
-            for t in pending:
-                if t["priority"] != current_p:
-                    current_p = t["priority"]
-                    f.write(f"\n### [Priority {current_p}]\n")
-                f.write(f"{t['content']}\n")
-        
-        f.write("\n---\n")
-        f.write("## ✅ Completed Tasks\n")
-        if not completed: f.write("- (None)\n")
-        for t in completed: f.write(f"{t['content']}\n")
+        f.write(new_content)
 
 if __name__ == "__main__":
     aggregate_tasks()

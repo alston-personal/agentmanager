@@ -145,10 +145,18 @@ class ThinClient:
                 caps.append('agent.session.receipt')
         if self.policy.allowed_executables:
             caps.append('shell.exec')
+            caps.append('process.exec')
+            if 'git' in self.policy.allowed_executables:
+                caps.append('git.status')
+                caps.append('git.diff')
+            if 'python3' in self.policy.allowed_executables or 'pytest' in self.policy.allowed_executables:
+                caps.append('test.run')
         if self.policy.readable_roots:
             caps.append('filesystem.read')
+            caps.append('filesystem.search')
         if self.policy.writable_roots:
             caps.append('filesystem.write')
+            caps.append('filesystem.patch')
         if self.policy.employee_wake_root is not None:
             caps.append('agent.employee.wake.deliver')
         if platform.system() == 'Windows':
@@ -240,12 +248,22 @@ class ThinClient:
             if task.get('schema') != 'agentos.node-task/v0.1':
                 raise ValueError('invalid task schema')
             action = task.get('action')
-            if action == 'shell.exec':
+            if action in {'shell.exec', 'process.exec'}:
                 result = self._exec_shell(task)
             elif action == 'filesystem.read':
                 result = self._read_file(task)
             elif action == 'filesystem.write':
                 result = self._write_file(task)
+            elif action == 'filesystem.patch':
+                result = self._patch_file(task)
+            elif action == 'filesystem.search':
+                result = self._search_filesystem(task)
+            elif action == 'git.status':
+                result = self._git_status(task)
+            elif action == 'git.diff':
+                result = self._git_diff(task)
+            elif action == 'test.run':
+                result = self._test_run(task)
             elif action == 'agent.employee.wake.deliver':
                 if self.policy.employee_wake_root is None:
                     raise PermissionError('employee_wake_inbox_not_configured')
@@ -585,6 +603,97 @@ class ThinClient:
         tmp.write_text(content, encoding='utf-8')
         tmp.replace(path)
         return {'path': str(path), 'bytes_written': len(content.encode('utf-8'))}
+
+    def _patch_file(self, task: dict[str, Any]) -> dict[str, Any]:
+        path = Path(str(task.get('path') or '')).expanduser().resolve()
+        if not self.policy.can_write(path):
+            raise PermissionError(f'path outside writable roots: {path}')
+        if not path.is_file():
+            raise FileNotFoundError(f'file not found: {path}')
+        content = path.read_text(encoding='utf-8')
+        target = task.get('target')
+        replacement = task.get('replacement')
+        if not isinstance(target, str) or replacement is None or not isinstance(replacement, str):
+            raise ValueError('target and replacement strings are required')
+        if target not in content:
+            raise ValueError(f'target string not found in {path}')
+        count = int(task.get('count') or 1)
+        if count == -1:
+            new_content = content.replace(target, replacement)
+            replacements_made = content.count(target)
+        else:
+            new_content = content.replace(target, replacement, count)
+            replacements_made = 1
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + '.agentos.tmp')
+        tmp.write_text(new_content, encoding='utf-8')
+        tmp.replace(path)
+        return {
+            'path': str(path),
+            'bytes_written': len(new_content.encode('utf-8')),
+            'replacements_made': replacements_made,
+        }
+
+    def _search_filesystem(self, task: dict[str, Any]) -> dict[str, Any]:
+        root_path = Path(str(task.get('path') or task.get('root') or '.')).expanduser().resolve()
+        if not self.policy.can_read(root_path):
+            raise PermissionError(f'path outside readable roots: {root_path}')
+        pattern = str(task.get('pattern') or '*')
+        query = str(task.get('query') or '').strip().lower()
+        limit = min(int(task.get('limit') or 50), 200)
+        results = []
+        if root_path.is_file():
+            results.append(str(root_path))
+        else:
+            for p in root_path.rglob(pattern):
+                if any(part.startswith('.') and part not in {'.', '..'} for part in p.parts):
+                    continue
+                if query and query not in p.name.lower():
+                    continue
+                results.append(str(p))
+                if len(results) >= limit:
+                    break
+        return {'matches': results, 'count': len(results), 'root': str(root_path)}
+
+    def _git_status(self, task: dict[str, Any]) -> dict[str, Any]:
+        cwd_raw = task.get('cwd')
+        cwd = Path(cwd_raw).expanduser().resolve() if cwd_raw else Path.cwd().resolve()
+        if not self.policy.can_read(cwd):
+            raise PermissionError(f'cwd outside readable roots: {cwd}')
+        argv = ['status', '--short'] + [str(x) for x in (task.get('argv') or [])]
+        task_shell = {'executable': 'git', 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': task.get('timeout_seconds')}
+        res = self._exec_shell(task_shell)
+        res['clean'] = len(str(res.get('stdout') or '').strip()) == 0
+        return res
+
+    def _git_diff(self, task: dict[str, Any]) -> dict[str, Any]:
+        cwd_raw = task.get('cwd')
+        cwd = Path(cwd_raw).expanduser().resolve() if cwd_raw else Path.cwd().resolve()
+        if not self.policy.can_read(cwd):
+            raise PermissionError(f'cwd outside readable roots: {cwd}')
+        argv = ['diff'] + [str(x) for x in (task.get('argv') or [])]
+        task_shell = {'executable': 'git', 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': task.get('timeout_seconds')}
+        res = self._exec_shell(task_shell)
+        res['diff_empty'] = len(str(res.get('stdout') or '').strip()) == 0
+        return res
+
+    def _test_run(self, task: dict[str, Any]) -> dict[str, Any]:
+        cwd_raw = task.get('cwd')
+        cwd = Path(cwd_raw).expanduser().resolve() if cwd_raw else Path.cwd().resolve()
+        if not self.policy.can_read(cwd):
+            raise PermissionError(f'cwd outside readable roots: {cwd}')
+        framework = str(task.get('framework') or 'unittest')
+        args = [str(x) for x in (task.get('args') or task.get('argv') or [])]
+        if framework == 'pytest':
+            executable = 'pytest'
+            argv = args or ['-v']
+        else:
+            executable = 'python3'
+            argv = ['-m', 'unittest'] + (args or ['discover', '-v'])
+        task_shell = {'executable': executable, 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': task.get('timeout_seconds') or 60}
+        res = self._exec_shell(task_shell)
+        res['tests_passed'] = res.get('returncode') == 0
+        return res
 
 
 def render_json(payload: dict[str, Any]) -> str:

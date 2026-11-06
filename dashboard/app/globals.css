@@ -12,12 +12,12 @@
   --color-accent-primary: #6366f1;
   --color-accent-secondary: #8b5cf6;
   --color-accent-tertiary: #ec4899;
-  --color-bg-primary: #0a0a0f;
-  --color-bg-secondary: #13131f;
-  --color-bg-tertiary: #1b1b2f;
   --color-primary: #6366f1;
   --color-secondary: #a855f7;
   --color-accent: #f43f5e;
+  --gradient-primary: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+  --gradient-secondary: linear-gradient(135deg, #3b82f6 0%, #2dd4bf 100%);
+  --gradient-accent: linear-gradient(135deg, #f43f5e 0%, #fb923c 100%);
   --color-text-primary: #f8fafc;
   --color-text-secondary: #94a3b8;
   --color-text-muted: #64748b;

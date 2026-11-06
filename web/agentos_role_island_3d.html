@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentOS 3D 角色生態島 (Role Island)</title>
+  <!-- Three.js and OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Tween.js for camera flight -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+  <style>
+    :root {
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      overflow: hidden;
+      font-family: var(--font-family);
+      background-color: #0c1427;
+      color: #f8fafc;
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    #webgl-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Floating UI Header */
+    .top-nav {
+      position: absolute;
+      top: 20px;
+      left: 24px;
+      right: 24px;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .brand-glass {
+      pointer-events: auto;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 12px 20px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #38bdf8, #818cf8, #f472b6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-sub {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-top: 3px;
+    }
+
+    /* Time-of-day switcher (致敬政策島 4段時段光影切換) */
+    .time-switcher {
+      pointer-events: auto;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 30px;
+      padding: 4px;
+      display: flex;
+      gap: 4px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+
+    .time-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .time-btn:hover { color: #f8fafc; }
+    .time-btn.active {
+      background: rgba(56, 189, 248, 0.25);
+      color: #38bdf8;
+      box-shadow: 0 2px 8px rgba(56, 189, 248, 0.3);
+    }
+
+    /* Bottom Role Sorting Hat / Perspective Pills */
+    .role-pills-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 8px 12px;
+      border-radius: 40px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+      max-width: 90vw;
+      overflow-x: auto;
+    }
+
+    .role-pill {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid transparent;
+      color: #cbd5e1;
+      padding: 8px 16px;
+      border-radius: 25px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .role-pill:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-2px);
+    }
+
+    .role-pill.active {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #38bdf8;
+      box-shadow: 0 4px 15px rgba(2, 132, 199, 0.5);
+      transform: translateY(-2px);
+    }
+
+    /* Detail Drawer (右側微縮檢視抽屜) */
+    .inspector-drawer {
+      position: absolute;
+      top: 90px;
+      right: 24px;
+      width: 380px;
+      max-height: calc(100vh - 180px);
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      z-index: 20;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: -10px 15px 35px rgba(0,0,0,0.5);
+      transform: translateX(450px);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto;
+    }
+
+    .inspector-drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .drawer-role-tag {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #38bdf8;
+      margin-bottom: 4px;
+    }
+
+    .drawer-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .close-btn {
+      background: rgba(255,255,255,0.08);
+      border: none;
+      color: #94a3b8;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+    .close-btn:hover { background: rgba(255,255,255,0.2); color: white; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      width: fit-content;
+    }
+    .status-handoff { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); }
+    .status-active { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .status-blocked { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+
+    .drawer-card {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .drawer-card-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    .drawer-card-body {
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+
+    .receipt-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.72rem;
+      background: #060911;
+      padding: 10px;
+      border-radius: 8px;
+      color: #38bdf8;
+      max-height: 150px;
+      overflow-y: auto;
+      line-height: 1.45;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white;
+      text-decoration: none;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+      margin-top: 6px;
+    }
+    .btn-action:hover {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      transform: translateY(-1px);
+    }
+
+    /* Help Tip */
+    .controls-hint {
+      position: absolute;
+      top: 90px;
+      left: 24px;
+      z-index: 10;
+      font-size: 0.75rem;
+      color: #64748b;
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(8px);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.05);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Glass Nav -->
+  <div class="top-nav">
+    <div class="brand-glass">
+      <div class="brand-title">🏝️ AgentOS HEART 角色生態島</div>
+      <div class="brand-sub">致敬沈伯洋「政策島」設計：卡坦島 3D 低多邊形懸浮微縮群島與連動生態系</div>
+    </div>
+
+    <!-- 4段時段光影切換 (Dawn, Day, Sunset, Night) -->
+    <div class="time-switcher">
+      <button class="time-btn" onclick="setTimeMode('dawn')">🌅 清晨</button>
+      <button class="time-btn active" onclick="setTimeMode('day')">☀️ 白天</button>
+      <button class="time-btn" onclick="setTimeMode('sunset')">🌇 黃昏</button>
+      <button class="time-btn" onclick="setTimeMode('night')">🌙 賽博夜</button>
+    </div>
+  </div>
+
+  <div class="controls-hint">
+    🖱️ 左鍵拖曳旋轉 3D 島嶼 | 滾輪縮放 | 點擊六角板塊檢視角色真實收據
+  </div>
+
+  <!-- WebGL Canvas Mount -->
+  <div id="webgl-container"></div>
+
+  <!-- Role Perspective Filter Pills (分類導覽) -->
+  <div class="role-pills-bar">
+    <button class="role-pill active" onclick="focusRole('all')">🌐 全島視角</button>
+    <button class="role-pill" onclick="focusRole('paw')">🐾 The Paw (工程實作)</button>
+    <button class="role-pill" onclick="focusRole('claw')">🦅 The Claw (安全審查)</button>
+    <button class="role-pill" onclick="focusRole('zeus')">✍️ Zeus (長文創作)</button>
+    <button class="role-pill" onclick="focusRole('spec')">📐 Spec Steward (規格督導)</button>
+    <button class="role-pill" onclick="focusRole('youtube')">📺 YouTube (傳媒優化)</button>
+    <button class="role-pill" onclick="focusRole('weaver')">🧶 Weaver (架構收斂)</button>
+  </div>
+
+  <!-- Detailed Inspection Drawer -->
+  <div class="inspector-drawer" id="drawer">
+    <div class="drawer-header">
+      <div>
+        <div class="drawer-role-tag" id="drawer-tag">SECTOR.PAW</div>
+        <div class="drawer-title" id="drawer-title">🐾 The Paw (虎掌)</div>
+      </div>
+      <button class="close-btn" onclick="closeDrawer()">✕</button>
+    </div>
+
+    <div id="drawer-status-badge">
+      <span class="status-badge status-handoff">🟢 階段達成: Handoff (Gen 14)</span>
+    </div>
+
+    <div class="drawer-card">
+      <div class="drawer-card-label">核心使命與責任邊界</div>
+      <div class="drawer-card-body" id="drawer-purpose">
+        將已核准的規格轉化為可驗證代碼。具備隔離沙盒、Ed25519 授權簽名驗證、Git Bundle 導出與自動 Draft PR 發布能力。
+      </div>
+    </div>
+
+    <div class="drawer-card">
+      <div class="drawer-card-label">即時運行狀態 (Live Execution)</div>
+      <div class="drawer-card-body" id="drawer-live">
+        成功完成 Issue #470 靜態驗證候選代碼！已在隔離 Worktree 產出候選 Commit 並由獨立 Publisher 發布為 Draft PR #2104。
+      </div>
+      <div id="drawer-action-container">
+        <a href="https://github.com/alston-personal/agentmanager/pull/2104" target="_blank" class="btn-action">
+          🚀 檢視 GitHub Draft PR #2104
+        </a>
+      </div>
+    </div>
+
+    <div class="drawer-card">
+      <div class="drawer-card-label">實體驗證收據 (Grounded Receipt)</div>
+      <pre class="receipt-code" id="drawer-receipt">Loading...</pre>
+    </div>
+  </div>
+
+  <script>
+    // --- 1. DATA DEFINITIONS (AgentOS Roles) ---
+    const ROLES = {
+      paw: {
+        id: "sector.paw",
+        name: "The Paw (虎掌)",
+        icon: "🐾",
+        color: 0xf59e0b,
+        hexX: -24,
+        hexZ: -12,
+        height: 8,
+        statusClass: "status-handoff",
+        statusText: "🟢 階段達成: Handoff (Gen 14)",
+        purpose: "將已核准的規格轉化為可驗證代碼。具備隔離沙盒、Ed25519 授權簽名驗證、Git Bundle 導出與自動 Draft PR 發布能力。",
+        live: "完成 Issue #470 靜態驗證候選！已在 Worktree 產出 Commit 899528e9 並由 agentos-publisher 推送 Draft PR #2104。",
+        receipt: `{\n  "schema": "agentos.employee-assignment-receipt/v1",\n  "assignment_id": "paw-470-inspection-v1",\n  "employee_id": "the-paw",\n  "generation": 14,\n  "outcome": "handoff",\n  "commit_sha": "899528e9276b2893d3a0c2ea8390e963d736bae7",\n  "pr_number": 2104,\n  "pr_url": "https://github.com/alston-personal/agentmanager/pull/2104"\n}`,
+        prUrl: "https://github.com/alston-personal/agentmanager/pull/2104",
+        prText: "檢視 GitHub Draft PR #2104"
+      },
+      claw: {
+        id: "sector.claw",
+        name: "The Claw (銳爪)",
+        icon: "🦅",
+        color: 0xef4444,
+        hexX: -24,
+        hexZ: 20,
+        height: 10,
+        statusClass: "status-active",
+        statusText: "🟢 獨立審查中 (NO_FINDINGS)",
+        purpose: "以獨立對抗性／QA／安全視角審查代碼與失敗模式。恪守「不偽造通過、未經人類指示不自簽 PASS」原則。",
+        live: "已對 Paw 剛產出的 Commit 899528e9 執行離線靜態檢查，確認無格式或空白錯誤 (NO_FINDINGS)。",
+        receipt: `{\n  "schema": "agentos.claw-review-readonly-worker-cli-result/v1",\n  "commit_sha": "899528e9276b2893d3a0c2ea8390e963d736bae7",\n  "static_check": "NO_FINDINGS",\n  "patch_bytes": 5609,\n  "independent_review_verdict": "NOT_REVIEWED"\n}`,
+        prUrl: null
+      },
+      zeus: {
+        id: "product.zeus_writer",
+        name: "Zeus Writer (長文創作)",
+        icon: "✍️",
+        color: 0x3b82f6,
+        hexX: 24,
+        hexZ: -12,
+        height: 7,
+        statusClass: "status-handoff",
+        statusText: "🟢 階段達成: Handoff (Gen 10004)",
+        purpose: "持續自主維護小說與內容創作專案之正文狀態。自主進行篇章審閱、斷章檢驗與續寫候選產出。",
+        live: "成功執行第 10004 代租約！完成《正文/Ch05》章節之內容審查，狀態順利收斂至 handoff。",
+        receipt: `{\n  "schema": "agentos.employee-assignment-receipt/v1",\n  "assignment_id": "zeus-writer-continuation-v1",\n  "employee_id": "zeus-writer",\n  "generation": 10004,\n  "outcome": "handoff",\n  "chapter": "Ch05",\n  "bounded_stage": "zeus-existing-draft-review"\n}`,
+        prUrl: null
+      },
+      spec: {
+        id: "governance.spec_steward",
+        name: "Spec Steward (規格督導)",
+        icon: "📐",
+        color: 0x10b981,
+        hexX: 0,
+        hexZ: 32,
+        height: 9,
+        statusClass: "status-active",
+        statusText: "🟢 O3 Bootstrap 就緒",
+        purpose: "持續追蹤正式規格是否有明確 Owner、Target 專案與驗收依賴，防止架構規格與實體代碼脫節漂移。",
+        live: "已完成 O3 Bootstrap，建立正式 WorkItem spec-steward-o3-acceptance-v1，隨時可發起全系統規格健康檢查。",
+        receipt: `{\n  "schema": "agentos.spec-steward-bootstrap-result/v1",\n  "assignment_id": "spec-steward-o3-acceptance-v1",\n  "employee_id": "agentos-spec-steward",\n  "role_capabilities": ["governance.spec.audit"],\n  "thread_head": "o3:spec-steward-acceptance:start"\n}`,
+        prUrl: null
+      },
+      youtube: {
+        id: "product.youtube_ai_manager",
+        name: "YouTube AI Manager",
+        icon: "📺",
+        color: 0xec4899,
+        hexX: 24,
+        hexZ: 20,
+        height: 6,
+        statusClass: "status-blocked",
+        statusText: "🔴 唯讀安全防護中",
+        purpose: "掃描授權 YouTube 頻道內容並產出優化候選。預設禁止任意對外 API 寫入，保證安全無洩漏。",
+        live: "目前處於唯讀安全保護中 (youtube_governed_read_adapter_unavailable)。等待注入頻道範圍白名單以解鎖掃描。",
+        receipt: `{\n  "schema": "agentos.employee-assignment-receipt/v1",\n  "assignment_id": "youtube-ai-manager-scan-v1",\n  "generation": 15018,\n  "outcome": "blocked",\n  "blocker_code": "youtube_governed_read_adapter_unavailable"\n}`,
+        prUrl: null
+      },
+      weaver: {
+        id: "sector.weaver",
+        name: "Weaver (織圖)",
+        icon: "🧶",
+        color: 0x8b5cf6,
+        hexX: 0,
+        hexZ: -28,
+        height: 11,
+        statusClass: "status-active",
+        statusText: "🟢 全域規格掌管",
+        purpose: "規格驅動開發 (SDD) 核心。把使用者願景收斂為 IR、Spec、Constraints 與驗收標準，交由 The Paw 落地。",
+        live: "維護全域 43 個專案之規格契約、責任解析 (Responsibility Resolution) 與邏輯／真相分離邊界。",
+        receipt: `{\n  "role": "sector.weaver",\n  "canonical_ir": "idx-core-20261030-unified-3",\n  "managed_projects": 43\n}`,
+        prUrl: null
+      },
+      root: {
+        id: "core.root",
+        name: "Core Root (核心元魂)",
+        icon: "🐱",
+        color: 0x38bdf8,
+        hexX: 0,
+        hexZ: 0,
+        height: 14,
+        statusClass: "status-active",
+        statusText: "🟢 核心中樞運行中",
+        purpose: "提供所有 Agent 共通的身份、真相邊界、邏輯與資料分離最高準則，守護 Oracle VM 執行實境。",
+        live: "常駐協調 Core Supervisor、Wake Node 與 Worker Host 進程，維持系統記憶與真相中心穩定運作。",
+        receipt: `{\n  "runtime_node": "oracle-employee-wake-node",\n  "release": "d94ca1f6194e6be77b2de727ceae9838e20a0f7a",\n  "status": "enforced"\n}`,
+        prUrl: null
+      }
+    };
+
+    // --- 2. THREE.JS SCENE & CAMERA SETUP ---
+    const container = document.getElementById("webgl-container");
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 1000);
+    camera.position.set(0, 75, 110);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go under water
+    controls.minDistance = 35;
+    controls.maxDistance = 220;
+    controls.target.set(0, 4, 0);
+
+    // --- 3. DYNAMIC LIGHTING MODES (致敬政策島) ---
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xfffaed, 1.2);
+    dirLight.position.set(60, 90, 40);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 10;
+    dirLight.shadow.camera.far = 250;
+    const d = 60;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    scene.add(dirLight);
+
+    const ambientLight = new THREE.AmbientLight(0x38bdf8, 0.25);
+    scene.add(ambientLight);
+
+    const timeModes = {
+      dawn: {
+        sky: 0x1e1b4b,
+        fog: 0x2e1065,
+        dirLight: 0xfdba74,
+        dirIntensity: 1.1,
+        dirPos: [80, 40, -30],
+        ambient: 0x312e81,
+        water: 0x1e1b4b
+      },
+      day: {
+        sky: 0x0f172a,
+        fog: 0x0f172a,
+        dirLight: 0xffffff,
+        dirIntensity: 1.3,
+        dirPos: [60, 90, 40],
+        ambient: 0x0284c7,
+        water: 0x0369a1
+      },
+      sunset: {
+        sky: 0x451a03,
+        fog: 0x3b0764,
+        dirLight: 0xf97316,
+        dirIntensity: 1.4,
+        dirPos: [-80, 35, 50],
+        ambient: 0x7c2d12,
+        water: 0x311042
+      },
+      night: {
+        sky: 0x030712,
+        fog: 0x050816,
+        dirLight: 0x38bdf8,
+        dirIntensity: 0.5,
+        dirPos: [30, 80, -50],
+        ambient: 0x0f172a,
+        water: 0x020617
+      }
+    };
+
+    scene.fog = new THREE.FogExp2(timeModes.day.fog, 0.0065);
+
+    function setTimeMode(mode) {
+      document.querySelectorAll('.time-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = Array.from(document.querySelectorAll('.time-btn')).find(b => b.textContent.includes(
+        mode === 'dawn' ? '清晨' : mode === 'day' ? '白天' : mode === 'sunset' ? '黃昏' : '賽博夜'
+      ));
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const config = timeModes[mode];
+      scene.fog.color.setHex(config.fog);
+      dirLight.color.setHex(config.dirLight);
+      dirLight.intensity = config.dirIntensity;
+      dirLight.position.set(...config.dirPos);
+      ambientLight.color.setHex(config.ambient);
+      waterMesh.material.color.setHex(config.water);
+      renderer.setClearColor(config.sky);
+    }
+
+    // --- 4. WATER SURFACE (波紋水面) ---
+    const waterGeo = new THREE.PlaneGeometry(500, 500, 64, 64);
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x0369a1,
+      roughness: 0.15,
+      metalness: 0.75,
+      transparent: true,
+      opacity: 0.88
+    });
+    const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+    waterMesh.rotation.x = -Math.PI / 2;
+    waterMesh.position.y = -2;
+    waterMesh.receiveShadow = true;
+    scene.add(waterMesh);
+
+    // --- 5. 3D HEXAGON ISLAND TILES & DECORATIONS ---
+    const islandGroup = new THREE.Group();
+    scene.add(islandGroup);
+
+    const hexMeshes = {};
+    const interactiveObjects = [];
+
+    // Helper: Hexagon Prism Geometry
+    function createHexPrism(radius, height) {
+      return new THREE.CylinderGeometry(radius, radius * 0.94, height, 6, 1);
+    }
+
+    // Build Low-Poly Tree
+    function createTree(scale = 1) {
+      const tree = new THREE.Group();
+      const trunkMat = new THREE.MeshLambertMaterial({ color: 0x78350f, flatShading: true });
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 2, 5), trunkMat);
+      trunk.position.y = 1;
+      trunk.castShadow = true;
+      tree.add(trunk);
+
+      const foliageMat = new THREE.MeshLambertMaterial({ color: 0x10b981, flatShading: true });
+      const foliage1 = new THREE.Mesh(new THREE.ConeGeometry(1.6, 2.5, 6), foliageMat);
+      foliage1.position.y = 2.4;
+      foliage1.castShadow = true;
+      tree.add(foliage1);
+
+      const foliage2 = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.0, 6), foliageMat);
+      foliage2.position.y = 3.6;
+      foliage2.castShadow = true;
+      tree.add(foliage2);
+
+      tree.scale.set(scale, scale, scale);
+      return tree;
+    }
+
+    // Build Crystal / Spire
+    function createCrystal(color, height = 5) {
+      const crystalGeo = new THREE.ConeGeometry(1.4, height, 5);
+      const crystalMat = new THREE.MeshStandardMaterial({
+        color: color,
+        emissive: color,
+        emissiveIntensity: 0.35,
+        roughness: 0.2,
+        metalness: 0.8,
+        flatShading: true
+      });
+      const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+      crystal.position.y = height / 2;
+      crystal.castShadow = true;
+      return crystal;
+    }
+
+    // Build Tower / Beacon
+    function createBeacon(color) {
+      const beacon = new THREE.Group();
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, flatShading: true });
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, 6, 6), baseMat);
+      pillar.position.y = 3;
+      pillar.castShadow = true;
+      beacon.add(pillar);
+
+      const orbMat = new THREE.MeshStandardMaterial({
+        color: color,
+        emissive: color,
+        emissiveIntensity: 0.8,
+        roughness: 0.1
+      });
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 12), orbMat);
+      orb.position.y = 6.8;
+      beacon.add(orb);
+      return beacon;
+    }
+
+    // Build the 7 Hexagonal Islands
+    Object.keys(ROLES).forEach(key => {
+      const r = ROLES[key];
+      const tileGroup = new THREE.Group();
+      tileGroup.position.set(r.hexX, 0, r.hexZ);
+
+      // Main Hex Tile
+      const radius = key === 'root' ? 14 : 11;
+      const hexGeo = createHexPrism(radius, r.height);
+      const hexMat = new THREE.MeshStandardMaterial({
+        color: r.color,
+        roughness: 0.65,
+        metalness: 0.15,
+        flatShading: true
+      });
+      const hexMesh = new THREE.Mesh(hexGeo, hexMat);
+      hexMesh.position.y = r.height / 2;
+      hexMesh.castShadow = true;
+      hexMesh.receiveShadow = true;
+      hexMesh.userData = { roleKey: key };
+      tileGroup.add(hexMesh);
+      interactiveObjects.push(hexMesh);
+
+      // Top Highlight Grass/Plateau
+      const topPlateauGeo = new THREE.CylinderGeometry(radius * 0.88, radius * 0.88, 0.4, 6);
+      const topMat = new THREE.MeshLambertMaterial({
+        color: new THREE.Color(r.color).lerp(new THREE.Color(0xffffff), 0.18),
+        flatShading: true
+      });
+      const topPlateau = new THREE.Mesh(topPlateauGeo, topMat);
+      topPlateau.position.y = r.height + 0.2;
+      topPlateau.receiveShadow = true;
+      tileGroup.add(topPlateau);
+
+      // Island Distinctive Landmark Models
+      if (key === 'paw') {
+        const beacon = createBeacon(0xf59e0b);
+        beacon.position.set(0, r.height, 0);
+        tileGroup.add(beacon);
+        const t1 = createTree(1.1); t1.position.set(-4, r.height, 3); tileGroup.add(t1);
+        const t2 = createTree(0.8); t2.position.set(4, r.height, -3); tileGroup.add(t2);
+      } else if (key === 'claw') {
+        const spire = createCrystal(0xef4444, 7);
+        spire.position.set(0, r.height, 0);
+        tileGroup.add(spire);
+        const b1 = createCrystal(0xef4444, 4); b1.position.set(3, r.height, 3); tileGroup.add(b1);
+      } else if (key === 'zeus') {
+        const spire = createCrystal(0x3b82f6, 6);
+        spire.position.set(0, r.height, 0);
+        tileGroup.add(spire);
+        const t1 = createTree(1.0); t1.position.set(-4, r.height, -2); tileGroup.add(t1);
+      } else if (key === 'spec') {
+        const beacon = createBeacon(0x10b981);
+        beacon.position.set(0, r.height, 0);
+        tileGroup.add(beacon);
+        const t1 = createTree(1.2); t1.position.set(3, r.height, 2); tileGroup.add(t1);
+      } else if (key === 'youtube') {
+        const beacon = createBeacon(0xec4899);
+        beacon.position.set(0, r.height, 0);
+        tileGroup.add(beacon);
+      } else if (key === 'weaver') {
+        const spire = createCrystal(0x8b5cf6, 8);
+        spire.position.set(0, r.height, 0);
+        tileGroup.add(spire);
+      } else if (key === 'root') {
+        const coreSphere = new THREE.Mesh(
+          new THREE.SphereGeometry(2.5, 16, 16),
+          new THREE.MeshStandardMaterial({
+            color: 0x38bdf8,
+            emissive: 0x38bdf8,
+            emissiveIntensity: 0.9,
+            roughness: 0.1
+          })
+        );
+        coreSphere.position.y = r.height + 3.5;
+        tileGroup.add(coreSphere);
+
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(5, 0.25, 8, 24),
+          new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true })
+        );
+        ring.position.y = r.height + 3.5;
+        ring.rotation.x = Math.PI / 3;
+        tileGroup.add(ring);
+        tileGroup.userData.ring = ring;
+      }
+
+      islandGroup.add(tileGroup);
+      hexMeshes[key] = { group: tileGroup, mainMesh: hexMesh, defaultY: 0, height: r.height };
+    });
+
+    // --- 6. 3D GLOWING ENERGY CONNECTIONS (連動流光線路) ---
+    const connections = [
+      ['weaver', 'paw'],
+      ['paw', 'claw'],
+      ['weaver', 'zeus'],
+      ['zeus', 'youtube'],
+      ['claw', 'spec'],
+      ['youtube', 'spec'],
+      ['root', 'weaver'],
+      ['root', 'paw'],
+      ['root', 'zeus']
+    ];
+
+    const splinePoints = [];
+    connections.forEach(([fromKey, toKey]) => {
+      const from = ROLES[fromKey];
+      const to = ROLES[toKey];
+      const p1 = new THREE.Vector3(from.hexX, from.height + 1, from.hexZ);
+      const p2 = new THREE.Vector3(to.hexX, to.height + 1, to.hexZ);
+      const mid = new THREE.Vector3()
+        .addVectors(p1, p2)
+        .multiplyScalar(0.5)
+        .add(new THREE.Vector3(0, 7, 0)); // Arch height
+
+      const curve = new THREE.QuadraticBezierCurve3(p1, mid, p2);
+      const points = curve.getPoints(30);
+      const tubeGeo = new THREE.BufferGeometry().setFromPoints(points);
+      const tubeMat = new THREE.LineDashedMaterial({
+        color: 0x38bdf8,
+        dashSize: 1.5,
+        gapSize: 1,
+        transparent: true,
+        opacity: 0.65
+      });
+      const line = new THREE.Line(tubeGeo, tubeMat);
+      line.computeLineDistances();
+      scene.add(line);
+
+      // Energy Pulse Particle
+      const pulseGeo = new THREE.SphereGeometry(0.6, 8, 8);
+      const pulseMat = new THREE.MeshBasicMaterial({ color: 0x67e8f9 });
+      const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+      scene.add(pulse);
+      splinePoints.push({ curve, pulse, progress: Math.random() });
+    });
+
+    // --- 7. FLOATING CLOUDS (低多邊形雲朵) ---
+    function createCloud(x, y, z) {
+      const cloud = new THREE.Group();
+      const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, flatShading: true });
+      for (let i = 0; i < 5; i++) {
+        const puff = new THREE.Mesh(new THREE.DodecahedronGeometry(2.5 + Math.random() * 1.5), cloudMat);
+        puff.position.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 5);
+        cloud.add(puff);
+      }
+      cloud.position.set(x, y, z);
+      scene.add(cloud);
+      return cloud;
+    }
+
+    const clouds = [
+      createCloud(-45, 25, -40),
+      createCloud(50, 30, -35),
+      createCloud(-50, 28, 40),
+      createCloud(45, 22, 35)
+    ];
+
+    // --- 8. RAYCASTING & INTERACTION (點擊聚焦) ---
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let hoveredMesh = null;
+    let selectedRoleKey = null;
+
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(interactiveObjects);
+
+      if (intersects.length > 0) {
+        const target = intersects[0].object;
+        if (hoveredMesh !== target) {
+          if (hoveredMesh && hoveredMesh !== hexMeshes[selectedRoleKey]?.mainMesh) {
+            new TWEEN.Tween(hoveredMesh.parent.position).to({ y: 0 }, 200).start();
+          }
+          hoveredMesh = target;
+          document.body.style.cursor = 'pointer';
+          new TWEEN.Tween(hoveredMesh.parent.position).to({ y: 3 }, 200).start();
+        }
+      } else {
+        if (hoveredMesh && hoveredMesh !== hexMeshes[selectedRoleKey]?.mainMesh) {
+          new TWEEN.Tween(hoveredMesh.parent.position).to({ y: 0 }, 200).start();
+        }
+        hoveredMesh = null;
+        document.body.style.cursor = 'default';
+      }
+    });
+
+    window.addEventListener('click', (e) => {
+      // Ignore click if clicking UI
+      if (e.target.closest('.top-nav') || e.target.closest('.role-pills-bar') || e.target.closest('.inspector-drawer')) return;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(interactiveObjects);
+
+      if (intersects.length > 0) {
+        const roleKey = intersects[0].object.userData.roleKey;
+        if (roleKey) focusRole(roleKey);
+      }
+    });
+
+    // Smooth Camera Flight (致敬政策島點擊聚焦)
+    function focusRole(key) {
+      document.querySelectorAll('.role-pill').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = Array.from(document.querySelectorAll('.role-pill')).find(b => b.onclick.toString().includes(`'${key}'`));
+      if (activeBtn) activeBtn.classList.add('active');
+
+      if (key === 'all') {
+        selectedRoleKey = null;
+        closeDrawer();
+        new TWEEN.Tween(camera.position)
+          .to({ x: 0, y: 75, z: 110 }, 1000)
+          .easing(TWEEN.Easing.Cubic.Out)
+          .start();
+        new TWEEN.Tween(controls.target)
+          .to({ x: 0, y: 4, z: 0 }, 1000)
+          .easing(TWEEN.Easing.Cubic.Out)
+          .start();
+        return;
+      }
+
+      selectedRoleKey = key;
+      const r = ROLES[key];
+      if (!r) return;
+
+      // Camera flies to frame the island
+      const targetPos = new THREE.Vector3(r.hexX, r.height / 2, r.hexZ);
+      const cameraOffset = new THREE.Vector3(r.hexX + 22, r.height + 26, r.hexZ + 36);
+
+      new TWEEN.Tween(controls.target)
+        .to({ x: targetPos.x, y: targetPos.y, z: targetPos.z }, 900)
+        .easing(TWEEN.Easing.Cubic.Out)
+        .start();
+
+      new TWEEN.Tween(camera.position)
+        .to({ x: cameraOffset.x, y: cameraOffset.y, z: cameraOffset.z }, 900)
+        .easing(TWEEN.Easing.Cubic.Out)
+        .start();
+
+      // Lift selected tile
+      Object.keys(hexMeshes).forEach(k => {
+        const meshGroup = hexMeshes[k].group;
+        new TWEEN.Tween(meshGroup.position)
+          .to({ y: k === key ? 3.5 : 0 }, 300)
+          .start();
+      });
+
+      openDrawer(r);
+    }
+
+    function openDrawer(r) {
+      document.getElementById('drawer-tag').textContent = r.id;
+      document.getElementById('drawer-title').textContent = `${r.icon} ${r.name}`;
+      document.getElementById('drawer-status-badge').innerHTML = `<span class="status-badge ${r.statusClass}">${r.statusText}</span>`;
+      document.getElementById('drawer-purpose').textContent = r.purpose;
+      document.getElementById('drawer-live').textContent = r.live;
+      document.getElementById('drawer-receipt').textContent = r.receipt;
+
+      const actionBox = document.getElementById('drawer-action-container');
+      if (r.prUrl) {
+        actionBox.innerHTML = `<a href="${r.prUrl}" target="_blank" class="btn-action">🚀 ${r.prText}</a>`;
+      } else {
+        actionBox.innerHTML = '';
+      }
+
+      document.getElementById('drawer').classList.add('open');
+    }
+
+    function closeDrawer() {
+      document.getElementById('drawer').classList.remove('open');
+      if (selectedRoleKey) {
+        new TWEEN.Tween(hexMeshes[selectedRoleKey].group.position).to({ y: 0 }, 300).start();
+        selectedRoleKey = null;
+      }
+    }
+
+    // --- 9. ANIMATION LOOP ---
+    let clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      const time = clock.getElapsedTime();
+
+      TWEEN.update();
+      controls.update();
+
+      // Animate Water Subtle Waves
+      const position = waterGeo.attributes.position;
+      for (let i = 0; i < position.count; i++) {
+        const u = position.getX(i);
+        const v = position.getY(i);
+        const z = Math.sin(u * 0.08 + time * 1.5) * 0.4 + Math.cos(v * 0.08 + time * 1.2) * 0.35;
+        position.setZ(i, z);
+      }
+      waterGeo.computeVertexNormals();
+      position.needsUpdate = true;
+
+      // Animate Energy Pulse on Bezier Curves
+      splinePoints.forEach(item => {
+        item.progress += delta * 0.35;
+        if (item.progress > 1) item.progress = 0;
+        const p = item.curve.getPoint(item.progress);
+        item.pulse.position.copy(p);
+      });
+
+      // Slowly Drift Clouds
+      clouds.forEach((cloud, index) => {
+        cloud.position.x += delta * (1.2 + index * 0.3);
+        if (cloud.position.x > 80) cloud.position.x = -80;
+      });
+
+      // Rotate Central Core Ring
+      if (hexMeshes['root']?.group.userData.ring) {
+        hexMeshes['root'].group.userData.ring.rotation.z += delta * 0.8;
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Window Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Default Focus on The Paw
+    setTimeout(() => {
+      focusRole('paw');
+    }, 600);
+  </script>
+</body>
+</html>

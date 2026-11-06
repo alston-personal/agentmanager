@@ -60,7 +60,9 @@ def main():
     root=Path(tempfile.mkdtemp(prefix='agentos-persona-sync-'))
     work=root/'work'
     try:
-        run(['git','worktree','add','--detach',str(work),'origin/main'],cwd=DATA_REPO)
+        run(['git','worktree','add','--no-checkout','--detach',str(work),'origin/main'],cwd=DATA_REPO)
+        run(['git','sparse-checkout','set',str(EVENTS_REL)],cwd=work)
+        run(['git','checkout'],cwd=work)
         events=work/EVENTS_REL
         if not events.is_file():
             print('persona_git_sync=PERSONA_IR_MISSING',file=sys.stderr); return 6
@@ -68,8 +70,14 @@ def main():
         for raw in events.read_text(encoding='utf-8').splitlines():
             try: row=json.loads(raw)
             except Exception: continue
-            if row.get('platform')=='threads' and row.get('object_id'):
-                existing.add(str(row['object_id']))
+            oid=str(row.get('object_id') or row.get('source_object_id') or '')
+            if not oid and 'threads:' in str(row.get('id') or ''):
+                oid=str(row['id']).split(':')[-1]
+            if oid:
+                existing.add(oid)
+            eid=str(row.get('event_id') or row.get('id') or '')
+            if eid:
+                existing.add(eid)
 
         account=str(payload.get('account_username') or '').lower()
         added=[]

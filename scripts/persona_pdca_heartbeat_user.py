@@ -76,7 +76,9 @@ def main():
         print("persona_pdca_heartbeat=FETCH_FAILED",file=sys.stderr); return 4
     tmp=Path(tempfile.mkdtemp(prefix="agentos-persona-heartbeat-")); work=tmp/"work"
     try:
-        run(["git","worktree","add","--detach",str(work),"origin/main"])
+        run(["git","worktree","add","--no-checkout","--detach",str(work),"origin/main"])
+        run(["git","sparse-checkout","set","--no-cone","personas/*/pdca/config.json","personas/*/pdca/state.json"],cwd=work)
+        run(["git","checkout"],cwd=work)
         personas=active_personas(work)
         if not personas:
             stamp=now()

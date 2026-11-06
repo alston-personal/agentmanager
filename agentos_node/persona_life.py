@@ -31,14 +31,26 @@ def _parse_hhmm(value:str)->tuple[int,int]:
     h,m=str(value).split(":",1)
     return int(h),int(m)
 
+def _daily_rest_jitter(local_date:str, window_id:str)->tuple[int,int]:
+    """Calculate natural non-rigid circadian jitter (-35 to +35 minutes) for a given day."""
+    h1 = abs(hash(f"{local_date}:{window_id}:start"))
+    h2 = abs(hash(f"{local_date}:{window_id}:end"))
+    start_jitter = (h1 % 71) - 35  # -35m to +35m
+    end_jitter = (h2 % 71) - 35    # -35m to +35m
+    return start_jitter, end_jitter
+
 def life_phase(now:datetime, temporal:dict[str,Any]|None=None, tz_name:str=DEFAULT_TZ)->str:
     local=now.astimezone(ZoneInfo(tz_name))
+    date_str=local.strftime("%Y-%m-%d")
     minutes=local.hour*60+local.minute
     for row in (temporal or {}).get("rest_windows") or []:
         try:
-            start,end=str(row.get("local_time") or "").split("-",1)
+            raw_time = str(row.get("local_time") or "")
+            start,end=raw_time.split("-",1)
             sh,sm=_parse_hhmm(start); eh,em=_parse_hhmm(end)
-            a=sh*60+sm; b=eh*60+em
+            sj, ej = _daily_rest_jitter(date_str, raw_time)
+            a = max(0, min(1439, sh*60 + sm + sj))
+            b = max(0, min(1439, eh*60 + em + ej))
             inside=(a<=minutes<b) if a<b else (minutes>=a or minutes<b)
             if inside:return str(row.get("state") or "rest")
         except Exception:continue
@@ -47,15 +59,22 @@ def life_phase(now:datetime, temporal:dict[str,Any]|None=None, tz_name:str=DEFAU
 def next_awake_at(now:datetime, temporal:dict[str,Any]|None=None, tz_name:str=DEFAULT_TZ)->datetime:
     if life_phase(now,temporal,tz_name) not in {"sleep","rest"}: return now
     local=now.astimezone(ZoneInfo(tz_name))
+    date_str=local.strftime("%Y-%m-%d")
     candidates=[]
     for row in (temporal or {}).get("rest_windows") or []:
         try:
-            start,end=str(row.get("local_time") or "").split("-",1)
+            raw_time = str(row.get("local_time") or "")
+            start,end=raw_time.split("-",1)
             sh,sm=_parse_hhmm(start); eh,em=_parse_hhmm(end)
-            a=sh*60+sm; b=eh*60+em; cur=local.hour*60+local.minute
+            sj, ej = _daily_rest_jitter(date_str, raw_time)
+            a = max(0, min(1439, sh*60 + sm + sj))
+            b = max(0, min(1439, eh*60 + em + ej))
+            cur=local.hour*60+local.minute
             inside=(a<=cur<b) if a<b else (cur>=a or cur<b)
             if not inside:continue
-            end_local=local.replace(hour=eh,minute=em,second=0,microsecond=0)
+            effective_hour = b // 60
+            effective_minute = b % 60
+            end_local=local.replace(hour=effective_hour,minute=effective_minute,second=0,microsecond=0)
             if a>=b and cur>=a:end_local+=timedelta(days=1)
             if end_local<=local:end_local+=timedelta(days=1)
             candidates.append(end_local)

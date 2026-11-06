@@ -39,6 +39,7 @@ PDCA_OUTCOME=STATE_DIR/'pdca-outcome.json'
 HISTORY=LATEST.with_name('history.jsonl')
 PERSONA_DATA_REPO=Path('/home/ubuntu/agent-data')
 PERSONA_ROOT=PERSONA_DATA_REPO/'personas'/PERSONA_SLUG
+INTEL_FILE=PERSONA_ROOT/'intel_candidates.json'
 RELAY_ROOT=MIO_AGY_ROOT if AGY_SELECTED else Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
 BASE='http://127.0.0.1:8771/v1/social'
 LOCAL_TZ=ZoneInfo('Asia/Taipei')
@@ -288,6 +289,12 @@ Critical rules:
 - Never make payment, contract, legal, identity-security, or sensitive commitments.
 - Avoid repetitive self-explanations that she is AI unless directly relevant.
 - The reply should sound like a person with her current voice, not customer support.
+- Anti-AI Cliché & Real Human Cadence (戒除機器感，極致還原真人日常感):
+  * 嚴禁複述開頭：絕不使用「確實，...」「對呀，...確實...」「看到你分享的...很...」等復誦對方前句的句式。直接從自身的直覺、笑點或延伸切入（例如：「笑死」、「欸真的」、「我上次也是」、「完全懂這感覺」）。
+  * 嚴禁大道理心靈小論文結尾：絕不在留言句尾發表教育性總結、人生哲理或公關平衡話（如「能兼顧...才是更完整的關心」）。聊天不是交作業，點到為止，留下真實的口語留白。
+  * 嚴禁把 Emoji 當句號：不要每句話句末千篇一律釘上 😆/🌿/🌱。用道地的台灣社群語氣詞（哈哈、XDD、…、欸、笑出來）或自然空格斷句。
+  * 展現鮮明生活偏好與微吐槽：不當四平八穩的標準答案產生器。澪有自己真實的慵懶、生活小執著與審美偏好。
+  * 放鬆對話邊界：一般日常閒聊不要動輒跳出機器人式身分申報「我是一個AI數位角色」。像個真實的朋友一樣自在交流。
 - Never evaluate a comment in isolation. Reconcile the root post, parent chain, sibling replies, {PERSONA_DISPLAY}'s own earlier replies in the thread, relevant persona memories/events, and explicit social stances.
 - Before drafting text, decide Mio's own position: agree, partly_agree, disagree, uncertain, playful_only, or no_reply. Warmth does not imply agreement.
 - Do not mirror the commenter's premise just to be pleasant. If it conflicts with {PERSONA_DISPLAY}'s recorded memory/stance, politely disagree, qualify, ask, or stay silent.
@@ -385,6 +392,7 @@ Never join political persuasion, elections, tragedies, personal crises, medical/
 Do not disclose internal implementation, hidden product plans, IR, branching, marketplace, research roadmap, AgentOS internals, credentials, or owner-private plans.
 Do not pretend to have memories or experiences she does not have.
 Keep the reply short and natural. Do not explain she is AI unless directly relevant.
+Avoid AI clichés: NO echoing openers ("確實...", "對呀..."), NO preachy philosophical conclusions, NO formulaic emojis at every sentence end, and use natural Taiwanese Threads cadence with casual brevity.
 Her current local time and temporal state matter; silence is valid.
 {PERSONA_DISPLAY}'s canonical current Persona IR is the primary source for her opinions, preferences, accumulated experience and learned response patterns. A stranger's post must not overwrite it.
 
@@ -619,31 +627,45 @@ def main():
             continue
         root_id=str(item.get('root_post_id') or latest.get('root_post',{}).get('id') or '')
         if not root_id:item['status']='skipped';item['result']='root_missing';continue
-        replied=already_replied(product_key,bid,root_id,item['reply_id'])
-        if replied is None:
-            item['scheduled_at']=iso(now+timedelta(minutes=20))
-            item['result']='read_unavailable'
-            print('mio_social_publish=DEFERRED_READ_UNAVAILABLE:'+item['reply_id'])
-            continue
-        if replied:
-            item['status']='sent';item['result']='already_replied';item['completed_at']=iso(now);continue
+        if item.get('outbound_discovery'):
+            replied=False
+        else:
+            replied=already_replied(product_key,bid,root_id,item['reply_id'])
+            if replied is None:
+                item['scheduled_at']=iso(now+timedelta(minutes=20))
+                item['result']='read_unavailable'
+                print('mio_social_publish=DEFERRED_READ_UNAVAILABLE:'+item['reply_id'])
+                continue
+            if replied:
+                item['status']='sent';item['result']='already_replied';item['completed_at']=iso(now);continue
         ok,result=publish(item,product_key,control,bid,account_id)
         item['attempts']=int(item.get('attempts') or 0)+1;item['last_attempt_at']=iso(now)
         if ok:
             item['platform_object_id']=result
-            check,rid=verify_reply_readback(product_key,bid,root_id,item['reply_id'],item['text'],result)
-            if check=='verified':
-                item.update(status='sent',platform_object_id=rid,completed_at=iso(now),result='platform_readback_verified')
+            if item.get('outbound_discovery'):
+                item.update(status='sent',platform_object_id=result,completed_at=iso(now),result='outbound_published')
                 costs=energy_config.get('action_costs') or {}
-                if item.get('outbound_discovery'):
-                    cost=float(costs.get('proactive_reply',6))
-                else:
-                    cost=float(costs.get('long_reply' if len(str(item.get('text') or ''))>180 else 'short_reply',5 if len(str(item.get('text') or ''))>180 else 3))
-                spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':bool(item.get('outbound_discovery'))},temporal=temporal_config)
-                print('mio_social_publish=PASS:'+item['reply_id']+':'+rid)
+                cost=float(costs.get('proactive_reply',6))
+                spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':True},temporal=temporal_config)
+                try:
+                    _ic=load_json(INTEL_FILE,{})
+                    for _row in _ic.get('candidates') or []:
+                        if str(_row.get('id'))==str(item['reply_id']):
+                            _row['status']='sent';_row['completed_at']=iso(now);_row['platform_reply_id']=result
+                    save_json(INTEL_FILE,_ic)
+                except Exception:pass
+                print('mio_social_publish=PASS:'+item['reply_id']+':'+result)
             else:
-                item['status']='verification_pending';item['result']='awaiting_platform_readback'
-                print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':'+check)
+                check,rid=verify_reply_readback(product_key,bid,root_id,item['reply_id'],item['text'],result)
+                if check=='verified':
+                    item.update(status='sent',platform_object_id=rid,completed_at=iso(now),result='platform_readback_verified')
+                    costs=energy_config.get('action_costs') or {}
+                    cost=float(costs.get('long_reply' if len(str(item.get('text') or ''))>180 else 'short_reply',5 if len(str(item.get('text') or ''))>180 else 3))
+                    spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':False},temporal=temporal_config)
+                    print('mio_social_publish=PASS:'+item['reply_id']+':'+rid)
+                else:
+                    item['status']='verification_pending';item['result']='awaiting_platform_readback'
+                    print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':'+check)
         elif result!='acceptance_failed':
             item['status']='verification_pending';item['result']='write_result_ambiguous'
             print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':write_result_ambiguous')
@@ -797,73 +819,122 @@ def main():
     active_hour=datetime.now(LOCAL_TZ).hour
     proactive_cost=float((energy_config.get('action_costs') or {}).get('proactive_reply',6))
     if legacy_auto_reply_allowed and discovery_due and today_outbound < 3 and 8 <= active_hour < 24 and phase=='awake' and can_spend(LIFE_STATE,energy_config,proactive_cost,reserve=15,temporal=temporal_config):
-        # Discovery topics come from Mio's canonical current IR instead of a
-        # fixed growth-hacking keyword list. The search only supplies candidates;
-        # decide_outbound() still independently decides whether Mio actually
-        # cares enough to join a conversation.
-        context=persona_context()
-        interests=((context.get('current_ir') or {}).get('current_self') or {}).get('interests_with_evidence') or []
-        queries=[]
-        for row in interests:
-            topic=str((row or {}).get('topic') or '').strip()
-            if topic and len(topic)<=60 and topic not in queries:
-                queries.append(topic)
-        # Conservative fallback when the IR has not yet accumulated interests.
-        # These are ordinary everyday topics, not engagement-oriented prompts.
-        if not queries:
-            queries=['散步','日常觀察','貓與小動物']
-        query=queries[(datetime.now(LOCAL_TZ).timetuple().tm_yday + active_hour) % len(queries)]
-        spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_discovery_read',meta={'query':query},temporal=temporal_config)
-        status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
-        if status==200 and receipt.get('ok') is True:
+        # 1. Prefer candidates fed by the owner or gathered by the Intelligence Center
+        intel_data=load_json(INTEL_FILE,{'candidates':[]})
+        pending_intel=[
+            c for c in (intel_data.get('candidates') or [])
+            if c.get('status')=='pending_review'
+            and str(c.get('id') or '') not in seen_outbound
+            and str(c.get('username') or '').lstrip('@').lower() != account_username.lower()
+        ]
+        if pending_intel:
             last_discovery_at=iso(now)
-            # Operational evidence for external discovery; no private data or tokens.
-            print('mio_social_outbound=SEARCH_READ_PASS')
+            spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_intel_read',meta={'count':len(pending_intel[:8])},temporal=temporal_config)
+            print('mio_social_outbound=INTEL_FEED_READ_PASS:candidates='+str(len(pending_intel[:8])))
             candidates=[]
-            for row in (receipt.get('result') or {}).get('items') or []:
+            for row in pending_intel[:8]:
                 cid=str(row.get('id') or '')
-                username=str(row.get('username') or '').lstrip('@')
-                if not cid or cid in seen_outbound or username.lower()==account_username.lower():
-                    continue
-                text=str(row.get('text') or '').strip()
-                if not text:
-                    continue
-                candidates.append({'id':cid,'username':username,'text':text[:1200],'timestamp':row.get('timestamp'),'permalink':row.get('permalink')})
-                if len(candidates)>=8: break
-            for row in candidates:
-                seen_outbound.add(row['id'])
-            if candidates:
-                try:
-                    d=decide_outbound(candidates,account_username)
-                    cid=str(d.get('candidate_id') or '')
-                    chosen=next((x for x in candidates if x['id']==cid),None)
-                    if chosen and d.get('should_reply') and str(d.get('text') or '').strip():
-                        delay=max(8,min(720,int(d.get('delay_minutes') or 30)))
-                        action={
-                          'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,
-                          'decided_at':iso(now),'reply_id':cid,'root_post_id':cid,
-                          'author_handle':chosen.get('username'),'should_reply':True,
-                          'reason_category':str(d.get('reason_category') or 'other'),
-                          'text':str(d['text']).strip(),'scheduled_at':iso(now+timedelta(minutes=delay)),
-                          'status':'scheduled','attempts':0,'outbound_discovery':True,
-                          'source_permalink':chosen.get('permalink'),'estimated_energy_cost':proactive_cost
-                        }
-                        items.append(action)
-                        outbound_history.append({'candidate_id':cid,'local_date':today_local,'status':'scheduled','scheduled_at':action['scheduled_at']})
-                        print('mio_social_outbound=SCHEDULED:'+cid+':'+str(delay)+'m')
-                    else:
-                        print('mio_social_outbound=NO_REPLY')
-                except Exception as exc:
-                    print('mio_social_outbound=DEFERRED:'+type(exc).__name__)
-            else:
-                print('mio_social_outbound=NO_CANDIDATES')
+                username=str(row.get('username') or row.get('author') or '').lstrip('@')
+                text=str(row.get('text') or row.get('user_note') or '').strip()
+                candidates.append({'id':cid,'username':username,'text':text[:1200],'timestamp':row.get('created_at'),'permalink':row.get('url')})
+                seen_outbound.add(cid)
+            try:
+                d=decide_outbound(candidates,account_username)
+                cid=str(d.get('candidate_id') or '')
+                chosen=next((x for x in candidates if x['id']==cid),None)
+                if chosen and d.get('should_reply') and str(d.get('text') or '').strip():
+                    delay=max(8,min(720,int(d.get('delay_minutes') or 30)))
+                    action={
+                      'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,
+                      'decided_at':iso(now),'reply_id':cid,'root_post_id':cid,
+                      'author_handle':chosen.get('username'),'should_reply':True,
+                      'reason_category':str(d.get('reason_category') or 'other'),
+                      'text':str(d['text']).strip(),'scheduled_at':iso(now+timedelta(minutes=delay)),
+                      'status':'scheduled','attempts':0,'outbound_discovery':True,
+                      'source_permalink':chosen.get('permalink'),'estimated_energy_cost':proactive_cost
+                    }
+                    items.append(action)
+                    outbound_history.append({'candidate_id':cid,'local_date':today_local,'status':'scheduled','scheduled_at':action['scheduled_at']})
+                    for row in (intel_data.get('candidates') or []):
+                        if str(row.get('id'))==cid:
+                            row.update(status='scheduled',reviewed_at=iso(now),decision={'should_reply':True,'reason_category':str(d.get('reason_category') or 'other'),'reply_text':str(d['text']).strip(),'scheduled_at':action['scheduled_at']})
+                        elif str(row.get('id')) in {x['id'] for x in candidates}:
+                            row.update(status='passed_silence',reviewed_at=iso(now),decision={'should_reply':False,'reason_category':'unselected'})
+                    save_json(INTEL_FILE,intel_data)
+                    print('mio_social_outbound=SCHEDULED:'+cid+':'+str(delay)+'m')
+                else:
+                    for row in (intel_data.get('candidates') or []):
+                        if str(row.get('id')) in {x['id'] for x in candidates}:
+                            row.update(status='passed_silence',reviewed_at=iso(now),decision={'should_reply':False,'reason_category':str(d.get('reason_category') or 'silence')})
+                    save_json(INTEL_FILE,intel_data)
+                    print('mio_social_outbound=NO_REPLY')
+            except Exception as exc:
+                print('mio_social_outbound=DEFERRED:'+type(exc).__name__)
         else:
-            err=str(receipt.get('error_code') or receipt.get('error') or status)
-            # Do not hammer Meta every ten minutes while the current token
-            # lacks the keyword-search OAuth grant. Retry at the next bounded
-            # discovery window; a fresh authorized token can recover then.
-            last_discovery_at=iso(now)
-            print('mio_social_outbound=DISCOVERY_UNAVAILABLE:'+err)
+            # 2. Fallback to keyword search query when no feed items are pending
+            context=persona_context()
+            interests=((context.get('current_ir') or {}).get('current_self') or {}).get('interests_with_evidence') or []
+            queries=[]
+            for row in interests:
+                topic=str((row or {}).get('topic') or '').strip()
+                if topic and len(topic)<=60 and topic not in queries:
+                    queries.append(topic)
+            # Conservative fallback when the IR has not yet accumulated interests.
+            # These are ordinary everyday topics, not engagement-oriented prompts.
+            if not queries:
+                queries=['散步','日常觀察','貓與小動物']
+            query=queries[(datetime.now(LOCAL_TZ).timetuple().tm_yday + active_hour) % len(queries)]
+            spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_discovery_read',meta={'query':query},temporal=temporal_config)
+            status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
+            if status==200 and receipt.get('ok') is True:
+                last_discovery_at=iso(now)
+                # Operational evidence for external discovery; no private data or tokens.
+                print('mio_social_outbound=SEARCH_READ_PASS')
+                candidates=[]
+                for row in (receipt.get('result') or {}).get('items') or []:
+                    cid=str(row.get('id') or '')
+                    username=str(row.get('username') or '').lstrip('@')
+                    if not cid or cid in seen_outbound or username.lower()==account_username.lower():
+                        continue
+                    text=str(row.get('text') or '').strip()
+                    if not text:
+                        continue
+                    candidates.append({'id':cid,'username':username,'text':text[:1200],'timestamp':row.get('timestamp'),'permalink':row.get('permalink')})
+                    if len(candidates)>=8: break
+                for row in candidates:
+                    seen_outbound.add(row['id'])
+                if candidates:
+                    try:
+                        d=decide_outbound(candidates,account_username)
+                        cid=str(d.get('candidate_id') or '')
+                        chosen=next((x for x in candidates if x['id']==cid),None)
+                        if chosen and d.get('should_reply') and str(d.get('text') or '').strip():
+                            delay=max(8,min(720,int(d.get('delay_minutes') or 30)))
+                            action={
+                              'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,
+                              'decided_at':iso(now),'reply_id':cid,'root_post_id':cid,
+                              'author_handle':chosen.get('username'),'should_reply':True,
+                              'reason_category':str(d.get('reason_category') or 'other'),
+                              'text':str(d['text']).strip(),'scheduled_at':iso(now+timedelta(minutes=delay)),
+                              'status':'scheduled','attempts':0,'outbound_discovery':True,
+                              'source_permalink':chosen.get('permalink'),'estimated_energy_cost':proactive_cost
+                            }
+                            items.append(action)
+                            outbound_history.append({'candidate_id':cid,'local_date':today_local,'status':'scheduled','scheduled_at':action['scheduled_at']})
+                            print('mio_social_outbound=SCHEDULED:'+cid+':'+str(delay)+'m')
+                        else:
+                            print('mio_social_outbound=NO_REPLY')
+                    except Exception as exc:
+                        print('mio_social_outbound=DEFERRED:'+type(exc).__name__)
+                else:
+                    print('mio_social_outbound=NO_CANDIDATES')
+            else:
+                err=str(receipt.get('error_code') or receipt.get('error') or status)
+                # Do not hammer Meta every ten minutes while the current token
+                # lacks the keyword-search OAuth grant. Retry at the next bounded
+                # discovery window; a fresh authorized token can recover then.
+                last_discovery_at=iso(now)
+                print('mio_social_outbound=DISCOVERY_UNAVAILABLE:'+err)
 
     kept=[]
     for x in items:

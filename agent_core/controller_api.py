@@ -30,6 +30,15 @@ CONTROLLER_ACTION_CAPABILITY = {
     'node.ssh.recover': 'node.ssh.recover',
     'node.runner.inspect': 'node.runner.inspect',
     'node.runner.recover': 'node.runner.recover',
+    'shell.exec': 'shell.exec',
+    'process.exec': 'shell.exec',
+    'filesystem.read': 'filesystem.read',
+    'filesystem.write': 'filesystem.write',
+    'filesystem.patch': 'filesystem.write',
+    'filesystem.search': 'filesystem.read',
+    'git.status': 'shell.exec',
+    'git.diff': 'shell.exec',
+    'test.run': 'shell.exec',
 }
 
 
@@ -579,9 +588,10 @@ print('agentos_source_commit='+source_commit)
                 'action': action,
                 'cognition_ids_used': list(request.get('cognition_ids_used') or []),
             }
-            for key in ('provider', 'session_id', 'request_id', 'payload', 'url', 'quality', 'max_width', 'max_height'):
-                if key in request:
-                    task[key] = request[key]
+            reserved = {'schema', 'task_id', 'action', 'node_id', 'cognition_ids_used'}
+            for key, val in request.items():
+                if key not in reserved:
+                    task[key] = val
 
         queued = self.fabric.queue_task(node_id, task)
         return {

@@ -43,6 +43,29 @@ class TestThinClient(unittest.TestCase):
             self.assertTrue(read['ok'])
             self.assertEqual(read['content_utf8'], 'hello ONE')
 
+            patch = client.execute({
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': 't-patch',
+                'action': 'filesystem.patch',
+                'path': str(path),
+                'target': 'hello',
+                'replacement': 'greeting',
+            })
+            self.assertTrue(patch['ok'])
+            self.assertEqual(patch['replacements_made'], 1)
+            self.assertEqual(path.read_text(encoding='utf-8'), 'greeting ONE')
+
+            search = client.execute({
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': 't-search',
+                'action': 'filesystem.search',
+                'root': str(root),
+                'pattern': '*.txt',
+            })
+            self.assertTrue(search['ok'])
+            self.assertEqual(search['count'], 1)
+            self.assertEqual(search['matches'], [str(path)])
+
     def test_shell_requires_allowlist(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

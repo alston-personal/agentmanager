@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+unset HF_TOKEN HUGGINGFACE_TOKEN HUGGING_FACE_HUB_TOKEN
+
 ACTIVE_SLOT="$(cat /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-slot)"
 RELEASE="$(readlink -f "/home/ubuntu/agent-data/runtime/dashboard/$ACTIVE_SLOT")"
 test -f "$RELEASE/scripts/character_fusion_worker.py"

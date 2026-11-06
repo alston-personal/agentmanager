@@ -86,7 +86,27 @@ export default function Home() {
               Flight Deck - Mission Control Dashboard
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
+            <a 
+              href="https://studio.milkcat.org/" 
+              target="_top"
+              className="btn" 
+              style={{ 
+                padding: '0.75rem 1.5rem', 
+                borderRadius: '2rem', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 'var(--spacing-xs)', 
+                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(139, 0, 0, 0.45) 100%)', 
+                border: '1px solid rgba(239, 68, 68, 0.5)', 
+                color: '#fff',
+                textDecoration: 'none',
+                fontWeight: 700,
+                boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)' 
+              }}
+            >
+              ⬅️ 返回官網首頁
+            </a>
             <button 
               className="btn btn-primary" 
               onClick={() => router.push('/knowledge')}

@@ -43,6 +43,8 @@ class RoleSummary:
     memory_read: list[str]
     memory_write: list[str]
     path: str
+    runtime_status: str = "unknown"
+    adapter_id: str = "none"
 
 
 @dataclass
@@ -138,13 +140,111 @@ def parse_role(path: Path) -> RoleSummary:
 
 def collect_roles() -> list[RoleSummary]:
     roles: list[RoleSummary] = []
-    if not ROLES_DIR.exists():
-        return roles
-    for path in sorted(ROLES_DIR.rglob("*.md")):
+    seen_ids: set[str] = set()
+
+    # 1. Base Markdown roles
+    if ROLES_DIR.exists():
+        for path in sorted(ROLES_DIR.rglob("*.md")):
+            try:
+                summary = parse_role(path)
+                stem = path.stem
+                seen_ids.add(stem)
+                roles.append(summary)
+            except Exception:
+                continue
+
+    # 2. Canonical registry.yaml
+    registry_path = ROLES_DIR / "registry.yaml"
+    if registry_path.exists() and yaml is not None:
         try:
-            roles.append(parse_role(path))
+            with open(registry_path, "r", encoding="utf-8") as f:
+                reg_data = yaml.safe_load(f) or {}
+            for r in reg_data.get("roles", []):
+                r_id = r.get("id", "")
+                r_name = r.get("name", r_id)
+                r_kind = r.get("kind", "role")
+                r_source = str(PROJECT_ROOT / r.get("source")) if r.get("source") else ""
+                
+                # Check if already in roles (by matching source path or stem)
+                matched = None
+                for existing in roles:
+                    if (r_source and existing.path == r_source) or existing.name == r_name or existing.name.endswith(f"({r_name})"):
+                        matched = existing
+                        break
+                if matched:
+                    matched.kind = r_kind
+                else:
+                    roles.append(
+                        RoleSummary(
+                            name=r_name,
+                            kind=r_kind,
+                            skills=list(r.get("capabilities", [])),
+                            memory_read=[],
+                            memory_write=[],
+                            path=r_source or f"registry://{r_id}",
+                        )
+                    )
         except Exception:
-            continue
+            pass
+
+    # 3. Personas in personas/*/agent.yaml
+    personas_dir = PROJECT_ROOT / "personas"
+    if personas_dir.exists() and yaml is not None:
+        for p_yaml in sorted(personas_dir.rglob("agent.yaml")):
+            try:
+                with open(p_yaml, "r", encoding="utf-8") as f:
+                    p_data = yaml.safe_load(f) or {}
+                p_name = p_data.get("display_name", p_yaml.parent.name)
+                # Check if already present
+                if not any(r.name == p_name or p_name in r.name for r in roles):
+                    roles.append(
+                        RoleSummary(
+                            name=p_name,
+                            kind="persona_agent",
+                            skills=[c.get("id", "") for c in p_data.get("capability_attachments", []) if isinstance(c, dict)],
+                            memory_read=[],
+                            memory_write=[],
+                            path=str(p_yaml),
+                        )
+                    )
+            except Exception:
+                continue
+
+    # 4. Bind Adapters and Presence status
+    presences: set[str] = set()
+    presence_dir = AGENT_DATA_ROOT / "employee-runtime" / "realm" / "employee-presence"
+    if presence_dir.exists():
+        for p_file in presence_dir.glob("*.json"):
+            presences.add(p_file.stem)
+
+    adapter_map: dict[str, str] = {}
+    adapter_file = PROJECT_ROOT / "governance" / "employee-worker-adapters-v2.json"
+    if adapter_file.exists():
+        try:
+            with open(adapter_file, "r", encoding="utf-8") as f:
+                adapters = json.load(f).get("adapters", [])
+            for a in adapters:
+                emp_id = a.get("employee_id", "")
+                ad_id = a.get("adapter_id", "")
+                adapter_map[emp_id] = ad_id
+                for r_id in a.get("role_ids", []):
+                    adapter_map[r_id] = ad_id
+        except Exception:
+            pass
+
+    for r in roles:
+        # Check if matches any employee/adapter
+        for emp_id, ad_id in adapter_map.items():
+            if emp_id in r.path.lower() or emp_id in r.name.lower() or r.name.lower() in emp_id:
+                r.adapter_id = ad_id
+                r.runtime_status = "present_bound" if emp_id in presences else "registered"
+                break
+        if r.runtime_status == "unknown":
+            if r.kind == "persona_agent":
+                r.runtime_status = "persona_active"
+            else:
+                r.runtime_status = "declarative"
+
     return roles
 
 

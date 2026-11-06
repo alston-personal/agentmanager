@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import StudioNavbar from "@/components/StudioNavbar";
 
 export const metadata: Metadata = {
   title: "AI Command Center - Flight Deck",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <StudioNavbar />
+        {children}
+      </body>
     </html>
   );
 }

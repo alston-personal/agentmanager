@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getAllKnowledgeItems } from '@/lib/knowledge';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const items = getAllKnowledgeItems();
