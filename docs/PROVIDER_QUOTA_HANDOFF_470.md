@@ -35,3 +35,12 @@ The functions are model-free; they use local Python and durable storage only. Cl
 ## Safety
 
 Do not merge to protected `main` without explicit authorization. Do not claim this code is installed on Oracle or that fallback can already read Oracle Local. This is a focused #470 change and should be reconciled against existing `core/integration` before deployment.
+
+
+## Mio-specific continuity: no quota outage may masquerade as persona choice
+
+The current Mio post and reply reasoners already share bounded Claude → Gemini → Codex fallback in `scripts/persona_post_intent_generator.py`; the reply generator imports the same function. Exhausted providers previously emitted `DEFER/persona_reasoning_exhausted` and preserved pending work rather than generating ungrounded fallback text. This change **retains that safety property** while writing `reasoning_availability.status` (`AVAILABLE`, `PROVIDER_CAPACITY`, `PROVIDER_AUTH`, `PROVIDER_TRANSPORT`, `PROVIDER_UNAVAILABLE`, or `NO_PROVIDER_AVAILABLE`) in both post/reply reasoning receipts. The classifications are derived only from sanitized provider attempt categories, never raw prompts, auth material or outputs.
+
+A real model-generated `NO_POST` / `NO_REPLY` remains a legitimate decision. Provider failures must not increment no-publish streak as a decision or record a terminal no-reply verdict. Tests cover simultaneous quota exhaustion on all three providers, pending consideration retention, reply eligibility retention and genuine model no-post.
+
+**Not yet implemented:** automatically dispatching to an external ChatGPT Web executor, a durable provider cooldown circuit breaker, or independent health checks that restart Mio's scheduling. The Runtime must separately monitor prolonged `PROVIDER_CAPACITY` receipts and continue non-model observation/checkpoint work; lack of Gemini credit does not authorize publication from templates. Real Oracle PDCA, Threads login/read/write and image-generation provider health remain separate live acceptance gates.
