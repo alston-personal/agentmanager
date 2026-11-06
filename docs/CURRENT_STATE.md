@@ -1029,3 +1029,7 @@ prove live deployment or mainline merge.
 The branch-convergence path gate classifies `runtime_core/` as RED (governed
 review required), matching `agent_core/`; portable IR/runtime modules are not
 unknown or exempt paths.
+
+### Provider-capacity failure continuity (#470 source candidate, 2026-11-06)
+
+The existing `scripts/work_completion.py` has a candidate generation-fenced recovery call for abrupt executor capacity failure, preserving work in a blocked reconciliation state rather than replaying uncertain operations. `scripts/persona_post_intent_generator.py` and `scripts/persona_reply_intent_generator.py` now classify sanitized reasoning availability on posts and replies. The existing Claude/Gemini/Codex fallback and `DEFER` behavior remain: no provider quota failure becomes an invented `NO_POST`, `NO_REPLY`, or public post. Tests cover the outage case, but this is **not** a live Oracle acceptance or write-path enforcement proof. Runtime failure receipt verification, GitHub/Oracle authoritative fencing, Orion local state reconciliation, and Mio real Threads/media liveness are pending. See `docs/PROVIDER_QUOTA_HANDOFF_470.md`.
