@@ -1025,3 +1025,7 @@ The former copy-based workaround is not synchronization. Remove its copied
 modules only after live release acceptance, retaining a data-layer rollback
 archive and checking other legacy consumers. Source tests and a PR alone do not
 prove live deployment or mainline merge.
+
+The branch-convergence path gate classifies `runtime_core/` as RED (governed
+review required), matching `agent_core/`; portable IR/runtime modules are not
+unknown or exempt paths.
