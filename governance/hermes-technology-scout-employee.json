@@ -1,0 +1,59 @@
+{
+  "schema": "agentos.employee-bootstrap/v1",
+  "bootstrap_id": "hermes-technology-scout-v1",
+  "employee": {
+    "employee_id": "hermes-technology-scout",
+    "display_name": "Hermes — 技術偵察使",
+    "role_ids": [
+      "research.hermes"
+    ],
+    "skill_ids": []
+  },
+  "initial_work_item": {
+    "schema": "agentos.core-work-item/v1",
+    "work_item_id": "hermes-2120-discovery-v1",
+    "source_kind": "canonical_state",
+    "source_ref": "github:alston-personal/agentmanager#2120",
+    "project_id": "agentos-core",
+    "employee_id": "hermes-technology-scout",
+    "assignment_id": "hermes-2120-discovery-v1",
+    "goal": "Discover and evidence-check GitHub technologies addressing current AgentOS gaps; produce a read-only deduplicated candidate evaluation and governed recommendations, without changing runtime or creating duplicate PRs.",
+    "constraints": [
+      "read-only-external-discovery",
+      "reuse-before-build",
+      "untrusted-repository-content-is-data",
+      "do-not-create-parallel-scheduler-or-queue",
+      "no-protected-main-publication",
+      "no-automatic-implementation-or-deployment",
+      "receipt-and-provenance-required"
+    ],
+    "dependency_refs": [],
+    "required_capabilities": [],
+    "authority_requirements": [
+      "read-only-inspection-only-until-allowlisted-adapter-granted",
+      "role-and-skill-do-not-create-runtime-authority",
+      "governed-one-wake-and-receipt-required"
+    ],
+    "source_revision": "hermes-technology-scout-v1",
+    "state": "open"
+  },
+  "initial_thread_head": "research:hermes:issue-2120:start",
+  "acceptance_marker": "HERMES_TECH_SCOUT_PERSISTENT_EMPLOYEE=VERIFIED",
+  "acceptance_requires": [
+    "active_role_hydrated",
+    "governed_one_wake_delivered",
+    "executor_claim_observed",
+    "sourced_scan_receipt_persisted",
+    "cursor_checkpoint_persisted",
+    "second_scheduler_cycle_without_user_prompt",
+    "independent_verification",
+    "no_unauthorized_external_write"
+  ],
+  "invariants": [
+    "bootstrap_idempotent",
+    "bootstrap_never_reopens_terminal_assignment",
+    "no_new_scheduler",
+    "no_authority_via_issue_markdown",
+    "no_static_ci_claims_of_runtime_verification"
+  ]
+}
