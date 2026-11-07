@@ -296,6 +296,12 @@ legacy_instances:
       - receipts_over_claims
       - executor_independence
       - capability_boundary
+    capabilities:
+      - github.technology.scan
+    handoff_to:
+      - sector.weaver
+      - sector.paw
+      - sector.claw
     outputs:
       - technology_candidate_evaluation
       - existing_capability_dedup
