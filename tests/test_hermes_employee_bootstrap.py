@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.employee_skills import EmployeeSkillRegistry, EmployeeSkillService
 from agent_core.hermes_employee_bootstrap import ensure_hermes_employee
 from agent_core.role_runtime import RoleRegistry
 
@@ -17,6 +18,9 @@ class HermesBootstrapTests(unittest.TestCase):
             first = ensure_hermes_employee(runtime, registry, BOOTSTRAP)
             self.assertEqual(first["employee_state"],"created")
             self.assertFalse(first["continuous_operation_verified"])
+            skills = EmployeeSkillService(runtime, registry, EmployeeSkillRegistry(ROOT/"governance/employee-skills.json")).hydrate_employee_skills("hermes-technology-scout")
+            self.assertEqual([s.skill_id for s in skills], ["github.technology.scan"])
+            self.assertFalse(skills[0].mutation_authority)
             a_id = first["assignment_id"]
             runtime.update_assignment(a_id, state="active",thread_head="checkpoint:one")
             second = ensure_hermes_employee(runtime, registry, BOOTSTRAP)
