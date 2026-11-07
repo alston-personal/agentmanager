@@ -198,12 +198,15 @@ jobs:
           assert item, 'market master intake missing'
           status=str(item.get('status') or '')
           owner=str(item.get('owner') or '')
-          assert status in {'accepted','in_progress','blocked','verifying','done'}, item
+          assert status in {'accepted','in_progress','waiting_external','blocked','verifying','done'}, status
           assert item.get('project_id') == 'market-master-evolution', item
-          if status == 'accepted':
-              assert owner == 'role://completion.controller', item
+          if status in {'accepted','waiting_external'}:
+              assert owner == 'role://completion.controller', (status,owner)
           else:
-              assert owner in {'role://completion.controller','role://lobster'}, item
+              assert owner in {'role://completion.controller','role://lobster'}, (status,owner)
+          if status == 'waiting_external':
+              wake=item.get('wake_condition') or {}
+              assert wake.get('kind') == 'time' and str(wake.get('not_before') or '').strip(), wake
           print('market_master_completion_intake=PASS status='+status+' owner='+owner)
           PY
 

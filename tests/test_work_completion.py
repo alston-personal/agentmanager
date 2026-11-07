@@ -444,5 +444,53 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertEqual(mod.load(path)["items"]["quota-2"]["owner_generation"], 1)
 
 
+    def test_oracle_install_preflight_recognizes_durable_waiting_external(self):
+        """Regression for Oracle installer failure on a valid timed wait.
+
+        Execute the workflow's exact inline assertion against minimal state
+        fixtures. This must reject malformed/unowned waits, not just allow all
+        waiting_external records unconditionally.
+        """
+        import contextlib
+        import io
+        import json
+        import re
+        import sys
+        import textwrap
+        from unittest.mock import patch
+
+        workflow = (ROOT / ".github/workflows/oracle-install-completion-controller.yml").read_text()
+        marker = 'register-intake --input "$INTAKE"'
+        start = workflow.index(marker) + len(marker)
+        block = re.search(
+            r'          python3 - "\$STATE" <<\'PY\'\n(.*?)\n          PY',
+            workflow[start:], re.S,
+        )
+        self.assertIsNotNone(block)
+        script = textwrap.dedent(block.group(1))
+        work_id = "market-master-1200-mvp"
+
+        def evaluate(status, owner, wake=None):
+            with tempfile.TemporaryDirectory() as temp:
+                state = Path(temp) / "state.json"
+                state.write_text(json.dumps({"items": {work_id: {
+                    "project_id": "market-master-evolution",
+                    "status": status, "owner": owner,
+                    "wake_condition": wake,
+                }}}))
+                with patch.object(sys, "argv", ["preflight", str(state)]), contextlib.redirect_stdout(io.StringIO()):
+                    exec(compile(script, "<oracle-completion-preflight>", "exec"), {"__name__": "__main__"})
+
+        valid_wake = {"kind": "time", "not_before": "2099-01-01T00:00:00Z"}
+        evaluate("waiting_external", "role://completion.controller", valid_wake)
+        evaluate("accepted", "role://completion.controller")
+        evaluate("in_progress", "role://lobster")
+        with self.assertRaises(AssertionError):
+            evaluate("waiting_external", "role://lobster", valid_wake)
+        with self.assertRaises(AssertionError):
+            evaluate("waiting_external", "role://completion.controller", None)
+        with self.assertRaises(AssertionError):
+            evaluate("unknown_state", "role://completion.controller")
+
 if __name__ == "__main__":
     unittest.main()
