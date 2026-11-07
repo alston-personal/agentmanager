@@ -7,7 +7,9 @@
     "role_ids": [
       "research.hermes"
     ],
-    "skill_ids": []
+    "skill_ids": [
+      "github.technology.scan"
+    ]
   },
   "initial_work_item": {
     "schema": "agentos.core-work-item/v1",
@@ -28,10 +30,13 @@
       "receipt-and-provenance-required"
     ],
     "dependency_refs": [],
-    "required_capabilities": [],
+    "required_capabilities": [
+      "github.technology.scan"
+    ],
     "authority_requirements": [
-      "read-only-inspection-only-until-allowlisted-adapter-granted",
-      "role-and-skill-do-not-create-runtime-authority",
+      "role-contract-must-cover-required-capability",
+      "skill-does-not-grant-network-or-execution-authority",
+      "public-github-read-adapter-must-be-explicitly-allowlisted",
       "governed-one-wake-and-receipt-required"
     ],
     "source_revision": "hermes-technology-scout-v1",
