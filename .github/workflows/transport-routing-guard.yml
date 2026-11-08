@@ -13,6 +13,9 @@ on:
       - tests/test_wow_addon_shell.py
       - tests/test_wow_bridge_protocol.py
       - tests/test_wow_pixel_probe.py
+      - tests/test_wow_capture_probe.py
+      - agentos_node/wow_capture_probe.py
+      - scripts/capture_wow_status_probe.ps1
       - agentos_node/wow_bridge_protocol.py
       - governance/transport-routing.json
       - tests/test_transport_routing.py
@@ -33,6 +36,9 @@ on:
       - tests/test_wow_addon_shell.py
       - tests/test_wow_bridge_protocol.py
       - tests/test_wow_pixel_probe.py
+      - tests/test_wow_capture_probe.py
+      - agentos_node/wow_capture_probe.py
+      - scripts/capture_wow_status_probe.ps1
       - agentos_node/wow_bridge_protocol.py
       - governance/transport-routing.json
       - tests/test_transport_routing.py
@@ -60,7 +66,7 @@ jobs:
         run: python3 -m unittest tests.test_transport_routing -v
 
       - name: Validate WoW bounded adapter and offline game UI
-        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell tests.test_wow_bridge_protocol tests.test_wow_pixel_probe -v
+        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell tests.test_wow_bridge_protocol tests.test_wow_pixel_probe tests.test_wow_capture_probe -v
 
       - name: Validate documentation coupling
         shell: bash
