@@ -314,6 +314,33 @@ jobs:
             if ! systemctl --user is-active --quiet "$unit"; then
               if grep -Fxq "$unit" "$BACKUP/active-services"; then
                 echo "ERROR: previously active $unit is now unavailable" >&2
+                # The deployment must fail and roll back; emit only bounded
+                # unit enums and exception CLASS (never raw log or journal text).
+                if [ "$unit" = "tg-commander.service" ]; then
+                  tg_active="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+                  tg_sub="$(systemctl --user show "$unit" -p SubState --value 2>/dev/null || true)"
+                  tg_result="$(systemctl --user show "$unit" -p Result --value 2>/dev/null || true)"
+                  tg_status="$(systemctl --user show "$unit" -p ExecMainStatus --value 2>/dev/null || true)"
+                  tg_restarts="$(systemctl --user show "$unit" -p NRestarts --value 2>/dev/null || true)"
+                  case "$tg_active" in active|inactive|failed|activating|deactivating) ;; *) tg_active=unknown;; esac
+                  case "$tg_sub" in running|dead|failed|auto-restart|start|stop) ;; *) tg_sub=unknown;; esac
+                  case "$tg_result" in success|exit-code|signal|core-dump|timeout|start-limit-hit|watchdog) ;; *) tg_result=unknown;; esac
+                  case "$tg_status" in ''|*[!0-9]*) tg_status=unknown;; esac
+                  case "$tg_restarts" in ''|*[!0-9]*) tg_restarts=unknown;; esac
+                  printf 'tg_commander_liveness=active:%s,sub:%s,result:%s,exit:%s,restarts:%s\n' "$tg_active" "$tg_sub" "$tg_result" "$tg_status" "$tg_restarts"
+                  tg_log="$DATA_ROOT/logs/tg_bridge.log"
+                  if [ -f "$tg_log" ]; then
+                    /usr/bin/python3 - "$tg_log" <<'TG_DIAG'
+          import pathlib, re, sys
+          path=pathlib.Path(sys.argv[1])
+          # Extract ONLY exception type names; never echo raw logs or credentials.
+          tail=path.read_bytes()[-65536:].decode('utf-8','replace')
+          classes=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
+          allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
+          print('tg_commander_recent_exception_class='+next((c for c in reversed(classes) if c in allowed),'unclassified'))
+          TG_DIAG
+                  fi
+                fi
                 exit 20
               fi
               echo "core_bundle_runtime=$unit:preexisting_inactive"
