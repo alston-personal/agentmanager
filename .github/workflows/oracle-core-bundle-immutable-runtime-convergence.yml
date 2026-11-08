@@ -16,6 +16,8 @@ on:
       - 'scripts/install_systemd_user.sh'
       - 'scripts/install_services.py'
       - 'scripts/work_completion.py'
+      - 'scripts/issue_work_intake.py'
+      - 'tests/test_issue_work_intake.py'
       - '.agent/roles/**'
       - 'agent_core/role_runtime.py'
       - 'agent_core/employee_skills.py'
