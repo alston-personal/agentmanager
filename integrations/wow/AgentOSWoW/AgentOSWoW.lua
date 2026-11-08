@@ -10,6 +10,86 @@ local askButton
 local function setState(message)
     if statusLine then statusLine:SetText(message) end
 end
+
+-- v0.1 outbound read-only status probe. Pixel capture is passive; NEVER
+-- interpret a rendered pixel packet as authentication or command authority.
+local probeStrip
+local probeId = 0
+local probeToken = tostring(time()) .. tostring(math.random(100000, 999999))
+local PROBE_CELL_SIZE = 4
+local PROBE_MAX_CELLS = 200
+local function encodeProbe(id)
+    local payload = '{"action":"wow.control.status","session":"' .. probeToken .. '"}'
+    local length = #payload
+    local bytes = {
+        0xC7, 0x1A, math.floor(id / 256) % 256, id % 256,
+        math.floor(length / 256) % 256, length % 256
+    }
+    for index = 1, length do bytes[#bytes + 1] = string.byte(payload, index) end
+    local s1, s2 = 0, 0
+    for index = 3, #bytes do
+        s1 = (s1 + bytes[index]) % 255
+        s2 = (s2 + s1) % 255
+    end
+    bytes[#bytes + 1], bytes[#bytes + 2] = s1, s2
+    local accumulator, bits, cells = 0, 0, {}
+    for _, byte in ipairs(bytes) do
+        accumulator = accumulator * 256 + byte
+        bits = bits + 8
+        while bits >= 3 do
+            bits = bits - 3
+            cells[#cells + 1] = math.floor(accumulator / (2 ^ bits)) % 8
+            accumulator = accumulator % (2 ^ bits)
+        end
+    end
+    if bits > 0 then cells[#cells + 1] = (accumulator * (2 ^ (3 - bits))) % 8 end
+    return cells
+end
+
+local function ensureProbeStrip()
+    if probeStrip then return probeStrip end
+    probeStrip = CreateFrame("Frame", nil, UIParent)
+    probeStrip:SetFrameStrata("TOOLTIP")
+    probeStrip:SetSize(PROBE_CELL_SIZE * PROBE_MAX_CELLS, PROBE_CELL_SIZE)
+    probeStrip:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    probeStrip.cells = {}
+    for i = 1, PROBE_MAX_CELLS do
+        local pixel = probeStrip:CreateTexture(nil, "ARTWORK")
+        pixel:SetSize(PROBE_CELL_SIZE, PROBE_CELL_SIZE)
+        pixel:SetPoint("TOPLEFT", probeStrip, "TOPLEFT", (i - 1) * PROBE_CELL_SIZE, 0)
+        pixel:SetColorTexture(0, 0, 0, 1)
+        probeStrip.cells[i] = pixel
+    end
+    probeStrip:Hide()
+    return probeStrip
+end
+
+local function sendStatusProbe()
+    probeId = (probeId % 65535) + 1
+    local cells = encodeProbe(probeId)
+    if #cells > PROBE_MAX_CELLS then
+        setState("Status probe too large; no packet sent")
+        return
+    end
+    local strip = ensureProbeStrip()
+    for i, texture in ipairs(strip.cells) do
+        local cell = cells[i] or 0
+        texture:SetColorTexture(
+            math.floor(cell / 4) % 2,
+            math.floor(cell / 2) % 2,
+            cell % 2, 1
+        )
+    end
+    strip:Show()
+    setState("Probe emitted (ID " .. probeId .. "); awaiting verified Bridge")
+    if C_Timer and C_Timer.After then
+        local sentId = probeId
+        C_Timer.After(20, function()
+            if probeId == sentId and probeStrip then probeStrip:Hide() end
+        end)
+    end
+end
+
 local function createPanel()
     if panel then return panel end
     panel = CreateFrame("Frame", "AgentOSWoWPanel", UIParent, "BackdropTemplate")
@@ -57,6 +137,11 @@ local function createPanel()
     answerLine:SetJustifyH("LEFT")
     answerLine:SetPoint("TOPLEFT", askButton, "BOTTOMLEFT", 0, -17)
     answerLine:SetText("No live data. The AgentOS local Bridge is not installed or verified.")
+    local probe = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    probe:SetSize(128, 28)
+    probe:SetPoint("LEFT", askButton, "RIGHT", 14, 0)
+    probe:SetText("Status probe")
+    probe:SetScript("OnClick", sendStatusProbe)
     panel:Hide()
     return panel
 end
