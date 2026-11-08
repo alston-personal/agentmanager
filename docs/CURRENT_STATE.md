@@ -990,3 +990,7 @@ with CAS parent checks and atomic `active-continuation.json` activation.
 ## WoW control surface candidate (#2134, 2026-11-08)
 
 A fail-closed, opt-in read-only NodeAdapter contract is implemented in `agentos_node/wow_control_adapter.py`, with offline tests `tests/test_wow_control_adapter.py`. It is **not** deployed or connected to any WoW client or Runtime reader; it cannot report live AgentOS state. See `docs/WOW_CONTROL_SURFACE.md`. No live Node attestation, client compatibility, or canonical Receipt exists yet.
+
+## WoW Windows preflight (#2134)
+
+`scripts/wow_agentos_installer_preflight.ps1` and `scripts/WoW-AgentOS-Setup.cmd` are a read-only Windows installer preflight candidate with static invariants in `tests/test_wow_installer_preflight_contract.py`. No finished installer, website release, game integration, or production acceptance is claimed; see `docs/WOW_INSTALLER_V1.md`.
