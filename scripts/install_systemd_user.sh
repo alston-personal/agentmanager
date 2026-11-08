@@ -52,8 +52,14 @@ for candidate in "${PYTHON_CANDIDATES[@]}"; do
   break
 done
 if [ -z "$PYTHON_BIN" ]; then
-  echo "agentos_service_python=DEPENDENCIES_UNAVAILABLE; refusing to replace active service units" >&2
-  exit 32
+  if [ "${AGENTOS_SERVICE_DEPENDENCY_GUARD:-0}" = "1" ]; then
+    echo "agentos_service_python=DEPENDENCIES_UNAVAILABLE; refusing to replace active service units" >&2
+    exit 32
+  fi
+  # Local/test installation retains historical portability; never mistake
+  # this profile for a verified Core runtime production deployment.
+  PYTHON_BIN="$(command -v python3)"
+  PYTHON_PROFILE=system_python_unverified
 fi
 echo "agentos_service_python=$PYTHON_PROFILE"
 
