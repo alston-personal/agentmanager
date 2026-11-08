@@ -7,6 +7,7 @@ on:
       - 'scripts/work_completion.py'
       - 'tests/test_issue_work_intake.py'
       - 'tests/test_runtime_intake_rollout.py'
+      - 'tests/test_core_bundle_active_recovery.py'
       - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
       - '.github/workflows/approved-issue-intake-tests.yml'
   push:
@@ -16,6 +17,7 @@ on:
       - 'scripts/work_completion.py'
       - 'tests/test_issue_work_intake.py'
       - 'tests/test_runtime_intake_rollout.py'
+      - 'tests/test_core_bundle_active_recovery.py'
       - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
       - '.github/workflows/approved-issue-intake-tests.yml'
 
@@ -32,4 +34,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test approved-only Issue Intake and durable Ledger
-        run: python3 -m unittest -v tests.test_issue_work_intake tests.test_work_completion tests.test_runtime_intake_rollout
+        run: python3 -m unittest -v tests.test_issue_work_intake tests.test_work_completion tests.test_runtime_intake_rollout tests.test_core_bundle_active_recovery
