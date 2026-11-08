@@ -11,6 +11,8 @@ on:
       - integrations/wow/**
       - tests/test_wow_control_adapter.py
       - tests/test_wow_addon_shell.py
+      - tests/test_wow_bridge_protocol.py
+      - agentos_node/wow_bridge_protocol.py
       - governance/transport-routing.json
       - tests/test_transport_routing.py
       - governance/product-deployment-carriers.json
@@ -28,6 +30,8 @@ on:
       - integrations/wow/**
       - tests/test_wow_control_adapter.py
       - tests/test_wow_addon_shell.py
+      - tests/test_wow_bridge_protocol.py
+      - agentos_node/wow_bridge_protocol.py
       - governance/transport-routing.json
       - tests/test_transport_routing.py
       - governance/product-deployment-carriers.json
@@ -54,7 +58,7 @@ jobs:
         run: python3 -m unittest tests.test_transport_routing -v
 
       - name: Validate WoW bounded adapter and offline game UI
-        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell -v
+        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell tests.test_wow_bridge_protocol -v
 
       - name: Validate documentation coupling
         shell: bash
