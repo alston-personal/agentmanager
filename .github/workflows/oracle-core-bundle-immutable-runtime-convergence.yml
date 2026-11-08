@@ -236,7 +236,21 @@ jobs:
           # Preserve availability: everything that was active before must be active after.
           while read -r unit; do
             [ -n "$unit" ] || continue
-            systemctl --user is-active --quiet "$unit"
+            if ! systemctl --user is-active --quiet "$unit"; then
+              # Recover only units recorded as active BEFORE this deployment.
+              # At most one restart; if still down, fail and roll back.
+              echo "core_bundle_preserved_service_recover=$unit:START"
+              if ! systemctl --user restart "$unit"; then
+                echo "core_bundle_preserved_service_recover=$unit:RESTART_FAILED" >&2
+                exit 28
+              fi
+              sleep 2
+              if ! systemctl --user is-active --quiet "$unit"; then
+                echo "core_bundle_preserved_service_recover=$unit:NOT_ACTIVE" >&2
+                exit 29
+              fi
+              echo "core_bundle_preserved_service_recover=$unit:PASS"
+            fi
             echo "core_bundle_preserved_active=$unit"
           done < "$BACKUP/active-services"
 
