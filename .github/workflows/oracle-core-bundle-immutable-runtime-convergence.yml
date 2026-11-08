@@ -331,14 +331,14 @@ jobs:
                   tg_log="$DATA_ROOT/logs/tg_bridge.log"
                   if [ -f "$tg_log" ]; then
                     /usr/bin/python3 - "$tg_log" <<'TG_DIAG'
-import pathlib, re, sys
-path=pathlib.Path(sys.argv[1])
-# Extract ONLY exception type names; never echo raw logs or credentials.
-tail=path.read_bytes()[-65536:].decode('utf-8','replace')
-classes=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
-allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
-print('tg_commander_recent_exception_class='+next((c for c in reversed(classes) if c in allowed),'unclassified'))
-TG_DIAG
+          import pathlib, re, sys
+          path=pathlib.Path(sys.argv[1])
+          # Extract ONLY exception type names; never echo raw logs or credentials.
+          tail=path.read_bytes()[-65536:].decode('utf-8','replace')
+          classes=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
+          allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
+          print('tg_commander_recent_exception_class='+next((c for c in reversed(classes) if c in allowed),'unclassified'))
+          TG_DIAG
                   fi
                 fi
                 exit 20
