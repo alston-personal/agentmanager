@@ -60,7 +60,8 @@ jobs:
           release="$(readlink -f "$data/runtime/core/current")"
           test -f "$release/scripts/issue_work_intake.py"
           test -f "$release/scripts/work_completion.py"
-          systemctl --user is-active --quiet os-lobster.service
+          # Intake is data-only; do not require a particular executor service
+          # for receiving an approved engineering task.
           /usr/bin/python3 "$release/scripts/issue_work_intake.py" \
             --issues-json "$data/governance/issue-intake/latest-approved-issues.json" \
             --state "$data/governance/work-items.json" \
@@ -88,6 +89,7 @@ jobs:
               print(f"lobster_issue_{number}_verified_done={'true' if verified else 'false'}")
           PY
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
+          echo "engineering_registration_is_not_execution_authorization=true"
           echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
 
