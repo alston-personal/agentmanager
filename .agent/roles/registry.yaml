@@ -6,6 +6,7 @@ roles:
     name: LeopardCat Root
     protocols:
       pdca: root.pdca.v1
+      employee_fork: root.employee-fork.v1
     inheritance_policy:
       parent_first: true
       memory: scoped_no_implicit_parent_write

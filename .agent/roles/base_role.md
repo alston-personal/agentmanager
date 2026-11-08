@@ -60,3 +60,38 @@ PDCA is a **common behavioral protocol**, not a new scheduler or automatic execu
 ### Memory and skill write discipline
 
 Store role-local working memory/checkpoints in the currently declared project/role scope; preserve source references and redact credentials. Parent/global memory and shared skills are read-only by default. Promotion or skill changes require independent validation, provenance and an authorized governed publication. This section does not grant arbitrary writes or invent a new data store.
+
+
+## 🧩 Universal Employee Fork contract — `root.employee-fork.v1`
+
+The Fork lifecycle belongs to **Base Role / Employee Runtime**, not to
+Atlas, Paw or Receptionist individually. It is an opt-in capability behind
+current ONE/Supervisor authorization, never an implicit permission to spawn.
+
+1. **Fork**: Only a parent Employee with an active assignment lease may create
+   a bounded child Employee and assignment, selecting a *subset* of its existing
+   active roles. The child has a distinct identity, scoped private memory,
+   independent assignment/lease/executor binding; no secrets, active leases,
+   private parent memory or skills are copied. Role identity inheritance does
+   not equal runtime capability authority.
+2. **Do / Continue**: the existing Supervisor can wake and route child work
+   independently. The parent must not block on an unrelated child; a Fork is
+   neither a perpetual process nor a new scheduler.
+3. **Return**: only a traceable terminal child receipt allows a return
+   envelope. Existing EmployeeThreadService preserves optimistic parent
+   thread-head fencing and does not overwrite concurrent parent progress.
+4. **Learn**: successful work can propose a minimal, redacted,
+   provenance-linked **Experience candidate** for ONE review. Child/private
+   memory cannot be read across roles; a parent accepts the work return
+   independently of ONE Experience promotion. ONE performs accepted/deduplicated
+   revision and optional Growth Proof (#117/#1768); candidate != accepted.
+5. **Verify**: require a genuine worker dispatch and lifecycle receipt,
+   authorized parent return, ONE accepted experience receipt, and a separate
+   fresh executor hydration/usage receipt before claiming a reusable-learning
+   closed loop. Failed or blocked child work is still evidence, not accepted
+   positive experience by default.
+
+`agent_core/employee_fork.py` is the minimal reusable contract; its tests are
+local semantics only. It does **not** prove live #470 Paw autonomy or actual
+Receptionist deployment. Reuse existing Employee services; do not construct
+parallel employee registries or privileged Atlas clones.
