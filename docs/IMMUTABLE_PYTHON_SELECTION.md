@@ -1,0 +1,7 @@
+# Immutable Core Python interpreter selection — #470
+
+Oracle deployments #42535428598 and #42535689680 showed `tg-commander.service` exits with `ModuleNotFoundError` and exit code 1, and Core convergence correctly rolled back. The Core installer fell back to system `python3` when its immutable git worktree had no `venv`, even though Telegram needs extra packages listed in `requirements.txt`.
+
+The existing installer now prefers an executable Python environment in the release itself, the separately managed AgentOS runtime Python environment, or the previous host AgentOS virtualenv. It selects an environment for Core only if it can import `google.generativeai`, `telegram`, `dotenv`, `psutil`, and `yaml`; otherwise it **fails before replacing any unit**. This does not pip-install anything, does not invoke arbitrary code from GitHub issue content, and does not change the source release's WorkingDirectory. The selected profile category, not a host-private path, appears in the deployment receipt.
+
+The existing host virtualenv is an interim compatibility dependency. Long-term packaging should move its contents to a separately managed, versioned Python runtime artifact with repeatable dependency pinning; do not silently claim source SHA pins site-packages. Verify real immutable rollout and fresh Telegram service stability before accepting this as a deployed fix. This source alone does not prove #2134 WorkItem acceptance.

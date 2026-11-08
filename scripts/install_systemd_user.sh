@@ -21,13 +21,47 @@ source "$ENV_FILE"
 set +a
 
 DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-PYTHON_BIN="$LOGIC_ROOT/venv/bin/python3"
-if [ ! -x "$PYTHON_BIN" ]; then
-  PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"
-fi
-if [ ! -x "$PYTHON_BIN" ]; then
+# Source releases are immutable git worktrees and intentionally exclude a
+# virtualenv. Reuse a verified, already-installed package environment; never
+# silently bind long-running bridges to a system Python missing dependencies.
+# Python is a dependency executable only: all source paths remain LOGIC_ROOT.
+PYTHON_BIN=""
+PYTHON_PROFILE=""
+declare -a PYTHON_CANDIDATES=(
+  "$LOGIC_ROOT/venv/bin/python3"
+  "$LOGIC_ROOT/.venv/bin/python3"
+  "$DATA_ROOT/runtime/python/venv/bin/python3"
+  "$HOME/agentmanager/venv/bin/python3"
+  "$HOME/agentmanager/.venv/bin/python3"
+  "$(command -v python3)"
+)
+for candidate in "${PYTHON_CANDIDATES[@]}"; do
+  [ -x "$candidate" ] || continue
+  if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
+    if ! "$candidate" -c 'import google.generativeai, telegram, dotenv, psutil, yaml' >/dev/null 2>&1; then
+      continue
+    fi
+  fi
+  PYTHON_BIN="$candidate"
+  case "$candidate" in
+    "$LOGIC_ROOT"/*) PYTHON_PROFILE=immutable_release_venv ;;
+    "$DATA_ROOT"/runtime/python/*) PYTHON_PROFILE=managed_runtime_venv ;;
+    "$HOME"/agentmanager/*) PYTHON_PROFILE=existing_host_venv ;;
+    *) PYTHON_PROFILE=system_python_verified ;;
+  esac
+  break
+done
+if [ -z "$PYTHON_BIN" ]; then
+  if [ "${AGENTOS_SERVICE_DEPENDENCY_GUARD:-0}" = "1" ]; then
+    echo "agentos_service_python=DEPENDENCIES_UNAVAILABLE; refusing to replace active service units" >&2
+    exit 32
+  fi
+  # Local/test installation retains historical portability; never mistake
+  # this profile for a verified Core runtime production deployment.
   PYTHON_BIN="$(command -v python3)"
+  PYTHON_PROFILE=system_python_unverified
 fi
+echo "agentos_service_python=$PYTHON_PROFILE"
 
 SUPERVISOR_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentos"
 SUPERVISOR_ENV_FILE="$SUPERVISOR_CONFIG_DIR/core-supervisor.env"
