@@ -986,3 +986,7 @@ older unmerged branch commits with `rejected_non_fast_forward`.
 `scripts/advance_ir_cli.py` (verified by `tests/test_advance_ir_cli.py`) provides
 a standard CLI to inspect and advance `agentos-core` Canonical IR generations
 with CAS parent checks and atomic `active-continuation.json` activation.
+
+## Base Role Employee Fork candidate (#151 / #1768)
+
+`agent_core/employee_fork.py` proposes a bounded Employee fork using existing RoleRegistry, Lifecycle and ThreadReturn. Child identity is isolated; parent role IDs may only be narrowed; completed-child evidence produces only a candidate pending ONE Experience acceptance. `tests/test_employee_fork.py` is the contract regression. No live Supervisor execution, Experience persistence receipt, or production rollout is claimed.
