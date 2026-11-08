@@ -7,6 +7,10 @@ on:
       - main
     paths:
       - agent_core/transport_routing.py
+      - agentos_node/wow_control_adapter.py
+      - integrations/wow/**
+      - tests/test_wow_control_adapter.py
+      - tests/test_wow_addon_shell.py
       - governance/transport-routing.json
       - tests/test_transport_routing.py
       - governance/product-deployment-carriers.json
@@ -20,6 +24,10 @@ on:
       - core/integration
     paths:
       - agent_core/transport_routing.py
+      - agentos_node/wow_control_adapter.py
+      - integrations/wow/**
+      - tests/test_wow_control_adapter.py
+      - tests/test_wow_addon_shell.py
       - governance/transport-routing.json
       - tests/test_transport_routing.py
       - governance/product-deployment-carriers.json
@@ -44,6 +52,9 @@ jobs:
 
       - name: Test transport authority resolver
         run: python3 -m unittest tests.test_transport_routing -v
+
+      - name: Validate WoW bounded adapter and offline game UI
+        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell -v
 
       - name: Validate documentation coupling
         shell: bash
