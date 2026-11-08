@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: AgentOS WoW
+## Notes: Governed AgentOS read-only control surface; bridge required
+## Author: AgentOS
+## Version: 0.1.0-dev
+## LoadOnDemand: 0
+AgentOSWoW.lua
