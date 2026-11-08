@@ -268,24 +268,12 @@ StandardError=append:$DATA_ROOT/logs/tg_bridge.log
 WantedBy=default.target
 EOF
 
-cat > "$USER_SYSTEMD_DIR/teams-commander.service" <<EOF
-[Unit]
-Description=AgentOS Teams Command Bridge
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=$LOGIC_ROOT
-EnvironmentFile=$ENV_FILE
-ExecStart=$PYTHON_BIN scripts/teams_bridge.py
-Restart=always
-RestartSec=10
-StandardOutput=append:$DATA_ROOT/logs/teams_bridge.log
-StandardError=append:$DATA_ROOT/logs/teams_bridge.log
-
-[Install]
-WantedBy=default.target
-EOF
+# The legacy Teams bridge is NOT in this Core release (scripts/teams_bridge.py
+# does not exist). Never overwrite an existing Teams unit with a broken
+# ExecStart, and never start/enable an absent service here. A previously active
+# host-managed Teams unit remains untouched; the immutable rollout continues
+# to verify that it is still active (and rolls back if it is not).
+# Teams migration/reintroduction requires a separate real provider implementation.
 
 cat > "$USER_SYSTEMD_DIR/cat-ink-syncer.service" <<EOF
 [Unit]
@@ -351,8 +339,7 @@ if command -v pm2 &>/dev/null; then
   pm2 save 2>/dev/null || true
 fi
 
-systemctl --user enable os-chronos.service agent-maintenance.timer teams-commander.service >/dev/null
-systemctl --user restart teams-commander.service
+systemctl --user enable os-chronos.service agent-maintenance.timer >/dev/null
 
 if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
   systemctl --user enable tg-commander.service cat-ink-syncer.service os-lobster.service >/dev/null
