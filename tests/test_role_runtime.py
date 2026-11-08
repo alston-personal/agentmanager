@@ -46,6 +46,7 @@ class RoleRuntimeTest(unittest.TestCase):
             with self.subTest(role_id=role_id):
                 role = registry.resolve(role_id)
                 self.assertEqual(role.protocols.get("pdca"), "root.pdca.v1")
+                self.assertEqual(role.protocols.get("employee_fork"), "root.employee-fork.v1")
                 self.assertIn("claim_unverified_side_effects", role.must_not)
                 if role_id != "core.root":
                     self.assertEqual(role.parent_role_id, "core.root")
