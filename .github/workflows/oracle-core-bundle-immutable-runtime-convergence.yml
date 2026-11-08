@@ -261,7 +261,7 @@ jobs:
                     /usr/bin/python3 - "$DATA_ROOT/logs/tg_bridge.log" <<'TG_EARLY_DIAG'
           import pathlib,re,sys
           tail=pathlib.Path(sys.argv[1]).read_bytes()[-65536:].decode('utf-8','replace')
-          names=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\\s*:',tail)
+          names=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
           allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
           print('tg_commander_first_gate_exception='+next((n for n in reversed(names) if n in allowed),'unclassified'))
           TG_EARLY_DIAG
