@@ -247,6 +247,26 @@ jobs:
               sleep 2
               if ! systemctl --user is-active --quiet "$unit"; then
                 echo "core_bundle_preserved_service_recover=$unit:NOT_ACTIVE" >&2
+                if [ "$unit" = "tg-commander.service" ]; then
+                  # Earlier than the later active-service fence: also classify
+                  # failure when the single bounded restart has just failed.
+                  tg_state="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+                  tg_result="$(systemctl --user show "$unit" -p Result --value 2>/dev/null || true)"
+                  tg_exit="$(systemctl --user show "$unit" -p ExecMainStatus --value 2>/dev/null || true)"
+                  case "$tg_state" in active|inactive|failed|activating|deactivating) ;; *) tg_state=unknown;; esac
+                  case "$tg_result" in success|exit-code|signal|core-dump|timeout|start-limit-hit|watchdog) ;; *) tg_result=unknown;; esac
+                  case "$tg_exit" in ''|*[!0-9]*) tg_exit=unknown;; esac
+                  printf 'tg_commander_first_gate=state:%s,result:%s,exit:%s\n' "$tg_state" "$tg_result" "$tg_exit"
+                  if [ -f "$DATA_ROOT/logs/tg_bridge.log" ]; then
+                    /usr/bin/python3 - "$DATA_ROOT/logs/tg_bridge.log" <<'TG_EARLY_DIAG'
+          import pathlib,re,sys
+          tail=pathlib.Path(sys.argv[1]).read_bytes()[-65536:].decode('utf-8','replace')
+          names=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
+          allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
+          print('tg_commander_first_gate_exception='+next((n for n in reversed(names) if n in allowed),'unclassified'))
+          TG_EARLY_DIAG
+                  fi
+                fi
                 exit 29
               fi
               echo "core_bundle_preserved_service_recover=$unit:PASS"
