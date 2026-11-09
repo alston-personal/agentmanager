@@ -16,7 +16,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: f46a48273f76446a24cf3391d919a6083798b618
+      source_sha: bd0370583601be8b33bffa5b72a8db88d572d57f
       route: future-isles
       backup_key: future-isles
       receipt_schema: studio-web.future-isles-release/v1
