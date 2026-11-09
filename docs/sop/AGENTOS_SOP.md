@@ -106,3 +106,21 @@
 
 ### 3. 歷史日誌自動滾動 (Log Compaction & Pruning)
 - 定期執行壓縮腳本，將超過 7 天的歷史 Task Log 聚合為日/週摘要指標，刪除單次執行的小檔案，保持 inode 與磁碟健康。
+
+---
+
+## 五、 雙軌身心合一與受控演進 SOP (Dual-Track Mind-Body Parity SOP)
+
+### 1. 軌道一：核心治理層（憲法與 Agent Rules）—— 永恆身心合一 (Strict Immediate Parity)
+- **最高天條**：凡是寫入憲法 (`.agent/CONSTITUTION.yaml`) 與核心規則 (`.agent/AGENT_RULES.md`) 的條文，**必須在同一個變更集中具備物理代碼守門 (Guards)、執行期阻斷或 Git 門禁**。
+- **嚴禁純口號**：尚未以代碼物理落實的規範，只能列為「指導方針 (Guideline / Policy Guidance)」，嚴禁列為核心不變量（Immutable Invariant）欺騙系統。
+- **動 Rule 必動 Guard，動 Guard 必動 Rule**，兩者互為原子一體。
+
+### 2. 軌道二：應用與專案層（Projects & Features）—— 受控誠實四態標準 (Honest 4-State Lifecycle)
+- **研發週期合規性**：專案開發允許存在「已發想、規格設計中、待實作」的合理時間差，但**必須在嚴格受控下誠實標註狀態**：
+  1. `💡 Proposed (已發想 / 待排期)`：規格明確、目標專案明確、Acceptance Criteria 確立。實作路徑誠實標示為待辦，由 Spec Steward 追蹤新鮮度與依賴關係。
+  2. `🔨 In-Progress (實作中)`：已認領進入當前 Sprint，實施進度即時記錄於 `STATUS.md`。
+  3. `✅ Implemented / Verified (已實裝且通過驗收)`：
+     - **剛性鐵律：必須同時具備【實體代碼路徑】+【可重複執行的測試指令或 Receipt 憑證】！**
+     - **嚴禁未落實但文件已標示完成 (Zero Tolerance for False Completion)**。只要缺少真實代碼或測試未通，一律強制降級回 `Proposed` 或 `In-Progress`。
+  4. `📦 Closed / Archived (已閉環 / 已歸檔)`：實作交付上線後，原始 Spec 必須顯式標註 `status: closed`、`closed_at: <DATE>` 與 `resolution: <PATH>`，正式結案交割，不得長期懸空。
