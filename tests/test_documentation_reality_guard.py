@@ -8,6 +8,15 @@ class DocumentationRealityGuardTests(unittest.TestCase):
     def test_current_static_reality_is_valid(self):
         self.assertEqual(guard.static_errors(), [])
 
+    def test_project_presence_authority_invariant_is_documented(self):
+        """Absence from a capability allowlist never proves project absence."""
+        self.assertEqual(guard.static_errors(), [])
+
+    def test_missing_project_source_lookup_rule_fails_closed(self):
+        with patch.object(guard, "ROOT", __import__("pathlib").Path("/nonexistent/agentos-guard-test")):
+            errors = guard.static_errors()
+        self.assertTrue(any("project-source authority invariant missing" in x for x in errors))
+
     def test_core_paths_are_architecture_sensitive(self):
         self.assertTrue(guard.is_architecture_path("agent_core/control_plane.py"))
         self.assertTrue(guard.is_architecture_path("scripts/continuation_state.py"))
