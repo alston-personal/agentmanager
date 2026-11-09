@@ -95,7 +95,7 @@ def intake(issues: list[dict], *, repo: str, state: Path, workspace: Path) -> li
                 "schema": INTAKE_SCHEMA, "work_id": work_id,
                 "project_id": project, "title": str(issue.get("title") or work_id)[:160],
                 "next_action": action, "acceptance": [acceptance],
-                "source": issue["html_url"],
+                "source": issue["html_url"], "intake_kind": "engineering",
             })
             result.append({"number": number, "status": item["status"], "work_id": work_id,
                            "intake_kind": "engineering", "execution_authorized": False})

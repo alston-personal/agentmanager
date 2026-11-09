@@ -74,6 +74,38 @@ class WorkCompletionTests(unittest.TestCase):
                     },
                 )
 
+    def test_engineering_intake_cannot_be_executed_by_legacy_board(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            item = mod.register_intake_envelope(path, {
+                "schema": mod.INTAKE_SCHEMA,
+                "intake_kind": "engineering",
+                "work_id": "gh-issue-2134-engineering",
+                "project_id": "wow-agentos-interface",
+                "title": "WoW Bridge",
+                "next_action": "Implement approved WoW Bridge",
+                "acceptance": ["real ONE acceptance receipt"],
+                "source": "https://github.com/alston-personal/agentmanager/issues/2134",
+            })
+            self.assertEqual(item["status"],"accepted")
+            self.assertEqual(item["owner"],"role://completion.controller")
+            self.assertFalse(item["execution_authorized"])
+            self.assertFalse(mod.lobster_execution_permitted(item))
+            self.assertNotIn("gh-issue-2134-engineering",mod.board_projection(path))
+            # Also fail closed for an item accepted before the new flag.
+            old = dict(item)
+            old.pop("execution_authorized")
+            old.pop("intake_kind")
+            self.assertFalse(mod.lobster_execution_permitted(old))
+            with self.assertRaises(ValueError):
+                mod.register_intake_envelope(path, {
+                    "schema": mod.INTAKE_SCHEMA, "intake_kind": "engineering",
+                    "work_id": "gh-issue-999-engineering",
+                    "project_id": "wow-agentos-interface", "title":"wrong",
+                    "next_action":"work","acceptance":["done"],
+                    "source":"https://github.com/alston-personal/agentmanager/issues/2134",
+                })
+
     def test_done_requires_verification_evidence(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)
