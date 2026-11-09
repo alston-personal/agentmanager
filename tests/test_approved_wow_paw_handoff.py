@@ -45,6 +45,17 @@ class ApprovedWoWPawHandoffTests(unittest.TestCase):
         self.assertNotIn("write",item.required_capabilities)
         self.assertIn("one-governed-dispatch",item.authority_requirements)
 
+    def test_waiting_and_blocked_do_not_create_paw_assignment(self):
+        for state in ("waiting_external","blocked"):
+            self.item["status"]=state
+            self.item["wake_condition"]={"kind":"time","not_before":"2030-01-01T00:00:00Z"}
+            self.store()
+            receipt=handoff(completion_state=self.ledger,runtime_root=self.runtime.root)
+            self.assertFalse(receipt["assignment_registered"])
+            self.assertEqual(receipt["completion_state"],state)
+            self.assertEqual(receipt["status"],"waiting_for_completion_controller")
+            self.assertFalse((self.runtime.assignments_dir / (ASSIGNMENT_ID+".json")).exists())
+
     def test_authority_rejections_and_no_creation(self):
         for field,value in (
             ("execution_authorized",True),

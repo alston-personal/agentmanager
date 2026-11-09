@@ -47,6 +47,22 @@ def handoff(*, completion_state: Path, runtime_root: Path) -> dict:
     }
     if any(item.get(key) != value for key, value in exact.items()):
         raise PermissionError("approved_wow_work_item_contract_mismatch")
+    if item.get("status") in ("waiting_external", "blocked"):
+        # Completion watchdog owns retry and timed wake. Do not manufacture
+        # an Employee Assignment while this WorkItem is waiting or blocked.
+        wake = item.get("wake_condition") or {}
+        return {
+            "schema": "agentos.approved-wow-paw-handoff-receipt/v1",
+            "work_id": WORK_ID, "assignment_id": ASSIGNMENT_ID,
+            "employee_id": EMPLOYEE, "assignment_state": "not_created",
+            "assignment_registered": False,
+            "status": "waiting_for_completion_controller",
+            "completion_state": item["status"],
+            "wake_kind": wake.get("kind") if wake.get("kind") in ("time", "external") else "none",
+            "execution_authorized": False,
+            "execution_started": False,
+            "lease_id": None, "credential_exposed": False,
+        }
     if item.get("status") not in ("accepted", "in_progress"):
         raise PermissionError("approved_wow_work_item_not_open")
     if not isinstance(item.get("acceptance"), list) or not item["acceptance"]:
