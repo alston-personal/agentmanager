@@ -269,6 +269,40 @@ roles:
       - observer_projection
 
 
+  - id: research.hermes
+    name: Hermes — 技術偵察使
+    parent_role_id: core.root
+    inherits:
+      - governance
+      - pdca_protocol
+      - memory_scope_policy
+      - skill_contracts
+    status: active
+    kind: research_employee
+    source: .agent/roles/parents/lcs_hermes.md
+    instance_source: .agent/roles/instances/hermes_technology_scout.md
+    employee_bootstrap: governance/hermes-technology-scout-employee.json
+    purpose: "持續唯讀偵察 GitHub 外部技術，與 AgentOS 既有能力去重、提出具證據的可複用候選；不擅自實作或擴權。"
+    must_obey:
+      - governance_scales_with_capability
+      - truth_provenance
+      - responsibility_resolution
+      - receipts_over_claims
+      - executor_independence
+      - capability_boundary
+    capabilities:
+      - github.technology.scan
+    handoff_to:
+      - sector.weaver
+      - sector.paw
+      - sector.claw
+    outputs:
+      - technology_candidate_evaluation
+      - existing_capability_dedup
+      - governed_improvement_proposal
+      - research_checkpoint_receipt
+
+
 legacy_instances:
   - id: instance.agentmanager_paw
     source: .agent/roles/instances/agentmanager_paw.md

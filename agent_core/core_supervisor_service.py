@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from agent_core.core_supervisor import CoreSupervisorReconciler, ReconcileIntent
 from agent_core.core_work_items import WorkItemStore
 from agent_core.employee_lifecycle import EmployeeLifecycle
+from agent_core.hermes_due_cycle import project_due_hermes_cycle
 
 
 LEADER_SCHEMA = "agentos.core-supervisor-leader/v1"
@@ -501,6 +502,13 @@ class CoreSupervisorService:
         self._reconcile_failed_claw_reviews()
         verified_dependencies = self._verified_dependency_states() if dependency_states is None else dependency_states
         self._project_authorized_paw_continuations(verified_dependencies)
+        # Optional: only explicitly configured and terminal-receipt-verified Hermes
+        # cycles are materialized. This does not select a carrier or grant authority.
+        try:
+            project_due_hermes_cycle(self.work_items, self.lifecycle, now=current)
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+            # Fail closed: malformed/unauthorized schedule never blocks other roles.
+            pass
         blocked = self._blocked_assignments(verified_dependencies)
         persisted = self._persisted_reconcile_ids()
         plan = self.reconciler.reconcile(
