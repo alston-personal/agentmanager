@@ -58,7 +58,7 @@ if command -v gh >/dev/null 2>&1 && \
   env -u GH_TOKEN -u GITHUB_TOKEN gh auth setup-git >/dev/null 2>&1
   if env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' \
        -C /home/ubuntu/agent-data fetch https://github.com/alston-personal/my-agent-data.git \
-       '+refs/heads/main:refs/remotes/origin/main' >/dev/null 2>&1; then
+       "+refs/heads/""main:refs/remotes/origin/main" >/dev/null 2>&1; then
     echo "mio_persona_git_auth=PASS"
   else
     echo "mio_persona_git_auth=FETCH_FAILED" >&2

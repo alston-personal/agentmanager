@@ -53,4 +53,4 @@ jobs:
           git add .agentos/evidence/layoutlib-web-runtime-inspection.txt 2>/dev/null || true
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(layoutlib): inspect existing web runtime'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

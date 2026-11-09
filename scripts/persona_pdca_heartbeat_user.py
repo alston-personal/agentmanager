@@ -69,7 +69,7 @@ def main():
     lock=open("/tmp/agentos-persona-data-git.lock","a+"); fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
     fetched=False
     for _ in range(3):
-        p=run(["git","-c",GIT_CREDENTIAL,"fetch",DATA_HTTPS,"+refs/heads/main:refs/remotes/origin/main"],check=False)
+        p=run(["git","-c",GIT_CREDENTIAL,"fetch",DATA_HTTPS,f"+refs/heads/{os.environ.get('DATA_BRANCH', 'main')}:refs/remotes/origin/{os.environ.get('DATA_BRANCH', 'main')}"],check=False)
         if p.returncode==0: fetched=True; break
         time.sleep(1)
     if not fetched:
@@ -95,10 +95,10 @@ def main():
             changed.append((d.name,str(s.get("persona_id") or ""),cycle))
         for d,_,_ in personas: run(["git","add",str((d/"pdca/state.json").relative_to(work))],cwd=work)
         run(["git","-c","user.name=AgentOS Persona Heartbeat","-c","user.email=agentos-persona-heartbeat@users.noreply.github.com","commit","-m","chore(persona): advance active persona heartbeats"],cwd=work)
-        p=run(["git","-c",GIT_CREDENTIAL,"push",DATA_HTTPS,"HEAD:main"],cwd=work,check=False)
+        p=run(["git","-c",GIT_CREDENTIAL,"push",DATA_HTTPS,f"HEAD:{os.environ.get('DATA_BRANCH', 'main')}"],cwd=work,check=False)
         if p.returncode:
             print("persona_pdca_heartbeat=PUSH_FAILED",file=sys.stderr); return 5
-        refreshed=run(["git","-c",GIT_CREDENTIAL,"fetch",DATA_HTTPS,"+refs/heads/main:refs/remotes/origin/main"],check=False)
+        refreshed=run(["git","-c",GIT_CREDENTIAL,"fetch",DATA_HTTPS,f"+refs/heads/{os.environ.get('DATA_BRANCH', 'main')}:refs/remotes/origin/{os.environ.get('DATA_BRANCH', 'main')}"],check=False)
         if refreshed.returncode:
             print("persona_pdca_heartbeat=POST_PUSH_REFRESH_FAILED",file=sys.stderr); return 6
         write_receipt("PASS",stamp,changed)

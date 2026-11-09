@@ -48,4 +48,4 @@ jobs:
           git add .agentos/evidence/dashboard-process-tree.txt
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): record dashboard process tree'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

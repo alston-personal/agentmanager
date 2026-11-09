@@ -84,4 +84,4 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): record interactive Windows browser control'
           git pull --rebase origin main
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

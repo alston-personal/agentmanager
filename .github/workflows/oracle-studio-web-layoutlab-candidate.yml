@@ -33,4 +33,4 @@ jobs:
           git add "$E"
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(studio-web): Layout Lab candidate mirror'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

@@ -31,9 +31,10 @@ fi
 test -f "$DM_ARTIFACT"
 
 # Refresh canonical private persona data so relationship context is current.
+DATA_BRANCH="${AGENT_DATA_BRANCH:-main}"
 env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' \
   -C "$HOME/agent-data" fetch https://github.com/alston-personal/my-agent-data.git \
-  '+refs/heads/main:refs/remotes/origin/main' >/dev/null 2>&1 || true
+  "+refs/heads/${DATA_BRANCH}:refs/remotes/origin/${DATA_BRANCH}" >/dev/null 2>&1 || true
 
 python3 - "$DM_ARTIFACT" "$USERNAME" > "$TMP/dm.json" <<'PY'
 import json,sys

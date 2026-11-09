@@ -57,4 +57,4 @@ jobs:
           git add .agentos/evidence/realm-windows-inspect-current.json
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): record Windows visible windows'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

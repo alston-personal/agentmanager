@@ -83,4 +83,4 @@ jobs:
           git add "$E"
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(studio-web): remote bootstrap capability'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

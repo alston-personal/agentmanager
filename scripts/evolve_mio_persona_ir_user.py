@@ -87,7 +87,7 @@ def main() -> int:
     fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
     fetched = False
     for _ in range(3):
-        result = run(["git", "-c", GIT_CREDENTIAL, "fetch", DATA_HTTPS, "+refs/heads/main:refs/remotes/origin/main"], check=False)
+        result = run(["git", "-c", GIT_CREDENTIAL, "fetch", DATA_HTTPS, f"+refs/heads/{os.environ.get('DATA_BRANCH', 'main')}:refs/remotes/origin/{os.environ.get('DATA_BRANCH', 'main')}"], check=False)
         if result.returncode == 0:
             fetched = True
             break

@@ -44,7 +44,7 @@ def main():
     fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
     fetched=False
     for _ in range(3):
-        p=run(['git','-c',GIT_CREDENTIAL,'fetch',DATA_HTTPS,'+refs/heads/main:refs/remotes/origin/main'],cwd=DATA_REPO,check=False)
+        p=run(['git','-c',GIT_CREDENTIAL,'fetch',DATA_HTTPS,f"+refs/heads/{os.environ.get('DATA_BRANCH', 'main')}:refs/remotes/origin/{os.environ.get('DATA_BRANCH', 'main')}"],cwd=DATA_REPO,check=False)
         if p.returncode==0:
             fetched=True; break
         time.sleep(1)
