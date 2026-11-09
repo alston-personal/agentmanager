@@ -228,7 +228,27 @@ jobs:
           echo "core_bundle_hermes_bootstrap=PASS"
 
           echo "core_bundle_install_services=START"
-          INSTALL_JSON="$(AGENTOS_SERVICE_DEPENDENCY_GUARD=1 PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          # Preserve previously accepted ONE S4 delivery authority when both
+          # the real Wake Node and its governed Worker Host were active before
+          # this deployment. The installer otherwise removes the one_direct
+          # drop-in and silently degrades autonomous Employees to S3-only.
+          # This does not invent new authority: missing services/Realm fail closed.
+          S4_RESTORE=0
+          if grep -Fxq 'agentos-employee-wake-node.service' "$BACKUP/active-services" \
+            && { grep -Fxq 'agentos-employee-worker-host.service' "$BACKUP/active-services" || [ "$WORKER_SYSTEM_ACTIVE" = 1 ]; } \
+            && [ -f "$DATA_ROOT/realm/fabric.json" ] \
+            && [ -f "$DATA_ROOT/realm/nodes.json" ]; then
+            S4_RESTORE=1
+          fi
+          echo "core_bundle_s4_delivery_restore_requested=$S4_RESTORE"
+          INSTALL_JSON="$(AGENTOS_CORE_SUPERVISOR_ENABLE_ONE_DIRECT="$S4_RESTORE" AGENTOS_SERVICE_DEPENDENCY_GUARD=1 PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          if [ "$S4_RESTORE" = 1 ]; then
+            test -f /home/ubuntu/.config/agentos/core-supervisor-delivery.env
+            grep -Fxq 'AGENTOS_SUPERVISOR_DELIVERY_MODE=one_direct' /home/ubuntu/.config/agentos/core-supervisor-delivery.env
+            echo "core_bundle_s4_delivery_config=ONE_DIRECT"
+          else
+            echo "core_bundle_s4_delivery_config=NOT_AUTO_ENABLED"
+          fi
           echo "core_bundle_install_services=DONE"
           printf '%s\n' "$INSTALL_JSON"
           printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("mode")=="systemd", d'
