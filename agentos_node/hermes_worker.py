@@ -167,19 +167,6 @@ def process_exact(*, runtime_root: Path, wake_root: Path, worker_state_root: Pat
     _verify_delivery(runtime_root,capsule,intent)
     lease_key=hashlib.sha256((wake_id+":"+str(presence_generation)).encode()).hexdigest()[:24]
     lease_id="hermeslease_"+lease_key
-    # Durable pre-execution marker: once started, uncertain crashes are never
-    # silently replayed by the host.
-    work_dir=worker_state_root/EMPLOYEE
-    work_dir.mkdir(parents=True,exist_ok=True)
-    state_path=work_dir/(lease_id+".json")
-    if state_path.exists():
-        raise RuntimeError("hermes_prior_execution_requires_reconciliation")
-    atomic_json_write(state_path,{"schema":"agentos.hermes-worker-state/v1","status":"launching",
-                                   "assignment_id":assignment.assignment_id,"wake_id":wake_id})
-    runtime.bind_executor(EMPLOYEE,provider="agentos-native-github-metadata",model="read-only-v1")
-    lease=lifecycle.claim(assignment.assignment_id,EMPLOYEE,lease_id,lease_seconds=300)
-    if lease.generation!=intent["expected_lease_generation"]:
-        raise RuntimeError("hermes_unexpected_lease_generation")
     # Production Worker Host intentionally has PrivateNetwork=true.
     # A network-capable ONE Wake Node creates a fixed-source snapshot only after
     # checking the actual S4 delivery. No GitHub HTTP fallback inside this child.
@@ -198,6 +185,20 @@ def process_exact(*, runtime_root: Path, wake_root: Path, worker_state_root: Pat
         if "ruvnet/RuView" not in repos:
             repos.append("ruvnet/RuView")
         actual_fetch=fetch
+
+    # Durable pre-execution marker: once started, uncertain crashes are never
+    # silently replayed by the host.
+    work_dir=worker_state_root/EMPLOYEE
+    work_dir.mkdir(parents=True,exist_ok=True)
+    state_path=work_dir/(lease_id+".json")
+    if state_path.exists():
+        raise RuntimeError("hermes_prior_execution_requires_reconciliation")
+    atomic_json_write(state_path,{"schema":"agentos.hermes-worker-state/v1","status":"launching",
+                                   "assignment_id":assignment.assignment_id,"wake_id":wake_id})
+    runtime.bind_executor(EMPLOYEE,provider="agentos-native-github-metadata",model="read-only-v1")
+    lease=lifecycle.claim(assignment.assignment_id,EMPLOYEE,lease_id,lease_seconds=300)
+    if lease.generation!=intent["expected_lease_generation"]:
+        raise RuntimeError("hermes_unexpected_lease_generation")
     previous=work_dir/"hermes-scan-state.json"
     old={}
     if previous.exists():
