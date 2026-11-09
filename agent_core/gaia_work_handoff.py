@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
+from urllib.parse import urlsplit
+import re
 from typing import Callable
 
 from .gaia_decision_record import ReviewRecord, verify_review_record
@@ -36,7 +38,10 @@ def propose_existing_project_work(
     parent = decision.get("canonical_parent")
     if not isinstance(parent, str) or not parent.startswith("project://"):
         raise GaiaHandoffDenied("existing_project_parent_required")
-    if not source_issue_url.startswith("https://github.com/") or "/issues/" not in source_issue_url:
+    parsed = urlsplit(source_issue_url)
+    if (parsed.scheme != "https" or parsed.netloc != "github.com"
+            or parsed.query or parsed.fragment
+            or not re.fullmatch(r"/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*", parsed.path)):
         raise GaiaHandoffDenied("canonical_issue_url_required")
     if not workspace or not Path(workspace).is_absolute():
         raise GaiaHandoffDenied("absolute_workspace_required")
@@ -45,7 +50,8 @@ def propose_existing_project_work(
         raise GaiaHandoffDenied("invalid_project_id")
     return {
         "schema": "agentos.work-intake/v1",
-        "work_id": "gaia-review-" + sha256((record.content_hash + ":" + source_issue_url).encode()).hexdigest()[:24],
+        # Stable across re-reviews. Do not key accepted work by reviewed_at.
+        "work_id": "gaia-review-" + sha256((parent + ":" + source_issue_url).encode()).hexdigest()[:24],
         "project_id": project_id,
         "title": "Review scoped extension proposal for " + project_id,
         "next_action": "Confirm canonical owner, authorized scope, dependencies and acceptance for Gaia proposal review " + record.content_hash,
