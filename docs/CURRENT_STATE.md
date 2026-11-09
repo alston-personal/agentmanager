@@ -1033,3 +1033,10 @@ unknown or exempt paths.
 ### Provider-capacity failure continuity (#470 source candidate, 2026-11-06)
 
 The existing `scripts/work_completion.py` has a candidate generation-fenced recovery call for abrupt executor capacity failure, preserving work in a blocked reconciliation state rather than replaying uncertain operations. `scripts/persona_post_intent_generator.py` and `scripts/persona_reply_intent_generator.py` now classify sanitized reasoning availability on posts and replies. The existing Claude/Gemini/Codex fallback and `DEFER` behavior remain: no provider quota failure becomes an invented `NO_POST`, `NO_REPLY`, or public post. Tests cover the outage case, but this is **not** a live Oracle acceptance or write-path enforcement proof. Runtime failure receipt verification, GitHub/Oracle authoritative fencing, Orion local state reconciliation, and Mio real Threads/media liveness are pending. See `docs/PROVIDER_QUOTA_HANDOFF_470.md`.
+
+
+## Gaia proposal intake classifier (#420 candidate, 2026-11-09)
+
+`agent_core/gaia_intake.py` is a **read-only, fail-closed proposal classifier** on draft PR #2157. Given an explicitly supplied canonical asset snapshot and its completeness assertion, it can suggest reuse of an existing capability, extension of an identified project, or a requirement for evidence/human approval. Its reference test fixture routes proposed mobile secretary work to the pre-existing Mobile Node parent, rather than creating a second mobile project.
+
+**Not implemented or verified:** real Atlas/Project Registry snapshot ingestion, system-wide Creation Gate enforcement at write entrypoints, review/approval persistence, Gaia Employee registration and scheduler continuity, ONE dispatch, Oracle deployment, or lifecycle receipt. The classifier's output is advice, not authorization, and no actor may self-declare the registry complete without a verified provenance contract. The existing fail-closed, port-check-only `scripts/issue_work_intake.py` is unchanged and must not be relaxed for idea intake. Related work: #420, #889, #200, #1528, #2156.
