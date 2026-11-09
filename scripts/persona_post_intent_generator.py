@@ -567,6 +567,12 @@ def main():
     # Read only previously verified, bounded public observations imported by #1825.
     # These are third-party statements, not Mio's experiences, beliefs or reply permission.
     external_public_observations=[]
+    # Owner-approved historical reading is contextual evidence, never fresh news or
+    # permission to adopt beliefs, reply, or publish claims about current events.
+    approved_historical_urls=set(
+        url for url in (cfg.get("approved_historical_external_read_urls") or [])
+        if isinstance(url,str) and url.startswith("https://www.threads.com/@")
+    )
     external_dir=root/"pdca/external_observation_inbox"
     if external_dir.is_dir():
         from persona_external_observation_inbox import validate as validate_external_observation
@@ -578,12 +584,17 @@ def main():
                 if observed is None:
                     continue
                 observed_at=timestamp(observed["observed_at"])
-                if observed_at is None or not timedelta(0) <= now_utc-observed_at <= timedelta(days=7):
+                if observed_at is None or observed_at > now_utc:
+                    continue
+                fresh=now_utc-observed_at <= timedelta(days=7)
+                if not fresh and observed["source_url"] not in approved_historical_urls:
                     continue
                 external_public_observations.append({
                     "source_url":observed["source_url"],"author":observed["author"],
                     "observed_at":observed["observed_at"],"text":observed["text"][:600],
                     "provenance":"verified_vendor_public_reader",
+                    "freshness":"recent" if fresh else "historical_owner_approved",
+                    "historical_context_only":not fresh,
                     "reply_allowed":False,"ir_adoption_allowed":False})
                 if len(external_public_observations)>=5:
                     break
