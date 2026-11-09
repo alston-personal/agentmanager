@@ -12,3 +12,4 @@
 ## 3. 輸出憑證
 - `chronicle_entry`
 - `historical_decision_record`
+

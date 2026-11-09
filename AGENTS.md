@@ -64,22 +64,28 @@ The expected result without explicit human approval is `AWAITING_HUMAN_APPROVAL`
 
 Provider-side acceptance is tracked separately and must prove that GitHub rejects a direct `main` push before mutation. See `docs/governance/decisions/GOV-2026-08-30-001-mainline-physical-enforcement.md`.
 
-## Documentation Reality Rule
+## Documentation Reality Rule (Atomic Doc-Code Parity)
 
-Architecture-sensitive implementation changes MUST update at least one authoritative entry-point document in the same change set:
+Architecture-sensitive implementation changes and code modifications MUST update at least one authoritative entry-point document in the same change set:
 
 - `README.md`
 - `docs/CURRENT_STATE.md`
 - `ONBOARDING.md`
 - `AGENTS.md`
 
+### Three Lines of Defense:
+1. **First Line (Active Development & PDCA Lifecycle)**: "動 Code 必動 Doc，兩者為不可分割的原子操作"。Paw 的實作完成標準 (Definition of Done) 必須包含文檔同步；Claw 在 Check 階段主動執行工作區同步審計 (`python3 scripts/documentation_reality_guard.py --worktree`)，若代碼變更而文檔未動，直接裁定 `FAIL` 打回重做。
+2. **Second Line (Pre-Commit Physical Hook)**: Git pre-commit hook 強制執行 `python3 scripts/documentation_reality_guard.py --staged`。任何未帶權威文檔更新的代碼暫存變更在提交時立即被物理攔截。
+3. **Third Line (CI & Protected Branch Authority)**: GitHub Actions CI 執行 `python3 scripts/documentation_reality_guard.py --base origin/main`，拒絕任何文檔滯後的分支合併入 `main`。
+
 Run:
 
 ```bash
-python3 scripts/documentation_reality_guard.py
+python3 scripts/documentation_reality_guard.py --worktree
+python3 scripts/documentation_reality_guard.py --staged
 ```
 
-CI enforces the same rule. Treat a documentation-drift failure as an architecture regression, not optional cleanup.
+Treat a documentation-drift failure as an architecture regression, not optional cleanup.
 
 ## Public Web Surface Machine-Readability Rule
 

@@ -12,3 +12,4 @@
 ## 3. 輸出憑證
 - `arbitration_record`
 - `dispute_resolution_receipt`
+

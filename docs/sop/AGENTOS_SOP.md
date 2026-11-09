@@ -71,15 +71,22 @@
   3. **必須停留在 `AWAITING_HUMAN_APPROVAL`**，嚴禁擅自直接 push 或自動 merge。
   4. CI 成功、測試通過或用戶普通的「繼續」指令，**均不代表合併授權**；必須有明確的人類審批命令（如「批准合併」）。
 
-### 2. 文件真實性守衛 (Documentation Reality Guard)
-- 架構或功能性變更，必須在同一變更集中更新以下權威文檔之一：
-  - `README.md`
-  - `docs/CURRENT_STATE.md`
-  - `ONBOARDING.md`
-  - `AGENTS.md`
-- 變更前必須執行通過：
+### 2. 文件真實性守衛與原子同步法則 (Atomic Doc-Code Parity Law)
+- **核心鐵律**：**動 Code 必動 Doc，代碼與說明文件互為原子一體。未同步更新文檔的代碼視為未完工殘品。**
+- **三道剛性保險**：
+  1. **第一道（日常運作態 / PDCA 驗收）**：
+     - Paw (工匠) 在完成實作前，必須同步更新架構與接口說明文件。
+     - Claw (審計官) 在 Check 階段主動執行 `python3 scripts/documentation_reality_guard.py --worktree`，若發現代碼變更但文檔未更新，**直接判定 FAIL 打回重做**，不予結案。
+  2. **第二道（本地提交態 / Pre-Commit 攔截）**：
+     - 每次執行 `git commit` 時，`pre_commit_guard.sh` 強制執行 `python3 scripts/documentation_reality_guard.py --staged`。
+     - 暫存區中若只有代碼修改而無權威說明文件更新，提交當場被物理拒絕。
+  3. **第三道（分支合併態 / CI 門禁）**：
+     - GitHub Actions CI 嚴格校驗 `--base origin/main`，禁止文檔脫節的 PR 合併入受保護分支。
+- 權威說明文件包含：`README.md`、`docs/CURRENT_STATE.md`、`ONBOARDING.md`、`AGENTS.md`。
+- 變更驗收指令：
   ```bash
-  python3 scripts/documentation_reality_guard.py
+  python3 scripts/documentation_reality_guard.py --worktree
+  python3 scripts/documentation_reality_guard.py --staged
   python3 scripts/continuation_state.py --self-test
   ```
 

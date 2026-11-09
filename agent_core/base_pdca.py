@@ -320,6 +320,16 @@ class ClawAuditorWorker(BasePDCAWorker):
         checks["logic_data_separation"] = separation_ok
         checks["latest_paw_receipt"] = latest_paw_receipt
 
+        # 4. Doc-Code Parity Audit (代碼與說明文件同步審計 - 第一道日常保險)
+        from scripts.documentation_reality_guard import coupling_errors
+        doc_coupling_errors = coupling_errors(None, worktree=True)
+        if doc_coupling_errors:
+            findings.append(f"❌ 代碼與文檔同步違規 (Doc-Code Parity Breach): {doc_coupling_errors[0]}")
+            checks["doc_code_parity"] = "FAIL"
+        else:
+            findings.append("✅ 代碼與權威說明文件同步狀態良好 (Doc-Code Parity OK)")
+            checks["doc_code_parity"] = "PASS"
+
         return {
             "action": "security_and_invariant_audit",
             "checks": checks,

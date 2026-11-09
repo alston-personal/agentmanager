@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Fail when AgentOS architecture evolves without its authoritative docs.
 
-This guard intentionally checks two things:
+This guard intentionally checks:
 1. Static reality: canonical entry-point docs and their claimed core paths exist.
 2. Change-set coupling: architecture-sensitive implementation changes must update
    at least one authoritative current-state document in the same change set.
+   Supports --base <ref>, --staged (pre-commit), and --worktree (active development/Claw).
 
-It does not try to prove that prose is semantically perfect. It makes silent
-implementation/documentation divergence a CI-visible regression instead of a
-maintenance task someone has to remember months later.
+It makes silent implementation/documentation divergence a visible regression
+during development, before commit, and in CI.
 """
 from __future__ import annotations
 
@@ -40,6 +40,7 @@ ARCHITECTURE_FILES = {
     "scripts/agentos_node.py",
     "scripts/drift_guard.py",
     "scripts/platform_runtime.py",
+    "scripts/rhea_role_steward.py",
 }
 
 # Claims made by docs/CURRENT_STATE.md that must remain tied to real repository paths.
@@ -49,10 +50,12 @@ REQUIRED_REALITY_PATHS = (
     "agent_core/governance_directory.py",
     "agent_core/resource_registry.py",
     "agent_core/realm_fabric.py",
+    "agent_core/role_seal.py",
     "runtime_core/interfaces.py",
     "scripts/continuation_state.py",
     "scripts/agentos_node.py",
     "scripts/drift_guard.py",
+    "scripts/rhea_role_steward.py",
     "tests/test_continuation_state.py",
     "tests/test_control_plane.py",
     "tests/test_governance_directory.py",
@@ -84,6 +87,19 @@ def changed_files(base: str) -> set[str]:
     return {line.strip() for line in output.splitlines() if line.strip()}
 
 
+def staged_files() -> set[str]:
+    output = git("diff", "--cached", "--name-only")
+    return {line.strip() for line in output.splitlines() if line.strip()}
+
+
+def worktree_files() -> set[str]:
+    try:
+        output = git("diff", "HEAD", "--name-only")
+    except RuntimeError:
+        output = git("diff", "--name-only")
+    return {line.strip() for line in output.splitlines() if line.strip()}
+
+
 def is_architecture_path(path: str) -> bool:
     return path in ARCHITECTURE_FILES or path.startswith(ARCHITECTURE_PREFIXES)
 
@@ -112,10 +128,7 @@ def static_errors() -> list[str]:
     return errors
 
 
-def coupling_errors(base: str | None) -> list[str]:
-    if not base:
-        return []
-    changed = changed_files(base)
+def verify_file_set_coupling(changed: set[str], context_name: str) -> list[str]:
     architecture = sorted(path for path in changed if is_architecture_path(path))
     if not architecture:
         return []
@@ -126,20 +139,41 @@ def coupling_errors(base: str | None) -> list[str]:
     if len(architecture) > 8:
         sample += f", ... (+{len(architecture) - 8})"
     return [
-        "architecture-sensitive implementation changed without an authoritative documentation update: "
+        f"[{context_name}] architecture-sensitive implementation changed without an authoritative documentation update: "
         + sample
     ]
+
+
+def coupling_errors(base: str | None, staged: bool = False, worktree: bool = False) -> list[str]:
+    errors: list[str] = []
+    if base:
+        errors.extend(verify_file_set_coupling(changed_files(base), f"base={base}"))
+    if staged:
+        errors.extend(verify_file_set_coupling(staged_files(), "pre-commit staged"))
+    if worktree:
+        errors.extend(verify_file_set_coupling(worktree_files(), "active worktree"))
+    return errors
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Detect AgentOS implementation/documentation drift")
     parser.add_argument(
         "--base",
-        help="base commit/ref for change-set coupling check (omit for static-only local check)",
+        help="base commit/ref for change-set coupling check",
+    )
+    parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="check git staged files (used by git pre-commit hook)",
+    )
+    parser.add_argument(
+        "--worktree",
+        action="store_true",
+        help="check active uncommitted worktree changes (used by Claw auditor / active development)",
     )
     args = parser.parse_args()
 
-    errors = static_errors() + coupling_errors(args.base)
+    errors = static_errors() + coupling_errors(args.base, staged=args.staged, worktree=args.worktree)
     if errors:
         print("Documentation Reality Guard: FAIL")
         for error in errors:
@@ -150,6 +184,10 @@ def main() -> int:
     print("Documentation Reality Guard: PASS")
     if args.base:
         print(f"base={args.base}")
+    if args.staged:
+        print("mode=staged")
+    if args.worktree:
+        print("mode=worktree")
     print("authoritative_docs=" + ",".join(sorted(AUTHORITATIVE_DOCS)))
     return 0
 
