@@ -49,6 +49,10 @@ class IssueIntakeTest(unittest.TestCase):
             self.assertEqual(row["owner"],"role://completion.controller")
             self.assertEqual(row["project_id"],"wow-agentos-interface")
             self.assertIsNone(row["workspace"])
+            self.assertEqual(row["intake_kind"],"engineering")
+            self.assertIs(row["execution_authorized"],False)
+            from work_completion import board_projection
+            self.assertNotIn("gh-issue-2134-engineering",board_projection(state))
             self.assertEqual(len(json.loads(state.read_text())["items"]),1)
 
     def test_engineering_rejects_implicit_authority_and_bad_labels(self):
