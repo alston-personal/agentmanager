@@ -8,6 +8,26 @@ class DocumentationRealityGuardTests(unittest.TestCase):
     def test_current_static_reality_is_valid(self):
         self.assertEqual(guard.static_errors(), [])
 
+    def test_project_presence_authority_invariant_is_documented(self):
+        """Absence from a capability allowlist never proves project absence."""
+        self.assertEqual(guard.static_errors(), [])
+
+    def test_missing_project_source_lookup_rule_fails_closed(self):
+        from pathlib import Path
+
+        guide = Path(guard.ROOT, "docs/governance/GOVERNANCE_DIRECTORY.md").read_text(encoding="utf-8")
+        self.assertEqual(guard.project_source_authority_errors(guide), [])
+        for marker in (
+            "PROJECT_PRESENCE_NOT_EXECUTION_ALLOWLIST",
+            "/home/ubuntu/agent-data/projects/<project_id>/project.yaml",
+            "governance/execution-authority.json",
+            "canonical_state_unverified",
+            "registry_projection_drift",
+        ):
+            damaged = guide.replace(marker, "REMOVED-INVARIANT")
+            errors = guard.project_source_authority_errors(damaged)
+            self.assertTrue(any(marker in err for err in errors), marker)
+
     def test_core_paths_are_architecture_sensitive(self):
         self.assertTrue(guard.is_architecture_path("agent_core/control_plane.py"))
         self.assertTrue(guard.is_architecture_path("scripts/continuation_state.py"))

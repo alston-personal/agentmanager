@@ -87,6 +87,21 @@ def changed_files(base: str) -> set[str]:
 def is_architecture_path(path: str) -> bool:
     return path in ARCHITECTURE_FILES or path.startswith(ARCHITECTURE_PREFIXES)
 
+def project_source_authority_errors(directory_text: str) -> list[str]:
+    """Prevent scoped execution allowlist from masquerading as Project Registry."""
+    required = (
+        "PROJECT_PRESENCE_NOT_EXECUTION_ALLOWLIST",
+        "/home/ubuntu/agent-data/projects/<project_id>/project.yaml",
+        "governance/execution-authority.json",
+        "canonical_state_unverified",
+        "registry_projection_drift",
+    )
+    return [
+        "project-source authority invariant missing: " + marker
+        for marker in required
+        if marker not in directory_text
+    ]
+
 
 def static_errors() -> list[str]:
     errors: list[str] = []
@@ -108,6 +123,12 @@ def static_errors() -> list[str]:
     for marker in ("Implemented", "Verified", "Research", "Cognitive IR"):
         if marker not in current:
             errors.append(f"docs/CURRENT_STATE.md missing reality marker: {marker}")
+
+    # The execution-authority allowlist is intentionally not the canonical
+    # Project Registry. Preserve the documented source-selection invariant.
+    directory_doc = ROOT / "docs/governance/GOVERNANCE_DIRECTORY.md"
+    directory_text = directory_doc.read_text(encoding="utf-8") if directory_doc.is_file() else ""
+    errors.extend(project_source_authority_errors(directory_text))
 
     return errors
 
