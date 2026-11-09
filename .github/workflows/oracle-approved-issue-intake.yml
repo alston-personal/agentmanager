@@ -1,6 +1,17 @@
 name: Oracle Approved Issue Intake
 
 on:
+  # Deploy-aware intake in the EXISTING workflow, not a second queue.
+  workflow_run:
+    workflows: ["Oracle Core Bundle Immutable Runtime Convergence"]
+    types: [completed]
+    branches: [core/integration]
+  # Run this single time when the new trigger is first merged to default branch.
+  # Subsequent runs come from successful Core convergence and normal schedule.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-approved-issue-intake.yml'
   schedule:
     - cron: '17,47 * * * *'
   workflow_dispatch:
@@ -15,6 +26,8 @@ concurrency:
 
 jobs:
   sync:
+    # Failed convergence must never be used to claim an installed Core Runtime.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -86,6 +99,15 @@ jobs:
               verified=(item.get("status")=="done" and verification.get("status")=="passed" and len(evidence)>0)
               print(f"lobster_issue_{number}_status={item.get('status','missing')}")
               print(f"lobster_issue_{number}_verified_done={'true' if verified else 'false'}")
+          PY
+          # Exact WoW receipt readback. Admission is not Executor authority.
+          /usr/bin/python3 - "$data/governance/work-items.json" <<'PY'
+          import json,sys
+          items=json.load(open(sys.argv[1],encoding="utf-8")).get("items",{})
+          item=items.get("gh-issue-2134-engineering") or {}
+          print("wow_2134_work_item_status="+str(item.get("status") or "missing"))
+          print("wow_2134_work_item_owner="+str(item.get("owner") or "unassigned"))
+          print("wow_2134_execution_authorized="+str(item.get("execution_authorized") is True).lower())
           PY
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
           echo "issue_intake_source=github_open_explicitly_approved"
