@@ -60,8 +60,10 @@ class CompletionChronosTickTests(unittest.TestCase):
     def test_retry_budget_exhaustion_does_not_reopen(self):
         self.set_wait("2026-01-01T00:00:00+00:00",retries=5)
         out=tick(self.root,at=datetime(2026,11,9,tzinfo=timezone.utc))
-        self.assertFalse(out["paw_registered"])
+        self.assertTrue(out["paw_registered"])
         self.assertEqual(load(self.ledger)["items"][WORK_ID]["status"],"blocked")
+        from agent_core.employee_runtime import EmployeeRuntime
+        self.assertEqual(EmployeeRuntime(self.root/"employee-runtime").get_assignment(ASSIGNMENT_ID).state, "pending")
 
 if __name__=="__main__":
     unittest.main()
