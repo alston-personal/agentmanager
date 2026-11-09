@@ -71,6 +71,34 @@ class GaiaCreationGateTest(unittest.TestCase):
         with self.assertRaisesRegex(CreationDenied, "invalid_review_record"):
             self.run_registration(record=replace(self.record, reviewed_at="2027-01-01T00:00:00+00:00"), verified=True)
 
+    def test_rejects_wrong_reviewed_project_name(self):
+        record = issue_review_record(
+            Proposal("Different Project", "project"),
+            Decision(Disposition.NEEDS_HUMAN_APPROVAL, None, ("no_match",)),
+            source_refs=("atlas://snapshot/xyz",),
+            reviewed_at=datetime.now(timezone.utc).isoformat())
+        with self.assertRaisesRegex(CreationDenied, "review_title_scope_mismatch"):
+            self.run_registration(record=record, verified=True)
+
+    def test_rejects_stale_review_before_authority(self):
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        record = issue_review_record(
+            Proposal("New Service", "project"),
+            Decision(Disposition.NEEDS_HUMAN_APPROVAL, None, ("no_match",)),
+            source_refs=("atlas://snapshot/xyz",), reviewed_at=old)
+        with self.assertRaisesRegex(CreationDenied, "stale_review_record"):
+            self.run_registration(record=record, verified=True)
+
+    def test_rejects_related_asset_even_when_review_says_new(self):
+        record = issue_review_record(
+            Proposal("New Service", "project",
+                     related_asset_ids=("project://existing",)),
+            Decision(Disposition.NEEDS_HUMAN_APPROVAL, None, ("no_match",)),
+            source_refs=("atlas://snapshot/xyz",),
+            reviewed_at=datetime.now(timezone.utc).isoformat())
+        with self.assertRaisesRegex(CreationDenied, "existing_related_assets_require_reconciliation"):
+            self.run_registration(record=record, verified=True)
+
     def test_existing_parent_is_not_new_project(self):
         rec = issue_review_record(
             Proposal("Extension", "project"),
