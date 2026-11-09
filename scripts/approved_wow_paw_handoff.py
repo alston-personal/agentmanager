@@ -47,14 +47,13 @@ def handoff(*, completion_state: Path, runtime_root: Path) -> dict:
     }
     if any(item.get(key) != value for key, value in exact.items()):
         raise PermissionError("approved_wow_work_item_contract_mismatch")
-    # A terminal verification retry-budget blocker is not eligible for the
-    # original work's automatic retry. It may, however, authorize the existing
-    # fixed read-only Paw INSPECTION assignment to identify a genuine repair;
-    # never clear the original blocker or claim its execution authority.
+    # Inspection of a verification failure is independent of retrying the
+    # original Completion WorkItem. A time wait or blocked state must never
+    # be reset merely to allow a separately scoped read-only Paw inspection.
+    # The original wait, retry budget and owner remain fully authoritative.
     verification_diagnostic = (
-        item.get("status") == "blocked"
+        item.get("status") in ("waiting_external", "blocked")
         and item.get("last_blocker_kind") == "VERIFICATION"
-        and int(item.get("machine_retry_count") or 0) >= 5
     )
     if item.get("status") in ("waiting_external", "blocked") and not verification_diagnostic:
         wake = item.get("wake_condition") or {}

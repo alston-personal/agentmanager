@@ -50,12 +50,13 @@ class CompletionChronosTickTests(unittest.TestCase):
         assignment=EmployeeRuntime(self.root/"employee-runtime").get_assignment(ASSIGNMENT_ID)
         self.assertEqual(assignment.state,"pending")
 
-    def test_future_wait_never_dispatches(self):
+    def test_future_wait_does_not_wake_original_but_allows_readonly_inspection(self):
         self.set_wait("2030-01-01T00:00:00+00:00")
         out=tick(self.root,at=datetime(2026,11,9,tzinfo=timezone.utc))
-        self.assertEqual(out["paw_projection"],"waiting_for_completion_controller")
-        self.assertFalse(out["paw_registered"])
-        self.assertFalse((self.root/"employee-runtime"/"assignments"/(ASSIGNMENT_ID+".json")).exists())
+        self.assertFalse(out["awakened_wow"])
+        self.assertTrue(out["paw_registered"])
+        self.assertEqual(load(self.ledger)["items"][WORK_ID]["status"],"waiting_external")
+        self.assertEqual(EmployeeRuntime(self.root/"employee-runtime").get_assignment(ASSIGNMENT_ID).state, "pending")
 
     def test_retry_budget_exhaustion_does_not_reopen(self):
         self.set_wait("2026-01-01T00:00:00+00:00",retries=5)
