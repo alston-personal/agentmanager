@@ -21,7 +21,7 @@ class HermesBootstrapTests(unittest.TestCase):
             skills = EmployeeSkillService(runtime, registry, EmployeeSkillRegistry(ROOT/"governance/employee-skills.json")).hydrate_employee_skills("hermes-technology-scout")
             self.assertEqual([s.skill_id for s in skills], ["github.technology.scan"])
             self.assertFalse(skills[0].mutation_authority)
-            request = EmployeeSkillService(runtime, registry, EmployeeSkillRegistry(ROOT/"governance/employee-skills.json")).build_request("hermes-technology-scout","github.technology.scan","scan",{"assignment_id":a_id,"topic_scope":"agentos-runtime"})
+            request = EmployeeSkillService(runtime, registry, EmployeeSkillRegistry(ROOT/"governance/employee-skills.json")).build_request("hermes-technology-scout","github.technology.scan","scan",{"assignment_id":first["assignment_id"],"topic_scope":"agentos-runtime"})
             self.assertEqual(request["execution_authority"],"external_governed_dispatcher")
             self.assertFalse(request["credential_exposed"])
             a_id = first["assignment_id"]
