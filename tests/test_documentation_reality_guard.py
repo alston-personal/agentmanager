@@ -24,7 +24,7 @@ class DocumentationRealityGuardTests(unittest.TestCase):
             "canonical_state_unverified",
             "registry_projection_drift",
         ):
-            damaged = guide.replace(marker, "REMOVED-INVARIANT", 1)
+            damaged = guide.replace(marker, "REMOVED-INVARIANT")
             errors = guard.project_source_authority_errors(damaged)
             self.assertTrue(any(marker in err for err in errors), marker)
 
