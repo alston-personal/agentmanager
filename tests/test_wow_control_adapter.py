@@ -40,6 +40,38 @@ class WoWControlContractTests(unittest.TestCase):
             {"status": "OK", "snapshot": {"paw": "unknown", "receipt": None}},
         )
 
+    def test_bounded_receipt_projection(self):
+        adapter = WoWControlAdapter(
+            lambda: {"state": "READY", "paw": "running", "receipt": "receipt:task-123"}
+        )
+        self.assertEqual(
+            adapter.execute({"action": CAPABILITY})["snapshot"]["receipt"],
+            "receipt:task-123",
+        )
+
+    def test_rejects_unknown_and_sensitive_reader_fields(self):
+        cases = [
+            {"state": "READY", "token": "secret"},
+            {"state": "READY", "path": "/home/ubuntu/secret"},
+            {"state": "READY", "error": "private runtime text"},
+            {"state": {"nested": "untrusted"}},
+            {"state": "READY", "receipt": {"id": "r1"}},
+            {"state": "READY", "receipt": "x" * 129},
+            {"paw": "x" * 65},
+            {"state": "a newline\nprivate"},
+            {"state": "READY", "receipt": "C:\\private"},
+            {"state": "READY", "receipt": True},
+            {"state": "READY", "paw": None},
+            {},
+            [],
+            "READY",
+        ]
+        for snapshot in cases:
+            with self.subTest(snapshot=snapshot), self.assertRaises(ValueError):
+                WoWControlAdapter(lambda snapshot=snapshot: snapshot).execute(
+                    {"action": CAPABILITY}
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
