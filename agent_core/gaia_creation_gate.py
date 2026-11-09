@@ -44,6 +44,25 @@ def register_reviewed_project(
     registration.validate()
     if not verify_review_record(review):
         raise CreationDenied("invalid_review_record")
+    if review.proposal.get("kind") != "project":
+        raise CreationDenied("review_kind_mismatch")
+    if review.proposal.get("title", "").strip().casefold() != registration.display_name.strip().casefold():
+        raise CreationDenied("review_title_scope_mismatch")
+    if review.proposal.get("related_asset_ids"):
+        raise CreationDenied("existing_related_assets_require_reconciliation")
+    if review.proposal.get("requests_new_trust_boundary") and not authorization.actor_id:
+        raise CreationDenied("trust_boundary_requires_actor")
+    try:
+        review_time = datetime.fromisoformat(review.reviewed_at.replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise CreationDenied("invalid_review_time") from exc
+    now = datetime.now(timezone.utc)
+    if review_time.tzinfo is None or review_time.utcoffset() is None:
+        raise CreationDenied("review_timezone_required")
+    if review_time.astimezone(timezone.utc) > now:
+        raise CreationDenied("future_review_record")
+    if (now - review_time.astimezone(timezone.utc)).total_seconds() > 86400:
+        raise CreationDenied("stale_review_record")
     if review.decision.get("disposition") != "NEEDS_HUMAN_APPROVAL":
         raise CreationDenied("review_is_not_new_project_proposal")
     if review.decision.get("canonical_parent") is not None:
