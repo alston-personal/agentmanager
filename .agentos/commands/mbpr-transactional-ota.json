@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.transactional-ota",
+  "node_id": "mbpr",
+  "source_commit": "18be78bbc0ccc94189f821e66da09ed4d41b268d",
+  "nonce": "mbpr-ota-live-1790562389875"
+}

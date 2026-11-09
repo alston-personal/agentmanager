@@ -3,9 +3,9 @@ name: Diagnose Studio Web Server
 on:
   workflow_dispatch:
   push:
+    branches: [core/integration]
     paths:
       - '.github/workflows/oracle-diagnose-studio-webserver.yml'
-
 permissions:
   contents: write
 
@@ -76,4 +76,6 @@ jobs:
           git add "$E"
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(layoutlab): Studio web-server diagnostic'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority
+
+# trigger: zero-downtime-dashboard-20261006

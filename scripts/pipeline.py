@@ -92,17 +92,12 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
 # ── Telegram 通知 ─────────────────────────────────────────────────────────
 
 def send_telegram(message: str):
-    """發送 Telegram 通知"""
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        logger.warning("⚠️ Telegram 未配置，跳過通知")
-        return
+    """發送 Telegram 通知（經由 Telegram Gate 物理隔離）"""
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message,
-            "parse_mode": "Markdown",
-        }, timeout=10)
+        from agent_core.telegram_gate import send_governed_telegram
+        send_governed_telegram(message, project_name="pipeline")
+    except Exception as exc:
+        logger.warning(f"⚠️ Telegram Gate 發送異常: {exc}")
         logger.info("📢 Telegram 通知已發送")
     except Exception as e:
         logger.warning(f"Telegram 發送失敗: {e}")

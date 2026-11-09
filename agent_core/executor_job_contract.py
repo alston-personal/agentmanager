@@ -1,0 +1,516 @@
+"""Governed bounded executor-job contract for AgentOS ONE.
+
+This is deliberately not a remote shell contract. A caller selects only a
+registered job type plus its bounded semantic inputs. Node-local adapters own
+the executable mapping and credentials. Long-running executor work is submitted
+as an asynchronous job and observed later through an opaque job identifier.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+from typing import Any, Mapping
+
+from agent_core.experience_attribution_contract import sanitize_attribution_evidence_json
+
+
+EXECUTOR_JOB_SCHEMA = "agentos.executor-job/v1"
+EXECUTOR_JOB_SUBMISSION_SCHEMA = "agentos.executor-job-submission/v1"
+EXECUTOR_JOB_RECEIPT_SCHEMA = "agentos.executor-job-receipt/v1"
+
+FORBIDDEN_REQUEST_KEYS = {
+    "command",
+    "cmd",
+    "shell",
+    "script",
+    "argv",
+    "executable",
+    "binary",
+    "cwd",
+    "path",
+    "paths",
+    "env",
+    "environment",
+    "token",
+    "credential",
+    "credentials",
+    "secret",
+    "password",
+}
+
+# Opaque identifiers may cross the control plane, but path-like or URL-like
+# values may not. The format is intentionally transport-neutral; Oracle's
+# Action Relay currently produces ``action-<uuidhex>`` while another Node may
+# use a different safe prefix.
+_OPAQUE_JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}\Z")
+
+
+class ExecutorJobContractError(ValueError):
+    """Raised when a caller attempts to escape a bounded executor-job contract."""
+
+
+@dataclass(frozen=True)
+class JobTypeSpec:
+    job_type: str
+    capability: str
+    authority: str
+    executor_class: str
+    project_id: str
+    workload_ref: str
+    read_only: bool
+    required_resources: tuple[str, ...] = ()
+
+
+JOB_TYPES: dict[str, JobTypeSpec] = {
+    "persona.mio.dm.resume": JobTypeSpec(
+        job_type="persona.mio.dm.resume",
+        capability="persona.social.dm.session.resume",
+        authority="bounded-persona-session-resume",
+        executor_class="oracle-gui-worker",
+        project_id="sunlake-milkcat-persona-dm",
+        workload_ref="persona://mio/threads-dm",
+        read_only=False,
+    ),
+    "persona.mio.dm.health": JobTypeSpec(
+        job_type="persona.mio.dm.health",
+        capability="persona.social.dm.health",
+        authority="bounded-read-only",
+        executor_class="oracle-gui-worker",
+        project_id="sunlake-milkcat-persona-dm",
+        workload_ref="persona://mio/threads-dm",
+        read_only=True,
+    ),
+    "experience.regression": JobTypeSpec(
+        job_type="experience.regression",
+        capability="agentos.experience.regression",
+        authority="read-only-regression",
+        executor_class="openai-codex-local",
+        project_id="agentos-core",
+        workload_ref="issue://117",
+        read_only=True,
+    ),
+    "typesafe.skill.install": JobTypeSpec(
+        job_type="typesafe.skill.install",
+        capability="agentos.skill.install.typesafe",
+        authority="oracle-user-skill-install",
+        executor_class="oracle-antigravity-skill-installer",
+        project_id="agentos-core",
+        workload_ref="skill://typesafe-ai",
+        read_only=False,
+    ),
+    "gemini.cli.install": JobTypeSpec(
+        job_type="gemini.cli.install",
+        capability="agentos.executor.install.gemini-cli",
+        authority="oracle-user-gemini-cli-install",
+        executor_class="gemini-cli",
+        project_id="agentos-core",
+        workload_ref="surface://gemini-cli",
+        read_only=False,
+    ),
+    "antigravity.cli.probe": JobTypeSpec(
+        job_type="antigravity.cli.probe",
+        capability="agentos.executor.probe.antigravity-cli",
+        authority="bounded-read-only",
+        executor_class="antigravity-cli",
+        project_id="agentos-core",
+        workload_ref="surface://antigravity-cli",
+        read_only=True,
+    ),
+    "gemini.cli.health": JobTypeSpec(
+        job_type="gemini.cli.health",
+        capability="agentos.executor.health.gemini-cli",
+        authority="bounded-read-only",
+        executor_class="gemini-cli",
+        project_id="agentos-core",
+        workload_ref="surface://gemini-cli",
+        read_only=True,
+    ),
+    "codex.cli.install": JobTypeSpec(
+        job_type="codex.cli.install",
+        capability="agentos.executor.install.codex-cli",
+        authority="oracle-user-codex-cli-install",
+        executor_class="codex-cli",
+        project_id="agentos-core",
+        workload_ref="surface://codex-cli",
+        read_only=False,
+    ),
+    "codex.cli.health": JobTypeSpec(
+        job_type="codex.cli.health",
+        capability="agentos.executor.health.codex-cli",
+        authority="bounded-read-only",
+        executor_class="codex-cli",
+        project_id="agentos-core",
+        workload_ref="surface://codex-cli",
+        read_only=True,
+    ),
+    "layoutlib.release.materialize": JobTypeSpec(
+        job_type="layoutlib.release.materialize",
+        capability="layoutlib.release.materialize",
+        authority="bounded-product-release-materialize",
+        executor_class="layoutlib-release-materializer",
+        project_id="layoutlib",
+        workload_ref="release://layoutlib/v0.7.9",
+        read_only=False,
+    ),
+    "layoutlib.production.promote": JobTypeSpec(
+        job_type="layoutlib.production.promote",
+        capability="layoutlib.production.promote",
+        authority="bounded-product-production-promote",
+        executor_class="layoutlib-production-promoter",
+        project_id="layoutlib",
+        workload_ref="release://layoutlib/v0.7.9",
+        read_only=False,
+    ),
+    "layoutlib.production.parity.inspect": JobTypeSpec(
+        job_type="layoutlib.production.parity.inspect",
+        capability="layoutlib.production.parity.inspect",
+        authority="bounded-read-only",
+        executor_class="layoutlib-parity-inspector",
+        project_id="layoutlib",
+        workload_ref="release://layoutlib/v0.7.9",
+        read_only=True,
+    ),
+    "engineering.subagent.smoke": JobTypeSpec(
+        job_type="engineering.subagent.smoke",
+        capability="agentos.engineering.probe",
+        authority="bounded-read-only",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="surface://engineering-subagent",
+        read_only=True,
+    ),
+    "engineering.executor.snapshot": JobTypeSpec(
+        job_type="engineering.executor.snapshot",
+        capability="agentos.engineering.executor-snapshot",
+        authority="bounded-read-only",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="surface://engineering-executors",
+        read_only=True,
+    ),
+    "engineering.executor.health": JobTypeSpec(
+        job_type="engineering.executor.health",
+        capability="agentos.engineering.executor-health",
+        authority="bounded-read-only",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="surface://engineering-executors",
+        read_only=True,
+    ),
+    "engineering.model.smoke": JobTypeSpec(
+        job_type="engineering.model.smoke",
+        capability="agentos.engineering.model-smoke",
+        authority="bounded-read-only",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="surface://engineering-model-subagent",
+        read_only=True,
+    ),
+    "engineering.windows-thin-client.fix": JobTypeSpec(
+        job_type="engineering.windows-thin-client.fix",
+        capability="agentos.engineering.windows-node",
+        authority="bounded-code-fix",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="issue://892",
+        read_only=False,
+    ),
+    "engineering.realm-device-flow.fix": JobTypeSpec(
+        job_type="engineering.realm-device-flow.fix",
+        capability="agentos.engineering.realm-device-flow",
+        authority="bounded-code-fix",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="issue://893",
+        read_only=False,
+    ),
+    "engineering.realm-node-fabric.fix": JobTypeSpec(
+        job_type="engineering.realm-node-fabric.fix",
+        capability="agentos.engineering.realm-node-fabric",
+        authority="bounded-code-fix",
+        executor_class="antigravity-engineering",
+        project_id="agentos-core",
+        workload_ref="issue://894",
+        read_only=False,
+    ),
+    "completion.market-master-1200.register": JobTypeSpec(
+        job_type="completion.market-master-1200.register",
+        capability="agentos.completion.work.register",
+        authority="bounded-work-intake",
+        executor_class="completion-controller",
+        project_id="market-master-evolution",
+        workload_ref="issue://1200",
+        read_only=False,
+    ),
+    "completion.470.status.inspect": JobTypeSpec(
+        job_type="completion.470.status.inspect",
+        capability="agentos.completion.work.status.inspect",
+        authority="bounded-read-only",
+        executor_class="completion-controller",
+        project_id="agentos-core",
+        workload_ref="issue://470",
+        read_only=True,
+    ),
+    "completion.next.inspect": JobTypeSpec(
+        job_type="completion.next.inspect",
+        capability="agentos.completion.work.inspect",
+        authority="bounded-read-only",
+        executor_class="completion-controller",
+        project_id="agentos-core",
+        workload_ref="completion://next",
+        read_only=True,
+    ),
+}
+
+
+def _reject_forbidden_keys(value: Any, *, prefix: str = "request") -> None:
+    if isinstance(value, Mapping):
+        for raw_key, child in value.items():
+            key = str(raw_key).strip().casefold()
+            if key in FORBIDDEN_REQUEST_KEYS:
+                raise ExecutorJobContractError(f"forbidden generic-execution field: {prefix}.{raw_key}")
+            _reject_forbidden_keys(child, prefix=f"{prefix}.{raw_key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _reject_forbidden_keys(child, prefix=f"{prefix}[{index}]")
+
+
+def validate_executor_job(request: Mapping[str, Any]) -> JobTypeSpec:
+    """Validate a declarative executor job without granting execution authority."""
+    if not isinstance(request, Mapping):
+        raise ExecutorJobContractError("executor job must be an object")
+    _reject_forbidden_keys(request)
+
+    allowed = {
+        "schema",
+        "job_type",
+        "project_id",
+        "executor_class",
+        "workload_ref",
+        "authority",
+    }
+    unexpected = set(request) - allowed
+    if unexpected:
+        raise ExecutorJobContractError(f"unexpected executor-job fields: {sorted(unexpected)}")
+    if request.get("schema") != EXECUTOR_JOB_SCHEMA:
+        raise ExecutorJobContractError("unsupported executor-job schema")
+
+    job_type = str(request.get("job_type") or "").strip()
+    spec = JOB_TYPES.get(job_type)
+    if spec is None:
+        raise ExecutorJobContractError("unsupported executor job type")
+
+    exact = {
+        "project_id": spec.project_id,
+        "executor_class": spec.executor_class,
+        "workload_ref": spec.workload_ref,
+        "authority": spec.authority,
+    }
+    for field, expected in exact.items():
+        if request.get(field) != expected:
+            raise ExecutorJobContractError(f"{field} must equal the registered job contract")
+    return spec
+
+
+def validate_executor_job_id(job_id: str) -> str:
+    """Validate an opaque durable identifier without accepting filesystem input."""
+    value = str(job_id or "").strip()
+    if not _OPAQUE_JOB_ID.fullmatch(value):
+        raise ExecutorJobContractError("job_id must be an opaque non-path identifier")
+    return value
+
+
+def canonical_executor_job_request(job_type: str) -> dict[str, str]:
+    job_type = str(job_type or "").strip()
+    spec = JOB_TYPES.get(job_type)
+    if spec is None:
+        raise ExecutorJobContractError("unsupported executor job type")
+    return {
+        "schema": EXECUTOR_JOB_SCHEMA,
+        "job_type": spec.job_type,
+        "project_id": spec.project_id,
+        "executor_class": spec.executor_class,
+        "workload_ref": spec.workload_ref,
+        "authority": spec.authority,
+    }
+
+
+def canonical_experience_regression_request() -> dict[str, str]:
+    return canonical_executor_job_request("experience.regression")
+
+
+def canonical_typesafe_skill_install_request() -> dict[str, str]:
+    return canonical_executor_job_request("typesafe.skill.install")
+
+
+def canonical_gemini_cli_install_request() -> dict[str, str]:
+    return canonical_executor_job_request("gemini.cli.install")
+
+
+def canonical_gemini_cli_health_request() -> dict[str, str]:
+    return canonical_executor_job_request("gemini.cli.health")
+
+
+def canonical_codex_cli_install_request() -> dict[str, str]:
+    return canonical_executor_job_request("codex.cli.install")
+
+
+def canonical_codex_cli_health_request() -> dict[str, str]:
+    return canonical_executor_job_request("codex.cli.health")
+
+
+def project_executor_job_submission(
+    *,
+    job_id: str,
+    node_id: str,
+    request: Mapping[str, Any],
+    reused: bool = False,
+) -> dict[str, Any]:
+    """Project the asynchronous acknowledgement returned before execution ends."""
+    spec = validate_executor_job(request)
+    job_id = validate_executor_job_id(job_id)
+    node_id = str(node_id or "").strip()
+    if not node_id:
+        raise ExecutorJobContractError("node_id is required")
+    return {
+        "schema": EXECUTOR_JOB_SUBMISSION_SCHEMA,
+        "ok": True,
+        "state": "queued",
+        "job_id": job_id,
+        "node_id": node_id,
+        "job_type": spec.job_type,
+        "project_id": spec.project_id,
+        "executor_class": spec.executor_class,
+        "capability": spec.capability,
+        "reused": bool(reused),
+        "credential_exposed": False,
+    }
+
+
+def project_executor_job_receipt(
+    *,
+    job_id: str,
+    request: Mapping[str, Any],
+    executor_available: bool,
+    routable: bool,
+    authorized: bool,
+    successful: bool,
+    result: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create the bounded model-visible result; never infer one state from another."""
+    spec = validate_executor_job(request)
+    job_id = validate_executor_job_id(job_id)
+    summary: dict[str, Any] = {
+        "schema": EXECUTOR_JOB_RECEIPT_SCHEMA,
+        "job_id": job_id,
+        "job_type": spec.job_type,
+        "project_id": spec.project_id,
+        "executor_class": spec.executor_class,
+        "capability": spec.capability,
+        "executor_available": bool(executor_available),
+        "routable": bool(routable),
+        "authorized": bool(authorized),
+        "successful": bool(successful),
+        "credential_exposed": False,
+    }
+    if result is not None:
+        # Only explicitly safe scalar regression fields cross the boundary.
+        for key in (
+            "experiment_id",
+            "verdict",
+            "baseline_score",
+            "hydrated_score",
+            "uplift",
+            "hydration_receipt_ok",
+            "install_receipt_ok",
+            "classification",
+            "dm_session_state",
+            "dm_account_state",
+            "dm_resume_state",
+            "dm_resume_reason",
+            "dm_checked_at",
+            "dm_oursong_timer_state",
+            "dm_oursong_timer_enabled",
+            "dm_oursong_cycle_status",
+            "dm_oursong_cycle_age_seconds",
+            "dm_oursong_cycle_fresh",
+            "dm_supervisor_timer_state",
+            "executor_returncode",
+            "executor_timed_out",
+            "executor_provider",
+            "worktree_clean",
+            "observed_head",
+            "claude_liveness",
+            "claude_state",
+            "claude_returncode",
+            "claude_timed_out",
+            "claude_ready_count",
+            "claude_probe_attempts",
+            "claude_health_classification",
+            "agy_liveness",
+            "agy_state",
+            "agy_returncode",
+            "agy_timed_out",
+            "agy_ready_count",
+            "agy_probe_attempts",
+            "agy_health_classification",
+            "gemini_liveness",
+            "gemini_state",
+            "gemini_returncode",
+            "gemini_timed_out",
+            "gemini_ready_count",
+            "gemini_probe_attempts",
+            "gemini_health_classification",
+            "gemini_cli_version",
+            "agy_probe_sha256",
+            "agy_marker_matched",
+            "agy_version_exit_code",
+            "agy_version_detected",
+            "gemini_cli_diagnostic_tags",
+            "codex_cli_version",
+            "codex_liveness",
+            "codex_state",
+            "codex_returncode",
+            "codex_timed_out",
+            "codex_ready_count",
+            "codex_probe_attempts",
+            "codex_health_classification",
+            "selected_provider",
+            "runtime_source_commit",
+            "layoutlib_release",
+            "layoutlib_manifest_files",
+            "layoutlib_matching_files",
+            "layoutlib_public_http",
+            "layoutlib_parity",
+            "layoutlib_promoted_files",
+            "layoutlib_rollback_retained",
+            "work_id",
+            "completion_status",
+            "completion_owner",
+            "completion_owner_generation",
+            "completion_active_count",
+            "completion_blocked_count",
+            "completion_waiting_count",
+            "completion_unreconciled_count",
+            "completion_target_verified",
+            "completion_wake_not_before",
+            "completion_wake_overdue",
+            "completion_last_event_category",
+            "completion_recent_wake_count",
+            "completion_recent_reclaim_count",
+            "completion_target_reclaimed",
+            "completion_last_blocker_kind",
+            "completion_last_verification_failure_code",
+            "completion_machine_retry_count",
+            "completion_wait_reason_category",
+        ):
+            value = result.get(key)
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                summary[key] = value
+        # #117 may additionally project one strictly validated canonical JSON
+        # scalar carrying only fixed benchmark dimensions + hydration manifest.
+        if "attribution_evidence_json" in result:
+            summary["attribution_evidence_json"] = sanitize_attribution_evidence_json(
+                result.get("attribution_evidence_json")
+            )
+    return summary

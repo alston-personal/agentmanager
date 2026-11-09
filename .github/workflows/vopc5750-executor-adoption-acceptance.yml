@@ -1,0 +1,136 @@
+name: VOPC5750 Executor Adoption Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/antigravity_relay_worker.py'
+      - 'agentos_node/executor_provider_adapters.py'
+      - 'agentos_node/codex_provider_adapter.py'
+      - 'agentos_node/executor_reconcile.py'
+      - 'agentos_node/thin_client.py'
+      - 'agent_core/runner_window.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - 'agent_core/realm_server.py'
+      - '.agentos/executors/**'
+      - '.github/workflows/vopc5750-executor-adoption-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  runtime-generation-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Mint GitHub OIDC Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Verify deployed control runtime generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
+          converged=0
+          live_commit=""
+          for i in $(seq 1 36); do
+            out="$RUNNER_TEMP/vopc5750-runtime-generation-$i.txt"
+            if AGENTOS_DISPATCH_WAIT_SECONDS=60 \
+              bash scripts/agentos_dispatch.sh agentos.relay status "$GITHUB_SHA" > "$out" 2>&1; then
+              cat "$out" >> "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
+              live_commit="$(python3 - "$out" <<'PY' || true
+          import json,re,sys
+          docs=[json.loads(line) for line in open(sys.argv[1],encoding='utf-8') if line.lstrip().startswith('{')]
+          if not docs:
+              raise SystemExit(1)
+          receipt=docs[-1].get('receipt') or {}
+          if receipt.get('ok') is not True:
+              raise SystemExit(1)
+          vals={}
+          for item in receipt.get('evidence') or []:
+              if '=' in item:
+                  k,v=item.split('=',1)
+                  vals[k]=v
+          a=str(vals.get('relay_status_antigravity_source_commit') or '')
+          b=str(vals.get('relay_status_action_source_commit') or '')
+          if vals.get('relay_status')!='PASS':
+              raise SystemExit(1)
+          if not re.fullmatch(r'[0-9a-f]{40}',a) or a!=b:
+              raise SystemExit(1)
+          print(a)
+          PY
+              )"
+              if [ -n "$live_commit" ]; then
+                git fetch --no-tags origin "$live_commit" >/dev/null 2>&1 || true
+                if git cat-file -e "$live_commit^{commit}" 2>/dev/null \
+                  && git merge-base --is-ancestor "$live_commit" "$GITHUB_SHA"; then
+                  changed="$(git diff --name-only "$live_commit" "$GITHUB_SHA" -- \
+                    agentos_node/bootstrap_control.py \
+                    agentos_node/bootstrap_scheduler.py \
+                    agent_core/runner_window.py \
+                    agent_core/realm_server.py \
+                    scripts/install_bootstrap_scheduler_user.sh)"
+                  if [ -z "$changed" ]; then
+                    converged=1
+                    break
+                  fi
+                fi
+              fi
+            else
+              cat "$out" >> "$RUNNER_TEMP/vopc5750-runtime-generation.txt"
+            fi
+            sleep 5
+          done
+          test "$converged" = 1
+          echo "vopc5750_control_runtime_generation=PASS"
+          echo "vopc5750_control_runtime_source_commit=$live_commit"
+
+      - name: Upload bounded runtime gate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vopc5750-runtime-generation-${{ github.run_id }}
+          path: ${{ runner.temp }}/vopc5750-runtime-generation.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+  node-inspect:
+    needs: runtime-generation-gate
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.realm
+      operation: inspect
+      payload_json: '{"node_id":"vopc5750"}'
+
+  executor-reconcile:
+    needs: node-inspect
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.executor
+      operation: reconcile
+      payload_json: '{"node_id":"vopc5750"}'

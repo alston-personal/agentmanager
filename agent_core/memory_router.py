@@ -116,8 +116,15 @@ class MemoryRoute:
         }
 
 
+def _normalize_project_name(project_root: Path) -> str:
+    name = project_root.name
+    if "releases/core" in str(project_root) or (len(name) == 40 and all(c in "0123456789abcdefABCDEF" for c in name)):
+        return "agentmanager"
+    return name
+
+
 def _route_from_paths(project_root: Path, data_root: Path, source: str) -> MemoryRoute:
-    project_name = project_root.name
+    project_name = _normalize_project_name(project_root)
     project_data_root = data_root / "projects" / project_name
     memory_dir = project_data_root / "memory"
     return MemoryRoute(

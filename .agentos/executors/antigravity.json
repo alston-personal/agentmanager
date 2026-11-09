@@ -1,0 +1,69 @@
+{
+  "schema": "agentos.executor-provider-profile/v0.1",
+  "executor_id": "antigravity",
+  "provider_id": "google-antigravity",
+  "executor_class": "antigravity",
+  "modes": [
+    "ide",
+    "relay"
+  ],
+  "owner": "provider-adapter",
+  "capabilities": [
+    "agent.chat",
+    "code.edit"
+  ],
+  "discovery": {
+    "strategy": [
+      "provider_adapter"
+    ],
+    "provider_owned_allowlists_only": true,
+    "credential_access": false
+  },
+  "readiness": {
+    "dimensions": [
+      "installed",
+      "reachable",
+      "authorized",
+      "routable",
+      "healthy"
+    ],
+    "ready_requires": [
+      "installed",
+      "reachable",
+      "authorized",
+      "routable",
+      "healthy"
+    ]
+  },
+  "invocation": {
+    "bounded_semantic_requests_only": true,
+    "caller_supplied_executable": false,
+    "caller_supplied_argv": false,
+    "caller_supplied_env": false
+  },
+  "cancellation": {
+    "supported": false,
+    "strategy": "provider-defined"
+  },
+  "concurrency": {
+    "model": "provider-defined",
+    "mutex_scope": null
+  },
+  "receipt": {
+    "required": true,
+    "secrets_allowed": false
+  },
+  "smoke": {
+    "required": true,
+    "kind": "provider-defined",
+    "expected_safe_evidence": []
+  },
+  "adoption": {
+    "reinstall_by_default": false,
+    "preserve_existing_identity": true
+  },
+  "implementation": {
+    "adapter_module": "agentos_node.executor_provider_adapters:AntigravityProvider",
+    "notes": "Trusted bounded relay adapter. READY still requires governed health and smoke acceptance."
+  }
+}

@@ -1,0 +1,11 @@
+# Optional systemd drop-in for AgentOS Core Supervisor S4 one_direct delivery.
+# Install only after the existing ONE Realm paths are verified on the target host.
+# Keep PrivateNetwork=true in the base unit: current one_direct uses the local ONE
+# fabric/Node Registry state and does not require a generic outbound network path.
+
+[Service]
+# The base service already grants write access to employee-runtime, where the
+# immutable reconcile journal and S4 delivery ledger live. S4 additionally needs
+# the existing ONE realm directory so ControllerService can enqueue the bounded
+# agent.employee.wake.deliver task into fabric.json.
+ReadWritePaths=/home/ubuntu/agent-data/realm

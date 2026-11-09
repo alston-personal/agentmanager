@@ -1,0 +1,62 @@
+name: VOPC5750 Transactional OTA
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Immutable candidate commit
+        required: true
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/realm-node-transactional-ota.json'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: vopc5750-transactional-ota
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      payload_json: ${{ steps.payload.outputs.payload_json }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: payload
+        name: Validate immutable OTA request
+        shell: bash
+        env:
+          INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json,os,re
+          from pathlib import Path
+
+          candidate=str(os.environ.get("INPUT_SOURCE_COMMIT") or "").strip()
+          if not candidate:
+              p=Path(".agentos/commands/realm-node-transactional-ota.json")
+              data=json.loads(p.read_text(encoding="utf-8"))
+              assert data.get("node_id")=="vopc5750",data
+              assert data.get("action")=="realm.node.transactional_ota",data
+              candidate=str(data.get("source_commit") or "").strip()
+          assert re.fullmatch(r"[0-9a-f]{40}",candidate),candidate
+          payload={"node_id":"vopc5750","candidate_commit":candidate}
+          print("payload_json="+json.dumps(payload,separators=(",",":")))
+          PY
+          bash -n scripts/run_realm_node_transactional_ota_user.sh
+          echo "vopc5750_ota_request=PASS"
+
+  dispatch:
+    needs: prepare
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.runtime
+      operation: transactional-ota
+      payload_json: ${{ needs.prepare.outputs.payload_json }}

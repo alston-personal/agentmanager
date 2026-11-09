@@ -1,0 +1,91 @@
+name: Hosted Node Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/hosted-node-acceptance.json'
+
+permissions:
+  contents: read
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify node is online and return a governed receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODE_ID="$(python3 - <<'PY'
+          import json,re
+          d=json.load(open('.agentos/commands/hosted-node-acceptance.json',encoding='utf-8'))
+          assert d.get('schema')=='agentos.realm-command/v0.1',d
+          assert d.get('action')=='realm.node.acceptance',d
+          node=str(d.get('node_id') or '')
+          assert re.fullmatch(r'[A-Za-z0-9._-]{1,64}',node),node
+          print(node)
+          PY
+          )"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$NODE_ID" <<'REMOTE'
+          set -euo pipefail
+          NODE_ID="$1"
+          REPO=/home/ubuntu/agentmanager
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH="$REPO"
+          python3 - "$NODE_ID" <<'PY'
+          import json,sys,time
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_id=sys.argv[1]
+          node=None
+          for _ in range(90):
+              node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')==node_id),None)
+              if node and node.get('status')=='online' and int(node.get('heartbeat_age_seconds') or 999999)<60:
+                  break
+              time.sleep(2)
+          else:
+              print(json.dumps({'node':node},ensure_ascii=False,indent=2))
+              raise SystemExit('node did not become freshly online')
+
+          print('hosted_node_online=PASS')
+          print('node_id='+node_id)
+          print('last_heartbeat='+str(node.get('last_heartbeat_at')))
+          print('heartbeat_age_seconds='+str(node.get('heartbeat_age_seconds')))
+          print('capability_count='+str(len(node.get('capabilities') or [])))
+
+          task_id='hosted-accept-'+str(int(time.time()))
+          task={
+            'schema':'agentos.node-task/v0.1',
+            'task_id':task_id,
+            'action':'process.inspect',
+            'query':'agentos',
+            'limit':20,
+            'cognition_ids_used':[],
+          }
+          store=RealmFabricStore()
+          store.queue_task(node_id,task)
+          for _ in range(60):
+              receipt=store.get_receipt(task_id)
+              if receipt:
+                  print(json.dumps({'receipt':receipt},ensure_ascii=False,indent=2))
+                  assert receipt.get('schema')=='agentos.node-receipt/v0.1',receipt
+                  assert receipt.get('node_id')==node_id,receipt
+                  assert receipt.get('ok') is True,receipt
+                  print('hosted_node_receipt=PASS')
+                  print('hosted_node_acceptance=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('governed receipt timeout')
+          PY
+          REMOTE

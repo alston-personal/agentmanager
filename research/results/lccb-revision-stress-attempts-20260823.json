@@ -1,0 +1,74 @@
+{
+  "schema_version": "agentos.lccb-revision-stress-attempts/v1",
+  "experiment_id": "lccb-revision-stress-v1",
+  "status": "PROTOCOL_READY_PROVIDER_BLOCKED",
+  "recorded_at": "2026-08-23",
+  "scientific_status": {
+    "cognitive_comparison_completed": false,
+    "b1_vs_b3_result_available": false,
+    "valid_accuracy_inference": false,
+    "valid_context_limit_inference": false,
+    "reason": "Both external-provider attempts failed before the first scored response because the provider returned HTTP 429. The second attempt failed on B1 stage 0 with a 6,390-character prompt after bounded 30/60/120-second retries, so the failure cannot be attributed to the 4,000-event full-history context."
+  },
+  "frozen_design": {
+    "model": "gemini-3.1-flash-lite",
+    "seed": 73129,
+    "events": 4000,
+    "semantic_revision_events": 4000,
+    "keys": 24,
+    "stages": [0, 1000, 4000],
+    "conditions": ["B1", "B3"],
+    "temperature": 0,
+    "repeats": 3,
+    "b1": "complete ordered public history without truncation",
+    "b3": "latest public semantic state per key derived from the identical public history",
+    "private_labels_exposed_during_execution": false
+  },
+  "implementation": {
+    "pack_builder": "scripts/build_lccb_revision_stress_pack.py",
+    "workflow": ".github/workflows/lccb-revision-stress-oracle.yml",
+    "runner": "scripts/run_lccb_condition_matrix.py",
+    "pack_builder_commit": "8732a79196d8086029b8a03bca0d48e0fdccd54b",
+    "workflow_commit": "e745e1b9fbfb8177c4717de0ebbeabfcb0a446bb",
+    "runner_retry_commit": "d2f248da9025adf5b2b39ad309654a1e6145a395"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "workflow_run": 32617741853,
+      "experiment_sha": "6208daeb7a194f1c595f55ea3f65976b64d6aa61",
+      "conclusion": "failure",
+      "artifact_uploaded": false,
+      "failure_class": "provider_http_429",
+      "diagnosis": "Checkout, SSH transport and pack construction succeeded. Provider execution failed with HTTP 429 before a complete scored response set was produced."
+    },
+    {
+      "attempt": 2,
+      "workflow_run": 32617901460,
+      "experiment_sha": "c895aa4c307f788d5d9a6ddc260595e0031c65d3",
+      "conclusion": "failure",
+      "artifact_uploaded": false,
+      "failure_class": "provider_http_429_persistent",
+      "first_model_call": {
+        "repeat": 0,
+        "condition": "B1",
+        "stage": 0,
+        "prompt_characters": 6390
+      },
+      "bounded_retry_delays_seconds": [30, 60, 120],
+      "diagnosis": "The same provider HTTP 429 persisted across all bounded retries on the first stage-0 call. Because stage 0 contains no 4,000-event history and the prompt is only 6,390 characters, this run provides evidence of provider availability/quota throttling, not evidence of full-history context failure."
+    }
+  ],
+  "claim_boundary": [
+    "Do not count either failed workflow as B1 or B3 task failure.",
+    "Do not treat HTTP 429 as evidence that B1 cannot process the 4,000-event history.",
+    "Do not revise the completed Experiment 2 B1/B3 accuracy conclusion from these attempts.",
+    "Only a successful run that emits raw responses, deterministic scores, manifest, artifact ID and digest may establish an Experiment 3 cognitive result."
+  ],
+  "next_valid_execution": {
+    "require_same_frozen_design": true,
+    "provider_must_accept_stage0_probe": true,
+    "success_requires_artifact": true,
+    "result_must_be_reported_separately_from_failed_attempts": true
+  }
+}

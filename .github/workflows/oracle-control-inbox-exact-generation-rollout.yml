@@ -1,0 +1,127 @@
+name: Oracle Control Inbox Exact Generation Rollout
+
+# Legacy bootstrap carrier retained only to bridge an older live bootstrap
+# generation to the isolated Control Inbox runtime. The temporary bootstrap
+# hook is restored before exit and never becomes runtime authority.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-control-inbox-exact-generation-rollout.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-control-inbox-exact-generation-rollout
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight exact integration generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          git cat-file -e "$GITHUB_SHA^{commit}"
+          echo "control_inbox_rollout_source_commit=$GITHUB_SHA"
+
+      - name: Bootstrap isolated Control Inbox reconcile
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          HOOK="$LIVE/agentos_node/bootstrap_control.py"
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="control-inbox-safe-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+          BACKUP="$(mktemp /tmp/agentos-bootstrap-control-backup-XXXXXX.py)"
+
+          test -f "$HOOK"
+          test -w "$HOOK"
+          cp -p "$HOOK" "$BACKUP"
+          BEFORE_SHA="$(sha256sum "$HOOK" | awk '{print $1}')"
+
+          restore_hook() {
+            cat "$BACKUP" > "$HOOK" || true
+            rm -f "$BACKUP"
+          }
+          trap restore_hook EXIT
+
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          cat agentos_node/bootstrap_control.py > "$HOOK"
+          python3 -m py_compile "$HOOK"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          path=Path(sys.argv[1]); request_id=sys.argv[2]; sha=sys.argv[3]
+          payload={
+            "schema":"agentos.bootstrap-request/v1",
+            "request_id":request_id,
+            "action":"agentos.control_inbox.reconcile",
+            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
+            "params":{"source_commit":sha},
+            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
+          }
+          tmp=path.with_suffix(path.suffix+".tmp")
+          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          os.chmod(tmp,0o644)
+          tmp.replace(path)
+          os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 240); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo 'control_inbox_bootstrap_receipt=TIMEOUT'; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.control_inbox.reconcile',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('executor_uid')==1001,r
+          assert r.get('source_commit')==expected,r
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          assert r.get('ok') is True,text[-16000:]
+          for marker in (
+            'control_inbox_safe_reconcile=PASS',
+            'control_inbox_realm_restart=NO',
+            'control_inbox_github_auth_repair=PASS',
+            'control_inbox_service=active',
+            'control_inbox_source_commit='+expected,
+          ):
+            assert marker in text, marker+' missing\n'+text[-16000:]
+          print('control_inbox_safe_rollout=PASS')
+          print('control_inbox_realm_restart=NO')
+          PY
+
+          restore_hook
+          trap - EXIT
+          test "$(sha256sum "$HOOK" | awk '{print $1}')" = "$BEFORE_SHA"
+          echo 'bootstrap_hook_restored=PASS'

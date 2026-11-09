@@ -1,0 +1,47 @@
+name: Oracle Install Dashboard Blue Green
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'scripts/install_dashboard_blue_green_user.sh'
+      - '.github/workflows/oracle-install-dashboard-blue-green.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-dashboard-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install blue-green foundation
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_PORT:-22}" scripts/install_dashboard_blue_green_user.sh "${DEPLOY_USER}@${ORACLE_HOST}:/tmp/install_dashboard_blue_green_user.sh"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          chmod 700 /tmp/install_dashboard_blue_green_user.sh
+          /tmp/install_dashboard_blue_green_user.sh
+          REMOTE
+      - name: Verify public dashboard still healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/bg-session -w '%{http_code}' --max-time 10 https://studio.milkcat.org/dashboard/api/auth/session || true)
+          echo "dashboard_public_session_http=$code"
+          test "$code" = 200
+          echo "dashboard_blue_green_public_continuity=PASS"

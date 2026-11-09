@@ -8,18 +8,11 @@ fi
 
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
-DASH="$REPO/dashboard"
-PORT_MANAGER_REL="scripts/core_services/port_manager.py"
-PORT_MANAGER_EXACT="/tmp/agentos-port-manager-$SOURCE_COMMIT.py"
-RETIRE_PM2_REL="scripts/retire_legacy_dashboard_pm2_user.sh"
-RETIRE_PM2_EXACT="/tmp/agentos-retire-dashboard-pm2-$SOURCE_COMMIT.sh"
-ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
-ROUTE="$REPO/$ROUTE_REL"
-PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
-PUBLIC_BOOTSTRAP='https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
+PUBLIC_DISPATCH='https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch'
 LOCAL='http://127.0.0.1:8780/v1/health'
 LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/agentos/v1/health'
 LOCAL_GATEWAY_BOOTSTRAP='http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
+LOCAL_GATEWAY_DISPATCH='http://127.0.0.1:3000/dashboard/api/agentos/v1/dispatch'
 
 [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'ERROR: AGENTOS_SOURCE_COMMIT must be exact lowercase 40-hex commit' >&2; exit 2; }
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
@@ -36,25 +29,9 @@ git -C "$REPO" show "$SOURCE_COMMIT:$RETIRE_PM2_REL" > "$RETIRE_PM2_EXACT"
 chmod 700 "$RETIRE_PM2_EXACT"
 echo "dashboard_pm2_retire_source=$SOURCE_COMMIT:$RETIRE_PM2_REL"
 
-PORT_3000_OWNER="$(
-  python3 "$PORT_MANAGER_EXACT" list --json |
-    python3 -c 'import json,sys; print((json.load(sys.stdin).get("3000") or {}).get("project") or "")'
-)"
-case "$PORT_3000_OWNER" in
-  agentos-dashboard)
-    python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard
-    ;;
-  agentmanager)
-    python3 "$PORT_MANAGER_EXACT" migrate 3000 agentmanager agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
-    ;;
-  "")
-    python3 "$PORT_MANAGER_EXACT" ensure 3000 agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
-    ;;
-  *)
-    echo "ERROR: governed port 3000 belongs to unexpected project '$PORT_3000_OWNER'" >&2
-    exit 8
-    ;;
-esac
+if ! python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard >/dev/null 2>&1; then
+  python3 "$PORT_MANAGER_EXACT" migrate 3000 agentmanager agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
+fi
 python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard
 python3 "$PORT_MANAGER_EXACT" ensure 8780 agentos-realm-fabric --desc "AgentOS ONE Realm Fabric"
 echo "port_governance=PASS"
@@ -306,45 +283,13 @@ for entry in Path('/proc').iterdir():
 PY
   systemctl --user list-units --type=service --all --no-pager | grep -Ei 'dashboard|studio|release' || true
   echo "dashboard_release_supervisor_identity_end"
-}
-
-TMP=$(mktemp -d)
-BACKUP="$TMP/route.backup"
-HAD_ROUTE=0
-cleanup() { rm -rf "$TMP"; }
-trap cleanup EXIT
-
-if [ -f "$ROUTE" ]; then
-  cp "$ROUTE" "$BACKUP"
-  HAD_ROUTE=1
-fi
-
-rollback() {
-  set +e
-  if [ "$HAD_ROUTE" = 1 ]; then
-    mkdir -p "$(dirname "$ROUTE")"
-    cp "$BACKUP" "$ROUTE"
-  else
-    rm -f "$ROUTE"
-  fi
-  (cd "$DASH" && npm run build >/tmp/agentos-realm-gateway-rollback-build.log 2>&1)
-  restart_dashboard >/tmp/agentos-realm-gateway-rollback-restart.log 2>&1 || true
-  set -e
-}
-
-trap 'rc=$?; if [ $rc -ne 0 ]; then rollback; fi; cleanup; exit $rc' EXIT
-
-mkdir -p "$(dirname "$ROUTE")"
-git -C "$REPO" show "$SOURCE_COMMIT:$ROUTE_REL" > "$ROUTE"
-chmod 0664 "$ROUTE" || true
-
 echo "route_source=$SOURCE_COMMIT:$ROUTE_REL"
-python3 - "$ROUTE" <<'PY'
+python3 - "$STAGE_ROUTE" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1])
 s=p.read_text(encoding='utf-8')
-required=['127.0.0.1:8780','/v1/bootstrap','/v1/join/request','/v1/join/claim','/v1/heartbeat','x-agentos-realm-gateway']
+required=['127.0.0.1:8780','/v1/bootstrap','/v1/dispatch','/v1/join/request','/v1/join/claim','/v1/heartbeat','x-agentos-realm-gateway']
 missing=[x for x in required if x not in s]
 assert not missing, missing
 assert 'http://' + '${' not in s
@@ -367,23 +312,81 @@ if ! printf '%s' "$LOCAL_BODY" | grep -q 'agentos.one-health/v0.1' || ! printf '
 fi
 echo "local_realm_health=PASS"
 
-# The canonical systemd runtime must not read the same .next tree while it is
-# being destroyed/rebuilt. An explicit stop does not trigger Restart=always.
-systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
-echo "dashboard_canonical_runtime_stopped_for_build=PASS"
-
-rm -rf "$DASH/.next"
-echo "dashboard_build_cache=CLEARED"
-(cd "$DASH" && npm run build)
+echo "dashboard_staging_build_begin=PASS"
+(cd "$STAGE" && npm run build)
 echo "dashboard_build=PASS"
+echo "dashboard_live_runtime_preserved_during_build=PASS"
 
-if ! grep -R -q '"method".*"path"\|"path".*"method"' "$DASH/.next/server" 2>/dev/null; then
+if ! grep -R -q '"method".*"path"\|"path".*"method"' "$STAGE/.next/server" 2>/dev/null; then
   echo "ERROR: compiled Realm gateway artifact does not contain current diagnostic fields" >&2
   exit 5
 fi
 echo "realm_gateway_compiled_generation=PASS"
 
-restart_dashboard
+# Finish slow housekeeping while the existing Dashboard is still serving.
+# The public port must not be held offline while PM2/legacy checks run.
+install_dashboard_service
+"$RETIRE_PM2_EXACT"
+echo "dashboard_precutover_housekeeping=PASS"
+
+# Cutover only after the staged generation and housekeeping are complete.
+# The unavailable window is limited to stop -> atomic artifact swap -> restart.
+CUTOVER_STARTED=1
+CUTOVER_STARTED_MS="$(date +%s%3N)"
+systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
+if [ -d "$DASH/.next" ]; then
+  mv "$DASH/.next" "$BACKUP_NEXT"
+  HAD_NEXT=1
+fi
+mv "$STAGE/.next" "$DASH/.next"
+mkdir -p "$(dirname "$ROUTE")"
+cp "$STAGE_ROUTE" "$ROUTE"
+chmod 0664 "$ROUTE" || true
+echo "dashboard_generation_cutover=PASS"
+
+fast_restart_dashboard
+CUTOVER_READY_MS="$(date +%s%3N)"
+CUTOVER_DOWNTIME_MS="$((CUTOVER_READY_MS - CUTOVER_STARTED_MS))"
+echo "dashboard_cutover_downtime_ms=$CUTOVER_DOWNTIME_MS"
+test "$CUTOVER_DOWNTIME_MS" -le 15000
+echo "dashboard_cutover_downtime_budget=PASS"
+CUTOVER_STARTED=0
+
+# Cut over the pinned ONE controller/runtime generation only after all staged
+# files compile. Keep backups until the restarted Realm proves healthy.
+mkdir -p "$CORE_BACKUP"
+for rel in "${CORE_RUNTIME_RELS[@]}"; do
+  mkdir -p "$CORE_BACKUP/$(dirname "$rel")"
+  cp "$REPO/$rel" "$CORE_BACKUP/$rel"
+  cp "$CORE_STAGE/$rel" "$REPO/$rel"
+done
+echo "realm_core_runtime_cutover=PASS"
+
+if ! systemctl --user restart agentos-realm-fabric.service; then
+  for rel in "${CORE_RUNTIME_RELS[@]}"; do cp "$CORE_BACKUP/$rel" "$REPO/$rel"; done
+  systemctl --user restart agentos-realm-fabric.service || true
+  echo "ERROR: Realm Fabric restart failed after core runtime cutover" >&2
+  exit 8
+fi
+
+realm_core_ready=0
+for i in $(seq 1 20); do
+  if curl -fsS --max-time 2 "$LOCAL" >/tmp/agentos-realm-core-health.json 2>/dev/null; then
+    if grep -q 'agentos.one-health/v0.1' /tmp/agentos-realm-core-health.json && grep -q 'realm-alston' /tmp/agentos-realm-core-health.json; then
+      realm_core_ready=1
+      break
+    fi
+  fi
+  sleep 1
+done
+if [ "$realm_core_ready" -ne 1 ]; then
+  for rel in "${CORE_RUNTIME_RELS[@]}"; do cp "$CORE_BACKUP/$rel" "$REPO/$rel"; done
+  systemctl --user restart agentos-realm-fabric.service || true
+  echo "ERROR: Realm Fabric health failed after core runtime cutover; runtime rolled back" >&2
+  exit 9
+fi
+echo "realm_core_runtime_restart=PASS"
+echo "realm_core_runtime_source_commit=$SOURCE_COMMIT"
 
 for i in $(seq 1 30); do
   if curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null; then break; fi
@@ -409,23 +412,29 @@ echo "local_bootstrap_http=$LB_CODE prefix=$(head -c 240 "$LB_BODY" 2>/dev/null 
 ! grep -q 'Realm gateway route not allowlisted' "$LB_BODY"
 echo "realm_gateway_bootstrap_local=PASS"
 
-for i in $(seq 1 30); do
-  BODY=$(curl -fsS --max-time 5 "$PUBLIC" 2>/dev/null || true)
-  if printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1' && printf '%s' "$BODY" | grep -q 'realm-alston'; then break; fi
-  sleep 1
-done
-BODY=$(curl -fsS --max-time 5 "$PUBLIC")
-printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1'
-printf '%s' "$BODY" | grep -q 'realm-alston'
-echo "realm_gateway_public=PASS"
+PD_BODY=/tmp/agentos-realm-public-dispatch
+PD_CODE=$(curl -sS -o "$PD_BODY" -w '%{http_code}' --max-time 8 "$PUBLIC_DISPATCH" || true)
+echo "public_dispatch_http=$PD_CODE prefix=$(head -c 240 "$PD_BODY" 2>/dev/null | tr '
+' ' ' | tr '
+' ' ' || true)"
+[ "$PD_CODE" = 401 ]
+! grep -q 'Realm gateway route not allowlisted' "$PD_BODY"
+echo "realm_gateway_dispatch_public=PASS"
 
-PB_BODY=/tmp/agentos-realm-public-bootstrap
-PB_CODE=$(curl -sS -o "$PB_BODY" -w '%{http_code}' --max-time 8 "$PUBLIC_BOOTSTRAP" || true)
-echo "public_bootstrap_http=$PB_CODE prefix=$(head -c 240 "$PB_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
-[ "$PB_CODE" = 401 ]
-! grep -q 'Realm gateway route not allowlisted' "$PB_BODY"
-echo "realm_gateway_bootstrap_public=PASS"
-
+REALM_PROVENANCE="$DATA_ROOT/runtime/realm-fabric/provenance.json"
+mkdir -p "$(dirname "$REALM_PROVENANCE")"
+python3 - "$REALM_PROVENANCE" "$SOURCE_COMMIT" <<'PY'
+import json,os,sys,tempfile
+from datetime import datetime,timezone
+from pathlib import Path
+p=Path(sys.argv[1]); sha=sys.argv[2]
+payload={"schema":"agentos.realm-runtime-provenance/v1","source_commit":sha,"accepted_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z")}
+fd,tmp=tempfile.mkstemp(prefix=p.name+".",dir=p.parent)
+with os.fdopen(fd,"w",encoding="utf-8") as f:
+    json.dump(payload,f,sort_keys=True,indent=2); f.write("\\n")
+os.chmod(tmp,0o664); os.replace(tmp,p)
+PY
+echo "realm_runtime_provenance=$REALM_PROVENANCE"
 echo "realm_gateway_source_commit=$SOURCE_COMMIT"
 echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
 echo "nginx_mutation=NONE"

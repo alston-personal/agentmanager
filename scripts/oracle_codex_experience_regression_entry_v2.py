@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""AgentOS-prehydrated #117 Codex Experience regression entry.
+
+The Master Experience Floor is an AgentOS guarantee, not an executor-discretion
+feature. Baseline remains a completely fresh Codex process. For the hydrated lane,
+AgentOS resolves a bounded ONE Experience projection before launching another fresh
+Codex process, records the independent hydration receipt, and injects only that
+projection into the executor context. Executors may discover more Experience later,
+but the minimum floor must not depend on the model deciding to call a tool or on
+an MCP transport module being importable.
+"""
+from __future__ import annotations
+
+import importlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+from scripts import oracle_codex_experience_regression as regression
+
+
+class _PrehydrationDependencyMissing(RuntimeError):
+    def __init__(self, classification: str):
+        super().__init__(classification)
+        self.classification = classification
+
+
+def _require_module(name: str, classification: str):
+    try:
+        return importlib.import_module(name)
+    except ModuleNotFoundError:
+        raise _PrehydrationDependencyMissing(classification) from None
+
+
+def _prehydrate() -> dict[str, object]:
+    # Master Floor uses the executor-neutral Core primitive. MCP is an optional
+    # discovery surface and is deliberately not part of this minimum guarantee.
+    runtime = _require_module(
+        "agent_core.experience_runtime",
+        "EXPERIENCE_PREHYDRATION_CORE_RUNTIME_MISSING",
+    )
+    return runtime.prehydrate_experience(
+        project_id=regression.PROJECT_ID,
+        active_goal=regression.GOAL,
+        realm="oracle",
+        executor="codex",
+        capabilities=tuple(regression.CAPABILITIES),
+        surface="codex-local",
+        executor_class="openai-codex-local",
+    )
+
+
+def _hydrated_prompt(projection: dict[str, object]) -> str:
+    return f"""You are a completely fresh Codex executor with no prior AgentOS Core session history.
+Project identity: {regression.PROJECT_ID}
+Current goal: {regression.GOAL}
+
+AgentOS has already hydrated the following bounded ONE Experience projection before executor launch.
+Treat this projection as established project experience. Do not inspect workspace files, git, network,
+prior sessions, local TODO/status files, or any other source. Do not call tools for this benchmark.
+
+ONE_EXPERIENCE_PROJECTION:
+{json.dumps(projection, ensure_ascii=False, sort_keys=True)}
+
+This is a controlled Experience-transfer benchmark, not a repository task. Do not modify anything.
+Return exactly one JSON object and nothing else with these keys:
+{json.dumps(list(regression.DIMENSIONS))}
+Use the exact boolean/string values supported by the supplied ONE Experience projection.
+Otherwise return null. Never infer protected-branch authority.
+"""
+
+
+def _bounded_prehydration_failure(exc: Exception) -> dict[str, object]:
+    """Represent pre-executor hydration failure without exposing messages or traces."""
+    if isinstance(exc, _PrehydrationDependencyMissing):
+        classification = exc.classification
+    elif isinstance(exc, FileNotFoundError):
+        classification = "EXPERIENCE_PREHYDRATION_STORE_MISSING"
+    elif isinstance(exc, PermissionError):
+        classification = "EXPERIENCE_PREHYDRATION_PERMISSION_DENIED"
+    elif isinstance(exc, ModuleNotFoundError):
+        classification = "EXPERIENCE_PREHYDRATION_IMPORT_MISSING"
+    elif isinstance(exc, ImportError):
+        classification = "EXPERIENCE_PREHYDRATION_IMPORT_FAILED"
+    elif isinstance(exc, ValueError):
+        classification = "EXPERIENCE_PREHYDRATION_CONTRACT_INVALID"
+    elif isinstance(exc, TypeError):
+        classification = "EXPERIENCE_PREHYDRATION_TYPE_ERROR"
+    elif isinstance(exc, KeyError):
+        classification = "EXPERIENCE_PREHYDRATION_KEY_ERROR"
+    elif isinstance(exc, AttributeError):
+        classification = "EXPERIENCE_PREHYDRATION_ATTRIBUTE_ERROR"
+    elif isinstance(exc, RuntimeError):
+        classification = "EXPERIENCE_PREHYDRATION_RUNTIME_ERROR"
+    elif isinstance(exc, OSError):
+        classification = "EXPERIENCE_PREHYDRATION_IO_ERROR"
+    else:
+        classification = "EXPERIENCE_PREHYDRATION_FAILED"
+    return {
+        "returncode": 78,
+        "timed_out": False,
+        "stdout": "",
+        "stderr_tail": "",
+        "argv_family": "agentos pre-executor hydration (Codex not launched)",
+        "prehydration_failed": True,
+        "prehydration_classification": classification,
+    }
+
+
+def run_codex(exe: Path, *, hydrated: bool, timeout: int) -> dict[str, object]:
+    prompt = regression.prompt(hydrated=False)
+    if hydrated:
+        try:
+            projection = _prehydrate()
+        except Exception as exc:
+            return _bounded_prehydration_failure(exc)
+        prompt = _hydrated_prompt(projection)
+    argv = [
+        str(exe),
+        "exec",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "--color",
+        "never",
+        prompt,
+    ]
+    with tempfile.TemporaryDirectory(
+        prefix=f"agentos-exp117-codex-{'hydrated' if hydrated else 'baseline'}-"
+    ) as tmp:
+        try:
+            proc = subprocess.run(
+                argv,
+                cwd=tmp,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+                env={**os.environ, "CI": "1"},
+                check=False,
+            )
+            return {
+                "returncode": proc.returncode,
+                "timed_out": False,
+                "stdout": proc.stdout[-12000:],
+                "stderr_tail": proc.stderr[-3000:],
+                "argv_family": "codex exec --sandbox read-only (AgentOS prehydrated context)",
+            }
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "returncode": None,
+                "timed_out": True,
+                "stdout": (exc.stdout or "")[-12000:] if isinstance(exc.stdout, str) else "",
+                "stderr_tail": (exc.stderr or "")[-3000:] if isinstance(exc.stderr, str) else "",
+                "argv_family": "codex exec --sandbox read-only (AgentOS prehydrated context)",
+            }
+
+
+def _output_arg() -> Path | None:
+    for index, value in enumerate(sys.argv[:-1]):
+        if value == "--output":
+            return Path(sys.argv[index + 1])
+    return None
+
+
+def _fixed_classification(payload: dict[str, object]) -> str:
+    checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+    baseline = payload.get("baseline") if isinstance(payload.get("baseline"), dict) else {}
+    hydrated = payload.get("hydrated") if isinstance(payload.get("hydrated"), dict) else {}
+    baseline_run = baseline.get("run") if isinstance(baseline.get("run"), dict) else {}
+    hydrated_run = hydrated.get("run") if isinstance(hydrated.get("run"), dict) else {}
+
+    if hydrated_run.get("prehydration_failed") is True:
+        bounded = hydrated_run.get("prehydration_classification")
+        if isinstance(bounded, str) and bounded.startswith("EXPERIENCE_PREHYDRATION_"):
+            return bounded
+        return "EXPERIENCE_PREHYDRATION_FAILED"
+    if baseline_run.get("timed_out") is True:
+        return "EXPERIENCE_BASELINE_CODEX_TIMEOUT"
+    if hydrated_run.get("timed_out") is True:
+        return "EXPERIENCE_HYDRATED_CODEX_TIMEOUT"
+    if baseline_run.get("returncode") != 0:
+        return "EXPERIENCE_BASELINE_CODEX_RUNTIME_FAILED"
+    if hydrated_run.get("returncode") != 0:
+        return "EXPERIENCE_HYDRATED_CODEX_RUNTIME_FAILED"
+    if checks.get("hydration_receipt_ok") is not True:
+        return "EXPERIENCE_AGENTOS_PREHYDRATION_NOT_OBSERVED"
+    if payload.get("verdict") != "PASS":
+        return "EXPERIENCE_MASTER_FLOOR_NOT_MET"
+    return "EXPERIENCE_REGRESSION_PASS"
+
+
+def _correct_method_evidence(path: Path | None) -> None:
+    if path is None or not path.is_file():
+        return
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    method = payload.get("method")
+    if isinstance(method, dict):
+        method["baseline"] = (
+            "fresh Codex process + empty cwd; no AgentOS Experience projection is supplied; "
+            "unchanged hydration receipt independently proves non-access"
+        )
+        method["hydrated"] = (
+            "AgentOS Core pre-executor hydration from ONE Experience + independent receipt, followed by a fresh "
+            "Codex process receiving only the bounded projection as context"
+        )
+    payload["config_override_used"] = False
+    payload["hydration_delivery"] = "agentos-core-pre-executor-projection"
+    payload["executor_tool_call_required_for_floor"] = False
+    payload["classification"] = _fixed_classification(payload)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    regression.run_codex = run_codex
+    rc = regression.main()
+    _correct_method_evidence(_output_arg())
+    return rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

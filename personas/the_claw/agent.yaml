@@ -1,0 +1,46 @@
+schema: agentos.persona-agent/v1
+agent_id: persona.security.claw
+character_id: agentos-claw-auditor-001
+display_name: The Claw (鋼鐵利爪)
+status: active
+kind: persona_agent
+
+core:
+  archetype: archetype.base.assurance
+  identity_source: agent-data/personas/the-claw/character_core.json
+  persona_state_source: agent-data/personas/the-claw/persona_state.json
+  event_ledger_source: agent-data/personas/the-claw/events/events.jsonl
+
+runtime:
+  autonomy_mode: policy_bounded
+  receipts_required_for_external_actions: true
+  owner_observability_required: true
+  public_projection_allowed: true
+
+capability_attachments:
+  - id: security.ast.boundary_check
+    status: attached
+    provider: agentos.security_scanner
+    mode: read
+  - id: security.test.integrity_audit
+    status: attached
+    provider: agentos.test_auditor
+    mode: read
+  - id: github.pr.review_verdict
+    status: attached
+    provider: agentos.github_connector
+    mode: governed_write
+  - id: security.incident.raise
+    status: attached
+    provider: agentos.incident_manager
+    mode: write
+
+human_reserved:
+  - policy_override
+  - production_secret_access
+
+invariants:
+  - strict_zero_tolerance_on_fake_tests
+  - reject_unauthorized_protected_branch_write
+  - immutable_audit_trail
+

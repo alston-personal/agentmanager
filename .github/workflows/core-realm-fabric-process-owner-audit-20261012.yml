@@ -1,0 +1,48 @@
+name: Core Realm Fabric Process Owner Audit 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-realm-fabric-process-owner-audit-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - name: Inspect process and user-service ownership
+        shell: bash
+        run: |
+          set -u
+          echo "RUNNER_USER=$(id -un)"
+          echo "RUNNER_UID=$(id -u)"
+          echo '=== REALM PROCESSES ==='
+          ps -eo user:20,pid,ppid,lstart,args | grep -E '[a]gent_core\.realm_cli.*serve|[a]gentos-one.*serve' || true
+
+          echo '=== PORT 8780 ==='
+          ss -ltnp 2>/dev/null | grep ':8780' || true
+
+          echo '=== AGENTOS-NODE UNIT ==='
+          cat /home/agentos-node/.config/systemd/user/agentos-realm-fabric.service 2>/dev/null || true
+
+          echo '=== UBUNTU UNIT ==='
+          cat /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service 2>/dev/null || true
+
+          echo '=== RELEASE ROOTS ==='
+          for root in             /home/agentos-node/.local/share/agentos/realm-fabric             /home/ubuntu/.local/share/agentos/realm-fabric; do
+            echo "--- $root"
+            ls -ld "$root" "$root/current" 2>/dev/null || true
+            readlink -f "$root/current" 2>/dev/null || true
+            find "$root/releases" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null | tail -n 20 || true
+          done
+
+          echo '=== USER BUS PROBE ==='
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+          systemctl --user is-active agentos-realm-fabric.service || true
+          systemctl --user show agentos-realm-fabric.service -p MainPID -p ExecStart -p WorkingDirectory || true

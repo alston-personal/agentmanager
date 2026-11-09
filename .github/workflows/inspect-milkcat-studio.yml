@@ -2,10 +2,6 @@ name: Resolve MilkCat Dashboard Upstream
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/inspect-milkcat-studio.yml'
-
 permissions:
   contents: write
 

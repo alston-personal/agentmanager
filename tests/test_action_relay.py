@@ -95,5 +95,73 @@ class ActionRelayTests(unittest.TestCase):
         self.assertIn("digest mismatch", receipt["error"])
 
 
+    @patch("agentos_node.action_relay._run")
+    def test_github_actions_dispatch_is_allowlisted_and_uses_gh_without_shell(self, run):
+        from agentos_node.action_relay import _github_actions_dispatch
+        run.side_effect = [
+            {"returncode": 0, "stdout": "", "stderr": ""},
+            {"returncode": 0, "stdout": "", "stderr": ""},
+            {"returncode": 0, "stdout": '[{"databaseId":123,"headSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued","conclusion":"","url":"https://github.com/alston-personal/agentmanager/actions/runs/123","createdAt":"2026-10-06T00:00:00Z"}]', "stderr": ""},
+        ]
+        result = _github_actions_dispatch({
+            "repository": "alston-personal/agentmanager",
+            "workflow": "oursong-persona-activation.yml",
+            "ref": "core/integration",
+            "inputs": {},
+            "expected_head_sha": "a" * 40,
+        })
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["run_id"], 123)
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            [
+                "/usr/bin/gh", "workflow", "run", "oursong-persona-activation.yml",
+                "--repo", "alston-personal/agentmanager",
+                "--ref", "core/integration",
+            ],
+        )
+
+    def test_github_actions_dispatch_rejects_unregistered_target(self):
+        from agentos_node.action_relay import _github_actions_dispatch
+        with self.assertRaises(ValueError):
+            _github_actions_dispatch({
+                "repository": "alston-personal/agentmanager",
+                "workflow": "other.yml",
+                "ref": "core/integration",
+                "inputs": {},
+                "expected_head_sha": "a" * 40,
+            })
+
+
+    @patch("agentos_node.action_relay._share", lambda *args, **kwargs: None)
+    def test_result_schema_cannot_overwrite_receipt_schema(self):
+        from agentos_node import action_relay as relay
+
+        action = "test.receipt-envelope-reserved"
+        with patch.dict(
+            relay.ACTIONS,
+            {action: lambda params: {
+                "schema": "capability.result/v1",
+                "capsule_id": "wrong",
+                "action": "wrong.action",
+                "ok": True,
+            }},
+            clear=False,
+        ):
+            client = relay.ActionRelayClient(self.root)
+            capsule = client.submit(action, {})
+            produced = relay.ActionRelayWorker(self.root).process_one()
+            self.assertEqual(produced["schema"], relay.RECEIPT_SCHEMA)
+            self.assertEqual(produced["capsule_id"], capsule["capsule_id"])
+            self.assertEqual(produced["action"], action)
+            self.assertEqual(produced["result_schema"], "capability.result/v1")
+            self.assertEqual(produced["result_capsule_id"], "wrong")
+            self.assertEqual(produced["result_action"], "wrong.action")
+            self.assertTrue(produced["ok"])
+            stored = client.receipt(capsule["capsule_id"])
+            self.assertEqual(stored["schema"], relay.RECEIPT_SCHEMA)
+
+
+
 if __name__ == "__main__":
     unittest.main()

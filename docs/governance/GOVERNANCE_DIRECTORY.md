@@ -25,6 +25,7 @@ Canonical sources remain separated by concern:
 | Resource/world model | `/home/ubuntu/agent-data/resources/registry.json` |
 | Port allocation | `/home/ubuntu/agent-data/config/port_registry.json` via `manager://port` |
 | Project state | `/home/ubuntu/agent-data/projects/*/project.yaml` |
+| IP provenance / employment boundary | `governance/ip-ownership-policy.json` + `docs/IP_PROVENANCE.md` |
 | Governance query index | `/home/ubuntu/agent-data/governance/directory.json` |
 
 The Directory **indexes and resolves** these authorities; it must not silently redefine them.
@@ -80,6 +81,13 @@ python3 scripts/core_services/port_manager.py allocate layoutlab-api --desc 'Lay
 ```
 
 A conflicting explicit registration now fails rather than merely warning. Override requires an explicit `--force`, which is intended only after governance approval.
+
+Persistent runtime rule:
+
+- A service MUST obtain or verify its port through `manager://port` before binding.
+- `ensure <port> <service>` registers an unclaimed port or verifies the existing owner.
+- `require <port> <service>` fails closed when the port is missing or owned by another service.
+- Directly hard-coding and binding an unmanaged persistent service port is a governance violation.
 
 ## Role model
 

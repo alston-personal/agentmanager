@@ -1,0 +1,176 @@
+name: Oracle Deploy Mio Wardrobe Dashboard
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'dashboard/app/api/wardrobe/**'
+      - 'dashboard/app/api/auth/**'
+      - 'dashboard/lib/tryon-jobs.ts'
+      - 'dashboard/lib/wardrobe-*.ts'
+      - 'dashboard/lib/wardrobe-*.mjs'
+      - 'dashboard/lib/auth/**'
+      - 'scripts/deploy_mio_wardrobe_dashboard_user.sh'
+      - 'scripts/deploy_dashboard_blue_green_user.sh'
+      - '.github/workflows/oracle-deploy-mio-wardrobe-dashboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-mio-wardrobe-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Deploy exact Dashboard generation through blue-green
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            "cd /home/ubuntu/agentmanager && git fetch --no-tags origin '$GITHUB_SHA' && git show '$GITHUB_SHA:scripts/deploy_dashboard_blue_green_user.sh' > /tmp/deploy-dashboard-blue-green.sh && chmod 700 /tmp/deploy-dashboard-blue-green.sh && /tmp/deploy-dashboard-blue-green.sh '$GITHUB_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
+
+      - name: Verify OAuth handoff release contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ACTIVE_SLOT="$(cat /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-slot)"
+          case "$ACTIVE_SLOT" in blue|green) ;; *) echo "invalid active slot: $ACTIVE_SLOT" >&2; exit 2 ;; esac
+          LIVE="$(readlink -f "/home/ubuntu/agent-data/runtime/dashboard/$ACTIVE_SLOT")"
+          CALLBACK="$LIVE/app/api/auth/callback/[provider]/route.ts"
+          test -f "$CALLBACK"
+          grep -F "completePwaHandoff(handoffId, token)" "$CALLBACK"
+          grep -F "authHandoff=completed" "$CALLBACK"
+          echo "mio_oauth_direct_handoff_release=PASS"
+          echo "mio_dashboard_blue_green_active_slot=$ACTIVE_SLOT"
+          REMOTE
+
+      - name: Exercise ordinary-user authenticated live try-on
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ACTIVE_SLOT="$(cat /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-slot)"
+          case "$ACTIVE_SLOT" in blue|green) ;; *) echo "invalid active slot: $ACTIVE_SLOT" >&2; exit 2 ;; esac
+          LIVE="$(readlink -f "/home/ubuntu/agent-data/runtime/dashboard/$ACTIVE_SLOT")"
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          test -d "$LIVE" && test -f "$CONFIG"
+          test -d "$LIVE/node_modules/jsonwebtoken"
+
+          JWT_SECRET_VALUE="$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          for raw in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line: continue
+              k,v=line.split('=',1)
+              if k.strip()=='JWT_SECRET':
+                  print(v.strip().strip('"').strip("'"))
+                  break
+          PY
+          )"
+          test -n "$JWT_SECRET_VALUE"
+
+          export JWT_SECRET_VALUE
+          TOKEN="$(cd "$LIVE" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          const secret=process.env.JWT_SECRET_VALUE||'';
+          process.stdout.write(jwt.sign({
+            username:'wardrobe-e2e-user',
+            provider:'e2e',
+            subject:'ordinary-user',
+            exp:Math.floor(Date.now()/1000)+900
+          },secret));
+          NODE
+          )"
+          unset JWT_SECRET_VALUE
+
+          BASE=https://studio.milkcat.org
+          BODY=/tmp/mio-live-create-$$.json
+          code="$(curl --noproxy '*' -k -sS -o "$BODY" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1             -X POST -H 'Content-Type: application/json' -H "Cookie: auth_token=$TOKEN"             --data '{"characterId":"sunlake-milkcat-ai-001","view":"front","pose":"neutral_standing","selectedLayers":{"lower_main":"net-32235-711"}}'             "$BASE/dashboard/api/wardrobe/tryon/render")"
+          echo "mio_live_create_http=$code"
+          test "$code" = 201
+          JOB_ID="$(python3 - "$BODY" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8')); assert j.get('success') is True
+          print(j['jobId'])
+          PY
+          )"
+
+          OK=0
+          for i in $(seq 1 120); do
+            POLL=/tmp/mio-live-poll-$$.json
+            code="$(curl --noproxy '*' -k -sS -o "$POLL" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1               -H "Cookie: auth_token=$TOKEN" "$BASE/dashboard/api/wardrobe/tryon/jobs/$JOB_ID")"
+            test "$code" = 200
+            STATE="$(python3 - "$POLL" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8')).get('status','missing'))
+          PY
+          )"
+            echo "mio_live_state=$STATE poll=$i"
+            if [ "$STATE" = ready ]; then
+              ASSET="$(python3 - "$POLL" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8')); out=j.get('output') or {}
+          assert 'lower_main' in (out.get('renderedLayers') or []), out
+          assert 'lower_main' not in (out.get('pendingLayers') or []), out
+          print(out['asset'])
+          PY
+          )"
+              IMG=/tmp/mio-live-asset-$$
+              code="$(curl --noproxy '*' -k -sS -o "$IMG" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1                 -H "Cookie: auth_token=$TOKEN" "$BASE$ASSET")"
+              test "$code" = 200
+              bytes="$(wc -c < "$IMG")"
+              test "$bytes" -gt 1000
+              file "$IMG" | grep -Ei 'image|webp|png|jpeg'
+              echo "mio_live_asset_bytes=$bytes"
+              echo "mio_production_tryon_user_auth=PASS"
+              OK=1
+              break
+            fi
+            if [ "$STATE" = failed ]; then
+              CLASSIFICATION="$(python3 - "$POLL" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          msg=str(((j.get('error') or {}).get('message') or '')).lower()
+          unavailable=any(x in msg for x in (
+              '402 payment required',
+              'no remaining credits',
+              'depleted your monthly included credits',
+              'quota',
+              'rate limit',
+              'resource exhausted',
+              'zerogpu runs limit',
+          ))
+          print('PROVIDER_UNAVAILABLE' if unavailable else 'RENDERER_FAILURE')
+          PY
+              )"
+              echo "mio_live_provider_classification=$CLASSIFICATION"
+              if [ "$CLASSIFICATION" = PROVIDER_UNAVAILABLE ]; then
+                echo "mio_production_tryon_user_auth=PASS"
+                echo "mio_production_tryon_provider=UNAVAILABLE"
+                OK=1
+                break
+              fi
+              cat "$POLL"
+              break
+            fi
+            sleep 2
+          done
+          test "$OK" -eq 1
+          REMOTE

@@ -25,5 +25,14 @@
       "name": "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
       "value": "1"
     }
-  ]
+  ],
+  "git.ignoredRepositories": [
+    "/tmp",
+    "/tmp/*",
+    "/home/ubuntu/agent-data/releases",
+    "/home/ubuntu/agent-data/employee-worker-state",
+    "/home/ubuntu/.local/share/agentos-core-releases"
+  ],
+  "git.autoRepositoryDetection": "openEditors",
+  "git.repositoryScanMaxDepth": 1
 }

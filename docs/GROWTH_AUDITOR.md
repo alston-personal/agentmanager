@@ -1,12 +1,12 @@
-# AgentOS Growth Auditor
+# AgentOS Growth Auditor Contract
 
 ## Purpose
 
-The Growth Auditor is the fixed owner for collecting evidence that AgentOS becomes measurably better because of accumulated validated experience.
+The **Growth Auditor** is the fixed responsibility for collecting evidence that AgentOS becomes measurably better because of accumulated validated experience.
 
 It does **not** execute the product task and it does **not** decide user intent. It observes execution/acceptance receipts and reusable-experience signals, then records attributable Growth Proof evidence.
 
-## Responsibility boundary
+## Responsibility Boundary
 
 - **Executor** — performs work.
 - **Closure Owner / Atlast** — keeps an open goal moving through execution -> acceptance -> close -> next work.
@@ -14,7 +14,24 @@ It does **not** execute the product task and it does **not** decide user intent.
 
 The Growth Auditor must not count persistence, larger context, one-off fixes, or model upgrades as self-growth.
 
-## Runtime contract
+## Five-Tier Growth Classification (G0 - G5)
+
+The Growth Auditor evaluates claims conservatively:
+
+- **G0 (No Qualification / Source Only)**:
+  - Historical interactions, transcripts, or session logs are recorded. Persistence alone is not self-growth.
+- **G1 (Reusable Pattern)**:
+  - Reusable candidate/pattern exists and is extracted.
+- **G2 (Independent Later Reuse)**:
+  - A subsequent session or executor retrieves and successfully applies previously stored validated patterns.
+- **G3 (Causal Before-vs-After Uplift)**:
+  - Measured latency reduction, token reduction, or test pass-rate improvement directly attributable to validated experience.
+- **G4 (Cross-Boundary Measured Transfer)**:
+  - Experience gained in one project, model, or executor transfers to an independent project or executor with measurable performance gain.
+- **G5 (Longitudinal Autonomous Evolution)**:
+  - Sustained multi-cycle capability expansion without human prompting or regression. Longitudinal proofs must not be inferred from a single event.
+
+## Runtime Contract
 
 Runtimes may emit JSONL observations containing:
 
@@ -60,23 +77,3 @@ $AGENT_DATA_ROOT/growth-proof/ledger.json
 ```
 
 Mutable evidence therefore remains in the data layer, not the logic repository.
-
-## Classification
-
-The automatic classifier is intentionally conservative:
-
-- no source experience -> not qualified;
-- source only -> G0;
-- reusable candidate/pattern exists -> G1;
-- later independent reuse -> G2;
-- measured before/after uplift -> G3;
-- measured uplift across executor/node/model/session boundary -> G4;
-- G5 remains a longitudinal claim and should be produced by an aggregate benchmark rather than inferred from one observation.
-
-Explicit verdicts are accepted only when they are one of G0-G5.
-
-## Operating rule
-
-Every reusable-experience-aware runtime SHOULD emit an observation after acceptance. A scheduler/monitor may run the Growth Auditor periodically, but the auditor's semantics are event-driven: it processes newly emitted evidence and deduplicates repeated proof records.
-
-The auditor must remain skeptical. A candidate is not a Growth Proof until later reuse and measurement justify the level claimed.

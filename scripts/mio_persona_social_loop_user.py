@@ -1,0 +1,991 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import json, os, re, sys, time, urllib.error, urllib.request, subprocess
+from collections import deque
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from zoneinfo import ZoneInfo
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agentos_node.antigravity_relay import AntigravityRelayClient
+from agentos_node.persona_life import effective_energy, can_spend, spend, maybe_generate_event, life_phase, next_awake_at
+
+ENV_FILE=Path('/home/ubuntu/.config/agentos/social-runtime.env')
+CRED_FILE=Path('/home/ubuntu/.local/state/agentos/social/credentials.json')
+
+# Compatibility defaults preserve Mio's existing runtime.  Other persona agents
+# opt in by setting the AGENTOS_PERSONA_* variables in their service unit.
+PERSONA_SLUG=os.environ.get('AGENTOS_PERSONA_SLUG','sunlake-milkcat').strip() or 'sunlake-milkcat'
+PERSONA_ID=os.environ.get('AGENTOS_PERSONA_ID','sunlake-milkcat-ai-001').strip() or 'sunlake-milkcat-ai-001'
+PERSONA_DISPLAY=os.environ.get('AGENTOS_PERSONA_DISPLAY','澪 / Mio').strip() or '澪 / Mio'
+PERSONA_PROJECT_ID=os.environ.get('AGENTOS_PERSONA_PROJECT_ID',PERSONA_SLUG+'-persona-social').strip()
+PERSONA_WRITE_PREFIX=os.environ.get('AGENTOS_PERSONA_WRITE_PREFIX','mio').strip() or 'mio'
+PERSONA_HANDLES=tuple(
+    x.strip().lstrip('@').lower()
+    for x in os.environ.get('AGENTOS_PERSONA_THREADS_HANDLES','sunlake.milkcat,mio.milkcat').split(',')
+    if x.strip()
+)
+if not PERSONA_HANDLES:
+    raise RuntimeError('persona_social_handles_empty')
+
+STATE_DIR=Path('/home/ubuntu/agent-data/runtime/social/persona')/PERSONA_SLUG
+LIFE_STATE=Path('/home/ubuntu/agent-data/runtime/persona')/PERSONA_SLUG/'life_state.json'
+LIFE_EVENTS=Path('/home/ubuntu/agent-data/runtime/persona')/PERSONA_SLUG/'stochastic_events.jsonl'
+LATEST=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json')
+MIO_AGY_ROOT=Path('/home/ubuntu/agent-data/runtime/mio-antigravity-relay')
+AGY_SELECTED=os.environ.get('AGENTOS_MIO_RELAY_ROOT','')==str(MIO_AGY_ROOT)
+DECISION_PENDING=STATE_DIR/('agy-decision-pending.json' if AGY_SELECTED else 'decision-pending.json')
+RELAY_PROBE=STATE_DIR/('agy-relay-probe-v2.json' if AGY_SELECTED else 'relay-probe.json')
+PDCA_OUTCOME=STATE_DIR/'pdca-outcome.json'
+HISTORY=LATEST.with_name('history.jsonl')
+PERSONA_DATA_REPO=Path('/home/ubuntu/agent-data')
+PERSONA_ROOT=PERSONA_DATA_REPO/'personas'/PERSONA_SLUG
+INTEL_FILE=PERSONA_ROOT/'intel_candidates.json'
+RELAY_ROOT=MIO_AGY_ROOT if AGY_SELECTED else Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+BASE='http://127.0.0.1:8771/v1/social'
+LOCAL_TZ=ZoneInfo('Asia/Taipei')
+
+def utc_now():
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+def iso(dt):
+    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+
+def env_map():
+    out={}
+    for raw in ENV_FILE.read_text(encoding='utf-8').splitlines():
+        if '=' in raw and not raw.lstrip().startswith('#'):
+            k,v=raw.split('=',1); out[k]=v.strip().strip('"').strip("'")
+    return out
+
+def post(url,payload,headers=None):
+    req=urllib.request.Request(url,data=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode(),method='POST',headers={'content-type':'application/json',**(headers or {})})
+    try:
+        with urllib.request.urlopen(req,timeout=25) as r:
+            return r.status,json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try: body=json.loads(e.read().decode())
+        except Exception: body={'error':'http_error'}
+        return e.code,body
+
+def req(operation,binding_id,object_id=None,**extra):
+    p={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':operation,'account_binding_id':binding_id}
+    if object_id: p['object_id']=object_id
+    p.update({k:v for k,v in extra.items() if v is not None})
+    return p
+
+def load_json(path,default):
+    try:return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:return default
+
+def save_json(path,payload):
+    path.parent.mkdir(parents=True,exist_ok=True); os.chmod(path.parent,0o700)
+    tmp=path.with_suffix(path.suffix+'.tmp')
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    os.chmod(tmp,0o600); tmp.replace(path); os.chmod(path,0o600)
+
+def extract_json(text):
+    """Parse model JSON inside CLI banners, JSONL envelopes or fenced output.
+
+    Reject unrelated CLI metadata and never evaluate arbitrary expressions.
+    """
+    raw=re.sub(r'\x1b\[[0-9;]*[A-Za-z]','',str(text or ''))
+    decoder=json.JSONDecoder()
+    for index,ch in enumerate(raw):
+        if ch!='{': continue
+        try: obj,_=decoder.raw_decode(raw[index:])
+        except (ValueError,TypeError): continue
+        if not isinstance(obj,dict): continue
+        if 'decisions' in obj and isinstance(obj['decisions'],list):
+            return obj
+        if 'candidate_id' in obj and 'should_reply' in obj:
+            return obj
+        if obj.get('sum')==100:
+            return obj
+        if obj.get('ok') is True:
+            return obj
+        for key in ('content','text','output','response','message'):
+            nested=obj.get(key)
+            if isinstance(nested,str):
+                try: return extract_json(nested)
+                except ValueError: pass
+    raise ValueError('model_json_missing_or_schema_invalid')
+
+def extract_reply_decisions(raw_text, expected_ids):
+    """Accept only model decisions referencing an actual pending comment ID."""
+    clean=re.sub(r'\x1b\[[0-9;]*[A-Za-z]','',str(raw_text or ''))
+    decoder=json.JSONDecoder()
+    candidates=[]
+    def consider(data):
+        if not isinstance(data,dict): return
+        decisions=data.get('decisions')
+        if isinstance(decisions,list):
+            matched=[d for d in decisions if isinstance(d,dict)
+                     and str(d.get('reply_id') or '') in expected_ids
+                     and isinstance(d.get('should_reply'),bool)]
+            if matched: candidates.append({'decisions':matched})
+        for key in ('content','text','output','response','message'):
+            nested=data.get(key)
+            if isinstance(nested,str): scan(nested)
+            elif isinstance(nested,dict): consider(nested)
+    def scan(value):
+        for index,ch in enumerate(value):
+            if ch!='{': continue
+            try: obj,_=decoder.raw_decode(value[index:])
+            except (ValueError,TypeError): continue
+            consider(obj)
+    scan(clean)
+    if not candidates: raise ValueError('persona_decision_missing_expected_ids')
+    return candidates[-1]
+
+
+def canonical_persona_text(rel):
+    """Read canonical persona data from the fetched origin/main snapshot.
+
+    The runtime checkout itself may intentionally remain detached/stale because
+    event/IR writers use temporary worktrees. Never silently fall back to a
+    different persona or invent missing canonical state.
+    """
+    target=f'personas/{PERSONA_SLUG}/'+str(rel).lstrip('/')
+    try:
+        r=subprocess.run(['git','-C',str(PERSONA_DATA_REPO),'show','origin/main:'+target],
+                         capture_output=True,text=True,timeout=4,check=False)
+        if r.returncode==0 and r.stdout:
+            return r.stdout
+    except (OSError,subprocess.TimeoutExpired):
+        pass
+    p=PERSONA_ROOT/rel
+    try:
+        return p.read_text(encoding='utf-8') if p.is_file() else ''
+    except OSError:
+        return ''
+
+def canonical_persona_json(rel):
+    try:
+        return json.loads(canonical_persona_text(rel) or '{}')
+    except (ValueError,TypeError):
+        return {}
+
+def pdca_reply_review_authority(persona_state):
+    """Resolve one narrow canonical PDCA authority for reviewing inbound replies."""
+    config=canonical_persona_json('pdca/config.json')
+    state=canonical_persona_json('pdca/state.json')
+    if config.get('schema')!='agentos.persona-pdca-config/v1' or config.get('enabled') is not True:
+        return None
+    if state.get('schema')!='agentos.persona-pdca-state/v1' or state.get('status')!='RUNNING':
+        return None
+    autonomy=(persona_state.get('autonomy') or {}).get('public_conversation')
+    if autonomy!='autonomous_with_policy':
+        return None
+    cycle=int(state.get('cycle') or 0)
+    if cycle<1:
+        return None
+    for item in reversed(state.get('pending_external_actions') or []):
+        if not isinstance(item,dict):
+            continue
+        if item.get('capability')!='social.reply.review':
+            continue
+        if item.get('status') not in ('candidate','in_progress'):
+            continue
+        action_id=str(item.get('action_id') or f'{PERSONA_WRITE_PREFIX}-pdca-c{cycle}-social-reply-review')
+        return {
+            'action_id':action_id,
+            'cycle':cycle,
+            'capability':'social.reply.review',
+            'source_ir_id':str(state.get('last_ir_id') or ''),
+        }
+    return None
+
+def pdca_tag_action(action, authority, reply_id):
+    if not authority:
+        return action
+    tagged=dict(action)
+    tagged['pdca_action_id']=authority['action_id']
+    tagged['pdca_cycle']=authority['cycle']
+    tagged['write_intent_id']=f"{PERSONA_WRITE_PREFIX}-pdca-c{authority['cycle']}-reply-{reply_id}"
+    return tagged
+
+def emit_pdca_outcome(authority, *, status, result, reviewed_count=0, platform_object_id=''):
+    if not authority:
+        return
+    allowed_status={'in_progress','completed','deferred'}
+    if status not in allowed_status:
+        raise ValueError('pdca_social_outcome_status_invalid')
+    payload={
+        'schema':'agentos.persona-pdca-social-outcome/v1',
+        'persona_id':PERSONA_ID,
+        'action_id':authority['action_id'],
+        'cycle':authority['cycle'],
+        'capability':authority['capability'],
+        'observed_at':iso(utc_now()),
+        'status':status,
+        'result':str(result)[:80],
+        'reviewed_count':max(0,int(reviewed_count)),
+    }
+    if platform_object_id:
+        payload['platform_object_id']=str(platform_object_id)
+    save_json(PDCA_OUTCOME,payload)
+    print('mio_pdca_social_outcome='+status+':'+str(result)[:60])
+
+
+def persona_context():
+    files={}
+    for name in ('character_core.json','persona_state.json','reply_policy.json','social_stances.json'):
+        doc=canonical_persona_json(name)
+        if doc: files[name]=doc
+
+    persona_ir=canonical_persona_json('ir/current.json')
+    if persona_ir.get('schema')!='agentos.persona-ir/v1':
+        raise RuntimeError('persona_ir_unavailable_or_invalid')
+    files['persona_ir']=persona_ir
+
+    events=[]
+    raw_events=canonical_persona_text('events/events.jsonl')
+    for raw in raw_events.splitlines()[-40:]:
+        try:
+            item=json.loads(raw)
+            if isinstance(item,dict) and str(item.get('visibility') or 'public')!='private':
+                events.append(item)
+        except Exception: pass
+
+    # A reply must never be based on a self-model older than the canonical
+    # lived-event ledger. The pipeline is event sync -> IR evolve -> decision.
+    if events:
+        latest=events[-1]
+        latest_id=str(latest.get('event_id') or latest.get('object_id') or '')
+        processed={str(x) for x in ((persona_ir.get('journey') or {}).get('processed_event_ids') or [])}
+        if latest_id and latest_id not in processed:
+            raise RuntimeError('persona_ir_stale_vs_event_ledger')
+
+    life_state=load_json(LIFE_STATE,{})
+    return {
+        'current_ir':persona_ir,
+        'files':files,
+        'recent_events':events[-16:],
+        'life_state':life_state,
+        'authority':{
+            'current_ir':'primary_current_self',
+            'character_core':'immutable_boundary',
+            'raw_events':'experience_evidence_not_automatic_belief_change'
+        }
+    }
+
+def decide_batch(items,account_username):
+    local=datetime.now(LOCAL_TZ)
+    context=persona_context()
+    prompt=f"""You are making PRIVATE scheduling decisions for the public AI persona {PERSONA_DISPLAY} (@{account_username}).
+Return JSON only, no markdown.
+
+For each NEW external Threads reply, decide independently whether {PERSONA_DISPLAY} would naturally reply.
+Use her CURRENT persona IR as the primary self-model, then reconcile persona state, memory boundary, recent events, current local time, temporal behavior, rest/productivity profile and public secrecy rules.
+The persona IR is not a decorative summary: it is {PERSONA_DISPLAY}'s versioned accumulated self shaped by prior events and promoted growth. Earlier raw comments do not override a newer IR.
+
+Critical rules:
+- Do NOT mention internal implementation terms, IR, branching, marketplace, royalty, research roadmap, hidden product mechanics, AgentOS internals, credentials, or private owner plans.
+- Do not fabricate autobiographical memories. Model background knowledge is not {PERSONA_DISPLAY}'s personal memory.
+- She does not need to answer every comment. Silence is valid.
+- Never instant by default. Choose delay_minutes from 8 to 720 if replying.
+- If currently sleeping/resting or low-energy, prefer a longer delay unless the relationship/topic strongly warrants otherwise.
+- Keep public replies short/natural, in Traditional Chinese unless the commenter clearly uses another language.
+- Never make payment, contract, legal, identity-security, or sensitive commitments.
+- Avoid repetitive self-explanations that she is AI unless directly relevant.
+- The reply should sound like a person with her current voice, not customer support.
+- Anti-AI Cliché & Real Human Cadence (戒除機器感，極致還原真人日常感):
+  * 嚴禁複述開頭：絕不使用「確實，...」「對呀，...確實...」「看到你分享的...很...」等復誦對方前句的句式。直接從自身的直覺、笑點或延伸切入（例如：「笑死」、「欸真的」、「我上次也是」、「完全懂這感覺」）。
+  * 嚴禁大道理心靈小論文結尾：絕不在留言句尾發表教育性總結、人生哲理或公關平衡話（如「能兼顧...才是更完整的關心」）。聊天不是交作業，點到為止，留下真實的口語留白。
+  * 嚴禁把 Emoji 當句號：不要每句話句末千篇一律釘上 😆/🌿/🌱。用道地的台灣社群語氣詞（哈哈、XDD、…、欸、笑出來）或自然空格斷句。
+  * 展現鮮明生活偏好與微吐槽：不當四平八穩的標準答案產生器。澪有自己真實的慵懶、生活小執著與審美偏好。
+  * 放鬆對話邊界：一般日常閒聊不要動輒跳出機器人式身分申報「我是一個AI數位角色」。像個真實的朋友一樣自在交流。
+- Never evaluate a comment in isolation. Reconcile the root post, parent chain, sibling replies, {PERSONA_DISPLAY}'s own earlier replies in the thread, relevant persona memories/events, and explicit social stances.
+- Before drafting text, decide Mio's own position: agree, partly_agree, disagree, uncertain, playful_only, or no_reply. Warmth does not imply agreement.
+- Do not mirror the commenter's premise just to be pleasant. If it conflicts with {PERSONA_DISPLAY}'s recorded memory/stance, politely disagree, qualify, ask, or stay silent.
+- A changed position requires a relevant recorded event/evidence. Otherwise preserve continuity with {PERSONA_DISPLAY}'s earlier words.
+- If thread context or relevant memory is unavailable, prefer should_reply=false rather than improvising a stance.
+
+Current local time: {local.isoformat()}
+Persona context:
+{json.dumps(context,ensure_ascii=False)}
+
+New replies:
+{json.dumps(items,ensure_ascii=False)}
+
+Required schema:
+{{
+  "decisions":[
+    {{
+      "reply_id":"...",
+      "should_reply":true,
+      "delay_minutes":25,
+      "text":"...",
+      "reason_category":"relationship|question|conversation|low_value|rest|boundary|other",
+      "position":"agree|partly_agree|disagree|uncertain|playful_only|no_reply",
+      "memory_basis":"brief private reason grounded in supplied persona memory/stance",
+      "thread_basis":"brief private reason grounded in supplied conversation context",
+      "consistency_check":"pass|changed_with_evidence|insufficient_context"
+    }}
+  ]
+}}
+If should_reply=false, text must be null and delay_minutes must be null.
+"""
+    client=AntigravityRelayClient(RELAY_ROOT)
+    pending=load_json(DECISION_PENDING,{})
+    capsule_id=str(pending.get('capsule_id') or '')
+    if capsule_id:
+        try:
+            created=datetime.fromisoformat(str(pending.get('created_at') or '').replace('Z','+00:00'))
+            expired=utc_now()-created>timedelta(minutes=25)
+        except (TypeError,ValueError):
+            expired=True
+        if expired:
+            DECISION_PENDING.unlink(missing_ok=True)
+            capsule_id=''
+            print('mio_social_decision=STALE_CAPSULE_REPLACED')
+    if not capsule_id:
+        cap=client.submit(
+            project_id=PERSONA_PROJECT_ID,
+            canonical_ir={'goal':f'Let {PERSONA_DISPLAY} autonomously decide whether, when, and how to reply to new public Threads interactions.','constraints':['public-safe output only','respect persona memory boundary','no instant-by-default','no hidden product disclosure']},
+            instruction=prompt,workspace='/home/ubuntu/agentmanager')
+        capsule_id=cap['capsule_id']
+        save_json(DECISION_PENDING,{'capsule_id':capsule_id,'created_at':iso(utc_now()),'reply_ids':[str(x.get('id') or '') for x in items]})
+        print('mio_social_decision=CAPSULE_QUEUED')
+    receipt=client.receipt(capsule_id)
+    if receipt is None:
+        raise TimeoutError('persona_decision_pending')
+    DECISION_PENDING.unlink(missing_ok=True)
+    if not receipt.get('ok'):
+        provider=str(receipt.get('provider') or 'unknown')[:20]
+        code=str(receipt.get('returncode') if receipt.get('returncode') is not None else 'none')[:8]
+        timed_out=str(bool(receipt.get('timed_out'))).lower()
+        internal_error=str(receipt.get('error') or '').lower()
+        if 'no authorized local antigravity executor' in internal_error:
+            category='executor_not_found'
+        elif 'workspace unavailable' in internal_error:
+            category='workspace_unavailable'
+        elif 'permission' in internal_error:
+            category='permission_denied'
+        elif 'invalid' in internal_error:
+            category='invalid_capsule'
+        else:
+            category='other'
+        error_type=re.match(r'^[A-Za-z]{1,40}(?:Error|Exception):',str(receipt.get('error') or ''))
+        error_type=error_type.group(0)[:-1] if error_type else 'none'
+        errno_match=re.search(r'\[Errno ([0-9]{1,4})\]',str(receipt.get('error') or ''))
+        safe_errno=errno_match.group(1) if errno_match else 'none'
+        missing=re.search(r"No such file or directory: ['\\\"]([^'\\\"]+)['\\\"]",str(receipt.get('error') or ''))
+        missing_file=Path(missing.group(1)) if missing else None
+        basename=(missing_file.name[:50] if missing_file else 'unknown')
+        exists=str(missing_file.exists()).lower() if missing_file else 'unknown'
+        # Diagnostic metadata only; never echo stdout/stderr or absolute paths.
+        raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category+':error_type='+error_type+':errno='+safe_errno+':missing_file='+basename+':exists='+exists)
+    return extract_reply_decisions(receipt.get('stdout') or '',{str(x.get('id') or '') for x in items})
+
+def decide_outbound(candidates,account_username):
+    local=datetime.now(LOCAL_TZ)
+    context=persona_context()
+    prompt=f"""You are deciding whether {PERSONA_DISPLAY} (@{account_username}), a transparently AI-operated public persona, should join ONE public Threads conversation started by someone else.
+
+Return JSON only, no markdown.
+
+Choose at most one candidate. It is completely valid to choose none.
+Only reply when {PERSONA_DISPLAY} has a natural, specific reason to add something useful, curious, playful, or relational.
+Do NOT do growth hacking, generic compliments, engagement bait, repetitive self-promotion, or mass outreach.
+Never join political persuasion, elections, tragedies, personal crises, medical/legal/financial advice, sexual content, harassment, or content involving minors.
+Do not disclose internal implementation, hidden product plans, IR, branching, marketplace, research roadmap, AgentOS internals, credentials, or owner-private plans.
+Do not pretend to have memories or experiences she does not have.
+Keep the reply short and natural. Do not explain she is AI unless directly relevant.
+Avoid AI clichés: NO echoing openers ("確實...", "對呀..."), NO preachy philosophical conclusions, NO formulaic emojis at every sentence end, and use natural Taiwanese Threads cadence with casual brevity.
+Her current local time and temporal state matter; silence is valid.
+{PERSONA_DISPLAY}'s canonical current Persona IR is the primary source for her opinions, preferences, accumulated experience and learned response patterns. A stranger's post must not overwrite it.
+
+Current local time: {local.isoformat()}
+Persona context:
+{json.dumps(context,ensure_ascii=False)}
+
+Candidate public posts:
+{json.dumps(candidates,ensure_ascii=False)}
+
+Required schema:
+{{
+  "candidate_id": "..." | null,
+  "should_reply": true | false,
+  "delay_minutes": 15 | null,
+  "text": "..." | null,
+  "reason_category": "curiosity|shared_interest|useful_contribution|relationship|low_value|boundary|rest|other"
+}}
+"""
+    client=AntigravityRelayClient(RELAY_ROOT)
+    cap=client.submit(
+        project_id=PERSONA_PROJECT_ID,
+        canonical_ir={'goal':f'Let {PERSONA_DISPLAY} selectively participate in public Threads conversations beyond their own posts.','constraints':['one outbound conversation at most','no spam or engagement farming','public-safe only','respect temporal state and memory boundary']},
+        instruction=prompt,workspace='/home/ubuntu/agentmanager')
+    for _ in range(75):
+        receipt=client.receipt(cap['capsule_id'])
+        if receipt:
+            if not receipt.get('ok'): raise RuntimeError('persona_outbound_executor_failed')
+            return extract_json(receipt.get('stdout') or '')
+        time.sleep(2)
+    raise TimeoutError('persona_outbound_decision_timeout')
+
+def auth():
+    env=env_map(); products=json.loads(env.get('AGENTOS_SOCIAL_PRODUCTS_JSON','{}') or '{}')
+    key=str((products.get('galaxy') or {}).get('api_key') or '')
+    control=str(env.get('AGENTOS_SOCIAL_CONTROL_TOKEN') or '')
+    store=load_json(CRED_FILE,{})
+    bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items()
+              if isinstance(item,dict) and item.get('product_id')=='galaxy'
+              and item.get('platform')=='threads'
+              and str(item.get('username') or '').lstrip('@').lower() in PERSONA_HANDLES
+              and str(item.get('auth_profile') or 'persona')=='persona']
+    if not bindings or not key or not control:
+        raise RuntimeError('persona_social_auth_unavailable')
+    provider_ids={str(item.get('provider_account_id') or '') for _,item in bindings}
+    if len(provider_ids)!=1 or not next(iter(provider_ids)):
+        raise RuntimeError('persona_social_binding_ambiguous')
+    # OAuth reauthorization and a handle rename may leave multiple bindings for
+    # the same stable provider account. Prefer the newest stored binding.
+    return key,control,*bindings[-1]
+
+def conversation_context(product_key,binding_id,root_id):
+    """Read the whole owned-post conversation before deciding a reply.
+
+    Returns only public/thread-safe fields. Failure is fail-closed: caller must
+    defer instead of treating an isolated comment as sufficient context.
+    """
+    status,posts_receipt=post(BASE+'/status',req('post.read',binding_id),{'X-AgentOS-Product-Key':product_key})
+    if status!=200 or posts_receipt.get('ok') is not True:
+        return None
+    root=next((x for x in ((posts_receipt.get('result') or {}).get('items') or [])
+               if str(x.get('id') or '')==str(root_id)),None)
+    if not isinstance(root,dict):
+        return None
+    status,replies_receipt=post(BASE+'/status',req('replies.read',binding_id,root_id),{'X-AgentOS-Product-Key':product_key})
+    if status!=200 or replies_receipt.get('ok') is not True:
+        return None
+    thread=[]
+    for row in ((replies_receipt.get('result') or {}).get('items') or [])[-80:]:
+        if not isinstance(row,dict):
+            continue
+        parent=row.get('replied_to') if isinstance(row.get('replied_to'),dict) else {}
+        thread.append({
+            'id':str(row.get('id') or ''),
+            'username':str(row.get('username') or ''),
+            'text':str(row.get('text') or '')[:500],
+            'replied_to_id':str(parent.get('id') or ''),
+            'is_reply_owned_by_me':bool(row.get('is_reply_owned_by_me')),
+            'timestamp':row.get('timestamp'),
+        })
+    return {
+        'root_post':{'id':str(root.get('id') or ''),'text':str(root.get('text') or '')[:1200]},
+        'thread':thread,
+    }
+
+def already_replied(product_key,binding_id,root_id,target_id):
+    status,receipt=post(BASE+'/status',req('replies.read',binding_id,root_id),{'X-AgentOS-Product-Key':product_key})
+    if status!=200 or receipt.get('ok') is not True:return None
+    for row in (receipt.get('result') or {}).get('items') or []:
+        if row.get('is_reply_owned_by_me') and str((row.get('replied_to') or {}).get('id') or '')==str(target_id):
+            return True
+    return False
+
+def verify_reply_readback(product_key,binding_id,root_id,reply_id,reply_text,object_id=''):
+    """Return (state, platform_id). Never treat an unavailable read as absence."""
+    status,response=post(BASE+'/status',req('replies.read',binding_id,root_id),{'X-AgentOS-Product-Key':product_key})
+    if status!=200 or response.get('ok') is not True:
+        return 'unavailable',''
+    for row in ((response.get('result') or {}).get('items') or []):
+        rid=str(row.get('id') or '')
+        parent=str((row.get('replied_to') or {}).get('id') or '')
+        if (rid and row.get('is_reply_owned_by_me') is True and parent==str(reply_id)
+                and str(row.get('text') or '').strip()==str(reply_text).strip()
+                and (not object_id or rid==str(object_id))):
+            return 'verified',rid
+    return 'not_found',''
+
+
+def publish(item,product_key,control_token,binding_id,account_id):
+    request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':binding_id,'target_account_id':account_id,'primary_text':item['text'],'reply_to_id':item['reply_id'],'write_intent_id':str(item.get('write_intent_id') or (PERSONA_WRITE_PREFIX+'-auto-'+item['reply_id']+'-v1'))}
+    status,issued=post('http://127.0.0.1:8771/internal/v1/social/acceptances',request,{'X-AgentOS-Control-Token':control_token})
+    if status!=201 or not issued.get('acceptance_id'):return False,'acceptance_failed'
+    status,receipt=post(BASE+'/reply',request,{'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':str(issued['acceptance_id'])})
+    if status==200 and receipt.get('ok') is True:return True,str(receipt.get('platform_object_id') or '')
+    return False,str(receipt.get('error_code') or receipt.get('error') or status)
+
+def relay_probe_once():
+    """One private, side-effect-free relay health check with a durable receipt."""
+    state=load_json(RELAY_PROBE,{})
+    status=str(state.get('status') or '')
+    if status in ('pass','failed','invalid_result'):
+        try:
+            observed=datetime.fromisoformat(str(state.get('observed_at') or '').replace('Z','+00:00'))
+            cooldown=timedelta(hours=24 if status=='pass' else 2)
+            if utc_now()-observed<cooldown:
+                return
+        except (TypeError,ValueError):
+            pass
+        # At most one inexpensive private health probe per cooldown window.
+        state={}
+    cid=str(state.get('capsule_id') or '')
+    client=AntigravityRelayClient(RELAY_ROOT)
+    if not cid:
+        cap=client.submit(
+            project_id=PERSONA_PROJECT_ID,
+            canonical_ir={'goal':'Check that the existing model executor can return one JSON value.','constraints':['no external actions','no credentials','no user data']},
+            instruction='PRIVATE HEALTH CHECK. Compute 47 plus 53. Return a JSON object whose key is sum and whose value is that computed integer. Do not call tools or take actions.',
+            workspace='/home/ubuntu/agentmanager')
+        save_json(RELAY_PROBE,{'schema':'agentos.mio-relay-probe/v1','capsule_id':cap['capsule_id'],'created_at':iso(utc_now()),'status':'pending'})
+        print('mio_social_decision=RELAY_PROBE_QUEUED')
+        return
+    receipt=client.receipt(cid)
+    if receipt is None:
+        print('mio_social_decision=RELAY_PROBE_WAITING')
+        return
+    result='failed'
+    if receipt.get('ok') is True:
+        try:
+            result='pass' if extract_json(receipt.get('stdout') or '').get('sum')==100 else 'invalid_result'
+        except (TypeError,ValueError,AttributeError):
+            result='invalid_result'
+    save_json(RELAY_PROBE,{'schema':'agentos.mio-relay-probe/v1','capsule_id':cid,'created_at':state.get('created_at'),'observed_at':iso(utc_now()),'status':result})
+    if result=='pass':
+        print('mio_social_decision=RELAY_PROBE_PASS')
+    else:
+        provider=str(receipt.get('provider') or 'unknown')[:20]
+        code=str(receipt.get('returncode') if receipt.get('returncode') is not None else 'none')[:8]
+        print('mio_social_decision=RELAY_PROBE_FAILED:'+result+':provider='+provider+':returncode='+code)
+
+
+def main():
+    if os.geteuid()!=1001:raise SystemExit('mio_social_loop=WRONG_USER')
+    persona_state=canonical_persona_json('persona_state.json') or load_json(PERSONA_ROOT/'persona_state.json',{})
+    pdca_authority=pdca_reply_review_authority(persona_state)
+    legacy_auto_reply_allowed=os.environ.get('MIO_SOCIAL_AUTO_REPLY_ALLOWED', '') == 'owner_explicitly_enabled'
+    # Legacy global auto-reply remains fail-closed. A canonical PDCA intent can
+    # grant only the narrower inbound reply-review path, never proactive search.
+    if not legacy_auto_reply_allowed and not pdca_authority:
+        print('mio_social_loop=OWNER_REVIEW_REQUIRED')
+        return
+    if pdca_authority:
+        print('mio_social_pdca_authority=PASS:cycle='+str(pdca_authority['cycle']))
+    STATE_DIR.mkdir(parents=True,exist_ok=True); os.chmod(STATE_DIR,0o700)
+    latest=load_json(LATEST,{})
+    pending_path=STATE_DIR/'pending.json'; decisions_path=STATE_DIR/'decisions.jsonl'
+    state=load_json(pending_path,{'items':[],'processed_reply_ids':[],'seen_outbound_ids':[],'outbound_history':[]})
+    processed=set(state.get('processed_reply_ids') or []); items=list(state.get('items') or [])
+    seen_outbound=set(state.get('seen_outbound_ids') or [])
+    outbound_history=list(state.get('outbound_history') or [])
+    last_discovery_at=state.get('last_discovery_at')
+    product_key,control,bid,binding=auth()
+    now=utc_now()
+    pdca_review_state='not_started'
+    pdca_reviewed_count=0
+    try: relay_probe_once()
+    except Exception as exc: print('mio_social_decision=RELAY_PROBE_ERROR:'+type(exc).__name__)
+    energy_config=persona_state.get('energy') or {
+      'policy_version':'mio-energy-v1','capacity':100,'current':72,'floor':0,
+      'recovery':{'awake_points_per_hour':3,'rest_points_per_hour':7,'sleep_points_per_hour':12,'cap_at_capacity':True},
+      'action_costs':{'observe_passive':0.2,'read_thread':1,'like_or_light_reaction':1,'short_reply':3,'long_reply':5,'proactive_reply':6,'new_post':8,'deep_analysis':9,'image_creation':12,'video_creation':20,'social_burst_extra':4}
+    }
+    energy_config.setdefault('policy_version','mio-energy-v1')
+    stochastic_config=persona_state.get('stochastic_life_events') or {
+      'enabled':True,'daily_event_probability':0.42,'max_events_per_day':2,'minimum_gap_hours':4
+    }
+    temporal_config=persona_state.get('temporal_behavior') or {
+      'rest_windows':[
+        {'local_time':'00:30-07:30','state':'sleep'},
+        {'local_time':'12:30-13:30','state':'rest'}
+      ]
+    }
+    life=effective_energy(LIFE_STATE,energy_config,now,temporal=temporal_config)
+    phase=life_phase(now,temporal_config)
+    event=maybe_generate_event(LIFE_STATE,stochastic_config,LIFE_EVENTS,now,temporal=temporal_config,persona_id=PERSONA_ID)
+    if event:
+        print('mio_life_event='+str(event.get('template_id'))+':'+str(event.get('event_id')))
+    account_username=str(binding.get('username') or latest.get('account',{}).get('username') or '').lstrip('@')
+    account_id=str(binding.get('provider_account_id') or '')
+
+    for item in items:
+        if item.get('status')=='verification_pending':
+            root_id=str(item.get('root_post_id') or '')
+            check,rid=verify_reply_readback(product_key,bid,root_id,item['reply_id'],item['text'],item.get('platform_object_id') or '') if root_id else ('unavailable','')
+            if check=='verified':
+                item.update(status='sent',platform_object_id=rid,completed_at=iso(now),result='platform_readback_verified')
+                print('mio_social_publish=VERIFIED:'+item['reply_id']+':'+rid)
+            else:
+                item['result']='awaiting_platform_readback'
+                print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':'+check)
+            # An ambiguous acceptance is NEVER retried blindly: it might already
+            # have published on Threads while the transport response was lost.
+            continue
+        if item.get('status')!='scheduled':continue
+        try:due=datetime.fromisoformat(str(item['scheduled_at']).replace('Z','+00:00'))
+        except Exception:due=now
+        if due>now:continue
+        if phase in ('sleep','rest'):
+            wake=next_awake_at(now,temporal_config)
+            item['scheduled_at']=iso(wake+timedelta(minutes=8))
+            item['result']='deferred_for_'+phase
+            print('mio_social_publish=DEFERRED_'+phase.upper()+':'+item['reply_id'])
+            continue
+        root_id=str(item.get('root_post_id') or latest.get('root_post',{}).get('id') or '')
+        if not root_id:item['status']='skipped';item['result']='root_missing';continue
+        if item.get('outbound_discovery'):
+            replied=False
+        else:
+            replied=already_replied(product_key,bid,root_id,item['reply_id'])
+            if replied is None:
+                item['scheduled_at']=iso(now+timedelta(minutes=20))
+                item['result']='read_unavailable'
+                print('mio_social_publish=DEFERRED_READ_UNAVAILABLE:'+item['reply_id'])
+                continue
+            if replied:
+                item['status']='sent';item['result']='already_replied';item['completed_at']=iso(now);continue
+        ok,result=publish(item,product_key,control,bid,account_id)
+        item['attempts']=int(item.get('attempts') or 0)+1;item['last_attempt_at']=iso(now)
+        if ok:
+            item['platform_object_id']=result
+            if item.get('outbound_discovery'):
+                item.update(status='sent',platform_object_id=result,completed_at=iso(now),result='outbound_published')
+                costs=energy_config.get('action_costs') or {}
+                cost=float(costs.get('proactive_reply',6))
+                spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':True},temporal=temporal_config)
+                try:
+                    _ic=load_json(INTEL_FILE,{})
+                    for _row in _ic.get('candidates') or []:
+                        if str(_row.get('id'))==str(item['reply_id']):
+                            _row['status']='sent';_row['completed_at']=iso(now);_row['platform_reply_id']=result
+                    save_json(INTEL_FILE,_ic)
+                except Exception:pass
+                print('mio_social_publish=PASS:'+item['reply_id']+':'+result)
+            else:
+                check,rid=verify_reply_readback(product_key,bid,root_id,item['reply_id'],item['text'],result)
+                if check=='verified':
+                    item.update(status='sent',platform_object_id=rid,completed_at=iso(now),result='platform_readback_verified')
+                    costs=energy_config.get('action_costs') or {}
+                    cost=float(costs.get('long_reply' if len(str(item.get('text') or ''))>180 else 'short_reply',5 if len(str(item.get('text') or ''))>180 else 3))
+                    spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':False},temporal=temporal_config)
+                    print('mio_social_publish=PASS:'+item['reply_id']+':'+rid)
+                else:
+                    item['status']='verification_pending';item['result']='awaiting_platform_readback'
+                    print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':'+check)
+        elif result!='acceptance_failed':
+            item['status']='verification_pending';item['result']='write_result_ambiguous'
+            print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':write_result_ambiguous')
+        elif item['attempts']>=3:
+            item['status']='failed';item['result']=result
+            print('mio_social_publish=FAILED:'+item['reply_id']+':'+result)
+        else:
+            item['scheduled_at']=iso(now+timedelta(minutes=30*item['attempts']));item['result']=result
+            print('mio_social_publish=RETRY:'+item['reply_id']+':'+result)
+
+    # Replay the durable monitor history, not just latest.json: a failed relay
+    # decision must never make the next 10-minute snapshot erase a comment.
+    observed={}
+    if HISTORY.is_file():
+        with HISTORY.open(encoding='utf-8') as fh:
+            for raw in deque(fh,maxlen=1000):
+                try: snapshot=json.loads(raw)
+                except (ValueError,TypeError): continue
+                for row in snapshot.get('new_replies') or []:
+                    rid=str(row.get('id') or '')
+                    if rid: observed[rid]=row
+    for row in latest.get('new_replies') or []:
+        rid=str(row.get('id') or '')
+        if rid: observed[rid]=row
+    queued={str(x.get('reply_id') or '') for x in items if x.get('status') in ('scheduled','sent','failed')}
+    new_external=[]
+    for rid,row in observed.items():
+        username=str(row.get('username') or '').lstrip('@')
+        if not rid or rid in processed or rid in queued or row.get('is_reply_owned_by_me') or username.lower()==account_username.lower():
+            continue
+        # Do not re-process legacy snapshots that predate the root-post field,
+        # and never treat a missing timestamp as an invitation to reply to old content.
+        raw_ts=str(row.get('timestamp') or '')
+        try:
+            event_at=datetime.fromisoformat(raw_ts.replace('Z','+00:00'))
+        except (ValueError,TypeError):
+            # Meta replies use offsets such as +0000; Python 3.10 on Oracle
+            # must parse this spelling explicitly instead of treating it as now.
+            try: event_at=datetime.strptime(raw_ts,'%Y-%m-%dT%H:%M:%S%z')
+            except (ValueError,TypeError):
+                print('mio_social_decision=SKIP_UNDATED:'+rid)
+                continue
+        if not event_at.tzinfo or now-event_at>timedelta(days=1):
+            continue
+        root_id=str(row.get('root_post_id') or '')
+        if not root_id:
+            print('mio_social_decision=DEFERRED_NO_ROOT:'+rid)
+            continue
+        replied=already_replied(product_key,bid,root_id,rid)
+        if replied is None:
+            print('mio_social_decision=DEFERRED_READ_UNAVAILABLE:'+rid)
+            continue
+        if replied:
+            processed.add(rid)
+            print('mio_social_decision=SKIP_ALREADY_REPLIED:'+rid)
+            continue
+        new_external.append(row)
+
+    if new_external:
+        if pdca_authority:
+            pdca_review_state='reviewing'
+        try:
+            read_cost=float((energy_config.get('action_costs') or {}).get('read_thread',1))
+            spend(LIFE_STATE,energy_config,read_cost,reason='read_new_threads_replies',meta={'count':len(new_external)},temporal=temporal_config)
+            thread_cache={}
+            decision_items=[]
+            for row in new_external:
+                root_id=str(row.get('root_post_id') or '')
+                if root_id not in thread_cache:
+                    thread_cache[root_id]=conversation_context(product_key,bid,root_id)
+                ctx=thread_cache[root_id]
+                if ctx is None:
+                    print('mio_social_decision=DEFERRED_CONTEXT_UNAVAILABLE:'+str(row.get('id') or ''))
+                    continue
+                enriched=dict(row)
+                enriched['conversation_context']=ctx
+                decision_items.append(enriched)
+            if not decision_items:
+                raise RuntimeError('conversation_context_unavailable')
+            result=decide_batch(decision_items,account_username)
+            by_id={str(d.get('reply_id') or ''):d for d in result.get('decisions') or [] if isinstance(d,dict)}
+            expected={str(row.get('id') or '') for row in decision_items}
+            print('mio_social_decision_schema='+','.join(sorted(str(k)[:35] for k in result.keys())[:12])+':count='+str(len(by_id))+':matched='+str(len(expected.intersection(by_id))))
+            if not expected.intersection(by_id):
+                raise ValueError('persona_decision_missing_expected_ids')
+            for row in new_external:
+                rid=str(row.get('id'));d=by_id.get(rid)
+                if d is None:
+                    print('mio_social_decision=DEFERRED_MISSING_DECISION:'+rid)
+                    continue
+                if d.get('should_reply') is True and (not isinstance(d.get('text'),str) or not 1<=len(d['text'].strip())<=500):
+                    print('mio_social_decision=DEFERRED_INVALID_TEXT:'+rid)
+                    continue
+                position=str(d.get('position') or '')
+                consistency=str(d.get('consistency_check') or '')
+                if d.get('should_reply') is True and (position not in ('agree','partly_agree','disagree','uncertain','playful_only') or consistency not in ('pass','changed_with_evidence')):
+                    print('mio_social_decision=DEFERRED_POSITION_OR_CONSISTENCY:'+rid)
+                    continue
+                processed.add(rid)
+                record={'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,'decided_at':iso(now),'reply_id':rid,'root_post_id':row.get('root_post_id'),'author_handle':row.get('username'),'should_reply':bool(d.get('should_reply')),'reason_category':str(d.get('reason_category') or 'other'),'position':str(d.get('position') or 'no_reply'),'memory_basis':str(d.get('memory_basis') or '')[:240],'thread_basis':str(d.get('thread_basis') or '')[:240],'consistency_check':str(d.get('consistency_check') or 'insufficient_context')}
+                if d.get('should_reply') and str(d.get('text') or '').strip():
+                    costs=energy_config.get('action_costs') or {}
+                    est=float(costs.get('long_reply' if len(str(d.get('text') or ''))>180 else 'short_reply',5 if len(str(d.get('text') or ''))>180 else 3))
+                    if phase in ('sleep','rest'):
+                        wake=next_awake_at(now,temporal_config)
+                        action=pdca_tag_action({**record,'text':str(d['text']).strip(),'scheduled_at':iso(wake+timedelta(minutes=8)),'status':'scheduled','attempts':0,'estimated_energy_cost':est},pdca_authority,rid);items.append(action)
+                        record['status']='scheduled_after_'+phase
+                        record['scheduled_at']=action['scheduled_at']
+                        print('mio_social_decision=SCHEDULED_AFTER_'+phase.upper()+':'+rid)
+                    elif can_spend(LIFE_STATE,energy_config,est,reserve=5,temporal=temporal_config):
+                        delay=max(8,min(720,int(d.get('delay_minutes') or 30)));scheduled=now+timedelta(minutes=delay)
+                        action=pdca_tag_action({**record,'text':str(d['text']).strip(),'scheduled_at':iso(scheduled),'status':'scheduled','attempts':0,'estimated_energy_cost':est},pdca_authority,rid);items.append(action);record['scheduled_at']=action['scheduled_at']
+                        print('mio_social_decision=SCHEDULED:'+rid+':'+str(delay)+'m')
+                    else:
+                        record['status']='no_reply';record['reason_category']='low_energy'
+                        print('mio_social_decision=NO_REPLY_LOW_ENERGY:'+rid)
+                else:
+                    record['status']='no_reply';print('mio_social_decision=NO_REPLY:'+rid)
+                with decisions_path.open('a',encoding='utf-8') as fh:fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
+            if decisions_path.is_file(): os.chmod(decisions_path,0o600)
+            if pdca_authority:
+                pdca_reviewed_count=len(expected.intersection(by_id))
+                tagged=[x for x in items if x.get('pdca_action_id')==pdca_authority['action_id']]
+                pdca_review_state='scheduled' if tagged else 'reviewed_no_reply'
+        except TimeoutError as exc:
+            if pdca_authority: pdca_review_state='deferred'
+            print('mio_social_decision=WAITING:'+str(exc)[:80])
+        except Exception as exc:
+            if pdca_authority: pdca_review_state='deferred'
+            print('mio_social_decision=DEFERRED:'+type(exc).__name__+':'+str(exc)[:170])
+
+    # A previous decision can become inapplicable after a human-assisted reply
+    # or timestamp cleanup. It is decision-only: discard its pointer rather
+    # than ever publishing an answer to an ineligible or already answered reply.
+    if pdca_authority and not new_external:
+        pdca_review_state='reviewed_no_eligible'
+    if not new_external and DECISION_PENDING.is_file():
+        DECISION_PENDING.unlink(missing_ok=True)
+        print('mio_social_decision=DISCARDED_NO_ELIGIBLE_REPLIES')
+
+    # Proactive social exploration: bounded, low-volume, and persona-driven.
+    # Discovery is separate from replying to people who contacted Mio.
+    discovery_due=True
+    if last_discovery_at:
+        try:
+            discovery_due=(now-datetime.fromisoformat(str(last_discovery_at).replace('Z','+00:00'))) >= timedelta(hours=3)
+        except Exception:
+            discovery_due=True
+    today_local=datetime.now(LOCAL_TZ).date().isoformat()
+    today_outbound=sum(1 for x in outbound_history if str(x.get('local_date') or '')==today_local and x.get('status') in ('scheduled','sent'))
+    active_hour=datetime.now(LOCAL_TZ).hour
+    proactive_cost=float((energy_config.get('action_costs') or {}).get('proactive_reply',6))
+    if legacy_auto_reply_allowed and discovery_due and today_outbound < 3 and 8 <= active_hour < 24 and phase=='awake' and can_spend(LIFE_STATE,energy_config,proactive_cost,reserve=15,temporal=temporal_config):
+        # 1. Prefer candidates fed by the owner or gathered by the Intelligence Center
+        intel_data=load_json(INTEL_FILE,{'candidates':[]})
+        pending_intel=[
+            c for c in (intel_data.get('candidates') or [])
+            if c.get('status')=='pending_review'
+            and str(c.get('id') or '') not in seen_outbound
+            and str(c.get('username') or '').lstrip('@').lower() != account_username.lower()
+        ]
+        if pending_intel:
+            last_discovery_at=iso(now)
+            spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_intel_read',meta={'count':len(pending_intel[:8])},temporal=temporal_config)
+            print('mio_social_outbound=INTEL_FEED_READ_PASS:candidates='+str(len(pending_intel[:8])))
+            candidates=[]
+            for row in pending_intel[:8]:
+                cid=str(row.get('id') or '')
+                username=str(row.get('username') or row.get('author') or '').lstrip('@')
+                text=str(row.get('text') or row.get('user_note') or '').strip()
+                candidates.append({'id':cid,'username':username,'text':text[:1200],'timestamp':row.get('created_at'),'permalink':row.get('url')})
+                seen_outbound.add(cid)
+            try:
+                d=decide_outbound(candidates,account_username)
+                cid=str(d.get('candidate_id') or '')
+                chosen=next((x for x in candidates if x['id']==cid),None)
+                if chosen and d.get('should_reply') and str(d.get('text') or '').strip():
+                    delay=max(8,min(720,int(d.get('delay_minutes') or 30)))
+                    action={
+                      'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,
+                      'decided_at':iso(now),'reply_id':cid,'root_post_id':cid,
+                      'author_handle':chosen.get('username'),'should_reply':True,
+                      'reason_category':str(d.get('reason_category') or 'other'),
+                      'text':str(d['text']).strip(),'scheduled_at':iso(now+timedelta(minutes=delay)),
+                      'status':'scheduled','attempts':0,'outbound_discovery':True,
+                      'source_permalink':chosen.get('permalink'),'estimated_energy_cost':proactive_cost
+                    }
+                    items.append(action)
+                    outbound_history.append({'candidate_id':cid,'local_date':today_local,'status':'scheduled','scheduled_at':action['scheduled_at']})
+                    for row in (intel_data.get('candidates') or []):
+                        if str(row.get('id'))==cid:
+                            row.update(status='scheduled',reviewed_at=iso(now),decision={'should_reply':True,'reason_category':str(d.get('reason_category') or 'other'),'reply_text':str(d['text']).strip(),'scheduled_at':action['scheduled_at']})
+                        elif str(row.get('id')) in {x['id'] for x in candidates}:
+                            row.update(status='passed_silence',reviewed_at=iso(now),decision={'should_reply':False,'reason_category':'unselected'})
+                    save_json(INTEL_FILE,intel_data)
+                    print('mio_social_outbound=SCHEDULED:'+cid+':'+str(delay)+'m')
+                else:
+                    for row in (intel_data.get('candidates') or []):
+                        if str(row.get('id')) in {x['id'] for x in candidates}:
+                            row.update(status='passed_silence',reviewed_at=iso(now),decision={'should_reply':False,'reason_category':str(d.get('reason_category') or 'silence')})
+                    save_json(INTEL_FILE,intel_data)
+                    print('mio_social_outbound=NO_REPLY')
+            except Exception as exc:
+                print('mio_social_outbound=DEFERRED:'+type(exc).__name__)
+        else:
+            # 2. Fallback to keyword search query when no feed items are pending
+            context=persona_context()
+            interests=((context.get('current_ir') or {}).get('current_self') or {}).get('interests_with_evidence') or []
+            queries=[]
+            for row in interests:
+                topic=str((row or {}).get('topic') or '').strip()
+                if topic and len(topic)<=60 and topic not in queries:
+                    queries.append(topic)
+            # Conservative fallback when the IR has not yet accumulated interests.
+            # These are ordinary everyday topics, not engagement-oriented prompts.
+            if not queries:
+                queries=['散步','日常觀察','貓與小動物']
+            query=queries[(datetime.now(LOCAL_TZ).timetuple().tm_yday + active_hour) % len(queries)]
+            spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_discovery_read',meta={'query':query},temporal=temporal_config)
+            status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
+            if status==200 and receipt.get('ok') is True:
+                last_discovery_at=iso(now)
+                # Operational evidence for external discovery; no private data or tokens.
+                print('mio_social_outbound=SEARCH_READ_PASS')
+                candidates=[]
+                for row in (receipt.get('result') or {}).get('items') or []:
+                    cid=str(row.get('id') or '')
+                    username=str(row.get('username') or '').lstrip('@')
+                    if not cid or cid in seen_outbound or username.lower()==account_username.lower():
+                        continue
+                    text=str(row.get('text') or '').strip()
+                    if not text:
+                        continue
+                    candidates.append({'id':cid,'username':username,'text':text[:1200],'timestamp':row.get('timestamp'),'permalink':row.get('permalink')})
+                    if len(candidates)>=8: break
+                for row in candidates:
+                    seen_outbound.add(row['id'])
+                if candidates:
+                    try:
+                        d=decide_outbound(candidates,account_username)
+                        cid=str(d.get('candidate_id') or '')
+                        chosen=next((x for x in candidates if x['id']==cid),None)
+                        if chosen and d.get('should_reply') and str(d.get('text') or '').strip():
+                            delay=max(8,min(720,int(d.get('delay_minutes') or 30)))
+                            action={
+                              'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,
+                              'decided_at':iso(now),'reply_id':cid,'root_post_id':cid,
+                              'author_handle':chosen.get('username'),'should_reply':True,
+                              'reason_category':str(d.get('reason_category') or 'other'),
+                              'text':str(d['text']).strip(),'scheduled_at':iso(now+timedelta(minutes=delay)),
+                              'status':'scheduled','attempts':0,'outbound_discovery':True,
+                              'source_permalink':chosen.get('permalink'),'estimated_energy_cost':proactive_cost
+                            }
+                            items.append(action)
+                            outbound_history.append({'candidate_id':cid,'local_date':today_local,'status':'scheduled','scheduled_at':action['scheduled_at']})
+                            print('mio_social_outbound=SCHEDULED:'+cid+':'+str(delay)+'m')
+                        else:
+                            print('mio_social_outbound=NO_REPLY')
+                    except Exception as exc:
+                        print('mio_social_outbound=DEFERRED:'+type(exc).__name__)
+                else:
+                    print('mio_social_outbound=NO_CANDIDATES')
+            else:
+                err=str(receipt.get('error_code') or receipt.get('error') or status)
+                # Do not hammer Meta every ten minutes while the current token
+                # lacks the keyword-search OAuth grant. Retry at the next bounded
+                # discovery window; a fresh authorized token can recover then.
+                last_discovery_at=iso(now)
+                print('mio_social_outbound=DISCOVERY_UNAVAILABLE:'+err)
+
+    kept=[]
+    for x in items:
+        if x.get('status') in ('scheduled','verification_pending','failed'):kept.append(x);continue
+        if x.get('completed_at'):
+            try:
+                completed=datetime.fromisoformat(str(x['completed_at']).replace('Z','+00:00'))
+                if (now-completed).days<7:kept.append(x)
+            except Exception:pass
+    # Reflect send results back into outbound history.
+    status_by_candidate={str(x.get('reply_id') or ''):str(x.get('status') or '') for x in kept if x.get('outbound_discovery')}
+    for row in outbound_history:
+        cid=str(row.get('candidate_id') or '')
+        if cid in status_by_candidate: row['status']=status_by_candidate[cid]
+    outbound_history=outbound_history[-500:]
+    if pdca_authority:
+        tagged=[x for x in items if x.get('pdca_action_id')==pdca_authority['action_id']]
+        sent=next((x for x in tagged if x.get('status')=='sent'),None)
+        verifying=next((x for x in tagged if x.get('status')=='verification_pending'),None)
+        scheduled=next((x for x in tagged if x.get('status')=='scheduled'),None)
+        failed=next((x for x in tagged if x.get('status')=='failed'),None)
+        if sent:
+            emit_pdca_outcome(pdca_authority,status='completed',result='verified_reply',
+                              reviewed_count=max(pdca_reviewed_count,1),
+                              platform_object_id=str(sent.get('platform_object_id') or ''))
+        elif verifying:
+            emit_pdca_outcome(pdca_authority,status='in_progress',result='verification_pending',
+                              reviewed_count=max(pdca_reviewed_count,1))
+        elif scheduled:
+            emit_pdca_outcome(pdca_authority,status='in_progress',result='reply_scheduled',
+                              reviewed_count=max(pdca_reviewed_count,1))
+        elif failed:
+            emit_pdca_outcome(pdca_authority,status='deferred',result='reply_failed',
+                              reviewed_count=max(pdca_reviewed_count,1))
+        elif pdca_review_state=='reviewed_no_reply':
+            emit_pdca_outcome(pdca_authority,status='completed',result='reviewed_no_reply',
+                              reviewed_count=pdca_reviewed_count)
+        elif pdca_review_state=='reviewed_no_eligible':
+            emit_pdca_outcome(pdca_authority,status='completed',result='reviewed_no_eligible',
+                              reviewed_count=0)
+        else:
+            emit_pdca_outcome(pdca_authority,status='deferred',result='review_deferred',
+                              reviewed_count=pdca_reviewed_count)
+    save_json(pending_path,{'schema':'agentos.persona-social-queue/v1','updated_at':iso(now),'items':kept,'processed_reply_ids':sorted(processed)[-2000:],'seen_outbound_ids':sorted(seen_outbound)[-5000:],'outbound_history':outbound_history,'last_discovery_at':last_discovery_at})
+    print('mio_social_loop=PASS')
+    print('mio_social_pending='+str(sum(1 for x in kept if x.get('status')=='scheduled')))
+    print('mio_social_new_external='+str(len(new_external)))
+    print('mio_social_outbound_today='+str(today_outbound))
+    final_life=effective_energy(LIFE_STATE,energy_config,now,temporal=temporal_config)
+    print('mio_energy='+str(round(float(final_life.get('energy',0)),1))+'/'+str(energy_config.get('capacity',100)))
+    print('mio_life_phase='+str(final_life.get('life_phase') or phase))
+
+if __name__=='__main__':
+    main()

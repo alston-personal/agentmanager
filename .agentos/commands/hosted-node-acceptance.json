@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.acceptance",
+  "node_id": "VO10005870",
+  "nonce": "reaccept-VO10005870-after-gateway-repair-20261001T0316Z"
+}

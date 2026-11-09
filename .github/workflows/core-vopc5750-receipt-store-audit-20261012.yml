@@ -1,0 +1,62 @@
+name: Core VOPC5750 Receipt Store Audit 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-vopc5750-receipt-store-audit-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Inspect backing store and recent vopc5750 receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+
+          store=RealmFabricStore()
+          data=store.load()
+          receipts=data.get('receipts') or {}
+          rows=[]
+          for task_id, r in receipts.items():
+              if not isinstance(r,dict):
+                  continue
+              if r.get('node_id')!='vopc5750':
+                  continue
+              rows.append({
+                  'task_id':task_id,
+                  'action':r.get('action'),
+                  'ok':r.get('ok'),
+                  'started_at':r.get('started_at'),
+                  'completed_at':r.get('completed_at'),
+                  'received_at':r.get('received_at'),
+                  'returncode':r.get('returncode'),
+                  'error':r.get('error'),
+                  'stdout_tail':str(r.get('stdout') or '')[-500:],
+              })
+          rows=sorted(rows,key=lambda x:str(x.get('received_at') or ''),reverse=True)[:30]
+          p=store.path
+          stat=p.stat() if p.exists() else None
+          print(json.dumps({
+              'store_path':str(p),
+              'store_exists':p.exists(),
+              'store_size':stat.st_size if stat else None,
+              'store_mtime':stat.st_mtime if stat else None,
+              'queued_vopc5750':(data.get('tasks') or {}).get('vopc5750') or [],
+              'recent_vopc5750_receipts':rows,
+          },indent=2,sort_keys=True))
+          PY

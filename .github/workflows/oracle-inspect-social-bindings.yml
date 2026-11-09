@@ -1,0 +1,48 @@
+name: Oracle Inspect Social Bindings
+
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect secret-free social account bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          CRED=/home/ubuntu/.local/state/agentos/social/credentials.json
+          test -f "$CRED"
+          python3 - "$CRED" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=p.get('bindings') or {}
+          print('social_binding_count='+str(len(rows)))
+          for binding_id,item in sorted(rows.items()):
+              if not isinstance(item,dict):
+                  continue
+              print('binding_id='+binding_id)
+              print('product_id='+str(item.get('product_id') or ''))
+              print('platform='+str(item.get('platform') or ''))
+              print('provider_account_id='+str(item.get('provider_account_id') or ''))
+              print('username='+str(item.get('username') or ''))
+              print('auth_profile='+str(item.get('auth_profile') or ''))
+              print('---')
+          PY
+          echo social_binding_inspect=PASS
+          REMOTE

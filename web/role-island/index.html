@@ -1,0 +1,1927 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentOS AI 員工作戰中心 ＆ 13專案群島文明進化觀測站</title>
+  <!-- Three.js, OrbitControls, and Tween.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+  <style>
+    :root {
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      --bg-dark: #070c18;
+      --bg-card: rgba(15, 23, 42, 0.94);
+      --bg-card-hover: rgba(30, 41, 59, 0.96);
+      --border-color: rgba(255, 255, 255, 0.12);
+      --accent-gold: #f59e0b;
+      --accent-blue: #3b82f6;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --accent-purple: #a855f7;
+      --accent-cyan: #06b6d4;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      overflow-x: hidden;
+      font-family: var(--font-family);
+      background-color: var(--bg-dark);
+      color: #f8fafc;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* Top Sticky Header */
+    .top-header {
+      position: sticky;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(7, 12, 24, 0.94);
+      backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fbbf24 0%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-badge {
+      font-size: 0.72rem;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.8; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.8; }
+    }
+
+    /* Core Mode Switcher Tabs */
+    .mode-switcher-container {
+      display: flex;
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 4px;
+      gap: 4px;
+    }
+    .mode-tab-btn {
+      padding: 8px 18px;
+      border-radius: 10px;
+      border: none;
+      font-size: 0.86rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: #94a3b8;
+      background: transparent;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mode-tab-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .mode-tab-btn.active {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+    }
+
+    .meta-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .meta-tag-pill {
+      font-size: 0.72rem;
+      color: #94a3b8;
+      border: 1px solid var(--border-color);
+      background: rgba(30, 41, 59, 0.6);
+      padding: 4px 10px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    /* ======================================================== */
+    /* VIEW 1: AI 員工作戰中心 (EMPLOYEE HUB VIEW)               */
+    /* ======================================================== */
+    #view-employee-hub {
+      padding: 24px;
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Metrics Summary Ribbon */
+    .summary-ribbon {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .metric-icon-box {
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .metric-value {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: #f1f5f9;
+    }
+    .metric-label {
+      font-size: 0.74rem;
+      color: #94a3b8;
+      margin-top: 2px;
+      font-weight: 600;
+    }
+
+    /* Backlog & Digestion Watermark Banner */
+    .backlog-watermark-card {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-radius: 16px;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .backlog-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .backlog-icon-pile {
+      font-size: 2rem;
+      animation: floatSlow 3s ease-in-out infinite;
+    }
+    @keyframes floatSlow {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+    .backlog-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #fbbf24;
+    }
+    .backlog-sub {
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      margin-top: 2px;
+    }
+    .backlog-pills-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .backlog-project-pill {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-size: 0.74rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .scroll-count-tag {
+      background: rgba(245, 158, 11, 0.2);
+      border: 1px solid rgba(245, 158, 11, 0.5);
+      color: #fbbf24;
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+
+    /* Section Heading */
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-heading {
+      font-size: 1.2rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Employee Grid */
+    .employee-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 20px;
+    }
+
+    .employee-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .employee-card:hover {
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-2px);
+    }
+
+    /* Header in Card */
+    .emp-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .emp-profile {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .emp-avatar {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-color);
+    }
+    .emp-name {
+      font-size: 1.15rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .emp-role-sub {
+      font-size: 0.74rem;
+      color: #94a3b8;
+      font-family: monospace;
+      margin-top: 2px;
+    }
+    .emp-station-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.12);
+      padding: 3px 8px;
+      border-radius: 8px;
+      margin-top: 4px;
+      width: fit-content;
+    }
+
+    .btn-locate-3d {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid var(--border-color);
+      color: #94a3b8;
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-locate-3d:hover {
+      background: rgba(59, 130, 246, 0.25);
+      border-color: rgba(59, 130, 246, 0.6);
+      color: #60a5fa;
+      transform: translateY(-1px);
+    }
+
+    /* THE HERO ACCOMPLISHMENT BLOCK (🏆 剛剛完成了什麼？) */
+    .accomplishment-block {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .accomplishment-badge-label {
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #fbbf24;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .accomplishment-title {
+      font-size: 0.96rem;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.4;
+    }
+    .accomplishment-deliverable {
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      line-height: 1.45;
+    }
+
+    .deliverable-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .deliverable-btn {
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-pr {
+      background: rgba(245, 158, 11, 0.18);
+      border: 1px solid rgba(245, 158, 11, 0.5);
+      color: #fbbf24;
+    }
+    .btn-pr:hover { background: rgba(245, 158, 11, 0.35); color: #fff; }
+
+    .btn-novel {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.5);
+      color: #93c5fd;
+    }
+    .btn-novel:hover { background: rgba(59, 130, 246, 0.4); color: #fff; }
+
+    .btn-verify {
+      background: rgba(16, 185, 129, 0.18);
+      border: 1px solid rgba(16, 185, 129, 0.5);
+      color: #34d399;
+    }
+
+    /* Live Action Block */
+    .live-action-block {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .live-action-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .live-action-text {
+      font-size: 0.82rem;
+      color: #e2e8f0;
+      line-height: 1.4;
+    }
+
+    /* Queue Block */
+    .queue-block {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .queue-block-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .queue-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .queue-step-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 0.76rem;
+    }
+    .step-seq-pill {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(59, 130, 246, 0.25);
+      border: 1px solid #3b82f6;
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.68rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .step-text {
+      flex: 1;
+      color: #cbd5e1;
+    }
+    .step-tag {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+    }
+
+    /* HISTORICAL CAREER TIMELINE (📜 歷史戰績履歷) */
+    .history-drawer-toggle {
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: #38bdf8;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      margin-top: 4px;
+    }
+    .history-drawer-toggle:hover {
+      color: #7dd3fc;
+    }
+    .history-timeline {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(8, 13, 26, 0.85);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .history-timeline.open {
+      display: flex;
+    }
+    .history-item {
+      display: flex;
+      gap: 10px;
+      position: relative;
+    }
+    .history-node {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #3b82f6;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+    .history-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 0.74rem;
+    }
+    .history-time {
+      color: #64748b;
+      font-family: monospace;
+      font-size: 0.68rem;
+    }
+    .history-msg {
+      color: #cbd5e1;
+      line-height: 1.35;
+    }
+
+    /* Footer Isolation Guarantee */
+    .observatory-footer {
+      margin-top: 24px;
+      padding: 18px 24px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 0.76rem;
+      color: #94a3b8;
+    }
+    .footer-reg-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #34d399;
+      font-weight: 700;
+    }
+
+    /* ======================================================== */
+    /* VIEW 2: 3D 專案群島 (ARCHIPELAGO 3D VIEW)                 */
+    /* ======================================================== */
+    #view-3d-scene {
+      width: 100vw;
+      height: calc(100vh - 65px);
+      position: absolute;
+      top: 65px;
+      left: 0;
+      display: none;
+    }
+    #view-3d-scene.active-view {
+      display: block;
+    }
+
+    #webgl-canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Quick Switcher Bar in 3D */
+    .scene-quick-bar {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      gap: 6px;
+      background: var(--bg-card);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--border-color);
+      padding: 6px 12px;
+      border-radius: 30px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      max-width: 92vw;
+      overflow-x: auto;
+    }
+    .scene-pill {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #94a3b8;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .scene-pill:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .scene-pill.active {
+      background: rgba(59, 130, 246, 0.3);
+      border-color: rgba(59, 130, 246, 0.6);
+      color: #60a5fa;
+    }
+
+    /* Floating Popup Card in 3D */
+    .scene-popup-card {
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      width: 380px;
+      max-width: calc(100vw - 48px);
+      z-index: 10;
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .employee-grid { grid-template-columns: 1fr; }
+      .top-header { flex-direction: column; gap: 10px; align-items: flex-start; }
+      .mode-switcher-container { width: 100%; justify-content: center; }
+      #view-3d-scene { top: 110px; height: calc(100vh - 110px); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Sticky Header -->
+  <header class="top-header">
+    <div class="brand-section">
+      <span class="brand-title">🪐 AgentOS 指揮觀測中心</span>
+      <div class="brand-badge">
+        <span class="pulse-dot"></span>
+        <span id="header-brand-badge-text">10 位 AI 員工在線 · 57 個專案群島 (3D 核心 13 島)</span>
+      </div>
+    </div>
+
+    <!-- Mode Switcher: View 1 vs View 2 -->
+    <div class="mode-switcher-container">
+      <button class="mode-tab-btn active" id="btn-mode-hub">
+        <span>👔 AI 員工作戰中心</span>
+      </button>
+      <button class="mode-tab-btn" id="btn-mode-3d">
+        <span>🪐 3D 專案群島 (13 核心島 / 57 專案文明)</span>
+      </button>
+    </div>
+
+    <div class="meta-controls">
+      <a href="https://studio.milkcat.org/" target="_top" style="text-decoration: none; color: #fca5a5; font-size: 0.78rem; font-weight: 700; background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.45); padding: 4px 12px; border-radius: 8px; display: inline-flex; align-items: center; gap: 4px;">
+        ⬅️ 返回官網
+      </a>
+      <a href="/mission-control/" style="text-decoration: none; color: #38bdf8; font-size: 0.78rem; font-weight: 700; background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.4); padding: 4px 10px; border-radius: 8px;">
+        🛰️ 作戰指揮室
+      </a>
+      <a href="/personas/" style="text-decoration: none; color: #c084fc; font-size: 0.78rem; font-weight: 700; background: rgba(192,132,252,0.15); border: 1px solid rgba(192,132,252,0.4); padding: 4px 10px; border-radius: 8px;">
+        👤 角色神殿
+      </a>
+      <a href="/mio-room/" style="text-decoration: none; color: #f472b6; font-size: 0.78rem; font-weight: 700; background: rgba(244,114,182,0.15); border: 1px solid rgba(244,114,182,0.4); padding: 4px 10px; border-radius: 8px;">
+        🌸 晴湖小築 (Mio)
+      </a>
+      <a href="/tiandao/" style="text-decoration: none; color: #fbbf24; font-size: 0.78rem; font-weight: 700; background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.4); padding: 4px 10px; border-radius: 8px;">
+        📖 天道連載
+      </a>
+      <a href="https://github.com/alston-personal/agentmanager/pull/2104" target="_blank" style="text-decoration: none; color: #fbbf24; font-size: 0.78rem; font-weight: 700; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); padding: 4px 10px; border-radius: 8px;">
+        📦 PR #2104
+      </a>
+    </div>
+  </header>
+
+  <!-- ======================================================== -->
+  <!-- VIEW 1: AI 員工作戰中心 (EMPLOYEE HUB VIEW)               -->
+  <!-- ======================================================== -->
+  <main id="view-employee-hub">
+
+    <!-- Metrics Summary Ribbon (Dynamic Sync via data.json) -->
+    <div class="summary-ribbon" id="dynamic-summary-ribbon">
+      <div class="metric-card">
+        <div class="metric-icon-box" style="color: #38bdf8;">👥</div>
+        <div>
+          <div class="metric-value" id="metric-personas-count">9 位 AI 員工</div>
+          <div class="metric-label">全自主職能運作中</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon-box" style="color: #fbbf24;">🪐</div>
+        <div>
+          <div class="metric-value" id="metric-projects-count">57 個專案</div>
+          <div class="metric-label">群島文明演進觀測</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon-box" style="color: #34d399;">📜</div>
+        <div>
+          <div class="metric-value" id="metric-backlog-status">194 卷待辦 / 50.6%</div>
+          <div class="metric-label">全生態任務閉環率</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon-box" style="color: #a855f7;">⚡</div>
+        <div>
+          <div class="metric-value" id="metric-sync-time">即時連線 (台北時間)</div>
+          <div class="metric-label" id="metric-sync-label">AgentOS 雙相巡檢衛戍</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 待辦任務視覺化：全專案卷軸水位與消化進度 -->
+    <div class="backlog-watermark-card">
+      <div class="backlog-left">
+        <div class="backlog-icon-pile">📜</div>
+        <div>
+          <div class="backlog-title">專案待辦任務卷軸堆疊 (Visual Backlog Stacks)</div>
+          <div class="backlog-sub">各專案待辦以 3D 卷軸堆疊呈現於島上。AI 員工處理掉一個就少一個，即時反映任務積累或消化狀態。</div>
+        </div>
+      </div>
+      <div class="backlog-pills-row" id="dynamic-backlog-pills">
+        <span style="font-size: 0.8rem; color: #94a3b8;">正在載入專案卷軸水位...</span>
+      </div>
+    </div>
+
+    <!-- Section Heading -->
+    <div class="section-title-row">
+      <div class="section-heading">
+        <span>👥 全自主 AI 員工執行戰情看板 (Employee Roster)</span>
+      </div>
+      <span style="font-size: 0.8rem; color: #94a3b8;">包含「🏆 剛剛完成了什麼」與「📜 歷史戰績時間軸」</span>
+    </div>
+
+    <!-- 9 全自主 AI 員工執行戰情看板 (Dynamic Employee Roster) -->
+    <div class="employee-grid" id="dynamic-employee-grid">
+      <div style="grid-column: 1 / -1; padding: 48px; text-align: center; color: #94a3b8; font-size: 0.95rem;">
+        <span class="pulse-dot" style="margin-right: 8px;"></span>
+        <span>正在連線 AgentOS 核心觀測站，動態裝載 9 位 AI 員工與 57 專案進度...</span>
+      </div>
+    </div>
+
+    <!-- Footer Isolation & Registration Guarantee -->
+    <footer class="observatory-footer">
+      <div class="footer-reg-badge">
+        <span>🟢 專案註冊：agentos-observatory</span>
+        <span style="color: #64748b;">· 純讀取視覺觀測層 (Telemetry & Visual Projection)</span>
+      </div>
+      <div>
+        <span>🛡️ 隔離保證：零核心運行時鎖 · 獨立失敗域 · 絕不阻塞或干擾 AgentOS 各角色與專案推進</span>
+      </div>
+    </footer>
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- VIEW 2: 3D 專案群島 (ARCHIPELAGO 3D VIEW - 13 ISLANDS)    -->
+  <!-- ======================================================== -->
+  <section id="view-3d-scene">
+    <div id="webgl-canvas-container"></div>
+
+    <!-- Quick Switcher Bar in 3D -->
+    <div class="scene-quick-bar">
+      <button class="scene-pill active" onclick="reset3DCamera()">🪐 群島全景</button>
+      <button class="scene-pill" onclick="focusIsland('agentos-core')">🏰 Core (Lv4)</button>
+      <button class="scene-pill" onclick="focusIsland('leopardcat-tarot')">🔮 Tarot (Lv3)</button>
+      <button class="scene-pill" onclick="focusIsland('metashield')">🛡️ MetaShield (Lv3)</button>
+      <button class="scene-pill" onclick="focusIsland('zeus-writer')">🏛️ Zeus (Lv2)</button>
+      <button class="scene-pill" onclick="focusIsland('fengshui')">🧭 FengShui (Lv2)</button>
+      <button class="scene-pill" onclick="focusIsland('studio-web')">🌐 Web (Lv1)</button>
+      <button class="scene-pill" onclick="focusIsland('youtube-ai-manager')">📺 YT (Lv1)</button>
+      <button class="scene-pill" onclick="focusIsland('prophecy-verifier')">🗿 Prophecy (Lv0荒島)</button>
+      <span style="width: 1px; height: 16px; background: rgba(255,255,255,0.2); margin: 0 4px;"></span>
+      <button class="scene-pill" onclick="locateRoleIn3D('os-lobster')">🦞 Lobster</button>
+      <button class="scene-pill" onclick="locateRoleIn3D('the-paw')">🐾 The Paw</button>
+      <button class="scene-pill" onclick="locateRoleIn3D('the-claw')">🦅 The Claw</button>
+      <button class="scene-pill" onclick="locateRoleIn3D('tiandao-alaya')">📖 Alaya</button>
+      <button class="scene-pill" onclick="locateRoleIn3D('sunlake-milkcat')">🌸 Mio</button>
+      <button class="scene-pill" onclick="locateRoleIn3D('puma-shen')">🔮 伯洋</button>
+      <button class="scene-pill" onclick="locateRoleIn3D('leopardcat-master')">🐾 石虎掌門</button>
+      <button class="scene-pill" onclick="locateRoleIn3D('oursong_alstonhuang')">🧭 Alston</button>
+    </div>
+
+    <!-- Floating Popup Card in 3D -->
+    <div class="scene-popup-card" id="scene-popup" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="popup-title" style="font-weight: 800; font-size: 1rem;">Core 核心島</span>
+        <button onclick="closeScenePopup()" style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 1rem;">✕</button>
+      </div>
+      <div id="popup-badge" style="font-size: 0.72rem; color: #fbbf24; font-weight: 700;">Lv 4 超級都會 (4,755 commits)</div>
+      <div id="popup-desc" style="font-size: 0.8rem; color: #cbd5e1; line-height: 1.4;">
+        AgentOS 核心運行時與調度中樞。
+      </div>
+      <!-- 待辦任務卷軸堆資訊 -->
+      <div id="popup-backlog" style="background: rgba(15,23,42,0.6); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); font-size: 0.74rem;">
+        <!-- Injected via JS -->
+      </div>
+      <div id="popup-actions" style="margin-top: 4px;">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // --- 1. VIEW SWITCHING LOGIC ---
+    const btnModeHub = document.getElementById("btn-mode-hub");
+    const btnMode3D = document.getElementById("btn-mode-3d");
+    const viewHub = document.getElementById("view-employee-hub");
+    const view3D = document.getElementById("view-3d-scene");
+
+    let is3DInitialized = false;
+
+    function switchMode(mode) {
+      if (mode === "hub") {
+        btnModeHub.classList.add("active");
+        btnMode3D.classList.remove("active");
+        viewHub.style.display = "flex";
+        view3D.classList.remove("active-view");
+      } else {
+        btnMode3D.classList.add("active");
+        btnModeHub.classList.remove("active");
+        viewHub.style.display = "none";
+        view3D.classList.add("active-view");
+
+        if (!is3DInitialized) {
+          init3D();
+          is3DInitialized = true;
+        } else {
+          onWindowResize();
+        }
+      }
+    }
+
+    btnModeHub.addEventListener("click", () => switchMode("hub"));
+    btnMode3D.addEventListener("click", () => switchMode("3d"));
+
+    function toggleTimeline(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle("open");
+    }
+
+    // --- 2. 13 REAL PROJECT ISLAND DEFINITIONS ---
+    const ISLAND_CONFIGS = {
+      "agentos-core": {
+        name: "AgentOS Core (核心基盤與調度中心)",
+        level: 4, level_title: "Lv 4 超級都會 (Metropolis)", commits: 4755,
+        coords: { x: 0, y: 0, z: 0 }, radius: 18, color: 0xf59e0b,
+        url: "https://github.com/alston-personal/agentmanager", urlText: "開啟 GitHub 專案倉庫",
+        desc: "調度核心、Worker Host、Git 鑄造廠與出港碼頭。Paw 正在此搬運 Commit 899528e9 交付 PR #2104。",
+        backlog: ["驗證 PR #2104 CI 狀態", "推進 Issue #470 後續議題", "自主 Worktree 代碼重構"]
+      },
+      "leopardcat-tarot": {
+        name: "LeopardCat Tarot (石虎塔羅星域)",
+        level: 3, level_title: "Lv 3 秘法城鎮 (Mystic Realm)", commits: 270,
+        coords: { x: -36, y: 0, z: -18 }, radius: 13, color: 0xa855f7,
+        url: "https://studio.milkcat.org/", urlText: "進入《石虎塔羅星域》",
+        desc: "78 張原創石虎大/小阿爾克那、畫布工作室與牌陣解讀。",
+        backlog: ["小阿爾克那 56 張牌義語料微調", "三牌陣占卜動畫連貫性優化"]
+      },
+      "metashield": {
+        name: "MetaShield & Security (安全守護堡壘)",
+        level: 3, level_title: "Lv 3 鋼鐵要塞 (Fortress Citadel)", commits: 160,
+        coords: { x: 0, y: 0, z: -44 }, radius: 14, color: 0xef4444,
+        url: "https://github.com/alston-personal/agentmanager", urlText: "檢視安全合規審查記錄",
+        desc: "獨立審查堡壘與安全圍欄。The Claw 在此巡檢代碼格式與分支隔離防線。",
+        backlog: ["對 Paw PR #2104 進行獨立代碼審查", "驗證受保護分支物理隔離防線"]
+      },
+      "zeus-writer": {
+        name: "Zeus Writer (長文創作之殿)",
+        level: 2, level_title: "Lv 2 書香聚落 (Cultural Town)", commits: 50,
+        coords: { x: 36, y: 0, z: -18 }, radius: 12, color: 0x3b82f6,
+        url: "https://studio.milkcat.org/novels/", urlText: "進入《Zeus 小說閱讀館》",
+        desc: "百萬字長篇小說自動化起草與審查之殿。Zeus 剛在此完成 Chapter 05 審閱。",
+        backlog: ["生成《正文/Ch06》大綱設定", "Chapter 06 萬字內文創作"]
+      },
+      "fengshui": {
+        name: "FengShui (地理風水排盤)",
+        level: 2, level_title: "Lv 2 八卦小島 (FengShui Town)", commits: 34,
+        coords: { x: 44, y: 0, z: 12 }, radius: 11, color: 0x06b6d4,
+        url: "https://studio.milkcat.org/fengshui/", urlText: "進入《風水排盤系統》",
+        desc: "玄空九星、八宅風水、空間格局動態圖層與即時吉凶研判。",
+        backlog: ["平面圖格局疊加層校準演算法增強"]
+      },
+      "studio-web": {
+        name: "Studio Web (官網展館門戶)",
+        level: 1, level_title: "Lv 1 公共港口 (Harbor Port)", commits: 18,
+        coords: { x: 20, y: 0, z: 36 }, radius: 9, color: 0x10b981,
+        url: "https://studio.milkcat.org/", urlText: "進入《官方 3D 展覽總館》",
+        desc: "官方 3D 測地圓頂展覽大廳、訪客入口與各專案展示傳送門。",
+        backlog: ["官方 3D 展館漫遊鏡頭路徑調整"]
+      },
+      "support-me-block": {
+        name: "Support Me (贊助補給站)",
+        level: 1, level_title: "Lv 1 補給前哨 (Supply Outpost)", commits: 22,
+        coords: { x: 34, y: 0, z: 36 }, radius: 8, color: 0xf97316,
+        url: "https://studio.milkcat.org/", urlText: "檢視贊助模組",
+        desc: "開源贊助、區塊鏈與多渠道打賞模組。",
+        backlog: ["支付回調 Webhook 簽名驗證重構"]
+      },
+      "trend-digest": {
+        name: "Trend Digest (趨勢情報中樞)",
+        level: 2, level_title: "Lv 2 情報燈塔 (Pulse Beacon)", commits: 30,
+        coords: { x: -22, y: 0, z: 20 }, radius: 10, color: 0x38bdf8,
+        url: "https://studio.milkcat.org/trends/mio_lifestyle.html", urlText: "閱讀今日即時晨讀情報",
+        desc: "AgentOS 全生態情報提煉與風格晨讀中樞。為澪的生活美學與投資人設提供即時靈感底料。",
+        backlog: ["排程時段避峰調度", "多格式 HTML/PDF 渲染器升級"]
+      },
+      "youtube-ai-manager": {
+        name: "YouTube AI (影音營運島)",
+        level: 1, level_title: "Lv 1 通訊雷達站 (Radar Outpost)", commits: 4,
+        coords: { x: -20, y: 0, z: 36 }, radius: 9, color: 0xec4899,
+        url: "https://studio.milkcat.org/", urlText: "開啟影音營運儀表盤",
+        desc: "影音營運衛星雷達塔，負責頻道監控、標題縮圖 A/B 測試建議。",
+        backlog: ["頻道 API 授權白名單解鎖配置", "最新 5 支影片標題 SEO 評估"]
+      },
+      "if-tv-station": {
+        name: "IF TV Station (IF 電視台)",
+        level: 1, level_title: "Lv 1 廣播營地 (Broadcast Camp)", commits: 6,
+        coords: { x: -38, y: 0, z: 16 }, radius: 8, color: 0xeab308,
+        url: "https://studio.milkcat.org/iftv", urlText: "開啟 IF 電視台",
+        desc: "虛擬影音節目生成與自動化串流轉播站。",
+        backlog: ["節目資產上傳管道自動化測試"]
+      },
+      "history-synthesizer": {
+        name: "History Synthesizer (歷史合成器)",
+        level: 1, level_title: "Lv 1 考察營地 (Expedition Camp)", commits: 6,
+        coords: { x: -44, y: 0, z: -2 }, radius: 8, color: 0x84cc16,
+        url: "https://studio.milkcat.org/", urlText: "檢視歷史合成器",
+        desc: "多源史料合成、時空交叉考證與歷史脈絡圖譜推演。",
+        backlog: ["時序爬蟲事件抽取管道建構"]
+      },
+      "asset-master": {
+        name: "Asset Master (資產管家)",
+        level: 0, level_title: "Lv 0 拓荒小岩礁 (Barren Outpost)", commits: 4,
+        coords: { x: -34, y: 0, z: 36 }, radius: 6, color: 0x64748b,
+        url: "https://studio.milkcat.org/", urlText: "檢視資產索引",
+        desc: "3D 模型、音訊與貼圖之全域快取管理中樞。",
+        backlog: ["全系統靜態資產目錄清查"]
+      },
+      "hanzi-gene-database": {
+        name: "Hanzi Gene (漢字基因庫)",
+        level: 0, level_title: "Lv 0 荒島岩礁 (Wild Reef)", commits: 2,
+        coords: { x: -18, y: 0, z: -46 }, radius: 6, color: 0x94a3b8,
+        url: "https://studio.milkcat.org/", urlText: "進入漢字基因庫",
+        desc: "剛打下地基的草創荒島，只有一頂探險帳篷與測量旗幟，等待 AI 拓荒者開墾。",
+        backlog: ["漢字象形拓撲構詞樹初始化"]
+      },
+      "prophecy-verifier": {
+        name: "Prophecy Verifier (預言驗證器)",
+        level: 0, level_title: "Lv 0 原始荒石島 (Untamed Wilds)", commits: 0,
+        coords: { x: 18, y: 0, z: -46 }, radius: 6, color: 0x475569,
+        url: "https://studio.milkcat.org/prophecy/", urlText: "檢視預言驗證器",
+        desc: "全新立項之原始荒島，立有一根古老測量木樁，等待第一批代碼交付開拓！",
+        backlog: ["專案代碼倉庫初次 Bootstrap 與 CI 設置"]
+      }
+    };
+
+    // --- 3. THREE.JS 3D ARCHIPELAGO SCENE ---
+    let scene, camera, renderer, controls;
+    const projectMeshes = {};
+    const characterMeshes = {};
+    const backlogMeshes = {};
+    const animators = [];
+
+    function init3D() {
+      const container = document.getElementById("webgl-canvas-container");
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x070c18);
+      scene.fog = new THREE.FogExp2(0x070c18, 0.0065);
+
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / (window.innerHeight - 65), 1, 1000);
+      camera.position.set(0, 58, 105);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+      renderer.setSize(window.innerWidth, window.innerHeight - 65);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxPolarAngle = Math.PI / 2 - 0.05;
+      controls.minDistance = 15;
+      controls.maxDistance = 250;
+      controls.target.set(0, 2, 0);
+
+      // Lights
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffeedd, 1.25);
+      dirLight.position.set(50, 90, 60);
+      dirLight.castShadow = true;
+      scene.add(dirLight);
+
+      const bluePoint = new THREE.PointLight(0x38bdf8, 2, 140);
+      bluePoint.position.set(0, 30, 0);
+      scene.add(bluePoint);
+
+      createOcean();
+      create13Islands();
+      createEnergyBridges();
+      create3DCharacters();
+
+      window.addEventListener("resize", onWindowResize);
+      setupRaycaster();
+      animate();
+    }
+
+    function createOcean() {
+      const geo = new THREE.PlaneGeometry(400, 400, 40, 40);
+      geo.rotateX(-Math.PI / 2);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const u = pos.getX(i);
+        const v = pos.getZ(i);
+        pos.setY(i, Math.sin(u * 0.05) * Math.cos(v * 0.05) * 0.5 - 1.2);
+      }
+      geo.computeVertexNormals();
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x050e1f,
+        roughness: 0.2,
+        metalness: 0.7,
+        flatShading: true
+      });
+      const ocean = new THREE.Mesh(geo, mat);
+      scene.add(ocean);
+
+      animators.push((t) => {
+        const p = geo.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          const u = p.getX(i);
+          const v = p.getZ(i);
+          p.setY(i, Math.sin(u * 0.04 + t * 1.2) * Math.cos(v * 0.04 + t * 1.2) * 0.4 - 1.2);
+        }
+        geo.computeVertexNormals();
+        p.needsUpdate = true;
+      });
+    }
+
+    function create13Islands() {
+      Object.keys(ISLAND_CONFIGS).forEach(key => {
+        const conf = ISLAND_CONFIGS[key];
+        const group = new THREE.Group();
+        group.position.set(conf.coords.x, conf.coords.y, conf.coords.z);
+        group.userData = { isIsland: true, islandId: key };
+
+        const r = conf.radius;
+        const height = conf.level >= 2 ? 3.5 : 2.2;
+        const baseGeo = new THREE.CylinderGeometry(r, r * 0.85, height, 6);
+        const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7, flatShading: true });
+        const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+        baseMesh.position.y = height / 2;
+        group.add(baseMesh);
+
+        // Top Grass / Platform
+        const topGeo = new THREE.CylinderGeometry(r * 0.96, r, 0.4, 6);
+        const topMat = new THREE.MeshStandardMaterial({ color: conf.color, roughness: 0.4, flatShading: true });
+        const topMesh = new THREE.Mesh(topGeo, topMat);
+        topMesh.position.y = height + 0.2;
+        group.add(topMesh);
+
+        // Build Level-based landmarks
+        buildLandmarksByLevel(key, group, conf, height);
+
+        // Build 3D Task Scroll Piles (待辦任務卷軸堆疊)
+        buildTaskScrollPile(key, group, conf, height);
+
+        scene.add(group);
+        projectMeshes[key] = group;
+      });
+    }
+
+    // --- Build 3D Task Scroll Backlog Piles (待辦卷軸堆疊) ---
+    function buildTaskScrollPile(key, group, conf, islandHeight) {
+      const count = conf.backlog.length;
+      if (count === 0) return;
+
+      const pileGroup = new THREE.Group();
+      pileGroup.position.set(conf.radius * 0.55, islandHeight + 0.4, conf.radius * 0.55);
+      pileGroup.userData = { isScrollPile: true, islandId: key };
+
+      // Stack scrolls like wood logs
+      for (let i = 0; i < count; i++) {
+        const scrollGeo = new THREE.CylinderGeometry(0.35, 0.35, 1.8, 8);
+        scrollGeo.rotateZ(Math.PI / 2);
+        const scrollMat = new THREE.MeshStandardMaterial({
+          color: 0xfef08a,
+          emissive: 0xf59e0b,
+          emissiveIntensity: 0.5,
+          roughness: 0.3
+        });
+        const scroll = new THREE.Mesh(scrollGeo, scrollMat);
+        scroll.position.set(0, i * 0.6 + 0.35, (i % 2 === 1) ? 0.3 : -0.3);
+        pileGroup.add(scroll);
+      }
+
+      // Small wooden pallet beneath scrolls
+      const pallet = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.2, 1.6), new THREE.MeshStandardMaterial({ color: 0x78350f }));
+      pallet.position.y = 0.1;
+      pileGroup.add(pallet);
+
+      group.add(pileGroup);
+      backlogMeshes[key] = pileGroup;
+
+      animators.push((t) => {
+        pileGroup.position.y = islandHeight + 0.4 + Math.sin(t * 2 + key.length) * 0.1;
+      });
+    }
+
+    // --- Landmarks By Prosperity Level ---
+    function buildLandmarksByLevel(key, group, conf, h) {
+      if (conf.level === 4) {
+        // Lv 4 Metropolis: Grand Tower, Kernel Crystal, Foundry, Port Cranes
+        const tGeo = new THREE.CylinderGeometry(2.2, 3.2, 16, 8);
+        const tower = new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ color: 0x334155 }));
+        tower.position.set(0, h + 8, 0);
+        group.add(tower);
+
+        const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(1.8, 0), new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 0.8 }));
+        crystal.position.set(0, h + 18, 0);
+        group.add(crystal);
+        animators.push((t) => { crystal.rotation.y = t * 1.5; });
+
+        const foundry = new THREE.Mesh(new THREE.BoxGeometry(5, 4, 6), new THREE.MeshStandardMaterial({ color: 0x475569 }));
+        foundry.position.set(-6, h + 2, -4);
+        group.add(foundry);
+
+        const pier = new THREE.Mesh(new THREE.BoxGeometry(6, 1.2, 4), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
+        pier.position.set(7, h + 0.6, 6);
+        group.add(pier);
+
+      } else if (conf.level === 3) {
+        if (key === "metashield") {
+          const fort = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 8), new THREE.MeshStandardMaterial({ color: 0x450a0a }));
+          fort.position.set(0, h + 3, 0);
+          group.add(fort);
+
+          const shield = new THREE.Mesh(new THREE.SphereGeometry(7, 16, 16), new THREE.MeshBasicMaterial({ color: 0xef4444, wireframe: true, transparent: true, opacity: 0.25 }));
+          shield.position.set(0, h + 3, 0);
+          group.add(shield);
+          animators.push((t) => { shield.rotation.y = -t * 0.5; });
+        } else {
+          // LeopardCat Tarot
+          const altar = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 4, 1.8, 8), new THREE.MeshStandardMaterial({ color: 0x581c87 }));
+          altar.position.set(0, h + 0.9, 0);
+          group.add(altar);
+
+          const cardGroup = new THREE.Group();
+          for (let i = 0; i < 4; i++) {
+            const card = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.0, 0.08), new THREE.MeshStandardMaterial({ color: 0xc084fc, emissive: 0xa855f7, emissiveIntensity: 0.6 }));
+            const angle = (i / 4) * Math.PI * 2;
+            card.position.set(Math.cos(angle) * 5, h + 2.5, Math.sin(angle) * 5);
+            card.rotation.y = -angle;
+            cardGroup.add(card);
+          }
+          group.add(cardGroup);
+          animators.push((t) => { cardGroup.rotation.y = t * 0.8; });
+        }
+
+      } else if (conf.level === 2) {
+        if (key === "zeus-writer") {
+          const hall = new THREE.Mesh(new THREE.BoxGeometry(6, 4.5, 5), new THREE.MeshStandardMaterial({ color: 0x1e3a8a }));
+          hall.position.set(0, h + 2.2, 0);
+          group.add(hall);
+
+          const quill = new THREE.Mesh(new THREE.ConeGeometry(0.5, 3.5, 6), new THREE.MeshStandardMaterial({ color: 0x93c5fd, emissive: 0x3b82f6, emissiveIntensity: 0.5 }));
+          quill.position.set(3.5, h + 3.5, 2.5);
+          quill.rotation.z = -0.4;
+          group.add(quill);
+          animators.push((t) => { quill.position.y = h + 3.5 + Math.sin(t * 3) * 0.3; });
+        } else {
+          // FengShui (Taiji Bagua & Garden)
+          const bagua = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 0.8, 8), new THREE.MeshStandardMaterial({ color: 0x0891b2 }));
+          bagua.position.set(0, h + 0.4, 0);
+          group.add(bagua);
+        }
+
+      } else if (conf.level === 1) {
+        // Lv 1 Outposts / Camps / Portals
+        if (key === "studio-web") {
+          const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(3.5, 2), new THREE.MeshStandardMaterial({ color: 0x10b981, wireframe: true }));
+          dome.position.set(0, h + 3.5, 0);
+          group.add(dome);
+        } else if (key === "youtube-ai-manager") {
+          const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 7, 8), new THREE.MeshStandardMaterial({ color: 0x831843 }));
+          mast.position.set(0, h + 3.5, 0);
+          group.add(mast);
+
+          const dish = new THREE.Mesh(new THREE.ConeGeometry(1.8, 1.0, 12, 1, true), new THREE.MeshStandardMaterial({ color: 0xf43f5e, side: THREE.DoubleSide }));
+          dish.position.set(0, h + 7.5, 0);
+          dish.rotation.x = Math.PI / 3;
+          group.add(dish);
+          animators.push((t) => { dish.rotation.y = t * 2; });
+        } else {
+          // Expedition Tents & Beacon
+          const tent = new THREE.Mesh(new THREE.ConeGeometry(2, 2.5, 4), new THREE.MeshStandardMaterial({ color: 0xd97706 }));
+          tent.position.set(0, h + 1.25, 0);
+          group.add(tent);
+        }
+
+      } else {
+        // Lv 0 Barren Reefs: Explorer Tent / Milestone Survey Stake (荒島岩礁)
+        const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3, 6), new THREE.MeshStandardMaterial({ color: 0x78350f }));
+        stake.position.set(0, h + 1.5, 0);
+        group.add(stake);
+
+        // Triangular Flag
+        const flag = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.2, 3), new THREE.MeshStandardMaterial({ color: conf.color }));
+        flag.position.set(0.6, h + 2.4, 0);
+        flag.rotation.z = Math.PI / 2;
+        group.add(flag);
+      }
+    }
+
+    let topologyBridgesGroup = new THREE.Group();
+
+    function createEnergyBridges() {
+      if (topologyBridgesGroup) {
+        scene.remove(topologyBridgesGroup);
+      }
+      topologyBridgesGroup = new THREE.Group();
+
+      const edges = (window.MISSION_DATA && window.MISSION_DATA.topology && window.MISSION_DATA.topology.edges) || [
+        { source: "trend-digest", target: "history-synthesizer", capability: "collector.news_rss", weight: 3.5 },
+        { source: "trend-digest", target: "zeus-writer", capability: "collector.news_rss", weight: 3.5 },
+        { source: "youtube-ai-manager", target: "history-synthesizer", capability: "video.transcribe_and_subtitle", weight: 4.0 },
+        { source: "agentos-core", target: "metashield", capability: "registry.resource_discovery", weight: 4.0 },
+        { source: "agentos-core", target: "leopardcat-tarot", capability: "registry.resource_discovery", weight: 4.0 },
+        { source: "agentos-core", target: "zeus-writer", capability: "registry.resource_discovery", weight: 4.0 },
+        { source: "agentos-core", target: "trend-digest", capability: "registry.resource_discovery", weight: 4.0 }
+      ];
+
+      const capColors = {
+        "collector.news_rss": 0x38bdf8,
+        "video.transcribe_and_subtitle": 0x10b981,
+        "endorsement.reputation_matrix": 0xa855f7,
+        "timeline.event_synthesizer": 0xf59e0b,
+        "persona.trend_pulse": 0xec4899,
+        "registry.resource_discovery": 0x0284c7
+      };
+
+      edges.forEach((edge, i) => {
+        let sKey = edge.source;
+        let tKey = edge.target;
+        if (sKey === "metashield-protocol") sKey = "metashield";
+        if (tKey === "metashield-protocol") tKey = "metashield";
+        if (sKey === "collector-endorsement-auction") sKey = "asset-master";
+        if (tKey === "collector-endorsement-auction") tKey = "asset-master";
+        if (tKey === "personas/sunlake-milkcat") tKey = "studio-web";
+        if (tKey === "ai-market-research-os") tKey = "asset-master";
+        if (tKey === "y2help-web") tKey = "youtube-ai-manager";
+
+        const sConf = ISLAND_CONFIGS[sKey] || ISLAND_CONFIGS["agentos-core"];
+        const tConf = ISLAND_CONFIGS[tKey];
+        if (!sConf || !tConf || sConf === tConf) return;
+
+        const sPos = sConf.coords;
+        const tPos = tConf.coords;
+        const midY = 3.5 + (i % 3) * 1.5;
+
+        const curve = new THREE.QuadraticBezierCurve3(
+          new THREE.Vector3(sPos.x * 0.75, sPos.y + 1.8, sPos.z * 0.75),
+          new THREE.Vector3((sPos.x + tPos.x) / 2, midY, (sPos.z + tPos.z) / 2),
+          new THREE.Vector3(tPos.x * 0.75, tPos.y + 1.8, tPos.z * 0.75)
+        );
+
+        const colorHex = capColors[edge.capability] || 0x38bdf8;
+        const tubeGeo = new THREE.TubeGeometry(curve, 24, 0.35, 8, false);
+        const tubeMat = new THREE.MeshStandardMaterial({
+          color: colorHex,
+          emissive: colorHex,
+          emissiveIntensity: 0.6,
+          transparent: true,
+          opacity: 0.75
+        });
+        const tube = new THREE.Mesh(tubeGeo, tubeMat);
+        tube.userData = { isTopologyEdge: true, edge };
+        topologyBridgesGroup.add(tube);
+      });
+
+      scene.add(topologyBridgesGroup);
+
+      animators.push((t) => {
+        if (topologyBridgesGroup) {
+          const pulse = 0.5 + 0.3 * Math.sin(t * 2.5);
+          topologyBridgesGroup.children.forEach(mesh => {
+            if (mesh.material) mesh.material.emissiveIntensity = pulse;
+          });
+        }
+      });
+    }
+
+    function create3DCharacters() {
+      // 1. The Paw
+      const pawGroup = new THREE.Group();
+      pawGroup.userData = { isCharacter: true, roleId: "the-paw" };
+      const pawBody = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.8, 1.8), new THREE.MeshStandardMaterial({ color: 0xf59e0b }));
+      pawBody.position.y = 1.3;
+      pawGroup.add(pawBody);
+
+      const cargo = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.0, 1.4), new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x059669, emissiveIntensity: 0.4 }));
+      cargo.position.set(0, 1.3, 1.2);
+      pawGroup.add(cargo);
+
+      scene.add(pawGroup);
+      characterMeshes["the-paw"] = pawGroup;
+      animators.push((t) => {
+        const prog = (Math.sin(t * 0.8) + 1) / 2;
+        pawGroup.position.lerpVectors(new THREE.Vector3(-6, 4.2, -3), new THREE.Vector3(6, 4.2, 5), prog);
+        pawGroup.position.y += Math.abs(Math.sin(t * 5)) * 0.25;
+        pawGroup.rotation.y = (Math.cos(t * 0.8) > 0) ? 0.9 : -2.2;
+      });
+
+      // 2. The Claw
+      const clawGroup = new THREE.Group();
+      clawGroup.userData = { isCharacter: true, roleId: "the-claw" };
+      const clawChassis = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.2, 4), new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.6 }));
+      clawChassis.rotation.x = Math.PI / 2;
+      clawGroup.add(clawChassis);
+
+      const spot = new THREE.Mesh(new THREE.ConeGeometry(2.5, 8, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.25, side: THREE.DoubleSide }));
+      spot.position.set(0, -4.5, 0);
+      clawGroup.add(spot);
+
+      scene.add(clawGroup);
+      characterMeshes["the-claw"] = clawGroup;
+      animators.push((t) => {
+        clawGroup.position.set(Math.cos(t * 0.6) * 14, 16 + Math.sin(t * 1.5) * 2, Math.sin(t * 0.6) * 18 - 15);
+        clawGroup.rotation.y = -t * 0.6 + Math.PI / 2;
+      });
+
+      // 3. Zeus Writer
+      const zeusGroup = new THREE.Group();
+      zeusGroup.userData = { isCharacter: true, roleId: "zeus-writer" };
+      const zeusBody = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, 2.6, 8), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
+      zeusBody.position.y = 1.3;
+      zeusGroup.add(zeusBody);
+      scene.add(zeusGroup);
+      characterMeshes["zeus-writer"] = zeusGroup;
+      animators.push((t) => {
+        zeusGroup.position.set(36 + Math.cos(t * 0.5) * 3, 3.8, -18 + Math.sin(t * 0.5) * 3);
+      });
+
+      // 4. Spec Steward
+      const specGroup = new THREE.Group();
+      specGroup.userData = { isCharacter: true, roleId: "agentos-spec-steward" };
+      const specBody = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.0, 2.4, 8), new THREE.MeshStandardMaterial({ color: 0x10b981 }));
+      specBody.position.y = 1.2;
+      specGroup.add(specBody);
+      scene.add(specGroup);
+      characterMeshes["agentos-spec-steward"] = specGroup;
+
+      // 5. Alaya (天道主筆) on Zeus Writer island
+      characterMeshes["tiandao-alaya"] = zeusGroup;
+      characterMeshes["tiandao-cangxuan"] = zeusGroup;
+      characterMeshes["tiandao-geek"] = zeusGroup;
+
+      // 6. Mio (晴湖小築) on Studio Web island
+      const mioGroup = new THREE.Group();
+      mioGroup.userData = { isCharacter: true, roleId: "sunlake-milkcat" };
+      const mioCore = new THREE.Mesh(
+        new THREE.SphereGeometry(1.2, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.6 })
+      );
+      mioCore.position.y = 1.4;
+      mioGroup.add(mioCore);
+      const mioRing = new THREE.Mesh(
+        new THREE.TorusGeometry(1.8, 0.15, 8, 24),
+        new THREE.MeshStandardMaterial({ color: 0xf472b6, emissive: 0xec4899, emissiveIntensity: 0.5 })
+      );
+      mioRing.rotation.x = Math.PI / 3;
+      mioRing.position.y = 1.4;
+      mioGroup.add(mioRing);
+      scene.add(mioGroup);
+      characterMeshes["sunlake-milkcat"] = mioGroup;
+      animators.push((t) => {
+        mioGroup.position.set(20 + Math.cos(t * 0.7) * 2.5, 3.5 + Math.sin(t * 1.2) * 0.4, 36 + Math.sin(t * 0.7) * 2.5);
+        mioRing.rotation.z = t * 1.2;
+      });
+
+      // 7. Puma Shen & Leopardcat Master on Tarot Island
+      const pumaGroup = new THREE.Group();
+      pumaGroup.userData = { isCharacter: true, roleId: "puma-shen" };
+      const pumaBody = new THREE.Mesh(
+        new THREE.OctahedronGeometry(1.3),
+        new THREE.MeshStandardMaterial({ color: 0xa855f7, emissive: 0x7e22ce, emissiveIntensity: 0.5 })
+      );
+      pumaBody.position.y = 1.5;
+      pumaGroup.add(pumaBody);
+      scene.add(pumaGroup);
+      characterMeshes["puma-shen"] = pumaGroup;
+      characterMeshes["leopardcat-master"] = pumaGroup;
+      animators.push((t) => {
+        pumaGroup.position.set(-36 + Math.cos(t * 0.5) * 2.2, 4.0 + Math.sin(t * 1.0) * 0.3, -18 + Math.sin(t * 0.5) * 2.2);
+        pumaBody.rotation.y = t * 0.8;
+      });
+
+      // 8. Alston (創世原點) on Core Metropolis Beacon
+      const alstonGroup = new THREE.Group();
+      alstonGroup.userData = { isCharacter: true, roleId: "oursong_alstonhuang" };
+      const alstonBeacon = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1.5),
+        new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0xd97706, emissiveIntensity: 0.7, wireframe: false })
+      );
+      alstonBeacon.position.y = 8.5;
+      alstonGroup.add(alstonBeacon);
+      scene.add(alstonGroup);
+      characterMeshes["oursong_alstonhuang"] = alstonGroup;
+      animators.push((t) => {
+        alstonBeacon.rotation.y = t * 0.5;
+        alstonBeacon.position.y = 8.5 + Math.sin(t * 2.0) * 0.3;
+      });
+      animators.push((t) => {
+        const prog = (Math.sin(t * 0.4) + 1) / 2;
+        specGroup.position.set(0, 3.8 + Math.abs(Math.sin(t * 4)) * 0.2, -10 - prog * 24);
+      });
+    }
+
+    function setupRaycaster() {
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2();
+
+      window.addEventListener("pointerdown", (e) => {
+        if (!view3D.classList.contains("active-view")) return;
+        if (e.target.closest(".scene-quick-bar") || e.target.closest(".scene-popup-card") || e.target.closest(".top-header")) return;
+
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -((e.clientY - 65) / (window.innerHeight - 65)) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+
+        const hits = raycaster.intersectObjects(scene.children, true);
+        if (hits.length > 0) {
+          let hitIsland = null;
+          let hitChar = null;
+
+          for (let h of hits) {
+            let o = h.object;
+            while (o && o !== scene) {
+              if (o.userData && o.userData.isIsland) { hitIsland = o.userData.islandId; break; }
+              if (o.userData && o.userData.isCharacter) { hitChar = o.userData.roleId; break; }
+              o = o.parent;
+            }
+            if (hitIsland || hitChar) break;
+          }
+
+          if (hitChar) {
+            showRolePopup(hitChar);
+          } else if (hitIsland) {
+            showIslandPopup(hitIsland);
+          }
+        }
+      });
+    }
+
+    function showIslandPopup(islandId) {
+      const conf = ISLAND_CONFIGS[islandId];
+      if (!conf) return;
+
+      document.getElementById("popup-title").textContent = conf.name;
+      document.getElementById("popup-badge").textContent = `${conf.level_title} · ${conf.commits} commits`;
+      document.getElementById("popup-desc").textContent = conf.desc;
+
+      // Render Backlog list inside popup
+      const backlogList = conf.backlog.map(t => `<div>• 📜 ${t}</div>`).join("");
+
+      // Render Dynamic Topology Dependencies
+      let topoHtml = "";
+      if (window.MISSION_DATA && window.MISSION_DATA.topology && window.MISSION_DATA.topology.edges) {
+        const edges = window.MISSION_DATA.topology.edges;
+        const provides = edges.filter(e => e.source === islandId || (islandId === "metashield" && e.source.includes("metashield")));
+        const depends = edges.filter(e => e.target === islandId || (islandId === "metashield" && e.target.includes("metashield")));
+        
+        if (provides.length > 0 || depends.length > 0) {
+          topoHtml = `
+            <div style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.35); border-radius: 8px; border: 1px solid rgba(56,189,248,0.2); font-size: 0.74rem;">
+              <div style="font-weight: 700; color: #38bdf8; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+                <span>🕸️ 跨專案相依拓撲：</span>
+              </div>
+              ${provides.length > 0 ? `
+                <div style="color: #34d399; margin-bottom: 5px; line-height: 1.4;">
+                  <strong>⚡ 賦能下游 (${provides.length})</strong>：<br/>
+                  ${provides.map(p => `<span style="display: inline-block; background: rgba(52,211,153,0.15); border: 1px solid rgba(52,211,153,0.3); padding: 1px 6px; border-radius: 4px; margin: 2px 4px 2px 0;">${escapeHtml(p.target)} (${escapeHtml(p.name)})</span>`).join("")}
+                </div>` : ''}
+              ${depends.length > 0 ? `
+                <div style="color: #fbbf24; line-height: 1.4;">
+                  <strong>📥 依賴上游 (${depends.length})</strong>：<br/>
+                  ${depends.map(d => `<span style="display: inline-block; background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.3); padding: 1px 6px; border-radius: 4px; margin: 2px 4px 2px 0;">${escapeHtml(d.source)} (${escapeHtml(d.name)})</span>`).join("")}
+                </div>` : ''}
+            </div>
+          `;
+        }
+      }
+
+      document.getElementById("popup-backlog").innerHTML = `
+        <div style="color: #fbbf24; font-weight: 700; margin-bottom: 4px;">待辦任務卷軸堆 (${conf.backlog.length} 卷)：</div>
+        ${backlogList || '<div style="color: #94a3b8;">目前無待辦任務</div>'}
+        ${topoHtml}
+      `;
+
+      document.getElementById("popup-actions").innerHTML = `
+        <a href="${conf.url}" target="_blank" style="padding: 6px 12px; background: rgba(59, 130, 246, 0.3); border: 1px solid rgba(59, 130, 246, 0.6); color: #93c5fd; border-radius: 8px; font-size: 0.76rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+          <span>🚀 ${conf.urlText}</span>
+        </a>
+      `;
+      document.getElementById("scene-popup").style.display = "flex";
+      focusPosition(conf.coords, 38);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function formatTaipeiTime(isoStr) {
+      if (!isoStr) return "";
+      try {
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return isoStr;
+        return d.toLocaleString("zh-TW", {
+          timeZone: "Asia/Taipei",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }).replace(/\//g, "-");
+      } catch (e) {
+        return isoStr;
+      }
+    }
+
+    function getRoleEmoji(id) {
+      const map = {
+        "os-lobster": "🦞",
+        "sunlake-milkcat": "🌸",
+        "the-paw": "🐾",
+        "the-claw": "🦅",
+        "tiandao-alaya": "📖",
+        "tiandao-cangxuan": "📜",
+        "tiandao-geek": "⚡",
+        "puma-shen": "🔮",
+        "leopardcat-master": "🐾",
+        "oursong_alstonhuang": "🧭",
+        "zeus-writer": "✍️",
+        "agentos-spec-steward": "🛡️"
+      };
+      return map[id] || "🤖";
+    }
+
+    function getRoleActionLinks(p) {
+      if (p.id === 'os-lobster') {
+        return `<a href="javascript:void(0)" class="deliverable-btn" style="background: rgba(239, 68, 68, 0.25); border: 1px solid rgba(239, 68, 68, 0.6); color: #fca5a5;">
+          <span>🦞 永動發動機運行中 (systemd daemon: os-lobster)</span>
+        </a>`;
+      }
+      if (p.id === 'sunlake-milkcat') {
+        return `<a href="/personas/mio/" target="_blank" class="deliverable-btn" style="background: rgba(56, 189, 248, 0.25); border: 1px solid rgba(56, 189, 248, 0.6); color: #7dd3fc;">
+          <span>🌸 觀看 Mio 活動紀錄與小築</span>
+        </a>`;
+      }
+      if (p.id === 'tiandao-alaya' || p.id === 'tiandao-cangxuan' || p.id === 'tiandao-geek') {
+        return `<a href="/tiandao/" target="_blank" class="deliverable-btn" style="background: rgba(139, 92, 246, 0.25); border: 1px solid rgba(139, 92, 246, 0.6); color: #c4b5fd;">
+          <span>📖 前往《天道敕令》修真專區</span>
+        </a>
+        <a href="/novels/" target="_blank" class="deliverable-btn btn-pr">
+          <span>🏛️ Zeus 小說閱讀館</span>
+        </a>`;
+      }
+      if (p.id === 'puma-shen' || p.id === 'leopardcat-master') {
+        return `<a href="https://leopardcat-tarot.milkcat.org/?persona=ocean-master" target="_blank" class="deliverable-btn" style="background: rgba(168, 85, 247, 0.25); border: 1px solid rgba(168, 85, 247, 0.6); color: #d8b4fe;">
+          <span>🔮 進入石虎洋流塔羅星域</span>
+        </a>`;
+      }
+      if (p.id === 'the-paw') {
+        return `<a href="https://github.com/alston-personal/agentmanager/pull/2104" target="_blank" class="deliverable-btn btn-pr">
+          <span>📦 檢視 GitHub PR #2104</span>
+        </a>`;
+      }
+      if (p.id === 'the-claw') {
+        return `<a href="https://github.com/alston-personal/agentmanager" target="_blank" class="deliverable-btn btn-review">
+          <span>🛡️ 受保護分支安全衛戍</span>
+        </a>`;
+      }
+      if (p.id === 'oursong_alstonhuang') {
+        return `<a href="/dashboard/" target="_blank" class="deliverable-btn" style="background: rgba(245, 158, 11, 0.25); border: 1px solid rgba(245, 158, 11, 0.6); color: #fde68a;">
+          <span>🧭 AgentOS 戰情儀表板</span>
+        </a>`;
+      }
+      return `<span style="font-size: 0.76rem; color: #94a3b8;">✅ 自主運作正常</span>`;
+    }
+
+    function showRolePopup(roleId) {
+      const personas = window.MISSION_DATA?.personas || [];
+      let p = personas.find(x => x.id === roleId);
+      if (!p) {
+        if (roleId === "zeus-writer") p = personas.find(x => x.id === "tiandao-alaya");
+        else if (roleId === "agentos-spec-steward") p = personas.find(x => x.id === "the-claw");
+        else if (roleId === "youtube-ai-manager") p = { id: "youtube-ai-manager", name: "YouTube AI 營運官", badge: "影音營運", present: { status: "頻道監控中", detail: "持續評估標題 SEO 與封面" }, future: { next_task: "頻道 API 授權配置", priority: "QUEUED" } };
+      }
+      if (!p) {
+        p = {
+          id: roleId,
+          name: roleId,
+          badge: "AI 員工",
+          present: { status: "全自主運作中", detail: "任務巡檢與持續推進中" },
+          future: { next_task: "依 AgentOS 總待辦認領", priority: "NORMAL" }
+        };
+      }
+
+      const roleEmoji = getRoleEmoji(p.id || roleId);
+      document.getElementById("popup-title").textContent = `${roleEmoji} ${p.name}`;
+      document.getElementById("popup-badge").textContent = `${p.badge || '全自主職能'} · ${p.home_island || p.stationed_project || 'AgentOS'}`;
+      document.getElementById("popup-desc").textContent = `${p.present?.status || ''}：${p.present?.detail || ''}`;
+      
+      const futureTask = p.future?.next_task || "依待辦隊列執行";
+      document.getElementById("popup-backlog").innerHTML = `
+        <div style="color: #fbbf24; font-weight: 700; margin-bottom: 2px;">待辦隊列 (${p.future?.priority || 'NORMAL'})：</div>
+        <div>• ${escapeHtml(futureTask)}</div>
+      `;
+
+      document.getElementById("popup-actions").innerHTML = getRoleActionLinks(p);
+      document.getElementById("scene-popup").style.display = "flex";
+
+      const m = characterMeshes[roleId] || characterMeshes[p.id];
+      if (m) {
+        focusPosition(m.position, 28);
+      } else if (p.stationed_project && ISLAND_CONFIGS[p.stationed_project]) {
+        focusPosition(ISLAND_CONFIGS[p.stationed_project].coords, 35);
+      }
+    }
+
+    function renderBacklogPills(projects) {
+      const container = document.getElementById("dynamic-backlog-pills");
+      if (!container) return;
+      const activeProjects = (projects || [])
+        .filter(p => (p.open_count && p.open_count > 0) || (p.open_todos && p.open_todos.length > 0))
+        .sort((a, b) => (b.open_count || 0) - (a.open_count || 0));
+
+      if (activeProjects.length === 0) {
+        container.innerHTML = '<span style="font-size: 0.8rem; color: #10b981;">🟢 全專案卷軸皆已出港消化完畢</span>';
+        return;
+      }
+
+      container.innerHTML = activeProjects.slice(0, 15).map(p => {
+        const count = p.open_count || (p.open_todos ? p.open_todos.length : 0);
+        return `
+          <div class="backlog-project-pill" onclick="focusIsland('${escapeHtml(p.id)}')" style="cursor: pointer;" title="${escapeHtml(p.open_todos ? p.open_todos.join('; ') : '')}">
+            <span>${escapeHtml(p.name)}</span>
+            <span class="scroll-count-tag">${count} 卷待辦</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderEmployeeGrid(personas) {
+      const container = document.getElementById("dynamic-employee-grid");
+      if (!container) return;
+      if (!personas || personas.length === 0) {
+        container.innerHTML = '<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #94a3b8;">暫無員工在線資料</div>';
+        return;
+      }
+
+      container.innerHTML = personas.map(p => {
+        const avatarHtml = (p.avatar && p.avatar.startsWith("http"))
+          ? `<img src="${escapeHtml(p.avatar)}" alt="${escapeHtml(p.name)}" style="width: 44px; height: 44px; border-radius: 12px; object-fit: cover; border: 2px solid ${p.color || '#38bdf8'};">`
+          : `<div class="emp-avatar" style="border: 2px solid ${p.color || '#38bdf8'}; font-size: 1.5rem;">${getRoleEmoji(p.id)}</div>`;
+
+        const latestPast = (p.past && p.past.length > 0) ? p.past[0] : null;
+        const pastTitle = latestPast ? (latestPast.summary || latestPast.type || "已建立自主推進基準") : "已建立自主推進基準";
+        const pastTime = latestPast ? formatTaipeiTime(latestPast.timestamp) : "歷史基準";
+        
+        const actionButtons = getRoleActionLinks(p);
+        const timelineHtml = (p.past && p.past.length > 0)
+          ? p.past.map(item => `
+              <div class="history-item">
+                <div class="history-node" style="background: ${p.color || '#38bdf8'};"></div>
+                <div class="history-body">
+                  <span class="history-time">${formatTaipeiTime(item.timestamp)} · ${escapeHtml(item.type || 'action')}</span>
+                  <span class="history-msg">${escapeHtml(item.summary || item.type || '自主執行完畢')}</span>
+                </div>
+              </div>
+            `).join("")
+          : `<div style="padding: 12px; font-size: 0.8rem; color: #64748b;">暫無歷史紀錄存檔</div>`;
+
+        return `
+          <div class="employee-card" id="card-${escapeHtml(p.id)}">
+            <div class="emp-header">
+              <div class="emp-profile">
+                ${avatarHtml}
+                <div class="emp-name-title">
+                  <div class="emp-name">
+                    <span>${escapeHtml(p.name)}</span>
+                    <span style="font-size: 0.72rem; color: ${p.color || '#fbbf24'}; font-weight: 700;">[${escapeHtml(p.badge || '全自主職能')}]</span>
+                  </div>
+                  <div class="emp-role-sub">${escapeHtml(p.handle || '')} · ${escapeHtml(p.title || '')}</div>
+                  <div class="emp-station-badge">
+                    <span>📍</span>
+                    <span>駐留：${escapeHtml(p.home_island || p.stationed_project || 'AgentOS')}</span>
+                  </div>
+                </div>
+              </div>
+              <button class="btn-locate-3d" onclick="locateRoleIn3D('${escapeHtml(p.id)}')">
+                <span>📍 在 3D 中定位</span>
+              </button>
+            </div>
+
+            <!-- 🏆 最新交付成果 (Latest Deliverable) -->
+            <div class="accomplishment-block">
+              <div class="accomplishment-badge-label">
+                <span>🏆 最新交付成果 (Latest Deliverable)</span>
+                <span style="color: #34d399; margin-left: auto;">${pastTime}</span>
+              </div>
+              <div class="accomplishment-title">
+                ${escapeHtml(pastTitle)}
+              </div>
+              <div class="accomplishment-deliverable">
+                ${escapeHtml(latestPast?.summary || p.present?.detail || '已建立各節點驗收與可觀測性防線。')}
+              </div>
+              <div class="deliverable-actions">
+                ${actionButtons}
+              </div>
+            </div>
+
+            <!-- ⚡ 現在正在做什麼？ (Live Action) -->
+            <div class="live-action-block">
+              <div class="live-action-label">
+                <span class="pulse-dot"></span>
+                <span>現在正在做什麼？ (Live Action)</span>
+              </div>
+              <div class="live-action-text">
+                <div style="font-weight: 700; color: #f8fafc; margin-bottom: 2px;">${escapeHtml(p.present?.status || '自主運作中')}</div>
+                <div style="font-size: 0.84rem; color: #cbd5e1;">${escapeHtml(p.present?.detail || '')}</div>
+              </div>
+            </div>
+
+            <!-- 📋 下一步待辦隊列 (Upcoming Queue) -->
+            <div class="queue-block">
+              <div class="queue-block-label">
+                <span>📋 下一步待辦隊列 (Upcoming Queue)</span>
+              </div>
+              <div class="queue-steps">
+                <div class="queue-step-item">
+                  <span class="step-seq-pill">1</span>
+                  <span class="step-text">${escapeHtml(p.future?.next_task || '依 AgentOS 總待辦自主認領')}</span>
+                  <span class="step-tag" style="color: #fbbf24;">${escapeHtml(p.future?.priority || 'QUEUED')}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 📜 歷史戰績時間軸 -->
+            <div>
+              <div class="history-drawer-toggle" onclick="toggleTimeline('${escapeHtml(p.id)}-timeline')">
+                <span>📜 展開完整歷史戰績時間軸 (${(p.past || []).length} 筆歷程紀錄) ▼</span>
+              </div>
+              <div class="history-timeline" id="${escapeHtml(p.id)}-timeline">
+                ${timelineHtml}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function initDynamicMissionData() {
+      fetch("./data.json?t=" + Date.now(), { cache: "no-store" })
+        .then(r => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(data => {
+          const mc = data.mission_control || data;
+          const personas = data.personas || mc.personas || [];
+          const projects = data.projects_list || mc.projects || (Array.isArray(data.projects) ? data.projects : Object.values(data.projects || {}));
+          const summary = data.ecosystem_summary || mc.ecosystem_summary || {};
+          
+          window.MISSION_DATA = { ...data, personas, projects, ecosystem_summary: summary };
+          
+          // 1. Update Metrics Summary Ribbon & Header Badge
+          const headerBadge = document.getElementById("header-brand-badge-text");
+          if (headerBadge) headerBadge.textContent = `${summary.total_personas || personas.length} 位 AI 員工在線 · ${summary.total_projects || projects.length} 個專案群島 (3D 核心 13 島)`;
+
+          const elPersonas = document.getElementById("metric-personas-count");
+          if (elPersonas) elPersonas.textContent = `${summary.total_personas || personas.length} 位全自主員工`;
+          
+          const elProjects = document.getElementById("metric-projects-count");
+          if (elProjects) elProjects.textContent = `${summary.total_projects || projects.length} 個專案群島`;
+          
+          const elBacklog = document.getElementById("metric-backlog-status");
+          if (elBacklog) elBacklog.textContent = `${summary.total_open_backlog || 0} 卷待辦 / ${summary.completion_rate_pct || 0}% 閉環`;
+          
+          const elSyncTime = document.getElementById("metric-sync-time");
+          if (elSyncTime) elSyncTime.textContent = formatTaipeiTime(mc.generated_at || data.updated_at || new Date().toISOString());
+
+          // 2. Render Backlog Pills
+          renderBacklogPills(projects);
+
+          // 3. Render Employee Grid (All 9 personas)
+          renderEmployeeGrid(personas);
+        })
+        .catch(err => {
+          console.warn("Mission control live data fetch error, fallback to cache:", err);
+        });
+    }
+
+    // Auto-init on page load and refresh every 30s
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initDynamicMissionData);
+    } else {
+      initDynamicMissionData();
+    }
+    setInterval(initDynamicMissionData, 30000);
+
+    function closeScenePopup() {
+      document.getElementById("scene-popup").style.display = "none";
+    }
+
+    function focusPosition(pos, dist = 40) {
+      new TWEEN.Tween(camera.position)
+        .to({ x: pos.x, y: pos.y + dist * 0.7, z: pos.z + dist }, 1200)
+        .easing(TWEEN.Easing.Cubic.Out)
+        .start();
+      new TWEEN.Tween(controls.target)
+        .to({ x: pos.x, y: pos.y + 2, z: pos.z }, 1200)
+        .easing(TWEEN.Easing.Cubic.Out)
+        .start();
+    }
+
+    function reset3DCamera() {
+      closeScenePopup();
+      focusPosition({ x: 0, y: 0, z: 0 }, 105);
+    }
+
+    function focusIsland(key) {
+      const conf = ISLAND_CONFIGS[key];
+      if (conf) showIslandPopup(key);
+    }
+
+    function locateRoleIn3D(roleId) {
+      switchMode("3d");
+      setTimeout(() => {
+        showRolePopup(roleId);
+      }, 100);
+    }
+
+    function onWindowResize() {
+      if (!camera || !renderer) return;
+      camera.aspect = window.innerWidth / (window.innerHeight - 65);
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight - 65);
+    }
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      for (let fn of animators) fn(t);
+      TWEEN.update();
+      if (controls) controls.update();
+      if (renderer && scene && camera) renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>

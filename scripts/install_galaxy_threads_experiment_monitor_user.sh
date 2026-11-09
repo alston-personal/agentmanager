@@ -1,0 +1,369 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$(id -un)" != "ubuntu" ]; then
+  echo "galaxy_experiment_monitor_install=WRONG_USER" >&2
+  exit 2
+fi
+
+REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
+SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
+RUNTIME_BASE="$HOME/.local/share/agentos/galaxy-experiment-monitor"
+RELEASE_ROOT="$RUNTIME_BASE/releases"
+CURRENT="$RUNTIME_BASE/current"
+
+printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$' || {
+  echo "galaxy_experiment_monitor_install=SOURCE_COMMIT_REQUIRED" >&2
+  exit 2
+}
+test -d "$REPO/.git" || { echo "galaxy_experiment_monitor_install=REPO_MISSING" >&2; exit 2; }
+
+git -C "$REPO" fetch --no-tags origin "$SOURCE_COMMIT" >/dev/null
+git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
+mkdir -p "$RELEASE_ROOT"
+RELEASE="$RELEASE_ROOT/$SOURCE_COMMIT"
+if [ ! -d "$RELEASE" ]; then
+  TMP_RELEASE="$(mktemp -d "$RELEASE_ROOT/.tmp.XXXXXX")"
+  cleanup_release() { rm -rf "$TMP_RELEASE"; }
+  trap cleanup_release EXIT
+  git -C "$REPO" archive "$SOURCE_COMMIT" \
+    agentos_node \
+    scripts/monitor_galaxy_threads_experiment_user.py \
+    scripts/monitor_social_post_experiment_user.py \
+    scripts/run_social_post_experiment_queue_user.py \
+    scripts/sync_sunlake_milkcat_persona_user.py \
+    scripts/evolve_mio_persona_ir_user.py \
+    scripts/mio_persona_social_loop_user.py \
+    scripts/sync_mio_pdca_social_outcome_user.py \
+    scripts/diagnose_mio_threads_search_scope_user.py \
+    | tar -x -C "$TMP_RELEASE"
+  python3 -m compileall -q "$TMP_RELEASE/agentos_node" "$TMP_RELEASE/scripts"
+  cat > "$TMP_RELEASE/GENERATION" <<EOF
+source_ref=core/integration
+source_commit=$SOURCE_COMMIT
+EOF
+  chmod -R go-w "$TMP_RELEASE"
+  mv "$TMP_RELEASE" "$RELEASE"
+  trap - EXIT
+fi
+test -f "$RELEASE/GENERATION"
+grep -q "^source_commit=$SOURCE_COMMIT$" "$RELEASE/GENERATION"
+echo "galaxy_experiment_monitor_release=$RELEASE"
+
+# Persona IR/event sync is part of the live social decision path and must be
+# able to read/write the private canonical my-agent-data repo as ubuntu.
+# Reuse the owner's existing GitHub CLI credential without ever echoing it.
+if command -v gh >/dev/null 2>&1 && \
+   env -u GH_TOKEN -u GITHUB_TOKEN gh repo view alston-personal/my-agent-data --json name --jq .name >/dev/null 2>&1; then
+  env -u GH_TOKEN -u GITHUB_TOKEN gh auth setup-git >/dev/null 2>&1
+  if env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' \
+       -C /home/ubuntu/agent-data fetch https://github.com/alston-personal/my-agent-data.git \
+       "+refs/heads/""main:refs/remotes/origin/main" >/dev/null 2>&1; then
+    echo "mio_persona_git_auth=PASS"
+  else
+    echo "mio_persona_git_auth=FETCH_FAILED" >&2
+    exit 8
+  fi
+else
+  echo "mio_persona_git_auth=GH_AUTH_UNAVAILABLE" >&2
+  exit 8
+fi
+
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SERVICE="$UNIT_DIR/agentos-galaxy-experiment-monitor.service"
+TIMER="$UNIT_DIR/agentos-galaxy-experiment-monitor.timer"
+LOG_DIR="$HOME/agent-data/logs"
+LOG="$LOG_DIR/galaxy-experiment-monitor.log"
+
+test -f "$RELEASE/scripts/monitor_galaxy_threads_experiment_user.py"
+test -f "$RELEASE/scripts/monitor_social_post_experiment_user.py"
+test -f "$RELEASE/scripts/run_social_post_experiment_queue_user.py"
+test -f "$RELEASE/scripts/sync_sunlake_milkcat_persona_user.py"
+test -f "$RELEASE/scripts/evolve_mio_persona_ir_user.py"
+test -f "$RELEASE/scripts/mio_persona_social_loop_user.py"
+test -f "$RELEASE/scripts/sync_mio_pdca_social_outcome_user.py"
+mkdir -p "$UNIT_DIR" "$LOG_DIR"
+
+# Diagnose the real ubuntu-owned relay executor; do not expose binary paths,
+# account state, credentials, model output, or user-private files.
+PYTHONPATH="$RELEASE" python3 - <<'PY'
+from pathlib import Path
+from agentos_node.antigravity_relay_worker import discover_executor
+for provider in ('claude','agy'):
+    try:
+        _, selected=discover_executor(provider)
+        available=bool(selected and Path(selected[0]).is_file())
+    except Exception:
+        available=False
+    print('mio_relay_'+provider+'_available='+str(available).lower())
+PY
+if systemctl --user is-active --quiet agentos-antigravity-relay.service; then
+  echo 'mio_relay_service=ACTIVE'
+else
+  echo 'mio_relay_service=INACTIVE'
+fi
+# Inspect only public-free relay queue state, never a capsule's instruction or stdout.
+python3 - <<'PY'
+import json,re
+from pathlib import Path
+pending=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/decision-pending.json')
+root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+try: cid=str(json.loads(pending.read_text(encoding='utf-8')).get('capsule_id') or '')
+except (FileNotFoundError,ValueError): cid=''
+if not re.fullmatch(r'relay-[0-9a-f]{32}',cid):
+    state='no_pending'
+elif (root/'receipts'/f'{cid}.json').is_file():
+    state='receipt_ready'
+elif (root/'processing'/f'{cid}.json').is_file():
+    state='processing'
+elif (root/'inbox'/f'{cid}.json').is_file():
+    state='queued'
+else:
+    state='missing'
+print('mio_relay_capsule_state='+state)
+probe=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/relay-probe.json')
+try: test=json.loads(probe.read_text(encoding='utf-8'))
+except (FileNotFoundError,ValueError): test={}
+probe_id=str(test.get('capsule_id') or '')
+if test.get('status')=='pass':
+    probe_state='pass'
+elif re.fullmatch(r'relay-[0-9a-f]{32}',probe_id):
+    if (root/'receipts'/f'{probe_id}.json').is_file(): probe_state='receipt_ready'
+    elif (root/'processing'/f'{probe_id}.json').is_file(): probe_state='processing'
+    elif (root/'inbox'/f'{probe_id}.json').is_file(): probe_state='queued'
+    else: probe_state='missing'
+else:
+    probe_state='not_submitted'
+print('mio_relay_probe_state='+probe_state)
+PY
+# Check whether the separately installed, already allowlisted AGY executor can
+# answer a harmless JSON prompt. Bounded, one check per six hours; never print
+# its model output, login state, file locations or any credential.
+python3 - "$RELEASE" <<'PY'
+import json,os,subprocess,sys,time
+from pathlib import Path
+from agentos_node.antigravity_relay_worker import discover_executor
+repo=Path(sys.argv[1])
+state=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/agy-health.json')
+try: old=json.loads(state.read_text(encoding='utf-8'))
+except (FileNotFoundError,ValueError): old={}
+if time.time()-float(old.get('checked_unix') or 0)<21600:
+    print('mio_agy_probe='+str(old.get('result') or 'unknown'))
+else:
+    result='unavailable'
+    try:
+        _,executor=discover_executor('agy')
+        if executor:
+            prompt='PRIVATE HEALTH CHECK: return exactly {"ok":true} as JSON. No tools, no external actions.'
+            r=subprocess.run([*executor,'run','--task',prompt,'--workspace',str(repo)],cwd=str(repo),capture_output=True,text=True,timeout=25,check=False)
+            if r.returncode:
+                result='nonzero_exit'
+            elif '"ok"' in r.stdout and 'true' in r.stdout.lower():
+                result='pass'
+            else:
+                result='unexpected_output'
+    except subprocess.TimeoutExpired: result='timeout'
+    except OSError: result='spawn_error'
+    state.parent.mkdir(parents=True,exist_ok=True)
+    state.write_text(json.dumps({'checked_unix':time.time(),'result':result})+'\n',encoding='utf-8')
+    os.chmod(state,0o600)
+    print('mio_agy_probe='+result)
+PY
+# Give Mio her own ubuntu-owned AGY relay. Never change the shared
+# Antigravity/Claude worker or other AgentOS projects' model provider.
+MIO_RELAY_ROOT="$HOME/agent-data/runtime/mio-antigravity-relay"
+MIO_RELAY_UNIT="$UNIT_DIR/agentos-mio-agy-relay.service"
+test "$(python3 - "$HOME/agent-data/runtime/social/experiments/ai-subscription/agy-health.json" <<'PY'
+import json,sys,time
+try: s=json.load(open(sys.argv[1],encoding='utf-8'))
+except (FileNotFoundError,ValueError): s={}
+print('yes' if s.get('result')=='pass' and time.time()-float(s.get('checked_unix') or 0)<21600 else 'no')
+PY
+)" = yes || { echo 'mio_agy_relay=PROBE_NOT_PASS'; exit 5; }
+cat > "$MIO_RELAY_UNIT" <<EOF
+[Unit]
+Description=AgentOS Mio Private AGY Persona Decision Relay
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$RELEASE
+Environment=PYTHONPATH=$RELEASE
+UMask=0007
+ExecStart=/usr/bin/python3 -m agentos_node.antigravity_relay_worker --provider agy --root $MIO_RELAY_ROOT
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now agentos-mio-agy-relay.service >/dev/null
+systemctl --user is-active --quiet agentos-mio-agy-relay.service
+echo 'mio_agy_relay=ACTIVE'
+# Read-only scope diagnostics; never log access tokens or OAuth responses.
+PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/diagnose_mio_threads_search_scope_user.py" || echo 'mio_search_scope_probe=unavailable'
+# Relay restart is a targeted repair, not part of normal monitor reinstallation.
+# Keep the background executor undisturbed during subsequent code deployments.
+
+
+cat > "$SERVICE" <<EOF
+[Unit]
+Description=AgentOS Threads AI Subscription Experiment Monitor
+After=network-online.target agentos-social-runtime.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$RELEASE
+Environment=PYTHONPATH=$RELEASE
+Environment=AGENTOS_MIO_RELAY_ROOT=$MIO_RELAY_ROOT
+ExecStart=/usr/bin/python3 $RELEASE/scripts/monitor_galaxy_threads_experiment_user.py
+ExecStart=/usr/bin/python3 $RELEASE/scripts/run_social_post_experiment_queue_user.py
+# Order is causal: observe -> persist event -> evolve current self -> decide/reply.
+# If canonical sync/evolution fails, do not answer from stale or isolated context.
+ExecStartPost=/bin/sh -c '/usr/bin/python3 $RELEASE/scripts/sync_sunlake_milkcat_persona_user.py && /usr/bin/python3 $RELEASE/scripts/evolve_mio_persona_ir_user.py && /usr/bin/python3 $RELEASE/scripts/mio_persona_social_loop_user.py && /usr/bin/python3 $RELEASE/scripts/sync_mio_pdca_social_outcome_user.py || { echo mio_persona_cycle=DEFERRED; exit 0; }'
+StandardOutput=append:$LOG
+StandardError=append:$LOG
+
+[Install]
+WantedBy=default.target
+EOF
+
+cat > "$TIMER" <<EOF
+[Unit]
+Description=Monitor Threads AI Subscription Experiment
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=agentos-galaxy-experiment-monitor.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# One-time migration backfill: the first shared Social Post Experiment was
+# published before automatic registration existed. Keep it idempotent and
+# scoped to the verified Mio post receipt.
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+root=Path('/home/ubuntu/agent-data/runtime/social/post-experiments')
+q=root/'queue'; done=root/'completed'
+q.mkdir(parents=True,exist_ok=True); done.mkdir(parents=True,exist_ok=True)
+name='mio-post-20260927-sunday-reflection-v1-18142806262589652.json'
+if not (q/name).exists() and not (done/name).exists():
+    payload={
+      'schema':'agentos.social-post-experiment-registration/v1',
+      'account_username':'mio.milkcat',
+      'post_id':'18142806262589652',
+      'permalink':'https://www.threads.com/@mio.milkcat/post/DdxcN44jx5T',
+      'experiment_id':'mio-post-20260927-sunday-reflection-v1',
+      'published_at':'2026-09-27T01:34:41Z',
+      'next_elapsed_minutes':60,
+      'hypothesis':'short contrast hook can create low-friction discussion',
+      'changed_variables':['text_only','contrast_hook','direct_question'],
+    }
+    p=q/name; tmp=p.with_suffix('.tmp')
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    os.chmod(tmp,0o600); tmp.replace(p); os.chmod(p,0o600)
+    print('social_experiment_backfill=REGISTERED')
+else:
+    print('social_experiment_backfill=ALREADY_PRESENT')
+PY
+
+systemctl --user daemon-reload
+systemctl --user enable --now agentos-galaxy-experiment-monitor.timer >/dev/null
+if ! systemctl --user start agentos-galaxy-experiment-monitor.service; then
+  systemctl --user --no-pager --full status agentos-galaxy-experiment-monitor.service >&2 || true
+  journalctl --user -u agentos-galaxy-experiment-monitor.service -n 80 --no-pager >&2 || true
+  if [ -f "$LOG" ]; then
+    echo "--- galaxy monitor log tail ---" >&2
+    tail -n 80 "$LOG" >&2 || true
+  fi
+  echo "galaxy_experiment_monitor_initial_run=FAIL" >&2
+  exit 4
+fi
+systemctl --user is-enabled --quiet agentos-galaxy-experiment-monitor.timer
+systemctl --user is-active --quiet agentos-galaxy-experiment-monitor.timer
+
+# Installation acceptance also runs the deterministic Persona IR reducer
+# directly. This is idempotent: after the service cycle advanced the IR it
+# emits NO_CHANGE; if the service deferred IR evolution, installation fails
+# here instead of silently claiming the growth loop is live.
+PYTHONPATH="$RELEASE" /usr/bin/python3 "$RELEASE/scripts/evolve_mio_persona_ir_user.py"
+
+# Emit only IDs for the newly observed reader comment; never expose the
+# surrounding private monitor snapshot or other commenters in run logs.
+python3 - <<'PY'
+import json
+from pathlib import Path
+catalog=Path('/tmp/agentos-social-public/sunlake-milkcat-replies.json')
+if catalog.is_file():
+    doc=json.loads(catalog.read_text(encoding='utf-8'))
+    item=next((x for x in (doc.get('replies') or []) if str(x.get('id') or '')=='18124006117843631'),None)
+    if item:
+        print('mio_latest_comment_id='+str(item['id']))
+        print('mio_latest_comment_root_id='+str(item.get('root_post_id') or ''))
+        print('mio_latest_comment_replied_to_id='+str(item.get('replied_to_id') or ''))
+        print('mio_latest_comment_owned='+str(bool(item.get('is_reply_owned_by_me'))).lower())
+PY
+
+SNAPSHOT="$HOME/agent-data/runtime/social/experiments/ai-subscription/latest.json"
+test -f "$SNAPSHOT"
+python3 - "$SNAPSHOT" <<'PY'
+import json, sys
+p=json.load(open(sys.argv[1],encoding='utf-8'))
+assert p.get('schema')=='agentos.social-experiment-snapshot/v1',p
+assert p.get('experiment')=='ai-pays-its-subscription',p
+print('galaxy_experiment_monitor_snapshot=PASS')
+print('galaxy_experiment_monitor_reply_count='+str(p.get('reply_count',0)))
+print('galaxy_experiment_monitor_new_replies='+str(len(p.get('new_replies') or [])))
+print('galaxy_experiment_monitor_needs_attention='+str(bool(p.get('needs_attention'))).lower())
+PY
+
+HISTORY="$HOME/agent-data/runtime/social/experiments/ai-subscription/history.jsonl"
+if [ -f "$HISTORY" ]; then
+python3 - "$HISTORY" <<'PY'
+import json, sys
+seen={}
+for raw in open(sys.argv[1],encoding='utf-8'):
+    try: row=json.loads(raw)
+    except Exception: continue
+    for item in row.get('new_replies') or []:
+        rid=str(item.get('id') or '')
+        if rid:
+            seen[rid]={
+              'id':rid,
+              'username':item.get('username'),
+              'text':item.get('text'),
+              'timestamp':item.get('timestamp'),
+              'permalink':item.get('permalink'),
+            }
+print('galaxy_experiment_monitor_reply_catalog='+json.dumps(list(seen.values()),ensure_ascii=False,separators=(',',':')))
+PY
+fi
+
+ln -sfn "$RELEASE" "$CURRENT"
+test "$(readlink -f "$CURRENT")" = "$RELEASE"
+echo "galaxy_experiment_monitor_source_commit=$SOURCE_COMMIT"
+echo "galaxy_experiment_monitor_current=$CURRENT"
+echo "galaxy_experiment_monitor_mutable_checkout_write=NONE"
+echo "galaxy_experiment_monitor_install=PASS"
+echo "galaxy_experiment_monitor_interval=10m"
+echo "galaxy_experiment_monitor_log=$LOG"
+if [ -f "$LOG" ]; then
+  tail -n 220 "$LOG" | grep -E '^(social_experiment_queue=|social_experiment_queue_checked=|social_experiment_queue_advanced=|social_experiment_queue_failed=|galaxy_monitor=|galaxy_monitor_reply_count=|galaxy_monitor_new_replies=|persona_git_sync=|persona_git_sync_added=|mio_persona_ir_evolve=|mio_persona_ir_revision=|mio_persona_ir_new_events=|mio_persona_ir_new_growth=|mio_persona_cycle=|mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pdca_authority=|mio_pdca_social_outcome=|mio_pdca_outcome_sync=|mio_pdca_outcome_status=|mio_pdca_outcome_result=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=|mio_life_event=|mio_energy=)' | tail -n 80 || true
+fi
+python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path('/tmp/agentos-social-public/sunlake-milkcat-replies.json')
+try: d=json.loads(p.read_text(encoding='utf-8'))
+except (FileNotFoundError,ValueError): d={}
+print('mio_public_export_owned_posts='+str(len(d.get('owned_posts') or [])))
+print('mio_public_export_replies='+str(len(d.get('replies') or [])))
+PY

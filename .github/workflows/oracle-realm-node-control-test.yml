@@ -1,10 +1,7 @@
 name: Oracle Realm Node Control Test
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-node-control-test.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 
@@ -64,4 +61,4 @@ jobs:
           git add .agentos/evidence/realm-node-control-test-current.json
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): queue Windows control test'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

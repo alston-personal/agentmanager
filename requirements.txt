@@ -15,6 +15,7 @@ Pillow>=11.0.0
 # --- Advanced & Tools ---
 pyyaml_env_tag>=1.1
 google-auth>=2.48.0
+cryptography>=43.0.0  # Ed25519 public verification for governed Paw requests
 psutil>=6.0.0
 
 # --- Development & Testing ---

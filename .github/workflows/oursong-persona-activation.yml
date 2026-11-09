@@ -1,0 +1,315 @@
+name: Oursong Persona Activation
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/runner_window.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/activate_oursong_persona_user.sh'
+      - 'scripts/bootstrap_oursong_persona_user.py'
+      - 'scripts/install_persona_social_timer_user.sh'
+      - 'scripts/probe_oursong_persona_user.sh'
+      - 'scripts/run_threads_web_dm_read_user.sh'
+      - 'scripts/install_oursong_threads_session_user.sh'
+      - 'scripts/start_threads_web_dm_login_user.sh'
+      - 'scripts/threads_web_dm_bridge_user.py'
+      - 'agentos_node/social/persona_dm.py'
+      - '.github/workflows/oursong-persona-activation.yml'
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'scripts/persona_pdca_heartbeat_user.py'
+      - 'scripts/probe_oursong_persona_user.sh'
+      - '.github/workflows/persona-pdca-runtime-origin-probe.yml'
+      - '.github/workflows/oursong-persona-activation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: oursong-persona-activation
+  cancel-in-progress: true
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile persona runtime sources
+        run: |
+          python3 -m py_compile scripts/persona_pdca_heartbeat_user.py
+          bash -n scripts/probe_oursong_persona_user.sh
+          bash -n scripts/run_threads_web_dm_read_user.sh
+          bash -n scripts/install_oursong_threads_session_user.sh
+          grep -Fq 'oursong_threads_session_existing_browser=preserved' scripts/install_oursong_threads_session_user.sh
+          bash -n scripts/start_threads_web_dm_login_user.sh
+          python3 -m py_compile scripts/threads_web_dm_bridge_user.py agentos_node/social/persona_dm.py
+      - name: Reject literal escaped-newline contamination
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          heartbeat=Path('scripts/persona_pdca_heartbeat_user.py').read_text(encoding='utf-8')
+          probe=Path('.github/workflows/persona-pdca-runtime-origin-probe.yml').read_text(encoding='utf-8')
+          assert '):\\n    ' not in heartbeat
+          assert '+"\\\\n"' not in heartbeat
+          assert 'ev),ev\\n          assert' not in probe
+          print('persona_runtime_source_static=PASS')
+          PY
+
+  activate:
+    if: github.event_name != 'pull_request'
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC Runner Window credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          echo 'oursong_activation_oidc=PASS'
+
+      - name: Wait for Runner Window intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for _ in $(seq 1 300); do
+            code="$(curl -sS -o "$RUNNER_TEMP/window.json" -w '%{http_code}' --max-time 8               -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"               "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+            if [ "$code" = 200 ] && python3 - "$RUNNER_TEMP/window.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          intents=d.get('intents') or []
+          assert any(
+              x.get('capability')=='persona.runtime'
+              and x.get('operation')=='oursong.activate'
+              for x in intents
+          ), intents
+          PY
+            then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ok" = 1
+          echo 'oursong_activation_intent=READY'
+
+      - name: Activate oursong through Runner Window
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=300             bash scripts/agentos_dispatch.sh               persona.runtime oursong.activate "$GITHUB_SHA"               | tee "$RUNNER_TEMP/oursong-activation.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/oursong-activation.txt"
+          python3 - "$RUNNER_TEMP/oursong-activation.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          path,expected=sys.argv[1:3]
+          completed=None
+          for raw in open(path,encoding='utf-8'):
+              raw=raw.strip()
+              if not raw.startswith('{'):
+                  continue
+              try:
+                  row=json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              if row.get('state')=='completed' and isinstance(row.get('receipt'),dict):
+                  completed=row
+          assert completed is not None, 'completed dispatch receipt missing'
+          receipt=completed['receipt']
+          assert receipt.get('ok') is True, receipt
+          assert receipt.get('source_commit')==expected, receipt
+          scheduler=receipt.get('scheduler') or {}
+          assert scheduler.get('worker_id')=='oracle-control', scheduler
+          assert scheduler.get('worker_role')=='control', scheduler
+          assert 'oracle-core-runtime' in set(scheduler.get('locks') or []), scheduler
+          print('oursong_persona_activation_receipt=PASS')
+          print('oursong_persona_activation_worker='+scheduler['worker_id'])
+          PY
+          echo 'oursong_persona_activation=PASS'
+
+      - name: Read back oursong runtime status
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in $(seq 1 30); do
+            OUT="$RUNNER_TEMP/oursong-status-${attempt}.txt"
+            set +e
+            AGENTOS_DISPATCH_WAIT_SECONDS=60 \
+              bash scripts/agentos_dispatch.sh \
+                persona.runtime oursong.status "$GITHUB_SHA" \
+                > "$OUT"
+            rc=$?
+            set -e
+            cat "$OUT"
+            if [ "$rc" = 0 ] && python3 - "$OUT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          path,expected=sys.argv[1:3]
+          completed=None
+          for raw in open(path,encoding='utf-8'):
+              raw=raw.strip()
+              if not raw.startswith('{'):
+                  continue
+              try:
+                  row=json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              if row.get('state')=='completed' and isinstance(row.get('receipt'),dict):
+                  completed=row
+          assert completed is not None
+          receipt=completed['receipt']
+          assert receipt.get('ok') is True,receipt
+          assert receipt.get('source_commit')==expected,receipt
+          scheduler=receipt.get('scheduler') or {}
+          assert scheduler.get('worker_id')=='oracle-control',scheduler
+          evidence=receipt.get('evidence') or []
+          pairs={}
+          for line in evidence:
+              if '=' in line:
+                  k,v=line.split('=',1); pairs[k]=v
+          assert pairs.get('oursong_status')=='PASS',pairs
+          assert pairs.get('ActiveState')=='active',pairs
+          assert pairs.get('UnitFileState') in {'enabled','static'},pairs
+          cycle=int(pairs.get('oursong_pdca_cycle') or 0)
+          assert cycle >= 1,pairs
+          assert pairs.get('oursong_last_tick_at') not in {None,'None',''},pairs
+          print('oursong_persona_status_receipt=PASS')
+          print('oursong_pdca_cycle='+str(cycle))
+          print('oursong_last_tick_at='+str(pairs.get('oursong_last_tick_at')))
+          print('oursong_last_action_at='+str(pairs.get('oursong_last_action_at')))
+          PY
+            then
+              ok=1
+              break
+            fi
+            echo "oursong_status_readback_wait=attempt_${attempt}"
+            sleep 3
+          done
+          test "$ok" = 1
+
+      - name: Ensure isolated Oursong Threads session
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oursong-session-install.txt"
+          AGENTOS_DISPATCH_WAIT_SECONDS=180 \
+            bash scripts/agentos_dispatch.sh \
+              persona.social.dm oursong.session.install "$GITHUB_SHA" \
+              | tee "$OUT"
+          grep -q 'runner_window_dispatch=PASS' "$OUT"
+          python3 - "$OUT" <<'PY'
+          import json,sys
+          docs=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip().startswith('{')]
+          receipt=next((x.get('receipt') for x in reversed(docs) if x.get('state')=='completed' and isinstance(x.get('receipt'),dict)),None)
+          assert receipt and receipt.get('ok') is True, receipt
+          pairs={}
+          for line in receipt.get('evidence') or []:
+              if '=' in line:
+                  k,v=line.split('=',1);pairs[k]=v
+          assert pairs.get('oursong_threads_session_install')=='PASS',pairs
+          assert pairs.get('oursong_threads_session_cdp_url')=='http://127.0.0.1:9223',pairs
+          assert pairs.get('oursong_threads_session_mio_isolated')=='true',pairs
+          print('oursong_threads_session_acceptance=PASS')
+          PY
+
+      - name: Read-only Oursong Threads DM identity acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oursong-dm-read.txt"
+          AGENTOS_DISPATCH_WAIT_SECONDS=240 \
+            bash scripts/agentos_dispatch.sh \
+              persona.social.dm oursong.read "$GITHUB_SHA" \
+              | tee "$OUT"
+          grep -q 'runner_window_dispatch=PASS' "$OUT"
+          CLASSIFICATION="$(python3 - "$OUT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          path,expected=sys.argv[1:3]
+          completed=None
+          for raw in open(path,encoding='utf-8'):
+              raw=raw.strip()
+              if not raw.startswith('{'):
+                  continue
+              try:
+                  row=json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              if row.get('state')=='completed' and isinstance(row.get('receipt'),dict):
+                  completed=row
+          assert completed is not None, 'completed dispatch receipt missing'
+          receipt=completed['receipt']
+          assert receipt.get('ok') is True, receipt
+          assert receipt.get('source_commit')==expected, receipt
+          pairs={}
+          for line in receipt.get('evidence') or []:
+              if '=' in line:
+                  k,v=line.split('=',1); pairs[k]=v
+          if pairs.get('threads_web_dm_identity')=='PASS' and pairs.get('threads_web_dm_account')=='oursong_alstonhuang' and pairs.get('threads_web_dm_read')=='PASS':
+              print('PASS')
+          elif pairs.get('threads_web_dm_read')=='LOGIN_REQUIRED' or pairs.get('threads_web_dm_bridge')=='LOGIN_REQUIRED':
+              print('LOGIN_REQUIRED')
+          else:
+              raise AssertionError(pairs)
+          PY
+          )"
+          if [ "$CLASSIFICATION" = "PASS" ]; then
+            echo 'oursong_dm_identity_acceptance=PASS'
+            echo 'oursong_dm_account=oursong_alstonhuang'
+            exit 0
+          fi
+
+          test "$CLASSIFICATION" = "LOGIN_REQUIRED"
+          LOGIN_OUT="$RUNNER_TEMP/oursong-dm-login-start.txt"
+          AGENTOS_DISPATCH_WAIT_SECONDS=90 \
+            bash scripts/agentos_dispatch.sh \
+              persona.social.dm oursong.login.start "$GITHUB_SHA" \
+              | tee "$LOGIN_OUT"
+          grep -q 'runner_window_dispatch=PASS' "$LOGIN_OUT"
+          python3 - "$LOGIN_OUT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          path,expected=sys.argv[1:3]
+          docs=[]
+          for raw in open(path,encoding='utf-8'):
+              raw=raw.strip()
+              if raw.startswith('{'):
+                  try: docs.append(json.loads(raw))
+                  except json.JSONDecodeError: pass
+          completed=next((x for x in reversed(docs) if x.get('state')=='completed' and isinstance(x.get('receipt'),dict)),None)
+          assert completed is not None, 'login-start receipt missing'
+          receipt=completed['receipt']
+          assert receipt.get('ok') is True,receipt
+          assert receipt.get('source_commit')==expected,receipt
+          pairs={}
+          for line in receipt.get('evidence') or []:
+              if '=' in line:
+                  k,v=line.split('=',1);pairs[k]=v
+          assert pairs.get('threads_web_dm_login_start')=='PASS',pairs
+          assert pairs.get('threads_web_dm_login_mode')=='oracle_gui_worker',pairs
+          assert pairs.get('threads_web_dm_login_browser_persistent')=='true',pairs
+          print('oursong_dm_login_handoff=PASS')
+          print('oursong_dm_login_remote_view='+str(pairs.get('threads_web_dm_login_remote_view') or 'unknown'))
+          PY
+          echo 'oursong_dm_identity_acceptance=LOGIN_REQUIRED'
+          exit 2

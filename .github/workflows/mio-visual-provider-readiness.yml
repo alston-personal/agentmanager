@@ -1,0 +1,29 @@
+name: Mio Visual Provider Readiness Contract
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/chatgpt_web_bridge.py'
+      - 'capabilities/wardrobe_visual_review/**'
+      - 'scripts/check_mio_visual_provider_readiness.py'
+      - '.github/workflows/mio-visual-provider-readiness.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/chatgpt_web_bridge.py'
+      - 'capabilities/wardrobe_visual_review/**'
+      - 'scripts/check_mio_visual_provider_readiness.py'
+      - '.github/workflows/mio-visual-provider-readiness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Distinguish session health from image-review capability
+        run: python3 scripts/check_mio_visual_provider_readiness.py

@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.transactional-bootstrap",
+  "node_id": "mbpr",
+  "source_commit": "eaf408343eddace123aed2eee649058d6608d1a9",
+  "nonce": "mbpr-transactional-bootstrap-1790562165634"
+}

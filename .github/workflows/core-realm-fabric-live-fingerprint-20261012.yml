@@ -1,0 +1,80 @@
+name: Core Realm Fabric Live Fingerprint 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-realm-fabric-live-fingerprint-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fingerprint:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2efc5d4c9db2267abf491806fe47b9901fc403b7
+
+      - name: Compare live Realm Fabric process to current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "EXPECTED_MAIN_SHA=2efc5d4c9db2267abf491806fe47b9901fc403b7"
+          expected_hash="$(sha256sum agent_core/realm_fabric.py | awk '{print $1}')"
+          echo "EXPECTED_REALM_FABRIC_HASH=$expected_hash"
+
+          unit="$HOME/.config/systemd/user/agentos-realm-fabric.service"
+          echo '=== UNIT ==='
+          cat "$unit" || true
+
+          echo '=== SYSTEMD SHOW ==='
+          systemctl --user show agentos-realm-fabric.service             -p ActiveState -p SubState -p MainPID -p WorkingDirectory -p ExecStart -p FragmentPath || true
+
+          pid="$(systemctl --user show agentos-realm-fabric.service -p MainPID --value)"
+          echo "MAINPID=$pid"
+          if [ -n "$pid" ] && [ "$pid" != 0 ]; then
+            echo "PROC_CWD=$(readlink -f /proc/$pid/cwd || true)"
+            printf 'PROC_CMDLINE='
+            tr '\0' ' ' < "/proc/$pid/cmdline" || true
+            echo
+          fi
+
+          echo '=== CURRENT POINTER ==='
+          ls -ld "$HOME/.local/share/agentos/realm-fabric/current" || true
+          current_target="$(readlink -f "$HOME/.local/share/agentos/realm-fabric/current" || true)"
+          echo "CURRENT_TARGET=$current_target"
+
+          live_root=""
+          if [ -n "$pid" ] && [ "$pid" != 0 ]; then
+            live_root="$(readlink -f /proc/$pid/cwd || true)"
+          fi
+          if [ -z "$live_root" ]; then
+            live_root="$current_target"
+          fi
+          echo "LIVE_ROOT=$live_root"
+
+          if [ -f "$live_root/agent_core/realm_fabric.py" ]; then
+            live_hash="$(sha256sum "$live_root/agent_core/realm_fabric.py" | awk '{print $1}')"
+            echo "LIVE_REALM_FABRIC_HASH=$live_hash"
+            if grep -q "_lease_until" "$live_root/agent_core/realm_fabric.py"; then
+              echo "LIVE_LEASE_MARKER=present"
+            else
+              echo "LIVE_LEASE_MARKER=missing"
+            fi
+            if grep -q "data\['tasks'\]\[node_id\] = \[" "$live_root/agent_core/realm_fabric.py"; then
+              echo "LIVE_RECEIPT_ACK_MARKER=present"
+            else
+              echo "LIVE_RECEIPT_ACK_MARKER=missing"
+            fi
+            if [ "$live_hash" = "$expected_hash" ]; then
+              echo "REALM_FABRIC_LIVE_PARITY=PASS"
+            else
+              echo "REALM_FABRIC_LIVE_PARITY=FAIL"
+            fi
+          else
+            echo "LIVE_REALM_FABRIC_FILE=missing"
+            echo "REALM_FABRIC_LIVE_PARITY=FAIL"
+          fi

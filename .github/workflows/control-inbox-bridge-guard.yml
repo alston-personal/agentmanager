@@ -1,0 +1,103 @@
+name: Control Inbox Bridge Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/active_continuation.py'
+      - 'agent_core/realm_server.py'
+      - 'agent_core/chatgpt_continuation_projection.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'scripts/install_chatgpt_continuation_projection_user.sh'
+      - 'scripts/repair_control_inbox_github_auth_user.sh'
+      - 'scripts/control_inbox_service_repair.py'
+      - 'tests/test_control_inbox_service_repair.py'
+      - 'docs/CONTROL_INBOX_SERVICE_REPAIR.md'
+      - '.github/workflows/oracle-control-inbox-service-repair.yml'
+      - 'tests/test_active_continuation.py'
+      - 'tests/test_realm_resolve_endpoint.py'
+      - 'tests/test_control_inbox_bridge.py'
+      - 'tests/test_control_inbox_runtime_installer.py'
+      - 'tests/test_chatgpt_continuation_projection.py'
+      - '.agent/scripts/agentos-control-inbox-bridge.service'
+      - 'config/control-inbox.env.example'
+      - 'docs/CONTROL_INBOX_BRIDGE.md'
+      - 'docs/CHATGPT_ONE_TRANSPORT.md'
+      - '.github/workflows/control-inbox-bridge-guard.yml'
+      - '.github/workflows/oracle-control-inbox-exact-generation-rollout.yml'
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/active_continuation.py'
+      - 'agent_core/realm_server.py'
+      - 'agent_core/chatgpt_continuation_projection.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'scripts/install_chatgpt_continuation_projection_user.sh'
+      - 'scripts/repair_control_inbox_github_auth_user.sh'
+      - 'scripts/control_inbox_service_repair.py'
+      - 'tests/test_control_inbox_service_repair.py'
+      - 'docs/CONTROL_INBOX_SERVICE_REPAIR.md'
+      - '.github/workflows/oracle-control-inbox-service-repair.yml'
+      - 'tests/test_active_continuation.py'
+      - 'tests/test_realm_resolve_endpoint.py'
+      - 'tests/test_control_inbox_bridge.py'
+      - 'tests/test_control_inbox_runtime_installer.py'
+      - 'tests/test_chatgpt_continuation_projection.py'
+      - '.agent/scripts/agentos-control-inbox-bridge.service'
+      - 'config/control-inbox.env.example'
+      - 'docs/CONTROL_INBOX_BRIDGE.md'
+      - 'docs/CHATGPT_ONE_TRANSPORT.md'
+      - '.github/workflows/control-inbox-bridge-guard.yml'
+      - '.github/workflows/oracle-control-inbox-exact-generation-rollout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run Control Inbox bridge regressions
+        run: python -m pytest tests/test_control_inbox_bridge.py tests/test_active_continuation.py tests/test_realm_resolve_endpoint.py tests/test_control_inbox_runtime_installer.py tests/test_chatgpt_continuation_projection.py tests/test_control_inbox_service_repair.py -q
+      - name: Verify Golden Path governed dispatch regression
+        run: python -m pytest tests/test_runner_window.py -k 'golden_path' -q
+      - name: Verify governed Oracle Linux Node installer intent
+        run: python -m pytest tests/test_oracle_exec_runner_window_install.py -q
+      - name: Verify Oracle node installed generation provenance
+        run: python -m pytest tests/test_oracle_exec_provenance_contract.py -q
+      - name: Verify governed runtime repair capability discovery
+        run: python -m pytest tests/test_golden_path_runtime_repair_discovery.py -q
+      - name: Compile bootstrap and bridge modules
+        run: python -m py_compile agent_core/control_inbox_bridge.py agent_core/chatgpt_continuation_projection.py agentos_node/bootstrap_control.py scripts/control_inbox_service_repair.py
+      - name: Validate governed runtime installers
+        run: |
+          bash -n scripts/install_control_inbox_bridge_user.sh
+          bash -n scripts/install_chatgpt_continuation_projection_user.sh
+          bash -n scripts/repair_control_inbox_github_auth_user.sh
+      - name: Verify service is secret-free and bounded
+        shell: bash
+        run: |
+          set -euo pipefail
+          unit=.agent/scripts/agentos-control-inbox-bridge.service
+          env_example=config/control-inbox.env.example
+          grep -F 'ExecStart=/usr/bin/python3 -m agent_core.control_inbox_bridge' "$unit"
+          grep -F 'EnvironmentFile=/home/ubuntu/.config/agentos/control-inbox.env' "$unit"
+          grep -F 'AGENTOS_CONTROL_ALLOWED_ACTIONS=' "$env_example"
+          if grep -Eiq '(github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)' "$unit" "$env_example" scripts/install_control_inbox_bridge_user.sh scripts/install_chatgpt_continuation_projection_user.sh scripts/repair_control_inbox_github_auth_user.sh; then
+            echo 'secret-like literal found in source-controlled runtime contract' >&2
+            exit 1
+          fi

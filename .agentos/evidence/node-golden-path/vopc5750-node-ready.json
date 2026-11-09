@@ -1,0 +1,81 @@
+{
+  "schema": "agentos.node-golden-path-acceptance/v1",
+  "accepted_at": "2026-08-30T09:18:53Z",
+  "node_id": "vopc5750",
+  "realm_id": "realm-alston",
+  "acceptance": {
+    "node_ready": true,
+    "single_managed_client": true,
+    "discovery": "PASS",
+    "readiness_regression": "PASS",
+    "benchmark_persisted": true,
+    "regressed_dimensions": 0
+  },
+  "core": {
+    "live_core_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+    "deployment_generation": 5,
+    "deployment_status": "converged",
+    "lease_status": "released",
+    "lease_owner": "agentos-core-mainline"
+  },
+  "runtime": {
+    "desired_runtime_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+    "observed_runtime_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+    "runtime_status": "converged",
+    "install_mode": "controller-single-owner-converge",
+    "source_ref": "feature/realm-node-fabric-readiness"
+  },
+  "lifecycle": {
+    "schema": "agentos.node-lifecycle/v0.1",
+    "platform": "Windows",
+    "returncode": 0,
+    "supervisor_ready": true,
+    "thin_client_task": "AgentOS Thin Client",
+    "watchdog_task": "AgentOS Thin Client Watchdog"
+  },
+  "workspace_roots": {
+    "readable": ["C:\\Users\\alston.huang\\AgentOS"],
+    "writable": ["C:\\Users\\alston.huang\\AgentOS"]
+  },
+  "surfaces": {
+    "surface_count": 4,
+    "providers": ["claude-code", "codex", "cursor", "vscode"]
+  },
+  "benchmark": {
+    "schema": "agentos.one-uplift-report/v0.1",
+    "report_kind": "readiness-regression",
+    "recorded_at": "2026-08-30T09:18:53Z",
+    "node_ready": true,
+    "one_uplift_observed": true,
+    "regressed_dimensions": 0,
+    "improved_dimensions": 2,
+    "lifecycle_supervisor_ready": true,
+    "local_capability_non_regression": true,
+    "lost_capabilities": [],
+    "surface_inventory_present": true
+  },
+  "evidence": {
+    "single_owner_workflow_run": 33303651347,
+    "single_owner_job": 99236231327,
+    "golden_path_workflow_run": 33303721066,
+    "golden_path_job": 99236424827,
+    "acceptance_head": "02049c3760928be9c297283ccf63f2b7d9a55937",
+    "source_workflow": ".github/workflows/oracle-vopc5750-runtime-stage2-start.yml"
+  },
+  "scope": {
+    "proves": [
+      "vopc5750 is online in the Realm",
+      "Core generation 5 is converged and released",
+      "runtime desired and observed commits are converged",
+      "one Scheduled-Task-managed Thin Client is accepted",
+      "lifecycle supervisor is ready",
+      "agent.surface.inspect succeeds with a real receipt",
+      "agentos-client verify succeeds",
+      "readiness benchmark is persisted with node_ready=true"
+    ],
+    "does_not_prove": [
+      "every advertised capability has successful execution evidence",
+      "fresh-chat ChatGPT Web to ONE /v1/resolve E2E acceptance"
+    ]
+  }
+}

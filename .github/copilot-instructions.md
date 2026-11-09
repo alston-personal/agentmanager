@@ -1,35 +1,40 @@
-# AgentOS AI Contributor Instructions
+# AgentOS Universal Contributor Instructions & Constitutional Invariants
 
-You are working in the AgentOS logic/runtime repository.
+All AI agents, executors (including Web GPT, GitHub PR agents, Copilot, Antigravity, Claude, and Codex), and human developers working across this repository are bound by the **AgentOS Constitution**. There are no exceptions for external, web, or remote contributors.
 
-## Read current reality first
+## Invariant 0: Two-Track Mind-Body Dual Parity (身心合一律 - 動 Code 必動 Doc)
 
-Before architectural or cross-project changes, read in this order:
+"Any code mutation must atomically mutate documentation; code and documentation are inseparable."
 
-1. `README.md`
-2. `docs/CURRENT_STATE.md`
-3. `AGENTS.md`
-4. `docs/AGENTOS_NODE.md` when capability ownership/resources are involved
+1. **Mandatory Documentation Coupling**:
+   - Every Pull Request or commit that introduces or modifies implementation code, scripts, tools, or GitHub Actions workflows (`agent_core/`, `scripts/`, `.github/workflows/`, `runtime_core/`, etc.) **MUST** update at least one authoritative documentation file in the very same commit/PR:
+     - `docs/CURRENT_STATE.md`
+     - `README.md`
+     - `AGENTS.md`
+     - `ONBOARDING.md`
+     - Or the relevant module/project specification under `docs/` or `agent-data/specs/`.
+   - **Zero-Tolerance for Bare Code PRs**: A PR that modifies code, scripts, or workflows without accompanying documentation updates is deemed unconstitutional and will be physically blocked by `scripts/documentation_reality_guard.py` in CI.
 
-Do not treat older pulse/brain-dump/LAMP-era documents as the current architecture when they conflict with the canonical current-state map and executable evidence.
+2. **Zero False Completion (嚴禁未落實卻標示完工)**:
+   - Conversely, claiming a task/spec is `implemented`, `verified`, or `closed` without corresponding code, test receipts, and zero open items is forbidden.
 
-## Essential invariants
+## Read Current Reality First
 
-- Preserve Logic/Data separation: mutable project/user state belongs under configured `AGENT_DATA_ROOT`, not accidentally in the logic repo.
-- Resolve existing capability responsibility before creating a competing implementation.
-- Newer user intent must not be rolled back by stale state, replay, compaction, or tool results.
-- Evidence does not silently rewrite intent.
-- Distinguish **Implemented**, **Verified**, and **Research** claims.
-- Cognitive IR / arbitrary zero-cost cross-model switching remains research until repeatable tests prove it.
+Before submitting any architectural, workflow, or capability changes:
 
-## Documentation reality
+1. `README.md` — current product goal and public architecture.
+2. `docs/CURRENT_STATE.md` — canonical map of **Implemented / Verified / Research** capabilities.
+3. `AGENTS.md` — operational rules, protected branch boundaries, and reality guards.
+4. `docs/AGENTOS_NODE.md` — responsibility and resource discovery contracts.
 
-Architecture-sensitive implementation changes must update `README.md`, `ONBOARDING.md`, `AGENTS.md`, or `docs/CURRENT_STATE.md` in the same change set.
+Do not rely on stale prompt lore, memory logs, or historical PR assumptions when they conflict with `docs/CURRENT_STATE.md`.
 
-Run:
+## Essential Invariants
 
-```bash
-python3 scripts/documentation_reality_guard.py
-```
-
-Treat a documentation-drift failure as a regression.
+- **Logic / Data Physical Separation**: Code, configurations, and tests belong here (Logic repo). Mutable runtime state, progress logs, and memories belong in `AGENT_DATA_ROOT` (`agent-data/`). Never commit runtime state into logic.
+- **Protected Branch Authority**: `main` is protected. All contributions must arrive via Pull Request, pass all CI verification, and halt at `AWAITING_HUMAN_APPROVAL`. Direct pushes to `main` are strictly forbidden.
+- **Verification Before Submission**:
+  ```bash
+  python3 scripts/documentation_reality_guard.py
+  python3 scripts/continuation_state.py --self-test
+  ```

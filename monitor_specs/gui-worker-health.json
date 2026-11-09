@@ -1,0 +1,10 @@
+{
+  "schema":"agentos.monitor/v1",
+  "monitor":{"id":"gui-worker-health","owner":"system"},
+  "goal":{"description":"Monitor Oracle GUI Worker browser session health"},
+  "schedule":{"type":"interval","every":"15m","timezone":"Asia/Taipei","run_immediately":true},
+  "execution":{"capability":"browser.gui.smoke"},
+  "payload":{},
+  "condition":{"smoke":"PASS"},
+  "notification_policy":{"severity":"high","cooldown":"30m","dedupe":true}
+}

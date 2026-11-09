@@ -1,0 +1,55 @@
+{
+  "schema": "agentos.master-session-local-evidence/v1",
+  "date": "2026-08-23",
+  "status": "PROVISIONAL_SESSION_LOCAL_REPRODUCTION",
+  "claim_scope": "This is evidence that the development conversation re-entered a long-horizon execution regime. It is not a fresh-session blind reproduction result.",
+  "human_clock": {
+    "continuation_pulses_during_recorded_run": 0,
+    "note": "The recorded run begins at the user's single continuation instruction and ends at verified CI/runtime receipts; no additional user pulse occurred inside it."
+  },
+  "repository_receipts": {
+    "base_sha": "6fd418cfe93c6701f4691c0374d2d81a384843a4",
+    "head_sha": "e2273eecfc82f935adf2cbd99a2ee723452ea0ca",
+    "commits_ahead": 15,
+    "changed_files": 11,
+    "pull_request": 2,
+    "pull_request_state": "open",
+    "pull_request_draft": true,
+    "pull_request_merged": false
+  },
+  "implemented_closure_gaps": [
+    "deterministic unseen-goal blind trial generator",
+    "terminal authority boundary after >=20 safe actions",
+    "hidden/public trial separation",
+    "blind trace evaluator",
+    "PFR/HCR recovery scoring aligned with authority terminal semantics",
+    "fresh-checkout-safe trial builder CLI",
+    "trace scoring CLI",
+    "unit and arbitrary-cwd CLI regression coverage",
+    "operational blind reproduction protocol"
+  ],
+  "self_corrections_without_user_pulse": [
+    "Detected that an authority boundary placed mid-trial made later expected safe steps impossible; moved it to the terminal step.",
+    "Detected that the recovery scorer did not recognize authority request as a valid terminal boundary; aligned the scorer and tests.",
+    "Reused known fresh-checkout failure knowledge to add explicit repository-root import bootstrapping to the new CLI before relying on editable-install behavior."
+  ],
+  "validation_receipts": {
+    "distributed_agentos_ci_run": 32613904810,
+    "distributed_agentos_ci_run_number": 856,
+    "deterministic_tests": "346 passed in 7.74s",
+    "activate_persistent_execution_run": 32613904769,
+    "activate_persistent_execution": "success",
+    "deploy_core_run": 32613904917,
+    "deploy_core": "success",
+    "inspect_core_run": 32613904800,
+    "inspect_core": "success",
+    "activate_core_run": 32613904802,
+    "activate_core": "success",
+    "provider_readiness_run": 32613904914,
+    "provider_readiness": "success",
+    "continuity_bootstrap_run": 32613904833,
+    "continuity_bootstrap": "success"
+  },
+  "epistemic_limit": "Because this run occurred in the same conversation that constructed the reproduction protocol and exemplars, it cannot establish cross-session reproducibility or count as an unseen blind trial.",
+  "next_discriminating_test": "Run A0-A4 on the pre-specified unseen trial seeds in genuinely fresh sessions with zero human continuation pulses; preserve public trace separately from hidden scoring key."
+}

@@ -1,0 +1,43 @@
+name: Oracle Diagnose Disk Remote
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-diagnose-disk-remote.json'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect disk usage
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== df ==='
+          df -h /
+          df -i /
+          echo '=== home top ==='
+          du -x -h -d1 "$HOME" 2>/dev/null | sort -h | tail -n 30
+          echo '=== agent-data top ==='
+          du -x -h -d2 "$HOME/agent-data" 2>/dev/null | sort -h | tail -n 40 || true
+          echo '=== caches ==='
+          du -sh "$HOME/.cache" "$HOME/.npm" "$HOME/.local/share" /tmp 2>/dev/null || true
+          echo '=== dashboard releases ==='
+          find "$HOME/agent-data/runtime/dashboard" -maxdepth 2 -type d -printf '%TY-%Tm-%Td %TH:%TM %p\n' 2>/dev/null | sort | tail -n 80 || true
+          echo '=== journal ==='
+          journalctl --disk-usage 2>/dev/null || true
+          REMOTE

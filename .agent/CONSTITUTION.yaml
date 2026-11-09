@@ -42,6 +42,9 @@ principles:
   - id: evolution_without_erasure
     level: core
     statement: "核心規則與角色的重大改動必須版本化、留下 decision record 與 migration/deprecation path，不得靜默覆寫歷史。"
+  - id: doc_code_parity_invariant
+    level: core
+    statement: "代碼與說明文件真實性原子等價：凡有代碼變更，必須同步更新權威說明文件以反映最新實裝狀態；代碼變更而文檔滯後視為架構回歸，日常審計與提交門禁強制攔截。"
 
 protected_artifacts:
   - .agent/CONSTITUTION.yaml

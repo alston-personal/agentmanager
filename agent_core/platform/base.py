@@ -480,6 +480,8 @@ class BasePlatformDriver(ABC):
         project_root = Path(project_root).expanduser().resolve()
         data_root = Path(data_root).expanduser().resolve()
         project_name = project_root.name
+        if "releases/core" in str(project_root) or (len(project_name) == 40 and all(c in "0123456789abcdefABCDEF" for c in project_name)):
+            project_name = "agentmanager"
         project_data_root = data_root / "projects" / project_name
         project_data_root.mkdir(parents=True, exist_ok=True)
         (project_data_root / "memory").mkdir(parents=True, exist_ok=True)

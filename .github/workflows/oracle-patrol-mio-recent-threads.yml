@@ -1,0 +1,147 @@
+name: Oracle Patrol Mio Recent Threads (Read Only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-patrol-mio-recent-threads.yml'
+      - 'scripts/inspect_mio_recent_threads_user.sh'
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+# Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify no model call or social write
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          bash -n scripts/inspect_mio_recent_threads_user.sh
+          bash -n scripts/submit_oracle_bootstrap_request_remote.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          script=Path('scripts/inspect_mio_recent_threads_user.sh').read_text()
+          inline=script.split("<<'PY'\n",1)[1].rsplit("\nPY",1)[0]
+          compile(inline,'inspect_mio_squirrel_inline.py','exec')
+          assert '"operation": operation' in inline
+          assert 'read("post.read"' in inline
+          assert 'read("replies.read"' in inline
+          assert 'http://127.0.0.1:8771/v1/social/status' in inline
+          assert 'acceptances' not in inline and 'http://127.0.0.1:8771/v1/social/reply' not in inline
+          assert 'subprocess' not in inline and 'AntigravityRelayClient' not in inline
+          assert 'LIMIT_POSTS = 14' in inline and 'LIMIT_ROWS = 36' in inline
+          assert 'SINCE = datetime.now(timezone.utc) - timedelta(hours=42)' in inline
+          PY
+          echo 'mio_recent_readonly_preflight=PASS'
+
+      - name: Inspect exact public reply thread through ubuntu bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          ID="mio-recent-patrol-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/mio-recent-patrol-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=300 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.social_threads_mio_recent.inspect "$ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys,re
+          doc=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert doc.get('schema')=='agentos.bootstrap-receipt/v1'
+          assert doc.get('action')=='agentos.social_threads_mio_recent.inspect'
+          assert doc.get('executor_user')=='ubuntu'
+          assert doc.get('executor_uid')==1001
+          assert doc.get('source_commit')==sys.argv[2]
+          scheduler=doc.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='social',scheduler
+          assert scheduler.get('worker_id') in {'oracle-social-1','oracle-social-2'},scheduler
+          print('agentos_scheduler_worker='+scheduler['worker_id']+':social')
+          if doc.get('ok') is not True:
+            for step in doc.get('steps') or []:
+              if not isinstance(step,dict): continue
+              name=str(step.get('step') or '')
+              if name in ('git_fetch','verify_source_commit','git_show_script','run_script'):
+                code=step.get('returncode')
+                print('mio_recent_readonly_failed_step='+name+':'+(str(code) if isinstance(code,int) else 'unknown'))
+              for line in str(step.get('stdout') or '').splitlines():
+                if line.startswith(('mio_recent_patrol=','mio_search_scope_probe=','mio_social_outbound=','mio_oauth_')) and len(line)<180:
+                  print(line)
+          assert doc.get('ok') is True,'mio_recent_readonly_executor_failed'
+          lines='\n'.join(str(x.get('stdout') or '') for x in doc.get('steps') or []).splitlines()
+          assert 'mio_recent_patrol=PASS' in lines,'mio_recent_readonly_platform_read_failed'
+          public=next((line.split('=',1)[1] for line in lines if line.startswith('mio_recent_patrol_public_replies=')),None)
+          assert public is not None,'mio_recent_readonly_missing_catalog'
+          rows=json.loads(public)
+          assert isinstance(rows,list) and len(rows)<=36
+          for row in rows:
+              assert isinstance(row,dict) and re.fullmatch(r'[0-9]{10,25}',str(row.get('id') or ''))
+              assert re.fullmatch(r'[0-9]{10,25}',str(row.get('root_post_id') or ''))
+              assert len(str(row.get('text') or ''))<=290
+              assert len(str(row.get('root_post_text') or ''))<=115
+          stats={}
+          for prefix in ('mio_recent_patrol_post_count=','mio_recent_patrol_failed_reads=','mio_recent_patrol_recent_comment_count=','mio_recent_patrol_truncated='):
+              found=next((line.split('=',1)[1] for line in lines if line.startswith(prefix)),None)
+              assert found is not None,prefix
+              if prefix.endswith('truncated='):
+                  assert found in ('true','false')
+              else:
+                  assert re.fullmatch(r'[0-9]{1,3}',found)
+              stats[prefix]=found
+          print('mio_recent_readonly_receipt=PASS')
+          for key,val in stats.items():
+              print(key+val)
+          for prefix in ('mio_oauth_persona_binding_count=','mio_oauth_persona_known_binding_count=','mio_oauth_owned_post_binding_count=','mio_oauth_owned_post_granted_count=','mio_search_scope_probe=','mio_social_outbound=','mio_search_results_count='):
+              found=next((line.split('=',1)[1] for line in lines if line.startswith(prefix)),None)
+              if found is None or not re.fullmatch(r'[a-zA-Z0-9_]{1,60}',found):
+                  print('mio_scope_diagnostic_missing='+prefix.rstrip('='))
+              else:
+                  print(prefix+found)
+          # The Oracle receipt stdout is otherwise not visible in GitHub job logs.
+          # Forward only bounded diagnostic status markers, never raw API errors,
+          # URLs, token strings or provider response bodies.
+          for line in lines:
+              if re.fullmatch(r'mio_direct_search_[A-Z_]{4,35}=(?:PASS|NO_TOKEN|INVALID_RESPONSE|TRANSPORT_OR_PARSE_FAILED|HTTP_[0-9]{3}_TYPE_(?:unknown|OAuthException|GraphMethodException|InvalidParameter|APIException)_CODE_(?:unknown|[0-9]{1,6})_SUBCODE_(?:unknown|[0-9]{1,7}))',line):
+                  print(line)
+              elif re.fullmatch(r'mio_direct_search_[A-Z_]{4,35}_result_count=[0-9]{1,3}',line):
+                  print(line)
+              elif re.fullmatch(r'mio_search_api_error=threads_[a-zA-Z0-9_]{1,100}',line):
+                  print(line)
+          print('mio_recent_patrol_public_replies='+json.dumps(rows,ensure_ascii=False,separators=(',',':')))
+          PY
+
+# Owner-requested read-only patrol of Mio public comments on 2026-09-25; no post or reply side effects.
+# 2026-09-25 owner-confirmed reauthorization: run sanitized scope and public keyword search validation.
+# 2026-09-25 11:47 Asia/Taipei owner-requested comment patrol; read only.
+
+# owner-requested rerun 2026-09-26 after duplicate persona binding diagnosis
+
+# owner-requested patrol 2026-09-27 07:57 Asia/Taipei
+# owner-requested live patrol rerun 2026-09-29T08:37+08:00
+      - name: Route Mio social incident
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/route_mio_social_incident.py
+
+
+# AgentOS scheduler acceptance: verify social lane receipt

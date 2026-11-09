@@ -1,0 +1,14 @@
+[Unit]
+Description=AgentOS Product Work Intent Reconciler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/agentmanager
+ExecStart=/usr/bin/python3 -m agentos_node.product_work_intent_reconciler --runtime-root /home/ubuntu/agent-data/employee-runtime --cache-root /home/ubuntu/agent-data/product-work-intent-cache --once
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/agent-data/employee-runtime /home/ubuntu/agent-data/product-work-intent-cache

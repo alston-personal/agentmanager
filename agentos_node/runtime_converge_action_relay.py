@@ -1,0 +1,722 @@
+"""Bounded Oracle Core runtime convergence through the existing Action Relay.
+
+The external capability is ``node.runtime.converge``. The relay action below is
+an implementation detail owned by the trusted ubuntu worker. Callers provide
+only the canonical typed request; executable names, argv, paths, environment,
+service names and installer sequence are fixed here.
+"""
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+import re
+import stat
+import subprocess
+import urllib.request
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
+from typing import Any, Iterator, Mapping
+
+from agent_core.runtime_converge_contract import validate_runtime_converge_request
+from agentos_node.action_relay import ACTIONS, ActionRelayClient
+
+
+ACTION = "agentos.runtime.converge"
+DEFAULT_RELAY_ROOT = Path("/home/ubuntu/agent-data/runtime/action-relay")
+DEFAULT_REPO = Path("/home/ubuntu/agentmanager")
+DEFAULT_DRIFT_BACKUP_ROOT = Path("/home/ubuntu/agent-data/runtime/backups/checkout-drift")
+NODE_LOCAL_DRIFT_ALLOWLIST = {"agentos.code-workspace.template"}
+CAPABILITY_MARKER = DEFAULT_RELAY_ROOT / "capabilities.json"
+REQUEST_ID_FIELDS = (
+    "schema",
+    "request_id",
+    "node_id",
+    "repository",
+    "source_ref",
+    "source_commit",
+)
+ALLOWED_ORIGIN_RE = re.compile(
+    r"^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
+    r"alston-personal/agentmanager(?:\.git)?/?$"
+)
+SAFE_RESULT_FIELDS = (
+    "request_id",
+    "node_id",
+    "repository",
+    "source_ref",
+    "source_commit",
+    "previous_commit",
+    "resulting_commit",
+    "health",
+    "rollback",
+    "status",
+    "classification",
+    "idempotent",
+    "credential_exposed",
+    "observed_at",
+    "failure_stage",
+)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _runtime_user_argv(argv: list[str]) -> list[str]:
+    """Drop a root Action Relay child into the canonical ubuntu user boundary."""
+    if os.geteuid() != 0:
+        return list(argv)
+    return [
+        "/usr/sbin/runuser",
+        "-u",
+        "ubuntu",
+        "--",
+        "/usr/bin/env",
+        "HOME=/home/ubuntu",
+        "USER=ubuntu",
+        "LOGNAME=ubuntu",
+        "XDG_RUNTIME_DIR=/run/user/1001",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus",
+        *argv,
+    ]
+
+
+def _run(argv: list[str], *, cwd: Path, timeout: int = 180) -> subprocess.CompletedProcess[str]:
+    """Run one trusted command as the canonical ubuntu runtime user."""
+    return subprocess.run(
+        _runtime_user_argv(argv),
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _git(repo: Path, *args: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
+    return _run(["git", *args], cwd=repo, timeout=timeout)
+
+
+def _git_value(repo: Path, *args: str) -> str:
+    result = _git(repo, *args)
+    if result.returncode != 0:
+        raise RuntimeError("git_preflight_failed")
+    return result.stdout.strip()
+
+
+def _health() -> bool:
+    for unit in ("agentos-realm-fabric.service", "agentos-core-supervisor.service"):
+        result = _run(
+            ["systemctl", "--user", "is-active", "--quiet", unit],
+            cwd=DEFAULT_REPO,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            return False
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8780/v1/health", timeout=5) as response:
+            if response.status != 200:
+                return False
+            payload = json.loads(response.read().decode("utf-8"))
+            return isinstance(payload, dict) and payload.get("ok") is True
+    except Exception:
+        return False
+
+
+def _install_fixed_runtime_diagnostic(repo: Path) -> tuple[bool, str]:
+    """Install fixed Core surfaces and return only a bounded failure stage.
+
+    Raw stdout/stderr never cross the runtime-converge receipt boundary.
+    """
+    steps = (
+        ("install_services", ["python3", "scripts/install_services.py"], 240),
+        ("realm_fabric_install", ["bash", "scripts/install_realm_fabric_user.sh"], 120),
+        ("product_employee_activation", ["bash", "scripts/activate_product_employees_oracle.sh"], 240),
+    )
+    for stage, argv, timeout in steps:
+        result = _run(argv, cwd=repo, timeout=timeout)
+        if result.returncode != 0:
+            return False, stage
+    if not _health():
+        return False, "health_gate"
+    return True, "ready"
+
+
+def _install_fixed_runtime(repo: Path) -> bool:
+    """Compatibility boolean facade for callers/tests that need only success."""
+    return _install_fixed_runtime_diagnostic(repo)[0]
+
+
+def _checkout_exact(repo: Path, commit: str) -> bool:
+    result = _git(repo, "checkout", "--detach", "--force", commit)
+    return result.returncode == 0 and _git_value(repo, "rev-parse", "HEAD") == commit
+
+
+def _tracked_status(repo: Path) -> str:
+    result = _git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=no")
+    if result.returncode != 0:
+        raise RuntimeError("git_preflight_failed")
+    return result.stdout
+
+
+def _safe_repo_relative_path(raw: str) -> str | None:
+    path = PurePosixPath(raw)
+    if not raw or path.is_absolute() or ".." in path.parts:
+        return None
+    return path.as_posix()
+
+
+
+def _status_entries(status: str) -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
+    for raw in (entry for entry in status.split("\0") if entry):
+        if len(raw) < 4:
+            raise RuntimeError("tracked_checkout_status_invalid")
+        entries.append((raw[:2], raw[3:]))
+    return entries
+
+
+def _path_target_equivalent(repo: Path, source_commit: str, code: str, rel: str) -> bool:
+    if code != " M":
+        return False
+    safe = _safe_repo_relative_path(rel)
+    if safe is None:
+        return False
+    path = repo / safe
+    if path.is_symlink() or not path.is_file():
+        return False
+    summary = _git(repo, "diff", "--summary", "--", safe)
+    if summary.returncode != 0 or summary.stdout.strip():
+        return False
+    worktree_blob = _git(repo, "hash-object", "--", safe)
+    target_blob = _git(repo, "rev-parse", f"{source_commit}:{safe}")
+    return (
+        worktree_blob.returncode == 0
+        and target_blob.returncode == 0
+        and worktree_blob.stdout.strip() == target_blob.stdout.strip()
+    )
+
+
+def _quarantine_allowed_node_local_drift(
+    repo: Path,
+    source_commit: str,
+    status: str,
+    *,
+    backup_root: Path = DEFAULT_DRIFT_BACKUP_ROOT,
+) -> bool:
+    entries = _status_entries(status)
+    non_target = [
+        (code, rel)
+        for code, rel in entries
+        if not _path_target_equivalent(repo, source_commit, code, rel)
+    ]
+    if not non_target:
+        return False
+    for code, rel in non_target:
+        safe = _safe_repo_relative_path(rel)
+        if code != " M" or safe not in NODE_LOCAL_DRIFT_ALLOWLIST:
+            return False
+        path = repo / safe
+        if path.is_symlink() or not path.is_file():
+            return False
+
+    current_head = _git_value(repo, "rev-parse", "HEAD")
+    for code, rel in non_target:
+        safe = _safe_repo_relative_path(rel)
+        assert safe is not None
+        path = repo / safe
+        raw = path.read_bytes()
+        raw_sha = hashlib.sha256(raw).hexdigest()
+        bundle = backup_root / f"runtime-converge-{source_commit[:12]}-{raw_sha[:12]}"
+        files = bundle / "files"
+        backup_file = files / safe
+        if bundle.exists():
+            if not backup_file.is_file():
+                raise RuntimeError("node_local_drift_backup_incomplete")
+            if hashlib.sha256(backup_file.read_bytes()).hexdigest() != raw_sha:
+                raise RuntimeError("node_local_drift_backup_conflict")
+        else:
+            files.mkdir(parents=True, exist_ok=False)
+            backup_file.parent.mkdir(parents=True, exist_ok=True)
+            backup_file.write_bytes(raw)
+
+            diff = _git(repo, "diff", "--binary", "--", safe)
+            if diff.returncode != 0:
+                raise RuntimeError("node_local_drift_backup_diff_failed")
+            (bundle / "working-tree.patch").write_text(diff.stdout, encoding="utf-8")
+            metadata = {
+                "schema": "agentos.node-local-drift-backup/v1",
+                "path": safe,
+                "status": code,
+                "worktree_sha256": raw_sha,
+                "current_head": current_head,
+                "target_source_commit": source_commit,
+                "content_exposed": False,
+                "credential_exposed": False,
+            }
+            (bundle / "metadata.json").write_text(
+                json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+        restored = _git(repo, "checkout", "HEAD", "--", safe)
+        if restored.returncode != 0:
+            raise RuntimeError("node_local_drift_restore_failed")
+        if hashlib.sha256(backup_file.read_bytes()).hexdigest() != raw_sha:
+            raise RuntimeError("node_local_drift_backup_verify_failed")
+    return True
+
+
+def _target_equivalent_dirty(repo: Path, source_commit: str, status: str) -> bool:
+    """Prove a narrow partial rollout is already byte-identical to target.
+
+    Only ordinary *unstaged content modifications* are eligible. Staged changes,
+    deletes, renames, conflicts, type/mode changes and any path whose worktree
+    blob differs from the exact fetched target fail closed.
+    """
+    entries = [entry for entry in status.split("\0") if entry]
+    if not entries:
+        return False
+
+    for entry in entries:
+        if len(entry) < 4 or entry[:2] != " M" or entry[2] != " ":
+            return False
+        rel = _safe_repo_relative_path(entry[3:])
+        if rel is None:
+            return False
+        path = repo / rel
+        if path.is_symlink() or not path.is_file():
+            return False
+
+        summary = _git(repo, "diff", "--summary", "--", rel)
+        if summary.returncode != 0 or summary.stdout.strip():
+            return False
+
+        worktree_blob = _git(repo, "hash-object", "--", rel)
+        target_blob = _git(repo, "rev-parse", f"{source_commit}:{rel}")
+        if worktree_blob.returncode != 0 or target_blob.returncode != 0:
+            return False
+        if worktree_blob.stdout.strip() != target_blob.stdout.strip():
+            return False
+
+    return True
+
+
+def _preflight(repo: Path, request: Mapping[str, Any]) -> tuple[str, bool, bool]:
+    if not repo.is_dir() or not (repo / ".git").exists():
+        raise RuntimeError("repo_unavailable")
+    origin = _git_value(repo, "remote", "get-url", "origin")
+    if not ALLOWED_ORIGIN_RE.fullmatch(origin):
+        raise RuntimeError("repository_origin_not_allowed")
+
+    previous = _git_value(repo, "rev-parse", "HEAD")
+    source_ref = str(request["source_ref"])
+    source_commit = str(request["source_commit"])
+    fetched = _git(repo, "fetch", "--no-tags", "origin", source_ref)
+    if fetched.returncode != 0:
+        raise RuntimeError("source_fetch_failed")
+    observed_head = _git_value(repo, "rev-parse", "FETCH_HEAD")
+
+    # The requested commit is immutable, while core/integration may advance
+    # between GitHub dispatch and Oracle execution.  Accept the exact requested
+    # commit when it is already present in the fetched branch history; do not
+    # require it to remain the mutable branch head.
+    present = _git(repo, "cat-file", "-e", f"{source_commit}^{{commit}}")
+    if present.returncode != 0:
+        exact_fetch = _git(repo, "fetch", "--no-tags", "origin", source_commit)
+        if exact_fetch.returncode != 0:
+            raise RuntimeError("exact_source_fetch_failed")
+        present = _git(repo, "cat-file", "-e", f"{source_commit}^{{commit}}")
+        if present.returncode != 0:
+            raise RuntimeError("exact_source_missing")
+    ancestor = _git(repo, "merge-base", "--is-ancestor", source_commit, observed_head)
+    if ancestor.returncode != 0:
+        raise RuntimeError("source_commit_not_in_allowed_ref_history")
+
+    dirty = _tracked_status(repo)
+    target_equivalent_dirty = False
+    if dirty:
+        target_equivalent_dirty = _target_equivalent_dirty(repo, source_commit, dirty)
+        if not target_equivalent_dirty:
+            quarantined = _quarantine_allowed_node_local_drift(repo, source_commit, dirty)
+            if quarantined:
+                dirty = _tracked_status(repo)
+                target_equivalent_dirty = bool(dirty) and _target_equivalent_dirty(repo, source_commit, dirty)
+                if dirty and not target_equivalent_dirty:
+                    raise RuntimeError("tracked_checkout_dirty_after_node_local_quarantine")
+            else:
+                raise RuntimeError("tracked_checkout_dirty")
+
+    # A target-equivalent dirty checkout still needs the exact checkout step so
+    # the index/HEAD/worktree become a clean, attestable generation.
+    idempotent = previous == source_commit and not target_equivalent_dirty
+    return previous, idempotent, target_equivalent_dirty
+
+
+def _safe_failure(
+    request: Mapping[str, Any],
+    classification: str,
+    *,
+    previous: str | None = None,
+    rollback: str = "not_attempted",
+    resulting: str | None = None,
+    failure_stage: str | None = None,
+) -> dict[str, Any]:
+    result = {
+        "request_id": request["request_id"],
+        "node_id": request["node_id"],
+        "repository": request["repository"],
+        "source_ref": request["source_ref"],
+        "source_commit": request["source_commit"],
+        "previous_commit": previous,
+        "resulting_commit": resulting,
+        "health": "failed",
+        "rollback": rollback,
+        "status": "failed",
+        "classification": classification,
+        "idempotent": False,
+        "credential_exposed": False,
+        "observed_at": _utc_now(),
+    }
+    if failure_stage:
+        result["failure_stage"] = failure_stage
+    return result
+
+
+def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -> dict[str, Any]:
+    """Converge exact source and reconcile its fixed operating profile.
+
+    Source equality is not operating-profile equality. Even when HEAD already
+    equals the requested generation, the source-owned installer sequence is
+    replayed idempotently so stopped services or missing host-local profile state
+    cannot survive a successful convergence receipt.
+    """
+    canonical = validate_runtime_converge_request(request).as_payload()
+    previous: str | None = None
+    try:
+        previous, idempotent, target_equivalent_dirty = _preflight(repo, canonical)
+    except RuntimeError as exc:
+        return _safe_failure(canonical, str(exc))
+
+    if idempotent:
+        reconciled, failure_stage = _install_fixed_runtime_diagnostic(repo)
+        result = {
+            "request_id": canonical["request_id"],
+            "node_id": canonical["node_id"],
+            "repository": canonical["repository"],
+            "source_ref": canonical["source_ref"],
+            "source_commit": canonical["source_commit"],
+            "previous_commit": previous,
+            "resulting_commit": previous,
+            "health": "passed" if reconciled else "failed",
+            "rollback": "not_needed",
+            "status": "completed" if reconciled else "failed",
+            "classification": (
+                "CURRENT_GENERATION_RECONCILED"
+                if reconciled
+                else "CURRENT_GENERATION_RECONCILE_FAILED"
+            ),
+            "idempotent": True,
+            "credential_exposed": False,
+            "observed_at": _utc_now(),
+        }
+        if not reconciled:
+            result["failure_stage"] = failure_stage
+        return result
+
+    if not _checkout_exact(repo, canonical["source_commit"]):
+        return _safe_failure(canonical, "target_checkout_failed", previous=previous)
+
+    target_ok, target_failure_stage = _install_fixed_runtime_diagnostic(repo)
+    if target_ok:
+        return {
+            "request_id": canonical["request_id"],
+            "node_id": canonical["node_id"],
+            "repository": canonical["repository"],
+            "source_ref": canonical["source_ref"],
+            "source_commit": canonical["source_commit"],
+            "previous_commit": previous,
+            "resulting_commit": canonical["source_commit"],
+            "health": "passed",
+            "rollback": "not_needed",
+            "status": "completed",
+            "classification": (
+                "CONVERGED_FROM_TARGET_EQUIVALENT_DIRTY"
+                if target_equivalent_dirty
+                else "CONVERGED"
+            ),
+            "idempotent": False,
+            "credential_exposed": False,
+            "observed_at": _utc_now(),
+        }
+
+    rollback_checkout = bool(previous) and _checkout_exact(repo, previous)
+    rollback_ok = False
+    if rollback_checkout:
+        rollback_ok, _rollback_failure_stage = _install_fixed_runtime_diagnostic(repo)
+    if rollback_ok:
+        return _safe_failure(
+            canonical,
+            "TARGET_HEALTH_FAILED_ROLLED_BACK",
+            previous=previous,
+            rollback="completed",
+            resulting=previous,
+            failure_stage=target_failure_stage,
+        )
+    return _safe_failure(
+        canonical,
+        "ROLLBACK_OUTCOME_UNKNOWN",
+        previous=previous,
+        rollback="unknown",
+        resulting=None,
+        failure_stage=target_failure_stage,
+    )
+
+
+def _execute(params: dict[str, Any]) -> dict[str, Any]:
+    if set(params) != {"request"} or not isinstance(params.get("request"), dict):
+        raise ValueError("runtime-converge relay accepts only a canonical request object")
+    result = converge_runtime(dict(params["request"]))
+    return {key: result.get(key) for key in SAFE_RESULT_FIELDS}
+
+
+if ACTION in ACTIONS and ACTIONS[ACTION] is not _execute:
+    raise RuntimeError("runtime-converge Action Relay action already registered differently")
+ACTIONS[ACTION] = _execute
+
+
+def _read_object(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _request_from_capsule(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    if payload.get("action") != ACTION:
+        return None
+    params = payload.get("params")
+    if not isinstance(params, Mapping):
+        return None
+    request = params.get("request")
+    if not isinstance(request, Mapping):
+        return None
+    try:
+        return validate_runtime_converge_request(request).as_payload()
+    except (TypeError, ValueError):
+        return None
+
+
+def _request_from_receipt(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    if payload.get("action") != ACTION or not payload.get("request_id"):
+        return None
+    candidate = {key: payload.get(key) for key in REQUEST_ID_FIELDS}
+    candidate["schema"] = "agentos.runtime-converge-request/v1"
+    try:
+        return validate_runtime_converge_request(candidate).as_payload()
+    except (TypeError, ValueError):
+        return None
+
+
+def _same_request_id(canonical: Mapping[str, Any], observed: Mapping[str, Any]) -> bool:
+    return str(observed.get("request_id") or "") == str(canonical["request_id"])
+
+
+def _require_same_request(canonical: Mapping[str, Any], observed: Mapping[str, Any]) -> None:
+    if not _same_request_id(canonical, observed):
+        return
+    for key in REQUEST_ID_FIELDS:
+        if str(observed.get(key) or "") != str(canonical.get(key) or ""):
+            raise RuntimeError("runtime_converge_request_id_collision")
+
+
+@contextmanager
+def _request_submit_lock(root: Path) -> Iterator[None]:
+    root.mkdir(parents=True, exist_ok=True)
+    lock_path = root / ".runtime-converge-submit.lock"
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o660)
+    locked = False
+    try:
+        info = os.fstat(fd)
+        mode = stat.S_IMODE(info.st_mode)
+        if info.st_uid == os.geteuid():
+            if mode != 0o660:
+                os.fchmod(fd, 0o660)
+        else:
+            groups = set(os.getgroups())
+            groups.add(os.getegid())
+            if info.st_gid not in groups:
+                raise PermissionError("runtime_converge_lock_group_not_authorized")
+            if mode & 0o007 or mode & 0o060 != 0o060:
+                raise PermissionError("runtime_converge_lock_mode_not_shared")
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        locked = True
+        yield
+    finally:
+        if locked:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def _existing_runtime_converge(
+    root: Path, canonical: Mapping[str, Any]
+) -> tuple[str, str] | None:
+    """Resolve one durable request-id execution without replaying ambiguity."""
+    buckets = {
+        name: root / name
+        for name in ("inbox", "processing", "receipts", "quarantine")
+    }
+
+    # A quarantined unknown always wins. Never replay ambiguous side effects.
+    quarantine = buckets["quarantine"]
+    for capsule_path in sorted(quarantine.glob("action-*.json")) if quarantine.exists() else []:
+        capsule = _read_object(capsule_path)
+        if not capsule:
+            continue
+        observed = _request_from_capsule(capsule)
+        if not observed or not _same_request_id(canonical, observed):
+            continue
+        _require_same_request(canonical, observed)
+        capsule_id = str(capsule.get("capsule_id") or capsule_path.stem)
+        receipt = _read_object(buckets["receipts"] / f"{capsule_id}.json")
+        if receipt and receipt.get("outcome") == "unknown":
+            return capsule_id, "unknown"
+
+    receipts = buckets["receipts"]
+    for receipt_path in sorted(receipts.glob("action-*.json")) if receipts.exists() else []:
+        receipt = _read_object(receipt_path)
+        if not receipt:
+            continue
+        observed = _request_from_receipt(receipt)
+        if not observed or not _same_request_id(canonical, observed):
+            continue
+        _require_same_request(canonical, observed)
+        capsule_id = str(receipt.get("capsule_id") or receipt_path.stem)
+        return capsule_id, "unknown" if receipt.get("outcome") == "unknown" else "completed"
+
+    for bucket, state in (("processing", "processing"), ("inbox", "queued")):
+        directory = buckets[bucket]
+        for capsule_path in sorted(directory.glob("action-*.json")) if directory.exists() else []:
+            capsule = _read_object(capsule_path)
+            if not capsule:
+                continue
+            observed = _request_from_capsule(capsule)
+            if not observed or not _same_request_id(canonical, observed):
+                continue
+            _require_same_request(canonical, observed)
+            return str(capsule.get("capsule_id") or capsule_path.stem), state
+    return None
+
+
+class ActionRelayRuntimeConvergeDispatcher:
+    def __init__(self, root: str | Path = DEFAULT_RELAY_ROOT):
+        self.root = Path(root)
+        self.client = ActionRelayClient(self.root)
+
+    def submit(self, *, request: Mapping[str, Any]) -> dict[str, Any]:
+        canonical = validate_runtime_converge_request(request).as_payload()
+        with _request_submit_lock(self.root):
+            existing = _existing_runtime_converge(self.root, canonical)
+            if existing is None:
+                capsule = self.client.submit(ACTION, {"request": canonical})
+                task_id = str(capsule["capsule_id"])
+                state = "queued"
+            else:
+                task_id, state = existing
+        return {
+            "schema": "agentos.runtime-converge-submission/v1",
+            "ok": state != "unknown",
+            "action": "node.runtime.converge",
+            "task_id": task_id,
+            "request_id": canonical["request_id"],
+            "node_id": canonical["node_id"],
+            "source_ref": canonical["source_ref"],
+            "source_commit": canonical["source_commit"],
+            "state": state,
+            "deduplicated": existing is not None,
+        }
+
+    def inspect_request(self, *, request: Mapping[str, Any]) -> dict[str, Any]:
+        canonical = validate_runtime_converge_request(request).as_payload()
+        with _request_submit_lock(self.root):
+            existing = _existing_runtime_converge(self.root, canonical)
+        if existing is None:
+            return {
+                "schema": "agentos.runtime-converge-reconnect/v1",
+                "ok": True,
+                "action": "node.runtime.converge",
+                "request_id": canonical["request_id"],
+                "status": "not_found",
+            }
+        task_id, state = existing
+        receipt = self.inspect(task_id)
+        if receipt is not None:
+            return {
+                **receipt,
+                "request_id": canonical["request_id"],
+                "reconnected": True,
+            }
+        return {
+            "schema": "agentos.runtime-converge-reconnect/v1",
+            "ok": state not in {"unknown"},
+            "action": "node.runtime.converge",
+            "request_id": canonical["request_id"],
+            "task_id": task_id,
+            "status": state,
+            "reconnected": True,
+        }
+
+    def inspect(self, task_id: str) -> dict[str, Any] | None:
+        receipt = self.client.receipt(str(task_id))
+        if receipt is None:
+            return None
+        if receipt.get("action") != ACTION:
+            raise RuntimeError("runtime_converge_receipt_action_mismatch")
+        projected = {
+            key: receipt.get(key) for key in SAFE_RESULT_FIELDS if key in receipt
+        }
+        projected.update(
+            {
+                "schema": "agentos.runtime-converge-receipt/v1",
+                "ok": projected.get("status") == "completed",
+                "action": "node.runtime.converge",
+                "task_id": str(task_id),
+            }
+        )
+        if receipt.get("outcome") == "unknown":
+            projected.update(
+                {
+                    "ok": False,
+                    "status": "unknown",
+                    "classification": "EXECUTION_OUTCOME_UNKNOWN",
+                }
+            )
+        return projected
+
+
+def capability_marker_payload(*, source_ref: str, source_commit: str) -> dict[str, Any]:
+    if source_ref != "core/integration" or not re.fullmatch(r"[0-9a-f]{40}", source_commit):
+        raise ValueError("invalid Action Relay capability provenance")
+    return {
+        "schema": "agentos.action-relay-capabilities/v1",
+        "actions": [
+            "agentos.executor.job",
+            ACTION,
+            "agentos.content.x.auth.inspect",
+            "agentos.content.social.bootstrap",
+            "agentos.content.social.inspect",
+        ],
+        "node_capabilities": [
+            "node.runtime.converge",
+            "content.publish.x.auth.inspect",
+            "content.publish.social.bootstrap",
+            "content.publish.social.inspect",
+        ],
+        "source_ref": source_ref,
+        "source_commit": source_commit,
+        "observed_at": _utc_now(),
+    }

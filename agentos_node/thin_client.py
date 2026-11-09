@@ -11,12 +11,39 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import urllib.request
+import socket
 
 from agentos_node import interactive_desktop
+from agentos_node import desktop_demo
 from agentos_node.semantic_preview import semantic_preview
-from agentos_node.desktop_plan import execute_plan
 from agentos_node.agent_surfaces import discover_surfaces
+from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
+from agentos_node.node_adapter import AdapterRegistry, load_configured_adapters
+
+
+def _linux_gui_worker_capabilities() -> list[str]:
+    if platform.system() != 'Linux':
+        return []
+    root = Path.home() / '.local' / 'share' / 'agentos' / 'gui-worker'
+    cap = root / 'capability.json'
+    if not cap.is_file():
+        return []
+    try:
+        doc=json.loads(cap.read_text(encoding='utf-8'))
+        if doc.get('schema')!='agentos.gui-worker/v1':
+            return []
+        with urllib.request.urlopen('http://127.0.0.1:9222/json/version',timeout=1.5) as r:
+            cdp=json.load(r)
+        if not cdp.get('webSocketDebuggerUrl'):
+            return []
+        s=socket.create_connection(('127.0.0.1',6080),timeout=1.5)
+        s.close()
+    except Exception:
+        return []
+    allowed={'browser.gui','browser.cdp','browser.persistent_profile','desktop.remote_view'}
+    return sorted(allowed.intersection(set(doc.get('capabilities') or [])))
 
 
 def _utc_now() -> str:
@@ -41,6 +68,7 @@ class ThinClientPolicy:
     allowed_executables: set[str] = field(default_factory=set)
     readable_roots: tuple[Path, ...] = field(default_factory=tuple)
     writable_roots: tuple[Path, ...] = field(default_factory=tuple)
+    employee_wake_root: Path | None = None
     max_timeout_seconds: int = 300
 
     @staticmethod
@@ -73,9 +101,10 @@ class ThinClient:
         'code', 'cursor', 'antigravity', 'claude', 'codex', 'gemini',
     )
 
-    def __init__(self, identity: NodeIdentity, policy: ThinClientPolicy):
+    def __init__(self, identity: NodeIdentity, policy: ThinClientPolicy, adapters: AdapterRegistry | None = None):
         self.identity = identity
         self.policy = policy
+        self.adapters = adapters if adapters is not None else AdapterRegistry(load_configured_adapters())
         self.hostname = socket.gethostname()
         self.started_at = _utc_now()
 
@@ -93,30 +122,72 @@ class ThinClient:
     def capability_manifest(self) -> dict[str, Any]:
         tools = self.discover_tools()
         surface_inventory = self.surface_inventory()
-        runtime = None
-        try:
-            runtime_root = Path(__file__).resolve().parent.parent
-            provenance_path = runtime_root / 'runtime-provenance.json'
-            if provenance_path.is_file():
-                loaded = json.loads(provenance_path.read_text(encoding='utf-8-sig'))
-                if isinstance(loaded, dict) and loaded.get('schema') == 'agentos.thin-client-runtime/v0.1':
-                    runtime = dict(loaded)
-        except Exception:
-            runtime = None
-        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
+        caps = [
+            'context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect',
+            'agent.executor.discover', 'agent.executor.reconcile',
+        ]
+        if platform.system() == 'Linux':
+            caps.extend(['node.ssh.inspect', 'node.ssh.recover', 'node.runner.inspect', 'node.runner.recover'])
         caps.extend(surface_inventory.get('capabilities') or [])
+
+        # Session bridge capabilities are provider-authorized and must be
+        # advertised only when a configured bridge is actually ready.
+        # This keeps Node discovery aligned with what execute() can really do.
+        for provider in ('antigravity', 'gemini', 'claude-code', 'codex', 'cursor', 'vscode'):
+            try:
+                from agentos_node.session_bridge import describe_bridge
+                descriptor = describe_bridge(provider)
+            except Exception:
+                descriptor = None
+            if descriptor and descriptor.get('ready'):
+                caps.extend(descriptor.get('capabilities') or [])
+                # Receipts are part of the same governed bridge surface.
+                caps.append('agent.session.receipt')
         if self.policy.allowed_executables:
             caps.append('shell.exec')
+            caps.append('process.exec')
+            if 'git' in self.policy.allowed_executables:
+                caps.append('git.status')
+                caps.append('git.diff')
+            if 'python3' in self.policy.allowed_executables or 'pytest' in self.policy.allowed_executables:
+                caps.append('test.run')
         if self.policy.readable_roots:
             caps.append('filesystem.read')
+            caps.append('filesystem.search')
         if self.policy.writable_roots:
             caps.append('filesystem.write')
+            caps.append('filesystem.patch')
+        if self.policy.employee_wake_root is not None:
+            caps.append('agent.employee.wake.deliver')
         if platform.system() == 'Windows':
             caps.extend([
                 'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
-                'desktop.open_url', 'desktop.mouse', 'desktop.keyboard', 'desktop.image_paste', 'desktop.plan.execute',
-                'desktop.semantic_preview',
+                'desktop.preview.capture', 'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
+                'desktop.windows.tile', 'desktop.demo.start', 'desktop.demo.stage', 'desktop.demo.stop',
             ])
+        elif platform.system() == 'Darwin':
+            caps.extend(['desktop.open_url', 'node.runtime.converge'])
+            try:
+                from agentos_node.social.threads_gui_client import capability_ready as threads_gui_read_ready
+                if threads_gui_read_ready():
+                    caps.append('threads.gui.read')
+            except Exception:
+                pass
+        elif platform.system() == 'Linux':
+            caps.extend(_linux_gui_worker_capabilities())
+        caps.extend(self.adapters.capabilities())
+        from agentos_node.executor_reconcile import discover_executor_inventory
+        executor_inventory = discover_executor_inventory(probe_health=False)
+        runtime = observe_runtime()
+        if runtime.get('status') == 'unknown':
+            try:
+                candidate = Path(__file__).resolve().parent.parent / 'runtime-provenance.json'
+                if candidate.is_file():
+                    data = json.loads(candidate.read_text(encoding='utf-8-sig'))
+                    if isinstance(data, dict) and data.get('schema') == 'agentos.thin-client-runtime/v0.1':
+                        runtime = dict(data)
+            except (OSError, ValueError):
+                pass
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -130,6 +201,8 @@ class ThinClient:
             'capabilities': sorted(set(caps)),
             'tool_presence': tools,
             'surface_inventory': surface_inventory,
+            'executor_inventory': executor_inventory,
+            'adapters': self.adapters.describe(),
             'runtime': runtime,
             'workspace_roots': {
                 'readable': [str(p.expanduser().resolve()) for p in self.policy.readable_roots],
@@ -175,24 +248,66 @@ class ThinClient:
             if task.get('schema') != 'agentos.node-task/v0.1':
                 raise ValueError('invalid task schema')
             action = task.get('action')
-            if action == 'shell.exec':
+            if action in {'shell.exec', 'process.exec'}:
                 result = self._exec_shell(task)
             elif action == 'filesystem.read':
                 result = self._read_file(task)
             elif action == 'filesystem.write':
                 result = self._write_file(task)
+            elif action == 'filesystem.patch':
+                result = self._patch_file(task)
+            elif action == 'filesystem.search':
+                result = self._search_filesystem(task)
+            elif action == 'git.status':
+                result = self._git_status(task)
+            elif action == 'git.diff':
+                result = self._git_diff(task)
+            elif action == 'test.run':
+                result = self._test_run(task)
+            elif action == 'agent.employee.wake.deliver':
+                if self.policy.employee_wake_root is None:
+                    raise PermissionError('employee_wake_inbox_not_configured')
+                from agentos_node.employee_wake_inbox import deliver_employee_wake
+                result = deliver_employee_wake(
+                    task,
+                    self.policy.employee_wake_root,
+                    expected_node_id=self.identity.node_id,
+                )
             elif action == 'agent.surface.inspect':
                 result = {'surface_inventory': self.surface_inventory()}
+            elif action == 'agent.executor.discover':
+                from agentos_node.executor_reconcile import discover_executor_inventory
+                result = {'executor_inventory': discover_executor_inventory(probe_health=False)}
+            elif action == 'agent.executor.reconcile':
+                from agentos_node.executor_reconcile import reconcile_executor_adoption
+                result = reconcile_executor_adoption(node_id=self.identity.node_id)
+            elif action == 'process.inspect':
+                result = self._inspect_processes(task)
+            elif action == 'node.ssh.inspect':
+                result = self._inspect_ssh()
+            elif action == 'node.ssh.recover':
+                result = self._recover_ssh()
+            elif action == 'node.runner.inspect':
+                result = self._inspect_runner()
+            elif action == 'node.runner.recover':
+                result = self._recover_runner()
+            elif action == 'node.runtime.converge':
+                from agentos_node.client_runtime_converge import execute_client_runtime_converge
+                result = execute_client_runtime_converge(task)
+            elif action == 'threads.gui.read':
+                from agentos_node.social.threads_gui_client import capability_ready as threads_gui_read_ready, read_threads_dm
+                if not threads_gui_read_ready():
+                    raise RuntimeError('threads_gui_read_capability_unavailable')
+                result = read_threads_dm(account=str(task.get('account') or 'mio.milkcat'))
             elif action == 'agent.session.discover':
                 result = {'session_index': self._session_bridge(task).discover()}
-            elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff', 'agent.session.invoke'}:
+            elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff'}:
                 op = {
                     'agent.session.attach': 'attach',
                     'agent.session.inspect': 'snapshot',
                     'agent.context.harvest': 'harvest',
                     'agent.context.inject': 'inject',
                     'agent.session.handoff': 'handoff',
-                    'agent.session.invoke': 'invoke',
                 }[str(action)]
                 request = self._session_bridge(task).request(
                     op,
@@ -210,40 +325,69 @@ class ThinClient:
             elif action == 'desktop.windows.inspect':
                 result = interactive_desktop.inspect_windows()
             elif action == 'desktop.open_url':
-                result = interactive_desktop.open_url(str(task.get('url') or ''))
+                url = str(task.get('url') or '')
+                if platform.system() == 'Darwin':
+                    from urllib.parse import urlparse
+                    parsed = urlparse(url)
+                    if parsed.scheme not in {'http','https'} or not parsed.netloc:
+                        raise ValueError('desktop.open_url requires an http(s) URL')
+                    p = subprocess.run(['open', url], capture_output=True, text=True, timeout=15, check=False)
+                    if p.returncode != 0:
+                        raise RuntimeError((p.stderr or p.stdout or 'open failed')[-1000:])
+                    result = {'opened': True, 'url': url}
+                else:
+                    result = interactive_desktop.open_url(url)
             elif action == 'desktop.screenshot':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
                 result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
             elif action == 'desktop.semantic_preview':
                 result = semantic_preview(task)
+            elif action == 'desktop.preview.capture':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
+                result = interactive_desktop.preview_capture(
+                    workspace,
+                    max_width=int(task.get('max_width') or 480),
+                    max_height=int(task.get('max_height') or 270),
+                    quality=int(task.get('quality') or 30),
+                )
+            elif action == 'desktop.windows.tile':
+                result = interactive_desktop.tile_windows(task)
+            elif action == 'desktop.demo.start':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
+                result = desktop_demo.start(
+                    workspace,
+                    label=str(task.get('label') or 'AgentOS Demo'),
+                    stage=str(task.get('stage') or 'Starting'),
+                    max_seconds=int(task.get('max_seconds') or 900),
+                )
+            elif action == 'desktop.demo.stage':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
+                result = desktop_demo.set_stage(workspace, str(task.get('stage') or ''))
+            elif action == 'desktop.demo.stop':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
+                result = desktop_demo.stop(workspace, final_stage=str(task.get('final_stage') or 'Verified'))
             elif action == 'desktop.mouse':
                 result = interactive_desktop.mouse(task)
             elif action == 'desktop.keyboard':
                 result = interactive_desktop.keyboard(task)
-            elif action == 'desktop.image_paste':
-                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
-                result = interactive_desktop.image_paste(task, workspace=workspace)
-            elif action == 'desktop.plan.execute':
-                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
-                result = execute_plan(task, workspace=workspace)
             else:
-                raise ValueError(f'unsupported action: {action}')
-            reserved_receipt_fields = {
-                'schema',
-                'realm_id',
-                'node_id',
-                'task_id',
-                'action',
-                'started_at',
-                'completed_at',
-                'ok',
-                'cognition_ids_used',
-            }
+                adapter = self.adapters.resolve(str(action or ''))
+                if adapter is None:
+                    raise ValueError(f'unsupported action: {action}')
+                result = adapter.execute(task)
+                if not isinstance(result, dict):
+                    raise TypeError(f'adapter result must be object: {adapter.adapter_id}')
+                result = dict(result)
+                result.setdefault('adapter_id', str(adapter.adapter_id))
+            reserved = {'schema', 'realm_id', 'node_id', 'task_id', 'action', 'started_at', 'completed_at', 'ok', 'cognition_ids_used', 'error'}
+            collisions = sorted(set(result).intersection(reserved))
+            if collisions:
+                receipt['result_metadata_collision_keys'] = collisions
             for key, value in result.items():
                 if key == 'schema':
                     receipt['result_schema'] = value
-                elif key in reserved_receipt_fields:
-                    receipt[f'result_{key}'] = value
+                elif key in reserved:
+                    receipt['result_' + key] = value
                 else:
                     receipt[key] = value
             receipt['ok'] = True
@@ -251,6 +395,141 @@ class ThinClient:
             receipt['error'] = f'{type(exc).__name__}: {exc}'
         receipt['completed_at'] = _utc_now()
         return receipt
+
+    def _inspect_ssh(self) -> dict[str, Any]:
+        if platform.system() != 'Linux':
+            raise RuntimeError('node.ssh.inspect is Linux-only')
+        status = subprocess.run(
+            ['systemctl', 'is-active', 'ssh'],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        listeners = subprocess.run(
+            ['ss', '-lnt'],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        port22 = any(
+            line.split()[3].endswith(':22')
+            for line in listeners.stdout.splitlines()
+            if len(line.split()) >= 4
+        )
+        return {
+            'ssh_service_active': status.returncode == 0 and status.stdout.strip() == 'active',
+            'ssh_service_state': status.stdout.strip()[:64] or 'unknown',
+            'port22_listening': port22,
+        }
+
+    def _recover_ssh(self) -> dict[str, Any]:
+        if platform.system() != 'Linux':
+            raise RuntimeError('node.ssh.recover is Linux-only')
+        before = self._inspect_ssh()
+        restart_argv = ['systemctl', 'restart', 'ssh']
+        if hasattr(os, 'geteuid') and os.geteuid() != 0:
+            restart_argv = ['sudo', '-n', *restart_argv]
+        restart = subprocess.run(
+            restart_argv,
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        after = self._inspect_ssh()
+        return {
+            'restart_returncode': restart.returncode,
+            'ssh_service_active_before': before['ssh_service_active'],
+            'port22_listening_before': before['port22_listening'],
+            'ssh_service_active': after['ssh_service_active'],
+            'ssh_service_state': after['ssh_service_state'],
+            'port22_listening': after['port22_listening'],
+            'recovered': restart.returncode == 0 and after['ssh_service_active'] and after['port22_listening'],
+        }
+
+    def _runner_units(self) -> list[str]:
+        if platform.system() != 'Linux':
+            raise RuntimeError('node.runner.inspect is Linux-only')
+        listing = subprocess.run(
+            ['systemctl', 'list-units', '--type=service', '--all', '--no-legend', '--no-pager', 'actions.runner.*.service'],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        units: list[str] = []
+        for line in listing.stdout.splitlines():
+            fields = line.split()
+            if not fields:
+                continue
+            unit = fields[0].strip()
+            if (
+                unit.startswith('actions.runner.')
+                and unit.endswith('.service')
+                and all(ch.isalnum() or ch in '._@-' for ch in unit)
+            ):
+                units.append(unit)
+        return sorted(set(units))
+
+    def _inspect_runner(self) -> dict[str, Any]:
+        units = self._runner_units()
+        active = 0
+        failed = 0
+        for unit in units:
+            status = subprocess.run(
+                ['systemctl', 'is-active', unit],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            state = status.stdout.strip()
+            if status.returncode == 0 and state == 'active':
+                active += 1
+            elif state == 'failed':
+                failed += 1
+        return {
+            'runner_unit_count': len(units),
+            'runner_active_count': active,
+            'runner_failed_count': failed,
+            'runner_healthy': bool(units) and active == len(units),
+        }
+
+    def _recover_runner(self) -> dict[str, Any]:
+        if platform.system() != 'Linux':
+            raise RuntimeError('node.runner.recover is Linux-only')
+        before = self._inspect_runner()
+        units = self._runner_units()
+        restart_returncodes: list[int] = []
+        for unit in units:
+            # Recovery must not interrupt a healthy runner processing queued jobs.
+            # An explicit unhealthy state is required before any restart.
+            state = subprocess.run(
+                ['systemctl', 'is-active', unit],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            if state.returncode == 0 and state.stdout.strip() == 'active':
+                continue
+            argv = ['systemctl', 'restart', unit]
+            if hasattr(os, 'geteuid') and os.geteuid() != 0:
+                argv = ['sudo', '-n', *argv]
+            restart = subprocess.run(
+                argv, capture_output=True, text=True, timeout=30, check=False,
+            )
+            restart_returncodes.append(restart.returncode)
+        after = self._inspect_runner()
+        return {
+            'runner_unit_count': after['runner_unit_count'],
+            'runner_active_count_before': before['runner_active_count'],
+            'runner_active_count': after['runner_active_count'],
+            'runner_failed_count': after['runner_failed_count'],
+            'restart_attempted_count': len(restart_returncodes),
+            'restart_failed_count': sum(1 for code in restart_returncodes if code != 0),
+            'runner_healthy': after['runner_healthy'],
+            'recovered': bool(units) and all(code == 0 for code in restart_returncodes) and after['runner_healthy'],
+        }
+
+    def _inspect_processes(self, task: dict[str, Any]) -> dict[str, Any]:
+        query = str(task.get('query') or '').strip().lower()
+        limit = max(1, min(int(task.get('limit') or 50), 200))
+        if platform.system() == 'Windows':
+            argv = ['powershell.exe','-NoProfile','-NonInteractive','-Command','Get-CimInstance Win32_Process | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress']
+        else:
+            argv = ['ps','-axo','pid=,ppid=,comm=,args=']
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=15, check=False)
+        if p.returncode != 0:
+            raise RuntimeError((p.stderr or 'process inspection failed')[-1000:])
+        lines = [line for line in p.stdout.splitlines() if line.strip()]
+        if query:
+            lines = [line for line in lines if query in line.lower()]
+        return {'processes': lines[:limit], 'count': min(len(lines), limit), 'truncated': len(lines) > limit}
 
     def _exec_shell(self, task: dict[str, Any]) -> dict[str, Any]:
         executable = str(task.get('executable') or '')
@@ -265,11 +544,42 @@ class ThinClient:
         if self.policy.readable_roots and not self.policy.can_read(cwd):
             raise PermissionError(f'cwd outside readable roots: {cwd}')
         timeout = min(int(task.get('timeout_seconds') or self.policy.max_timeout_seconds), self.policy.max_timeout_seconds)
-        completed = subprocess.run([resolved, *argv], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False)
+        if platform.system() == 'Windows':
+            creationflags = int(getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+            proc = subprocess.Popen(
+                [resolved, *argv],
+                cwd=str(cwd),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=creationflags,
+            )
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+                returncode = int(proc.returncode or 0)
+            except subprocess.TimeoutExpired:
+                # Kill the complete Windows process tree. Some GUI/UIA providers
+                # can leave descendants alive after the direct child is killed,
+                # which otherwise wedges the persistent Thin Client daemon.
+                subprocess.run(
+                    ['taskkill', '/PID', str(proc.pid), '/T', '/F'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                except Exception:
+                    stdout, stderr = '', ''
+                raise TimeoutError(f'shell.exec timed out after {timeout}s and process tree was terminated')
+        else:
+            completed = subprocess.run([resolved, *argv], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False)
+            returncode, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
         return {
-            'returncode': completed.returncode,
-            'stdout': completed.stdout[-30000:],
-            'stderr': completed.stderr[-10000:],
+            'returncode': returncode,
+            'stdout': stdout[-30000:],
+            'stderr': stderr[-10000:],
             'execution': {'executable': resolved, 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': timeout},
         }
 
@@ -293,6 +603,97 @@ class ThinClient:
         tmp.write_text(content, encoding='utf-8')
         tmp.replace(path)
         return {'path': str(path), 'bytes_written': len(content.encode('utf-8'))}
+
+    def _patch_file(self, task: dict[str, Any]) -> dict[str, Any]:
+        path = Path(str(task.get('path') or '')).expanduser().resolve()
+        if not self.policy.can_write(path):
+            raise PermissionError(f'path outside writable roots: {path}')
+        if not path.is_file():
+            raise FileNotFoundError(f'file not found: {path}')
+        content = path.read_text(encoding='utf-8')
+        target = task.get('target')
+        replacement = task.get('replacement')
+        if not isinstance(target, str) or replacement is None or not isinstance(replacement, str):
+            raise ValueError('target and replacement strings are required')
+        if target not in content:
+            raise ValueError(f'target string not found in {path}')
+        count = int(task.get('count') or 1)
+        if count == -1:
+            new_content = content.replace(target, replacement)
+            replacements_made = content.count(target)
+        else:
+            new_content = content.replace(target, replacement, count)
+            replacements_made = 1
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + '.agentos.tmp')
+        tmp.write_text(new_content, encoding='utf-8')
+        tmp.replace(path)
+        return {
+            'path': str(path),
+            'bytes_written': len(new_content.encode('utf-8')),
+            'replacements_made': replacements_made,
+        }
+
+    def _search_filesystem(self, task: dict[str, Any]) -> dict[str, Any]:
+        root_path = Path(str(task.get('path') or task.get('root') or '.')).expanduser().resolve()
+        if not self.policy.can_read(root_path):
+            raise PermissionError(f'path outside readable roots: {root_path}')
+        pattern = str(task.get('pattern') or '*')
+        query = str(task.get('query') or '').strip().lower()
+        limit = min(int(task.get('limit') or 50), 200)
+        results = []
+        if root_path.is_file():
+            results.append(str(root_path))
+        else:
+            for p in root_path.rglob(pattern):
+                if any(part.startswith('.') and part not in {'.', '..'} for part in p.parts):
+                    continue
+                if query and query not in p.name.lower():
+                    continue
+                results.append(str(p))
+                if len(results) >= limit:
+                    break
+        return {'matches': results, 'count': len(results), 'root': str(root_path)}
+
+    def _git_status(self, task: dict[str, Any]) -> dict[str, Any]:
+        cwd_raw = task.get('cwd')
+        cwd = Path(cwd_raw).expanduser().resolve() if cwd_raw else Path.cwd().resolve()
+        if not self.policy.can_read(cwd):
+            raise PermissionError(f'cwd outside readable roots: {cwd}')
+        argv = ['status', '--short'] + [str(x) for x in (task.get('argv') or [])]
+        task_shell = {'executable': 'git', 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': task.get('timeout_seconds')}
+        res = self._exec_shell(task_shell)
+        res['clean'] = len(str(res.get('stdout') or '').strip()) == 0
+        return res
+
+    def _git_diff(self, task: dict[str, Any]) -> dict[str, Any]:
+        cwd_raw = task.get('cwd')
+        cwd = Path(cwd_raw).expanduser().resolve() if cwd_raw else Path.cwd().resolve()
+        if not self.policy.can_read(cwd):
+            raise PermissionError(f'cwd outside readable roots: {cwd}')
+        argv = ['diff'] + [str(x) for x in (task.get('argv') or [])]
+        task_shell = {'executable': 'git', 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': task.get('timeout_seconds')}
+        res = self._exec_shell(task_shell)
+        res['diff_empty'] = len(str(res.get('stdout') or '').strip()) == 0
+        return res
+
+    def _test_run(self, task: dict[str, Any]) -> dict[str, Any]:
+        cwd_raw = task.get('cwd')
+        cwd = Path(cwd_raw).expanduser().resolve() if cwd_raw else Path.cwd().resolve()
+        if not self.policy.can_read(cwd):
+            raise PermissionError(f'cwd outside readable roots: {cwd}')
+        framework = str(task.get('framework') or 'unittest')
+        args = [str(x) for x in (task.get('args') or task.get('argv') or [])]
+        if framework == 'pytest':
+            executable = 'pytest'
+            argv = args or ['-v']
+        else:
+            executable = 'python3'
+            argv = ['-m', 'unittest'] + (args or ['discover', '-v'])
+        task_shell = {'executable': executable, 'argv': argv, 'cwd': str(cwd), 'timeout_seconds': task.get('timeout_seconds') or 60}
+        res = self._exec_shell(task_shell)
+        res['tests_passed'] = res.get('returncode') == 0
+        return res
 
 
 def render_json(payload: dict[str, Any]) -> str:

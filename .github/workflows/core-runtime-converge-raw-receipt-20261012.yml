@@ -1,0 +1,35 @@
+name: Core Runtime Converge Raw Receipt 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-runtime-converge-raw-receipt-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Inspect exact runtime converge receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          rid='agentos.runtime.converge-1791765868-8bc0e813'
+          for root in /tmp/agentos-bootstrap-control /home/ubuntu/agent-data/runtime/bootstrap-control; do
+            f="$root/receipts/$rid.json"
+            if [ -r "$f" ]; then
+              echo "RECEIPT_PATH=$f"
+              python3 - "$f" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(json.dumps(d,indent=2,ensure_ascii=False))
+          PY
+              exit 0
+            fi
+          done
+          echo 'RAW_RECEIPT_NOT_FOUND'
+          exit 1

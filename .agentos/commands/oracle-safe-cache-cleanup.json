@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.remote-maintenance-command/v1",
+  "target": "oracle",
+  "purpose": "emergency safe cleanup after root disk reached 99-100%; remove only rebuildable caches and user-owned /tmp entries older than one day",
+  "requested_at": "2026-10-07T13:32:00+08:00"
+}

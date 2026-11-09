@@ -1,0 +1,223 @@
+name: Oracle Read Threads Web DM
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-read-threads-web-dm.yml'
+
+      - 'agentos_node/social/web_dm.py'
+      - 'agentos_node/social/persona_dm.py'
+      - 'agentos_node/social/dm_loop_guard.py'
+      - 'scripts/threads_web_dm_bridge_user.py'
+      - 'scripts/mio_threads_dm_autonomous_user.py'
+      - 'scripts/send_threads_dm_from_decision_user.py'
+      - 'scripts/run_threads_web_dm_read_user.sh'
+      - 'scripts/probe_threads_web_dm_login_user.sh'
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+# Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/core/integration"
+          python3 -m py_compile \
+            agentos_node/bootstrap_control.py \
+            agentos_node/social/web_dm.py \
+            agentos_node/social/persona_dm.py \
+            agentos_node/social/dm_loop_guard.py \
+            scripts/threads_web_dm_bridge_user.py \
+            scripts/mio_threads_dm_autonomous_user.py \
+            scripts/send_threads_dm_from_decision_user.py
+          bash -n scripts/run_threads_web_dm_read_user.sh
+          bash -n scripts/submit_oracle_bootstrap_request_remote.sh
+
+      - name: Probe safe login resume hints
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST_ID="threads-web-dm-login-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/threads-web-dm-login-probe-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=240 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.social_threads_web_dm.login_probe "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
+          assert r.get("action")=="agentos.social_threads_web_dm.login_probe",r
+          assert r.get("source_commit")==expected,r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="gui",scheduler
+          assert r.get("ok") is True,r
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          for line in text.splitlines():
+              if line.startswith(("threads_web_dm_login_session_state=","threads_web_dm_login_resume_candidate=","threads_web_dm_login_mio_account_hint=")):
+                  print(line)
+          PY
+
+      - name: Start login when session is required
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROBE_RECEIPT="$RUNNER_TEMP/threads-web-dm-login-probe-receipt.json"
+          STATE=$(python3 - "$PROBE_RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8"))
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          state="UNKNOWN"
+          for line in text.splitlines():
+              if line.startswith("threads_web_dm_login_session_state="):
+                  state=line.split("=",1)[1]
+          print(state)
+          PY
+          )
+          if [ "$STATE" != "LOGIN_REQUIRED" ]; then
+            echo "threads_web_dm_login_start=SKIPPED"
+            exit 0
+          fi
+          REQUEST_ID="threads-web-dm-login-start-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/threads-web-dm-login-start-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=120 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.social_threads_web_dm.login_start "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
+          assert r.get("action")=="agentos.social_threads_web_dm.login_start",r
+          assert r.get("source_commit")==expected,r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="gui",scheduler
+          assert scheduler.get("worker_id")=="oracle-gui",scheduler
+          assert r.get("ok") is True,r
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          assert "threads_web_dm_login_start=PASS" in text,text[-8000:]
+          for line in text.splitlines():
+              if line.startswith(("threads_web_dm_login_mode=","threads_web_dm_login_browser_persistent=","threads_web_dm_login_remote_view=")):
+                  print(line)
+          PY
+      - name: Read via bounded bootstrap action
+        shell: bash
+        run: |
+          set -euo pipefail
+          RECEIPT="$RUNNER_TEMP/threads-web-dm-read-receipt.json"
+          rm -f "$RECEIPT"
+          for attempt in 1 2 3; do
+            REQUEST_ID="threads-web-dm-read-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$attempt"
+            if AGENTOS_RECEIPT_TIMEOUT_SECONDS=360 \
+              bash scripts/submit_oracle_bootstrap_request_remote.sh \
+                agentos.social_threads_web_dm.read "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"; then
+              break
+            fi
+            rm -f "$RECEIPT"
+            echo "threads_web_dm_read_ingress_retry=$attempt"
+            sleep 5
+          done
+          test -s "$RECEIPT"
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
+          assert r.get("action")=="agentos.social_threads_web_dm.read",r
+          assert r.get("executor_user")=="ubuntu",r
+          assert r.get("source_commit")==expected,r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="gui",scheduler
+          assert scheduler.get("worker_id") in {"oracle-gui","mbpr"},scheduler
+          if scheduler.get("worker_id")=="mbpr":
+              assert scheduler.get("node")=="mbpr",scheduler
+              assert scheduler.get("fallback_from")=="oracle-gui",scheduler
+              assert scheduler.get("fallback_attempted") is True,scheduler
+          print("agentos_scheduler_worker="+scheduler["worker_id"]+":gui")
+          print("agentos_scheduler_node="+str(scheduler.get("node") or "oracle"))
+          assert r.get("ok") is True,r
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          state="unknown"
+          for line in text.splitlines():
+              if line.startswith("threads_web_dm_read="):
+                  state=line.split("=",1)[1]
+              if line.startswith("threads_web_dm_new_events=") or line.startswith("threads_web_dm_error_type="):
+                  print(line)
+          print("threads_web_dm_read_state="+state)
+          status={
+              "read_state":state,
+              "new_events":None,
+              "inbound_events":None,
+              "autonomous":None,
+              "decision":None,
+              "send":None,
+              "readback":None,
+              "pending":None,
+          }
+          for line in text.splitlines():
+              pairs={
+                  "threads_web_dm_new_events=":"new_events",
+                  "threads_web_dm_inbound_events=":"inbound_events",
+                  "threads_web_dm_autonomous=":"autonomous",
+                  "mio_dm_autonomous_decision=":"decision",
+                  "persona_dm_send=":"send",
+                  "persona_dm_send_readback=":"readback",
+                  "mio_dm_autonomous_pending=":"pending",
+              }
+              for prefix,key in pairs.items():
+                  if line.startswith(prefix):
+                      status[key]=line.split("=",1)[1][:80]
+          open("/tmp/mio-dm-e2e-status.json","w",encoding="utf-8").write(json.dumps(status,indent=2)+"\n")
+          assert state in {"PASS","LOGIN_REQUIRED"},text[-8000:]
+          if state=="PASS":
+              assert status["autonomous"]=="PASS",status
+          print("mio_dm_live_acceptance="+("PASS" if state=="PASS" else state))
+          PY
+
+      - name: Upload sanitized Mio DM E2E status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-dm-e2e-status
+          path: /tmp/mio-dm-e2e-status.json
+          retention-days: 1
+          if-no-files-found: warn
+
+# diagnostic rerun 2026-09-27T13:58+08:00
+# owner-requested live acceptance rerun 2026-09-29T08:37+08:00
+      - name: Route Mio social incident
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/route_mio_social_incident.py
+# owner-requested verification 2026-09-30
+
+
+# AgentOS scheduler acceptance: verify GUI lane receipt
+# post-login live verification 2026-10-01T15:05+08:00
+
+# post-control-inbox repair live verification 2026-10-05
+
+# post-login live acceptance 2026-10-05

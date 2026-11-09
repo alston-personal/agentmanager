@@ -1,0 +1,5 @@
+{
+  "schema": "agentos.gui-worker-smoke-command/v1",
+  "target": "oracle",
+  "nonce": "gui-smoke-bootstrap-1790597664411"
+}

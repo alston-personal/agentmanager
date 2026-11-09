@@ -2,11 +2,6 @@ name: Oracle Bootstrap Studio Web Remote via AgentOS
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-bootstrap-studio-web-remote-via-agentos.yml'
-      - 'scripts/bootstrap_studio_web_remote_via_agentos.py'
-
 permissions:
   contents: write
 
@@ -39,4 +34,4 @@ jobs:
           git add "$E"
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(studio-web): AgentOS remote bootstrap'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

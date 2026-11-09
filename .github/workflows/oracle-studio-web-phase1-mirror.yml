@@ -2,13 +2,6 @@ name: Oracle Studio Web Phase1 Mirror
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-studio-web-phase1-mirror.yml'
-      - 'scripts/studio_web_phase1_mirror.sh'
-      - 'docs/STUDIO_WEB_MIGRATION_CONTRACT.md'
-      - 'docs/STUDIO_WEB_ROUTE_OWNERSHIP_MATRIX.md'
-
 permissions:
   contents: write
 
@@ -40,4 +33,4 @@ jobs:
           git add "$E"
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(studio-web): phase1 zero-cutover mirror build'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

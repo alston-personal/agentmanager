@@ -2,12 +2,6 @@ name: Oracle Diagnose LayoutLib Capability Gateway
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-diagnose-layoutlib-capability-gateway.yml'
-      - 'agentos_node/capability_http.py'
-      - 'agentos_node/capability_store.py'
-
 permissions:
   contents: write
 
@@ -76,4 +70,4 @@ jobs:
           git add .agentos/evidence/layoutlib-capability-gateway-diagnostic.txt 2>/dev/null || true
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(layoutlib): capability gateway wiring diagnostic'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

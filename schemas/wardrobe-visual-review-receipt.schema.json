@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentos.wardrobe-visual-review-receipt/v1",
+  "type": "object",
+  "required": ["schema", "state", "accepted", "reason", "selectedLayers", "verifiedLayers", "checks", "semanticBackendReady"],
+  "properties": {
+    "schema": {"const": "agentos.wardrobe-visual-review-receipt/v1"},
+    "state": {"enum": ["candidate", "verified", "rejected"]},
+    "accepted": {"type": "boolean"},
+    "reason": {"type": "string"},
+    "selectedLayers": {"type": "array", "items": {"type": "string"}},
+    "verifiedLayers": {"type": "array", "items": {"type": "string"}},
+    "checks": {"type": "array", "items": {"type": "object"}},
+    "semanticBackendReady": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

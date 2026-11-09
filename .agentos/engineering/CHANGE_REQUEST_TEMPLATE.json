@@ -1,0 +1,22 @@
+{
+  "schema": "agentos.change-request/v0.1",
+  "request_id": "ACR-YYYYMMDD-NNN",
+  "source": {
+    "project": "<project-or-agent>",
+    "role": "project-agent"
+  },
+  "target": {
+    "project": "AgentOS",
+    "area": "<capability|node-fabric|one|governance|session-bridge|other>"
+  },
+  "need": "<what the requesting project needs>",
+  "reason": "<why this belongs in AgentOS core rather than the source project>",
+  "proposed_capabilities": [],
+  "acceptance": [],
+  "evidence": [],
+  "constraints": [
+    "Do not modify AgentOS core from the requesting project branch",
+    "Do not weaken existing governance boundaries"
+  ],
+  "status": "proposed"
+}

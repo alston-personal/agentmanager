@@ -1,0 +1,76 @@
+schema: agentos.persona-agent/v1
+agent_id: persona.mio
+character_id: sunlake-milkcat-ai-001
+display_name: 澪 / Mio
+status: active
+kind: persona_agent
+
+core:
+  identity_source: agent-data/personas/sunlake-milkcat/character_core.json
+  persona_state_source: agent-data/personas/sunlake-milkcat/persona_state.json
+  current_ir_source: agent-data/personas/sunlake-milkcat/ir/current.json
+  event_ledger_source: agent-data/personas/sunlake-milkcat/events/events.jsonl
+  relationship_root: agent-data/personas/sunlake-milkcat/relationships
+  pdca_config_source: agent-data/personas/sunlake-milkcat/pdca/config.json
+  pdca_state_source: agent-data/personas/sunlake-milkcat/pdca/state.json
+
+runtime:
+  autonomy_mode: policy_bounded
+  heartbeat_source: persona_pdca
+  energy_model: enabled
+  memory_model: event_ledger_plus_versioned_ir
+  receipts_required_for_external_actions: true
+  owner_observability_required: true
+  public_projection_allowed: true
+
+capability_attachments:
+  - id: social.threads.observe
+    status: attached
+    provider: agentos.social_runtime
+    mode: read
+  - id: social.threads.reply
+    status: attached
+    provider: agentos.social_runtime
+    mode: governed_write
+  - id: social.threads.post
+    status: attached
+    provider: agentos.social_runtime
+    mode: governed_write
+  - id: social.threads.dm
+    status: attached
+    provider: agentos.social_runtime
+    mode: governed_write
+  - id: persona.relationship.memory
+    status: attached
+    provider: galaxy
+    mode: read_write
+  - id: persona.wardrobe
+    status: attached
+    provider: mio_wardrobe
+    mode: read_write
+  - id: persona.visual.generate
+    status: attached
+    provider: image_generation
+    mode: policy_gated
+  - id: persona.observer.public
+    status: planned
+    provider: mio_observer
+    mode: projection
+  - id: persona.observer.owner
+    status: planned
+    provider: mio_observer
+    mode: private_projection
+
+human_reserved:
+  - payment
+  - contracts
+  - account_security
+  - sensitive_identity_decisions
+
+invariants:
+  - no_false_autobiography
+  - persona_core_cannot_be_silently_overwritten
+  - external_side_effects_require_receipts
+  - capability_failure_must_surface_as_incident
+  - private_reasoning_is_not_public_projection
+  - capabilities_may_be_added_or_removed_without_redefining_agent_identity

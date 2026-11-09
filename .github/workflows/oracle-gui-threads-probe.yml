@@ -1,0 +1,62 @@
+name: Oracle GUI Threads Probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe Threads on Oracle GUI Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, urllib.request, time
+          from pathlib import Path
+          ws=None
+          for _ in range(20):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:9222/json/version',timeout=2) as r:
+                      d=json.load(r)
+                  ws=d['webSocketDebuggerUrl']
+                  break
+              except Exception:
+                  time.sleep(1)
+          assert ws,'CDP unavailable'
+          print('oracle_gui_threads_cdp=PASS')
+          PY
+          /usr/bin/python3 - <<'PY'
+          import json,time,urllib.parse,urllib.request
+          base='http://127.0.0.1:9222'
+          url='https://www.threads.com/messages'
+          req=urllib.request.Request(base+'/json/new?'+urllib.parse.quote(url,safe=''),method='PUT')
+          try:
+              with urllib.request.urlopen(req,timeout=5) as r:
+                  target=json.load(r)
+              tid=target.get('id')
+              print('oracle_gui_threads_target_create=PASS')
+          except Exception as e:
+              print('oracle_gui_threads_probe=ERROR')
+              print('oracle_gui_threads_error_type=CDP_TARGET_CREATE')
+              print('oracle_gui_threads_error_safe='+str(type(e).__name__))
+              raise
+          current=''
+          for _ in range(15):
+              time.sleep(1)
+              with urllib.request.urlopen(base+'/json/list',timeout=5) as r:
+                  items=json.load(r)
+              t=next((x for x in items if x.get('id')==tid),None)
+              if t:
+                  current=str(t.get('url') or '')
+                  if current and current!='about:blank':
+                      break
+          low=current.lower()
+          login=('login' in low or 'accountscenter' in low or 'accounts.google' in low)
+          messages=('/messages' in low and 'threads.com' in low)
+          print('oracle_gui_threads_login_required='+str(login).lower())
+          print('oracle_gui_threads_messages_url='+str(messages).lower())
+          print('oracle_gui_threads_target_url_class='+('messages' if messages else ('login' if login else 'other')))
+          PY

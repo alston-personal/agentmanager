@@ -1,0 +1,65 @@
+{
+  "schema": "agentos.evidence/resolve-e2e-v1",
+  "accepted": true,
+  "accepted_at": "2026-08-30T09:51:45Z",
+  "branch": "feature/realm-node-fabric-readiness",
+  "trigger_commit": "aae93ddab034918f153ae862c32ab09738d0e32f",
+  "live_core_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+  "deployment_generation": 5,
+  "workflow": ".github/workflows/oracle-vopc5750-resolve-e2e.yml",
+  "workflow_run_id": 33305066302,
+  "workflow_job_id": 99240031405,
+  "node_id": "vopc5750",
+  "realm_id": "realm-alston",
+  "task_id": "resolve-e2e-1788083499",
+  "transport": "vopc5750 -> public Realm gateway -> live ONE -> POST /v1/resolve",
+  "request": {
+    "schema": "agentos.resolve-request/v1",
+    "intent": "continue",
+    "project": "agentos-core",
+    "authentication": "real enrolled node bearer credential; secret not logged"
+  },
+  "response": {
+    "schema": "agentos.resolve/v1",
+    "intent": "continue",
+    "ok": true,
+    "project_id": "agentos-core",
+    "aliases": ["AgentOS", "AgentOS Core"],
+    "mutation_allowed": true,
+    "caller_node_id": "vopc5750",
+    "one_url": "https://studio.milkcat.org/dashboard/api/agentos",
+    "availability": {
+      "continuation": false,
+      "execution_head": false,
+      "last_receipt": false,
+      "node_context": true,
+      "project_identity": true,
+      "project_integrity": true
+    },
+    "provenance": {
+      "continuation": null,
+      "execution_head": null,
+      "last_receipt": "not-yet-project-indexed",
+      "project_identity": "governance-directory",
+      "project_resolution": "governance-directory"
+    },
+    "active_goal": null,
+    "execution_head": null,
+    "continuation": null,
+    "next_action": null
+  },
+  "assertions": {
+    "resolve_e2e_baseline": "PASS",
+    "resolve_authenticated_live_e2e": "PASS",
+    "project_identity": "PASS",
+    "project_integrity": "PASS",
+    "gateway_route": "PASS",
+    "enrolled_node_authentication": "PASS",
+    "continuation_indexing": "PENDING"
+  },
+  "security": {
+    "node_token_logged": false,
+    "credential_value_persisted": false
+  },
+  "remaining_gap": "Canonical project continuation indexing is absent: active_goal, execution_head, continuation, next_action, and project-indexed last_receipt are not yet available."
+}

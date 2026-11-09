@@ -1,0 +1,97 @@
+name: Oracle Mio DM Decision
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+  issues: write
+# Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
+jobs:
+  decide:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Mio DM decision through ubuntu bootstrap boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="mio-dm-decision-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys,re
+          from datetime import datetime,timezone
+          cmd=json.load(open('.agentos/commands/mio-dm-decision.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.mio-dm-decision-command/v1'
+          username=str(cmd.get('username') or '').strip().lstrip('@')
+          assert re.fullmatch(r'[A-Za-z0-9._]{1,64}',username),'invalid_username'
+          run_id=int(cmd.get('source_run_id') or 0)
+          assert run_id>0
+          path,request_id,sha=sys.argv[1],sys.argv[2],sys.argv[3]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':request_id,
+            'action':'agentos.mio_dm_decision.run',
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'params':{
+              'source_commit':sha,
+              'source_run_id':str(run_id),
+              'username':username,
+            },
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=path+'.tmp'
+          open(tmp,'w',encoding='utf-8').write(json.dumps(payload,sort_keys=True,indent=2)+'\n')
+          os.chmod(tmp,0o644)
+          os.replace(tmp,path)
+          os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "mio_dm_decision_receipt=TIMEOUT"; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.mio_dm_decision.run',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('executor_uid')==1001,r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          text='\n'.join(str(s.get('stdout') or '') for s in r.get('steps',[]))
+          line=next((x for x in text.splitlines() if x.startswith('mio_dm_decision_payload=')),None)
+          assert line,line
+          d=json.loads(line.split('=',1)[1])
+          assert d.get('decision') in ('reply','no_reply')
+          open('/tmp/mio-dm-decision.json','w',encoding='utf-8').write(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
+          print('mio_dm_decision_receipt=PASS')
+          print('mio_dm_decision='+d['decision'])
+          print('mio_dm_decision_text_chars='+str(len(d.get('text') or '')))
+          print('mio_dm_decision_consistency='+str(d.get('consistency_check') or ''))
+          PY
+      - name: Upload private DM decision artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-dm-decision
+          path: /tmp/mio-dm-decision.json
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Route Mio social incident
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/route_mio_social_incident.py

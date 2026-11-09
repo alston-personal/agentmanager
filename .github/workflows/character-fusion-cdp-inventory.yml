@@ -1,0 +1,56 @@
+name: Character Fusion CDP Inventory
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-cdp-inventory.yml'
+      - 'scripts/oracle_browser_identity_inventory.py'
+      - 'scripts/oracle_threads_existing_tab_readback.js'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-cdp-inventory.yml'
+      - 'scripts/oracle_browser_identity_inventory.py'
+      - 'scripts/oracle_threads_existing_tab_readback.js'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'cdp_inventory=PASS' .github/workflows/character-fusion-cdp-inventory.yml
+      - run: node --check scripts/oracle_threads_existing_tab_readback.js
+
+  inventory:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - uses: actions/checkout@v4
+      - name: Inventory read-only Oracle CDP identity (#1735)
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}" || { echo "oracle_identity_inventory=NO_DEPLOY_USER"; exit 1; }
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'python3 -' < scripts/oracle_browser_identity_inventory.py
+          echo "cdp_inventory=PASS"
+      - name: Read existing Threads tabs without navigation (#1735)
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'bash -c '\''NODE=$(find /home/ubuntu/.local/share/agentos/gui-worker/venv/lib -type f -path "*/playwright/driver/node" -print -quit); test -n "$NODE" && exec "$NODE" -'\''' \
+            < scripts/oracle_threads_existing_tab_readback.js

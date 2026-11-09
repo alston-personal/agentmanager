@@ -1,0 +1,40 @@
+schema: agentos.persona-agent/v1
+agent_id: persona.writer.tiandao.alaya
+character_id: tiandao-alaya-writer-001
+display_name: 阿賴耶識 (Alaya Writer)
+status: active
+kind: persona_agent
+
+core:
+  archetype: archetype.base.literary
+  sub_role: author
+  identity_source: agent-data/personas/tiandao-alaya/character_core.json
+  persona_state_source: agent-data/personas/tiandao-alaya/persona_state.json
+  event_ledger_source: agent-data/personas/tiandao-alaya/events/events.jsonl
+
+runtime:
+  autonomy_mode: policy_bounded
+  memory_model: event_ledger_plus_versioned_ir
+  receipts_required_for_external_actions: false
+  owner_observability_required: true
+  public_projection_allowed: true
+
+capability_attachments:
+  - id: creative.narrative.synthesis
+    status: attached
+    provider: zeus_writer_core
+    mode: write
+  - id: creative.voice.taoist_zenpunk
+    status: attached
+    provider: zeus_writer_core
+    mode: read
+  - id: creative.sensory.expansion
+    status: attached
+    provider: zeus_writer_core
+    mode: write
+
+invariants:
+  - strictly_first_person_alaya_perspective
+  - zero_leakage_of_modern_english_tech_terms
+  - adheres_to_chapter_plan_outline
+

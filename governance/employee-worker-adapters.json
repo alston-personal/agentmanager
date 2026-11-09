@@ -1,0 +1,18 @@
+{
+  "schema": "agentos.employee-worker-adapters/v1",
+  "adapters": [
+    {
+      "adapter_id": "spec-steward-o3",
+      "status": "active",
+      "runner_kind": "spec_steward_o3",
+      "employee_id": "agentos-spec-steward",
+      "assignment_id": "spec-steward-o3-acceptance-v1",
+      "role_ids": [
+        "governance.spec_steward"
+      ],
+      "skill_ids": [
+        "spec.audit"
+      ]
+    }
+  ]
+}

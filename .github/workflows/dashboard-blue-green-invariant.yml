@@ -1,0 +1,33 @@
+name: Dashboard Blue Green Invariant
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-deploy-*.yml'
+      - '.github/workflows/dashboard-blue-green-invariant.yml'
+      - 'scripts/deploy_dashboard_blue_green_user.sh'
+      - 'scripts/deploy_realm_gateway_blue_green_user.sh'
+      - 'scripts/deploy_realm_gateway_user.sh'
+      - 'scripts/check_dashboard_blue_green_invariant.py'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-deploy-*.yml'
+      - '.github/workflows/dashboard-blue-green-invariant.yml'
+      - 'scripts/deploy_dashboard_blue_green_user.sh'
+      - 'scripts/deploy_realm_gateway_blue_green_user.sh'
+      - 'scripts/deploy_realm_gateway_user.sh'
+      - 'scripts/check_dashboard_blue_green_invariant.py'
+
+permissions:
+  contents: read
+
+jobs:
+  invariant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove Dashboard zero-downtime deployment invariant
+        run: python3 scripts/check_dashboard_blue_green_invariant.py
