@@ -45,7 +45,7 @@ class GaiaHandoffTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             state = Path(temp) / "work-items.json"
             with self.assertRaisesRegex(GaiaHandoffDenied, "intake_not_authorized"):
-                admit_existing_project_work(state, self.envelope(),
+                admit_existing_project_work(state, review(), self.envelope(),
                                              verify_intake_authority=lambda _: False)
             self.assertFalse(state.exists())
 
@@ -53,13 +53,38 @@ class GaiaHandoffTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             state = Path(temp) / "work-items.json"
             envelope = self.envelope()
-            one = admit_existing_project_work(state, envelope,
+            one = admit_existing_project_work(state, review(), envelope,
                                                verify_intake_authority=lambda _: True)
-            two = admit_existing_project_work(state, envelope,
+            two = admit_existing_project_work(state, review(), envelope,
                                                verify_intake_authority=lambda _: True)
             self.assertEqual(one["work_id"], two["work_id"])
             self.assertEqual(one["owner"], "role://completion.controller")
             self.assertEqual(len(load(state)["items"]), 1)
+
+    def test_admission_rejects_mutated_owner_and_action(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "work-items.json"
+            envelope = self.envelope()
+            for change in ({"project_id": "other"},
+                           {"next_action": "execute arbitrary command"},
+                           {"owner": "role://untrusted"},
+                           {"acceptance": ["fake"]}):
+                with self.subTest(change=change):
+                    changed = {**envelope, **change}
+                    with self.assertRaisesRegex(GaiaHandoffDenied, "intake_envelope_mismatch"):
+                        admit_existing_project_work(
+                            state, review(), changed,
+                            verify_intake_authority=lambda _: True)
+            self.assertFalse(state.exists())
+
+    def test_admission_rejects_inconsistent_review(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "work-items.json"
+            with self.assertRaises(GaiaHandoffDenied):
+                admit_existing_project_work(
+                    state, review(Disposition.NEEDS_HUMAN_APPROVAL), self.envelope(),
+                    verify_intake_authority=lambda _: True)
+            self.assertFalse(state.exists())
 
     def test_invalid_issue_or_relative_workspace_rejected(self):
         with self.assertRaises(GaiaHandoffDenied):
