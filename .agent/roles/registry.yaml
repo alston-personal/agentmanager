@@ -178,7 +178,7 @@ roles:
   - resource_record
   - freshness_status
 - id: system.atlas
-  name: Atlast (總管 / Closure Owner)
+  name: 阿特拉斯 Atlas (擎天神 / 任務閉環總管 Closure Owner)
   status: active
   kind: orchestrator
   source: .agent/roles/instances/atlas_closure_owner.md
