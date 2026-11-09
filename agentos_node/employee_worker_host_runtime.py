@@ -310,6 +310,7 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
                 "--wake-root", str(self.wake_root),
                 "--worker-state-root", str(self.worker_state_root),
                 "--node-id", self.node_id,
+                "--assignment-id", adapter.assignment_id,
                 "--once",
             ]
         elif adapter.runner_kind in PRODUCT_RUNNER_KINDS:
