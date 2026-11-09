@@ -23,6 +23,20 @@ class WowBridgeProtocolTest(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             decode(broken)
 
+    def test_accepts_zero_padded_capture(self):
+        cells = frame()
+        self.assertLess(len(cells), 200)
+        self.assertEqual(decode_request(cells + [0] * (200 - len(cells))), (1, "abc12345"))
+
+    def test_rejects_hidden_frame_tail(self):
+        cells = frame()
+        with self.assertRaisesRegex(ProtocolError, "unexpected_trailing_cells"):
+            decode(cells + [0, 0, 4])
+        with self.assertRaisesRegex(ProtocolError, "unexpected_trailing_cells"):
+            decode(cells + [False])
+        with self.assertRaisesRegex(ProtocolError, "unexpected_trailing_cells"):
+            decode(cells + [0, 2])
+
     def test_no_auth_no_fake_status(self):
         gateway=OfflineStatusGateway()
         self.assertEqual(gateway.accept(frame())["reason"],"ONE_NOT_BOUND")
