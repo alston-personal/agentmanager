@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timezone
-from agent_core.hermes_github_scan import evaluate, normalized_repo, run_scan
+from agent_core.hermes_github_scan import evaluate, normalized_repo, run_scan, lifecycle_scan_summary
 
 NOW=datetime(2026,11,7,tzinfo=timezone.utc)
 
@@ -42,6 +42,21 @@ class HermesGithubScanTests(unittest.TestCase):
         self.assertEqual(report["candidate_count"],0)
         self.assertEqual(report["failures"][0]["error_class"],"RuntimeError")
         self.assertNotIn("secret-error",str(report))
+    def test_lifecycle_summary_is_evidence_not_receipt(self):
+        report=run_scan(["Example/project"],lambda _:fixture(),now=NOW)
+        summary=lifecycle_scan_summary(report,next_interval_hours=24)
+        self.assertEqual(summary["scan_outcome"],"completed")
+        self.assertEqual(len(summary["report_sha256"]),64)
+        self.assertIn("evidence_only",summary["authority_boundary"])
+    def test_no_success_sources_fails_closed(self):
+        report=run_scan(["Example/project"],lambda _: (_ for _ in ()).throw(RuntimeError("offline")),now=NOW)
+        with self.assertRaises(RuntimeError):
+            lifecycle_scan_summary(report,next_interval_hours=24)
+    def test_invalid_interval_denied(self):
+        report=run_scan(["Example/project"],lambda _:fixture(),now=NOW)
+        with self.assertRaises(ValueError):
+            lifecycle_scan_summary(report,next_interval_hours=0)
+
     def test_max_repo_limit(self):
         with self.assertRaises(ValueError):
             run_scan(["a/b"]*26,lambda _:fixture(),now=NOW)
