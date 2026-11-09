@@ -1080,3 +1080,8 @@ Draft PR #2157 strengthens its **optional** reviewed-create wrapper to reject wr
 ### Gaia existing-project Work Intake handoff (#420 draft, 2026-11-09)
 
 `agent_core/gaia_work_handoff.py` now converts a validated informational `EXTEND_PROJECT` review record into a deterministic bounded `agentos.work-intake/v1` candidate, using the existing Completion Controller intake schema rather than a new queue. It cannot submit an unrelated `CREATE_NEW_PROJECT` proposal, inject an executor/command/owner, or mutate state without a separately supplied admission verification callback. Tests exercise idempotent handoff to the existing work-completion ledger under a simulated trusted admission and denial without writes. **The admission callback is NOT yet bound to authenticated ONE policy, nor is the real Oracle Scheduler/Employee loop deployed or proven; a test lambda is not evidence of production authority.** The API is an integration seam, not a live secure entrypoint, and only the existing Completion Controller owns queued accepted work. Dedicated durable intake, authorized automatic forwarding, and genuine ONE receipts remain pending.
+
+
+### Gaia Work Intake exact-envelope binding (2026-11-09, draft)
+
+The candidate `admit_existing_project_work` now requires the source `ReviewRecord` at admission time and reconstructs the exact bounded Work Intake envelope from that review. Mutated project IDs, actions, acceptance, owners or other extra fields fail before an admission callback or ledger write. This blocks caller-provided envelope substitution but **does not authenticate the callback**; a trusted ONE identity/authority integration is still missing, and no live work was dispatched. The old read-only approved-issue workflow remains unchanged by design.
