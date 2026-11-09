@@ -26,16 +26,20 @@ AUTHORITATIVE_DOCS = {
     "docs/CURRENT_STATE.md",
 }
 
-# Changes under these surfaces can materially alter the public AgentOS mental model.
+# Changes under these surfaces materially alter AgentOS runtime semantics or operations.
 ARCHITECTURE_PREFIXES = (
     "agent_core/",
     "runtime_core/",
     ".agent/roles/",
     ".agent/governance/",
     ".agentos/commands/",
+    "scripts/",
+    ".github/workflows/",
+    "agentos_node/",
 )
 ARCHITECTURE_FILES = {
     ".agent/CONSTITUTION.yaml",
+    ".github/copilot-instructions.md",
     "scripts/continuation_state.py",
     "scripts/agentos_node.py",
     "scripts/drift_guard.py",
