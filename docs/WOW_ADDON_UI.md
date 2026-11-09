@@ -1,21 +1,29 @@
-# WoW V1 native Addon UI — developer shell, not live chat
+# WoW V1 native Addon UI — offline developer shell, not live chat
 
-A small native addon shell is provided in `integrations/wow/AgentOSWoW/`.
-It is intentionally offline and read-only until a real, authenticated local
-bridge is built and verified. Open/close with `/agentos`. The Send input is
-disabled to prevent false success or direct CLI execution.
+A native Addon shell exists in `integrations/wow/AgentOSWoW/`.
+Open/close the panel with `/agentos`. The chat Send field remains disabled:
+there is NO authenticated reply transport, installed local Bridge, verified ONE
+reader, official Runtime Receipt, or completed in-game two-way exchange.
 
-The TOC `16001` is for the WoW: Forever integration candidate described by
-the reviewed upstream project; it is **not** verified for official Retail or
-Classic, nor has any real running game session been tested here.
+The Addon now includes a passive, user-initiated **outbound status pixel probe**
+with a bounded frame protocol in `agentos_node/wow_bridge_protocol.py`.
+This is **not** an authenticated or deployed channel; a visible pixel frame is
+not evidence of successful local capture or Node/ONE connection. The probe's
+session text is not an authorization credential, and no arbitrary commands,
+execution, permissions or shell access are supported.
 
-This addon currently has no pixel-strip output, WAV channel, load-on-demand
-reply slots, installed bridge, Node status reader or valid live Receipt.
-It demonstrates only native interface structure. Do not advertise as a
-functional AgentOS game chat or as production-ready.
+The candidate TOC `16001` targets the upstream-documented WoW: Forever
+environment only. Its actual running client/API compatibility has not yet
+been verified; official Retail/Classic are unsupported pending independent
+compatibility tests. Do not advertise an official installer or functional chat.
 
-**Next live gate:** establish one trusted, tightly bounded game-to-local
-message transport with request identity, authentication and replay limits,
-connect to ONE's already-governed read-only status route, then return an
-actual answer and correlation receipt via a game-compatible reply transport.
-No generic shell/permissions model from upstream wow-ai may be imported.
+`wow.control.status` is off by default and fails closed without a trusted
+Node-side reader. Its status projection is now strictly constrained to
+`state`, `paw` and `receipt` display fields, rejecting unknown and malformed
+input; the reader itself must still be authenticated and construct only
+non-sensitive canonical data before any game-visible return.
+
+**Next acceptance:** compatible real client, safe passive capture, authenticated
+Bridge binding to the already enrolled Windows Node and existing ONE read-only
+route, game-compatible reply transport, and two verified in-game exchanges
+with canonical correlation/Receipt evidence. No generic upstream CLI gateway.
