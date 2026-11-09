@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
-from agent_core.hermes_scan_policy import ScanSignals, propose_scan
+from agent_core.hermes_scan_policy import ScanSignals, propose_scan, plan_after_completed_scan
 
 NOW = datetime(2026, 11, 7, 12, tzinfo=timezone.utc)
 
@@ -32,6 +32,14 @@ class HermesScanPolicyTests(unittest.TestCase):
     def test_eligible_after_cadence(self):
         p=propose_scan(now=NOW,last_scan_at=NOW-timedelta(hours=25),signals=ScanSignals())
         self.assertTrue(p.should_run)
+
+    def test_completion_uses_same_clock_observation(self):
+        # This is the exact post-claim bug that stranded the first live scan.
+        end=NOW
+        plan=plan_after_completed_scan(completed_at=end,signals=ScanSignals(meaningful_findings=2))
+        self.assertEqual(plan.interval_hours,12)
+        self.assertFalse(plan.should_run)
+        self.assertEqual(plan.reason,"high_signal")
 
     def test_naive_timestamp_fails_closed(self):
         with self.assertRaises(ValueError):
