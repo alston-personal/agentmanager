@@ -5,6 +5,9 @@ on:
     paths:
       - 'scripts/issue_work_intake.py'
       - 'scripts/approved_wow_paw_handoff.py'
+      - 'scripts/completion_watchdog_tick.py'
+      - 'tests/test_completion_watchdog_tick.py'
+      - 'schedule.yaml'
       - 'tests/test_approved_wow_paw_handoff.py'
       - 'scripts/work_completion.py'
       - 'tests/test_issue_work_intake.py'
@@ -22,6 +25,9 @@ on:
     paths:
       - 'scripts/issue_work_intake.py'
       - 'scripts/approved_wow_paw_handoff.py'
+      - 'scripts/completion_watchdog_tick.py'
+      - 'tests/test_completion_watchdog_tick.py'
+      - 'schedule.yaml'
       - 'tests/test_approved_wow_paw_handoff.py'
       - 'scripts/work_completion.py'
       - 'tests/test_issue_work_intake.py'
@@ -46,4 +52,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test approved-only Issue Intake and durable Ledger
-        run: python3 -m unittest -v tests.test_issue_work_intake tests.test_work_completion tests.test_runtime_intake_rollout tests.test_core_bundle_active_recovery tests.test_legacy_teams_preservation tests.test_telegram_service_fence tests.test_telegram_early_proof tests.test_immutable_service_python tests.test_approved_wow_paw_handoff
+        run: python3 -m unittest -v tests.test_issue_work_intake tests.test_work_completion tests.test_runtime_intake_rollout tests.test_core_bundle_active_recovery tests.test_legacy_teams_preservation tests.test_telegram_service_fence tests.test_telegram_early_proof tests.test_immutable_service_python tests.test_approved_wow_paw_handoff tests.test_completion_watchdog_tick
