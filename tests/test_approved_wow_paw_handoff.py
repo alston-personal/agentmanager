@@ -56,17 +56,18 @@ class ApprovedWoWPawHandoffTests(unittest.TestCase):
             self.assertEqual(receipt["status"],"waiting_for_completion_controller")
             self.assertFalse((self.runtime.assignments_dir / (ASSIGNMENT_ID+".json")).exists())
 
-    def test_exhausted_verification_allows_only_separate_readonly_inspection(self):
-        self.item["status"]="blocked"
+    def test_verification_wait_allows_independent_readonly_inspection(self):
+        self.item["status"]="waiting_external"
         self.item["last_blocker_kind"]="VERIFICATION"
-        self.item["machine_retry_count"]=5
+        self.item["wake_condition"]={"kind":"time","not_before":"2030-01-01T00:00:00Z"}
+        self.item["machine_retry_count"]=1
         self.store()
         receipt=handoff(completion_state=self.ledger,runtime_root=self.runtime.root)
         self.assertTrue(receipt["assignment_registered"])
         self.assertTrue(receipt["verification_remediation_only"])
         self.assertFalse(receipt["execution_authorized"])
         self.assertFalse(receipt["execution_started"])
-        self.assertEqual(self.item["status"],"blocked")
+        self.assertEqual(self.item["status"],"waiting_external")
         self.assertEqual(self.runtime.get_assignment(ASSIGNMENT_ID).state,"pending")
         from agent_core.core_work_items import WorkItemStore
         work=WorkItemStore(self.runtime).get(ASSIGNMENT_ID)
