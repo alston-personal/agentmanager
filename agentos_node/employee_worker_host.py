@@ -39,7 +39,7 @@ CAPSULE_FIELDS = {
     "wake_intent",
     "employee_wake_route",
 }
-ACTIVE_RUNNER_KINDS = {"spec_steward_o3"}
+ACTIVE_RUNNER_KINDS = {"spec_steward_o3", "hermes_github_scan"}
 TERMINAL_DISPATCH_STATES = {"checkpointed", "completed", "blocked", "handoff", "failed", "unknown", "rejected"}
 SAFE_CHILD_RESULT_KEYS = {
     "schema",
@@ -58,7 +58,7 @@ SAFE_CHILD_RESULT_KEYS = {
     "session_identity_exposed",
     "verified_marker_emitted",
 }
-CHILD_RESULT_SCHEMAS = {"spec_steward_o3": "agentos.spec-steward-o3-worker-cli-result/v1"}
+CHILD_RESULT_SCHEMAS = {"spec_steward_o3": "agentos.spec-steward-o3-worker-cli-result/v1", "hermes_github_scan": "agentos.hermes-worker-cli-result/v1"}
 
 
 def _utc_now() -> str:
@@ -175,7 +175,14 @@ class EmployeeWorkerAdapterRegistry:
             for adapter in self._adapters
             if adapter.status == "active"
             and adapter.employee_id == employee_id
-            and adapter.assignment_id == assignment_id
+            and (adapter.assignment_id == assignment_id or (
+                adapter.runner_kind == "hermes_github_scan"
+                and adapter.employee_id == "hermes-technology-scout"
+                and adapter.assignment_id == "hermes-2120-discovery-v1"
+                and assignment_id.startswith("hermes-2120-discovery-v1-cycle-")
+                and len(assignment_id) == len("hermes-2120-discovery-v1-cycle-") + 6
+                and assignment_id[-6:].isdigit()
+            ))
             and set(adapter.role_ids) == set(role_ids)
             and set(adapter.skill_ids) == set(skill_ids)
         ]
@@ -438,7 +445,20 @@ class EmployeeWorkerHost:
             self._terminal_dispatch_keys.add(self._dispatch_key(path))
         return state
 
-    def _child_command(self, adapter: EmployeeWorkerAdapter) -> list[str]:
+    def _child_command(self, adapter: EmployeeWorkerAdapter, capsule: dict[str, Any] | None = None) -> list[str]:
+        if adapter.runner_kind == "hermes_github_scan":
+            if not isinstance(capsule, dict) or capsule.get("employee_id") != "hermes-technology-scout":
+                raise PermissionError("hermes_exact_capsule_required")
+            return [
+                sys.executable, "-m", "agentos_node.hermes_worker_cli",
+                "--runtime-root", str(self.runtime_root),
+                "--wake-root", str(self.wake_root),
+                "--worker-state-root", str(self.worker_state_root),
+                "--node-id", self.node_id,
+                "--wake-id", _safe_id(capsule.get("wake_id"), "wake_id"),
+                "--presence-generation", str(int(capsule.get("presence_generation") or 0)),
+                "--once",
+            ]
         if adapter.runner_kind != "spec_steward_o3":
             raise RuntimeError("employee_worker_runner_kind_unimplemented")
         return [
@@ -558,7 +578,7 @@ class EmployeeWorkerHost:
         self._persist_dispatch(candidate, state)
         try:
             completed = subprocess.run(
-                self._child_command(candidate.adapter),
+                self._child_command(candidate.adapter, candidate.capsule),
                 cwd=str(ROOT),
                 env=self._child_environment(),
                 text=True,
