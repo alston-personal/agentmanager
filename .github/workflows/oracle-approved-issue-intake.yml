@@ -109,6 +109,14 @@ jobs:
           print("wow_2134_work_item_owner="+str(item.get("owner") or "unassigned"))
           print("wow_2134_execution_authorized="+str(item.get("execution_authorized") is True).lower())
           PY
+          # Project the canonical, already-accepted WoW WorkItem to Paw's
+          # existing read-only engineering inspection Assignment. This creates
+          # no lease and does not authorize execution or deployment.
+          test -f "$release/scripts/approved_wow_paw_handoff.py"
+          PYTHONPATH="$release" /usr/bin/python3 "$release/scripts/approved_wow_paw_handoff.py" \
+            --completion-state "$data/governance/work-items.json" \
+            --runtime-root "$data/employee-runtime"
+          echo "wow_2134_paw_assignment_projection=PASS"
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
           echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
