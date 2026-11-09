@@ -1,5 +1,11 @@
 # Central Chronos Scheduler Configurations
 schedules:
+  # Existing Chronos drives the existing Completion Ledger due-time transition.
+  # No new queue, independent daemon, or Executor authority is introduced.
+  - name: completion-ledger-watchdog
+    interval_seconds: 60
+    command: "python3 scripts/completion_watchdog_tick.py"
+
   - name: os-pulse
     interval_seconds: 60
     command: "python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active"
