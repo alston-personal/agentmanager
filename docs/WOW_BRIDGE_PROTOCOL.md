@@ -13,3 +13,18 @@ Capture framing hardening: decoders now allow zero-only display padding after a 
 `NodeBoundStatusGateway` provides a unit-testable **host-side** seam between a decoded, read-only `wow.control.status` request and the existing Node adapter. It requires an injected trusted Node authorization callback returning the boolean `True` on every request and an injected read-only adapter callback. It never interprets the game-provided session as authorization, never forwards that session to the adapter, and never invokes arbitrary actions. Unknown or unsafe response fields are rejected through the canonical WoW projection. Request replay is denied in memory; after a bounded history fills, it fails closed instead of evicting prior IDs.
 
 This is not a deployed Windows service, not a verified Node identity or Realm, not a screen capture transport, and not a game-side response channel. A production integration must bind the callback to a **fresh authenticated Node/ONE state check** in the existing Windows Node, persist appropriate idempotency across restarts and establish a verified game-compatible response mechanism. A successful mocked unit test MUST NOT be reported as an actual in-game exchange or ONE Receipt.
+
+## Correlated status reply codec (source-only)
+
+`agentos_node/wow_status_reply.py` now provides a transport-neutral, bounded
+`agentos.wow.status.reply/v1` envelope (maximum 384 bytes), encoding an
+allowlisted status snapshot together with the original request ID. Its decoder
+rejects wrong IDs, unexpected fields, unsupported schema/status, malformed
+values and oversized payloads. The existing Transport Routing Guard test step
+includes `tests.test_wow_status_reply`.
+
+**This is not a game reply transport.** Before sending any payload back to the
+Addon, the host must authenticate its own Windows Node/Realm state, verify the
+actual ONE status route, and bind a version-compatible, user-authorized reply
+mechanism. The codec alone does not authenticate a sender, install Addon files,
+deliver status into WoW, or supply a real Receipt.
