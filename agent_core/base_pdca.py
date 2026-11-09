@@ -985,6 +985,18 @@ class SpecStewardWorker(BasePDCAWorker):
                 findings.append(f"⚠️ 文檔防漂移警告: {res.stderr.strip()[:100]}")
         else:
             findings.append("ℹ️ 規格防漂移基線保持同步")
+
+        # 規格閉環實施率審計 (Spec Closure Audit)
+        spec_steward_script = self.project_root / "scripts" / "spec_steward.py"
+        if spec_steward_script.exists():
+            res_spec = subprocess.run(["python3", str(spec_steward_script)], capture_output=True, text=True)
+            if res_spec.returncode == 0:
+                first_lines = [l for l in res_spec.stdout.splitlines() if l.strip().startswith("-")]
+                summary_str = "; ".join(first_lines[:3]) if first_lines else "規格治理狀態已更新"
+                findings.append(f"✅ Spec Steward 規格審查完成 ({summary_str})")
+            else:
+                findings.append(f"⚠️ 規格治理腳本執行異常: {res_spec.stderr.strip()[:100]}")
+
         return {"action": "governance_spec_audit", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
