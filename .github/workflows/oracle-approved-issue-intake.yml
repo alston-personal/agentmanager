@@ -115,8 +115,23 @@ jobs:
           test -f "$release/scripts/approved_wow_paw_handoff.py"
           PYTHONPATH="$release" /usr/bin/python3 "$release/scripts/approved_wow_paw_handoff.py" \
             --completion-state "$data/governance/work-items.json" \
-            --runtime-root "$data/employee-runtime"
-          echo "wow_2134_paw_assignment_projection=PASS"
+            --runtime-root "$data/employee-runtime" > "$data/governance/issue-intake/last-wow-paw-handoff.json"
+          /usr/bin/python3 - "$data/governance/issue-intake/last-wow-paw-handoff.json" "$data/governance/work-items.json" <<'PY'
+          import json,sys
+          receipt=json.load(open(sys.argv[1],encoding="utf-8"))
+          item=json.load(open(sys.argv[2],encoding="utf-8")).get("items",{}).get("gh-issue-2134-engineering") or {}
+          if receipt.get("schema") != "agentos.approved-wow-paw-handoff-receipt/v1":
+              raise SystemExit("wow_paw_receipt_invalid")
+          status="REGISTERED" if receipt.get("assignment_registered") is True else "WAITING"
+          print("wow_2134_paw_assignment_projection="+status)
+          print("wow_2134_completion_status="+str(item.get("status") or "missing"))
+          kind=str(item.get("last_blocker_kind") or "UNKNOWN")
+          if kind not in {"NONE","HUMAN_AUTH","RUNTIME_HEALTH","PROVIDER_CAPACITY","VERIFICATION","UNKNOWN","MARKET_DATA"}:
+              kind="UNKNOWN"
+          print("wow_2134_blocker_kind="+kind)
+          wake=item.get("wake_condition") or {}
+          print("wow_2134_wake_kind="+str(wake.get("kind") if wake.get("kind") in ("time","external") else "none"))
+          PY
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
           echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
