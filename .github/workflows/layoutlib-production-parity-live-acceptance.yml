@@ -70,11 +70,11 @@ jobs:
           job=receipt.get('executor_job_receipt')
           assert isinstance(job,dict), job
           safe={k:job.get(k) for k in (
- 'job_id','job_type','project_id','executor_class','capability',
- 'executor_available','routable','authorized','successful','credential_exposed',
- 'verdict','classification','observed_head','layoutlib_release',
- 'layoutlib_manifest_files','layoutlib_matching_files','layoutlib_public_http',
- 'layoutlib_parity'
+          'job_id','job_type','project_id','executor_class','capability',
+          'executor_available','routable','authorized','successful','credential_exposed',
+          'verdict','classification','observed_head','layoutlib_release',
+          'layoutlib_manifest_files','layoutlib_matching_files','layoutlib_public_http',
+          'layoutlib_parity'
           ) if k in job}
           print(json.dumps(safe,sort_keys=True))
           assert job.get('job_type') == 'layoutlib.production.parity.inspect'
