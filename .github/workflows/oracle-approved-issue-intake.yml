@@ -171,6 +171,41 @@ jobs:
           outcome=safe(latest.get("outcome"),{"completed","blocked","handoff","cancelled"}) if latest else "missing"
           print("wow_2134_employee_receipt_outcome="+outcome)
           PY
+          # Read-only Supervisor S4 health projection. No raw env, secrets,
+          # Node registry, employee memory, credentials, or action parameters.
+          /usr/bin/python3 - "$data" <<'PY'
+          import json,re,subprocess,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          conf=Path("/home/ubuntu/.config/agentos")
+          base=conf/"core-supervisor.env"
+          delivery=conf/"core-supervisor-delivery.env"
+          def exact_mode(path):
+              if not path.is_file(): return "missing"
+              for line in path.read_text(encoding="utf-8",errors="replace").splitlines():
+                  if re.fullmatch(r"AGENTOS_SUPERVISOR_DELIVERY_MODE=(disabled|one_direct)",line.strip()):
+                      return line.strip().split("=",1)[1]
+              return "unconfigured"
+          mode=exact_mode(delivery) if delivery.is_file() else exact_mode(base)
+          print("wow_2134_supervisor_delivery_mode="+mode)
+          print("wow_2134_supervisor_one_realm_present="+str((root/"realm"/"fabric.json").is_file() and (root/"realm"/"nodes.json").is_file()).lower())
+          try:
+              p=subprocess.run(["systemctl","--user","is-active","agentos-core-supervisor.service"],
+                  text=True,capture_output=True,timeout=4,check=False)
+              active="active" if p.returncode==0 and p.stdout.strip()=="active" else "inactive"
+          except (OSError,subprocess.TimeoutExpired):
+              active="unknown"
+          print("wow_2134_supervisor_service_state="+active)
+          cycle=root/"employee-runtime"/"supervisor"/"state.json"
+          try: state=json.loads(cycle.read_text(encoding="utf-8"))
+          except (OSError,ValueError): state={}
+          if not isinstance(state,dict): state={}
+          count=state.get("cycle_generation")
+          print("wow_2134_supervisor_cycle_generation="+str(count if type(count) is int and count>=0 else 0))
+          for name in ("delivery_dispatch_count","delivery_blocked_count","delivery_error_count"):
+              value=state.get(name)
+              print("wow_2134_supervisor_"+name+"="+str(value if type(value) is int and value>=0 else 0))
+          PY
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
           echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
