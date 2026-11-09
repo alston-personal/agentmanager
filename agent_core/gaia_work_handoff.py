@@ -60,6 +60,7 @@ def propose_existing_project_work(
 
 def admit_existing_project_work(
     state_path: Path,
+    record: ReviewRecord,
     envelope: dict,
     *,
     verify_intake_authority: Callable[[dict], bool],
@@ -69,7 +70,16 @@ def admit_existing_project_work(
     The callback MUST be bound to an authenticated ONE policy decision in
     production, never simply supplied by an untrusted requester.
     """
-    if not callable(verify_intake_authority) or verify_intake_authority(envelope) is not True:
+    if not isinstance(envelope, dict):
+        raise GaiaHandoffDenied("invalid_intake_envelope")
+    expected = propose_existing_project_work(
+        record,
+        source_issue_url=str(envelope.get("source") or ""),
+        workspace=str(envelope.get("workspace") or ""),
+    )
+    if envelope != expected:
+        raise GaiaHandoffDenied("intake_envelope_mismatch")
+    if not callable(verify_intake_authority) or verify_intake_authority(expected) is not True:
         raise GaiaHandoffDenied("intake_not_authorized")
     # This existing API assigns role://completion.controller, not the caller.
     from scripts.work_completion import register_intake_envelope
