@@ -97,7 +97,7 @@ def _verify_delivery(runtime_root: Path, capsule: dict, intent: dict) -> None:
 
 def process_exact(*, runtime_root: Path, wake_root: Path, worker_state_root: Path,
                   node_id: str, wake_id: str, presence_generation: int,
-                  fetch=None) -> dict:
+                  assigned_id: str | None = None, fetch=None) -> dict:
     """Act only on one specifically addressed, source-controlled, bounded task."""
     runtime_root, wake_root, worker_state_root = (
         runtime_root.resolve(),wake_root.resolve(),worker_state_root.resolve()
@@ -126,6 +126,11 @@ def process_exact(*, runtime_root: Path, wake_root: Path, worker_state_root: Pat
         raise PermissionError("hermes_wake_node_mismatch")
     if capsule.get("employee_id")!=EMPLOYEE or not _is_hermes_assignment(str(capsule.get("assignment_id") or "")):
         raise PermissionError("hermes_wake_scope_invalid")
+    # The exact WorkItem identity is pinned by the V2 Host, never taken from
+    # arbitrary CLI payloads. A mismatched capsule fails before any lifecycle
+    # claim, checkpoint, report write or executor binding.
+    if assigned_id is not None and capsule["assignment_id"] != assigned_id:
+        raise PermissionError("hermes_assigned_work_mismatch")
     intent=capsule.get("wake_intent")
     route=capsule.get("employee_wake_route")
     if not isinstance(intent,dict) or set(intent)!=ALLOWED_INTENT_KEYS or not isinstance(route,dict) or set(route)!=ROUTE_KEYS:
