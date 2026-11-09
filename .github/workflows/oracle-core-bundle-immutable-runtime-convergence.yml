@@ -17,6 +17,8 @@ on:
       - 'scripts/install_services.py'
       - 'scripts/work_completion.py'
       - 'scripts/issue_work_intake.py'
+      - 'scripts/approved_wow_paw_handoff.py'
+      - 'tests/test_approved_wow_paw_handoff.py'
       - 'tests/test_issue_work_intake.py'
       - '.agent/roles/**'
       - 'agent_core/role_runtime.py'
