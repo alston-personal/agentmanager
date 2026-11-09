@@ -167,6 +167,25 @@ def process_exact(*, runtime_root: Path, wake_root: Path, worker_state_root: Pat
     _verify_delivery(runtime_root,capsule,intent)
     lease_key=hashlib.sha256((wake_id+":"+str(presence_generation)).encode()).hexdigest()[:24]
     lease_id="hermeslease_"+lease_key
+    # Production Worker Host intentionally has PrivateNetwork=true.
+    # A network-capable ONE Wake Node creates a fixed-source snapshot only after
+    # checking the actual S4 delivery. No GitHub HTTP fallback inside this child.
+    if fetch is None:
+        from agentos_node.hermes_metadata_feed import snapshot_path, validate_snapshot
+        metadata_path=snapshot_path(worker_state_root,assignment.assignment_id,wake_id)
+        metadata=_read_json(metadata_path)
+        sources=validate_snapshot(metadata,assignment_id=assignment.assignment_id,
+            wake_id=wake_id,presence_generation=presence_generation)
+        repos=list(sources)
+        actual_fetch=lambda repo:sources[repo]
+    else:
+        # Explicit injection exists for isolated tests; the host never supplies
+        # a dynamic callable from a wake payload or network request.
+        repos=list(DEFAULT_REPOS[:5])
+        if "ruvnet/RuView" not in repos:
+            repos.append("ruvnet/RuView")
+        actual_fetch=fetch
+
     # Durable pre-execution marker: once started, uncertain crashes are never
     # silently replayed by the host.
     work_dir=worker_state_root/EMPLOYEE
@@ -180,10 +199,6 @@ def process_exact(*, runtime_root: Path, wake_root: Path, worker_state_root: Pat
     lease=lifecycle.claim(assignment.assignment_id,EMPLOYEE,lease_id,lease_seconds=300)
     if lease.generation!=intent["expected_lease_generation"]:
         raise RuntimeError("hermes_unexpected_lease_generation")
-    actual_fetch=fetch if fetch is not None else lambda repo: github_repo_get(repo,timeout=3)
-    repos=list(DEFAULT_REPOS[:5])
-    if "ruvnet/RuView" not in repos:
-        repos.append("ruvnet/RuView")
     previous=work_dir/"hermes-scan-state.json"
     old={}
     if previous.exists():

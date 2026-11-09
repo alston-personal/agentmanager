@@ -8,6 +8,9 @@ on:
     paths:
       - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/hermes_worker.py'
+      - 'agentos_node/hermes_metadata_feed.py'
+      - 'agentos_node/employee_wake_node.py'
+      - 'tests/test_hermes_metadata_feed.py'
       - 'agentos_node/hermes_worker_cli.py'
       - 'governance/employee-worker-adapters-v2.json'
       - 'agentos_node/employee_worker_host_runtime.py'
@@ -32,6 +35,9 @@ on:
     paths:
       - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/hermes_worker.py'
+      - 'agentos_node/hermes_metadata_feed.py'
+      - 'agentos_node/employee_wake_node.py'
+      - 'tests/test_hermes_metadata_feed.py'
       - 'agentos_node/hermes_worker_cli.py'
       - 'governance/employee-worker-adapters-v2.json'
       - 'agentos_node/employee_worker_host_runtime.py'
@@ -71,6 +77,7 @@ jobs:
           python -m unittest
           tests.test_employee_worker_host
           tests.test_hermes_worker_integration
+          tests.test_hermes_metadata_feed
           tests.test_employee_worker_host_daemon
           tests.test_employee_worker_host_assets
           tests.test_employee_worker_host_installer_runtime

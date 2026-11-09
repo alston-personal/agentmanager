@@ -242,10 +242,21 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
     def _product_preclaim_ready(self, candidate: WorkerHostCandidate) -> bool:
         if candidate.adapter.runner_kind == "hermes_github_scan":
             from agentos_node.hermes_worker import _verify_delivery
+            from agentos_node.hermes_metadata_feed import snapshot_path, validate_snapshot
             try:
-                _verify_delivery(self.runtime_root, candidate.capsule,
-                                 candidate.capsule.get("wake_intent") or {})
-            except PermissionError:
+                capsule=candidate.capsule
+                _verify_delivery(self.runtime_root, capsule,
+                                 capsule.get("wake_intent") or {})
+                snapshot=snapshot_path(self.worker_state_root,
+                    str(capsule["assignment_id"]),str(capsule["wake_id"]))
+                if not snapshot.is_file():
+                    return False
+                import json
+                validate_snapshot(json.loads(snapshot.read_text(encoding="utf-8")),
+                    assignment_id=str(capsule["assignment_id"]),
+                    wake_id=str(capsule["wake_id"]),
+                    presence_generation=int(capsule["presence_generation"]))
+            except (OSError,ValueError,PermissionError,TypeError,KeyError):
                 return False
             return True
         if candidate.adapter.runner_kind not in PRODUCT_RUNNER_KINDS:
