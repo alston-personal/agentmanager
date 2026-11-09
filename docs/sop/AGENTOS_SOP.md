@@ -124,3 +124,8 @@
      - **剛性鐵律：必須同時具備【實體代碼路徑】+【可重複執行的測試指令或 Receipt 憑證】！**
      - **嚴禁未落實但文件已標示完成 (Zero Tolerance for False Completion)**。只要缺少真實代碼或測試未通，一律強制降級回 `Proposed` 或 `In-Progress`。
   4. `📦 Closed / Archived (已閉環 / 已歸檔)`：實作交付上線後，原始 Spec 必須顯式標註 `status: closed`、`closed_at: <DATE>` 與 `resolution: <PATH>`，正式結案交割，不得長期懸空。
+
+### 3. 物理守護與門禁整合 (Physical Guards & Gates)
+- **日常運行態 (Claw & PDCA)**: `ConstitutionKeeperWorker` 與 `SpecStewardWorker` 自動執行 `python3 scripts/spec_steward.py --check`，一旦發現任何宣稱完工卻有未完成項之規格，直接判處 `FAIL` 打回。
+- **提交前門禁 (Pre-commit)**: Git hook 強制執行 `scripts/documentation_reality_guard.py --staged`。
+- **合併門禁 (CI & Protected Branch)**: CI 執行 `documentation_reality_guard.py --base origin/main`，杜絕任何身心脫節變更進入主線。

@@ -989,18 +989,23 @@ class SpecStewardWorker(BasePDCAWorker):
         # 規格閉環實施率審計 (Spec Closure Audit)
         spec_steward_script = self.project_root / "scripts" / "spec_steward.py"
         if spec_steward_script.exists():
+            res_check = subprocess.run(["python3", str(spec_steward_script), "--check"], capture_output=True, text=True)
             res_spec = subprocess.run(["python3", str(spec_steward_script)], capture_output=True, text=True)
-            if res_spec.returncode == 0:
+            if res_check.returncode == 0 and res_spec.returncode == 0:
                 first_lines = [l for l in res_spec.stdout.splitlines() if l.strip().startswith("-")]
                 summary_str = "; ".join(first_lines[:3]) if first_lines else "規格治理狀態已更新"
                 findings.append(f"✅ Spec Steward 規格審查完成 ({summary_str})")
             else:
-                findings.append(f"⚠️ 規格治理腳本執行異常: {res_spec.stderr.strip()[:100]}")
+                err_msg = res_check.stderr.strip() or res_spec.stderr.strip()
+                findings.append(f"❌ 規格治理檢測失敗 (發現虛假完工或執行異常): {err_msg[:120]}")
 
         return {"action": "governance_spec_audit", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {"verifier_role": "governance.spec_steward.judge", "verdict": "PASS", "findings": do_data.get("findings", [])}
+        findings = do_data.get("findings", [])
+        has_failure = any(f.startswith("❌") for f in findings)
+        verdict = "FAIL" if has_failure else "PASS"
+        return {"verifier_role": "governance.spec_steward.judge", "verdict": verdict, "findings": findings}
 
 
 class ConstitutionKeeperWorker(BasePDCAWorker):
@@ -1011,19 +1016,55 @@ class ConstitutionKeeperWorker(BasePDCAWorker):
 
     def plan(self, cycle: int) -> dict[str, Any]:
         return {
-            "task": "AgentOS 最高天條 (邏輯資料物理分離、受保護分支權限、受治理執行) 稽核",
+            "task": "AgentOS 最高天條 (邏輯資料物理分離、受保護分支權限、受治理執行、雙軌身心合一) 稽核",
             "source": "constitution_keeper_scheduler",
         }
 
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
-        findings = [
-            "🛡️ 憲法守門核驗：未發現代碼庫直接提交 STATUS.md 或 memory/ 實體目錄 (Logic/Data 分離遵循中)",
-            "🛡️ 受保護分支權限：main / master 物理柵欄保持鎖定，禁止無授權直接提交",
-        ]
+        findings: list[str] = []
+
+        # 1. Logic / Data 物理分離檢驗
+        status_symlink = self.project_root / "STATUS.md"
+        memory_symlink = self.project_root / "memory"
+        if status_symlink.exists() and not status_symlink.is_symlink():
+            findings.append("❌ Logic/Data 分離破壞：STATUS.md 存在於代碼庫中且為實體檔案而非軟連結！")
+        elif memory_symlink.exists() and not memory_symlink.is_symlink():
+            findings.append("❌ Logic/Data 分離破壞：memory/ 存在於代碼庫中且為實體目錄而非軟連結！")
+        else:
+            findings.append("🛡️ 憲法守門核驗：代碼庫未包含實體 STATUS.md 或 memory/ 目錄 (Logic/Data 分離遵循中)")
+
+        # 2. 受保護分支物理防線 (Protected Branch Authority)
+        pba_script = self.project_root / "scripts" / "protected_branch_authority.py"
+        if pba_script.exists():
+            res_pba = subprocess.run(
+                ["python3", str(pba_script), "--branch", "main", "--actor-kind", "agent", "--via-pull-request"],
+                capture_output=True,
+                text=True,
+            )
+            # 正常情況下代理無權直接合併，必須回傳非零 (AWAITING_HUMAN_APPROVAL)
+            if res_pba.returncode != 0 and "AWAITING_HUMAN_APPROVAL" in res_pba.stdout:
+                findings.append("🛡️ 受保護分支權限：main / master 物理柵欄保持鎖定 (AWAITING_HUMAN_APPROVAL)")
+            elif res_pba.returncode == 0:
+                findings.append("❌ 受保護分支物理防線失效：main 分支竟然放行代理人無授權合併！")
+            else:
+                findings.append(f"⚠️ 受保護分支腳本執行異常: {res_pba.stderr.strip()[:100]}")
+
+        # 3. 雙軌身心合一之規格生命週期檢驗 (Spec Steward False Completion Check)
+        spec_script = self.project_root / "scripts" / "spec_steward.py"
+        if spec_script.exists():
+            res_spec = subprocess.run(["python3", str(spec_script), "--check"], capture_output=True, text=True)
+            if res_spec.returncode == 0:
+                findings.append("🛡️ 雙軌身心合一：規格生命週期受控，未發現虛假完工 (Zero False Completion)")
+            else:
+                findings.append(f"❌ 雙軌身心合一違憲：規格層檢測到虛假完工！{res_spec.stderr.strip()[:100]}")
+
         return {"action": "constitution_compliance_check", "findings": findings, "status": "completed"}
 
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
-        return {"verifier_role": "governance.keeper.judge", "verdict": "PASS", "findings": do_data.get("findings", [])}
+        findings = do_data.get("findings", [])
+        has_failure = any(f.startswith("❌") for f in findings)
+        verdict = "FAIL" if has_failure else "PASS"
+        return {"verifier_role": "governance.keeper.judge", "verdict": verdict, "findings": findings}
 
 
 class IrisDnsWorker(BasePDCAWorker):

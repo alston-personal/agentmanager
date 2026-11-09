@@ -188,15 +188,27 @@ def build_findings(limit_spec: str | None = None) -> list[SpecFinding]:
             or ""
         ).strip()
 
-        if production_target and production_state != "PRODUCTION_VERIFIED":
-            notes.append("production target declared but not PRODUCTION_VERIFIED")
-        if production_target and not production_receipt:
-            notes.append("production target missing deployment/acceptance receipt")
+        is_completed = status.lower() in ("closed", "implemented", "verified", "done", "completed")
+        is_proposed = status.lower() in ("proposed", "draft", "ideation", "planned")
 
-        if open_items:
-            notes.append(f"{open_items} open checklist item(s)")
-        if freshness_days >= 7 and open_items:
-            notes.append("stale spec with unresolved checklist items")
+        if is_completed:
+            if open_items:
+                notes.append(f"FALSE_COMPLETION: marked as '{status}' but has {open_items} open checklist item(s)")
+            if production_target and production_state != "PRODUCTION_VERIFIED":
+                notes.append(f"FALSE_COMPLETION: marked as '{status}' with production target but not PRODUCTION_VERIFIED")
+            if production_target and not production_receipt:
+                notes.append(f"FALSE_COMPLETION: marked as '{status}' with production target but missing receipt")
+        else:
+            if production_target and production_state != "PRODUCTION_VERIFIED":
+                notes.append("production target declared but not PRODUCTION_VERIFIED")
+            if production_target and not production_receipt:
+                notes.append("production target missing deployment/acceptance receipt")
+            if open_items:
+                notes.append(f"{open_items} open checklist item(s)")
+            if freshness_days >= 60 and is_proposed:
+                notes.append(f"stale proposed spec ({freshness_days} days inactive, needs active review or archive)")
+            elif freshness_days >= 7 and open_items and not is_proposed:
+                notes.append("stale active spec with unresolved checklist items")
 
         # Surface likely drift when a target project remains proposed.
         for target in targets:
@@ -269,9 +281,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate an AgentOS spec governance report.")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
     parser.add_argument("--spec", help="Limit to a single spec slug (filename without .md).")
+    parser.add_argument("--check", action="store_true", help="Fail closed (exit 1) if False Completion is detected.")
     args = parser.parse_args()
 
     findings = build_findings(args.spec)
+    if args.check:
+        false_completions = [f for f in findings if any("FALSE_COMPLETION" in note for note in f.notes)]
+        if false_completions:
+            print("❌ Spec Steward Check: False Completion detected!", file=sys.stderr)
+            for item in false_completions:
+                fc_notes = [n for n in item.notes if "FALSE_COMPLETION" in n]
+                print(f"  - [{item.spec}] status='{item.status}': {'; '.join(fc_notes)}", file=sys.stderr)
+            return 1
+        print("✅ Spec Steward Check: No false completion detected. Lifecycle contracts intact.")
+        return 0
+
     if args.json:
         print(json.dumps([asdict(item) for item in findings], ensure_ascii=False, indent=2))
         return 0

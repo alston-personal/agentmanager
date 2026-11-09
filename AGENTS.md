@@ -87,6 +87,26 @@ python3 scripts/documentation_reality_guard.py --staged
 
 Treat a documentation-drift failure as an architecture regression, not optional cleanup.
 
+## Two-Track Mind-Body Dual Parity Rule (身心合一雙軌律)
+
+為了兼顧「憲法體制不可妥協之嚴肅性」與「產品創新探索必然之研發週期」，AgentOS 嚴格區分治理層與專案層之身心合一標準：
+
+1. **軌道一：核心治理與體制層（Constitutional & Governance Track）**
+   - **範圍**：`.agent/CONSTITUTION.yaml`、`AGENTS.md`、`.agent/roles/`、Agent Rules。
+   - **標準**：**永恆零時差身心合一 (Strict Zero-Lag Immediate Parity)**。
+   - **鐵律**：條文與代碼必須雙向同步。凡在憲法中宣示之守則，代碼層必須有物理守衛攔截（Guard/Hook/Fail-closed check），嚴禁空洞宣誓；動 code 必動 doc，文檔修改若無實裝代碼支撐亦屬違憲。由 `ConstitutionKeeperWorker` 與 `drift_guard.py` 實時裁決。
+
+2. **軌道二：產品與專案研發層（Product & Feature Engineering Track）**
+   - **範圍**：專案開發、新功能發想、PRD 架構、`agent-data/specs/*.md`、`docs/CURRENT_STATE.md`。
+   - **標準**：**生命週期受控演進 (Lifecycle Controlled Evolution)**。
+   - **允許發想先行**：允許專案存在研發孕育期（發想、架構設計、任務拆解早於代碼完工），但必須誠實受控：
+     - 明確標示狀態：`proposed`（已發想/待立案）或 `in-progress`（實作中）；
+     - 必須聲明 `owner`、`target_projects` 與清晰的待辦清單（`[ ]`）。
+   - **絕對紅線 (Zero False Completion)**：
+     - **嚴禁未落實卻標示完工**：凡標記為 `closed`、`implemented`、`verified` 之規格，必須完成項清零（0 open items）並具備實體代碼/驗證憑據。
+     - 若宣稱完成但有未勾選項目或缺乏憑證，`scripts/spec_steward.py --check` 直接裁定 `FALSE_COMPLETION` 並阻斷。
+     - 嚴禁無人維護之陳舊遊魂（超過 60 天無人推進之 proposed 規格強制標記警告）。
+
 ## Public Web Surface Machine-Readability Rule
 
 Web surfaces created or materially changed by AgentOS MUST be classified before implementation as one of:
