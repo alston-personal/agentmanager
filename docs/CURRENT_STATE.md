@@ -1085,3 +1085,8 @@ Draft PR #2157 strengthens its **optional** reviewed-create wrapper to reject wr
 ### Gaia Work Intake exact-envelope binding (2026-11-09, draft)
 
 The candidate `admit_existing_project_work` now requires the source `ReviewRecord` at admission time and reconstructs the exact bounded Work Intake envelope from that review. Mutated project IDs, actions, acceptance, owners or other extra fields fail before an admission callback or ledger write. This blocks caller-provided envelope substitution but **does not authenticate the callback**; a trusted ONE identity/authority integration is still missing, and no live work was dispatched. The old read-only approved-issue workflow remains unchanged by design.
+
+
+### Gaia work-item re-review deduplication (2026-11-09)
+
+Draft Gaia handoff work identity is now derived from the canonical GitHub Issue URL and matched parent project ID, not from the review-record content hash (which changes each time a new review timestamp or inventory snapshot is recorded). Therefore the same source issue and parent map to the same existing WorkItem across repeated reviews; the proposal's review hash still remains in the bounded `next_action` evidence and must be checked by trusted admission. Canonical GitHub Issue URLs are validated structurally before handoff. This is source/CI continuity only: real autonomous scheduler admission, one-time trusted authorization and persisted ONE receipts remain unverified.
