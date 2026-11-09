@@ -62,7 +62,7 @@ python3 scripts/protected_branch_authority.py \
 
 The expected result without explicit human approval is `AWAITING_HUMAN_APPROVAL` and a non-zero exit status.
 
-Provider-side acceptance is tracked separately and must prove that GitHub rejects a direct `main` push before mutation. See `docs/governance/decisions/GOV-2026-08-30-001-mainline-physical-enforcement.md`.
+Provider-side acceptance is tracked separately and must prove that GitHub rejects a direct `main` push before mutation. See [`docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`](file:///home/ubuntu/agentmanager/docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md).
 
 ## Documentation Reality Rule (Atomic Doc-Code Parity)
 
@@ -118,8 +118,8 @@ Acceptance for a public-discoverable route requires both the `agentos.web-static
 python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
 python3 -m unittest tests.test_protected_branch_authority -v
-python3 -m unittest tests.test_production_parity_receipt -v
-python3 scripts/documentation_reality_guard.py
+python3 -m unittest tests.test_role_reality tests.test_role_runtime -v
+python3 scripts/documentation_reality_guard.py --worktree
 ```
 
 ## Git reporting

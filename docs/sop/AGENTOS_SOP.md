@@ -47,7 +47,7 @@
 ## 二、 任務流轉與生命週期 SOP (Task Lifecycle & Dispatch SOP)
 
 ### 1. 任務進入隊列標準
-- 所有進入 `GLOBAL_TODO_LIST.md` 或 `TASK_BOARD.md` 的任務，必須遵循 `TASK_SPECIFICATION_STANDARD.md`：
+- 所有進入 `$AGENT_DATA_ROOT/GLOBAL_TODO_LIST.md` 或 `$AGENT_DATA_ROOT/TASK_BOARD.md` 的任務，必須遵循 [`docs/TASK_SPECIFICATION_STANDARD.md`](file:///home/ubuntu/agentmanager/docs/TASK_SPECIFICATION_STANDARD.md)：
   - **明確邊界**：指出受影響的檔案路徑或模組名稱。
   - **執行前置 (Pre-requisite)**：指明前置條件是否滿足。
   - **明確驗收閘門 (Acceptance Gate)**：必須附帶可自動執行的驗收指令（例如：`pytest tests/test_xxx.py` 或 `test -f ...`），嚴禁抽象空泛的純文字佔位符（如「定義目標」、「規劃架構」）。
@@ -78,7 +78,7 @@
      - Paw (工匠) 在完成實作前，必須同步更新架構與接口說明文件。
      - Claw (審計官) 在 Check 階段主動執行 `python3 scripts/documentation_reality_guard.py --worktree`，若發現代碼變更但文檔未更新，**直接判定 FAIL 打回重做**，不予結案。
   2. **第二道（本地提交態 / Pre-Commit 攔截）**：
-     - 每次執行 `git commit` 時，`pre_commit_guard.sh` 強制執行 `python3 scripts/documentation_reality_guard.py --staged`。
+     - 每次執行 `git commit` 時，[`.agent/scripts/pre_commit_guard.sh`](file:///home/ubuntu/agentmanager/.agent/scripts/pre_commit_guard.sh) 強制執行 `python3 scripts/documentation_reality_guard.py --staged`。
      - 暫存區中若只有代碼修改而無權威說明文件更新，提交當場被物理拒絕。
   3. **第三道（分支合併態 / CI 門禁）**：
      - GitHub Actions CI 嚴格校驗 `--base origin/main`，禁止文檔脫節的 PR 合併入受保護分支。
@@ -95,7 +95,7 @@
 ## 四、 巡檢自癒與資料終態 SOP (Sentinel & Terminal Sinks SOP)
 
 ### 1. 每日冥想 (Meditation) 閉環規範
-- `meditator.py` 生成系統反思與架構升級建議後，**不得停留在單純寫入 Markdown**：
+- [`scripts/meditation/meditator.py`](file:///home/ubuntu/agentmanager/scripts/meditation/meditator.py) 生成系統反思與架構升級建議後，**不得停留在單純寫入 Markdown**：
   - 輸出建議必須即時解析，提取出最具體的一項行動派發至看板隊列，指定負責 Persona 接手。
   - 若評估當前無須架構變更，必須標記為 `TERMINAL_DISCARD (Reviewed, No Action Required)`，做到每一份思維產出均有終態結論。
 
