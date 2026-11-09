@@ -3,6 +3,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from agent_core.employee_lifecycle import EmployeeLifecycle
+from agent_core.employee_wake import EmployeeWakePlanner
 from unittest.mock import patch
 from agent_core.employee_runtime import EmployeeRuntime
 from agent_core.core_work_items import WorkItemStore
@@ -11,9 +14,6 @@ from agentos_node.hermes_metadata_feed import (
 )
 
 ASSIGNMENT="hermes-2120-discovery-v1"
-WAKE="wake-accepted-123"
-CAPSULE={"employee_id":EMPLOYEE,"assignment_id":ASSIGNMENT,
-         "wake_id":WAKE,"presence_generation":1,"wake_intent":{}}
 
 def meta(repo):
     return {"full_name":repo,"pushed_at":"2026-11-06T00:00:00Z",
@@ -42,13 +42,25 @@ class HermesMetadataFeedTests(unittest.TestCase):
           "authority_requirements":["hermes-scheduled-continuation-authorized",
                                     "one-governed-dispatch"],"state":"open"})
         self.store.project_pending_assignment(ASSIGNMENT)
+    def capsule(self):
+        planned=EmployeeWakePlanner(EmployeeLifecycle(self.runtime)).plan_next(EMPLOYEE)
+        if planned is None:
+            raise RuntimeError("missing_governed_test_intent")
+        return {"employee_id":EMPLOYEE,"assignment_id":ASSIGNMENT,
+                "wake_id":planned.wake_id,"presence_generation":1,
+                "wake_intent":planned.as_dict()}
     def produce(self,fetch=meta):
         return produce_snapshot(runtime_root=self.runtime.root,wake_root=self.wake_root,
-            state_root=self.state_root,capsule=CAPSULE,fetch=fetch)
+            state_root=self.state_root,capsule=self.capsule(),fetch=fetch)
+    def expire_lease(self):
+        lifecycle=EmployeeLifecycle(self.runtime)
+        lifecycle.claim(ASSIGNMENT,EMPLOYEE,"prior-lease",
+            now=datetime.now(timezone.utc)-timedelta(minutes=10))
+        return lifecycle
     def test_no_authority_no_network_fetch(self):
         requested=[]
         with patch("agentos_node.hermes_metadata_feed._verify_delivery",return_value=None):
-            with self.assertRaises((PermissionError,FileNotFoundError)):
+            with self.assertRaises((PermissionError,FileNotFoundError,RuntimeError)):
                 self.produce(lambda repo:requested.append(repo))
         self.assertEqual(requested,[])
     def test_snapshot_bound_to_one_canonical_wake(self):
@@ -59,9 +71,9 @@ class HermesMetadataFeedTests(unittest.TestCase):
             self.assertLessEqual(first["source_count"],6)
             again=self.produce(lambda _: (_ for _ in ()).throw(AssertionError("unexpected fetch")))
             self.assertEqual(again["status"],"already_present")
-        p=snapshot_path(self.state_root,ASSIGNMENT,WAKE)
+        p=snapshot_path(self.state_root,ASSIGNMENT,self.capsule()["wake_id"])
         snapshot=json.loads(p.read_text())
-        data=validate_snapshot(snapshot,assignment_id=ASSIGNMENT,wake_id=WAKE,presence_generation=1)
+        data=validate_snapshot(snapshot,assignment_id=ASSIGNMENT,wake_id=self.capsule()["wake_id"],presence_generation=1)
         self.assertIn("ruvnet/RuView",data)
         with self.assertRaises(PermissionError):
             validate_snapshot(snapshot,assignment_id=ASSIGNMENT,
@@ -70,23 +82,46 @@ class HermesMetadataFeedTests(unittest.TestCase):
         self.authorize()
         with patch("agentos_node.hermes_metadata_feed._verify_delivery",return_value=None):
             self.produce()
-        p=snapshot_path(self.state_root,ASSIGNMENT,WAKE)
+        p=snapshot_path(self.state_root,ASSIGNMENT,self.capsule()["wake_id"])
         value=json.loads(p.read_text())
         value["sources"][ROSTER[0]]["full_name"]="other/identity"
         with self.assertRaises(PermissionError):
             validate_snapshot(value,assignment_id=ASSIGNMENT,
-                              wake_id=WAKE,presence_generation=1)
+                              wake_id=self.capsule()["wake_id"],presence_generation=1)
     def test_producer_failure_does_not_create_fake_snapshot(self):
         self.authorize()
         with patch("agentos_node.hermes_metadata_feed._verify_delivery",return_value=None):
             out=self.produce(lambda _: (_ for _ in ()).throw(RuntimeError("offline")))
         self.assertEqual(out["status"],"source_unavailable")
-        self.assertFalse(snapshot_path(self.state_root,ASSIGNMENT,WAKE).exists())
+        self.assertFalse(snapshot_path(self.state_root,ASSIGNMENT,self.capsule()["wake_id"]).exists())
     def test_s4_fence_blocks_fetch(self):
         self.authorize()
         with patch("agentos_node.hermes_metadata_feed._verify_delivery",side_effect=PermissionError("unverified")):
             with self.assertRaises(PermissionError):
                 self.produce(lambda _: (_ for _ in ()).throw(AssertionError("unexpected fetch")))
+    def test_expired_active_lease_can_resume_same_authorized_work(self):
+        self.authorize()
+        self.expire_lease()
+        self.assertEqual(self.capsule()["wake_intent"]["mode"], "resume")
+        with patch("agentos_node.hermes_metadata_feed._verify_delivery",return_value=None):
+            out=self.produce()
+        self.assertEqual(out["status"],"materialized")
+
+    def test_active_unexpired_lease_cannot_trigger_duplicate_scan(self):
+        self.authorize()
+        lifecycle=EmployeeLifecycle(self.runtime)
+        lifecycle.claim(ASSIGNMENT,EMPLOYEE,"live-lease")
+        called=[]
+        # A stale original wake is not a new authority for a concurrent fetch.
+        stale={"employee_id":EMPLOYEE,"assignment_id":ASSIGNMENT,
+               "wake_id":"wake_stale","presence_generation":1,"wake_intent":{}}
+        with patch("agentos_node.hermes_metadata_feed._verify_delivery",return_value=None):
+            with self.assertRaises(PermissionError):
+                produce_snapshot(runtime_root=self.runtime.root,wake_root=self.wake_root,
+                    state_root=self.state_root,capsule=stale,
+                    fetch=lambda repo:called.append(repo))
+        self.assertEqual(called,[])
+
     def test_network_sandbox_remains_intact(self):
         root=Path(__file__).resolve().parents[1]
         for name in [".agent/scripts/agentos-employee-worker-host-system.service",
