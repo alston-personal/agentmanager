@@ -51,5 +51,18 @@ class TestInbox(unittest.TestCase):
             self.assertEqual(ingest(src, root)["rejected"], 1)
 
 
+    def test_oracle_local_social_lane_installs_and_imports_before_reasoning(self):
+        root = Path(__file__).resolve().parents[1]
+        social = (root / "scripts/run_persona_social_actions_user.sh").read_text()
+        install = (root / "scripts/install_persona_pdca_timer_user.sh").read_text()
+        workflow = (root / ".github/workflows/persona-pdca-heartbeat.yml").read_text()
+        self.assertIn('python3 "$EXTERNAL_INBOX"', social)
+        self.assertLess(social.index('python3 "$EXTERNAL_INBOX"'),
+                        social.index('python3 "$POST_INTENT_GENERATOR"'))
+        self.assertIn('install -m 0755 "$SOURCE_EXTERNAL_INBOX"', install)
+        self.assertIn('"$REMOTE_WARDROBE_SOURCES" "$REMOTE_EXTERNAL_INBOX"', workflow)
+        self.assertIn('"$REMOTE_EXTERNAL_INBOX" "$REMOTE_INSTALLER"', workflow)
+
+
 if __name__ == "__main__":
     unittest.main()
