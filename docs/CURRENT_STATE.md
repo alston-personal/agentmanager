@@ -1090,3 +1090,8 @@ The candidate `admit_existing_project_work` now requires the source `ReviewRecor
 ### Gaia work-item re-review deduplication (2026-11-09)
 
 Draft Gaia handoff work identity is now derived from the canonical GitHub Issue URL and matched parent project ID, not from the review-record content hash (which changes each time a new review timestamp or inventory snapshot is recorded). Therefore the same source issue and parent map to the same existing WorkItem across repeated reviews; the proposal's review hash still remains in the bounded `next_action` evidence and must be checked by trusted admission. Canonical GitHub Issue URLs are validated structurally before handoff. This is source/CI continuity only: real autonomous scheduler admission, one-time trusted authorization and persisted ONE receipts remain unverified.
+
+
+### Gaia Runner Window live-bridge baseline risk (2026-11-09)
+
+The standalone `scripts/gaia_intake_probe.py` is a bounded *read-only* candidate for a future ONE Runner Window action, with tests in Documentation Reality Guard. It is NOT registered as a publicly dispatchable capability or Oracle scheduler action. **Do not copy the outdated `agentos_node/bootstrap_control.py` from this PR head into deployed main:** GitHub compare reported the PR branch 3,957 commits behind main, and the branch's bootstrap_control.py is materially older than the current main file, while `bootstrap_scheduler.py` exists in main but not on this branch. Before any bootstrap action/policy changes, converge or otherwise safely transplant Gaia-only commits onto the current main head with original integration dependencies preserved. No live receipt or autonomous Gaia exists yet.
