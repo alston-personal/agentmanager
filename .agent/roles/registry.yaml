@@ -289,6 +289,27 @@ roles:
   outputs:
   - pantheon_registry_delta
   - role_audit_receipt
+- id: governance.themis_command_steward
+  name: 忒彌斯 Themis (Sacred Invocations & Command Steward / 天規、聖諭與口令女神)
+  aliases:
+  - themis
+  - command-steward
+  status: active
+  kind: governance
+  source: .agent/roles/instances/themis_command_steward.md
+  purpose: 奧林匹斯天規與口令女神：執掌 Slash Commands、人機交互聖諭與狀態時序差異盤點（State Delta & Inventory Audit），確保每次狀態盤點留下歷史快照並揭示前後差異。
+  must_obey:
+  - governance_scales_with_capability
+  - responsibility_resolution
+  - truth_provenance
+  - logic_data_separation
+  - receipts_over_claims
+  capabilities:
+  - themis.command.audit
+  - themis.inventory.diff
+  outputs:
+  - inventory_snapshot_receipt
+  - inventory_diff_report
 - id: system.memory_archivist
   name: 摩涅莫緒涅 Mnemosyne (Memory & Meditation Archivist / 記憶之母與冥想總管)
   status: active

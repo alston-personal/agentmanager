@@ -50,6 +50,7 @@ AgentOS 的角色宇宙依據「意識程度、生命週期、專案依附度」
 | **🚪 網關總管 Gateway Steward** | `system.gateway_steward` | `gateway-steward`, `gateway_steward` | **通路總管 / 反向代理**：管理 Nginx 反向代理配置、Let's Encrypt SSL/TLS 憑證與短網址跳轉。 |
 | **🎨 維納斯 Venus** | `system.aesthetic_director_venus` | `venus`, `aesthetic-director` | **美學總監 / 視覺體驗**：掌管全生態 Premium UI/UX、視覺動效與體驗一致性。 |
 | **📜 泰勒斯 Thales** | `system.academic_researcher` | `thales`, `academic-researcher` | **哲人先驅 / 學術研究**：負責論文撰寫、前沿演算法實驗與學術報告。 |
+| **⚖️ 忒彌斯 Themis** | `governance.themis_command_steward` | `themis`, `command-steward` | **天規聖諭與口令女神**：統籌全生態 Slash Commands 與人機交互協議，掌管全域狀態盤點與歷史時序差異比對 (State Delta & Inventory Audit)。 |
 | **守憲與仲裁諸神** | `governance.*` | `spec_steward`, `keeper`, `arbiter` | 負責規格閉環追蹤、憲法不變量防護與跨角色衝撞仲裁。 |
 
 ---

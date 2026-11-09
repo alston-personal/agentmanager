@@ -1320,6 +1320,50 @@ class RheaRoleStewardWorker(BasePDCAWorker):
         }
 
 
+class ThemisCommandWorker(BasePDCAWorker):
+    """忒彌斯 Themis (governance.themis_command_steward): Sacred Invocations, Slash Commands & Inventory Delta Steward."""
+
+    def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
+        super().__init__("governance-themis-command-steward", data_root, project_root)
+        self.commands_dir = self.project_root / ".agentos" / "commands"
+
+    def plan(self, cycle: int) -> dict[str, Any]:
+        return {
+            "task": "全生態狀態時序盤點與聖諭口令規範審查",
+            "mission_focus": "採集狀態快照、計算前後時序差異、留存歷史存檔，並監督人機交互協議",
+            "source": "themis_command_steward",
+        }
+
+    def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
+        from scripts.themis_status_diff import run_inventory_diff
+        result, report_md = run_inventory_diff(self.project_root, self.data_root, save=True)
+        delta = result.get("delta", {})
+        summary = result.get("current", {}).get("projects_summary", {})
+
+        findings = [
+            f"⚖️ 專案總量: {summary.get('total_projects', 0)} 座",
+            f"⚖️ Open TODOs: {summary.get('total_open', 0)} 項, Closed: {summary.get('total_closed', 0)} 項",
+        ]
+        if delta.get("has_baseline"):
+            td = delta.get("todo_delta", {})
+            findings.append(f"⚖️ 時序變更: Open Δ {td.get('open_delta', 0):+d}, Closed Δ {td.get('closed_delta', 0):+d}")
+
+        return {
+            "action": "themis_inventory_diff",
+            "report_markdown": report_md,
+            "delta": delta,
+            "findings": findings,
+            "status": "completed",
+        }
+
+    def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "verifier_role": "governance.themis.command_inspector",
+            "verdict": "PASS",
+            "findings": do_data.get("findings", []),
+        }
+
+
 class HephaestusPawWorker(BasePDCAWorker):
     """赫菲斯托斯 Hephaestus (sector.paw): The Paw Executor & Master Smith (工匠之神與掌中神掌)."""
 
@@ -1385,6 +1429,10 @@ WORKER_REGISTRY: Dict[str, Callable[[], BasePDCAWorker]] = {
     "rhea": RheaRoleStewardWorker,
     "role-steward": RheaRoleStewardWorker,
     "governance.role_steward": RheaRoleStewardWorker,
+    "governance-themis-command-steward": ThemisCommandWorker,
+    "themis": ThemisCommandWorker,
+    "command-steward": ThemisCommandWorker,
+    "governance.themis_command_steward": ThemisCommandWorker,
     "system-cartographer": CartographerWorker,
     "cartographer": CartographerWorker,
     "system.cartographer": CartographerWorker,

@@ -1077,3 +1077,13 @@ older unmerged branch commits with `rejected_non_fast_forward`.
 `scripts/advance_ir_cli.py` (verified by `tests/test_advance_ir_cli.py`) provides
 a standard CLI to inspect and advance `agentos-core` Canonical IR generations
 with CAS parent checks and atomic `active-continuation.json` activation.
+
+### Themis Sacred Invocations & Temporal Inventory Diff Engine (2026-11-09)
+
+Consecrated **Themis 忒彌斯** (`governance.themis_command_steward`) as the Sacred Invocations and Slash Command Steward.
+Implemented `scripts/themis_status_diff.py` (verified by `tests/test_themis_status_diff.py`) and command specification `.agentos/commands/status-diff.json`.
+Features:
+- Scans full project island inventory (61+ projects, STATUS.md presence, Open/Closed/AC TODOs).
+- Persists historical snapshots in Data Layer (`$AGENT_DATA_ROOT/snapshots/inventory/`) preserving physical Logic/Data separation.
+- Computes atomic temporal deltas (Git SHA, project count, TODO progression, and Atlas closure cycles) against baseline `latest.json`.
+- Integrated `ThemisCommandWorker` into `agent_core/base_pdca.py` under Rhea's physical seal (`scripts/rhea_role_steward.py --seal`).
