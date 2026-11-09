@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.core_work_items import WorkItemStore
 from agent_core.hermes_github_scan import (
     DEFAULT_REPOS, github_repo_get, normalized_repo, evaluate, atomic_json_write,
 )
@@ -80,6 +81,13 @@ def produce_snapshot(
     runtime=EmployeeRuntime(runtime_root)
     assignment=runtime.get_assignment(assignment_id)
     employee=runtime.get_employee(EMPLOYEE)
+    item=WorkItemStore(runtime).get(assignment_id)
+    if (item.employee_id != EMPLOYEE or item.assignment_id != assignment_id
+        or item.state != "open" or item.source_kind != "schedule"
+        or "github.technology.scan" not in item.required_capabilities
+        or "one-governed-dispatch" not in item.authority_requirements
+        or "hermes-scheduled-continuation-authorized" not in item.authority_requirements):
+        raise PermissionError("hermes_metadata_work_item_not_authorized")
     if (assignment.employee_id != EMPLOYEE or assignment.state!="pending"
         or employee.role_ids!=["research.hermes"]
         or employee.skill_ids!=["github.technology.scan"]):
