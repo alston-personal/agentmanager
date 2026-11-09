@@ -14,8 +14,8 @@
   "initial_work_item": {
     "schema": "agentos.core-work-item/v1",
     "work_item_id": "hermes-2120-discovery-v1",
-    "source_kind": "canonical_state",
-    "source_ref": "github:alston-personal/agentmanager#2120",
+    "source_kind": "schedule",
+    "source_ref": "schedule:hermes-2120",
     "project_id": "agentos-core",
     "employee_id": "hermes-technology-scout",
     "assignment_id": "hermes-2120-discovery-v1",
@@ -27,7 +27,9 @@
       "do-not-create-parallel-scheduler-or-queue",
       "no-protected-main-publication",
       "no-automatic-implementation-or-deployment",
-      "receipt-and-provenance-required"
+      "receipt-and-provenance-required",
+      "max-repositories-per-scan=25",
+      "next-due-hours-bounded-1-to-168"
     ],
     "dependency_refs": [],
     "required_capabilities": [
@@ -37,7 +39,9 @@
       "role-contract-must-cover-required-capability",
       "skill-does-not-grant-network-or-execution-authority",
       "public-github-read-adapter-must-be-explicitly-allowlisted",
-      "governed-one-wake-and-receipt-required"
+      "governed-one-wake-and-receipt-required",
+      "hermes-scheduled-continuation-authorized",
+      "one-governed-dispatch"
     ],
     "source_revision": "hermes-technology-scout-v1",
     "state": "open"
