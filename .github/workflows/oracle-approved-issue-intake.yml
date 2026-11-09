@@ -132,6 +132,45 @@ jobs:
           wake=item.get("wake_condition") or {}
           print("wow_2134_wake_kind="+str(wake.get("kind") if wake.get("kind") in ("time","external") else "none"))
           PY
+          # Independent read-only receipt projection for ONE/Supervisor claim:
+          # registering an Assignment never equals a claim, delivery or result.
+          /usr/bin/python3 - "$data/employee-runtime" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          assignment_id="paw-wow-2134-inspect-v1"
+          def read(path):
+              try:
+                  obj=json.loads(path.read_text(encoding="utf-8"))
+                  return obj if isinstance(obj,dict) else {}
+              except (FileNotFoundError, OSError, ValueError):
+                  return {}
+          def safe(value, allowed):
+              return value if value in allowed else "unknown"
+          assignment=read(root/"assignments"/(assignment_id+".json"))
+          state=safe(assignment.get("state"),{"pending","active","blocked","handoff","completed","cancelled"})
+          if not assignment: state="missing"
+          print("wow_2134_employee_assignment_state="+state)
+          lease=read(root/"lifecycle"/"leases"/(assignment_id+".json"))
+          lease_status=safe(lease.get("status"),{"active","completed","blocked","handoff","cancelled","expired"})
+          if not lease: lease_status="missing"
+          print("wow_2134_employee_lease_state="+lease_status)
+          generation=lease.get("generation",0)
+          print("wow_2134_employee_lease_generation="+str(generation if type(generation) is int and 0 <= generation <= 1000000 else 0))
+          deliveries=root/"supervisor"/"deliveries"
+          states=[]
+          if deliveries.is_dir():
+              for path in sorted(deliveries.glob("reconcile_*.json"))[-300:]:
+                  row=read(path)
+                  if row.get("assignment_id")==assignment_id and row.get("employee_id")=="the-paw":
+                      states.append(safe(row.get("status"),{"queued","awaiting_claim","claimed","blocked","failed","unknown","superseded","terminal_observed"}))
+          print("wow_2134_supervisor_delivery_state="+(states[-1] if states else "missing"))
+          receipts=root/"lifecycle"/"receipts"/assignment_id
+          files=sorted(receipts.glob("*.json")) if receipts.is_dir() else []
+          latest=read(files[-1]) if files else {}
+          outcome=safe(latest.get("outcome"),{"completed","blocked","handoff","cancelled"}) if latest else "missing"
+          print("wow_2134_employee_receipt_outcome="+outcome)
+          PY
           echo "ORACLE_APPROVED_ISSUE_INTAKE=PASS"
           echo "issue_intake_source=github_open_explicitly_approved"
           REMOTE
