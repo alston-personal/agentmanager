@@ -13,19 +13,6 @@
       "skill_ids": [
         "spec.audit"
       ]
-    },
-    {
-      "adapter_id": "hermes-github-scan",
-      "status": "active",
-      "runner_kind": "hermes_github_scan",
-      "employee_id": "hermes-technology-scout",
-      "assignment_id": "hermes-2120-discovery-v1",
-      "role_ids": [
-        "research.hermes"
-      ],
-      "skill_ids": [
-        "github.technology.scan"
-      ]
     }
   ]
 }
