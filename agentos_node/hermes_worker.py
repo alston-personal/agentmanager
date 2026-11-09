@@ -210,7 +210,11 @@ def process_exact(*, runtime_root: Path, wake_root: Path, worker_state_root: Pat
         raise RuntimeError("hermes_no_github_sources")
     signals=ScanSignals(meaningful_findings=report["changed_count"],
         consecutive_empty_scans=0 if report["changed_count"] else int(old.get("consecutive_empty_scans",0))+1)
-    plan=propose_scan(now=datetime.now(timezone.utc),last_scan_at=datetime.now(timezone.utc),signals=signals)
+    # One monotonic observation is authoritative for both scheduler inputs.
+    # Calling datetime.now() twice produces last_scan_at > now and raises
+    # future_last_scan_at after the lease was already claimed.
+    completed_at=datetime.now(timezone.utc)
+    plan=propose_scan(now=completed_at,last_scan_at=completed_at,signals=signals)
     summary=lifecycle_scan_summary(report,next_interval_hours=plan.interval_hours)
     new_hashes=dict(old.get("fingerprints",{}))
     new_hashes.update({x["repo"].casefold():x["fingerprint"] for x in report["findings"]})
