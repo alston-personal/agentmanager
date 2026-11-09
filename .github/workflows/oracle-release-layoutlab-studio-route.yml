@@ -1,0 +1,40 @@
+# Restore the existing Layout Lab route through the shared, governed Studio publisher.
+# Canonical Studio source PR #147 is pinned; this scope NEVER replaces /poc or any other route.
+name: Oracle Release Layout Lab Studio Route
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-layoutlab-studio-route.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: layoutlab-canonical-studio-route
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: ./.github/workflows/reusable-studio-static-route-release.yml
+    with:
+      source_sha: bc215f0dcec4bf537a1ae30c2dba6a5a28f96fdf
+      route: layout-lab
+      backup_key: layoutlab-canonical-route
+      receipt_schema: studio-web.layoutlab-recovery/v1
+      acceptance_anchors: |-
+        data-release="0.7.9"
+        layoutlib-browser-v0.5.js
+        layoutlab-v0.7-release-fix.js?v=0.7.9
+        Floor Plan → Spatial IR → 3D
+      acceptance_js_module: layoutlib-browser-v0.5.js
+      acceptance_js_anchor: LayoutLib Browser Adapter v0.6.0
+    secrets:
+      AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
+      AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
+      AGENTOS_DEPLOY_SSH_KEY: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY }}
+      N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
