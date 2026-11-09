@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.employee_lifecycle import EmployeeLifecycle
+from agent_core.employee_wake import EmployeeWakePlanner
 from agent_core.core_work_items import WorkItemStore
 from agent_core.hermes_github_scan import (
     DEFAULT_REPOS, github_repo_get, normalized_repo, evaluate, atomic_json_write,
@@ -88,10 +90,33 @@ def produce_snapshot(
         or "one-governed-dispatch" not in item.authority_requirements
         or "hermes-scheduled-continuation-authorized" not in item.authority_requirements):
         raise PermissionError("hermes_metadata_work_item_not_authorized")
-    if (assignment.employee_id != EMPLOYEE or assignment.state!="pending"
+    if (assignment.employee_id != EMPLOYEE
         or employee.role_ids!=["research.hermes"]
         or employee.skill_ids!=["github.technology.scan"]):
-        raise PermissionError("hermes_metadata_employee_not_pending")
+        raise PermissionError("hermes_metadata_employee_invalid")
+    # Pending first runs and expired-lease resumes are both selected by the
+    # canonical read-only planner. An active non-expired lease must NOT trigger
+    # a second external metadata fetch or concurrent worker.
+    lifecycle = EmployeeLifecycle(runtime)
+    planned = EmployeeWakePlanner(lifecycle).plan_next(EMPLOYEE)
+    wake_intent = capsule.get("wake_intent")
+    if (planned is None or planned.assignment_id != assignment_id
+        or not isinstance(wake_intent, dict)
+        or planned.as_dict() != wake_intent):
+        raise PermissionError("hermes_metadata_wake_not_current")
+    if assignment.state == "pending":
+        if planned.mode != "fresh" or planned.resume_required:
+            raise PermissionError("hermes_metadata_fresh_intent_invalid")
+    elif assignment.state == "active":
+        prior = lifecycle.get_lease(assignment_id)
+        if (prior is None or prior.status != "active"
+            or not lifecycle.lease_expired(prior)
+            or planned.mode != "resume"
+            or not planned.resume_required
+            or planned.expected_lease_generation != prior.generation + 1):
+            raise PermissionError("hermes_metadata_resume_not_authorized")
+    else:
+        raise PermissionError("hermes_metadata_assignment_not_runnable")
     dest=snapshot_path(state_root,assignment_id,wake_id)
     if dest.exists():
         existing=json.loads(dest.read_text(encoding="utf-8"))
