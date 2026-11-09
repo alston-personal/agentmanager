@@ -1045,3 +1045,8 @@ The existing `scripts/work_completion.py` has a candidate generation-fenced reco
 ### Local Project Store adapter (candidate)
 
 `agent_core/gaia_project_adapter.py` reads the existing `agent_core.project_store.list_projects()` and declares provenance/errors for the local Project Store. It can recommend extending an explicitly matched project, but deliberately returns `NEEDS_EVIDENCE` for unmatched proposals because local inventory does not attest Atlas/global completeness. The adapter neither registers projects nor supplies a Creation Gate/authorization token. Unit tests are run in the existing Documentation Reality Guard workflow. This remains source/CI evidence only, not a live Oracle ONE receipt.
+
+
+### Governance Directory projection adapter (candidate, #420)
+
+`agent_core/gaia_directory_adapter.py` reads the pre-existing Governance Directory as a *non-authoritative query projection* with source-path and structural error evidence. It can identify a known project/role/capability and recommend reuse/extension, but a missing match is NOT proof that a new asset is unique. It does not mint approval, change `register_canonical_project`, or enable new repository/role creation. Additional adapter tests run through the existing Documentation Reality Guard. The write-path Creation Gate, canonical source reconciliation, scheduler/ONE receipt and Gaia deployment remain unimplemented/unverified.
