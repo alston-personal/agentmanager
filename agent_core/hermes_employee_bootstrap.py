@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.core_work_items import WorkItemStore
 from agent_core.role_runtime import RoleRegistry
 
 EMPLOYEE_ID = "hermes-technology-scout"
@@ -34,18 +35,20 @@ def ensure_hermes_employee(runtime: EmployeeRuntime, registry: RoleRegistry,
                                 role_ids=[ROLE_ID], skill_ids=employee.get("skill_ids", []))
         action = "created"
 
-    assignment_id = str(work["assignment_id"])
+    # Canonical WorkItemStore is the sole source for Supervisor work projection.
+    # The schedule/authority declaration must be installed by the trusted operator.
+    store = WorkItemStore(runtime)
+    stored = store.persist(work)
+    assignment_id = stored.assignment_id
     try:
         current_assignment = runtime.get_assignment(assignment_id)
         if current_assignment.employee_id != EMPLOYEE_ID:
             raise RuntimeError("existing_assignment_owner_mismatch")
         assignment_action = "preserved"
     except FileNotFoundError:
-        runtime.create_assignment(
-            assignment_id, EMPLOYEE_ID, str(work["goal"]),
-            thread_head=str(bootstrap.get("initial_thread_head") or ""),
-            constraints=list(work.get("constraints", []))
-        )
+        store.project_pending_assignment(stored.work_item_id)
+        if bootstrap.get("initial_thread_head"):
+            runtime.update_assignment(assignment_id, thread_head=str(bootstrap["initial_thread_head"]))
         assignment_action = "created"
     return {
         "schema": "agentos.hermes-bootstrap-result/v1",
