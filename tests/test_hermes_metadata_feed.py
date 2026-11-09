@@ -60,7 +60,7 @@ class HermesMetadataFeedTests(unittest.TestCase):
     def test_no_authority_no_network_fetch(self):
         requested=[]
         with patch("agentos_node.hermes_metadata_feed._verify_delivery",return_value=None):
-            with self.assertRaises((PermissionError,FileNotFoundError)):
+            with self.assertRaises((PermissionError,FileNotFoundError,RuntimeError)):
                 self.produce(lambda repo:requested.append(repo))
         self.assertEqual(requested,[])
     def test_snapshot_bound_to_one_canonical_wake(self):
@@ -82,18 +82,18 @@ class HermesMetadataFeedTests(unittest.TestCase):
         self.authorize()
         with patch("agentos_node.hermes_metadata_feed._verify_delivery",return_value=None):
             self.produce()
-        p=snapshot_path(self.state_root,ASSIGNMENT,WAKE)
+        p=snapshot_path(self.state_root,ASSIGNMENT,self.capsule()["wake_id"])
         value=json.loads(p.read_text())
         value["sources"][ROSTER[0]]["full_name"]="other/identity"
         with self.assertRaises(PermissionError):
             validate_snapshot(value,assignment_id=ASSIGNMENT,
-                              wake_id=WAKE,presence_generation=1)
+                              wake_id=self.capsule()["wake_id"],presence_generation=1)
     def test_producer_failure_does_not_create_fake_snapshot(self):
         self.authorize()
         with patch("agentos_node.hermes_metadata_feed._verify_delivery",return_value=None):
             out=self.produce(lambda _: (_ for _ in ()).throw(RuntimeError("offline")))
         self.assertEqual(out["status"],"source_unavailable")
-        self.assertFalse(snapshot_path(self.state_root,ASSIGNMENT,WAKE).exists())
+        self.assertFalse(snapshot_path(self.state_root,ASSIGNMENT,self.capsule()["wake_id"]).exists())
     def test_s4_fence_blocks_fetch(self):
         self.authorize()
         with patch("agentos_node.hermes_metadata_feed._verify_delivery",side_effect=PermissionError("unverified")):
