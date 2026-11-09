@@ -35,7 +35,7 @@ def encode(request_id: int, payload: bytes) -> list[int]:
 def decode(cells: list[int]) -> tuple[int, bytes]:
     raw = bytearray()
     accumulator = count = 0
-    for cell in cells:
+    for consumed_index, cell in enumerate(cells):
         if type(cell) is not int or not 0 <= cell <= 7:
             raise ProtocolError("invalid_cell")
         accumulator = (accumulator << 3) | cell
@@ -54,6 +54,14 @@ def decode(cells: list[int]) -> tuple[int, bytes]:
                     body = bytes(raw[2:6 + length])
                     if checksum(body) != bytes(raw[-2:]):
                         raise ProtocolError("checksum_failure")
+                    # A screen capture may pad the final frame with zero cells.
+                    # Reject hidden nonzero data after the declared frame, and
+                    # reject nonzero residual bits in the partial 3-bit cell.
+                    if accumulator != 0:
+                        raise ProtocolError("invalid_frame_padding")
+                    tail = cells[(consumed_index + 1):]
+                    if any(type(extra) is not int or extra != 0 for extra in tail):
+                        raise ProtocolError("unexpected_trailing_cells")
                     return int.from_bytes(raw[2:4], "big"), bytes(raw[6:6 + length])
     raise ProtocolError("incomplete_frame")
 
