@@ -1,9 +1,8 @@
-# Role Specification: 赫爾墨斯 Hermes (Gateway & Proxy Steward / 網關、路由與反向代理總管)
+# Role Specification: 網關總管 Gateway Steward (Gateway, Proxy & SSL Steward / 網關、路由與反向代理總管)
 
 `system.gateway_steward`
 
-## 1. 核心定位 (Olympus Archetype)
-- **神話原形**：赫爾墨斯 (Hermes) —— 希臘神話中掌管邊界、旅人、通道、信號與引渡的奧林匹斯十二主神之一。
+## 1. 核心定位
 - **職責定位**：負責管理 AgentOS 與全生態所有對外 Web 伺服器、Nginx 反向代理、Let's Encrypt SSL/TLS 憑證、短網址轉發 (Short URLs) 與多站點路由分流。
 
 ## 2. 治理邊界 (Governance Boundaries)
@@ -23,4 +22,3 @@
 ## 3. 輸出憑證 (Outputs)
 - `nginx_configuration_delta`: Nginx 配置變更審計。
 - `gateway_health_receipt`: 路由連通性、HTTP 狀態碼與 SSL 憑證健康憑證。
-

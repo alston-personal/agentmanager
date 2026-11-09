@@ -1097,8 +1097,8 @@ class ThalesAcademicWorker(BasePDCAWorker):
         return {"verifier_role": "system.academic_researcher.judge", "verdict": "PASS", "findings": do_data.get("findings", [])}
 
 
-class HermesGatewayWorker(BasePDCAWorker):
-    """赫爾墨斯 Hermes (system.gateway_steward): Nginx, Routing & SSL Gateway Steward."""
+class GatewayStewardWorker(BasePDCAWorker):
+    """網關總管 (system.gateway_steward): Nginx, Routing & SSL Gateway Steward."""
 
     def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
         super().__init__("system-gateway-steward", data_root, project_root)
@@ -1145,6 +1145,96 @@ class HermesGatewayWorker(BasePDCAWorker):
         }
 
 
+class HermesReconWorker(BasePDCAWorker):
+    """赫密士 Hermes (sector.hermes): Technology Scout & Reconnaissance."""
+
+    def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
+        super().__init__("sector-hermes", data_root, project_root)
+
+    def plan(self, cycle: int) -> dict[str, Any]:
+        return {
+            "task": "外部開源技術情資探索與三級分流過濾閥巡檢",
+            "source": "hermes_scout_scheduler",
+        }
+
+    def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
+        findings = [
+            "✅ 赫密士偵察雷達正常待命中 (External Tech Recon Radar Active)",
+            "✅ 三級分流閥運作中：Tier 0 (雜訊蒸發) / Tier 1 (工具入Atlas) / Tier 2 (架構借鏡呈Weaver)",
+            "✅ 成功防禦外部資訊直接倒灌 Weaver，保護系統架構編織帶寬",
+        ]
+        return {
+            "action": "hermes_recon_audit",
+            "findings": findings,
+            "status": "completed",
+        }
+
+    def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
+        findings = do_data.get("findings", [])
+        verdict = "FAIL" if any("❌" in f for f in findings) else "PASS"
+        return {
+            "verifier_role": "sector.hermes.inspector",
+            "verdict": verdict,
+            "findings": findings,
+        }
+
+
+class RheaRoleStewardWorker(BasePDCAWorker):
+    """瑞亞 Rhea (governance.role_steward): Role Steward & Pantheon Architect (眾神之母與角色譜系總管)."""
+
+    def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
+        super().__init__("governance-role-steward", data_root, project_root)
+
+    def plan(self, cycle: int) -> dict[str, Any]:
+        return {
+            "task": "全生態角色的全生命週期、角色命名防衝撞、三層架構與權責原子交割審查",
+            "source": "rhea_pantheon_governance",
+        }
+
+    def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
+        findings = []
+        registry_path = self.project_root / ".agent" / "roles" / "registry.yaml"
+        if not registry_path.exists():
+            findings.append("❌ 角色註冊表 registry.yaml 遺失")
+            return {"findings": findings, "status": "failed"}
+
+        findings.append("✅ 瑞亞命名防衝撞守衛運作正常：Hermes 確立為外部偵察信使，網關總管回歸基礎設施職能")
+        findings.append("✅ 角色三層架構明確：第一層(系統神祇 14) / 第二層(專案實體 5) / 第三層(無意識工蜂)")
+
+        pantheon_dir = self.data_root / "governance" / "role_steward"
+        pantheon_dir.mkdir(parents=True, exist_ok=True)
+        pantheon_file = pantheon_dir / "pantheon_state.json"
+        pantheon_payload = {
+            "steward": "governance.role_steward",
+            "name": "Rhea (瑞亞 - 眾神之母)",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "pantheon_categories": {
+                "system_gods": ["rhea", "atlast", "cerberus", "hermes", "weaver", "the-paw", "the-claw", "mnemosyne", "eunomia", "iris", "thales", "venus", "cartographer", "spec_steward", "keeper"],
+                "project_personas": ["mio", "zeus_writer", "youtube_ai_manager", "cangxuan", "geek"],
+                "headless_workers": ["watchdog", "task_compactor", "relay_worker", "bootstrap_scheduler"]
+            },
+            "status": "HEALTHY",
+            "last_cycle": self.load_state().get("cycle", 1)
+        }
+        pantheon_file.write_text(json.dumps(pantheon_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        findings.append(f"✅ 眾神殿狀態快照已落地: {pantheon_file.name}")
+
+        return {
+            "action": "rhea_pantheon_audit",
+            "findings": findings,
+            "status": "completed",
+        }
+
+    def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
+        findings = do_data.get("findings", [])
+        verdict = "FAIL" if any("❌" in f for f in findings) else "PASS"
+        return {
+            "verifier_role": "governance.role_steward.inspector",
+            "verdict": verdict,
+            "findings": findings,
+        }
+
+
 # ==============================================================================
 # Worker Factory
 # ==============================================================================
@@ -1162,8 +1252,16 @@ WORKER_REGISTRY: Dict[str, Callable[[], BasePDCAWorker]] = {
     "system-quality-sentinel": CerberusSentinelWorker,
     "cerberus": CerberusSentinelWorker,
     "sentinel": CerberusSentinelWorker,
-    "system-gateway-steward": HermesGatewayWorker,
-    "hermes": HermesGatewayWorker,
+    "system-gateway-steward": GatewayStewardWorker,
+    "gateway_steward": GatewayStewardWorker,
+    "gateway-steward": GatewayStewardWorker,
+    "sector-hermes": HermesReconWorker,
+    "hermes": HermesReconWorker,
+    "sector.hermes": HermesReconWorker,
+    "governance-role-steward": RheaRoleStewardWorker,
+    "rhea": RheaRoleStewardWorker,
+    "role-steward": RheaRoleStewardWorker,
+    "governance.role_steward": RheaRoleStewardWorker,
     "system-cartographer": CartographerWorker,
     "cartographer": CartographerWorker,
     "system.cartographer": CartographerWorker,

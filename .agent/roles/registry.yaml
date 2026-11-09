@@ -220,11 +220,11 @@ roles:
   - dns_registry_delta
   - dns_audit_receipt
 - id: system.gateway_steward
-  name: 赫爾墨斯 Hermes (Gateway & Proxy Steward / 網關、路由與反向代理總管)
+  name: 網關總管 Gateway Steward (Gateway, Proxy & SSL Steward / 網關、路由與反向代理總管)
   status: active
   kind: infrastructure_governance
   source: .agent/roles/instances/gateway_steward.md
-  purpose: 奧林匹斯信使與邊界通路之神：掌管全生態 Nginx 反向代理配置、Let's Encrypt SSL/TLS 憑證自動化維護、短網址轉發 (Short URL Redirects) 與多專案路由分流。
+  purpose: 掌管全生態 Nginx 反向代理配置、Let's Encrypt SSL/TLS 憑證自動化維護、短網址轉發 (Short URL Redirects) 與多專案路由分流。
   must_obey:
   - truth_provenance
   - receipts_over_claims
@@ -237,6 +237,41 @@ roles:
   outputs:
   - nginx_configuration_delta
   - gateway_health_receipt
+- id: sector.hermes
+  name: 赫密士 Hermes (Recon & Technology Scout / 外部探索與技術信使)
+  status: active
+  kind: discovery
+  source: .agent/roles/parents/lcs_hermes.md
+  purpose: 奧林匹斯信使與邊界旅者：向外探索 GitHub、開源生態與前沿架構，蒐集可借鏡技術並執行三級分流初評，防止資訊倒灌壓垮 Weaver。
+  must_obey:
+  - external_scout_boundary
+  - three_tier_filtering
+  - zero_orphan_residuals
+  capabilities:
+  - discovery.tech.recon
+  - discovery.filter.evaluate
+  - discovery.rfc.draft
+  outputs:
+  - tech_scout_memo
+  - rfc_candidate
+- id: governance.role_steward
+  name: 瑞亞 Rhea (Role Steward & Pantheon Architect / 眾神之母與角色譜系總管)
+  status: active
+  kind: governance
+  source: .agent/roles/instances/role_steward_rhea.md
+  purpose: 眾神之母與位格秩序女神：掌管全生態角色的全生命週期、角色命名防衝撞、權責原子交割 (Zero-Downtime Split)、角色三層架構分類（系統眾神/專案角色/純行動工蜂），嚴防假人與職責重疊。
+  must_obey:
+  - anti_collision_naming
+  - atomic_responsibility_handoff
+  - zero_downtime_cutover
+  - reality_evidence_verification
+  capabilities:
+  - governance.role.genesis.review
+  - governance.role.handoff.coordinate
+  - governance.role.pantheon.audit
+  outputs:
+  - pantheon_registry_delta
+  - role_audit_receipt
 - id: system.memory_archivist
   name: 摩涅莫緒涅 Mnemosyne (Memory & Meditation Archivist / 記憶之母與冥想總管)
   status: active
