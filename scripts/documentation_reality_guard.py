@@ -109,6 +109,20 @@ def static_errors() -> list[str]:
         if marker not in current:
             errors.append(f"docs/CURRENT_STATE.md missing reality marker: {marker}")
 
+    # The execution-authority allowlist is intentionally not the canonical
+    # Project Registry. Preserve the documented source-selection invariant.
+    directory_doc = ROOT / "docs/governance/GOVERNANCE_DIRECTORY.md"
+    directory_text = directory_doc.read_text(encoding="utf-8") if directory_doc.is_file() else ""
+    for invariant in (
+        "PROJECT_PRESENCE_NOT_EXECUTION_ALLOWLIST",
+        "/home/ubuntu/agent-data/projects/<project_id>/project.yaml",
+        "governance/execution-authority.json",
+        "canonical_state_unverified",
+        "registry_projection_drift",
+    ):
+        if invariant not in directory_text:
+            errors.append("project-source authority invariant missing: " + invariant)
+
     return errors
 
 
