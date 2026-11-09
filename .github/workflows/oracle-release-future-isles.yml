@@ -1,9 +1,13 @@
 # Narrow Future Isles FI-001 release through existing governed Studio carrier.
-# Activate only after Studio source PR #146 is approved and promoted.
+# Pinned and game-CI-tested Studio source from PR #146; bounded public route preview.
 name: Oracle Release Future Isles FI-001
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-future-isles.yml'
 
 permissions:
   contents: read
