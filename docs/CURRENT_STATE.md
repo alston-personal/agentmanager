@@ -49,6 +49,8 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Credits pricing + shadow metering | Implemented unit logic (Isolated) | `agent_core/credit_service.py`, `.agent/governance/credit_pricing.json` | `tests/test_credit_service.py`; not integrated into live API gateways |
 | Local Credits service boundary | Implemented unit logic (Isolated) | `agent_core/credit_http.py` | `tests/test_credit_http.py`; no active daemon bound |
 | Zero-Residual Baton SOP & Lifecycle Governance | Implemented | `docs/sop/AGENTOS_SOP.md` | `scripts/documentation_reality_guard.py`, continuation self-test |
+| Telegram Notification Gate & ONE Node Fence | Implemented + tested | `agent_core/telegram_gate.py`, `scripts/chronos.py`, `scripts/lobster.py`, `scripts/pipeline.py` | `tests/test_telegram_gate.py`, node role fence fail-closed |
+| Multi-Novel Swarm & Gaia Persona Matrix | Implemented + live verified | `agent_core/base_pdca.py`, `zeus-writer/` writing personas | `ZeusWriterWorker` multi-novel audit, outline-driven event chaining |
 | Model-independent Cognitive IR | Research | operational handoff envelopes exist, but general sufficiency is not canonical | requires repeatable cross-model continuity benchmark |
 | Zero-cost model switch with only `continue` | Target / not yet proven generally | depends on portable working-state + canonical resolution layer | continuity benchmark still required |
 

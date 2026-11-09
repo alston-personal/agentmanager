@@ -136,31 +136,11 @@ Keep it highly readable, visually appealing with emojis, and straight to the poi
     return response.text
 
 def send_telegram(message: str):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHANNEL_ID:
-        logger.error("Telegram credentials missing.")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHANNEL_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
     try:
-        res = requests.post(url, json=payload, timeout=10)
-        res.raise_for_status()
-        logger.info("✅ Telegram report sent successfully with Markdown formatting.")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to send Telegram message with Markdown: {e}. Retrying in plain text mode...")
-        payload_fallback = {
-            "chat_id": TELEGRAM_CHANNEL_ID,
-            "text": message
-        }
-        try:
-            res = requests.post(url, json=payload_fallback, timeout=10)
-            res.raise_for_status()
-            logger.info("✅ Telegram report sent successfully in plain text mode.")
-        except Exception as ex:
-            logger.error(f"❌ Failed to send Telegram message in plain text mode: {ex}")
+        from agent_core.telegram_gate import send_governed_telegram
+        send_governed_telegram(message, project_name="ecosystem_report")
+    except Exception as exc:
+        logger.error(f"Telegram gate dispatch failed: {exc}")
 
 def main():
     if not GEMINI_API_KEY:

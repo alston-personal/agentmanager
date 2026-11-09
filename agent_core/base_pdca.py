@@ -736,45 +736,63 @@ class EunomiaPortWorker(BasePDCAWorker):
 
 
 class ZeusWriterWorker(BasePDCAWorker):
-    """宙斯寫手 Zeus Writer (product.zeus_writer): Autonomous Novel Publishing Employee."""
+    """宙斯寫手 Zeus Writer (product.zeus_writer): Multi-Novel Swarm Writing & Publishing Employee."""
 
     def __init__(self, data_root: Path = AGENT_DATA_DEFAULT, project_root: Path = AGENTMANAGER_DEFAULT) -> None:
         super().__init__("product-zeus-writer", data_root, project_root)
-        self.novel_dir = Path("/home/ubuntu/zeus-writer/天道敕令_阿賴耶識修真錄/正文")
-        self.website_dist = Path("/home/ubuntu/zeus-writer/website/dist/index.html")
+        self.zeus_root = Path("/home/ubuntu/zeus-writer")
+        self.novels = {
+            "天道敕令_阿賴耶識修真錄": self.zeus_root / "天道敕令_阿賴耶識修真錄",
+            "AgentOS開發血淚史": self.zeus_root / "AgentOS開發血淚史",
+            "AI_奇幻編年史": self.zeus_root / "AI_奇幻編年史",
+        }
+        self.website_dist = self.zeus_root / "website" / "dist" / "index.html"
 
     def plan(self, cycle: int) -> dict[str, Any]:
         return {
-            "task": "阿賴耶識修真錄最新章節完整性、字數與公開站點發布審核",
+            "task": "一源三模（修真/血淚史/科幻編年史）大綱推進度、章節未竟任務感知與發布審核",
             "source": "zeus_writer_scheduler",
         }
 
     def do(self, plan_data: dict[str, Any], work_id: str) -> dict[str, Any]:
         findings = []
-        if not self.novel_dir.exists():
-            findings.append(f"❌ 小說目錄不存在: {self.novel_dir}")
-            return {"action": "novel_chapter_audit", "findings": findings, "status": "failed"}
+        if not self.zeus_root.exists():
+            findings.append(f"❌ 宙斯寫手專案目錄不存在: {self.zeus_root}")
+            return {"action": "multi_novel_audit", "findings": findings, "status": "failed"}
 
-        chapters = sorted(list(self.novel_dir.glob("*.md")))
-        findings.append(f"📖 總計已編寫章節數: {len(chapters)} 章")
-        if chapters:
-            latest = chapters[-1]
-            content = latest.read_text(encoding="utf-8")
-            char_count = len(content)
-            findings.append(f"📑 最新章節: {latest.name} (總字數: {char_count} 字)")
-            if char_count < 1500:
-                findings.append(f"⚠️ 最新章節字數偏低 ({char_count} < 1500 字)")
-            else:
-                findings.append("✅ 最新章節字數充盈，符合發布標準")
+        total_written = 0
+        novel_stats = {}
+        for name, npath in self.novels.items():
+            content_dir = npath / "正文"
+            plan_file = npath / "寫作計畫.md"
+            chapters = sorted(list(content_dir.glob("*.md"))) if content_dir.exists() else []
+            total_written += len(chapters)
+
+            # 檢查大綱中未完成項目
+            pending_count = 0
+            if plan_file.exists():
+                text = plan_file.read_text(encoding="utf-8")
+                import re
+                pending_count = len(re.findall(r"-\s*\[\s*\]\s+", text))
+
+            latest_info = f"已撰寫 {len(chapters)} 章"
+            if chapters:
+                latest = chapters[-1]
+                size = len(latest.read_text(encoding="utf-8"))
+                latest_info += f" (最新: {latest.name}, {size} 字)"
+
+            findings.append(f"📚 《{name}》: {latest_info} | 大綱待續寫: {pending_count} 項")
+            novel_stats[name] = {"chapters": len(chapters), "pending_outline_items": pending_count}
 
         if self.website_dist.exists():
-            findings.append("✅ Astro 靜態站點 dist/index.html 正常存在，可供對外訪問")
+            findings.append("✅ Astro 靜態發布站點 dist/index.html 正常在線")
         else:
             findings.append("⚠️ Astro 站點尚未編譯或 dist/index.html 缺失")
 
         return {
-            "action": "novel_chapter_audit",
-            "total_chapters": len(chapters),
+            "action": "multi_novel_audit",
+            "total_written": total_written,
+            "novel_stats": novel_stats,
             "findings": findings,
             "status": "completed",
         }
@@ -782,7 +800,7 @@ class ZeusWriterWorker(BasePDCAWorker):
     def check(self, plan_data: dict[str, Any], do_data: dict[str, Any]) -> dict[str, Any]:
         return {
             "verifier_role": "product.zeus_writer.editor",
-            "verdict": "PASS" if do_data.get("total_chapters", 0) > 0 else "FAIL",
+            "verdict": "PASS" if do_data.get("total_written", 0) > 0 else "FAIL",
             "findings": do_data.get("findings", []),
         }
 

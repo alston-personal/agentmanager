@@ -166,12 +166,10 @@ def verify_physical_output(proj_dir: Path, task_text: str, output: str, target_d
 
 
 def send_telegram_alert(message: str):
-    """發送 Telegram 警報通知"""
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return
+    """發送 Telegram 警報通知（經由 Telegram Gate 物理隔離）"""
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}, timeout=10)
+        from agent_core.telegram_gate import send_governed_telegram
+        send_governed_telegram(f"🦞 **[Lobster 警報]**\n\n{message}", project_name="lobster")
     except Exception:
         pass
 
