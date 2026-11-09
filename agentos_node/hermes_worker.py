@@ -21,7 +21,7 @@ from agent_core.employee_runtime import EmployeeRuntime
 from agent_core.employee_skills import EmployeeSkillRegistry, EmployeeSkillService
 from agent_core.employee_wake import EmployeeWakePlanner
 from agent_core.hermes_github_scan import run_scan, github_repo_get, lifecycle_scan_summary, DEFAULT_REPOS, atomic_json_write
-from agent_core.hermes_scan_policy import ScanSignals, propose_scan
+from agent_core.hermes_scan_policy import ScanSignals, plan_after_completed_scan
 from agent_core.role_runtime import RoleRegistry
 from agentos_node.employee_wake_inbox import WAKE_RECEIPT_SCHEMA, ALLOWED_INTENT_KEYS, ROUTE_KEYS, WAKE_ROUTE_SCHEMA
 from agent_core.spec_steward_acceptance import EXPECTED_AUTHORITY_POLICY, EXPECTED_TRANSPORT
@@ -210,7 +210,11 @@ def process_exact(*, runtime_root: Path, wake_root: Path, worker_state_root: Pat
         raise RuntimeError("hermes_no_github_sources")
     signals=ScanSignals(meaningful_findings=report["changed_count"],
         consecutive_empty_scans=0 if report["changed_count"] else int(old.get("consecutive_empty_scans",0))+1)
-    plan=propose_scan(now=datetime.now(timezone.utc),last_scan_at=datetime.now(timezone.utc),signals=signals)
+    # One monotonic observation is authoritative for both scheduler inputs.
+    # Calling datetime.now() twice produces last_scan_at > now and raises
+    # future_last_scan_at after the lease was already claimed.
+    completed_at=datetime.now(timezone.utc)
+    plan=plan_after_completed_scan(completed_at=completed_at,signals=signals)
     summary=lifecycle_scan_summary(report,next_interval_hours=plan.interval_hours)
     new_hashes=dict(old.get("fingerprints",{}))
     new_hashes.update({x["repo"].casefold():x["fingerprint"] for x in report["findings"]})

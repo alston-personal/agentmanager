@@ -986,3 +986,12 @@ older unmerged branch commits with `rejected_non_fast_forward`.
 `scripts/advance_ir_cli.py` (verified by `tests/test_advance_ir_cli.py`) provides
 a standard CLI to inspect and advance `agentos-core` Canonical IR generations
 with CAS parent checks and atomic `active-continuation.json` activation.
+
+
+## Hermes #2120: first live scan and post-claim clock fix (2026-11-09)
+
+- Hermes `research.hermes` is deployed through the existing immutable Core and existing ONE/Supervisor/V2 Worker Host, retaining the shared Worker Host `PrivateNetwork=true`. The ONE Wake Node obtains fixed public GitHub metadata only after governed S4 delivery and passes a bounded digest-bound snapshot to Hermes.
+- Live Oracle job [run 42569086970, attempt 2](https://github.com/alston-personal/agentmanager/actions/runs/42569086970) confirmed the initial assignment `hermes-2120-discovery-v1` is `active`, an S4 delivery was `claimed`, and one GitHub metadata snapshot existed. At observation time it had **zero terminal Lifecycle Receipts**. Do not call this two-cycle accepted or fully autonomous.
+- Root-cause correction: the worker had computed `propose_scan(now=datetime.now(...), last_scan_at=datetime.now(...))`. Independent clock reads could make `last_scan_at` greater than `now`, raising `future_last_scan_at` *after lease claim*. Now one `completed_at` observation is passed to `plan_after_completed_scan` for both values, with regression coverage.
+- Immutable Core deployment workflow now tracks changes to Hermes Worker/scan/policy/recurrence modules, so subsequent fixes trigger the existing governed deployment path rather than remaining in an un-deployed source branch. No additional daemon or schedule created.
+- Remaining acceptance: prove true first successful terminal scan receipt, due-only second scan with independently persisted Receipt and checkpoint, safe recovery of the pre-fix interrupted lease, and restart continuity. Keep canonical #2120 open until live evidence meets the minimum autonomy gate.
