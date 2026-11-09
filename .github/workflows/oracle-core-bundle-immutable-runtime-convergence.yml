@@ -215,6 +215,18 @@ jobs:
           printf '%s\n' "$PAW_BOOTSTRAP"
           printf '%s' "$PAW_BOOTSTRAP" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("schema")=="agentos.product-employee-bootstrap-receipt/v1"; assert any(e.get("employee_id")=="the-paw" for e in d.get("employees",[])), "paw_bootstrap_identity_missing"; assert d.get("executor_bound") is False and d.get("verified_marker_emitted") is False'
           echo "core_bundle_paw_bootstrap=PASS"
+
+          # Hermes is a research Employee, not a separately scheduled daemon.
+          # Bootstrap through the SAME canonical durable EmployeeRuntime as Paw;
+          # source checkout remains immutable, independent from local tracked drift.
+          HERMES_BOOTSTRAP="$(PYTHONPATH="$RELEASE" python3 -m agent_core.hermes_employee_bootstrap \
+            --runtime-root "$DATA_ROOT/employee-runtime" \
+            --role-registry "$RELEASE/.agent/roles/registry.yaml" \
+            --bootstrap-json "$RELEASE/governance/hermes-technology-scout-employee.json")"
+          printf '%s\n' "$HERMES_BOOTSTRAP"
+          printf '%s' "$HERMES_BOOTSTRAP" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema")=="agentos.hermes-bootstrap-result/v1", d; assert d.get("employee_id")=="hermes-technology-scout", d; assert d.get("assignment_id")=="hermes-2120-discovery-v1", d; assert d.get("employee_state") in ("created","exists"), d; assert d.get("assignment_state") in ("created","preserved"), d; assert d.get("runtime_wake_verified") is False and d.get("continuous_operation_verified") is False, d'
+          echo "core_bundle_hermes_bootstrap=PASS"
+
           echo "core_bundle_install_services=START"
           INSTALL_JSON="$(AGENTOS_SERVICE_DEPENDENCY_GUARD=1 PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
           echo "core_bundle_install_services=DONE"
