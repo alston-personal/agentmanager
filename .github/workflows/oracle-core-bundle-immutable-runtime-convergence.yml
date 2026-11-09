@@ -442,6 +442,75 @@ jobs:
           echo "core_bundle_release=$RELEASE"
           echo "core_bundle_current=$CURRENT"
           echo "core_bundle_immutable_runtime=PASS"
+
+          # Read-only, sanitized employee acceptance snapshot. This is not a
+          # synthetic Hermes lifecycle receipt and never changes assignment state.
+          PYTHONPATH="$RELEASE" python3 - "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" <<'HERMES_ACCEPTANCE'
+          import json
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from agent_core.employee_runtime import EmployeeRuntime
+          from agent_core.employee_lifecycle import EmployeeLifecycle
+
+          root, state = map(Path, sys.argv[1:])
+          runtime = EmployeeRuntime(root)
+          lifecycle = EmployeeLifecycle(runtime)
+          employee_id = "hermes-technology-scout"
+          assignment_prefix = "hermes-2120-discovery-v1"
+          result = {
+              "schema": "agentos.hermes-readonly-acceptance-snapshot/v1",
+              "employee_registered": False,
+              "wake_presence_live": False,
+              "s4_awaiting_claim": 0,
+              "completed_lifecycle_receipts": 0,
+              "assignment_states": {},
+              "metadata_snapshots": 0,
+              "live_verification": False,
+          }
+          try:
+              employee = runtime.get_employee(employee_id)
+              result["employee_registered"] = (employee.role_ids == ["research.hermes"]
+                  and employee.skill_ids == ["github.technology.scan"])
+              presence = root / "realm" / "employee-presence" / (employee_id + ".json")
+              if presence.is_file():
+                  value = json.loads(presence.read_text())
+                  expires = datetime.fromisoformat(str(value.get("expires_at", "")).replace("Z","+00:00"))
+                  result["wake_presence_live"] = (
+                      expires.tzinfo is not None and expires > datetime.now(timezone.utc)
+                  )
+              deliveries = root / "supervisor" / "deliveries"
+              for item in deliveries.glob("reconcile_*.json"):
+                  try:
+                      delivery = json.loads(item.read_text())
+                      if delivery.get("employee_id") == employee_id and delivery.get("status") == "awaiting_claim":
+                          result["s4_awaiting_claim"] += 1
+                  except (ValueError, OSError):
+                      continue
+              for item in sorted((root / "assignments").glob(assignment_prefix + "*.json")):
+                  try:
+                      assignment = runtime.get_assignment(item.stem)
+                      result["assignment_states"][item.stem] = assignment.state
+                      lease = lifecycle.get_lease(item.stem)
+                      if assignment.state == "completed" and lease and lease.status == "completed":
+                          receipt = lifecycle._receipt_path(item.stem, lease.generation)
+                          if receipt.is_file():
+                              body = json.loads(receipt.read_text())
+                              if (body.get("employee_id") == employee_id
+                                  and body.get("outcome") == "completed"
+                                  and body.get("assignment_id") == item.stem):
+                                  result["completed_lifecycle_receipts"] += 1
+                  except (OSError, ValueError, KeyError):
+                      continue
+              result["metadata_snapshots"] = len(list(
+                  (state / employee_id).glob("metadata-*.json")
+              ))
+          except (OSError, ValueError, KeyError) as exc:
+              result["probe_error_class"] = type(exc).__name__
+          print("hermes_live_acceptance=" + json.dumps(result,sort_keys=True))
+          HERMES_ACCEPTANCE
+
           trap - EXIT
           rm -rf "$BACKUP"
           REMOTE
