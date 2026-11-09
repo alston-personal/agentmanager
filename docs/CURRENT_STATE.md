@@ -1055,3 +1055,8 @@ The existing `scripts/work_completion.py` has a candidate generation-fenced reco
 ### Gaia cross-source reconciliation (#420 candidate)
 
 `agent_core/gaia_reconcile.py` cross-checks a proposed parent between existing local Project Store and Governance Directory query evidence. Only consistent positive matches yield read-only reuse/extension recommendations; missing, conflicting, or unreadable sources are `NEEDS_EVIDENCE`. A new trust boundary requires human authorization. Neither adapter nor reconciler asserts Atlas/global inventory completeness, grants authority, intercepts write paths, or runs a durable Employee. CI runs its targeted tests. This is an incremental source candidate, not a deployed Gaia creation gate.
+
+
+### Gaia content-addressed review evidence (#420 candidate)
+
+`agent_core/gaia_decision_record.py` now defines `agentos.gaia-review/v1` as an **informational, content-addressed review record** bound to explicit source references and timezone-aware review time. Its SHA-256 content hash detects altered record contents but cannot authenticate source provenance, establish fresh Atlas coverage, or serve as a Creation Gate approval. `authority` is fixed to `none`, and downstream work still requires a separate authorization attestation and existing guarded Work Intake. Its tests run under the existing Documentation Reality Guard. No project-write enforcement, stateful scheduling, runtime deployment, or ONE verified receipt is claimed.
