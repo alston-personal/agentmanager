@@ -269,12 +269,6 @@ roles:
       - observer_projection
 
 
-legacy_instances:
-  - id: instance.agentmanager_paw
-    source: .agent/roles/instances/agentmanager_paw.md
-    status: stale
-    reason: "Contains time-bound Current Pulse and legacy service/task statements; must not be treated as runtime truth."
-
   - id: research.hermes
     name: Hermes — 技術偵察使
     parent_role_id: core.root
@@ -307,3 +301,10 @@ legacy_instances:
       - existing_capability_dedup
       - governed_improvement_proposal
       - research_checkpoint_receipt
+
+
+legacy_instances:
+  - id: instance.agentmanager_paw
+    source: .agent/roles/instances/agentmanager_paw.md
+    status: stale
+    reason: "Contains time-bound Current Pulse and legacy service/task statements; must not be treated as runtime truth."
