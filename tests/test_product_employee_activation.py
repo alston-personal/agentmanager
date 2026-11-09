@@ -76,7 +76,11 @@ def test_product_employee_bootstrap_is_idempotent_and_preserves_progress(tmp_pat
     first = bootstrap_mod.bootstrap_all(runtime_root)
     assert first["ok"] is True
     runtime = EmployeeRuntime(runtime_root)
-    assert {runtime.get_employee(e).agent_id for e in EMPLOYEE_IDS} == set(EMPLOYEE_IDS)
+    product_ids = {item["employee_id"] for item in first["employees"]}
+    assert {runtime.get_employee(e).agent_id for e in product_ids} == product_ids
+    # Research Employees use their own canonical bootstrap, not the product-only bootstrap.
+    assert "hermes-technology-scout" in EMPLOYEE_IDS
+    assert "hermes-technology-scout" not in product_ids
     runtime.update_assignment("zeus-writer-continuation-v1", thread_head="product:zeus-writer:progress-1")
 
     second = bootstrap_mod.bootstrap_all(runtime_root)
