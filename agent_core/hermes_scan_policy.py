@@ -61,3 +61,12 @@ def propose_scan(*, now: datetime, last_scan_at: datetime | None, signals: ScanS
     should_run = bool(signals.budget_remaining and signals.provider_available
                       and not signals.resource_pressure and now >= next_time)
     return ScanPlan(hours, next_time.isoformat(), reason, should_run)
+
+
+def plan_after_completed_scan(*, completed_at: datetime, signals: ScanSignals) -> ScanPlan:
+    """Use exactly one UTC observation for an already completed scan.
+
+    A second clock read would make last_scan_at later than now, fail closed,
+    and strand a claimed Employee lease without a terminal receipt.
+    """
+    return propose_scan(now=completed_at, last_scan_at=completed_at, signals=signals)
