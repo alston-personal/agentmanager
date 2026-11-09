@@ -94,3 +94,59 @@ class OfflineStatusGateway:
             self._seen.clear()
         self._seen.add(key)
         return {"status": "UNAVAILABLE", "reason": "ONE_NOT_BOUND", "duplicate": False}
+
+
+class NodeBoundStatusGateway:
+    """Opt-in host-side status boundary; NEVER authenticates via pixel data.
+
+    The host must supply a fresh, independently verified Node/Realm authorization
+    probe. Both callbacks are trusted local Node-side interfaces, not values
+    supplied by the game, its SavedVariables, or the pixel packet.
+    No production transport or Node/ONE binding is installed here.
+    """
+
+    def __init__(self, authorization_probe, node_adapter, *, max_seen=128):
+        if not callable(authorization_probe) or not callable(node_adapter):
+            raise TypeError("trusted_host_callbacks_required")
+        if not 1 <= max_seen <= 1024:
+            raise ValueError("invalid_replay_capacity")
+        self._authorization_probe = authorization_probe
+        self._node_adapter = node_adapter
+        self._seen = set()
+        self._max_seen = max_seen
+
+    def accept(self, cells: list[int]) -> dict:
+        request_id, session = decode_request(cells)
+        key = (session, request_id)
+        if key in self._seen:
+            return {"status": "UNAVAILABLE", "reason": "DUPLICATE_REQUEST"}
+        # Do not discard replay history to make room: fail closed until a new,
+        # independently provisioned host session / gateway instance exists.
+        if len(self._seen) >= self._max_seen:
+            return {"status": "UNAVAILABLE", "reason": "REPLAY_CAPACITY_EXHAUSTED"}
+        self._seen.add(key)
+        try:
+            authorized = self._authorization_probe()
+        except Exception:
+            return {"status": "UNAVAILABLE", "reason": "NODE_AUTH_UNAVAILABLE"}
+        # Require exact True; a truthy error string is not an authorization.
+        if authorized is not True:
+            return {"status": "UNAVAILABLE", "reason": "NODE_AUTH_UNAVAILABLE"}
+        try:
+            # The trusted adapter must be the read-only WoWControlAdapter;
+            # caller-supplied session never becomes an execution argument.
+            result = self._node_adapter({"action": "wow.control.status"})
+        except Exception:
+            return {"status": "UNAVAILABLE", "reason": "NODE_READER_UNAVAILABLE"}
+        if not isinstance(result, dict):
+            return {"status": "UNAVAILABLE", "reason": "NODE_READER_UNAVAILABLE"}
+        if result.get("status") != "OK":
+            return {"status": "UNAVAILABLE", "reason": "NODE_READER_UNAVAILABLE"}
+        # Re-check the game-facing projection even if an unexpected adapter
+        # implementation is provided. Never surface arbitrary Node responses.
+        from agentos_node.wow_control_adapter import _safe_snapshot
+        try:
+            snapshot = _safe_snapshot(result.get("snapshot"))
+        except (TypeError, ValueError):
+            return {"status": "UNAVAILABLE", "reason": "UNSAFE_NODE_RESPONSE"}
+        return {"status": "OK", "request_id": request_id, "snapshot": snapshot}
