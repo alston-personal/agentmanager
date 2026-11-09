@@ -47,6 +47,7 @@ jobs:
           python3 -m unittest tests.test_gaia_reconcile -v
           python3 -m unittest tests.test_gaia_decision_record -v
           python3 -m unittest tests.test_gaia_creation_gate -v
+          python3 -m unittest tests.test_gaia_proposal_intake -v
           python3 scripts/continuation_state.py --self-test
           python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
           python3 -m unittest tests.test_reuse_before_build_credits -v
