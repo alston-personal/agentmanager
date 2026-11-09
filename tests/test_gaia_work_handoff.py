@@ -34,6 +34,41 @@ class GaiaHandoffTest(unittest.TestCase):
         self.assertNotIn("owner", envelope)
         self.assertNotIn("executor", envelope)
 
+    def test_repeat_review_new_timestamp_reuses_same_work_id(self):
+        from datetime import datetime, timezone
+        another_review = issue_review_record(
+            Proposal("Personal Device Secretary", "project",
+                     related_asset_ids=("project://mobile-node",)),
+            Decision(Disposition.EXTEND_PROJECT, "project://mobile-node",
+                     ("verified_project_match",)),
+            source_refs=("project://mobile-node@sha256:other-snapshot",),
+            reviewed_at=datetime.now(timezone.utc).isoformat())
+        later_envelope = propose_existing_project_work(
+            another_review,
+            source_issue_url="https://github.com/alston-personal/agentmanager/issues/2156",
+            workspace="/tmp/agentos-gaia")
+        first = self.envelope()
+        self.assertNotEqual(first["next_action"], later_envelope["next_action"])
+        self.assertEqual(first["work_id"], later_envelope["work_id"])
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "work-items.json"
+            admit_existing_project_work(state, review(), first,
+                                        verify_intake_authority=lambda _: True)
+            admit_existing_project_work(state, another_review, later_envelope,
+                                        verify_intake_authority=lambda _: True)
+            self.assertEqual(len(load(state)["items"]), 1)
+
+    def test_rejects_lookalike_github_issue_urls(self):
+        for source in (
+            "https://github.com.evil.example/owner/repo/issues/1",
+            "https://github.com/owner/repo/issues/1?escape=1",
+            "https://github.com/owner/repo/issues/1/extra",
+            "https://github.com/owner/repo/issues/0",
+        ):
+            with self.subTest(source=source), self.assertRaises(GaiaHandoffDenied):
+                propose_existing_project_work(review(), source_issue_url=source,
+                                               workspace="/tmp/agentos")
+
     def test_new_project_must_not_be_dispatched(self):
         with self.assertRaises(GaiaHandoffDenied):
             propose_existing_project_work(
