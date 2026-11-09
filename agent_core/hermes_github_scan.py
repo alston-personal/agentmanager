@@ -150,6 +150,44 @@ def run_scan(repos: list[str], fetch: Callable[[str], dict[str, Any]], *,
     }
 
 
+
+def lifecycle_scan_summary(report: dict[str, Any], *, next_interval_hours: int) -> dict[str, Any]:
+    """Provide bounded evidence for an authorized executor's Lifecycle.finish().
+
+    This function NEVER writes a lifecycle receipt or claims a ONE execution.
+    The runtime executor must independently validate output/provenance and
+    finish its own actively leased assignment.
+    """
+    if report.get("schema") != SCHEMA or report.get("employee_id") != "hermes-technology-scout":
+        raise ValueError("unexpected_hermes_scan_report")
+    if type(next_interval_hours) is not int or not 1 <= next_interval_hours <= 168:
+        raise ValueError("invalid_hermes_scan_interval")
+    candidates = report.get("findings")
+    failures = report.get("failures")
+    if not isinstance(candidates, list) or not isinstance(failures, list):
+        raise ValueError("invalid_hermes_scan_evidence")
+    # Do not treat an entirely failed scan as a completed useful cycle.
+    if not candidates:
+        raise RuntimeError("no_successful_github_sources")
+    refs = []
+    for item in candidates:
+        if not isinstance(item, dict) or not isinstance(item.get("source_url"), str):
+            raise ValueError("invalid_hermes_candidate")
+        refs.append(item["source_url"])
+    digest = hashlib.sha256(json.dumps(report,sort_keys=True,ensure_ascii=False).encode("utf-8")).hexdigest()
+    return {
+        "scan_schema": SCHEMA,
+        "scan_outcome": "completed",
+        "next_interval_hours": next_interval_hours,
+        "report_sha256": digest,
+        "source_count": report.get("source_count"),
+        "candidate_count": len(candidates),
+        "failure_count": len(failures),
+        "source_refs": refs[:MAX_REPOS],
+        "authority_boundary": "evidence_only_executor_must_commit_lifecycle",
+    }
+
+
 def atomic_json_write(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
