@@ -1050,3 +1050,8 @@ The existing `scripts/work_completion.py` has a candidate generation-fenced reco
 ### Governance Directory projection adapter (candidate, #420)
 
 `agent_core/gaia_directory_adapter.py` reads the pre-existing Governance Directory as a *non-authoritative query projection* with source-path and structural error evidence. It can identify a known project/role/capability and recommend reuse/extension, but a missing match is NOT proof that a new asset is unique. It does not mint approval, change `register_canonical_project`, or enable new repository/role creation. Additional adapter tests run through the existing Documentation Reality Guard. The write-path Creation Gate, canonical source reconciliation, scheduler/ONE receipt and Gaia deployment remain unimplemented/unverified.
+
+
+### Gaia cross-source reconciliation (#420 candidate)
+
+`agent_core/gaia_reconcile.py` cross-checks a proposed parent between existing local Project Store and Governance Directory query evidence. Only consistent positive matches yield read-only reuse/extension recommendations; missing, conflicting, or unreadable sources are `NEEDS_EVIDENCE`. A new trust boundary requires human authorization. Neither adapter nor reconciler asserts Atlas/global inventory completeness, grants authority, intercepts write paths, or runs a durable Employee. CI runs its targeted tests. This is an incremental source candidate, not a deployed Gaia creation gate.
