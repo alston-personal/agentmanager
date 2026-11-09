@@ -9,7 +9,7 @@ def test_immutable_core_deploy_restores_only_previously_active_s4_surface():
     assert "S4_RESTORE=0" in text
     assert "grep -Fxq 'agentos-employee-wake-node.service' \"$BACKUP/active-services\"" in text
     assert "grep -Fxq 'agentos-employee-worker-host.service' \"$BACKUP/active-services\"" in text
-    assert '&& [ "$WORKER_SYSTEM_ACTIVE" = 1 ]' in text
+    assert '|| [ "$WORKER_SYSTEM_ACTIVE" = 1 ]' in text
     assert 'AGENTOS_CORE_SUPERVISOR_ENABLE_ONE_DIRECT="$S4_RESTORE"' in text
     assert "AGENTOS_SUPERVISOR_DELIVERY_MODE=one_direct" in text
 
