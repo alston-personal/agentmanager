@@ -44,6 +44,10 @@ def register_reviewed_project(
     registration.validate()
     if not verify_review_record(review):
         raise CreationDenied("invalid_review_record")
+    if review.decision.get("disposition") != "NEEDS_HUMAN_APPROVAL":
+        raise CreationDenied("review_is_not_new_project_proposal")
+    if review.decision.get("canonical_parent") is not None:
+        raise CreationDenied("existing_parent_requires_extension")
     if review.proposal.get("kind") != "project":
         raise CreationDenied("review_kind_mismatch")
     if review.proposal.get("title", "").strip().casefold() != registration.display_name.strip().casefold():
@@ -63,10 +67,6 @@ def register_reviewed_project(
         raise CreationDenied("future_review_record")
     if (now - review_time.astimezone(timezone.utc)).total_seconds() > 86400:
         raise CreationDenied("stale_review_record")
-    if review.decision.get("disposition") != "NEEDS_HUMAN_APPROVAL":
-        raise CreationDenied("review_is_not_new_project_proposal")
-    if review.decision.get("canonical_parent") is not None:
-        raise CreationDenied("existing_parent_requires_extension")
     if authorization.decision_hash != review.content_hash:
         raise CreationDenied("review_hash_mismatch")
     if authorization.project_id != registration.project_id:
