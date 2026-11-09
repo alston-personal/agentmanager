@@ -170,6 +170,18 @@ def run_daemon(*, data_root: Path, config_path: Path, wake_root: Path, runtime_r
 
     while True:
         transport.run_once()
+        # Existing Wake Node is the bounded network-capable side of Hermes'
+        # data boundary; the shared Worker Host remains PrivateNetwork=true.
+        # Never block other employees when public GitHub is unavailable.
+        try:
+            from agentos_node.hermes_metadata_feed import tick as hermes_metadata_tick
+            hermes_metadata_tick(
+                runtime_root=runtime.root,
+                wake_root=wake_root,
+                state_root=data_root / "employee-worker-state",
+            )
+        except (OSError, ValueError, RuntimeError, PermissionError):
+            pass
         for employee_id in EMPLOYEE_IDS:
             presences.heartbeat(employee_id, presence_id, ttl_seconds=120)
         if once:
