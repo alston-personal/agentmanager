@@ -5,3 +5,5 @@ This commit only implements an independent pure-Python binary pixel frame codec 
 The OfflineStatusGateway ALWAYS returns `ONE_NOT_BOUND`. No live Node/ONE reader, captured WoW screen, credential, authenticated local session, game-side pixel strip, slot reply, executable Bridge or receipt exists here. This is a codec/test increment only, not a working bidirectional link.
 
 The next work is game-side encoding and a Windows screenshot capture probe with a pinned supported client, followed by ONE-authorized local reader and load-on-demand return channel. Do not reuse upstream direct CLI or unrestricted permissions.
+
+Capture framing hardening: decoders now allow zero-only display padding after a declared complete packet, but reject nonzero residual bits and any unexpected trailing colored cell, including non-integer/boolean cell types. This is an integrity boundary only, not authentication or evidence of a live Bridge.
