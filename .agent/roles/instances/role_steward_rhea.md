@@ -21,3 +21,4 @@
 ## 3. 輸出憑證 (Outputs)
 - `pantheon_registry_delta`: 角色註冊表與譜系圖變更審計。
 - `role_audit_receipt`: 角色真實性、衝突與重疊審查憑證。
+

@@ -28,7 +28,11 @@ roles:
   - silently_mutate_governance
   - claim_unverified_side_effects
 - id: sector.paw
-  name: The Paw
+  name: 赫菲斯托斯 Hephaestus (工匠之神 / 掌中虎掌 The Paw)
+  aliases:
+  - the-paw
+  - paw
+  - hephaestus
   parent_role_id: core.root
   inherits:
   - governance
@@ -45,7 +49,7 @@ roles:
   status: active
   kind: executor
   source: .agent/roles/parents/lcs_the_paw.md
-  purpose: 將已核准的規格轉化為可驗證實作。
+  purpose: 奧林匹斯工匠之神與掌中神掌：將已核准的規格轉化為可驗證實作代碼。
   must_obey:
   - capability_boundary
   - responsibility_resolution
@@ -60,7 +64,11 @@ roles:
   - test_result
   - execution_receipt
 - id: sector.claw
-  name: The Claw
+  name: 阿斯特萊亞 Astraea (正義審計女神 / 破邪銳爪 The Claw)
+  aliases:
+  - the-claw
+  - claw
+  - astraea
   parent_role_id: core.root
   inherits:
   - governance
@@ -70,7 +78,7 @@ roles:
   status: active
   kind: assurance
   source: .agent/roles/parents/lcs_the_claw.md
-  purpose: 以 adversarial/QA/security 視角驗證安全、失敗模式與合規性。
+  purpose: 正義天秤與破邪神爪：以 adversarial/QA/security 視角驗證安全、失敗模式與合規性。
   capabilities:
   - claw.review.readonly
   must_obey:
@@ -82,11 +90,15 @@ roles:
   - blocking_finding
   - risk_assessment
 - id: sector.weaver
-  name: Weaver
+  name: 雅典娜 Athena (智慧織圖女神 / 規格織圖 The Weaver)
+  aliases:
+  - sector-weaver
+  - weaver
+  - athena
   status: active
   kind: specification
   source: .agent/roles/parents/lcs_weaver.md
-  purpose: 把目標與模糊需求收斂為 IR、spec、constraints 與 acceptance criteria。
+  purpose: 奧林匹斯智慧與編織大師：把目標與模糊需求收斂為 IR、spec、constraints 與 acceptance criteria。
   must_obey:
   - specification_closure
   - capability_boundary
@@ -97,11 +109,15 @@ roles:
   - specification
   - architecture_decision
 - id: sector.whisperer
-  name: Whisperer
+  name: 仄費洛斯 Zephyrus (西風靈感之神 / 引路鳴風 The Whisperer)
+  aliases:
+  - sector-whisperer
+  - whisperer
+  - zephyrus
   status: active
   kind: ideation
   source: .agent/roles/parents/lcs_whisperer.md
-  purpose: 探索需求、UX、創意空間與候選方向；不把探索結果誤標為正式規格。
+  purpose: 帶來第一縷春天微風的西風之神：探索需求、UX、創意空間與候選方向；不把探索結果誤標為正式規格。
   must_obey:
   - truth_provenance
   - executor_independence
