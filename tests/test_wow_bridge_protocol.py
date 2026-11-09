@@ -1,6 +1,6 @@
 import json
 import unittest
-from agentos_node.wow_bridge_protocol import ProtocolError, encode, decode, decode_request, OfflineStatusGateway
+from agentos_node.wow_bridge_protocol import ProtocolError, encode, decode, decode_request, OfflineStatusGateway, NodeBoundStatusGateway
 
 def frame(action="wow.control.status", session="abc12345", request_id=1):
     return encode(request_id, json.dumps({"action":action,"session":session}).encode())
@@ -36,6 +36,51 @@ class WowBridgeProtocolTest(unittest.TestCase):
             decode(cells + [False])
         with self.assertRaisesRegex(ProtocolError, "unexpected_trailing_cells"):
             decode(cells + [0, 2])
+
+
+    def test_host_bound_status_requires_fresh_auth(self):
+        from agentos_node.wow_control_adapter import WoWControlAdapter
+        calls = []
+        adapter = WoWControlAdapter(lambda: {"state": "READY", "paw": "running", "receipt": None})
+        gateway = NodeBoundStatusGateway(lambda: (calls.append("verify") or True), adapter.execute)
+        result = gateway.accept(frame(request_id=7))
+        self.assertEqual(result, {"status": "OK", "request_id": 7,
+                                  "snapshot": {"state": "READY", "paw": "running", "receipt": None}})
+        self.assertEqual(calls, ["verify"])
+        self.assertEqual(gateway.accept(frame(request_id=7))["reason"], "DUPLICATE_REQUEST")
+
+    def test_host_bound_status_rejects_spoofed_or_stale_auth(self):
+        from agentos_node.wow_control_adapter import WoWControlAdapter
+        called = []
+        reader = WoWControlAdapter(lambda: called.append(1) or {"state": "READY"})
+        for denial in [False, None, "true", 1]:
+            gateway = NodeBoundStatusGateway(lambda denial=denial: denial, reader.execute)
+            self.assertEqual(gateway.accept(frame())["reason"], "NODE_AUTH_UNAVAILABLE")
+        self.assertEqual(called, [])
+
+    def test_host_bound_status_rejects_unsafe_response_and_reader_failures(self):
+        for response, reason in [
+            ({"status": "OK", "snapshot": {"state": "READY", "token": "secret"}}, "UNSAFE_NODE_RESPONSE"),
+            ({"status": "OK", "snapshot": {"state": {"untrusted": 1}}}, "UNSAFE_NODE_RESPONSE"),
+            ({"status": "UNAVAILABLE", "reason": "RUNTIME_READER_NOT_BOUND"}, "NODE_READER_UNAVAILABLE"),
+            ("unexpected", "NODE_READER_UNAVAILABLE"),
+        ]:
+            gateway = NodeBoundStatusGateway(lambda: True, lambda _, response=response: response)
+            output = gateway.accept(frame())
+            self.assertEqual(output["reason"], reason)
+            self.assertNotIn("snapshot", output)
+
+    def test_host_bound_status_rejects_replay_capacity_exhaustion(self):
+        gateway = NodeBoundStatusGateway(lambda: True,
+                lambda _: {"status": "OK", "snapshot": {"state": "READY"}}, max_seen=1)
+        self.assertEqual(gateway.accept(frame( request_id=1))["status"], "OK")
+        self.assertEqual(gateway.accept(frame( request_id=2))["reason"], "REPLAY_CAPACITY_EXHAUSTED")
+
+    def test_host_bound_status_rejects_probe_or_reader_exception(self):
+        def fail(*_):
+            raise RuntimeError("never leak credentials")
+        self.assertEqual(NodeBoundStatusGateway(fail, lambda _: {}).accept(frame())["reason"], "NODE_AUTH_UNAVAILABLE")
+        self.assertEqual(NodeBoundStatusGateway(lambda: True, fail).accept(frame())["reason"], "NODE_READER_UNAVAILABLE")
 
     def test_no_auth_no_fake_status(self):
         gateway=OfflineStatusGateway()
