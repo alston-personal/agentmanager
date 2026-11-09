@@ -11,7 +11,19 @@ class DocumentationRealityGuardTests(unittest.TestCase):
     def test_core_paths_are_architecture_sensitive(self):
         self.assertTrue(guard.is_architecture_path("agent_core/control_plane.py"))
         self.assertTrue(guard.is_architecture_path("scripts/continuation_state.py"))
+        self.assertTrue(guard.is_architecture_path("scripts/persona_post_intent_generator.py"))
+        self.assertTrue(guard.is_architecture_path(".github/workflows/deploy-agentos-core.yml"))
         self.assertFalse(guard.is_architecture_path("docs/USER_GUIDE.md"))
+
+    def test_script_and_workflow_changes_require_authoritative_doc(self):
+        with patch.object(
+            guard,
+            "changed_files",
+            return_value={"scripts/persona_post_intent_generator.py", "tests/test_persona.py"},
+        ):
+            errors = guard.coupling_errors("base")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("without an authoritative documentation update", errors[0])
 
     def test_architecture_change_requires_authoritative_doc(self):
         with patch.object(

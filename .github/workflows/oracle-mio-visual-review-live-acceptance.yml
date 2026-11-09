@@ -1,0 +1,129 @@
+name: Oracle Mio Visual Review Live Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'capabilities/wardrobe_visual_review/**'
+      - 'scripts/deploy_mio_tryon_worker_user.sh'
+      - '.github/workflows/oracle-mio-visual-review-live-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify exact deployed semantic evaluator
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED=$(sha256sum capabilities/wardrobe_visual_review/review.py | awk '{print $1}')
+          for attempt in $(seq 1 25); do
+            ACTUAL=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'sha256sum /home/ubuntu/.local/share/mio-tryon/runtime-lib/capabilities/wardrobe_visual_review/review.py' | awk '{print $1}')
+            if [ "$ACTUAL" = "$EXPECTED" ]; then
+              echo "mio_visual_review_exact_evaluator=PASS"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "mio_visual_review_exact_evaluator=FAIL"
+          exit 1
+      - name: Review latest existing candidate without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export PYTHONPATH=/home/ubuntu/.local/share/mio-tryon/runtime-lib
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          PY=/home/ubuntu/.local/share/mio-tryon-venv/bin/python
+          "$PY" - <<'PY'
+          import json
+          from pathlib import Path
+
+          from capabilities.wardrobe_visual_review import evaluate_review
+          from capabilities.wardrobe_visual_review.gemini_backend import review_with_gemini
+          from capabilities.wardrobe_visual_review.agy_backend import review_with_agy
+
+          root=Path('/home/ubuntu/agent-data/projects/dressup-simulator')
+          rows=[]
+          for p in (root/'render_jobs/runtime').glob('*.json'):
+              try:
+                  j=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              out=j.get('output') or {}
+              q=out.get('quality') or {}
+              asset=root/'render_assets'/f"{j.get('jobId')}.webp"
+              if j.get('status')!='ready' or not asset.is_file() or asset.stat().st_size<1000:
+                  continue
+              if not ((j.get('input') or {}).get('selectedLayers') or {}):
+                  continue
+              rows.append((j.get('completedAt') or j.get('requestedAt') or '',j,asset))
+          if not rows:
+              print('mio_visual_review_live=SKIP_NO_CANDIDATE')
+              raise SystemExit(1)
+
+          _,job,asset=sorted(rows,reverse=True)[0]
+          semantic=review_with_gemini(
+              job=job,
+              candidate_path=asset,
+              workspace_root=Path('/home/ubuntu/agent-data/runtime/wardrobe-visual-review-live'),
+              timeout_seconds=35,
+          )
+          if semantic.get('backendReady') is not True and semantic.get('classification') in {
+              'OAUTH_CLIENT_UNSUPPORTED', 'AUTH_REQUIRED', 'RATE_LIMITED',
+              'INSTALL_REQUIRED', 'TIMEOUT', 'BACKEND_ERROR'
+          }:
+              semantic=review_with_agy(
+                  job=job,
+                  candidate_path=asset,
+                  workspace_root=Path('/home/ubuntu/agent-data/runtime/wardrobe-visual-review-live'),
+                  timeout_seconds=120,
+              )
+          request={
+              'schema':'agentos.wardrobe-visual-review-request/v1',
+              'selectedLayers':((job.get('input') or {}).get('selectedLayers') or {}),
+              'renderedLayers':((job.get('output') or {}).get('renderedLayers') or []),
+              'pendingLayers':((job.get('output') or {}).get('pendingLayers') or []),
+              'machineChecks':[],
+              'semanticReceipt':semantic,
+          }
+          receipt=evaluate_review(request)
+          classification=str(semantic.get('classification') or 'UNKNOWN')
+          print('mio_visual_review_live_job='+str(job.get('jobId')))
+          print('mio_visual_review_backend_classification='+classification)
+          message=str(semantic.get('message') or '').replace('\n',' ')[:800]
+          print('mio_visual_review_backend_message='+message)
+          print('mio_visual_review_state='+str(receipt.get('state')))
+          print('mio_visual_review_backend='+str(semantic.get('backend') or 'unknown'))
+          print('mio_visual_review_reason='+str(receipt.get('reason') or 'unknown'))
+          print('mio_visual_review_selected_layers='+','.join(sorted(request['selectedLayers'].keys())))
+          print('mio_visual_review_rendered_layers='+','.join(sorted(request['renderedLayers'])))
+          print('mio_visual_review_pending_layers='+','.join(sorted(request['pendingLayers'])))
+          for check in receipt.get('checks') or []:
+              code=str(check.get('code') or '')[:80]
+              layer=str(check.get('layer') or '')[:80]
+              outcome='PASS' if check.get('passed') is True else 'FAIL'
+              print('mio_visual_review_check='+code+':'+layer+':'+outcome)
+          print('mio_visual_review_verified_layers='+','.join(receipt.get('verifiedLayers') or []))
+          if receipt.get('accepted') is True and receipt.get('state') == 'verified':
+              print('mio_visual_review_live=VERIFIED')
+          else:
+              print('mio_visual_review_live='+classification)
+              raise SystemExit(1)
+          PY
+          REMOTE

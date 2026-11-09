@@ -39,7 +39,7 @@ The long-term objective is functional continuity across executors: changing mode
 - `scripts/agentos_node.py` — node-local capability/governance/resource discovery surface.
 - `agent_core/governance_directory.py` — responsibility/provider resolution.
 - `agent_core/resource_registry.py` — registered world/resource state.
-- `agent_core/realm_fabric.py` / `realm_server.py` — cross-node Realm work.
+- `agent_core/realm_fabric.py` / `agent_core/realm_server.py` — cross-node Realm work.
 - `agent_core/platform/` — Linux/Windows/macOS runtime abstraction.
 - `.agentos/evidence/` — live acceptance and operational receipts/evidence.
 

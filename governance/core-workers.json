@@ -1,0 +1,8 @@
+{
+  "schema": "agentos.core-workers/deprecated-pointer",
+  "deprecated": true,
+  "deprecated_at": "2026-09-11T11:26:00Z",
+  "reason": "v0 duplicated mutable GitHub issue/runtime status and became stale, including #117=blocked after #117 completion and a historical hard-coded generation 6 live-runtime claim",
+  "replacement": "governance/core-workers.v1.json",
+  "authority_note": "Current worker completion comes from GitHub issue state plus preserved acceptance evidence. Live runtime identity comes from exact deployment/convergence/health receipts. Do not reconstruct either from this deprecated file."
+}

@@ -1,0 +1,160 @@
+# Live recheck trigger: verify Product Employee preclaim evidence index from PR #1908
+# Live recheck trigger: verify Employee Worker wake-path cache rollout from PR #1892
+# Incident acceptance trigger: verify Oracle after Employee Worker hot-path rollout
+name: Oracle Post Reclaim Health Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-post-reclaim-health-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify Oracle after pack reclaim and Worker cutover
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          REPO="$HOME/agent-data"
+          UNIT=agentos-employee-worker-host.service
+          MARKER="$HOME/.config/agentos/employee-worker-host-system-boundary"
+          CURRENT="$HOME/agent-data/runtime/core/current"
+          GDRIVE="$HOME/.local/share/agentos/gdrive-remote-v2"
+          STATE="$HOME/.local/state/agentos/gdrive-health.state"
+
+          root_pct="$(df -P / | awk 'NR==2 {gsub("%","",$5); print $5}')"
+          echo "root_use_percent=${root_pct}%"
+          test "$root_pct" -lt 85
+
+          git -C "$REPO" fsck --connectivity-only --no-dangling >/dev/null
+          echo "agent_data_connectivity=PASS"
+          size_pack="$(git -C "$REPO" count-objects -v | awk '/^size-pack:/{print $2}')"
+          echo "agent_data_size_pack_kib=$size_pack"
+          test "$size_pack" -lt 2097152
+
+          test -f "$MARKER"
+          ! systemctl --user is-active --quiet "$UNIT" 2>/dev/null
+          sudo -n systemctl is-active --quiet "$UNIT"
+          echo "worker_owner=system"
+          echo "worker_active=PASS"
+
+          current="$(readlink -f "$CURRENT")"
+          pid="$(sudo -n systemctl show "$UNIT" -p MainPID --value)"
+          test -n "$pid" && test "$pid" != 0
+          test "$(readlink -f "/proc/$pid/cwd")" = "$current"
+          cg="$(sudo -n systemctl show "$UNIT" -p ControlGroup --value)"
+          case "$cg" in /system.slice/*) ;; *) exit 42;; esac
+          root="/sys/fs/cgroup$cg"
+
+          echo "worker_control_group=$cg"
+          echo "worker_cpu_max=$(cat "$root/cpu.max")"
+          echo "worker_cpu_weight=$(cat "$root/cpu.weight")"
+          echo "worker_io_weight=$(tr '\n' ';' < "$root/io.weight")"
+          echo "worker_memory_max=$(cat "$root/memory.max")"
+          test "$(cat "$root/cpu.max")" = "50000 100000"
+          test "$(cat "$root/cpu.weight")" = "20"
+          grep -Eq '^default[[:space:]]+20$' "$root/io.weight"
+          test "$(cat "$root/memory.max")" = "1073741824"
+
+          worker_proc_count="$(wc -l < "$root/cgroup.procs")"
+          echo "worker_cgroup_proc_count=$worker_proc_count"
+          read u0 p0 t0 x0 < <(awk '
+            $1=="usage_usec"{u=$2}
+            $1=="nr_periods"{p=$2}
+            $1=="nr_throttled"{t=$2}
+            $1=="throttled_usec"{x=$2}
+            END{print u+0,p+0,t+0,x+0}
+          ' "$root/cpu.stat")
+          ts0="$(date +%s%N)"
+          sleep 10
+          read u1 p1 t1 x1 < <(awk '
+            $1=="usage_usec"{u=$2}
+            $1=="nr_periods"{p=$2}
+            $1=="nr_throttled"{t=$2}
+            $1=="throttled_usec"{x=$2}
+            END{print u+0,p+0,t+0,x+0}
+          ' "$root/cpu.stat")
+          ts1="$(date +%s%N)"
+          python3 - "$u0" "$u1" "$p0" "$p1" "$t0" "$t1" "$x0" "$x1" "$ts0" "$ts1" "$worker_proc_count" <<'PY'
+          import sys
+          u0,u1,p0,p1,t0,t1,x0,x1,ts0,ts1,proc_count=map(int,sys.argv[1:])
+          wall=max(1,ts1-ts0)
+          pct=max(0,u1-u0)*100_000_000_000/wall/1_000_000
+          print(f"worker_cpu_percent_10s={pct:.2f}")
+          print(f"worker_periods_delta={max(0,p1-p0)}")
+          print(f"worker_throttled_periods_delta={max(0,t1-t0)}")
+          print(f"worker_throttled_usec_delta={max(0,x1-x0)}")
+          if pct > 55.0:
+              raise SystemExit("worker cpu above kernel boundary")
+          # With only the long-lived daemon in the cgroup, historical state must
+          # not consume a meaningful CPU core. The 10% ceiling is deliberately
+          # far above the post-fix live baseline (0.09%) to tolerate jitter.
+          if proc_count == 1 and pct > 10.0:
+              raise SystemExit("idle worker daemon cpu regression")
+          if p1-p0 <= 0:
+              raise SystemExit("cpu bandwidth periods are not active")
+          PY
+
+          echo "=== worker cgroup processes ==="
+          while read -r child_pid; do
+            [ -r "/proc/$child_pid/stat" ] || continue
+            ps -p "$child_pid" -o pid=,ppid=,pcpu=,pmem=,stat=,etime=,comm= 2>/dev/null || true
+          done < "$root/cgroup.procs"
+
+          python3 - "$HOME/agent-data/employee-wakes" "$HOME/agent-data/employee-worker-host/dispatches" <<'PY'
+          from pathlib import Path
+          import sys
+          wakes=Path(sys.argv[1]); dispatches=Path(sys.argv[2])
+          wake_keys={(p.parent.name,p.name) for p in wakes.glob("*/*.json")}
+          dispatch_keys={(p.parent.name,p.name) for p in dispatches.glob("*/*.json")}
+          print(f"worker_wake_files={len(wake_keys)}")
+          print(f"worker_dispatch_files={len(dispatch_keys)}")
+          print(f"worker_wakes_without_dispatch={len(wake_keys-dispatch_keys)}")
+          PY
+
+          echo "worker_supervisor_delivery_files=$(find "$HOME/agent-data/employee-runtime/supervisor/deliveries" -maxdepth 1 -type f -name 'reconcile_*.json' 2>/dev/null | wc -l)"
+          echo "worker_supervisor_intent_files=$(find "$HOME/agent-data/employee-runtime/supervisor/intents" -maxdepth 1 -type f -name 'reconcile_*.json' 2>/dev/null | wc -l)"
+
+          python3 - /proc/pressure/io <<'PY'
+          import re,sys
+          vals={}
+          for line in open(sys.argv[1],encoding='utf-8'):
+              name=line.split()[0]
+              vals[name]={k:float(v) for k,v in re.findall(r'(avg10|avg60|avg300)=([0-9.]+)',line)}
+          for name in ('some','full'):
+              for key in ('avg10','avg60','avg300'):
+                  print(f"io_psi_{name}_{key}={vals.get(name,{}).get(key,0.0):.2f}")
+          if vals.get('some',{}).get('avg300',100.0) >= 50.0:
+              raise SystemExit("io some avg300 still elevated")
+          if vals.get('full',{}).get('avg300',100.0) >= 35.0:
+              raise SystemExit("io full avg300 still elevated")
+          PY
+
+          mountpoint -q "$GDRIVE"
+          state="$(grep '^state=' "$STATE" | tail -n1 | cut -d= -f2-)"
+          echo "gdrive_health_state=$state"
+          case "$state" in READY|RECOVERED) ;; *) exit 41;; esac
+          timeout 10 test -d "$GDRIVE/backups"
+          echo "gdrive_backups=PASS"
+
+          test ! -e "$REPO/.git/objects/pack/pack-05712690d52472e874ca91a3f728329bfa7c0a00.pack"
+          echo "giant_pack_absent=PASS"
+          echo "oracle_post_reclaim_health=PASS"
+          REMOTE

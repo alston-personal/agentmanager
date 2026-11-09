@@ -2,10 +2,6 @@ name: Oracle Inspect LayoutLib Web Runtime
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-inspect-layoutlib-web-runtime.yml'
-
 permissions:
   contents: write
 

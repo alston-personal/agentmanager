@@ -1,10 +1,7 @@
-name: Oracle Realm Node Self Update
+name: Oracle Realm Node Bootstrap Runtime Converge
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-node-self-update.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 
@@ -16,37 +13,70 @@ jobs:
   update:
     if: github.actor == 'alstonhuang'
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
 
-      - name: Queue first-node AgentOS runtime update
+      - name: Normalize Node OTA capability contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('agentos_node/thin_client.py')
+          s=p.read_text(encoding='utf-8')
+          old="caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']"
+          new="caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect', 'node.runtime.converge']"
+          if new in s:
+              print('node_runtime_converge_capability=already-present')
+          else:
+              if old not in s:
+                  raise SystemExit('capability manifest anchor missing')
+              p.write_text(s.replace(old,new,1),encoding='utf-8')
+              print('node_runtime_converge_capability=patched')
+          PY
+          if ! git diff --quiet -- agentos_node/thin_client.py; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '4189826+github-actions[bot]@users.noreply.github.com'
+            git add agentos_node/thin_client.py
+            git commit -m 'fix(agentos-node): advertise governed runtime convergence'
+            git push origin HEAD:feature/realm-node-fabric-readiness
+          fi
+          echo "bootstrap_source_commit=$(git rev-parse HEAD)" | tee /tmp/node-bootstrap-ref.env
+
+      - name: Queue first-node bootstrap runtime converge
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          CMD=.agentos/commands/realm-node-self-update.json
+          source /tmp/node-bootstrap-ref.env
           OUT=/tmp/realm-node-self-update-result.json
-          python3 - "$CMD" "$OUT" "$GITHUB_SHA" <<'PY'
+          python3 - "$OUT" "$bootstrap_source_commit" <<'PY'
           import json,re,sys,time
           from pathlib import Path
           from agent_core.realm_fabric import RealmFabricStore
 
-          cmd=json.load(open(sys.argv[1],encoding='utf-8'))
-          assert cmd.get('schema') == 'agentos.realm-command/v0.1', cmd
-          assert cmd.get('action') == 'realm.node.self_update_desktop_v01', cmd
-          node_id=str(cmd.get('node_id') or '')
-          assert node_id == 'vopc5750', node_id
-          ref=sys.argv[3]
-          assert re.fullmatch(r'[0-9a-f]{40}', ref), ref
+          node_id='vopc5750'
+          ref=sys.argv[2]
+          if not re.fullmatch(r'[0-9a-f]{40}',ref):
+              raise SystemExit('invalid source commit')
 
           script = r'''$ErrorActionPreference='Stop'
           $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $taskName='AgentOS Thin Client'
+          $watchdogName='AgentOS Thin Client Watchdog'
+          if ($null -eq (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) { throw 'Thin Client scheduled task missing' }
+          if ($null -eq (Get-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue)) { throw 'Watchdog scheduled task missing' }
+
           $base='https://raw.githubusercontent.com/alston-personal/agentmanager/REF'
           $files=@(
             'agentos_node/thin_client.py',
+            'agentos_node/runtime_provenance.py',
             'agentos_node/interactive_desktop.py',
             'agentos_node/thin_client_transport.py',
             'agentos_node/client_cli.py',
@@ -60,34 +90,42 @@ jobs:
             New-Item -ItemType Directory -Force -Path $parent | Out-Null
             Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri "$base/$rel" -OutFile $dest
           }
-          $launcher=Join-Path $install 'agentos-client.cmd'
-          $taskName='AgentOS Thin Client'
-          $action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/d /c `"$launcher`" run" -WorkingDirectory $install
-          $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-          $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
-          Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null
 
-          # Do not Start-ScheduledTask while this update is still executing inside the
-          # currently-running scheduled-task instance. Windows may ignore the start,
-          # after which killing the old daemon leaves the node offline. Instead, let
-          # this command return its receipt first, then use a detached helper to stop
-          # the old scheduled-task instance and start a fresh one.
+          $provenance=[ordered]@{
+            schema='agentos.thin-client-runtime/v0.1'
+            source_ref='${{ github.ref_name }}'
+            source_commit='REF'
+            installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            install_mode='bootstrap-preserve-lifecycle'
+          }
+          $provenance | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $install 'runtime-provenance.json')
+
           $restart = "Start-Sleep -Seconds 8; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '$taskName'"
           Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
-          Write-Output ('agentos_runtime_ref=REF')
+
+          Write-Output 'agentos_runtime_bootstrap=PASS'
+          Write-Output 'agentos_watchdog_preserved=PASS'
+          Write-Output ('agentos_source_commit=REF')
           Write-Output 'agentos_restart=deferred-stop-start'
           '''.replace('REF',ref)
-          task_id='self-update-runtime-'+node_id+'-'+str(int(time.time()))
+
+          task_id='bootstrap-runtime-'+node_id+'-'+str(int(time.time()))
           task={
-            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
-            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],
-            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':60,'cognition_ids_used':[]}
+            'schema':'agentos.node-task/v0.1',
+            'task_id':task_id,
+            'action':'shell.exec',
+            'executable':'powershell',
+            'argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS',
+            'timeout_seconds':90,
+            'cognition_ids_used':[]
+          }
           queued=RealmFabricStore().queue_task(node_id,task)
-          Path(sys.argv[2]).write_text(json.dumps({'ok':True,'node_id':node_id,'ref':ref,'task':queued},indent=2)+'\n',encoding='utf-8')
-          print('self_update_task_id='+task_id)
+          Path(sys.argv[1]).write_text(json.dumps({'ok':True,'node_id':node_id,'ref':ref,'task':queued},indent=2)+'\n',encoding='utf-8')
+          print('bootstrap_task_id='+task_id)
           PY
 
-      - name: Wait for update receipt
+      - name: Wait for bootstrap receipt
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
@@ -95,33 +133,29 @@ jobs:
         run: |
           set -euo pipefail
           TASK=$(python3 -c "import json; print(json.load(open('/tmp/realm-node-self-update-result.json'))['task']['task_id'])")
-          for i in $(seq 1 20); do
+          for i in $(seq 1 45); do
             python3 - "$TASK" <<'PY' && exit 0 || true
           import sys
           from agent_core.realm_fabric import RealmFabricStore
           r=RealmFabricStore().get_receipt(sys.argv[1])
-          if r and r.get('ok') is True:
-              print('self_update_receipt=PASS')
-              print(r)
-              raise SystemExit(0)
+          if r and r.get('ok') is True and int(r.get('returncode') or 0) == 0:
+              out=str(r.get('stdout') or '')
+              required=('agentos_runtime_bootstrap=PASS','agentos_watchdog_preserved=PASS')
+              if all(x in out for x in required):
+                  print('bootstrap_receipt=PASS')
+                  print(out)
+                  raise SystemExit(0)
           raise SystemExit(1)
           PY
             sleep 2
           done
-          echo 'self update receipt timeout' >&2
+          echo 'bootstrap receipt timeout' >&2
           exit 1
 
-      - name: Publish non-secret evidence
+      - name: Report non-secret evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           test -f /tmp/realm-node-self-update-result.json || exit 0
-          mkdir -p .agentos/evidence
-          cp /tmp/realm-node-self-update-result.json .agentos/evidence/realm-node-self-update-current.json
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/realm-node-self-update-current.json
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): record first-node runtime self update'
-          git push origin HEAD:main
+          cat /tmp/realm-node-self-update-result.json

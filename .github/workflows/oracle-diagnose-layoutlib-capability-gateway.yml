@@ -2,12 +2,6 @@ name: Oracle Diagnose LayoutLib Capability Gateway
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-diagnose-layoutlib-capability-gateway.yml'
-      - 'agentos_node/capability_http.py'
-      - 'agentos_node/capability_store.py'
-
 permissions:
   contents: write
 

@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.studio-web-mio-deploy/v1",
+  "studioCommit": "3b1aed261f7350fc159b6bb2f9db1d766e6cea6d",
+  "requestedAt": "2026-10-13T14:25:00+08:00",
+  "reason": "Publish six real NET vendor CDN source images from verified download evidence (#144)"
+}

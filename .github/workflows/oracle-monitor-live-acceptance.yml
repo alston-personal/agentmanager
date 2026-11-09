@@ -1,0 +1,130 @@
+name: Monitor Runtime Live Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-monitor-live-acceptance.yml'
+      - 'agentos_node/monitor_runtime.py'
+      - 'scripts/install_monitor_runtime_user.sh'
+      - 'agent_core/realm_server.py'
+      - 'dashboard/app/api/agentos/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify durable scheduler, receipts, attention and ONE contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          DB=/home/ubuntu/agent-data/runtime/monitor-runtime/monitor.sqlite3
+          systemctl --user is-active --quiet agentos-monitor-scheduler.timer
+          test -s "$DB"
+          python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          db=sqlite3.connect(sys.argv[1]); db.row_factory=sqlite3.Row
+          mids={r['monitor_id'] for r in db.execute('select monitor_id from monitors')}
+          required={'google-ai-pro-plan-watch','chatgpt-plus-plan-watch','vopc5750-health','agentos-scheduler-health','one-relay-health','threads-auth-health','one-gateway-health','gui-worker-health'}
+          assert required <= mids, required-mids
+          print('monitor_durable_registration=PASS')
+          PY
+          ENV=$HOME/.config/agentos/controller.env
+          test -s "$ENV"
+          set -a; . "$ENV"; set +a
+          test -n "${AGENTOS_CONTROLLER_TOKEN:-}"
+          RUN=/tmp/monitor-one-run.json
+          CODE=$(curl -sS -o "$RUN" -w '%{http_code}' --max-time 90 \
+            -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"schema":"agentos.monitor-command/v1","method":"monitor.run","params":{"monitor_id":"vopc5750-health"}}' \
+            http://127.0.0.1:8780/v1/monitor || true)
+          test "$CODE" = 200
+          python3 - "$RUN" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d.get('ok') is True,d
+          assert d.get('method')=='monitor.run',d
+          r=d.get('result') or {}
+          assert r.get('schema')=='agentos.monitor-receipt/v1',r
+          assert r.get('ok') is True,r
+          assert r.get('condition_triggered') in (True,False),r
+          p=r.get('provenance') or {}
+          assert p.get('capability')=='node.realm',p
+          assert p.get('operation')=='inspect',p
+          assert p.get('one_request_id'),p
+          print('one_backed_monitor_run=PASS')
+          print('monitor_run_receipt='+str(r.get('receipt_id')))
+          PY
+          python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          db=sqlite3.connect(sys.argv[1]); db.row_factory=sqlite3.Row
+          decoded=[json.loads(r['receipt_json']) for r in db.execute('select receipt_json from receipts order by created_at desc limit 100')]
+          assert decoded, 'no monitor receipts'
+          assert all(not (r.get('executor_failure') and r.get('condition_triggered')) for r in decoded)
+          assert any(r.get('ok') is True and (r.get('provenance') or {}).get('capability')=='node.realm' for r in decoded),decoded
+          print('monitor_receipt_count='+str(len(decoded)))
+          print('one_backed_receipt_success=PASS')
+          print('executor_failure_condition_isolation=PASS')
+          PY
+          BODY=/tmp/monitor-one-list.json
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 10             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"             -H 'Content-Type: application/json'             -d '{"schema":"agentos.monitor-command/v1","method":"monitor.list","params":{}}'             http://127.0.0.1:8780/v1/monitor || true)
+          test "$CODE" = 200
+          python3 - "$BODY" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d.get('ok') is True,d
+          assert d.get('method')=='monitor.list',d
+          ids={x['monitor_id'] for x in d.get('result') or []}
+          assert 'vopc5750-health' in ids,ids
+          print('one_monitor_contract=PASS')
+          PY
+          TR=/tmp/monitor-triggered.json
+          CODE=$(curl -sS -o "$TR" -w '%{http_code}' --max-time 10             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN"             -H 'Content-Type: application/json'             -d '{"schema":"agentos.monitor-command/v1","method":"monitor.triggered","params":{"unread_only":true}}'             http://127.0.0.1:8780/v1/monitor || true)
+          test "$CODE" = 200
+          python3 - "$TR" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); assert d.get('ok') is True,d
+          rows=d.get('result') or []
+          assert all(x.get('schema')=='agentos.notification/v1' for x in rows)
+          print('atlas_attention_queue_read=PASS')
+          print('unread_notification_count='+str(len(rows)))
+          PY
+          AT=/tmp/monitor-attention.json
+          CODE=$(curl -sS -o "$AT" -w '%{http_code}' --max-time 10 \
+            -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"schema":"agentos.monitor-command/v1","method":"monitor.triggered","params":{"view":"attention","open_only":true}}' \
+            http://127.0.0.1:8780/v1/monitor || true)
+          test "$CODE" = 200
+          python3 - "$AT" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); assert d.get('ok') is True,d
+          rows=d.get('result') or []
+          assert all(x.get('schema')=='agentos.attention/v1' for x in rows),rows
+          assert all(x.get('state')=='OPEN' for x in rows),rows
+          print('atlas_attention_projection=PASS')
+          print('open_attention_count='+str(len(rows)))
+          for x in rows[:10]:
+              safe={k:x.get(k) for k in ('monitor_id','severity','summary','occurrence_count','state')}
+              print('attention_item='+json.dumps(safe,ensure_ascii=False,sort_keys=True))
+          PY
+          echo 'monitor_live_acceptance=PASS'
+          REMOTE

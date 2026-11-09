@@ -1,0 +1,42 @@
+name: Oracle Runner Recovery Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/controller_api.py'
+      - 'agent_core/control_inbox_bridge.py'
+      - 'agentos_node/thin_client.py'
+      - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'scripts/repair_control_inbox_github_auth_user.sh'
+      - 'tests/test_oracle_ssh_emergency_actions.py'
+      - 'tests/test_oracle_runner_emergency_actions.py'
+      - 'tests/test_control_inbox_runtime_installer.py'
+      - '.github/workflows/oracle-runner-recovery-guard.yml'
+  push:
+    branches:
+      - core/issue-600-runner-recovery
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Compile recovery boundary
+        run: |
+          python -m py_compile agent_core/controller_api.py agent_core/control_inbox_bridge.py agentos_node/thin_client.py
+          bash -n scripts/install_control_inbox_bridge_user.sh
+          bash -n scripts/repair_control_inbox_github_auth_user.sh
+      - name: Run bounded runner recovery contracts
+        run: |
+          python -m pytest -q             tests/test_oracle_ssh_emergency_actions.py             tests/test_oracle_runner_emergency_actions.py             tests/test_control_inbox_bridge.py             tests/test_control_inbox_runtime_installer.py

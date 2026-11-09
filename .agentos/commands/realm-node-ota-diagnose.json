@@ -1,0 +1,10 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.ota-diagnose",
+  "node_id": "vopc5750",
+  "nonce": "ota-fifth-rollback-receipt-diagnose-20260927-2245",
+  "receipt_task_ids": [
+    "ota-rollback-vopc5750-1790520248",
+    "ota-stage-vopc5750-1790520204"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.supervisor-recovery-proof",
+  "node_id": "mbpr",
+  "nonce": "mbpr-supervisor-recovery-1790562559698"
+}

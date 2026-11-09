@@ -1,0 +1,33 @@
+name: Governed Execution Contract
+
+on:
+  pull_request:
+    paths:
+      - 'governance/execution-authority.json'
+      - 'scripts/fetch_governed_product_request.py'
+      - 'scripts/run_governed_execution_request.py'
+      - 'tests/test_governed_execution_request.py'
+      - 'docs/GOVERNED_EXECUTION_REQUESTS.md'
+      - '.github/workflows/governed-execution-contract.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - 'governance/execution-authority.json'
+      - 'scripts/fetch_governed_product_request.py'
+      - 'scripts/run_governed_execution_request.py'
+      - 'tests/test_governed_execution_request.py'
+      - 'docs/GOVERNED_EXECUTION_REQUESTS.md'
+      - '.github/workflows/governed-execution-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded execution contract
+        run: |
+          python3 tests/test_governed_execution_request.py
+          python3 -m py_compile scripts/run_governed_execution_request.py scripts/fetch_governed_product_request.py

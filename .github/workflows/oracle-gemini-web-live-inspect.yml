@@ -1,0 +1,173 @@
+name: Oracle Gemini Web Live Inspect
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-gemini-web-live-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read live Gemini bridge state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          echo "=== services ==="
+          systemctl --user is-active agentos-gemini-web-bridge.service || true
+          systemctl --user is-active agentos-bootstrap-gui.service || true
+          systemctl --user --no-pager --full status agentos-gemini-web-bridge.service | sed -n '1,28p' || true
+
+          echo "=== scheduler status ==="
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json')
+          if p.exists():
+              d=json.loads(p.read_text(encoding='utf-8'))
+              row=(d.get('workers') or {}).get('oracle-gui') or {}
+              print('gui_state='+str(row.get('state')))
+              current=row.get('current_job') or {}
+              print('gui_action='+str(current.get('action')))
+              print('gui_queue_depth='+str((d.get('queue_depth') or {}).get('gui')))
+          PY
+
+          echo "=== gemini bridge snapshot ==="
+          python3 - <<'PY'
+          import json,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          def age_seconds(value):
+              try:
+                  ts=datetime.fromisoformat(str(value or '').replace('Z','+00:00')).astimezone(timezone.utc)
+                  return round(max(0.0,(datetime.now(timezone.utc)-ts).total_seconds()),3)
+              except Exception:
+                  return None
+
+          home=Path.home()
+          root=home/'.local/share/agentos/gemini-web/bridge'
+          for label,p in [
+              ('bridge',root/'bridge.json'),
+              ('sessions',root/'sessions.json'),
+              ('probe',home/'.local/share/agentos/gemini-web/probe-current.json'),
+          ]:
+              print(label+'_present='+str(p.exists()).lower())
+              if not p.exists():
+                  continue
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8-sig'))
+              except Exception as e:
+                  print(label+'_error='+type(e).__name__)
+                  continue
+              if label=='bridge':
+                  print('bridge_ready='+str(bool(d.get('ready'))).lower())
+                  print('bridge_session_state='+str(d.get('session_state')))
+              elif label=='sessions':
+                  sessions=[x for x in (d.get('sessions') or []) if isinstance(x,dict)]
+                  print('sessions_observed_age_seconds='+str(age_seconds(d.get('observed_at'))))
+                  print('session_count='+str(len(sessions)))
+                  print('session_states='+','.join(str(x.get('state') or 'UNKNOWN') for x in sessions))
+                  hosts=[]
+                  for x in sessions:
+                      host=(urlparse(str(x.get('url') or '')).hostname or '').lower()
+                      if host and host not in hosts:
+                          hosts.append(host)
+                  print('session_hosts='+','.join(hosts))
+              else:
+                  print('probe_observed_age_seconds='+str(age_seconds(d.get('observed_at'))))
+                  print('probe_state='+str(d.get('state')))
+                  print('probe_source='+str(d.get('source')))
+          events=root/'events.jsonl'
+          if events.exists():
+              rows=[]
+              error_types=[]
+              for raw in events.read_text(encoding='utf-8').splitlines()[-24:]:
+                  try: item=json.loads(raw)
+                  except Exception: continue
+                  rows.append((str(item.get('event') or ''),str(item.get('state') or '')))
+                  if item.get('event') == 'provider_error':
+                      detail=str(item.get('detail') or '')
+                      error_types.append(detail.split(':',1)[0][:80] if detail else 'unknown')
+              print('recent_bridge_events='+','.join(a+':'+b for a,b in rows[-12:]))
+              print('recent_bridge_error_types='+','.join(error_types[-12:]))
+          PY
+
+          echo "=== CDP endpoint ==="
+          if RAW="$(timeout 5s curl -fsS http://127.0.0.1:9222/json/version 2>/dev/null)"; then
+            printf '%s' "$RAW" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("cdp_version=PASS"); print("cdp_browser="+str(d.get("Browser") or "unknown")); print("cdp_websocket="+str(bool(d.get("webSocketDebuggerUrl"))).lower())'
+          else
+            echo "cdp_version=FAIL_OR_TIMEOUT"
+          fi
+          if RAW="$(timeout 5s curl -fsS http://127.0.0.1:9222/json/list 2>/dev/null)"; then
+            printf '%s' "$RAW" | python3 -c 'import json,sys; from urllib.parse import urlparse; rows=json.load(sys.stdin); hosts={}; [hosts.__setitem__((urlparse(str(x.get("url") or "")).hostname or "non-http").lower(),hosts.get((urlparse(str(x.get("url") or "")).hostname or "non-http").lower(),0)+1) for x in rows if isinstance(x,dict)]; print("cdp_targets=PASS"); print("cdp_target_count="+str(len(rows))); print("cdp_target_hosts="+",".join(k+":"+str(v) for k,v in sorted(hosts.items())))'
+          else
+            echo "cdp_targets=FAIL_OR_TIMEOUT"
+          fi
+
+          echo "=== transport versions ==="
+          python3 - <<'PY'
+          import importlib.metadata,importlib.util
+          try:
+              print('playwright_python='+importlib.metadata.version('playwright'))
+          except Exception:
+              print('playwright_python=UNKNOWN')
+          print('python_websocket_client='+('AVAILABLE' if importlib.util.find_spec('websocket') else 'UNAVAILABLE'))
+          print('python_websockets='+('AVAILABLE' if importlib.util.find_spec('websockets') else 'UNAVAILABLE'))
+          PY
+          node --version 2>/dev/null | sed 's/^/node_version=/' || echo "node_version=UNAVAILABLE"
+          node -e 'console.log("node_global_websocket="+typeof WebSocket)' 2>/dev/null || echo "node_global_websocket=UNAVAILABLE"
+
+          echo "=== raw browser CDP websocket ==="
+          WS_URL="$(timeout 5s curl -fsS http://127.0.0.1:9222/json/version 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("webSocketDebuggerUrl") or "")')" || WS_URL=""
+          if [ -n "$WS_URL" ] && command -v node >/dev/null 2>&1; then
+            timeout 7s node - "$WS_URL" <<'NODE' || true
+          const wsUrl=process.argv[2];
+          if (typeof WebSocket === 'undefined') {
+            console.log('raw_cdp_ws=NODE_WEBSOCKET_UNAVAILABLE');
+            process.exit(0);
+          }
+          let done=false;
+          const finish=(line,code=0)=>{ if(done)return; done=true; console.log(line); try{ws.close();}catch{}; process.exitCode=code; };
+          const ws=new WebSocket(wsUrl);
+          const timer=setTimeout(()=>finish('raw_cdp_ws=TIMEOUT',2),5000);
+          ws.onopen=()=>ws.send(JSON.stringify({id:1,method:'Target.getTargets'}));
+          ws.onerror=()=>{clearTimeout(timer); finish('raw_cdp_ws=ERROR',2);};
+          ws.onmessage=(event)=>{
+            let msg;
+            try{msg=JSON.parse(String(event.data));}catch{return;}
+            if(msg.id!==1)return;
+            clearTimeout(timer);
+            const rows=msg.result?.targetInfos||[];
+            console.log('raw_cdp_target_count='+rows.length);
+            finish('raw_cdp_ws=PASS');
+          };
+          NODE
+          else
+            echo "raw_cdp_ws=UNAVAILABLE"
+          fi
+
+          echo "=== bridge process ==="
+          pgrep -af 'agentos_node.gemini_web_bridge|playwright.*run-driver' || true
+          echo "gemini_live_inspect=PASS"
+          REMOTE

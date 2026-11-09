@@ -1,0 +1,81 @@
+name: Browser Session Login Start
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/browser-session-login-start.json'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate session command
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > "$RUNNER_TEMP/session.env"
+          import json,re
+          p=json.load(open('.agentos/commands/browser-session-login-start.json',encoding='utf-8'))
+          assert p.get('schema')=='agentos.browser-session-login-start/v1'
+          session=str(p.get('session') or '')
+          assert session in {'threads:mio','threads:oursong','google:flow'}
+          assert re.fullmatch(r'login-[a-z0-9:-]+-[0-9]{8}-r[0-9]+',str(p.get('nonce') or ''))
+          print('SESSION='+session)
+          PY
+          cat "$RUNNER_TEMP/session.env" >> "$GITHUB_ENV"
+
+      - name: Mint OIDC credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Bring selected browser session to login surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$SESSION" in
+            threads:mio)
+              bash scripts/agentos_dispatch.sh threads.dm login.start "$GITHUB_SHA"                 | tee "$RUNNER_TEMP/login.txt"
+              grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/login.txt"
+              ;;
+            threads:oursong)
+              bash scripts/agentos_dispatch.sh persona.social.dm oursong.login.start "$GITHUB_SHA"                 | tee "$RUNNER_TEMP/login.txt"
+              grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/login.txt"
+              ;;
+            google:flow)
+              AGENTOS_DISPATCH_WAIT_SECONDS=240                 bash scripts/agentos_dispatch.sh media.google-flow recover "$GITHUB_SHA"                 | tee "$RUNNER_TEMP/login.txt"
+              grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/login.txt"
+              ;;
+          esac
+          echo "browser_session_login_start=$SESSION"
+
+      - name: Upload bounded handoff receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-session-login-${{ github.run_id }}
+          path: ${{ runner.temp }}/login.txt
+          if-no-files-found: warn
+          retention-days: 7

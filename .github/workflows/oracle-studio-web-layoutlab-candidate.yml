@@ -2,11 +2,6 @@ name: Oracle Studio Web Layout Lab Candidate
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-studio-web-layoutlab-candidate.yml'
-      - 'scripts/studio_web_phase1_layoutlab_candidate.sh'
-
 permissions:
   contents: write
 

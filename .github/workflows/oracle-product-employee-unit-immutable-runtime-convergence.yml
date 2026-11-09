@@ -1,0 +1,78 @@
+name: Oracle Product Employee Unit Immutable Runtime Convergence
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-product-employee-unit-immutable-runtime-convergence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Rebind inactive Product Employee units to accepted Core release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          DATA_ROOT=/home/ubuntu/agent-data
+          CURRENT="$DATA_ROOT/runtime/core/current"
+          RELEASE="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+          case "$RELEASE" in "$DATA_ROOT/releases/core/"*) ;; *) echo "invalid Core current release" >&2; exit 2;; esac
+          UNIT_DIR=/home/ubuntu/.config/systemd/user
+          WAKE_DST="$UNIT_DIR/agentos-employee-wake-node.service"
+          WORK_DST="$UNIT_DIR/agentos-product-work-intent-reconciler.service"
+          WAKE_SRC="$RELEASE/.agent/scripts/agentos-employee-wake-node.service"
+          WORK_SRC="$RELEASE/.agent/scripts/agentos-product-work-intent-reconciler.service"
+          PYTHON_BIN="$RELEASE/.venv/bin/python3"
+          [ -x "$PYTHON_BIN" ] || PYTHON_BIN="$(command -v python3)"
+          wake_before="$(systemctl --user show agentos-employee-wake-node.service -p ActiveState --value 2>/dev/null || true)"
+          work_before="$(systemctl --user show agentos-product-work-intent-reconciler.service -p ActiveState --value 2>/dev/null || true)"
+
+          python3 - "$WAKE_SRC" "$WAKE_DST" "$RELEASE" "$DATA_ROOT" "$PYTHON_BIN" <<'PY'
+          from pathlib import Path
+          import sys
+          src,dst,root,data_root,python_bin=sys.argv[1:]
+          text=Path(src).read_text(encoding='utf-8')
+          text=text.replace('/home/ubuntu/agentmanager',root)
+          text=text.replace('/home/ubuntu/agent-data',data_root)
+          text=text.replace('/usr/bin/python3',python_bin)
+          Path(dst).write_text(text,encoding='utf-8')
+          PY
+          python3 - "$WORK_SRC" "$WORK_DST" "$RELEASE" "$DATA_ROOT" "$PYTHON_BIN" <<'PY'
+          from pathlib import Path
+          import sys
+          src,dst,root,data_root,python_bin=sys.argv[1:]
+          text=Path(src).read_text(encoding='utf-8')
+          text=text.replace('/home/ubuntu/agentmanager',root)
+          text=text.replace('/home/ubuntu/agent-data',data_root)
+          text=text.replace('/usr/bin/python3',python_bin)
+          Path(dst).write_text(text,encoding='utf-8')
+          PY
+
+          systemctl --user daemon-reload
+          test "$(systemctl --user show agentos-employee-wake-node.service -p WorkingDirectory --value)" = "$RELEASE"
+          test "$(systemctl --user show agentos-product-work-intent-reconciler.service -p WorkingDirectory --value)" = "$RELEASE"
+          wake_after="$(systemctl --user show agentos-employee-wake-node.service -p ActiveState --value 2>/dev/null || true)"
+          work_after="$(systemctl --user show agentos-product-work-intent-reconciler.service -p ActiveState --value 2>/dev/null || true)"
+          test "$wake_after" = "$wake_before"
+          test "$work_after" = "$work_before"
+          echo "product_employee_unit_runtime=$RELEASE"
+          echo "product_employee_wake_state_preserved=${wake_after:-unknown}"
+          echo "product_employee_work_intent_state_preserved=${work_after:-unknown}"
+          echo "product_employee_unit_immutable_runtime=PASS"
+          REMOTE

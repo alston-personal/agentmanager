@@ -1,0 +1,242 @@
+{
+  "schema": "agentos.oracle-identity-boundaries/v1",
+  "policy_version": "2026.10.06.5",
+  "shared_group": "agentos",
+  "roots": {
+    "source_cache": {
+      "path": "/home/ubuntu/agentmanager",
+      "classification": "ubuntu-source-cache-only",
+      "production_runtime_allowed": false
+    },
+    "shared_data": {
+      "path": "/home/ubuntu/agent-data",
+      "classification": "transitional-shared-runtime",
+      "required_group": "agentos",
+      "implicit_supplementary_group_for_mutation_allowed": false,
+      "target_state": "dedicated-service-identity-or-bounded-group-boundary"
+    },
+    "node_home": {
+      "path": "/home/agentos-node",
+      "classification": "dedicated-node-identity"
+    }
+  },
+  "ubuntu_required_path_hints": [
+    "browser",
+    "chatgpt",
+    "gemini",
+    "threads",
+    "gui",
+    "claude",
+    "codex"
+  ],
+  "bounded_group_markers": [
+    "/usr/bin/sg agentos -c",
+    "chgrp agentos",
+    "SHARED_GROUP = \"agentos\"",
+    "group=agentos",
+    "Group=agentos",
+    "[\"/usr/bin/sg\", \"agentos\", \"-c\"",
+    "['/usr/bin/sg', 'agentos', '-c'"
+  ],
+  "mutation_markers": [
+    "write_text(",
+    ".replace(",
+    ".unlink(",
+    "mkdir ",
+    "install ",
+    "cp ",
+    "mv ",
+    "rm ",
+    "rsync ",
+    "chmod ",
+    "chown ",
+    "chgrp "
+  ],
+  "review_roots": [
+    ".github/workflows",
+    ".agent/scripts",
+    "agent_core",
+    "agentos_node",
+    "scripts"
+  ],
+  "confirmed_migrations": {
+    ".agent/scripts/agentos-core-supervisor.service": {
+      "severity": "P0",
+      "reason": "production service runs directly from source-cache-only /home/ubuntu/agentmanager while mutating shared employee runtime",
+      "target": "immutable release runtime under declared core release controller",
+      "status": "live_immutable_complete",
+      "live_acceptance": {
+        "core_bundle_convergence_run": 37271897923,
+        "core_runtime_audit_run": 37394284772,
+        "core_runtime_audit_attempt": "accepted-2026-10-06",
+        "mutable_count": 0,
+        "immutable_count": 10,
+        "other_count": 0,
+        "result": "PASS"
+      }
+    },
+    ".agent/scripts/agentos-employee-wake-node.service": {
+      "severity": "P0",
+      "reason": "production wake daemon runs from mutable source checkout and reads checkout-local .env",
+      "target": "immutable node runtime plus external configuration",
+      "status": "live_immutable_complete",
+      "live_acceptance": {
+        "core_bundle_convergence_run": 37271897923,
+        "core_runtime_audit_run": 37394284772,
+        "core_runtime_audit_attempt": "accepted-2026-10-06",
+        "mutable_count": 0,
+        "immutable_count": 10,
+        "other_count": 0,
+        "result": "PASS"
+      }
+    },
+    ".agent/scripts/agentos-employee-worker-host.service": {
+      "severity": "P1",
+      "reason": "group boundary is explicit and safe, but code still executes from mutable source checkout",
+      "target": "immutable employee runtime release",
+      "status": "live_immutable_complete",
+      "live_acceptance": {
+        "core_bundle_convergence_run": 37271897923,
+        "core_runtime_audit_run": 37394284772,
+        "core_runtime_audit_attempt": "accepted-2026-10-06",
+        "mutable_count": 0,
+        "immutable_count": 10,
+        "other_count": 0,
+        "result": "PASS"
+      }
+    }
+  },
+  "known_good_boundaries": {
+    "scripts/install_realm_fabric_user.sh": "explicit sg agentos boundary for shared Realm state",
+    "scripts/install_action_relay_user.sh": "explicit sg agentos boundary for shared Action Relay spool",
+    "scripts/install_control_inbox_bridge_user.sh": "materializes exact Realm runtime instead of executing bridge from shared checkout"
+  },
+  "audit_excludes": [
+    "scripts/audit_oracle_identity_boundaries.py",
+    "tests/**",
+    ".agentos/evidence/**"
+  ],
+  "live_acceptance": {
+    "oracle_core_bundle": {
+      "status": "PASS",
+      "accepted_release": "1387daab2309bcbc4e9098a5744cef5eff59a669",
+      "convergence_run": 37271897923,
+      "product_employee_unit_convergence_run": 37272281279,
+      "runtime_audit_run": 37394284772,
+      "immutable_count": 10,
+      "mutable_count": 0,
+      "other_count": 0,
+      "result": "PASS"
+    }
+  },
+  "audit_overrides": {
+    ".github/workflows/oracle-runner-hosted-readonly-inspect.yml": {
+      "risk": "P2",
+      "classification": "read-only-inspection",
+      "reason": "hosted SSH workflow inspects runner/scheduler state and does not mutate shared runtime"
+    },
+    ".github/workflows/oracle-runner-probe.yml": {
+      "risk": "P2",
+      "classification": "diagnostic-evidence",
+      "reason": "agentos-node runner probe reads host permissions/state and only commits repository evidence"
+    },
+    ".github/workflows/governance-directory-audit.yml": {
+      "risk": "P1",
+      "classification": "dedicated-agentos-node-authority",
+      "reason": "governance mutations are performed by the declared agentos-node governance authority"
+    },
+    ".github/workflows/oracle-realm-node-self-update.yml": {
+      "risk": "P1",
+      "classification": "governed-realm-store-boundary",
+      "reason": "shared Realm state is mutated through RealmFabricStore; source edits occur only in the ephemeral Actions checkout"
+    },
+    ".github/workflows/oracle-exact-generation-executor-job-rollout.yml": {
+      "risk": "P1",
+      "classification": "governed-bootstrap-protocol-boundary",
+      "reason": "cross-user work is submitted through fixed bootstrap request/receipt contracts into an immutable scheduler generation"
+    },
+    ".github/workflows/oracle-x-auth-inspect.yml": {
+      "risk": "P1",
+      "classification": "governed-action-relay-boundary",
+      "reason": "runtime convergence and X auth inspection use bounded Action Relay contracts; probe is read-only"
+    },
+    ".github/workflows/oracle-install-storage-resource-publisher.yml": {
+      "risk": "P1",
+      "classification": "dedicated-agentos-node-service",
+      "reason": "installed system service declares User=agentos-node and Group=agentos before updating the shared resource registry"
+    },
+    "agentos_node/bootstrap_control.py": {
+      "risk": "P1",
+      "classification": "bounded-control-boundary",
+      "reason": "cross-owner recovery enters the shared agentos group only through fixed bounded helpers"
+    },
+    ".github/workflows/oracle-hosted-recovery.yml": {
+      "risk": "P1",
+      "classification": "hosted-recovery-review",
+      "reason": "hosted SSH recovery crosses several authorities but does not execute as the self-hosted agentos-node runner; split remains recommended"
+    },
+    ".github/workflows/oracle-enable-layoutlib-images.yml": {
+      "risk": "P2",
+      "classification": "static-false-positive",
+      "reason": "read-only runtime/public acceptance; heuristic mutation is from local dependency/evidence operations, not shared agent-data writes"
+    },
+    ".github/workflows/oracle-verify-layoutlib-public.yml": {
+      "risk": "P2",
+      "classification": "static-false-positive",
+      "reason": "read-only public/runtime acceptance; reads pid/log/fixture state and does not mutate shared agent-data runtime"
+    },
+    "scripts/studio_web_phase1_mirror.sh": {
+      "risk": "P2",
+      "classification": "static-false-positive",
+      "reason": "copies source into temporary staging and performs build/acceptance; agent-data appears only in dependency-scan text"
+    },
+    "scripts/create_studio_web_parallel_checkout.sh": {
+      "risk": "P1",
+      "classification": "migration-staging-boundary",
+      "reason": "one-time product extraction staging writes the dedicated studio-web target; shared agent-data appears only in dependency-scan text"
+    },
+    ".github/workflows/oracle-deploy-layoutlib-web.yml": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
+    },
+    ".github/workflows/oracle-integrate-layoutlab-official-site.yml": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
+    },
+    ".github/workflows/oracle-layoutlib-hardening.yml": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
+    },
+    ".github/workflows/oracle-register-layoutlib.yml": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "retired stub only; no Oracle, shared-runtime, product-state, service, or deployment mutation remains"
+    },
+    "scripts/deploy_layoutlab_official_v2.py": {
+      "risk": "P2",
+      "classification": "retired-carrier",
+      "reason": "legacy Layout Lab deploy helper is a non-operational fail-safe stub; canonical publication is materialize -> promote -> parity through bounded executor jobs"
+    }
+  },
+  "closure_classifications": {
+    "ubuntu-required": "intentionally bound to an interactive ubuntu login/session/profile",
+    "dedicated-service-identity": "long-lived daemon/runtime must use a dedicated service identity",
+    "bounded-group-boundary": "cross-owner shared mutable state uses the explicit narrow agentos group contract",
+    "static-false-positive": "source/template/reference is not live runtime authority"
+  },
+  "closure_requirements": {
+    "every_finding_requires_closure_classification": true,
+    "string_matching_alone_is_not_migration_authority": true,
+    "bulk_chown_home_ubuntu_forbidden": true,
+    "live_reaudit_required_before_parent_close": true
+  },
+  "p0_baseline": {
+    "purpose": "Temporary explicit baseline for #1178. Existing heuristic P0 findings remain unresolved; any new unreviewed P0 path is a regression.",
+    "issue": 1178,
+    "paths": [],
+    "rule": "No reviewed Oracle identity P0 paths remain. Any future P0 finding is new unreviewed regression and must fail governance."
+  }
+}

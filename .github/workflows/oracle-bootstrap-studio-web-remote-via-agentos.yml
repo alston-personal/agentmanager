@@ -2,11 +2,6 @@ name: Oracle Bootstrap Studio Web Remote via AgentOS
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-bootstrap-studio-web-remote-via-agentos.yml'
-      - 'scripts/bootstrap_studio_web_remote_via_agentos.py'
-
 permissions:
   contents: write
 

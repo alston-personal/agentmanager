@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.oracle-maintenance-command/v1",
+  "operation": "runtime_user_manager_delegate_refresh_test",
+  "scope": "user@1001.service",
+  "runtime_only": true,
+  "delegate": ["cpu","io","memory","pids"]
+}

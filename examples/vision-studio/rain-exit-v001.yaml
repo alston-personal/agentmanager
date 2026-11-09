@@ -1,0 +1,87 @@
+project:
+  id: rain-exit-v001
+  title: Rain Exit
+  intent: "Mio exits a Taipei metro station on a rainy night; lonely, but quietly hopeful."
+  target_platform: short_vertical
+  aspect_ratio: "9:16"
+  target_duration_s: 10
+  budget_policy:
+    priority: existing_entitlement_first
+    max_paid_increment_usd: 2.00
+
+character:
+  identity_id: mio-canonical
+  continuity_required: true
+  wardrobe:
+    outfit_id: rain-exit-look-v001
+    description: "consistent outfit across all shots"
+  props:
+    - transparent_umbrella
+
+style:
+  look: cinematic_35mm
+  lighting: "rainy Taipei night, wet asphalt, restrained neon reflections"
+  tone: "solitary but hopeful"
+  dialogue: none
+  subtitles: none
+
+audio:
+  ambience:
+    - rain
+    - distant_traffic
+    - metro_exit_roomtone
+  music: "minimal restrained cinematic ambient"
+
+shots:
+  - id: s01
+    duration_s: 2
+    framing: wide
+    action: "Mio walks up the metro exit stairs holding a transparent umbrella."
+    camera: "mostly locked, subtle push"
+    continuity: ["mio_identity", "wardrobe", "umbrella", "rain"]
+
+  - id: s02
+    duration_s: 3
+    framing: medium
+    action: "Mio enters the street while reflections from cars and signs move across wet pavement."
+    camera: "slow dolly backward"
+    continuity: ["mio_identity", "wardrobe", "umbrella", "rain"]
+
+  - id: s03
+    duration_s: 2
+    framing: close_up
+    action: "Mio pauses briefly and turns her head toward the street; neon light crosses her face."
+    camera: "subtle handheld-stable close shot"
+    continuity: ["mio_identity", "wardrobe", "rain"]
+
+  - id: s04
+    duration_s: 3
+    framing: rear_wide
+    action: "Mio walks away into the rainy Taipei night."
+    camera: "locked; subject recedes"
+    continuity: ["mio_identity", "wardrobe", "umbrella", "rain"]
+
+routing:
+  preferred:
+    - google_veo_existing_entitlement
+    - local_wan
+    - local_ltx
+  fallback:
+    - runway_api
+    - gui_web_executor
+
+qc:
+  hard_fail:
+    - identity_break
+    - wardrobe_break
+    - severe_anatomy_error
+    - shot_order_break
+  thresholds:
+    character_consistency: 0.85
+    temporal_coherence: 0.80
+    prompt_adherence: 0.80
+    visual_quality: 0.80
+
+deliverable:
+  filename: rain_exit_final_v001.mp4
+  receipt: rain_exit_final_v001.receipt.json

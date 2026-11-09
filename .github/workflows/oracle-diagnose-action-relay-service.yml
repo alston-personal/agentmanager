@@ -2,10 +2,6 @@ name: Oracle Diagnose Action Relay Service
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-diagnose-action-relay-service.yml'
-
 permissions:
   contents: write
 

@@ -2,11 +2,6 @@ name: Oracle Validate LayoutLib Coordinate Frame
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-validate-layoutlib-coordinate-frame.yml'
-      - 'scripts/upgrade_layoutlib_coordinate_frame.py'
-
 permissions:
   contents: write
 

@@ -1,0 +1,205 @@
+name: Oracle Inspect Oursong Threads
+# rerun: 2026-09-30T09:36+08:00
+
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe Oursong keyword-search OAuth scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import json,urllib.parse,urllib.request,urllib.error
+          from pathlib import Path
+          cred=Path('/home/ubuntu/.local/state/agentos/social/credentials.json')
+          store=json.loads(cred.read_text(encoding='utf-8'))
+          rows=[
+              b for b in (store.get('bindings') or {}).values()
+              if isinstance(b,dict)
+              and b.get('product_id')=='galaxy'
+              and b.get('platform')=='threads'
+              and b.get('username')=='oursong_alstonhuang'
+              and b.get('auth_profile')=='persona'
+          ]
+          if len(rows)!=1:
+              print('oursong_keyword_scope=binding_not_unique')
+              raise SystemExit(0)
+          token=str(rows[0].get('access_token') or '')
+          if not token:
+              print('oursong_keyword_scope=missing_token')
+              raise SystemExit(0)
+          url='https://graph.threads.net/debug_token?'+urllib.parse.urlencode({'input_token':token})
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'},method='GET')
+          try:
+              with urllib.request.urlopen(req,timeout=15) as r:
+                  payload=json.load(r)
+          except urllib.error.HTTPError as exc:
+              print('oursong_keyword_scope=http_'+str(int(exc.code)))
+              raise SystemExit(0)
+          except Exception:
+              print('oursong_keyword_scope=probe_unavailable')
+              raise SystemExit(0)
+          info=payload.get('data') if isinstance(payload,dict) else None
+          if not isinstance(info,dict):
+              print('oursong_keyword_scope=invalid_response')
+          elif info.get('is_valid') is False:
+              print('oursong_keyword_scope=token_invalid')
+          else:
+              scopes=info.get('scopes')
+              if not isinstance(scopes,list):
+                  print('oursong_keyword_scope=scope_field_unavailable')
+              else:
+                  print('oursong_keyword_scope=' + ('granted' if 'threads_keyword_search' in scopes else 'not_granted'))
+          PY
+
+      - name: Read recent posts replies and safe discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import json,re,urllib.request,urllib.error
+          from pathlib import Path
+          from datetime import datetime,timezone,timedelta
+          env={}
+          for raw in Path('/home/ubuntu/.config/agentos/social-runtime.env').read_text(encoding='utf-8').splitlines():
+              raw=raw.strip()
+              if raw and not raw.startswith('#') and '=' in raw:
+                  k,v=raw.split('=',1); env[k]=v.strip().strip('"').strip("'")
+          product_key=str(json.loads(env['AGENTOS_SOCIAL_PRODUCTS_JSON'])['galaxy']['api_key'])
+          bindings=json.loads(Path('/home/ubuntu/.local/state/agentos/social/credentials.json').read_text(encoding='utf-8')).get('bindings') or {}
+          matches=[(bid,row) for bid,row in bindings.items() if isinstance(row,dict) and row.get('product_id')=='galaxy' and row.get('platform')=='threads' and row.get('username')=='oursong_alstonhuang' and row.get('auth_profile')=='persona']
+          assert len(matches)==1, f'oursong_binding_count={len(matches)}'
+          bid,_=matches[0]
+          def read(op,object_id=None,query=None):
+              p={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':op,'account_binding_id':bid}
+              if object_id: p['object_id']=object_id
+              if query: p.update({'query':query,'search_type':'RECENT','search_mode':'KEYWORD'})
+              req=urllib.request.Request('http://127.0.0.1:8771/v1/social/status',data=json.dumps(p,ensure_ascii=False,separators=(',',':')).encode(),headers={'Content-Type':'application/json','X-AgentOS-Product-Key':product_key},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r: return json.load(r)
+              except urllib.error.HTTPError as e:
+                  return {'ok':False,'error_code':'http_'+str(e.code)}
+          posts=read('post.read')
+          assert posts.get('ok') is True, posts
+          items=(posts.get('result') or {}).get('items') or []
+          owned=[]
+          replies=[]
+          cutoff=datetime.now(timezone.utc)-timedelta(hours=72)
+          for p in items[:12]:
+              if not isinstance(p,dict): continue
+              pid=str(p.get('id') or '')
+              if not re.fullmatch(r'[0-9]{10,25}',pid): continue
+              owned.append({'id':pid,'text':str(p.get('text') or '')[:180],'timestamp':str(p.get('timestamp') or '')[:40],'permalink':str(p.get('permalink') or '')[:150],'has_replies':bool(p.get('has_replies'))})
+              rr=read('replies.read',pid)
+              if rr.get('ok') is not True: continue
+              for row in (rr.get('result') or {}).get('items') or []:
+                  if not isinstance(row,dict): continue
+                  rid=str(row.get('id') or '')
+                  if not re.fullmatch(r'[0-9]{10,25}',rid): continue
+                  replies.append({'id':rid,'root_post_id':pid,'username':str(row.get('username') or '')[:80].lstrip('@'),'text':str(row.get('text') or '')[:350],'timestamp':str(row.get('timestamp') or '')[:50],'replied_to_id':str((row.get('replied_to') or {}).get('id') or ''),'is_reply_owned_by_me':bool(row.get('is_reply_owned_by_me')),'permalink':str(row.get('permalink') or '')[:150]})
+          # External discovery is intentionally non-political. Political/public-official
+          # threads may still appear organically, but this patrol does not target them.
+          # Stage 1 expands broad interests into ordinary-language variants.
+          topic_queries={
+              '塔羅':['塔羅','占卜'],
+              '動漫':['動漫','動畫','漫畫'],
+              '假期':['連假','放假','假期'],
+              '羽球':['羽球','羽毛球'],
+              '旅行':['台灣小旅行','台灣旅行','散步'],
+              '貓':['貓','貓咪'],
+              '日常':['日常觀察','日常'],
+          }
+          candidates=[]
+          seen=set()
+          discovery_status={}
+          def search(query, search_type):
+              p={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'keyword.search','account_binding_id':bid,
+                 'query':query,'search_type':search_type,'search_mode':'KEYWORD'}
+              req=urllib.request.Request('http://127.0.0.1:8771/v1/social/status',
+                  data=json.dumps(p,ensure_ascii=False,separators=(',',':')).encode(),
+                  headers={'Content-Type':'application/json','X-AgentOS-Product-Key':product_key},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r: return json.load(r)
+              except urllib.error.HTTPError as e:
+                  return {'ok':False,'error_code':'http_'+str(e.code)}
+          def add_rows(topic, query, mode, rows):
+              added=0
+              for row in rows:
+                  if not isinstance(row,dict): continue
+                  oid=str(row.get('id') or '')
+                  username=str(row.get('username') or '')[:80].lstrip('@')
+                  text=str(row.get('text') or '').strip()
+                  if not oid or oid in seen or username.lower()=='oursong_alstonhuang' or not text:
+                      continue
+                  seen.add(oid)
+                  # A lightweight conversation score favors posts that contain enough
+                  # context to answer naturally; it is not an engagement prediction.
+                  score=0
+                  if 20<=len(text)<=400: score+=2
+                  if '?' in text or '？' in text: score+=2
+                  if '\\n' in text: score+=1
+                  candidates.append({
+                      'id':oid,'topic':topic,'query':query,'mode':mode,'conversation_score':score,
+                      'username':username,'text':text[:400],
+                      'timestamp':str(row.get('timestamp') or '')[:50],
+                      'permalink':str(row.get('permalink') or '')[:150]
+                  })
+                  added+=1
+                  if added>=2 or len(candidates)>=16: break
+              return added
+          # Stage 2 searches RECENT first; when a query returns no usable rows,
+          # fall back to TOP so a quiet recent window does not look like API failure.
+          for topic,queries in topic_queries.items():
+              for q in queries:
+                  recent=search(q,'RECENT')
+                  key=q+':RECENT'
+                  discovery_status[key]='PASS' if recent.get('ok') is True else str(recent.get('error_code') or 'FAILED')
+                  added=0
+                  if recent.get('ok') is True:
+                      added=add_rows(topic,q,'RECENT',(recent.get('result') or {}).get('items') or [])
+                  if added==0:
+                      top=search(q,'TOP')
+                      key=q+':TOP'
+                      discovery_status[key]='PASS' if top.get('ok') is True else str(top.get('error_code') or 'FAILED')
+                      if top.get('ok') is True:
+                          add_rows(topic,q,'TOP',(top.get('result') or {}).get('items') or [])
+                  if len(candidates)>=16: break
+              if len(candidates)>=16: break
+          candidates.sort(key=lambda x:(-int(x.get('conversation_score') or 0),x.get('topic',''),x.get('id','')))
+          print('oursong_patrol=PASS')
+          print('oursong_posts='+json.dumps(owned,ensure_ascii=False,separators=(',',':')))
+          print('oursong_replies='+json.dumps(replies[-40:],ensure_ascii=False,separators=(',',':')))
+          print('oursong_discovery='+json.dumps(candidates,ensure_ascii=False,separators=(',',':')))
+          print('oursong_discovery_status='+json.dumps(discovery_status,ensure_ascii=False,separators=(',',':')))
+          # Diagnose whether the provider is returning zero rows before local filtering.
+          probe={}
+          for q in ['塔羅','動漫','貓']:
+              for mode in ['RECENT','TOP']:
+                  res=search(q,mode)
+                  rows=(res.get('result') or {}).get('items') or [] if res.get('ok') is True else []
+                  probe[q+':'+mode]={
+                      'ok':bool(res.get('ok') is True),
+                      'row_count':len(rows),
+                      'sample_usernames':[str(x.get('username') or '')[:40] for x in rows[:3] if isinstance(x,dict)],
+                      'sample_ids':[str(x.get('id') or '')[:30] for x in rows[:3] if isinstance(x,dict)],
+                  }
+          print('oursong_discovery_probe='+json.dumps(probe,ensure_ascii=False,separators=(',',':')))
+          PY
+
+# live binding acceptance 2026-10-05

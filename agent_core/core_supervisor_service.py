@@ -1,0 +1,646 @@
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from threading import Event
+from typing import Any, Mapping
+
+from agent_core.core_supervisor import CoreSupervisorReconciler, ReconcileIntent
+from agent_core.core_work_items import WorkItemStore
+from agent_core.employee_lifecycle import EmployeeLifecycle
+
+
+LEADER_SCHEMA = "agentos.core-supervisor-leader/v1"
+STATE_SCHEMA = "agentos.core-supervisor-state/v1"
+CYCLE_SCHEMA = "agentos.core-supervisor-cycle/v1"
+INTENT_RECORD_SCHEMA = "agentos.core-reconcile-record/v1"
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse(value: str) -> datetime:
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def _atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, sort_keys=True, indent=2)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def _read(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("supervisor_state_invalid")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class SupervisorLeaderLease:
+    schema: str
+    owner_id: str
+    generation: int
+    claimed_at: str
+    heartbeat_at: str
+    expires_at: str
+    prior_owner_state: str
+
+
+@dataclass(frozen=True, slots=True)
+class SupervisorCycleReceipt:
+    schema: str
+    cycle_generation: int
+    owner_id: str
+    leader_generation: int
+    observed_at: str
+    plan_digest: str
+    new_intent_count: int
+    total_planned_intent_count: int
+    suppressed_count: int
+    error_count: int
+    blocked_assignment_count: int
+    next_poll_seconds: int
+    dispatch_performed: bool = False
+    authority_boundary: str = "persistent_observe_plan_only"
+    delivery_examined_count: int = 0
+    delivery_dispatch_count: int = 0
+    delivery_queued_count: int = 0
+    delivery_awaiting_claim_count: int = 0
+    delivery_claimed_count: int = 0
+    delivery_blocked_count: int = 0
+    delivery_unknown_count: int = 0
+    delivery_failed_count: int = 0
+    delivery_superseded_count: int = 0
+    delivery_error_count: int = 0
+
+
+class CoreSupervisorService:
+    """Persistent Core loop for durable reconciliation and optional governed wake delivery.
+
+    S3 observe/plan behavior remains the default. S4 is enabled only when a
+    governed delivery driver is explicitly attached. Planning never itself grants
+    delivery authority, and the immutable reconcile-intent journal remains the
+    source evidence for what Core selected before any delivery decision.
+    """
+
+    def __init__(
+        self,
+        lifecycle: EmployeeLifecycle,
+        *,
+        owner_id: str,
+        base_poll_seconds: int = 5,
+        max_poll_seconds: int = 60,
+    ) -> None:
+        owner = str(owner_id or "").strip()
+        if not owner or len(owner) > 180 or any(ch in owner for ch in "/\\\0"):
+            raise ValueError("invalid_supervisor_owner_id")
+        if base_poll_seconds < 1 or max_poll_seconds < base_poll_seconds:
+            raise ValueError("invalid_supervisor_poll_interval")
+        self.lifecycle = lifecycle
+        self.runtime = lifecycle.runtime
+        self.reconciler = CoreSupervisorReconciler(lifecycle)
+        self.work_items = WorkItemStore(self.runtime)
+        self.owner_id = owner
+        self.base_poll_seconds = int(base_poll_seconds)
+        self.max_poll_seconds = int(max_poll_seconds)
+        self.root = self.runtime.root / "supervisor"
+        self.leader_path = self.root / "leader.json"
+        self.leader_lock_path = self.root / "leader.lock"
+        self.state_path = self.root / "state.json"
+        self.intents_dir = self.root / "intents"
+        self.cycles_dir = self.root / "cycles"
+        self.delivery_driver: Any | None = None
+
+    def attach_delivery_driver(self, driver: Any) -> None:
+        """Explicitly enable the S4 boundary for this service instance."""
+        if driver is None:
+            raise ValueError("supervisor_delivery_driver_required")
+        if self.delivery_driver is not None:
+            raise RuntimeError("supervisor_delivery_driver_already_attached")
+        if getattr(driver, "service", None) is not self:
+            raise ValueError("supervisor_delivery_driver_service_mismatch")
+        self.delivery_driver = driver
+
+    def _lock(self):
+        self.leader_lock_path.parent.mkdir(parents=True, exist_ok=True)
+        return self.leader_lock_path.open("a+", encoding="utf-8")
+
+    def claim_leader(self, *, lease_seconds: int = 30, now: datetime | None = None) -> SupervisorLeaderLease:
+        if lease_seconds < 5 or lease_seconds > 300:
+            raise ValueError("supervisor_leader_lease_out_of_range")
+        current = now or _now()
+        with self._lock() as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                existing = _read(self.leader_path)
+                generation = 1
+                prior_state = "known"
+                claimed_at = _iso(current)
+                if existing:
+                    if existing.get("schema") != LEADER_SCHEMA:
+                        raise ValueError("supervisor_leader_state_invalid")
+                    expires = _parse(str(existing.get("expires_at") or "1970-01-01T00:00:00Z"))
+                    same_owner = existing.get("owner_id") == self.owner_id
+                    if expires > current and not same_owner:
+                        raise RuntimeError("supervisor_leader_already_active")
+                    if same_owner and expires > current:
+                        generation = int(existing.get("generation") or 1)
+                        claimed_at = str(existing.get("claimed_at") or claimed_at)
+                    else:
+                        generation = int(existing.get("generation") or 0) + 1
+                        prior_state = "unknown"
+                lease = SupervisorLeaderLease(
+                    schema=LEADER_SCHEMA,
+                    owner_id=self.owner_id,
+                    generation=generation,
+                    claimed_at=claimed_at,
+                    heartbeat_at=_iso(current),
+                    expires_at=_iso(current + timedelta(seconds=lease_seconds)),
+                    prior_owner_state=prior_state,
+                )
+                _atomic(self.leader_path, asdict(lease))
+                return lease
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def heartbeat_leader(
+        self,
+        generation: int,
+        *,
+        lease_seconds: int = 30,
+        now: datetime | None = None,
+    ) -> SupervisorLeaderLease:
+        current = now or _now()
+        with self._lock() as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                raw = _read(self.leader_path)
+                if not raw or raw.get("schema") != LEADER_SCHEMA:
+                    raise RuntimeError("supervisor_leader_missing")
+                if raw.get("owner_id") != self.owner_id or int(raw.get("generation") or 0) != int(generation):
+                    raise PermissionError("supervisor_leader_not_owned")
+                if _parse(str(raw.get("expires_at"))) <= current:
+                    raise RuntimeError("supervisor_leader_expired")
+                lease = SupervisorLeaderLease(
+                    schema=LEADER_SCHEMA,
+                    owner_id=self.owner_id,
+                    generation=int(generation),
+                    claimed_at=str(raw.get("claimed_at")),
+                    heartbeat_at=_iso(current),
+                    expires_at=_iso(current + timedelta(seconds=lease_seconds)),
+                    prior_owner_state=str(raw.get("prior_owner_state") or "known"),
+                )
+                _atomic(self.leader_path, asdict(lease))
+                return lease
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def _require_leader(self, generation: int, *, now: datetime) -> SupervisorLeaderLease:
+        raw = _read(self.leader_path)
+        if not raw or raw.get("schema") != LEADER_SCHEMA:
+            raise RuntimeError("supervisor_leader_missing")
+        lease = SupervisorLeaderLease(**raw)
+        if lease.owner_id != self.owner_id or lease.generation != int(generation):
+            raise PermissionError("supervisor_leader_not_owned")
+        if _parse(lease.expires_at) <= now:
+            raise RuntimeError("supervisor_leader_expired")
+        return lease
+
+    def require_leader(self, generation: int, *, now: datetime | None = None) -> SupervisorLeaderLease:
+        """Public read/guard used by governed S4 components before crossing authority."""
+        return self._require_leader(generation, now=now or _now())
+
+    def _persisted_reconcile_ids(self) -> set[str]:
+        if not self.intents_dir.exists():
+            return set()
+        return {path.stem for path in self.intents_dir.glob("reconcile_*.json") if path.is_file()}
+
+    def _persist_intent(self, intent: ReconcileIntent, *, cycle_generation: int, now: datetime) -> bool:
+        path = self.intents_dir / f"{intent.reconcile_id}.json"
+        if path.exists():
+            return False
+        _atomic(
+            path,
+            {
+                "schema": INTENT_RECORD_SCHEMA,
+                "reconcile_id": intent.reconcile_id,
+                "state": "planned",
+                "planned_at": _iso(now),
+                "planned_by_cycle": cycle_generation,
+                "intent": intent.as_dict(),
+                "dispatch_performed": False,
+            },
+        )
+        return True
+
+    def _verified_dependency_states(self) -> dict[str, str]:
+        """Project terminal lifecycle receipts into existing typed WorkItem refs.
+
+        A closed issue, WorkItem state, or assignment state alone is never
+        completion authority. Ambiguous source refs fail closed.
+        """
+        candidates: dict[str, list[Any]] = {}
+        if not self.work_items.root.exists():
+            return {}
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+            candidates.setdefault(item.source_ref, []).append(item)
+
+        verified: dict[str, str] = {}
+        for ref, items in candidates.items():
+            if len(items) != 1:
+                continue
+            item = items[0]
+            try:
+                assignment = self.runtime.get_assignment(item.assignment_id)
+                result = assignment.result
+                if assignment.employee_id != item.employee_id or not isinstance(result, dict):
+                    continue
+                if assignment.state not in ({"completed", "handoff"} if "independent_review_required" in item.authority_requirements else {"completed"}):
+                    continue
+                # Paw engineering completion is only a handoff to independent Claw
+                # review, not permission to unblock a dependent assignment.
+                # Fail closed until a separate reviewer-verified state is wired in.
+                review_required = "independent_review_required" in item.authority_requirements
+                generation = result.get("generation")
+                if type(generation) is not int or generation < 1:
+                    continue
+                expected = self.lifecycle._receipt_path(item.assignment_id, generation)
+                if result.get("receipt") != str(expected.relative_to(self.runtime.root)):
+                    continue
+                if result.get("schema") != "agentos.employee-assignment-receipt/v1" or result.get("outcome") != assignment.state:
+                    continue
+                receipt = _read(expected)
+                lease = self.lifecycle.get_lease(item.assignment_id)
+                if (
+                    not receipt or not lease
+                    or receipt.get("schema") != result["schema"]
+                    or receipt.get("assignment_id") != item.assignment_id
+                    or receipt.get("employee_id") != item.employee_id
+                    or receipt.get("generation") != generation
+                    or receipt.get("outcome") != assignment.state
+                    or receipt.get("lease_id") != lease.lease_id
+                    or lease.generation != generation
+                    or lease.status != assignment.state
+                ):
+                    continue
+                if review_required:
+                    # Independent reviewer must be a separately registered Employee
+                    # with inherited Claw role, and finish its own durable lease.
+                    review_id = "claw-review-" + item.work_item_id
+                    review_assignment = self.runtime.get_assignment(review_id)
+                    reviewer = self.runtime.get_employee(review_assignment.employee_id)
+                    if (
+                        review_assignment.employee_id == assignment.employee_id
+                        or "sector.claw" not in reviewer.role_ids
+                        or review_assignment.state != "completed"
+                        or not isinstance(review_assignment.result, dict)
+                    ):
+                        continue
+                    review_result = review_assignment.result
+                    reviewer_generation = review_result.get("generation")
+                    if type(reviewer_generation) is not int or reviewer_generation < 1:
+                        continue
+                    reviewer_receipt_path = self.lifecycle._receipt_path(review_id, reviewer_generation)
+                    reviewer_receipt = _read(reviewer_receipt_path)
+                    reviewer_lease = self.lifecycle.get_lease(review_id)
+                    if (
+                        review_result.get("schema") != "agentos.employee-assignment-receipt/v1"
+                        or review_result.get("outcome") != "completed"
+                        or review_result.get("receipt") != str(reviewer_receipt_path.relative_to(self.runtime.root))
+                        or not reviewer_receipt or not reviewer_lease
+                        or reviewer_receipt.get("assignment_id") != review_id
+                        or reviewer_receipt.get("employee_id") != review_assignment.employee_id
+                        or reviewer_receipt.get("generation") != reviewer_generation
+                        or reviewer_receipt.get("lease_id") != reviewer_lease.lease_id
+                        or reviewer_receipt.get("outcome") != "completed"
+                        or reviewer_lease.generation != reviewer_generation
+                        or reviewer_lease.status != "completed"
+                    ):
+                        continue
+                    # The verdict is part of the independent Claw lifecycle
+                    # receipt, never a free-standing editable sidecar.
+                    summary = reviewer_receipt.get("result_summary")
+                    if (
+                        not isinstance(summary, dict)
+                        or summary.get("schema") != "agentos.independent-claw-review/v1"
+                        or summary.get("target_assignment_id") != item.assignment_id
+                        or summary.get("target_generation") != generation
+                        or summary.get("verdict") != "PASS"
+                    ):
+                        continue
+                verified[ref] = "completed"
+            except (OSError, ValueError, KeyError, TypeError, FileNotFoundError):
+                continue
+        return verified
+
+    def _blocked_assignments(self, dependency_states: Mapping[str, str]) -> set[str]:
+        result: set[str] = set()
+        if not self.work_items.root.exists():
+            return result
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+            except Exception:
+                continue
+            if item.state == "open" and item.dependency_refs and not self.work_items.dependencies_ready(item.work_item_id, dependency_states):
+                result.add(item.assignment_id)
+        return result
+
+    def _project_authorized_claw_reviews(self) -> int:
+        """Project pre-authorized Claw review WorkItems after author handoff.
+
+        A completed Paw receipt reveals eligible work but does not grant Claw
+        authority. Only an existing, explicitly approved WorkItem is projected.
+        """
+        if not self.work_items.root.exists():
+            return 0
+        count = 0
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+                if (item.state != "open"
+                        or "claw.review.readonly" not in item.required_capabilities
+                        or "one-governed-dispatch" not in item.authority_requirements
+                        or not item.assignment_id.startswith("claw-review-")):
+                    continue
+                reviewer = self.runtime.get_employee(item.employee_id)
+                if "sector.claw" not in reviewer.role_ids:
+                    continue
+                parent_id = item.assignment_id[len("claw-review-"):]
+                parent_item = self.work_items.get(parent_id)
+                if ("independent_review_required" not in parent_item.authority_requirements
+                        or parent_item.employee_id == item.employee_id):
+                    continue
+                parent = self.runtime.get_assignment(parent_item.assignment_id)
+                if parent.state not in {"completed", "handoff"}:
+                    continue
+                # The original terminal receipt must be valid; merely setting
+                # assignment.state=completed is not a review handoff.
+                result = parent.result
+                if not isinstance(result, dict):
+                    continue
+                generation = result.get("generation")
+                if type(generation) is not int or generation < 1:
+                    continue
+                receipt_path = self.lifecycle._receipt_path(parent.assignment_id, generation)
+                lease = self.lifecycle.get_lease(parent.assignment_id)
+                receipt = _read(receipt_path)
+                if (not lease or not receipt or lease.status != parent.state
+                        or lease.generation != generation
+                        or result.get("receipt") != str(receipt_path.relative_to(self.runtime.root))
+                        or result.get("outcome") != parent.state
+                        or receipt.get("assignment_id") != parent.assignment_id
+                        or receipt.get("employee_id") != parent.employee_id
+                        or receipt.get("generation") != generation
+                        or receipt.get("lease_id") != lease.lease_id
+                        or receipt.get("outcome") != parent.state):
+                    continue
+                try:
+                    self.runtime.get_assignment(item.assignment_id)
+                except FileNotFoundError:
+                    self.work_items.project_pending_assignment(item.work_item_id)
+                    count += 1
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError):
+                continue
+        return count
+
+    def _project_authorized_paw_continuations(self, dependency_states: Mapping[str, str]) -> int:
+        """Project independently authorized Paw B while A awaits Claw review.
+
+        The Supervisor only materializes existing, explicitly governed WorkItems.
+        It never infers a new assignment or execution authority from a handoff.
+        """
+        if not self.work_items.root.exists():
+            return 0
+        count = 0
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+                if (item.state != "open"
+                        or item.assignment_id == "paw-470-inspection-v1"
+                        or "one-governed-dispatch" not in item.authority_requirements
+                        or "engineering.work.inspect" not in item.required_capabilities
+                        or not self.work_items.dependencies_ready(item.work_item_id, dependency_states)):
+                    continue
+                employee = self.runtime.get_employee(item.employee_id)
+                if ("sector.paw" not in employee.role_ids
+                        or "engineering.work.inspect" not in employee.skill_ids):
+                    continue
+                try:
+                    self.runtime.get_assignment(item.assignment_id)
+                except FileNotFoundError:
+                    self.work_items.project_pending_assignment(item.work_item_id)
+                    count += 1
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError):
+                continue
+        return count
+
+    def _reconcile_failed_claw_reviews(self) -> int:
+        """Feed verified Claw FAIL back to existing WorkItem queue, once.
+
+        Invalid or incomplete review receipts are not work authorization.
+        """
+        if not self.work_items.root.exists():
+            return 0
+        new_repairs = 0
+        for path in sorted(self.work_items.root.glob("*.json")):
+            try:
+                item = self.work_items.get(path.stem)
+                if item.state != "open" or "independent_review_required" not in item.authority_requirements:
+                    continue
+                # Do not recursively interpret repair work as a new failed
+                # review of the parent; repair needs a fresh review after execution.
+                if item.source_kind == "canonical_state" and item.source_ref.startswith("repair:"):
+                    continue
+                review = self.runtime.get_assignment("claw-review-" + item.work_item_id)
+                if review.state != "completed":
+                    continue
+                repair = self.work_items.repair_from_failed_claw_review(item.work_item_id)
+                self.work_items.project_pending_assignment(repair.work_item_id)
+                new_repairs += 1
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, PermissionError):
+                # Incomplete/non-FAIL review is not a trigger. Idempotent
+                # projection is retried by the next supervisor cycle.
+                continue
+        return new_repairs
+
+    def run_cycle(
+        self,
+        leader_generation: int,
+        *,
+        dependency_states: Mapping[str, str] | None = None,
+        now: datetime | None = None,
+    ) -> SupervisorCycleReceipt:
+        current = now or _now()
+        leader = self._require_leader(leader_generation, now=current)
+        previous = _read(self.state_path) or {}
+        cycle_generation = int(previous.get("cycle_generation") or 0) + 1
+        self._project_authorized_claw_reviews()
+        self._reconcile_failed_claw_reviews()
+        verified_dependencies = self._verified_dependency_states() if dependency_states is None else dependency_states
+        self._project_authorized_paw_continuations(verified_dependencies)
+        blocked = self._blocked_assignments(verified_dependencies)
+        persisted = self._persisted_reconcile_ids()
+        plan = self.reconciler.reconcile(
+            blocked_assignment_ids=blocked,
+            persisted_reconcile_ids=persisted,
+            now=current,
+        )
+        new_count = sum(
+            1 for intent in plan.intents if self._persist_intent(intent, cycle_generation=cycle_generation, now=current)
+        )
+        plan_payload = plan.as_dict()
+        plan_digest = hashlib.sha256(
+            json.dumps(plan_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
+        delivery_summary = None
+        delivery_top_error = 0
+        if self.delivery_driver is not None:
+            try:
+                delivery_summary = self.delivery_driver.advance_all(leader.generation, now=current)
+            except Exception:
+                # Never serialize exception text from an authority boundary. A
+                # later cycle may retry after the durable cause is corrected.
+                delivery_top_error = 1
+
+        dispatch_performed = bool(delivery_summary and delivery_summary.dispatch_performed)
+        previous_digest = str(previous.get("last_plan_digest") or "")
+        previous_poll = int(previous.get("next_poll_seconds") or self.base_poll_seconds)
+        delivery_needs_fast_poll = bool(
+            delivery_summary
+            and (delivery_summary.dispatch_count > 0 or delivery_summary.queued_count > 0)
+        )
+        if new_count > 0 or plan_digest != previous_digest or delivery_needs_fast_poll:
+            next_poll = self.base_poll_seconds
+        else:
+            next_poll = min(self.max_poll_seconds, max(self.base_poll_seconds, previous_poll * 2))
+        total_planned = len(self._persisted_reconcile_ids())
+
+        boundary = (
+            "persistent_observe_plan_plus_governed_wake_delivery"
+            if self.delivery_driver is not None
+            else "persistent_observe_plan_only"
+        )
+        receipt = SupervisorCycleReceipt(
+            schema=CYCLE_SCHEMA,
+            cycle_generation=cycle_generation,
+            owner_id=self.owner_id,
+            leader_generation=leader.generation,
+            observed_at=_iso(current),
+            plan_digest=plan_digest,
+            new_intent_count=new_count,
+            total_planned_intent_count=total_planned,
+            suppressed_count=len(plan.suppressed),
+            error_count=len(plan.errors),
+            blocked_assignment_count=len(blocked),
+            next_poll_seconds=next_poll,
+            dispatch_performed=dispatch_performed,
+            authority_boundary=boundary,
+            delivery_examined_count=int(getattr(delivery_summary, "examined_count", 0)),
+            delivery_dispatch_count=int(getattr(delivery_summary, "dispatch_count", 0)),
+            delivery_queued_count=int(getattr(delivery_summary, "queued_count", 0)),
+            delivery_awaiting_claim_count=int(getattr(delivery_summary, "awaiting_claim_count", 0)),
+            delivery_claimed_count=int(getattr(delivery_summary, "claimed_count", 0)),
+            delivery_blocked_count=int(getattr(delivery_summary, "blocked_count", 0)),
+            delivery_unknown_count=int(getattr(delivery_summary, "unknown_count", 0)),
+            delivery_failed_count=int(getattr(delivery_summary, "failed_count", 0)),
+            delivery_superseded_count=int(getattr(delivery_summary, "superseded_count", 0)),
+            delivery_error_count=int(getattr(delivery_summary, "error_count", 0)) + delivery_top_error,
+        )
+        _atomic(self.cycles_dir / f"{cycle_generation:08d}.json", asdict(receipt))
+        _atomic(
+            self.state_path,
+            {
+                "schema": STATE_SCHEMA,
+                "status": "running",
+                "owner_id": self.owner_id,
+                "leader_generation": leader.generation,
+                "cycle_generation": cycle_generation,
+                "last_cycle_at": receipt.observed_at,
+                "last_plan_digest": plan_digest,
+                "next_poll_seconds": next_poll,
+                "planned_intent_count": total_planned,
+                "last_cycle_receipt": f"cycles/{cycle_generation:08d}.json",
+                "dispatch_performed": dispatch_performed,
+                "authority_boundary": boundary,
+                "delivery_examined_count": receipt.delivery_examined_count,
+                "delivery_dispatch_count": receipt.delivery_dispatch_count,
+                "delivery_queued_count": receipt.delivery_queued_count,
+                "delivery_awaiting_claim_count": receipt.delivery_awaiting_claim_count,
+                "delivery_claimed_count": receipt.delivery_claimed_count,
+                "delivery_blocked_count": receipt.delivery_blocked_count,
+                "delivery_unknown_count": receipt.delivery_unknown_count,
+                "delivery_failed_count": receipt.delivery_failed_count,
+                "delivery_superseded_count": receipt.delivery_superseded_count,
+                "delivery_error_count": receipt.delivery_error_count,
+            },
+        )
+        return receipt
+
+    def health(self, *, now: datetime | None = None) -> dict[str, Any]:
+        current = now or _now()
+        state = _read(self.state_path) or {}
+        leader = _read(self.leader_path) or {}
+        leader_live = False
+        if leader.get("schema") == LEADER_SCHEMA and leader.get("expires_at"):
+            leader_live = _parse(str(leader["expires_at"])) > current
+        return {
+            "schema": "agentos.core-supervisor-health/v1",
+            "status": "running" if leader_live and state.get("status") == "running" else "inactive",
+            "leader_live": leader_live,
+            "owner_id": state.get("owner_id"),
+            "leader_generation": state.get("leader_generation"),
+            "cycle_generation": int(state.get("cycle_generation") or 0),
+            "last_cycle_at": state.get("last_cycle_at"),
+            "next_poll_seconds": state.get("next_poll_seconds"),
+            "planned_intent_count": int(state.get("planned_intent_count") or 0),
+            "dispatch_performed": bool(state.get("dispatch_performed", False)),
+            "authority_boundary": state.get("authority_boundary", "persistent_observe_plan_only"),
+            "delivery_examined_count": int(state.get("delivery_examined_count") or 0),
+            "delivery_dispatch_count": int(state.get("delivery_dispatch_count") or 0),
+            "delivery_queued_count": int(state.get("delivery_queued_count") or 0),
+            "delivery_awaiting_claim_count": int(state.get("delivery_awaiting_claim_count") or 0),
+            "delivery_claimed_count": int(state.get("delivery_claimed_count") or 0),
+            "delivery_blocked_count": int(state.get("delivery_blocked_count") or 0),
+            "delivery_unknown_count": int(state.get("delivery_unknown_count") or 0),
+            "delivery_failed_count": int(state.get("delivery_failed_count") or 0),
+            "delivery_superseded_count": int(state.get("delivery_superseded_count") or 0),
+            "delivery_error_count": int(state.get("delivery_error_count") or 0),
+        }
+
+    def run_forever(
+        self,
+        *,
+        stop_event: Event | None = None,
+        leader_lease_seconds: int = 30,
+    ) -> None:
+        stopper = stop_event or Event()
+        lease = self.claim_leader(lease_seconds=leader_lease_seconds)
+        while not stopper.is_set():
+            receipt = self.run_cycle(lease.generation)
+            lease = self.heartbeat_leader(lease.generation, lease_seconds=leader_lease_seconds)
+            stopper.wait(receipt.next_poll_seconds)
+        # Exiting does not erase durable state or pretend pending intents are done.

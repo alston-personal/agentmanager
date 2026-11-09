@@ -1,0 +1,94 @@
+name: Character Fusion Flow Image Mode Probe
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-flow-image-mode-probe.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-flow-image-mode-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: grep -Fq 'flow_image_mode_probe=PASS' .github/workflows/character-fusion-flow-image-mode-probe.yml
+
+  probe:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe Flow image-mode suggestion via raw CDP
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import asyncio, json, urllib.request, websockets
+          PORT=9225
+          with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/list",timeout=5) as r:
+              rows=json.loads(r.read().decode())
+          target=next((x for x in rows if x.get("type")=="page" and "flow.google.com/project/" in str(x.get("url") or "")),None)
+          if not target:
+              raise SystemExit("flow_project_session=NOT_FOUND")
+          async def main():
+              async with websockets.connect(target["webSocketDebuggerUrl"],open_timeout=5,max_size=8*1024*1024) as ws:
+                  seq=0
+                  async def call(method,params=None):
+                      nonlocal seq
+                      seq+=1; ident=seq
+                      await ws.send(json.dumps({"id":ident,"method":method,"params":params or {}}))
+                      while True:
+                          msg=json.loads(await ws.recv())
+                          if msg.get("id")==ident:
+                              if msg.get("error"): raise RuntimeError(msg["error"])
+                              return msg.get("result") or {}
+                  async def ev(expr):
+                      r=await call("Runtime.evaluate",{"expression":expr,"returnByValue":True,"awaitPromise":True})
+                      return (r.get("result") or {}).get("value")
+
+                  before=await ev(r'''(() => ({
+                    prompt:[...document.querySelectorAll('.base-prompt-box .ProseMirror[contenteditable="true"]')].find(x=>x.offsetParent!==null)?.innerText||'',
+                    buttons:[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null).map(x=>({
+                      text:(x.innerText||x.textContent||'').replace(/\s+/g,' ').trim().slice(0,160),
+                      aria:(x.getAttribute('aria-label')||'').slice(0,160),
+                      disabled:!!x.disabled
+                    })).filter(x=>/圖像|image|影片|video|版本|generate|生成/i.test(x.text+' '+x.aria))
+                  }))()''')
+                  print(json.dumps({"before":before},ensure_ascii=False))
+
+                  clicked=await ev(r'''(() => {
+                    const b=[...document.querySelectorAll('button,[role="button"]')].find(x=>
+                      x.offsetParent!==null && /製作多個圖像版本/.test((x.innerText||x.textContent||'').trim())
+                    );
+                    if(!b) return false; b.click(); return true;
+                  })()''')
+                  print(json.dumps({"clicked_image_versions":clicked},ensure_ascii=False))
+                  await asyncio.sleep(1.0)
+
+                  after=await ev(r'''(() => ({
+                    prompt:[...document.querySelectorAll('.base-prompt-box .ProseMirror[contenteditable="true"]')].find(x=>x.offsetParent!==null)?.innerText||'',
+                    buttons:[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null).map(x=>({
+                      text:(x.innerText||x.textContent||'').replace(/\s+/g,' ').trim().slice(0,160),
+                      aria:(x.getAttribute('aria-label')||'').slice(0,160),
+                      disabled:!!x.disabled
+                    })).filter(x=>/圖像|image|影片|video|版本|generate|生成|設定|tune/i.test(x.text+' '+x.aria))
+                  }))()''')
+                  print(json.dumps({"after":after},ensure_ascii=False))
+                  print("flow_image_mode_probe=PASS")
+          asyncio.run(main())
+          PY

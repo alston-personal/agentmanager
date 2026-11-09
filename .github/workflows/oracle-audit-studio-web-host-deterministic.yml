@@ -2,11 +2,6 @@ name: Oracle Audit Studio Web Host Deterministic
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-audit-studio-web-host-deterministic.yml'
-      - 'scripts/audit_studio_web_host_deterministic.sh'
-
 permissions:
   contents: write
 

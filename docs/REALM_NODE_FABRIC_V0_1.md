@@ -26,9 +26,28 @@ A Thin Client must provide:
 6. governed local execution;
 7. artifact references;
 8. execution receipt;
-9. experience/evidence feedback.
+9. experience/evidence feedback;
+10. transactional OTA runtime update with verified rollback.
 
 A Thin Client must not own canonical Realm memory, project state or cognition. Those belong to ONE.
+
+## Transactional OTA contract
+
+A Thin Client OTA update MUST be fail-safe and must not overwrite the last known-good runtime in place.
+
+Required sequence:
+
+1. download the candidate runtime into a separate staging/version directory;
+2. verify source identity, expected commit/version, file manifest and integrity before activation;
+3. run static/import/configuration checks against the staged candidate without replacing the active runtime;
+4. start or probe the candidate sufficiently to prove heartbeat and required baseline capabilities;
+5. retain the current runtime as the last-known-good rollback target;
+6. switch the active runtime atomically only after candidate validation passes;
+7. run post-switch health/readiness acceptance, including heartbeat and governed task receipt;
+8. if activation or post-switch acceptance fails, automatically restore and restart the last-known-good runtime;
+9. emit an OTA receipt recording candidate version, previous version, validation results, activation result and rollback result without secrets.
+
+An OTA operation is successful only after post-switch acceptance passes. A downloaded or copied candidate is not considered deployed. Update failure MUST leave the Node operating on the previous known-good runtime whenever that runtime was healthy before the update.
 
 ## Generic-first capability model
 
@@ -43,20 +62,77 @@ v0.1 starts with generic capabilities:
 
 Tool-specific semantic adapters are optional. For example, detecting Unity does not require a Unity adapter; `tool.presence + shell.exec + filesystem.*` can already expose useful generic execution. Repeated validated recipes may later be promoted to semantic capabilities such as `unity.project.build`.
 
+## Thin Client adapter contract
+
+The Thin Client is the stable Node runtime and transport boundary. Device-specific
+or runtime-specific behavior MUST be contributed through an adapter instead of
+adding another Node transport.
+
+An adapter:
+
+- has a stable local `adapter_id`;
+- declares one or more capability IDs;
+- exposes sanitized topology metadata;
+- executes only tasks for its declared capabilities;
+- returns structured results that the Thin Client wraps in the normal governed
+  Node receipt;
+- does not own Realm identity, enrollment credentials, heartbeat, task polling,
+  receipt transport, canonical memory or cognition.
+
+Configured external adapters are explicit local authority via
+`AGENTOS_NODE_ADAPTERS`; the Thin Client does not scan arbitrary modules or
+devices and silently grant capabilities.
+
+The Node manifest projects adapter topology into ONE so routing can distinguish
+the Node from the hardware/runtime providers attached to it.
+
+Example:
+
+```text
+glasses-01 (Node / Thin Client)
+├─ camera-adapter
+│  ├─ camera.capture
+│  └─ camera.status
+├─ xreal-adapter
+│  ├─ display.overlay
+│  └─ head.pose
+└─ audio-adapter
+   ├─ audio.capture
+   └─ audio.play
+```
+
+Cross-Node sharing is Realm-mediated, not implicit peer trust:
+
+```text
+Node A capability request
+        ↓
+ONE / Realm policy + routing
+        ↓
+authorized Node B capability
+        ↓
+receipt / artifact reference
+        ↓
+Node A / requesting Agent
+```
+
+A Node becoming reachable does not authorize another Node to invoke it directly.
+Capability declaration, Realm membership, routing and execution authorization
+remain separate decisions.
+
 ## Governance boundary
 
 ONE never sends an unrestricted shell string. A task capsule describes executable, argv, cwd, timeout and path scope. The Thin Client performs local validation before execution and emits a receipt. Capability discovery, authorization and execution are separate decisions.
 
-## Oracle canonical identity
+## Oracle identities
 
-The existing Oracle deployment is canonicalized as one Core Node, not re-enrolled as a duplicate client:
+Oracle has two deliberately distinct AgentOS identities:
 
-- role: `core`
-- node id: `core-oracle-01`
-- GitHub self-hosted runner: Core GitHub adapter / bootstrap ingress
-- ubuntu and agentos-node: executor identities inside the same Core Node
+- `oracle-core-node` — the ONE Core identity. It owns Realm/control-plane responsibilities and must not be treated as a generic shell executor.
+- `oracle-exec` — the native Linux Thin Client execution identity introduced by #600. It joins the Realm through normal Node transport, emits heartbeat, pulls governed tasks, and returns receipts independently of SSH and the GitHub self-hosted runner.
 
-Future client Nodes should not require GitHub Actions runners or GitHub credentials.
+The GitHub self-hosted runner remains an adapter/bootstrap ingress, not the execution Node transport itself. Linux OS users such as `ubuntu` and `agentos-node` are executor/runtime accounts, not Node identities.
+
+This separation is required so a failure of SSH or the GitHub runner does not remove the controller's ability to diagnose and recover Oracle through bounded semantic maintenance actions.
 
 ## Before/After ONE benchmark
 

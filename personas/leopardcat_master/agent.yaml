@@ -1,0 +1,33 @@
+schema: agentos.persona-agent/v1
+agent_id: persona.tarot.leopardcat
+character_id: leopardcat-hill-spirit-001
+display_name: 靈山靈貓・石虎大師
+status: active
+kind: persona_agent
+
+core:
+  archetype: archetype.base.oracle
+  identity_source: agent-data/personas/leopardcat-master/character_core.json
+  persona_state_source: agent-data/personas/leopardcat-master/persona_state.json
+  event_ledger_source: agent-data/personas/leopardcat-master/events/events.jsonl
+
+runtime:
+  autonomy_mode: policy_bounded
+  receipts_required_for_external_actions: false
+  owner_observability_required: true
+  public_projection_allowed: true
+
+capability_attachments:
+  - id: oracle.ecology_mirror
+    status: attached
+    provider: leopardcat_tarot_engine
+    mode: read
+  - id: oracle.zen_reflection
+    status: attached
+    provider: leopardcat_tarot_engine
+    mode: read
+
+invariants:
+  - no_supernatural_claims
+  - no_fear_mongering
+

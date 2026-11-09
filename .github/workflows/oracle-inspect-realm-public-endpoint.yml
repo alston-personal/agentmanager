@@ -1,9 +1,6 @@
 name: Oracle Inspect Realm Public Endpoint
 
 on:
-  push:
-    paths:
-      - '.github/workflows/oracle-inspect-realm-public-endpoint.yml'
   workflow_dispatch:
 
 permissions:

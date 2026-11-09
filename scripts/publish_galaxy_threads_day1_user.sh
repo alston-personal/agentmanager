@@ -1,0 +1,376 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$(id -un)" != "ubuntu" ]; then
+  echo "galaxy_day1_publish=WRONG_USER" >&2
+  exit 2
+fi
+
+ENV_FILE="/home/ubuntu/.config/agentos/social-runtime.env"
+CRED_FILE="/home/ubuntu/.local/state/agentos/social/credentials.json"
+MARKER="/home/ubuntu/.local/state/agentos/social/galaxy-day1-publish.json"
+
+test -f "$ENV_FILE"
+test -f "$CRED_FILE"
+
+# Serialize all invocations of the shared publisher across Oracle jobs.
+exec 9>/home/ubuntu/.local/state/agentos/social/threads-publish.lock
+flock -x -w 100 9 || { echo "social_publish=LOCK_TIMEOUT" >&2; exit 9; }
+
+python3 - "$ENV_FILE" "$CRED_FILE" "$MARKER" <<'PY'
+from __future__ import annotations
+import json, os, re, sys, urllib.request
+from pathlib import Path
+
+env_file=Path(sys.argv[1]); cred_file=Path(sys.argv[2]); marker=Path(sys.argv[3])
+
+def parse_env(path: Path) -> dict[str,str]:
+    out={}
+    for raw in path.read_text(encoding='utf-8').splitlines():
+        line=raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        k,v=line.split('=',1)
+        v=v.strip()
+        if len(v)>=2 and ((v[0]==v[-1]=='"') or (v[0]==v[-1]=="'")):
+            v=v[1:-1]
+        out[k]=v
+    return out
+
+def post_json(url: str, payload: dict, headers: dict[str,str] | None=None, timeout_seconds: int=20) -> tuple[int,dict]:
+    data=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode('utf-8')
+    h={'content-type':'application/json','accept':'application/json'}
+    if headers: h.update(headers)
+    req=urllib.request.Request(url,data=data,headers=h,method='POST')
+    try:
+        with urllib.request.urlopen(req,timeout=timeout_seconds) as r:
+            return r.status,json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        body=e.read().decode('utf-8','replace')
+        try: parsed=json.loads(body)
+        except Exception: parsed={'error':'http_error'}
+        return e.code,parsed
+
+env=parse_env(env_file)
+products=json.loads(env.get('AGENTOS_SOCIAL_PRODUCTS_JSON','{}'))
+galaxy=products.get('galaxy') if isinstance(products,dict) else None
+product_key=str((galaxy or {}).get('api_key') or '')
+control_token=str(env.get('AGENTOS_SOCIAL_CONTROL_TOKEN') or '')
+if not product_key or not control_token:
+    raise SystemExit('galaxy_day1_publish=RUNTIME_CONTROL_UNAVAILABLE')
+
+store=json.loads(cred_file.read_text(encoding='utf-8'))
+bindings=[]
+for binding_id,item in (store.get('bindings') or {}).items():
+    if not isinstance(item,dict): continue
+    if item.get('product_id')=='galaxy' and item.get('platform')=='threads':
+        bindings.append((binding_id,item))
+
+# The shared Galaxy vault can contain several Threads personas. Restrict this
+# publisher to Mio's known account handles before evaluating provider identity;
+# another persona (for example a personal viewer/account) must not make Mio
+# publishing look ambiguous.
+mio_bindings=[(b,i) for b,i in bindings
+              if str(i.get('username') or '').lstrip('@').lower() in {'sunlake.milkcat','mio.milkcat'}]
+provider_accounts={str(i.get('provider_account_id') or '') for _,i in mio_bindings if i.get('provider_account_id')}
+if len(provider_accounts)!=1:
+    safe=[{'binding_id':b,'username':i.get('username'),'provider_account_id':i.get('provider_account_id')} for b,i in mio_bindings]
+    print('galaxy_day1_binding_count='+str(len(mio_bindings)))
+    print('galaxy_day1_bindings='+json.dumps(safe,ensure_ascii=False,separators=(',',':')))
+    raise SystemExit(3)
+
+account_id=next(iter(provider_accounts))
+bindings=mio_bindings
+if not account_id:
+    raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
+
+def publish_scope_state(row):
+    token=str(row.get('access_token') or '')
+    if not token:
+        return 'missing_token'
+    try:
+        import urllib.parse
+        url='https://graph.threads.net/debug_token?'+urllib.parse.urlencode({'input_token':token})
+        req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'},method='GET')
+        with urllib.request.urlopen(req,timeout=15) as response:
+            result=json.load(response)
+        info=result.get('data') if isinstance(result,dict) else None
+        if not isinstance(info,dict) or info.get('is_valid') is False:
+            return 'invalid'
+        scopes=info.get('scopes')
+        if not isinstance(scopes,list):
+            return 'unknown'
+        return 'granted' if 'threads_content_publish' in scopes else 'not_granted'
+    except urllib.error.HTTPError:
+        return 'http_error'
+    except (OSError,ValueError,TypeError):
+        return 'probe_unavailable'
+
+# Historical/legacy aliases can coexist for the same provider account. Choose a
+# persona credential that is currently valid for threads_content_publish rather
+# than assuming the newest-looking binding ID is the healthy token.
+candidates=[]
+for b,i in bindings:
+    if str(i.get('provider_account_id') or '')!=account_id:
+        continue
+    if str(i.get('auth_profile') or 'persona')!='persona':
+        continue
+    if str(i.get('username') or '').lstrip('@').lower() not in {'sunlake.milkcat','mio.milkcat'}:
+        continue
+    candidates.append((b,i,publish_scope_state(i)))
+granted=[row for row in candidates if row[2]=='granted']
+print('galaxy_day1_persona_candidate_count='+str(len(candidates)))
+print('galaxy_day1_publish_scope_granted_count='+str(len(granted)))
+if not granted:
+    raise SystemExit('galaxy_day1_publish=PUBLISH_SCOPE_UNAVAILABLE')
+# Publishing has previously succeeded through the legacy binding for this same
+# provider account. Prefer that proven credential first; the newer persona alias
+# can remain as fallback. Both were scope-checked above.
+legacy=[row for row in granted if row[0]==f'galaxy:threads:{account_id}']
+persona=[row for row in granted if row[0]==f'galaxy:threads:persona:{account_id}']
+binding_id,item,_=(legacy[0] if legacy else persona[0] if persona else granted[0])
+username=str(item.get('username') or '')
+print('galaxy_day1_selected_binding_kind=' + ('legacy' if binding_id==f'galaxy:threads:{account_id}' else 'persona'))
+
+# Reuse the original governed publisher for a pinned, reviewed second post.
+# The default remains Day 1 for existing callers; day2 requires explicit opt-in.
+post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
+if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}', post_key):
+    marker=marker.with_name(post_key+'.json')
+if post_key.startswith('mio-post-') and username.lstrip('@').lower() not in {'sunlake.milkcat','mio.milkcat'}:
+    raise SystemExit('mio_day2_publish=ACCOUNT_MISMATCH')
+if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
+    import subprocess
+    source=os.environ.get('AGENTOS_SOURCE_COMMIT','')
+    if not re.fullmatch(r'[0-9a-f]{40}',source):
+        raise SystemExit('social_publish=SOURCE_COMMIT_MISSING')
+    article=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/approved/'+post_key+'.txt'],capture_output=True,text=True,check=True)
+    text=article.stdout.strip()
+    image_url=None
+    image_alt_text=None
+    image_urls=None
+    image_alt_texts=None
+    manifest=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/approved/'+post_key+'.json'],capture_output=True,text=True)
+    if manifest.returncode==0:
+        from urllib.parse import quote
+        import hashlib
+        spec=json.loads(manifest.stdout)
+        external_only=False
+        if isinstance(spec,dict) and set(spec)=={'image_path','image_alt_text'}:
+            ordered=[{'image_path':spec['image_path'],'image_alt_text':spec['image_alt_text']}]
+        elif isinstance(spec,dict) and set(spec)=={'image_url','image_alt_text'}:
+            ordered=[{'image_url':spec['image_url'],'image_alt_text':spec['image_alt_text']}]
+            external_only=True
+        elif (isinstance(spec,dict) and set(spec)=={'images'}
+              and isinstance(spec['images'],list) and 2<=len(spec['images'])<=20):
+            ordered=spec['images']
+        else:
+            raise SystemExit('social_publish=INVALID_IMAGE_MANIFEST')
+        hosted_images=[]
+        hosted_alts=[]
+        for photo in ordered:
+            if not isinstance(photo,dict):
+                raise SystemExit('social_publish=INVALID_IMAGE_ITEM')
+            alt=str(photo.get('image_alt_text') or '').strip()
+            if not alt or len(alt)>1000:
+                raise SystemExit('social_publish=IMAGE_ALT_MISSING')
+            if set(photo)=={'image_url','image_alt_text'}:
+                from urllib.parse import urlparse
+                remote_url=str(photo['image_url']).strip()
+                parsed=urlparse(remote_url)
+                if parsed.scheme!='https' or parsed.hostname not in {'export-download.canva.com'}:
+                    raise SystemExit('social_publish=EXTERNAL_IMAGE_HOST_NOT_ALLOWED')
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(remote_url,headers={'User-Agent':'AgentOS-Mio-Media-Preflight/1'}),timeout=18) as hosted:
+                        remote=hosted.read(8*1024*1024+1)
+                        served_type=str(hosted.headers.get('Content-Type') or '').lower()
+                        if hosted.status!=200 or not (30000<=len(remote)<=8*1024*1024) or not served_type.startswith('image/'):
+                            raise SystemExit('social_publish=EXTERNAL_IMAGE_INVALID')
+                except (OSError,TimeoutError) as exc:
+                    raise SystemExit('social_publish=IMAGE_CDN_UNAVAILABLE') from exc
+                hosted_images.append(remote_url)
+                hosted_alts.append(alt)
+                continue
+            if set(photo)!={'image_path','image_alt_text'}:
+                raise SystemExit('social_publish=INVALID_IMAGE_ITEM')
+            rel=str(photo['image_path'])
+            if not re.fullmatch(r'personas/mio/approved/assets/[a-z0-9-]{1,64}\.(?:png|jpg|jpeg)',rel):
+                raise SystemExit('social_publish=INVALID_IMAGE_PATH')
+            blob=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':'+rel],capture_output=True,check=True).stdout
+            if not 32<=len(blob)<=8*1024*1024:
+                raise SystemExit('social_publish=INVALID_IMAGE_SIZE')
+            kind='image/png' if blob.startswith(bytes.fromhex('89504e470d0a1a0a')) else 'image/jpeg' if blob.startswith(bytes.fromhex('ffd8ff')) else ''
+            if kind=='image/jpeg' and len(blob)<30000:
+                print('galaxy_day1_image_asset_size='+str(len(blob)))
+                raise SystemExit('social_publish=JPEG_SUSPICIOUSLY_SMALL')
+            if not kind or (kind=='image/png' and not rel.endswith('.png')) or (kind=='image/jpeg' and not rel.endswith(('.jpg','.jpeg'))):
+                raise SystemExit('social_publish=INVALID_IMAGE_CONTENT')
+            remote_url='https://raw.githubusercontent.com/alston-personal/agentmanager/'+source+'/'+quote(rel,safe='/')
+            try:
+                with urllib.request.urlopen(urllib.request.Request(remote_url,headers={'User-Agent':'AgentOS-Mio-Media-Preflight/1'}),timeout=18) as hosted:
+                    remote=hosted.read(len(blob)+1)
+                    served_type=str(hosted.headers.get('Content-Type') or '').lower()
+                    if hosted.status!=200 or hashlib.sha256(remote).digest()!=hashlib.sha256(blob).digest() or kind not in served_type:
+                        raise SystemExit('social_publish=IMAGE_CDN_MISMATCH')
+            except (OSError,TimeoutError) as exc:
+                raise SystemExit('social_publish=IMAGE_CDN_UNAVAILABLE') from exc
+            hosted_images.append(remote_url)
+            hosted_alts.append(alt)
+        if len(hosted_images)==1:
+            image_url,image_alt_text=hosted_images[0],hosted_alts[0]
+        else:
+            image_urls,image_alt_texts=hosted_images,hosted_alts
+        print('galaxy_day1_image_asset=VERIFIED')
+        print('galaxy_day1_image_count='+str(len(hosted_images)))
+    if os.environ.get('AGENTOS_REQUIRE_IMAGE','0')=='1' and not (image_url or image_urls):
+        raise SystemExit('social_publish=IMAGE_REQUIRED_NO_TEXT_FALLBACK')
+    if not text or len(text)>500:
+        raise SystemExit('social_publish=INVALID_TEXT')
+elif post_key=='galaxy-experiment-day1-20260918-v1':
+    text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費賺回來。
+
+這個帳號從 0 開始。選題、產品、定價、文案、發文、回覆、分析，盡量都交給 AI；我只保留付款、帳號授權，以及必要的人類確認。
+
+規則很簡單：讚數不算，追蹤數不算，只有真的收到錢才算。
+
+目標：先賺回一個月的 AI 訂閱費。
+
+今天是 Day 1。帳號剛建立，收入：NT$0。
+
+接下來我會把每一步、做錯什麼、賺到多少都公開記錄。"""
+else:
+    raise SystemExit('social_publish=UNAPPROVED_POST_KEY')
+
+request={
+    'schema':'agentos.social-request/v1',
+    'product_id':'galaxy',
+    'platform':'threads',
+    'operation':'publish',
+    'account_binding_id':binding_id,
+    'target_account_id':account_id,
+    'primary_text':text,
+    'write_intent_id':post_key,
+}
+if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
+    if image_url:
+        request['image_url']=image_url
+        request['image_alt_text']=image_alt_text
+    elif image_urls:
+        request['image_urls']=image_urls
+        request['image_alt_texts']=image_alt_texts
+
+# Idempotency: if the exact post already exists, do not publish again.
+read_req={
+    'schema':'agentos.social-request/v1',
+    'product_id':'galaxy',
+    'platform':'threads',
+    'operation':'post.read',
+    'account_binding_id':binding_id,
+}
+status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
+if status!=200 or posts.get('ok') is not True:
+    raise SystemExit('social_publish=PREPUBLISH_READ_FAILED')
+if status==200 and posts.get('ok') is True:
+    for row in ((posts.get('result') or {}).get('items') or []):
+        if str(row.get('text') or '').strip()==text.strip() and ((not request.get('image_url') and not request.get('image_urls')) or (request.get('image_url') and str(row.get('media_type') or '').upper()=='IMAGE' and row.get('image_visible') is True) or (request.get('image_urls') and str(row.get('media_type') or '').upper() in {'CAROUSEL','CAROUSEL_ALBUM'} and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))):
+            result={'schema':'agentos.social-day1-publish/v1','ok':True,'already_present':True,'username':username,'platform_object_id':row.get('id'),'permalink':row.get('permalink')}
+            marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+            os.chmod(marker,0o600)
+            print('galaxy_day1_publish=ALREADY_PRESENT')
+            print('galaxy_day1_username='+username)
+            print('galaxy_day1_object_id='+str(row.get('id') or ''))
+            print('galaxy_day1_permalink='+str(row.get('permalink') or ''))
+            raise SystemExit(0)
+
+status,issued=post_json(
+    'http://127.0.0.1:8771/internal/v1/social/acceptances',
+    request,
+    {'X-AgentOS-Control-Token':control_token},
+)
+if status!=201 or not issued.get('acceptance_id'):
+    print('galaxy_day1_acceptance=FAIL')
+    print('galaxy_day1_acceptance_error='+str(issued.get('error') or status))
+    raise SystemExit(4)
+
+acceptance_id=str(issued['acceptance_id'])
+status,receipt=post_json(
+    'http://127.0.0.1:8771/v1/social/publish',
+    request,
+    {'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':acceptance_id},
+    timeout_seconds=(480 if request.get('image_urls') else 90 if request.get('image_url') else 20),
+)
+if status!=200 or receipt.get('ok') is not True:
+    print('galaxy_day1_publish=FAIL')
+    print('galaxy_day1_publish_error='+str(receipt.get('error_code') or receipt.get('error') or status))
+    raise SystemExit(5)
+
+obj=str(receipt.get('platform_object_id') or '')
+if not obj: raise SystemExit('social_publish=PLATFORM_OBJECT_ID_MISSING')
+permalink=''
+is_verified_image=False
+for attempt in range(10 if (request.get('image_url') or request.get('image_urls')) else 1):
+    status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
+    if status!=200 or posts.get('ok') is not True:
+        raise SystemExit('social_publish=POSTPUBLISH_READ_FAILED')
+    for row in ((posts.get('result') or {}).get('items') or []):
+        if str(row.get('id') or '')!=obj:
+            continue
+        permalink=str(row.get('permalink') or '')
+        if request.get('image_url') or request.get('image_urls'):
+            actual_type=str(row.get('media_type') or '').upper()
+            is_verified_image=(str(row.get('text') or '').strip()==text.strip()
+                               and permalink.startswith('https://')
+                               and ((request.get('image_url') and actual_type=='IMAGE' and row.get('image_visible') is True)
+                                    or (request.get('image_urls') and actual_type in {'CAROUSEL','CAROUSEL_ALBUM'}
+                                        and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))))
+        break
+    if not (request.get('image_url') or request.get('image_urls')) or is_verified_image: break
+    import time
+    time.sleep(3)
+if (request.get('image_url') or request.get('image_urls')) and not is_verified_image:
+    raise SystemExit('social_publish=IMAGE_READBACK_MISSING_OR_NOT_VISIBLE')
+if request.get('image_url') or request.get('image_urls'):
+    print('galaxy_day1_image_readback=PASS')
+
+result={
+    'schema':'agentos.social-day1-publish/v1',
+    'ok':True,
+    'already_present':False,
+    'username':username,
+    'platform_object_id':obj,
+    'permalink':permalink,
+}
+marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+os.chmod(marker,0o600)
+print('galaxy_day1_publish=PASS')
+print('galaxy_day1_username='+username)
+print('galaxy_day1_object_id='+obj)
+print('galaxy_day1_permalink='+permalink)
+
+# Register every successful governed publish with the shared post-experiment
+# learning loop. This is additive: registration failure must not retroactively
+# turn a provider-confirmed publish into a failed publish.
+try:
+    from datetime import datetime, timezone
+    queue=Path('/home/ubuntu/agent-data/runtime/social/post-experiments/queue')
+    queue.mkdir(parents=True,exist_ok=True); os.chmod(queue,0o700)
+    safe_key=re.sub(r'[^a-z0-9_.-]+','-',post_key.lower()).strip('-') or obj
+    reg=queue/(safe_key+'-'+obj+'.json')
+    payload={
+      'schema':'agentos.social-post-experiment-registration/v1',
+      'account_username':username.lstrip('@'),
+      'post_id':obj,
+      'permalink':permalink,
+      'experiment_id':post_key,
+      'published_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+      'next_elapsed_minutes':60,
+      'hypothesis':'',
+      'changed_variables':[],
+    }
+    tmp=reg.with_suffix('.tmp')
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    os.chmod(tmp,0o600); tmp.replace(reg); os.chmod(reg,0o600)
+    print('social_experiment_registration=PASS')
+except Exception:
+    print('social_experiment_registration=DEFERRED')
+PY

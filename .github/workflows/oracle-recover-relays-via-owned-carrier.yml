@@ -44,7 +44,7 @@ jobs:
             'schema':'agentos.antigravity-relay/v1','capsule_id':cid,
             'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
             'project_id':'agentmanager','workspace':'/home/ubuntu/agentmanager','executor_hint':'antigravity',
-            'instruction':"Use your shell execution capability now. Execute exactly this command and do not merely describe it: cd /home/ubuntu/agentmanager && git fetch origin main && git merge --ff-only origin/main && bash scripts/repair_antigravity_relay_user.sh . Do not perform any unrelated change. Return stdout/stderr and exit status.",
+            'instruction':"Use your shell execution capability now. Execute exactly this command and do not merely describe it: git -C /home/ubuntu/agentmanager fetch --no-tags origin main && git -C /home/ubuntu/agentmanager show origin/main:scripts/repair_antigravity_relay_user.sh > /tmp/agentos-repair-antigravity.sh && chmod 700 /tmp/agentos-repair-antigravity.sh && AGENTOS_REPO=/home/ubuntu/agentmanager bash /tmp/agentos-repair-antigravity.sh . Do not perform any unrelated change. Return stdout/stderr and exit status.",
             'canonical_ir':{'goal':'Repair the governed AgentOS relay boundary so deterministic actions can execute again.','constraints':['Use only the trusted repair script from canonical main.','Do not use sudo.','Do not modify unrelated services or projects.']},
             'authority':{'source':'agentos-node','desktop_user':'ubuntu','direct_session_impersonation':False},
           }

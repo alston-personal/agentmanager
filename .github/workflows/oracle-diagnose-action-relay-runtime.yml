@@ -2,10 +2,6 @@ name: Diagnose Live Action Relay Runtime
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-diagnose-action-relay-runtime.yml'
-
 permissions:
   contents: write
 

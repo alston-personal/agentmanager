@@ -1,10 +1,7 @@
 name: Oracle Realm Windows Inspect
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-windows-inspect.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 

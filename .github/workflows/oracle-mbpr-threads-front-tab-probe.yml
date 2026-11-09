@@ -1,0 +1,53 @@
+name: Oracle MBPR Threads Front Tab Probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open Threads and inspect only front Chrome tab
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-threads-front-tab-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='mbpr-threads-front-tab-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
+          code="import subprocess,time; o=subprocess.run(['open','-a','Google Chrome','https://www.threads.com/messages'],text=True,capture_output=True); print('OPEN_RC='+str(o.returncode)); time.sleep(2); p=subprocess.run(['/usr/bin/osascript','-e','tell application \"Google Chrome\" to return URL of active tab of front window'],text=True,capture_output=True,timeout=8); print('OSA_RC='+str(p.returncode)); print('OSA_ERR_KIND='+('none' if p.returncode==0 else ('permission' if ('not authorized' in p.stderr.lower() or 'not permitted' in p.stderr.lower() or '-1743' in p.stderr) else 'other'))); u=p.stdout.strip(); print('FRONT_IS_THREADS_MESSAGES='+('true' if u.startswith('https://www.threads.com/messages') or u.startswith('https://threads.com/messages') else 'false')); raise SystemExit(p.returncode)"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(35):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  print(out)
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
+                      if 'no window' in err or 'invalid index' in err:
+                          kind='NO_WINDOW'
+                      elif 'not authorized' in err or 'not permitted' in err or '-1743' in err:
+                          kind='AUTOMATION_PERMISSION'
+                      elif 'timed out' in err or 'timeout' in err:
+                          kind='TIMEOUT'
+                      elif 'execution error' in err or 'syntax error' in err:
+                          kind='APPLESCRIPT_ERROR'
+                      else:
+                          kind='OTHER'
+                      print('threads_front_tab_probe=ERROR')
+                      print('error_type='+kind)
+                      raise SystemExit(2)
+                  ok='FRONT_IS_THREADS_MESSAGES=true' in out
+                  print('threads_front_tab_probe=' + ('PASS' if ok else 'NOT_MESSAGES'))
+                  raise SystemExit(0 if ok else 4)
+              time.sleep(2)
+          raise SystemExit('front tab probe timeout')
+          PY

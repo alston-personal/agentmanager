@@ -1,0 +1,64 @@
+name: Core Runtime Dirty Audit 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-runtime-dirty-audit-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Inspect tracked checkout drift metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo=/home/ubuntu/agentmanager
+          target=8733eda5f553d637e452aef15b7f47a8eeb92dcd
+          echo "TARGET=$target"
+          echo "HEAD=$(git -C "$repo" rev-parse HEAD)"
+          echo '=== TRACKED STATUS ==='
+          git -C "$repo" status --porcelain=v1 --untracked-files=no || true
+
+          echo '=== PATH CLASSIFICATION ==='
+          python3 - "$repo" "$target" <<'PY'
+          import hashlib,json,subprocess,sys
+          from pathlib import Path
+
+          repo=Path(sys.argv[1])
+          target=sys.argv[2]
+          raw=subprocess.check_output(
+              ["git","-C",str(repo),"status","--porcelain=v1","-z","--untracked-files=no"]
+          ).decode("utf-8","replace")
+          rows=[]
+          for entry in [x for x in raw.split("\0") if x]:
+              code=entry[:2]
+              rel=entry[3:]
+              path=repo/rel
+              worktree_sha=None
+              target_sha=None
+              same=False
+              if path.is_file() and not path.is_symlink():
+                  worktree_sha=hashlib.sha256(path.read_bytes()).hexdigest()
+                  p=subprocess.run(
+                      ["git","-C",str(repo),"show",f"{target}:{rel}"],
+                      stdout=subprocess.PIPE,stderr=subprocess.DEVNULL
+                  )
+                  if p.returncode==0:
+                      target_sha=hashlib.sha256(p.stdout).hexdigest()
+                      same=(worktree_sha==target_sha)
+              rows.append({
+                  "status":code,
+                  "path":rel,
+                  "worktree_sha256":worktree_sha,
+                  "target_sha256":target_sha,
+                  "target_identical":same,
+              })
+          print(json.dumps(rows,indent=2,sort_keys=True))
+          print("TRACKED_DIRTY_COUNT="+str(len(rows)))
+          PY

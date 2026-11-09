@@ -1,0 +1,127 @@
+name: Oracle Google Storage Check
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-google-storage-check.json'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Google storage mount and AgentOS paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== df ==='
+          df -hT
+          echo '=== mounts matching google/rclone/fuse/gdrive ==='
+          mount | grep -Ei 'rclone|google|gdrive|fuse' || true
+          echo '=== findmnt ==='
+          findmnt -t fuse,fuse.rclone,fuseblk 2>/dev/null || true
+          echo '=== rclone ==='
+          command -v rclone || true
+          rclone listremotes 2>/dev/null || true
+          echo '=== likely mount dirs ==='
+          for p in "$HOME/google-drive" "$HOME/gdrive" "$HOME/drive" "$HOME/mnt" /mnt /media /srv; do
+            [ -e "$p" ] && { echo "-- $p"; ls -ld "$p"; timeout 5 du -sh "$p" 2>/dev/null || true; }
+          done
+          echo '=== services ==='
+          systemctl --user list-units --type=service --all 2>/dev/null | grep -Ei 'rclone|google|gdrive|mount' || true
+          systemctl list-units --type=service --all 2>/dev/null | grep -Ei 'rclone|google|gdrive|mount' || true
+          echo '=== fstab ==='
+          grep -Ei 'rclone|google|gdrive|fuse' /etc/fstab 2>/dev/null || true
+          echo '=== reboot start ==='
+          uptime -s || true
+          echo '=== newest local gdrive files ==='
+          find "$HOME/gdrive" -xdev -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TS\t%s\t%P\n' 2>/dev/null | sort -r | head -n 60 || true
+          echo '=== remote backup evidence ==='
+          rclone lsf gdrive:backups --files-only --format 'pst' 2>/dev/null | grep -E 'agentos_backup_(20260930|20261001)_030001\.tar\.gz' || true
+          echo '=== backup schedulers ==='
+          crontab -l 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
+          systemctl --user list-timers --all 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
+          systemctl list-timers --all 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
+          echo '=== remote capacity and structure ==='
+          timeout 15 rclone about gdrive: 2>/dev/null || true
+          echo '-- remote root dirs --'
+          timeout 15 rclone lsf gdrive: --dirs-only --max-depth 1 2>/dev/null | head -n 120 || true
+          echo '-- remote backup targets --'
+          for n in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            timeout 15 rclone lsf "gdrive:backups/$n" --files-only --format 'tsp' 2>/dev/null || true
+          done
+          echo '=== backup writer discovery ==='
+          grep -RIl 'agentos_backup_' /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/systemd/system 2>/dev/null | head -n 40 || true
+          grep -RIl '/gdrive/backups' /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/systemd/system 2>/dev/null | head -n 40 || true
+          find "$HOME" -maxdepth 2 -type f \( -iname '*backup*' -o -iname '*gdrive*' -o -iname '*rclone*' \) -printf '%p\n' 2>/dev/null | head -n 100 || true
+          echo '-- all user cron lines --'
+          crontab -l 2>/dev/null || true
+          echo '-- root cron lines --'
+          sudo -n crontab -l 2>/dev/null || true
+          echo '=== backup scheduler ==='
+          systemctl --user list-timers --all 2>/dev/null | grep -Ei 'backup|agentos|gdrive' || true
+          systemctl --user list-unit-files 2>/dev/null | grep -Ei 'backup|agentos|gdrive' || true
+          crontab -l 2>/dev/null | grep -Ei 'backup|agentos|gdrive|03:00|3 \* \* \*' || true
+          echo '=== pre-reboot remote backup checks ==='
+          for name in agentos_backup_20260928_030001.tar.gz agentos_backup_20260929_030001.tar.gz; do
+            echo "-- $name"
+            rclone lsl "gdrive:backups/$name" 2>/dev/null || echo 'remote_missing'
+          done
+          echo '=== backup script body ==='
+          if [ -f "$HOME/backup_agentos.sh" ]; then
+            sed -n '1,60p' "$HOME/backup_agentos.sh"
+          fi
+          echo '=== backup script destination ==='
+          if [ -f "$HOME/backup_agentos.sh" ]; then
+            grep -En 'gdrive|backups|tar|gzip|backup' "$HOME/backup_agentos.sh" | head -n 120 || true
+          else
+            echo 'backup_script_missing'
+          fi
+          echo '=== crontab metadata ==='
+          crontab -l 2>/dev/null || true
+          stat -c 'mtime=%y size=%s path=%n' /var/spool/cron/crontabs/$(id -un) 2>/dev/null || true
+          echo '=== recovery namespace listing ==='
+          rclone lsf "gdrive:backups/recovered-oracle-underlay-20261001" --files-only --format 'sp' 2>/dev/null | sort || true
+          echo '=== local underlay candidates ==='
+          find "$HOME/.local/share/agentos" "$HOME" -maxdepth 3 -type d \( -iname '*underlay*' -o -iname '*gdrive*old*' -o -iname '*gdrive*recovery*' \) -print 2>/dev/null | head -n 80 || true
+          echo '=== recovery upload status ==='
+          ps -eo pid,etimes,args | grep '[r]clone copyto' || true
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            echo "-- recovery $name"
+            rclone lsf "gdrive:backups/recovered-oracle-underlay-20261001/$name" --files-only --format s 2>/dev/null || echo 'recovery_missing'
+          done
+          echo '=== exact remote backup checks ==='
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            echo "-- $name"
+            echo "local:"
+            stat -c 'size=%s mtime=%y path=%n' "$HOME/gdrive/backups/$name" 2>/dev/null || echo 'local_missing'
+            echo "remote:"
+            rclone lsl "gdrive:backups/$name" 2>/dev/null || echo 'remote_missing'
+          done
+          echo '=== legacy gdrive current state ==='
+          ls -ld "$HOME/gdrive" 2>/dev/null || true
+          readlink "$HOME/gdrive" 2>/dev/null || true
+          mountpoint "$HOME/gdrive" 2>/dev/null || true
+          timeout 10 du -sh "$HOME/gdrive" 2>/dev/null || true
+          find "$HOME/gdrive" -maxdepth 2 -type f -printf '%s\t%P\n' 2>/dev/null | head -n 40 || true
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            stat -c "local_state=$name size=%s blocks=%b mtime=%y" "$HOME/gdrive/backups/$name" 2>/dev/null || echo "local_state=$name MISSING"
+          done
+          echo '=== AgentOS path devices ==='
+          for p in "$HOME/agent-data" "$HOME/agentmanager" "$HOME/.local/share/agentos"; do
+            [ -e "$p" ] && { printf '%s -> ' "$p"; df -hT "$p" | tail -n1; }
+          done
+          REMOTE

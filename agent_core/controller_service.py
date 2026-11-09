@@ -4,7 +4,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from agent_core.executor_job_contract import validate_executor_job
 from agent_core.realm_fabric import RealmFabricStore
+from agent_core.runtime_converge_contract import SCHEMA as RUNTIME_CONVERGE_SCHEMA, validate_runtime_converge_request
 
 
 def _utc_now() -> str:
@@ -14,16 +16,199 @@ def _utc_now() -> str:
 class ControllerService:
     """Governed ONE control-plane dispatcher for Node actions.
 
-    This service does not execute Node actions itself. It validates the target
-    against the live Realm Node Map and translates a controller request into the
-    existing agentos.node-task/v0.1 queue contract consumed by Thin Clients.
+    Typed privileged actions use fixed semantic adapters. Ordinary Node actions
+    still follow the accepted #64 queue contract. No privileged branch expands
+    into generic shell/argv authority.
     """
 
     REQUEST_SCHEMA = 'agentos.controller-dispatch/v0.1'
     RECEIPT_SCHEMA = 'agentos.controller-dispatch-receipt/v0.1'
+    EXECUTOR_JOB_ACTION = 'agentos.executor.job'
+    EXECUTOR_JOB_NODE = 'oracle-core-node'
+    RUNTIME_CONVERGE_ACTION = 'node.runtime.converge'
+    RUNTIME_CONVERGE_INSPECT_ACTION = 'node.runtime.converge.inspect'
+    RUNTIME_CONVERGE_NODE = 'oracle-core-node'
 
-    def __init__(self, fabric: RealmFabricStore):
+    def __init__(self, fabric: RealmFabricStore, executor_job_dispatcher: Any | None = None,
+                 runtime_converge_dispatcher: Any | None = None):
         self.fabric = fabric
+        self._executor_job_dispatcher = executor_job_dispatcher
+        self._runtime_converge_dispatcher = runtime_converge_dispatcher
+
+    def _executor_dispatcher(self):
+        if self._executor_job_dispatcher is None:
+            from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
+            self._executor_job_dispatcher = ActionRelayExecutorJobDispatcher()
+        return self._executor_job_dispatcher
+
+    def _runtime_dispatcher(self):
+        if self._runtime_converge_dispatcher is None:
+            from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
+            self._runtime_converge_dispatcher = ActionRelayRuntimeConvergeDispatcher()
+        return self._runtime_converge_dispatcher
+
+    TYPED_DESKTOP_CAPABILITY = {
+        'desktop.window.stage': 'desktop.windows.tile',
+        'desktop.pointer.click': 'desktop.mouse',
+        'desktop.text.insert': 'desktop.keyboard',
+        'desktop.preview.capture': 'desktop.preview.capture',
+        RUNTIME_CONVERGE_INSPECT_ACTION: RUNTIME_CONVERGE_ACTION,
+    }
+
+    @classmethod
+    def _typed_desktop_task(cls, *, task_id: str, action: str, request: dict[str, Any]) -> dict[str, Any]:
+        base = {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': task_id,
+            'controller_action': action,
+            'cognition_ids_used': list(request.get('cognition_ids_used') or []),
+        }
+        if action == 'desktop.window.stage':
+            title = str(request.get('title_contains') or '').strip()
+            zone = str(request.get('zone') or '').strip().lower()
+            if not title or len(title) > 120:
+                raise ValueError('desktop.window.stage requires title_contains 1..120 chars')
+            if zone not in {'left', 'right', 'full'}:
+                raise ValueError('desktop.window.stage zone must be left|right|full')
+            reserve_top = int(request.get('reserve_top_px') if request.get('reserve_top_px') is not None else 8)
+            margin = int(request.get('margin_px') if request.get('margin_px') is not None else 4)
+            if not 0 <= reserve_top <= 160:
+                raise ValueError('desktop.window.stage reserve_top_px must be 0..160')
+            if not 0 <= margin <= 40:
+                raise ValueError('desktop.window.stage margin_px must be 0..40')
+            return {
+                **base,
+                'action': 'desktop.windows.tile',
+                'windows': [{'title_contains': title, 'zone': zone}],
+                'reserve_top_px': reserve_top,
+                'margin_px': margin,
+            }
+        if action == 'desktop.pointer.click':
+            if 'x' not in request or 'y' not in request:
+                raise ValueError('desktop.pointer.click requires x and y')
+            x, y = int(request['x']), int(request['y'])
+            if not 0 <= x <= 16383 or not 0 <= y <= 16383:
+                raise ValueError('desktop.pointer.click coordinates out of bounds')
+            button = str(request.get('button') or 'left').strip().lower()
+            if button not in {'left', 'right'}:
+                raise ValueError('desktop.pointer.click button must be left|right')
+            return {
+                **base, 'action': 'desktop.mouse', 'operation': 'click',
+                'x': x, 'y': y, 'button': button,
+            }
+        if action == 'desktop.text.insert':
+            text = str(request.get('text') or '')
+            if not text or len(text) > 1000:
+                raise ValueError('desktop.text.insert text must contain 1..1000 characters')
+            return {**base, 'action': 'desktop.keyboard', 'operation': 'paste', 'text': text}
+        if action == 'desktop.preview.capture':
+            max_width = int(request.get('max_width') if request.get('max_width') is not None else 480)
+            max_height = int(request.get('max_height') if request.get('max_height') is not None else 270)
+            quality = int(request.get('quality') if request.get('quality') is not None else 30)
+            if not 160 <= max_width <= 480:
+                raise ValueError('desktop.preview.capture max_width must be 160..480')
+            if not 90 <= max_height <= 270:
+                raise ValueError('desktop.preview.capture max_height must be 90..270')
+            if not 20 <= quality <= 50:
+                raise ValueError('desktop.preview.capture quality must be 20..50')
+            return {
+                **base,
+                'action': 'desktop.preview.capture',
+                'max_width': max_width,
+                'max_height': max_height,
+                'quality': quality,
+            }
+        raise ValueError(f'unsupported typed desktop action: {action}')
+
+    def _node_for_dispatch(self, node_id: str) -> dict[str, Any]:
+        node_map = self.fabric.node_registry.node_map()
+        matches = [node for node in node_map.get('nodes', []) if node.get('node_id') == node_id]
+        if not matches:
+            raise KeyError(node_id)
+        node = matches[0]
+        if node.get('status') != 'online':
+            raise ValueError(f'target node is not online: {node_id}')
+        return node
+
+    def _dispatch_executor_job(self, *, node_id: str, payload: Any, passthrough: dict[str, Any]) -> dict[str, Any]:
+        if passthrough:
+            raise ValueError(f'unexpected executor-job controller fields: {sorted(passthrough)}')
+        if not isinstance(payload, dict):
+            raise ValueError('executor-job payload must be an object')
+        validate_executor_job(payload)
+        if node_id != self.EXECUTOR_JOB_NODE:
+            raise ValueError(f'executor job is not routable to target node: {node_id}')
+        submission = dict(self._executor_dispatcher().submit(node_id=node_id, request=payload))
+        job_id = str(submission.get('job_id') or '')
+        if not job_id:
+            raise RuntimeError('executor-job dispatcher returned no job_id')
+        submission['task_id'] = job_id
+        return submission
+
+    def _dispatch_runtime_converge(self, *, node_id: str, task_hint: str,
+                                   payload: dict[str, Any], passthrough: dict[str, Any]) -> dict[str, Any]:
+        if payload:
+            raise ValueError('runtime converge does not accept generic payload')
+        allowed = {'repository', 'source_ref', 'source_commit'}
+        unexpected = set(passthrough) - allowed
+        if unexpected:
+            raise ValueError(f'unexpected runtime-converge controller fields: {sorted(unexpected)}')
+        if set(passthrough) != allowed:
+            raise ValueError('runtime converge requires repository, source_ref, and source_commit')
+        if node_id != self.RUNTIME_CONVERGE_NODE:
+            raise ValueError(f'runtime converge is not routable to target node: {node_id}')
+        request_id = task_hint or ('ctl-' + uuid.uuid4().hex)
+        canonical = {
+            'schema': RUNTIME_CONVERGE_SCHEMA,
+            'request_id': request_id,
+            'node_id': node_id,
+            'repository': passthrough['repository'],
+            'source_ref': passthrough['source_ref'],
+            'source_commit': passthrough['source_commit'],
+        }
+        validate_runtime_converge_request(canonical)
+        return dict(self._runtime_dispatcher().submit(request=canonical))
+
+    def _inspect_runtime_converge(self, *, node_id: str, task_id: str,
+                                  payload: dict[str, Any], passthrough: dict[str, Any]) -> dict[str, Any]:
+        if payload:
+            raise ValueError('runtime converge inspect does not accept generic payload')
+        if node_id != self.RUNTIME_CONVERGE_NODE:
+            raise ValueError(f'runtime converge inspect is not routable to target node: {node_id}')
+
+        task_id = str(task_id or '').strip()
+        if task_id:
+            if passthrough:
+                raise ValueError(f'unexpected runtime-converge inspect fields: {sorted(passthrough)}')
+            if not task_id.startswith('action-') or len(task_id) > 96:
+                raise ValueError('invalid runtime converge task_id')
+            result = self._runtime_dispatcher().inspect(task_id)
+            if result is None:
+                return {
+                    'schema': 'agentos.runtime-converge-receipt/v1',
+                    'ok': True,
+                    'action': self.RUNTIME_CONVERGE_ACTION,
+                    'task_id': task_id,
+                    'status': 'pending',
+                }
+            return dict(result)
+
+        allowed = {'request_id', 'repository', 'source_ref', 'source_commit'}
+        if set(passthrough) != allowed:
+            raise ValueError(
+                'runtime converge inspect requires task_id or '
+                'request_id, repository, source_ref, and source_commit'
+            )
+        canonical = {
+            'schema': RUNTIME_CONVERGE_SCHEMA,
+            'request_id': str(passthrough['request_id'] or ''),
+            'node_id': node_id,
+            'repository': passthrough['repository'],
+            'source_ref': passthrough['source_ref'],
+            'source_commit': passthrough['source_commit'],
+        }
+        validate_runtime_converge_request(canonical)
+        return dict(self._runtime_dispatcher().inspect_request(request=canonical))
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(request, dict):
@@ -37,46 +222,41 @@ class ControllerService:
         if not action:
             raise ValueError('action is required')
 
-        node_map = self.fabric.node_registry.node_map()
-        nodes = list(node_map.get('nodes', []))
-        fabric_state = self.fabric.load()
+        # Privileged and typed actions must preserve explicit Node authority.
+        if not requested_node_id and (
+            action in self.TYPED_DESKTOP_CAPABILITY
+            or action in {self.EXECUTOR_JOB_ACTION, self.RUNTIME_CONVERGE_ACTION}
+        ):
+            raise ValueError('node_id is required for privileged or typed action')
 
+        # Typed dispatchers can use a fixed Fabric adapter without a load() API.
+        # Only capability-based selection requires a live queue snapshot.
+        fabric_state = {'tasks': {}}
         if requested_node_id:
-            matches = [node for node in nodes if node.get('node_id') == requested_node_id]
-            if not matches:
-                raise KeyError(requested_node_id)
-            node = matches[0]
-            if node.get('status') != 'online':
-                raise ValueError(f'target node is not online: {requested_node_id}')
-            advertised = {str(x) for x in (node.get('capabilities') or []) if str(x)}
-            if action not in advertised:
-                raise ValueError(f'target node does not advertise capability: {action}')
+            node_id = requested_node_id
+            node = self._node_for_dispatch(node_id)
             selection_mode = 'explicit_target'
         else:
+            fabric_state = self.fabric.load()
             candidates = []
-            for candidate in nodes:
+            for candidate in self.fabric.node_registry.node_map().get('nodes', []):
                 if candidate.get('status') != 'online':
                     continue
                 advertised = {str(x) for x in (candidate.get('capabilities') or []) if str(x)}
                 if action not in advertised:
                     continue
                 candidate_id = str(candidate.get('node_id') or '')
+                if not candidate_id:
+                    continue
                 queue_depth = len(fabric_state.get('tasks', {}).get(candidate_id, []))
-                heartbeat_age = candidate.get('heartbeat_age_seconds')
-                candidates.append((
-                    queue_depth,
-                    heartbeat_age if isinstance(heartbeat_age, int) else 10**9,
-                    candidate_id,
-                    candidate,
-                ))
+                age = candidate.get('heartbeat_age_seconds')
+                candidates.append((queue_depth, age if isinstance(age, int) else 10**9,
+                                   candidate_id, candidate))
             if not candidates:
                 raise ValueError(f'no online node advertises capability: {action}')
             candidates.sort(key=lambda item: (item[0], item[1], item[2]))
-            _, _, _, node = candidates[0]
+            _, _, node_id, node = candidates[0]
             selection_mode = 'capability_auto'
-        node_id = str(node.get('node_id') or '')
-
-        task_id = str(request.get('task_id') or ('task-' + uuid.uuid4().hex))
         payload = request.get('payload')
         if payload is None:
             payload = {}
@@ -85,13 +265,45 @@ class ControllerService:
 
         reserved = {'schema', 'task_id', 'action', 'node_id', 'target_node', 'capability', 'payload'}
         passthrough = {key: value for key, value in request.items() if key not in reserved}
-        task = {
-            'schema': 'agentos.node-task/v0.1',
-            'task_id': task_id,
-            'action': action,
-            **payload,
-            **passthrough,
-        }
+
+        if action == self.EXECUTOR_JOB_ACTION:
+            return self._dispatch_executor_job(node_id=node_id, payload=payload, passthrough=passthrough)
+
+        advertised = {str(x) for x in (node.get('capabilities') or []) if str(x)}
+        required_capability = self.TYPED_DESKTOP_CAPABILITY.get(action, action)
+        if required_capability not in advertised:
+            raise ValueError(f'target node does not advertise capability: {required_capability}')
+
+        if action == self.RUNTIME_CONVERGE_ACTION:
+            task_hint = str(request.get('task_id') or '').strip()
+            return self._dispatch_runtime_converge(
+                node_id=node_id,
+                task_hint=task_hint,
+                payload=payload,
+                passthrough=passthrough,
+            )
+
+        if action == self.RUNTIME_CONVERGE_INSPECT_ACTION:
+            return self._inspect_runtime_converge(
+                node_id=node_id,
+                task_id=str(request.get('task_id') or ''),
+                payload=payload,
+                passthrough=passthrough,
+            )
+
+        task_id = str(request.get('task_id') or ('task-' + uuid.uuid4().hex))
+        if action in self.TYPED_DESKTOP_CAPABILITY:
+            if payload:
+                raise ValueError(f'{action} does not accept generic payload')
+            task = self._typed_desktop_task(task_id=task_id, action=action, request=passthrough)
+        else:
+            task = {
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': task_id,
+                'action': action,
+                **payload,
+                **passthrough,
+            }
         queued = self.fabric.queue_task(node_id, task)
         return {
             'schema': self.RECEIPT_SCHEMA,
@@ -108,5 +320,6 @@ class ControllerService:
             'selection_mode': selection_mode,
             'requested_node_id': requested_node_id or None,
             'candidate_queue_depth': len(fabric_state.get('tasks', {}).get(node_id, [])),
-            'selection_reason': 'explicit target validated' if selection_mode == 'explicit_target' else 'lowest queued load among online capability matches',
+            'selection_reason': ('explicit target validated' if selection_mode == 'explicit_target'
+                                 else 'lowest queued load among online capability matches'),
         }

@@ -1,0 +1,87 @@
+{
+  "schema": "agentos.transport-routing/v1",
+  "policy_id": "core-chatgpt-one-routing",
+  "description": "Authority-driven transport selection for AgentOS intents. Availability never grants authority and GitHub Actions is not a generic fallback for ONE control-plane work.",
+  "transport_priority": [
+    "one_direct",
+    "agentos_mcp_app",
+    "control_inbox",
+    "github_actions"
+  ],
+  "transports": {
+    "one_direct": {
+      "kind": "agentos_control",
+      "authority": "ONE",
+      "status": "preferred_when_available"
+    },
+    "agentos_mcp_app": {
+      "kind": "agentos_control",
+      "authority": "ONE_via_bounded_adapter",
+      "status": "target"
+    },
+    "control_inbox": {
+      "kind": "agentos_control",
+      "authority": "ONE_via_bootstrap_bridge",
+      "status": "current_chatgpt_bootstrap",
+      "evidence": "issue/50"
+    },
+    "github_actions": {
+      "kind": "workflow_carrier",
+      "authority": "explicit_workflow_only",
+      "status": "available_for_declared_workflow_intents"
+    }
+  },
+  "intent_classes": {
+    "control_plane": {
+      "allowed_transports": [
+        "one_direct",
+        "agentos_mcp_app",
+        "control_inbox"
+      ],
+      "forbidden_implicit_fallbacks": [
+        "github_actions"
+      ],
+      "examples": [
+        "realm.status",
+        "realm.discovery",
+        "node.inspect",
+        "node.status",
+        "capability.resolve",
+        "governance.resolve",
+        "executor.discovery",
+        "executor.liveness",
+        "session.handoff",
+        "runtime.control",
+        "runtime.rollout",
+        "governed.node.execute"
+      ]
+    },
+    "workflow": {
+      "allowed_transports": [
+        "github_actions"
+      ],
+      "requires_explicit_workflow_intent": true,
+      "examples": [
+        "ci",
+        "test",
+        "build",
+        "package",
+        "release",
+        "deployment",
+        "evidence.workflow"
+      ]
+    }
+  },
+  "failure_semantics": {
+    "control_plane_transport_unavailable": "fail_closed",
+    "control_plane_transport_error": "surface_error_no_workflow_fallback",
+    "github_actions_available_but_unauthorized": "reject"
+  },
+  "invariants": [
+    "capability_does_not_imply_authority",
+    "same_classified_intent_and_availability_snapshot_resolves_deterministically",
+    "control_plane_intents_never_implicitly_route_to_github_actions",
+    "transport_failure_does_not_expand_authority",
+    "github_actions_requires_explicit_workflow_classification"
+  ]
+}

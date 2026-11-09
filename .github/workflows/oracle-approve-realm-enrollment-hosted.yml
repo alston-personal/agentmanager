@@ -1,0 +1,57 @@
+name: Hosted Approve Realm Enrollment
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/realm-enrollment-approval-hosted.json'
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Approve pending Realm enrollment on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          CODE="$(python3 - <<'PY'
+          import json,re
+          d=json.load(open('.agentos/commands/realm-enrollment-approval-hosted.json',encoding='utf-8'))
+          assert d.get('schema')=='agentos.realm-command/v0.1',d
+          assert d.get('action')=='realm.enrollment.approve',d
+          code=str(d.get('user_code') or '').upper()
+          assert re.fullmatch(r'[A-Z2-9]{4}-[A-Z2-9]{4}',code),code
+          print(code)
+          PY
+          )"
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$CODE" <<'REMOTE'
+          set -euo pipefail
+          CODE="$1"
+          REPO=/home/ubuntu/agentmanager
+          test -d "$REPO"
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH="$REPO"
+          python3 -m agent_core.realm_cli approve --code "$CODE" >/tmp/agentos-hosted-approval.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/agentos-hosted-approval.json',encoding='utf-8'))
+          assert d.get('ok') is True,d
+          assert d.get('schema')=='agentos.join-approval/v0.1',d
+          print('hosted_realm_enrollment_approval=PASS')
+          print('node_id='+str(d.get('node_id')))
+          print('user_code='+str(d.get('user_code')))
+          PY
+          REMOTE

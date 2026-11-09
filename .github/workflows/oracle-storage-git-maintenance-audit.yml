@@ -1,0 +1,110 @@
+name: Oracle Storage and Git Maintenance Audit
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-storage-git-maintenance-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Audit git pack and Google Drive state read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          REPO=/home/ubuntu/agentmanager
+          GIT_OBJECTS="$REPO/.git/objects"
+          GDRIVE="$HOME/.local/share/agentos/gdrive-remote-v2"
+          LEGACY="$HOME/gdrive"
+          STATE="$HOME/.local/state/agentos/gdrive-health.state"
+
+          echo "disk_root=$(df -P / | awk 'NR==2 {print $5}')"
+          echo "disk_home=$(df -P /home | awk 'NR==2 {print $5}')"
+
+          if [ -d "$GIT_OBJECTS/pack" ]; then
+            bytes="$(du -sb "$GIT_OBJECTS/pack" | awk '{print $1}')"
+            count="$(find "$GIT_OBJECTS/pack" -maxdepth 1 -type f -name '*.pack' | wc -l)"
+            largest="$(find "$GIT_OBJECTS/pack" -maxdepth 1 -type f -name '*.pack' -printf '%s\n' 2>/dev/null | sort -nr | head -n 1)"
+            echo "git_pack_bytes=$bytes"
+            echo "git_pack_count=$count"
+            echo "git_largest_pack_bytes=${largest:-0}"
+          else
+            echo "git_pack_bytes=0"
+            echo "git_pack_count=0"
+            echo "git_largest_pack_bytes=0"
+          fi
+
+          if git -C "$REPO" count-objects -vH >/tmp/git-count.txt 2>/dev/null; then
+            grep -E '^(count|size|in-pack|packs|size-pack|prune-packable|garbage|size-garbage):' /tmp/git-count.txt | sed 's/^/git_/'
+          else
+            echo "git_count_objects=FAILED"
+          fi
+          rm -f /tmp/git-count.txt
+
+          if mountpoint -q "$GDRIVE"; then
+            echo "gdrive_mountpoint=mounted"
+          else
+            echo "gdrive_mountpoint=not_mounted"
+          fi
+          fstype="$(findmnt -rn -o FSTYPE "$GDRIVE" 2>/dev/null || true)"
+          echo "gdrive_fstype=${fstype:-none}"
+
+          legacy_kind=missing
+          legacy_target=none
+          if [ -L "$LEGACY" ]; then
+            legacy_kind=symlink
+            legacy_target="$(readlink -f "$LEGACY" 2>/dev/null || true)"
+          elif [ -e "$LEGACY" ]; then
+            legacy_kind=local_path
+          fi
+          echo "gdrive_legacy_kind=$legacy_kind"
+          echo "gdrive_legacy_target=${legacy_target:-none}"
+          if [ "$legacy_kind" = symlink ] && [ "$legacy_target" = "$GDRIVE" ]; then
+            echo "gdrive_legacy_integrity=PASS"
+          else
+            echo "gdrive_legacy_integrity=FAIL"
+          fi
+
+          if [ -f "$STATE" ]; then
+            state="$(grep '^state=' "$STATE" | tail -n1 | cut -d= -f2- || true)"
+            reason="$(grep '^reason=' "$STATE" | tail -n1 | cut -d= -f2- || true)"
+            checked="$(grep '^checked_at=' "$STATE" | tail -n1 | cut -d= -f2- || true)"
+            echo "gdrive_health_state=${state:-unknown}"
+            echo "gdrive_health_reason=${reason:-none}"
+            echo "gdrive_health_checked_at=${checked:-unknown}"
+          else
+            echo "gdrive_health_state=missing"
+          fi
+
+          if mountpoint -q "$GDRIVE"; then
+            if timeout 10 test -d "$GDRIVE/backups"; then
+              echo "gdrive_backups_directory=PASS"
+            else
+              echo "gdrive_backups_directory=FAIL"
+            fi
+          else
+            echo "gdrive_backups_directory=UNAVAILABLE"
+          fi
+
+          echo "gdrive_health_timer=$(systemctl --user is-active agentos-gdrive-health.timer 2>/dev/null || true)"
+          echo "gdrive_mount_service=$(systemctl --user is-active agentos-gdrive-mount.service 2>/dev/null || true)"
+          echo "oracle_storage_git_audit=PASS"
+          REMOTE

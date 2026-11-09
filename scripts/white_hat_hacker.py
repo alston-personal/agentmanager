@@ -50,11 +50,9 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
 
 def send_telegram_alert(message: str):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}, timeout=10)
+        from agent_core.telegram_gate import send_governed_telegram
+        send_governed_telegram(f"🛡️ **[WhiteHat 警報]**\n\n{message}", project_name="white_hat")
     except Exception:
         pass
 

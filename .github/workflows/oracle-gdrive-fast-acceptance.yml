@@ -1,0 +1,59 @@
+name: Oracle GDrive Fast Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-gdrive-fast-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Fast acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
+          EXPECTED="$MOUNT"
+          TARGET="$(readlink -f "$HOME/gdrive")"
+          echo "legacy_target=$TARGET"
+          test "$TARGET" = "$EXPECTED"
+          mountpoint -q "$MOUNT"
+          systemctl --user is-active --quiet agentos-gdrive-mount.service
+          echo "mount=PASS"
+
+          echo "finalizer_state:"
+          cat "$HOME/.local/state/agentos/gdrive-underlay-finalize.state" || true
+
+          for n in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            s="$(timeout 30 rclone lsf "gdrive:backups/recovered-oracle-underlay-20261001/$n" --files-only --format s 2>/dev/null | head -n1 || true)"
+            echo "recovered_size=$n:$s"
+            test -n "$s"
+          done
+
+          echo "legacy_local_backup_paths:"
+          for n in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            if [ -e "$HOME/gdrive/backups/$n" ]; then
+              echo "legacy_visible=$n"
+            else
+              echo "legacy_missing=$n"
+            fi
+          done
+
+          df -hT /
+          echo "fast_acceptance=PASS"
+          REMOTE

@@ -1,0 +1,179 @@
+name: Oracle Employee Worker System Boundary Cutover
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-employee-worker-system-boundary-cutover.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-employee-worker-system-boundary-cutover
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Cut over Worker owner with rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          CURRENT=/home/ubuntu/agent-data/runtime/core/current
+          SUPPORT_COMMIT=3b4705bc05bebebbbb69a3819668ce1d4a4640c0
+          ENV_FILE=/home/ubuntu/.config/agentos/employee-worker-host.env
+          MARKER=/home/ubuntu/.config/agentos/employee-worker-host-system-boundary
+          USER_UNIT=agentos-employee-worker-host.service
+          SYSTEM_UNIT=/etc/systemd/system/agentos-employee-worker-host.service
+          RELEASE="$(readlink -f "$CURRENT")"
+          SOURCE_UNIT="$RELEASE/.agent/scripts/agentos-employee-worker-host-system.service"
+          BACKUP="$(mktemp -d /tmp/agentos-worker-cutover.XXXXXX)"
+
+          test "$(basename "$RELEASE")" = "$SUPPORT_COMMIT"
+          test "$(git -C "$RELEASE" rev-parse HEAD)" = "$SUPPORT_COMMIT"
+          test -f "$SOURCE_UNIT"
+          test -f "$ENV_FILE"
+
+          # The system unit currently has exact canonical RW roots. Fail closed
+          # instead of silently broadening them if host-local roots differ.
+          grep -qx 'AGENTOS_EMPLOYEE_WORKER_HOST_STATE_ROOT=/home/ubuntu/agent-data/employee-worker-host' "$ENV_FILE"
+          grep -qx 'AGENTOS_EMPLOYEE_WORKER_STATE_ROOT=/home/ubuntu/agent-data/employee-worker-state' "$ENV_FILE"
+          grep -qx 'AGENTOS_EMPLOYEE_RUNTIME_ROOT=/home/ubuntu/agent-data/employee-runtime' "$ENV_FILE"
+
+          if [ -f "$MARKER" ]; then
+            sudo -n systemctl is-active --quiet "$USER_UNIT"
+            cg="$(sudo -n systemctl show "$USER_UNIT" -p ControlGroup --value)"
+            case "$cg" in /system.slice/*) ;; *) exit 31;; esac
+            echo "employee_worker_system_cutover=ALREADY_DONE"
+            exit 0
+          fi
+
+          systemctl --user is-active --quiet "$USER_UNIT"
+          user_enabled="$(systemctl --user is-enabled "$USER_UNIT" 2>/dev/null || true)"
+          [ "$user_enabled" = enabled ] || [ "$user_enabled" = enabled-runtime ]
+
+          if [ -f "$SYSTEM_UNIT" ]; then
+            sudo -n cp -a "$SYSTEM_UNIT" "$BACKUP/system-unit"
+          fi
+
+          # Validate the candidate unit before touching the existing owner.
+          sudo -n install -o root -g root -m 0644 "$SOURCE_UNIT" "$SYSTEM_UNIT"
+          sudo -n systemctl daemon-reload
+          sudo -n systemd-analyze verify "$SYSTEM_UNIT" >/dev/null
+
+          rollback() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "employee_worker_system_cutover_rollback=START" >&2
+              rm -f "$MARKER" || true
+              sudo -n systemctl disable --now "$USER_UNIT" 2>/dev/null || true
+              if [ -f "$BACKUP/system-unit" ]; then
+                sudo -n cp -a "$BACKUP/system-unit" "$SYSTEM_UNIT" || true
+              else
+                sudo -n rm -f "$SYSTEM_UNIT" || true
+              fi
+              sudo -n systemctl daemon-reload || true
+              systemctl --user daemon-reload || true
+              systemctl --user enable "$USER_UNIT" >/dev/null 2>&1 || true
+              systemctl --user restart "$USER_UNIT" || true
+              echo "employee_worker_system_cutover_rollback=DONE" >&2
+            fi
+            rm -rf "$BACKUP"
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          # Stop the old singleton before starting the system-owned singleton.
+          systemctl --user stop "$USER_UNIT"
+          ! systemctl --user is-active --quiet "$USER_UNIT" 2>/dev/null
+
+          sudo -n systemctl enable "$USER_UNIT" >/dev/null
+          sudo -n systemctl start "$USER_UNIT"
+          sudo -n systemctl is-active --quiet "$USER_UNIT"
+
+          pid="$(sudo -n systemctl show "$USER_UNIT" -p MainPID --value)"
+          test -n "$pid" && test "$pid" != 0
+          test "$(readlink -f "/proc/$pid/cwd")" = "$RELEASE"
+          test "$(ps -o user= -p "$pid" | xargs)" = ubuntu
+
+          cg="$(sudo -n systemctl show "$USER_UNIT" -p ControlGroup --value)"
+          case "$cg" in
+            /system.slice/*) ;;
+            *) echo "unexpected system worker cgroup=$cg" >&2; exit 32 ;;
+          esac
+          root="/sys/fs/cgroup$cg"
+          test "$(cat "$root/cpu.max")" = "50000 100000"
+          test "$(cat "$root/cpu.weight")" = "20"
+          test "$(cat "$root/memory.max")" = "1073741824"
+          grep -Eq '^default[[:space:]]+20$' "$root/io.weight"
+
+          # Real kernel accounting, not systemd property text.
+          read u0 p0 t0 x0 < <(awk '
+            $1=="usage_usec"{u=$2}
+            $1=="nr_periods"{p=$2}
+            $1=="nr_throttled"{t=$2}
+            $1=="throttled_usec"{x=$2}
+            END{print u+0,p+0,t+0,x+0}
+          ' "$root/cpu.stat")
+          ts0="$(date +%s%N)"
+          sleep 10
+          read u1 p1 t1 x1 < <(awk '
+            $1=="usage_usec"{u=$2}
+            $1=="nr_periods"{p=$2}
+            $1=="nr_throttled"{t=$2}
+            $1=="throttled_usec"{x=$2}
+            END{print u+0,p+0,t+0,x+0}
+          ' "$root/cpu.stat")
+          ts1="$(date +%s%N)"
+          python3 - "$u0" "$u1" "$p0" "$p1" "$t0" "$t1" "$x0" "$x1" "$ts0" "$ts1" <<'PY'
+          import sys
+          u0,u1,p0,p1,t0,t1,x0,x1,ts0,ts1=map(int,sys.argv[1:])
+          wall=max(1,ts1-ts0)
+          pct=max(0,u1-u0)*100_000_000_000/wall/1_000_000
+          print(f"worker_system_cpu_percent_10s={pct:.2f}")
+          print(f"worker_system_periods_delta={max(0,p1-p0)}")
+          print(f"worker_system_throttled_periods_delta={max(0,t1-t0)}")
+          print(f"worker_system_throttled_usec_delta={max(0,x1-x0)}")
+          if pct > 55.0:
+              raise SystemExit("system worker cpu above 55 percent")
+          PY
+
+          # Only after the new owner is proven do we make the owner choice durable.
+          install -d -m 0700 "$(dirname "$MARKER")"
+          printf 'owner=system\nsupport_commit=%s\n' "$SUPPORT_COMMIT" > "$MARKER"
+          chmod 0600 "$MARKER"
+          systemctl --user disable "$USER_UNIT" >/dev/null
+          ! systemctl --user is-active --quiet "$USER_UNIT" 2>/dev/null
+          sudo -n systemctl is-enabled --quiet "$USER_UNIT"
+
+          # Control plane and storage must remain available through cutover.
+          systemctl --user is-active --quiet agentos-core-supervisor.service
+          systemctl --user is-active --quiet agentos-control-plane.service
+          systemctl --user is-active --quiet agentos-gdrive-mount.service
+          mountpoint -q /home/ubuntu/.local/share/agentos/gdrive-remote-v2
+
+          echo "worker_system_control_group=$cg"
+          echo "worker_system_cpu_max=$(cat "$root/cpu.max")"
+          echo "worker_system_cpu_weight=$(cat "$root/cpu.weight")"
+          echo "worker_system_io_weight=$(cat "$root/io.weight" | tr '\n' ';')"
+          echo "worker_system_memory_max=$(cat "$root/memory.max")"
+          echo "employee_worker_system_cutover=PASS"
+
+          trap - EXIT
+          rm -rf "$BACKUP"
+          REMOTE

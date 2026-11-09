@@ -1,0 +1,91 @@
+name: Oracle Employee Worker Cgroup Enforcement Probe
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-employee-worker-cgroup-enforcement-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Probe kernel cgroup enforcement read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          UNIT=agentos-employee-worker-host.service
+
+          echo "unit_active=$(systemctl --user is-active "$UNIT")"
+          echo "unit_cpu_quota=$(systemctl --user show "$UNIT" -p CPUQuotaPerSecUSec --value)"
+          echo "unit_cpu_period=$(systemctl --user show "$UNIT" -p CPUQuotaPeriodUSec --value)"
+          echo "unit_cpu_accounting=$(systemctl --user show "$UNIT" -p CPUAccounting --value)"
+          echo "unit_control_group=$(systemctl --user show "$UNIT" -p ControlGroup --value)"
+          echo "unit_main_pid=$(systemctl --user show "$UNIT" -p MainPID --value)"
+
+          cg="$(systemctl --user show "$UNIT" -p ControlGroup --value)"
+          test -n "$cg"
+          root="/sys/fs/cgroup$cg"
+          test -d "$root"
+
+          echo "cgroup_cpu_max=$(cat "$root/cpu.max")"
+          echo "cgroup_cpu_weight=$(cat "$root/cpu.weight")"
+          echo "cgroup_memory_max=$(cat "$root/memory.max")"
+          echo "cgroup_proc_count=$(wc -l < "$root/cgroup.procs")"
+          echo "cgroup_procs=$(tr '\n' ',' < "$root/cgroup.procs" | sed 's/,$//')"
+
+          read_stat() {
+            awk '
+              $1=="usage_usec"{u=$2}
+              $1=="nr_periods"{p=$2}
+              $1=="nr_throttled"{t=$2}
+              $1=="throttled_usec"{x=$2}
+              END{printf "%s %s %s %s\n",u+0,p+0,t+0,x+0}
+            ' "$root/cpu.stat"
+          }
+
+          read u0 p0 t0 x0 < <(read_stat)
+          s0="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
+          ts0="$(date +%s%N)"
+          sleep 10
+          read u1 p1 t1 x1 < <(read_stat)
+          s1="$(systemctl --user show "$UNIT" -p CPUUsageNSec --value)"
+          ts1="$(date +%s%N)"
+
+          python3 - "$u0" "$u1" "$p0" "$p1" "$t0" "$t1" "$x0" "$x1" "$s0" "$s1" "$ts0" "$ts1" <<'PY'
+          import sys
+          u0,u1,p0,p1,t0,t1,x0,x1,s0,s1,ts0,ts1=map(int,sys.argv[1:])
+          wall=max(1,ts1-ts0)
+          cgroup_pct=max(0,u1-u0)*100_000_000_000/wall/1_000_000
+          systemd_pct=max(0,s1-s0)*100/wall
+          print(f"cgroup_usage_delta_usec={max(0,u1-u0)}")
+          print(f"cgroup_cpu_percent_10s={cgroup_pct:.2f}")
+          print(f"systemd_cpu_percent_10s={systemd_pct:.2f}")
+          print(f"cpu_periods_delta={max(0,p1-p0)}")
+          print(f"cpu_throttled_periods_delta={max(0,t1-t0)}")
+          print(f"cpu_throttled_usec_delta={max(0,x1-x0)}")
+          PY
+
+          echo "=== cgroup process snapshot ==="
+          while read -r pid; do
+            [ -r "/proc/$pid/stat" ] || continue
+            ps -p "$pid" -o pid=,ppid=,pcpu=,stat=,etime=,comm= 2>/dev/null || true
+          done < "$root/cgroup.procs"
+
+          echo "oracle_worker_cgroup_enforcement_probe=PASS"
+          REMOTE

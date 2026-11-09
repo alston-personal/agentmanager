@@ -3,11 +3,6 @@ name: Recover Antigravity Group Boundary Safely
 # revision: tmp-receipt quarantine without peer read
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-recover-antigravity-group-boundary.yml'
-      - 'scripts/recover_antigravity_group_boundary.py'
-
 permissions:
   contents: write
 

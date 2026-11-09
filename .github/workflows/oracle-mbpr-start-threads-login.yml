@@ -1,0 +1,42 @@
+name: Oracle MBPR Start Threads Login
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  login:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open persistent Threads login window on MBPR
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-start-threads-login.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='threads-login-mbpr-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
+          runner='/Users/tengweihuang/Library/Application Support/AgentOS/browser-bridge/bridge-runner.py'
+          code=("import subprocess; subprocess.Popen(["+
+                repr(py)+","+repr(runner)+",'--account','mio.milkcat','--login-only','--headed','--wait-for-login-seconds','900','--channel','chrome'], "+
+                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True); print('THREADS_LOGIN_WINDOW_STARTED')")
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(30):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  print(out)
+                  if r.get('ok') is True and 'THREADS_LOGIN_WINDOW_STARTED' in out:
+                      print('mbpr_threads_login_window=STARTED')
+                      raise SystemExit(0)
+                  print(str(r)); raise SystemExit(2)
+              time.sleep(2)
+          raise SystemExit('MBPR Threads login launcher timeout')
+          PY

@@ -1,0 +1,377 @@
+"""Fixed Oracle Gemini CLI + ONE installer for the bounded executor-job path."""
+from __future__ import annotations
+
+import json
+import os
+import re
+from pathlib import Path
+import subprocess
+import tempfile
+from typing import Any, Mapping
+
+from agent_core.executor_job_contract import validate_executor_job
+from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS, ExecutorJobProviderRegistry
+
+JOB_TYPE = "gemini.cli.install"
+HEALTH_JOB_TYPE = "gemini.cli.health"
+PROVIDER_ID = "oracle-gemini-cli-one-install-v1"
+HEALTH_PROVIDER_ID = "oracle-gemini-cli-one-health-v1"
+EXECUTOR_CLASS = "gemini-cli"
+EXPECTED_HOME = Path("/home/ubuntu")
+DATA_ROOT = EXPECTED_HOME / "agent-data"
+RECEIPT_FILE = DATA_ROOT / "runtime/gemini-cli-one/install-receipt.json"
+
+
+def _runtime_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _failure(classification: str, *, executor_available: bool = True, routable: bool = True, authorized: bool = True) -> dict[str, Any]:
+    return {
+        "verdict": "FAIL",
+        "classification": classification,
+        "install_receipt_ok": False,
+        "executor_available": executor_available,
+        "routable": routable,
+        "authorized": authorized,
+        "successful": False,
+        "credential_exposed": False,
+    }
+
+
+def _classify_install_failure(returncode: int, combined: str) -> str:
+    text = combined.casefold()
+    if returncode == 2 or "run as oracle ubuntu user" in text:
+        return "GEMINI_CLI_ORACLE_UBUNTU_IDENTITY_MISMATCH"
+    if returncode == 3 or "missing prerequisite" in text:
+        return "GEMINI_CLI_PREREQUISITE_MISSING"
+    if returncode == 4 or "agentos data root missing" in text:
+        return "GEMINI_CLI_AGENT_DATA_ROOT_UNAVAILABLE"
+    if any(token in text for token in ("permission denied", "eacces", "operation not permitted")):
+        return "GEMINI_CLI_INSTALL_PERMISSION_DENIED"
+    if any(token in text for token in (
+        "ebadengine", "unsupported engine", "required: { node", "not compatible with your version of node"
+    )):
+        return "GEMINI_CLI_NODE_INCOMPATIBLE"
+    if any(token in text for token in (
+        "network is unreachable", "enotfound", "eai_again", "connection reset", "socket hang up", "etimedout"
+    )):
+        return "GEMINI_CLI_INSTALL_NETWORK"
+    if any(token in text for token in ("e404", "404 not found", "package not found")):
+        return "GEMINI_CLI_PACKAGE_UNAVAILABLE"
+    if "npm err!" in text or "npm error" in text:
+        return "GEMINI_CLI_INSTALL_NPM_FAILED"
+    return "GEMINI_CLI_INSTALL_COMMAND_FAILED"
+
+
+def run_gemini_cli_install(request: Mapping[str, Any], *, runtime_root: str | Path | None = None) -> dict[str, Any]:
+    spec = validate_executor_job(request)
+    if spec.job_type != JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
+        return _failure("GEMINI_CLI_PROVIDER_CONTRACT_MISMATCH", executor_available=False, routable=False, authorized=False)
+
+    home = Path.home()
+    if home != EXPECTED_HOME or os.environ.get("USER") not in (None, "", "ubuntu"):
+        return _failure("GEMINI_CLI_ORACLE_UBUNTU_IDENTITY_MISMATCH", executor_available=False, routable=False, authorized=False)
+    if not DATA_ROOT.is_dir():
+        return _failure("GEMINI_CLI_AGENT_DATA_ROOT_UNAVAILABLE", executor_available=False, routable=False, authorized=False)
+
+    root = Path(runtime_root) if runtime_root is not None else _runtime_root()
+    installer = root / "scripts/install_oracle_gemini_cli_one.sh"
+    if not installer.is_file() or installer.is_symlink():
+        return _failure("GEMINI_CLI_INSTALLER_UNAVAILABLE", executor_available=False, routable=False, authorized=False)
+
+    try:
+        proc = subprocess.run(
+            ["/bin/bash", str(installer)],
+            cwd=str(root),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=600,
+            check=False,
+            env={
+                "HOME": str(EXPECTED_HOME),
+                "USER": "ubuntu",
+                "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                "AGENT_DATA_ROOT": str(DATA_ROOT),
+            },
+        )
+    except subprocess.TimeoutExpired:
+        return _failure("GEMINI_CLI_INSTALL_TIMEOUT")
+    except OSError:
+        return _failure("GEMINI_CLI_INSTALL_LAUNCH_ERROR")
+
+    if proc.returncode != 0:
+        return _failure(_classify_install_failure(proc.returncode, (proc.stdout or "") + "\n" + (proc.stderr or "")))
+    if not RECEIPT_FILE.is_file() or RECEIPT_FILE.is_symlink():
+        return _failure("GEMINI_CLI_INSTALL_RECEIPT_MISSING")
+    try:
+        verify = json.loads(RECEIPT_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return _failure("GEMINI_CLI_INSTALL_RECEIPT_INVALID")
+
+    receipt_ok = (
+        verify.get("schema") == "agentos.gemini-cli-one-install-receipt/v1"
+        and verify.get("cli_installed") is True
+        and verify.get("one_mcp_configured") is True
+        and verify.get("session_start_hook_configured") is True
+        and verify.get("credential_exposed") is False
+        and verify.get("auth_ready") is None
+        and verify.get("live_sessionstart_verified") is None
+    )
+    return {
+        "verdict": "PASS" if receipt_ok else "FAIL",
+        "classification": "GEMINI_CLI_ONE_INSTALL_PASS" if receipt_ok else "GEMINI_CLI_INSTALL_RECEIPT_INVALID",
+        "install_receipt_ok": bool(receipt_ok),
+        "executor_available": True,
+        "routable": True,
+        "authorized": True,
+        "successful": bool(receipt_ok),
+        "credential_exposed": False,
+        "gemini_cli_version": str(verify.get("gemini_cli_version") or "")[:128],
+    }
+
+
+def register_gemini_cli_install_provider(*, registry: ExecutorJobProviderRegistry = DEFAULT_PROVIDERS, runtime_root: str | Path | None = None) -> bool:
+    root = Path(runtime_root) if runtime_root is not None else _runtime_root()
+    installer = root / "scripts/install_oracle_gemini_cli_one.sh"
+    if not installer.is_file():
+        return False
+    existing = registry.get(JOB_TYPE)
+    if existing is not None:
+        if existing.provider_id == PROVIDER_ID and existing.executor_class == EXECUTOR_CLASS:
+            return True
+        raise RuntimeError("Gemini CLI provider already registered differently")
+
+    def handler(request: Mapping[str, Any]) -> Mapping[str, Any]:
+        return run_gemini_cli_install(request, runtime_root=root)
+
+    registry.register(
+        job_type=JOB_TYPE,
+        provider_id=PROVIDER_ID,
+        executor_class=EXECUTOR_CLASS,
+        handler=handler,
+    )
+
+    existing_health = registry.get(HEALTH_JOB_TYPE)
+    if existing_health is None:
+        registry.register(
+            job_type=HEALTH_JOB_TYPE,
+            provider_id=HEALTH_PROVIDER_ID,
+            executor_class=EXECUTOR_CLASS,
+            handler=lambda request: run_gemini_cli_health(request),
+        )
+    elif existing_health.provider_id != HEALTH_PROVIDER_ID or existing_health.executor_class != EXECUTOR_CLASS:
+        raise RuntimeError("Gemini CLI health provider already registered differently")
+    return True
+
+
+def _classify_health_failure(returncode: int, combined: str, *, timed_out: bool = False) -> str:
+    text = combined.casefold()
+    if timed_out:
+        return "GEMINI_CLI_HEALTH_TIMEOUT"
+    if any(token in text for token in ("ineligibletiererror", "unsupported_client", "this client is no longer supported", "migrate to antigravity")):
+        return "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"
+    if any(token in text for token in ("login", "log in", "sign in", "unauthorized", "authentication required", "not authenticated", "authenticate", "oauth", "credential", "invalid_grant", "reauth")):
+        return "GEMINI_CLI_AUTH_REQUIRED"
+    if any(token in text for token in ("rate limit", "too many requests", "quota", "resource exhausted")):
+        return "GEMINI_CLI_RATE_LIMITED"
+    if any(token in text for token in ("network is unreachable", "enotfound", "eai_again", "connection reset", "socket hang up", "etimedout")):
+        return "GEMINI_CLI_NETWORK"
+    if any(token in text for token in ("unknown argument", "unknown option", "unrecognized option", "invalid option", "approval-mode")):
+        return "GEMINI_CLI_CLI_CONTRACT"
+    if any(token in text for token in ("workspace trust", "folder trust", "not trusted", "trust this folder", "untrusted workspace")):
+        return "GEMINI_CLI_WORKSPACE_TRUST_REQUIRED"
+    if any(token in text for token in ("settings.json", "fatalconfigerror", "invalid configuration", "config error", "failed to load settings")):
+        return "GEMINI_CLI_CONFIG_ERROR"
+    if any(token in text for token in ("unsupported engine", "ebadengine", "requires node", "node version")):
+        return "GEMINI_CLI_NODE_INCOMPATIBLE"
+    if any(token in text for token in ("sessionstart", "hook failed", "hook error", "hooks")):
+        return "GEMINI_CLI_HOOK_ERROR"
+    if any(token in text for token in ("mcp", "agentos-one")):
+        return "GEMINI_CLI_MCP_ERROR"
+    return "GEMINI_CLI_HEALTH_NONZERO"
+
+
+def _gemini_health_diagnostic_tags(combined: str, payload: Mapping[str, Any] | None) -> str:
+    tags: list[str] = []
+    if isinstance(payload, Mapping):
+        keys = sorted(str(k) for k in payload.keys())
+        if keys:
+            tags.append("payload_keys=" + ",".join(keys[:12]))
+        error = payload.get("error")
+        if isinstance(error, Mapping):
+            error_keys = sorted(str(k) for k in error.keys())
+            if error_keys:
+                tags.append("error_keys=" + ",".join(error_keys[:12]))
+            error_type = str(error.get("type") or "").strip()
+            if re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,80}", error_type):
+                tags.append("error_type=" + error_type)
+            error_code = str(error.get("code") or "").strip()
+            if re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", error_code):
+                tags.append("error_code=" + error_code)
+    symbols: list[str] = []
+    for token in re.findall(r"\b[A-Z][A-Z0-9_]{2,64}\b|\b[A-Za-z][A-Za-z0-9]*(?:Error|Exception)\b", combined or ""):
+        if token not in symbols:
+            symbols.append(token)
+        if len(symbols) >= 8:
+            break
+    if symbols:
+        tags.append("symbols=" + ",".join(symbols))
+    if not tags:
+        tags.append("shape=opaque-nonzero")
+    return ";".join(tags)[:512]
+
+def _classify_gemini_json_error(error_type: str, error_code: Any, returncode: int, error_text: str = "") -> str:
+    value = (str(error_type or "") + " " + str(error_text or "")).strip().casefold()
+    if returncode == 42:
+        return "GEMINI_CLI_CLI_CONTRACT"
+    if returncode == 53:
+        return "GEMINI_CLI_TURN_LIMIT"
+    if "auth" in value or "credential" in value or "login" in value:
+        return "GEMINI_CLI_AUTH_REQUIRED"
+    if any(token in value for token in ("rate", "quota", "resourceexhaust", "resource_exhaust")):
+        return "GEMINI_CLI_RATE_LIMITED"
+    if "config" in value or "settings" in value:
+        return "GEMINI_CLI_CONFIG_ERROR"
+    if "network" in value or "connection" in value or "fetch" in value:
+        return "GEMINI_CLI_NETWORK"
+    if "badrequest" in value or "invalidargument" in value or "input" in value:
+        return "GEMINI_CLI_API_REQUEST_ERROR"
+    if value:
+        return "GEMINI_CLI_API_ERROR"
+    return "GEMINI_CLI_HEALTH_NONZERO"
+
+
+def run_gemini_cli_health(request: Mapping[str, Any]) -> dict[str, Any]:
+    spec = validate_executor_job(request)
+    if spec.job_type != HEALTH_JOB_TYPE or spec.executor_class != EXECUTOR_CLASS:
+        return _failure("GEMINI_CLI_HEALTH_CONTRACT_MISMATCH", executor_available=False, routable=False, authorized=False)
+
+    home = Path.home()
+    if home != EXPECTED_HOME or os.environ.get("USER") not in (None, "", "ubuntu"):
+        return _failure("GEMINI_CLI_ORACLE_UBUNTU_IDENTITY_MISMATCH", executor_available=False, routable=False, authorized=False)
+
+    gemini = EXPECTED_HOME / ".local/bin/gemini"
+    if not gemini.is_file() or gemini.is_symlink() and not gemini.exists():
+        return _failure("GEMINI_CLI_INSTALL_REQUIRED", executor_available=False, routable=False, authorized=False)
+
+    from agentos_node.provider_terminal_health import gemini_identity, blocked, record_block
+    try:
+        provider_identity = gemini_identity(gemini, home=EXPECTED_HOME)
+    except OSError:
+        provider_identity = None
+    if provider_identity and blocked(provider_identity):
+        result = _failure("GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED",
+                          executor_available=True, routable=False, authorized=False)
+        result["provider_health_cache_hit"] = True
+        result["gemini_cli_invoked"] = False
+        return result
+
+    env = {
+        **os.environ,
+        "HOME": str(EXPECTED_HOME),
+        "USER": "ubuntu",
+        "PATH": f"{EXPECTED_HOME}/.local/bin:{EXPECTED_HOME}/.local/share/agentos/npm-global/bin:" + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "CI": "1",
+    }
+    argv = [
+        str(gemini),
+        "-p",
+        "AgentOS Gemini CLI health probe. Do not modify files. Reply exactly READY.",
+        "--approval-mode",
+        "plan",
+        "--skip-trust",
+        "--output-format",
+        "json",
+    ]
+    with tempfile.TemporaryDirectory(prefix="agentos-gemini-health-") as health_dir:
+        temp_root = Path(health_dir)
+        health_root = temp_root / "workspace"
+        health_root.mkdir()
+        cli_home = temp_root / "cli-home"
+        settings_dir = cli_home / ".gemini"
+        settings_dir.mkdir(parents=True, exist_ok=True)
+        (settings_dir / "settings.json").write_text(
+            json.dumps({
+                "security": {"auth": {"selectedType": "oauth-personal"}},
+                "hooksConfig": {"enabled": False},
+                "skills": {"enabled": False},
+            }, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        source_settings = EXPECTED_HOME / ".gemini"
+        for credential_name in ("oauth_creds.json", "google_accounts.json"):
+            source = source_settings / credential_name
+            if source.exists():
+                (settings_dir / credential_name).symlink_to(source)
+        env["GEMINI_CLI_HOME"] = str(cli_home)
+        try:
+            proc = subprocess.run(
+                argv,
+                cwd=str(health_root),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60,
+                check=False,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            result = _failure("GEMINI_CLI_HEALTH_TIMEOUT", executor_available=True, routable=False, authorized=False)
+            result["executor_returncode"] = 124
+            result["executor_timed_out"] = True
+            return result
+        except OSError:
+            return _failure("GEMINI_CLI_HEALTH_LAUNCH_ERROR", executor_available=False, routable=False, authorized=False)
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    payload: dict[str, Any] | None = None
+    try:
+        value = json.loads(proc.stdout or "")
+        if isinstance(value, dict):
+            payload = value
+    except json.JSONDecodeError:
+        payload = None
+
+    response = str((payload or {}).get("response") or "").strip()
+    ready = proc.returncode == 0 and response == "READY"
+    if not ready:
+        error = (payload or {}).get("error")
+        classification = _classify_health_failure(proc.returncode, combined)
+        if classification == "GEMINI_CLI_HEALTH_NONZERO" and isinstance(error, dict):
+            classification = _classify_gemini_json_error(
+                str(error.get("type") or ""),
+                error.get("code"),
+                int(proc.returncode),
+                json.dumps(error, sort_keys=True),
+            )
+        elif classification == "GEMINI_CLI_HEALTH_NONZERO" and proc.returncode == 0:
+            classification = "GEMINI_CLI_JSON_RESPONSE_INVALID"
+        if classification == "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED" and provider_identity:
+            record_block(provider_identity)
+        authorized = classification not in {"GEMINI_CLI_AUTH_REQUIRED", "GEMINI_CLI_OAUTH_CLIENT_UNSUPPORTED"}
+        result = _failure(classification, executor_available=True, routable=False, authorized=authorized)
+        diagnostic_tags = _gemini_health_diagnostic_tags(combined, payload)
+        result["executor_returncode"] = int(proc.returncode)
+        result["executor_timed_out"] = False
+        result["gemini_cli_diagnostic_tags"] = diagnostic_tags
+        result["provider_health_cache_hit"] = False
+        result["gemini_cli_invoked"] = True
+        result["gemini_health_classification"] = classification
+        result["gemini_state"] = diagnostic_tags
+        result["gemini_returncode"] = int(proc.returncode)
+        return result
+
+    return {
+        "verdict": "PASS",
+        "classification": "GEMINI_CLI_HEALTH_READY",
+        "executor_available": True,
+        "routable": True,
+        "authorized": True,
+        "successful": True,
+        "credential_exposed": False,
+        "executor_returncode": 0,
+        "executor_timed_out": False,
+    }

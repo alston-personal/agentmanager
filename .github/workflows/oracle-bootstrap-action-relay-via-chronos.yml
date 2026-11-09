@@ -2,10 +2,6 @@ name: Oracle Bootstrap Action Relay Via Existing Chronos
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-bootstrap-action-relay-via-chronos.yml'
-
 permissions:
   contents: write
 

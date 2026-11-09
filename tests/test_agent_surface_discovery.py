@@ -90,3 +90,35 @@ def test_heartbeat_refreshes_surface_inventory(tmp_path):
     node = registry.node_map()['nodes'][0]
     assert node['surface_inventory']['providers'] == ['antigravity']
     assert 'agent.chat' in node['capabilities']
+
+
+def test_gemini_web_bridge_respects_login_state(monkeypatch, tmp_path):
+    bridge = tmp_path / 'gemini-web'
+    bridge.mkdir()
+    monkeypatch.setenv('AGENTOS_GEMINI_WEB_BRIDGE', str(bridge))
+
+    (bridge / 'bridge.json').write_text(json.dumps({
+        'schema': 'agentos.session-bridge/v0.1',
+        'provider': 'gemini-web',
+        'ready': True,
+        'session_state': 'LOGIN_REQUIRED',
+        'operations': ['discover', 'attach', 'snapshot', 'inject', 'harvest', 'handoff'],
+    }), encoding='utf-8')
+    inventory = discover_surfaces(process_names=set(), which=_which_factory({}))
+    surface = next(x for x in inventory['surfaces'] if x['provider'] == 'gemini-web')
+    assert surface['kind'] == 'web-agent'
+    assert surface['running'] is True
+    assert surface['attachable'] is False
+    assert 'agent.session.discover' in surface['capabilities']
+
+    (bridge / 'bridge.json').write_text(json.dumps({
+        'schema': 'agentos.session-bridge/v0.1',
+        'provider': 'gemini-web',
+        'ready': True,
+        'session_state': 'READY',
+        'operations': ['discover', 'attach', 'snapshot', 'inject', 'harvest', 'handoff'],
+    }), encoding='utf-8')
+    inventory = discover_surfaces(process_names=set(), which=_which_factory({}))
+    surface = next(x for x in inventory['surfaces'] if x['provider'] == 'gemini-web')
+    assert surface['attachable'] is True
+    assert 'agent.context.inject' in surface['capabilities']

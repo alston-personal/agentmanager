@@ -1,0 +1,56 @@
+name: Oracle GDrive Immutable Underlay Probe
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-gdrive-immutable-underlay-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe immutable underlay with disposable mountpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          D="$HOME/.local/share/agentos/gdrive-immutable-probe"
+          cleanup() {
+            if mountpoint -q "$D"; then
+              fusermount3 -uz "$D" 2>/dev/null || fusermount -uz "$D" 2>/dev/null || true
+            fi
+            sudo -n chattr -i "$D" 2>/dev/null || true
+            rm -rf "$D"
+          }
+          trap cleanup EXIT
+          rm -rf "$D"
+          mkdir -p "$D"
+          chmod 700 "$D"
+          sudo -n chattr +i "$D"
+          if touch "$D/should-fail" 2>/dev/null; then
+            echo "immutable_write_block=FAIL"
+            exit 41
+          fi
+          echo "immutable_write_block=PASS"
+          timeout 20 rclone mount gdrive: "$D"             --config="$HOME/.config/rclone/rclone.conf"             --read-only --vfs-cache-mode=off --daemon
+          for i in $(seq 1 20); do
+            mountpoint -q "$D" && break
+            sleep 1
+          done
+          mountpoint -q "$D"
+          timeout 10 test -d "$D/backups"
+          echo "immutable_mount_overlay=PASS"
+          REMOTE

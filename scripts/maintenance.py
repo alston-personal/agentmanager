@@ -51,6 +51,12 @@ def main():
     # 1. Health & Structure (Bootstrap)
     run_script("bootstrap.py")
 
+    # Action Relay immutable-generation convergence intentionally does not live
+    # in this legacy maintenance pipeline.  The independent
+    # agentos-action-relay-reconcile.timer owns that Core self-heal lane so a
+    # failure in reporting, compaction, or any other maintenance task cannot
+    # prevent executor-generation repair.
+
     # 2. Reliability Check (Watchdog Service)
     check_os_watchdog()
     

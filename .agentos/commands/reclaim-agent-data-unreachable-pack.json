@@ -1,0 +1,13 @@
+{
+  "schema": "agentos.oracle-maintenance-command/v1",
+  "operation": "reclaim_proven_unreachable_agent_data_pack",
+  "target": "~/agent-data/.git/objects/pack/pack-05712690d52472e874ca91a3f728329bfa7c0a00.pack",
+  "expected_size_bytes": 19236299381,
+  "required_proofs": [
+    "refs_and_reflogs_zero_hits",
+    "all_present_worktree_indexes_zero_hits",
+    "no_live_agent_data_git_processes",
+    "post_quarantine_git_connectivity_pass"
+  ],
+  "rollback_before_delete": true
+}

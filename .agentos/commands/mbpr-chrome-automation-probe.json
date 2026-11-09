@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.chrome-automation-probe",
+  "node_id": "mbpr",
+  "nonce": "chrome-auto-1790567719750"
+}

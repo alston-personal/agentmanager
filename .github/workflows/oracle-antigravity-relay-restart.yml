@@ -1,10 +1,7 @@
 name: Oracle Antigravity Relay Restart
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/antigravity-relay-restart.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 
@@ -12,7 +9,7 @@ jobs:
   restart:
     if: github.actor == 'alstonhuang'
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Restart relay through allowlisted action boundary

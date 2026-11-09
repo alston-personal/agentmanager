@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentos.wardrobe-visual-semantic-receipt/v1",
+  "type": "object",
+  "required": ["schema", "backendReady", "checks"],
+  "properties": {
+    "schema": {"const": "agentos.wardrobe-visual-semantic-receipt/v1"},
+    "backendReady": {"type": "boolean"},
+    "backend": {"type": "string"},
+    "classification": {"type": "string"},
+    "message": {"type": "string"},
+    "checks": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}
