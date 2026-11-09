@@ -464,6 +464,10 @@ jobs:
               "employee_registered": False,
               "wake_presence_live": False,
               "s4_awaiting_claim": 0,
+              "s4_delivery_states": {},
+              "supervisor_intents": 0,
+              "supervisor_last_cycle": None,
+              "supervisor_authority_boundary": "unknown",
               "completed_lifecycle_receipts": 0,
               "assignment_states": {},
               "metadata_snapshots": 0,
@@ -480,12 +484,27 @@ jobs:
                   result["wake_presence_live"] = (
                       expires.tzinfo is not None and expires > datetime.now(timezone.utc)
                   )
+              state_file = root / "supervisor" / "state.json"
+              if state_file.is_file():
+                  state_data = json.loads(state_file.read_text())
+                  result["supervisor_last_cycle"] = state_data.get("last_cycle_at")
+                  result["supervisor_authority_boundary"] = state_data.get("authority_boundary", "unknown")
+              for item in (root / "supervisor" / "intents").glob("reconcile_*.json"):
+                  try:
+                      rec = json.loads(item.read_text())
+                      if (rec.get("intent") or {}).get("employee_id") == employee_id:
+                          result["supervisor_intents"] += 1
+                  except (ValueError, OSError):
+                      continue
               deliveries = root / "supervisor" / "deliveries"
               for item in deliveries.glob("reconcile_*.json"):
                   try:
                       delivery = json.loads(item.read_text())
-                      if delivery.get("employee_id") == employee_id and delivery.get("status") == "awaiting_claim":
-                          result["s4_awaiting_claim"] += 1
+                      if delivery.get("employee_id") == employee_id:
+                          state_value = str(delivery.get("status") or "unknown")
+                          result["s4_delivery_states"][state_value] = result["s4_delivery_states"].get(state_value, 0) + 1
+                          if state_value == "awaiting_claim":
+                              result["s4_awaiting_claim"] += 1
                   except (ValueError, OSError):
                       continue
               for item in sorted((root / "assignments").glob(assignment_prefix + "*.json")):
