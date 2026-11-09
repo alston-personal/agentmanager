@@ -126,10 +126,18 @@ def tick(*, runtime_root: Path, wake_root: Path, state_root: Path,
     for path in sorted(directory.glob("*.json")):
         try:
             capsule=json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(capsule,dict):
+            if not isinstance(capsule,dict) or capsule.get("employee_id")!=EMPLOYEE:
                 continue
-            return produce_snapshot(runtime_root=runtime_root,wake_root=wake_root,
+            assignment_id=str(capsule.get("assignment_id") or "")
+            wake_id=str(capsule.get("wake_id") or "")
+            dest=snapshot_path(state_root,assignment_id,wake_id)
+            if dest.exists():
+                # Old wakes must not starve later scheduled cycles.
+                continue
+            result=produce_snapshot(runtime_root=runtime_root,wake_root=wake_root,
                                     state_root=state_root,capsule=capsule,fetch=fetch)
+            if result.get("status") in ("materialized","source_unavailable"):
+                return result
         except (PermissionError,ValueError,RuntimeError,OSError,KeyError,TypeError):
             continue
     return {"status":"idle"}
