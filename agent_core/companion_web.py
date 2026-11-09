@@ -280,15 +280,33 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   <script>
     const API_BASE = window.location.pathname.startsWith('/agentos') ? '/agentos' : '';
-    const AUTH_TOKEN = "__AGENTOS_AUTH_TOKEN__";
+    // Credentials are NEVER embedded in served HTML. The operator signs in once
+    // on each device; the token stays in this browser's localStorage only.
+    const TOKEN_KEY = 'agentos_operator_token';
+    function getToken() {
+      let t = localStorage.getItem(TOKEN_KEY) || '';
+      if (!t) {
+        t = (window.prompt('AgentOS operator token (stored only on this device):') || '').trim();
+        if (t) localStorage.setItem(TOKEN_KEY, t);
+      }
+      return t;
+    }
+    function signOut() { localStorage.removeItem(TOKEN_KEY); location.reload(); }
 
     function getHeaders() {
       const h = { 'Content-Type': 'application/json' };
-      if (AUTH_TOKEN && AUTH_TOKEN !== '__AGENTOS_' + 'AUTH_TOKEN__') {
-        h['Authorization'] = 'Bearer ' + AUTH_TOKEN;
-      }
+      const t = getToken();
+      if (t) h['Authorization'] = 'Bearer ' + t;
       return h;
     }
+    const _origFetch = window.fetch.bind(window);
+    window.fetch = async (...args) => {
+      const r = await _origFetch(...args);
+      if (r.status === 401 || r.status === 403) {
+        localStorage.removeItem(TOKEN_KEY);
+      }
+      return r;
+    };
 
     function showToast(msg) {
       const toast = document.getElementById('toast');
@@ -563,5 +581,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 
 def render_companion_html(auth_token: str = "") -> str:
-    """Render the full responsive HTML for the AgentOS Web Console with injected token."""
-    return HTML_TEMPLATE.replace("__AGENTOS_AUTH_TOKEN__", auth_token)
+    """Render the AgentOS Web Console HTML.
+
+    ``auth_token`` is accepted only for backward compatibility and is
+    deliberately ignored: credentials must never be embedded in served HTML,
+    because the console is reachable from the public internet.
+    """
+    del auth_token
+    return HTML_TEMPLATE
