@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Antigravity Git Security Guard
-# 此腳本會掃描即將提交的變動，防止密鑰洩露。
+# Antigravity Git Security & Governance Guard
+# 此腳本會掃描即將提交的變動，防止密鑰洩露與未經瑞亞審批之角色變更。
 
 echo "🔍 正在檢查提交內容是否存在敏感資訊..."
 
@@ -18,5 +18,14 @@ if git diff --cached | grep -qE "[0-9]{10}:[A-Za-z0-9_-]{35}"; then
     exit 1
 fi
 
-echo "✅ 安全檢查通過。"
+# 👑 檢查是否有角色註冊或 instance 異動
+if git diff --cached --name-only | grep -qE "^(\.agent/roles/|scripts/rhea_role_steward\.py)"; then
+    echo "👑 檢測到角色變更，正在驗證瑞亞神殿封印 (Rhea Seal Check)..."
+    python3 scripts/rhea_role_steward.py --check || {
+        echo "❌ [Pre-Commit Blocked] 角色變更未經瑞亞審批蓋印！請執行 python3 scripts/rhea_role_steward.py --seal 後再提交。"
+        exit 1
+    }
+fi
+
+echo "✅ 安全與角色守門檢查通過。"
 exit 0

@@ -239,6 +239,10 @@ class BasePDCAWorker:
         return result
 
     def run_cycle(self) -> PDCAResult:
+        # 👑 瑞亞神殿封印檢驗：若未審批蓋印，任何角色 Worker 拒絕運轉
+        from agent_core.role_seal import verify_seal
+        verify_seal(raise_on_error=True)
+
         state = self.load_state()
         cycle = int(state.get("cycle", 1))
         work_id = f"{self.role_slug}-work-{cycle:04d}-{int(time.time())}"

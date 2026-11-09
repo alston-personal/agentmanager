@@ -34,8 +34,11 @@ class RoleRegistry:
     by scraping arbitrary prose.
     """
 
-    def __init__(self, registry_path: str | Path) -> None:
+    def __init__(self, registry_path: str | Path, *, enforce_seal: bool = True) -> None:
         self.registry_path = Path(registry_path)
+        if enforce_seal and self.registry_path.name == "registry.yaml":
+            from agent_core.role_seal import verify_seal
+            verify_seal(self.registry_path, raise_on_error=True)
         raw = yaml.safe_load(self.registry_path.read_text(encoding="utf-8")) or {}
         roles = raw.get("roles", [])
         if not isinstance(roles, list):

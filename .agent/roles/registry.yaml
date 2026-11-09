@@ -181,7 +181,7 @@ roles:
   name: Atlast (總管 / Closure Owner)
   status: active
   kind: orchestrator
-  source: /home/ubuntu/agent-data/atlas/README.md
+  source: .agent/roles/instances/atlas_closure_owner.md
   purpose: 作為 AgentOS 閉環總管與認知索引；主動推進 execution -> acceptance -> close -> next work
     循環，監控 open loops 與 Attention Queue，免除人類逐項盯梢。
   must_obey:
@@ -227,7 +227,7 @@ roles:
   - truth_provenance
   - receipts_over_claims
   - logic_data_separation
-  - fail_safe_defaults
+  - capability_boundary
   capabilities:
   - infrastructure.dns.record.manage
   - infrastructure.dns.drift.audit
@@ -245,7 +245,7 @@ roles:
   - truth_provenance
   - receipts_over_claims
   - logic_data_separation
-  - fail_safe_defaults
+  - capability_boundary
   capabilities:
   - infrastructure.nginx.configure
   - infrastructure.ssl.certbot.renew
@@ -260,9 +260,10 @@ roles:
   source: .agent/roles/parents/lcs_hermes.md
   purpose: 奧林匹斯信使與邊界旅者：向外探索 GitHub、開源生態與前沿架構，蒐集可借鏡技術並執行三級分流初評，防止資訊倒灌壓垮 Weaver。
   must_obey:
-  - external_scout_boundary
-  - three_tier_filtering
-  - zero_orphan_residuals
+  - capability_boundary
+  - responsibility_resolution
+  - receipts_over_claims
+  - truth_provenance
   capabilities:
   - discovery.tech.recon
   - discovery.filter.evaluate
@@ -277,10 +278,10 @@ roles:
   source: .agent/roles/instances/role_steward_rhea.md
   purpose: 眾神之母與位格秩序女神：掌管全生態角色的全生命週期、角色命名防衝撞、權責原子交割 (Zero-Downtime Split)、角色三層架構分類（系統眾神/專案角色/純行動工蜂），嚴防假人與職責重疊。
   must_obey:
-  - anti_collision_naming
-  - atomic_responsibility_handoff
-  - zero_downtime_cutover
-  - reality_evidence_verification
+  - governance_scales_with_capability
+  - responsibility_resolution
+  - truth_provenance
+  - evolution_without_erasure
   capabilities:
   - governance.role.genesis.review
   - governance.role.handoff.coordinate
@@ -348,9 +349,9 @@ roles:
   - authorization_blocker
 - id: governance.arbiter
   name: Arbiter
-  status: active
+  status: proposed
   kind: governance
-  source: null
+  source: .agent/roles/instances/governance_arbiter.md
   purpose: 處理角色、規格、風險與優先序衝突；不自行執行實作。
   must_obey:
   - governance_scales_with_capability
@@ -363,7 +364,7 @@ roles:
   name: Chronicler
   status: active
   kind: knowledge
-  source: null
+  source: .agent/roles/instances/knowledge_chronicler.md
   purpose: 將已驗證事件、決策與演化寫入 Chronicle，避免知識只存在於 session 或過時角色文件。
   must_obey:
   - truth_provenance
@@ -409,8 +410,8 @@ roles:
   must_obey:
   - truth_provenance
   - receipts_over_claims
-  - evidence_boundary
   - logic_data_separation
+  - capability_boundary
   capabilities:
   - academic.paper.author
   - academic.experiment.execute
@@ -426,10 +427,10 @@ roles:
   source: .agent/roles/instances/aesthetic_director_venus.md
   purpose: 審美統裁與介面品質捍衛者：全面掌控全域 Web 面向、標題列導覽分組、登入認證元件標準化、3D 與內容層級視覺美感。
   must_obey:
-  - navigation_cleanliness
-  - independent_auth_component
-  - dark_glassmorphism_canon
+  - capability_boundary
+  - truth_provenance
   - logic_data_separation
+  - receipts_over_claims
   capabilities:
   - web.aesthetic.audit
   - web.ui.redesign
@@ -446,8 +447,8 @@ roles:
   must_obey:
   - truth_provenance
   - receipts_over_claims
-  - immersion_guard
   - logic_data_separation
+  - capability_boundary
   capabilities:
   - quality.novel_audit
   - quality.social_translation_guard

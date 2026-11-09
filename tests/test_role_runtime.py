@@ -87,6 +87,23 @@ class RoleRuntimeTest(unittest.TestCase):
         self.assertIn("governance.spec.audit", steward.capabilities)
         self.assertIn("closure_gap", steward.outputs)
 
+    def test_rhea_seal_enforcement_blocks_tampering(self):
+        import tempfile
+        import json
+        from agent_core.role_seal import verify_seal
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_reg = Path(tmp) / "registry.yaml"
+            fake_reg.write_text("dummy: true\n", encoding="utf-8")
+
+            fake_seal = Path(tmp) / "seal.json"
+            fake_seal.write_text(json.dumps({"registry_sha256": "wrong_hash"}), encoding="utf-8")
+
+            # Must fail when hash doesn't match
+            with self.assertRaises(RuntimeError) as ctx:
+                verify_seal(fake_reg, fake_seal, raise_on_error=True)
+            self.assertIn("物理防篡改攔截", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
