@@ -471,7 +471,7 @@ jobs:
 
           # Read-only, sanitized employee acceptance snapshot. This is not a
           # synthetic Hermes lifecycle receipt and never changes assignment state.
-          PYTHONPATH="$RELEASE" python3 - "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" <<'HERMES_ACCEPTANCE'
+          PYTHONPATH="$RELEASE" python3 - "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" "$DATA_ROOT/employee-worker-host" <<'HERMES_ACCEPTANCE'
           import json
           import sys
           from datetime import datetime, timezone
@@ -480,7 +480,7 @@ jobs:
           from agent_core.employee_runtime import EmployeeRuntime
           from agent_core.employee_lifecycle import EmployeeLifecycle
 
-          root, state = map(Path, sys.argv[1:])
+          root, state, host_root = map(Path, sys.argv[1:])
           runtime = EmployeeRuntime(root)
           lifecycle = EmployeeLifecycle(runtime)
           employee_id = "hermes-technology-scout"
@@ -497,6 +497,11 @@ jobs:
               "completed_lifecycle_receipts": 0,
               "assignment_states": {},
               "metadata_snapshots": 0,
+              "worker_dispatch_states": {},
+              "worker_error_codes": {},
+              "lease_statuses": {},
+              "lease_generations": {},
+              "lease_expired": {},
               "live_verification": False,
           }
           try:
@@ -538,6 +543,10 @@ jobs:
                       assignment = runtime.get_assignment(item.stem)
                       result["assignment_states"][item.stem] = assignment.state
                       lease = lifecycle.get_lease(item.stem)
+                      if lease:
+                          result["lease_statuses"][item.stem] = lease.status
+                          result["lease_generations"][item.stem] = lease.generation
+                          result["lease_expired"][item.stem] = lifecycle.lease_expired(lease)
                       if assignment.state == "completed" and lease and lease.status == "completed":
                           receipt = lifecycle._receipt_path(item.stem, lease.generation)
                           if receipt.is_file():
@@ -551,6 +560,29 @@ jobs:
               result["metadata_snapshots"] = len(list(
                   (state / employee_id).glob("metadata-*.json")
               ))
+              # Existing V2 Worker Host owns the durable dispatch ledger.
+              # Project ONLY status and bounded error classes, never raw child
+              # stdout, credentials, paths, URLs or source API responses.
+              import re
+              for item in sorted((host_root / "dispatches" / employee_id).glob("*.json")):
+                  try:
+                      data = json.loads(item.read_text(encoding="utf-8"))
+                      if not isinstance(data, dict) or data.get("employee_id") != employee_id:
+                          continue
+                      state_value = str(data.get("status") or "unknown")
+                      if state_value not in {"launching", "checkpointed", "completed", "blocked",
+                                             "handoff", "failed", "unknown", "rejected"}:
+                          state_value = "invalid"
+                      counts = result["worker_dispatch_states"]
+                      counts[state_value] = counts.get(state_value, 0) + 1
+                      code = data.get("error_code")
+                      if isinstance(code, str) and re.fullmatch(r"[a-z0-9_]{1,80}", code):
+                          errors = result["worker_error_codes"]
+                          errors[code] = errors.get(code, 0) + 1
+                  except (OSError, ValueError):
+                      result["worker_dispatch_states"]["invalid"] = (
+                          result["worker_dispatch_states"].get("invalid", 0) + 1
+                      )
           except (OSError, ValueError, KeyError) as exc:
               result["probe_error_class"] = type(exc).__name__
           print("hermes_live_acceptance=" + json.dumps(result,sort_keys=True))
