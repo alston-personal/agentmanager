@@ -7,6 +7,19 @@ on:
       - main
     paths:
       - 'agent_core/employee_runtime.py'
+      - 'agent_core/hermes_scan_policy.py'
+      - 'agent_core/hermes_github_scan.py'
+      - 'agent_core/hermes_handoff.py'
+      - 'agent_core/hermes_employee_bootstrap.py'
+      - 'agent_core/hermes_due_cycle.py'
+      - 'agent_core/employee_autonomy_gate.py'
+      - 'governance/hermes-technology-scout-employee.json'
+      - 'tests/test_hermes_scan_policy.py'
+      - 'tests/test_hermes_github_scan.py'
+      - 'tests/test_hermes_handoff.py'
+      - 'tests/test_hermes_employee_bootstrap.py'
+      - 'tests/test_hermes_due_cycle.py'
+      - 'tests/test_employee_autonomy_gate.py'
       - 'agent_core/employee_lifecycle.py'
       - 'agent_core/employee_wake.py'
       - 'agent_core/work_intent.py'
@@ -77,6 +90,19 @@ on:
       - core/integration
     paths:
       - 'agent_core/employee_runtime.py'
+      - 'agent_core/hermes_scan_policy.py'
+      - 'agent_core/hermes_github_scan.py'
+      - 'agent_core/hermes_handoff.py'
+      - 'agent_core/hermes_employee_bootstrap.py'
+      - 'agent_core/hermes_due_cycle.py'
+      - 'agent_core/employee_autonomy_gate.py'
+      - 'governance/hermes-technology-scout-employee.json'
+      - 'tests/test_hermes_scan_policy.py'
+      - 'tests/test_hermes_github_scan.py'
+      - 'tests/test_hermes_handoff.py'
+      - 'tests/test_hermes_employee_bootstrap.py'
+      - 'tests/test_hermes_due_cycle.py'
+      - 'tests/test_employee_autonomy_gate.py'
       - 'agent_core/employee_lifecycle.py'
       - 'agent_core/employee_wake.py'
       - 'agent_core/work_intent.py'
@@ -203,3 +229,12 @@ jobs:
         run: python -m unittest tests.test_governed_spec_steward_worker -v
       - name: Run Spec Steward worker CLI regressions
         run: python -m unittest tests.test_spec_steward_worker_cli -v
+      - name: Run Hermes self-sustaining employee regression suite
+        run: >-
+          python -m unittest -v
+          tests.test_hermes_scan_policy
+          tests.test_hermes_github_scan
+          tests.test_hermes_handoff
+          tests.test_hermes_employee_bootstrap
+          tests.test_hermes_due_cycle
+          tests.test_employee_autonomy_gate
