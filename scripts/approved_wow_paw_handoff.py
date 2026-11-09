@@ -47,9 +47,16 @@ def handoff(*, completion_state: Path, runtime_root: Path) -> dict:
     }
     if any(item.get(key) != value for key, value in exact.items()):
         raise PermissionError("approved_wow_work_item_contract_mismatch")
-    if item.get("status") in ("waiting_external", "blocked"):
-        # Completion watchdog owns retry and timed wake. Do not manufacture
-        # an Employee Assignment while this WorkItem is waiting or blocked.
+    # A terminal verification retry-budget blocker is not eligible for the
+    # original work's automatic retry. It may, however, authorize the existing
+    # fixed read-only Paw INSPECTION assignment to identify a genuine repair;
+    # never clear the original blocker or claim its execution authority.
+    verification_diagnostic = (
+        item.get("status") == "blocked"
+        and item.get("last_blocker_kind") == "VERIFICATION"
+        and int(item.get("machine_retry_count") or 0) >= 5
+    )
+    if item.get("status") in ("waiting_external", "blocked") and not verification_diagnostic:
         wake = item.get("wake_condition") or {}
         return {
             "schema": "agentos.approved-wow-paw-handoff-receipt/v1",
@@ -63,7 +70,7 @@ def handoff(*, completion_state: Path, runtime_root: Path) -> dict:
             "execution_started": False,
             "lease_id": None, "credential_exposed": False,
         }
-    if item.get("status") not in ("accepted", "in_progress"):
+    if item.get("status") not in ("accepted", "in_progress") and not verification_diagnostic:
         raise PermissionError("approved_wow_work_item_not_open")
     if not isinstance(item.get("acceptance"), list) or not item["acceptance"]:
         raise PermissionError("approved_wow_acceptance_missing")
@@ -98,6 +105,7 @@ def handoff(*, completion_state: Path, runtime_root: Path) -> dict:
         "work_id": WORK_ID, "assignment_id": ASSIGNMENT_ID,
         "employee_id": EMPLOYEE, "assignment_state": assignment.state,
         "assignment_registered": True,
+        "verification_remediation_only": verification_diagnostic,
         "execution_authorized": False,
         "execution_started": False,
         "lease_id": None,
