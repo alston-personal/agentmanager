@@ -58,11 +58,16 @@ class HermesWorkerIntegrationTests(unittest.TestCase):
                 status=main(["--runtime-root",str(p/"runtime"),
                     "--wake-root",str(p/"wake"),
                     "--worker-state-root",str(p/"worker"),
-                    "--node-id","oracle","--wake-id","wake-1",
+                    "--node-id","oracle","--assignment-id",BASE,"--wake-id","wake-1",
                     "--presence-generation","1","--once"])
             self.assertEqual(status,2)
             result=json.loads(out.getvalue())
             self.assertEqual(result["status"],"failed")
+            self.assertEqual(result["employee_id"],EMPLOYEE)
+            self.assertEqual(result["assignment_id"],BASE)
+            self.assertEqual(result["wake_id"],"wake-1")
+            self.assertEqual(result["presence_generation"],1)
+            self.assertEqual(result["error_code"],"hermes_wake_missing_or_ambiguous")
             self.assertFalse(result["verified_marker_emitted"])
 
     def test_recurring_scope_requires_six_digit_index(self):
@@ -81,6 +86,7 @@ class HermesWorkerIntegrationTests(unittest.TestCase):
                 "wake_id":"wake-one","presence_generation":1}})()
             cmd=host._child_command(adapter)
             self.assertIn("agentos_node.hermes_worker_cli",cmd)
+            self.assertEqual(cmd[cmd.index("--assignment-id")+1],BASE)
             self.assertEqual(cmd[-4:],["--wake-id","wake-one","--presence-generation","1"])
             self.assertNotIn("--token",cmd)
             self.assertNotIn("--shell",cmd)
