@@ -19,6 +19,7 @@ from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 from .approval_broker import list_approvals, resolve_approval, park_approval
 from .companion_web import render_companion_html, render_public_entry_html
+from .shared_auth_bridge import is_shared_auth_path, proxy_shared_auth_request
 
 MAX_REQUEST_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -352,7 +353,32 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         return path, [part for part in path.split("/") if part]
 
+    def _shared_auth(self, method: str) -> bool:
+        path, _ = self._route()
+        if not is_shared_auth_path(path):
+            return False
+        try:
+            status, headers, body = proxy_shared_auth_request(
+                raw_path=self.path, method=method,
+                host=self.headers.get("Host", ""),
+                cookie=self.headers.get("Cookie"),
+            )
+        except (OSError, ValueError, TimeoutError):
+            self._json(503, {"error": "shared_auth_service_unavailable"})
+            return True
+        self.send_response(status)
+        self.send_header("Cache-Control", "no-store")
+        for key, value in headers:
+            if key.lower() != "cache-control":
+                self.send_header(key, value)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if method != "HEAD":
+            self.wfile.write(body)
+        return True
+
     def do_HEAD(self) -> None:
+        if self._shared_auth('HEAD'): return
         path, parts = self._route()
         if path in ("", "/"):
             data = render_public_entry_html().encode("utf-8")
@@ -376,6 +402,7 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
+        if self._shared_auth('GET'): return
         path, parts = self._route()
         if path in ("", "/"):
             self._html(200, render_public_entry_html())
