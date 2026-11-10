@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 FILES = (
+    "Install-AgentOS-WoW.cmd",
     "scripts/WoW-AgentOS-Setup.cmd",
     "scripts/wow_agentos_install.ps1",
     "scripts/wow_agentos_installer_preflight.ps1",
