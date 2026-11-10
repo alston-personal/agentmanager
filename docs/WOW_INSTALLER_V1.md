@@ -158,3 +158,31 @@ shell on a synthetic Forever game directory and mock Node. It **does not**
 prove real game client compatibility, host Node/Realm authorization, signed
 release or successful official-site distribution. The acceptance gate for
 actual WoW game load remains open.
+
+## Real game client acceptance and optional Node Join — 2026-11-10
+
+The user provided a real WoW Forever screenshot showing `/agentos` loading,
+the first status probe emitted, and disabled chat. This confirms **the real
+game Addon UI loads and sends a local probe**; it does not confirm pixel capture,
+trusted local Bridge, ONE reply or working chat. The input is intentionally
+disabled in the current Lua Addon until a trusted Bridge exists.
+
+Existing Windows enrollment sources already exist at
+`scripts/AgentOS-Join.cmd` and `scripts/bootstrap_clean_windows_node.ps1`.
+Do not create a second Node enrollment implementation.
+
+The preview ZIP now contains `Join-AgentOS-Node.cmd` in the root and the
+existing `scripts/AgentOS-Join.cmd` source. The wrapper requires the user
+to type `JOIN` before invoking the already-governed enrollment/bootstrap
+flow, which may download runtime components and require administrator
+approval for an enrollment code. After installing the offline Addon, the
+setup offers the same opt-in entry **only if the default Node state is absent**.
+A detected existing Node is preserved; users with a custom Node location
+should reuse that Node and not enroll another identity.
+
+Already-installed Addon users can run `Join-AgentOS-Node.cmd` from the
+new ZIP without reinstalling or replacing their Addon. Successful Node Join
+is necessary for live bridge routing but **not sufficient** to enable chat:
+a local authorized Bridge and game-visible correlated ONE receipts remain
+separate acceptance gates. The preview still is not an official signed
+release and Node credentials are never packaged into ZIP.
