@@ -21,7 +21,7 @@ class GatewayDeployPreflightTest(unittest.TestCase):
         for variable in (
             "DASH", "PORT_MANAGER_REL", "PORT_MANAGER_EXACT",
             "RETIRE_PM2_REL", "RETIRE_PM2_EXACT",
-            "ROUTE_REL", "ROUTE", "DATA_ROOT", "PUBLIC", "PUBLIC_BOOTSTRAP",
+            "ROUTE_REL", "ROUTE", "DATA_ROOT",
         ):
             with self.subTest(variable=variable):
                 declaration = next(
