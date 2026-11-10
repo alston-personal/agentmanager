@@ -43,6 +43,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/deploy_realm_gateway_user.sh
           python3 -m unittest tests.test_realm_gateway_deploy_preflight -v
+          python3 -m unittest tests.test_realm_gateway_receipt_contract -v
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -141,14 +142,41 @@ jobs:
           assert s.get('worker_role') == 'maintenance', s
           assert s.get('worker_id') == 'oracle-maintenance', s
           assert 'oracle-core-runtime' in set(s.get('locks') or []), s
-          text='\n'.join((step.get('stdout','')+'\n'+step.get('stderr','')) for step in r.get('steps',[]))
-          assert f'route_source={source_commit}:dashboard/app/api/agentos/[...path]/route.ts' in text, text[-12000:]
-          assert 'dashboard_build=PASS' in text, text[-12000:]
-          assert 'realm_gateway_bootstrap_local=PASS' in text, text[-12000:]
-          assert 'realm_gateway_bootstrap_public=PASS' in text, text[-12000:]
-          assert f'realm_gateway_source_commit={source_commit}' in text, text[-12000:]
-          assert 'realm_gateway_public=PASS' in text, text[-12000:]
-          assert 'nginx_mutation=NONE' in text, text[-12000:]
+          # Only accept output from the successful Oracle run_script step.
+          runs=[step for step in r.get('steps',[]) if step.get('step') == 'run_script']
+          assert len(runs) == 1 and runs[0].get('returncode') == 0, runs
+          markers=set(str(runs[0].get('stdout') or '').splitlines())
+          def require(*values):
+              missing=set(values)-markers
+              assert not missing, {'missing':sorted(missing),'source_commit':source_commit}
+          require(f'realm_gateway_source_commit={source_commit}',
+                  'realm_gateway_public=PASS',
+                  'realm_gateway_bootstrap_public=PASS')
+          if 'realm_gateway_blue_green=PASS' in markers:
+              # The canonical Blue/Green carrier has a separate release, port
+              # owner and Nginx cutover contract from the legacy 3000 carrier.
+              require('realm_gateway_dashboard_bg=PASS',
+                      'realm_core_runtime_staged=PASS',
+                      'realm_core_runtime_cutover=PASS',
+                      'realm_core_runtime_restart=PASS',
+                      f'realm_core_runtime_source_commit={source_commit}',
+                      'realm_gateway_dispatch_public=PASS',
+                      'nginx_mutation=BLUE_GREEN_HELPER',
+                      'root_privilege=NGINX_RELOAD_ONLY')
+              assert ('realm_gateway_dashboard_slot=blue' in markers or
+                      'realm_gateway_dashboard_slot=green' in markers), markers
+              assert ('realm_gateway_dashboard_port=3040' in markers or
+                      'realm_gateway_dashboard_port=3041' in markers), markers
+              print('realm_gateway_release_mode=blue_green')
+          else:
+              # Preserve strict legacy checks; do not treat arbitrary output
+              # or an incomplete Blue/Green attempt as a successful release.
+              require(f'route_source={source_commit}:dashboard/app/api/agentos/[...path]/route.ts',
+                      'dashboard_build=PASS',
+                      'realm_gateway_bootstrap_local=PASS',
+                      'nginx_mutation=NONE')
+              assert not any(m.startswith('realm_gateway_dashboard_bg=') for m in markers), markers
+              print('realm_gateway_release_mode=legacy')
           print('realm_gateway_deploy=PASS')
           print('realm_gateway_pinned_source=PASS')
           print('realm_gateway_scheduler_worker='+s['worker_id'])
