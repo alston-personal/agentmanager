@@ -245,6 +245,23 @@ class ProjectContinuationIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symlink"):
             publish_project_continuation(self.params, data_root=self.root)
 
+    @patch("agent_core.project_continuation_index.resolve_project_identity")
+    def test_monotonic_timestamp_guard_blocks_stale_august_snapshot(self, resolve):
+        resolve.return_value = self.project
+        first = json.loads(json.dumps(self.params))
+        first["continuation"]["published_at"] = "2026-11-10T07:00:00Z"
+        publish_project_continuation(first, data_root=self.root)
+
+        child = self._child_params()
+        child["continuation"]["published_at"] = "2026-08-27T00:00:00Z"
+        with self.assertRaisesRegex(ValueError, "monotonic timestamp violation"):
+            publish_project_continuation(
+                child,
+                data_root=self.root,
+                expected_index_id="idx-1",
+                expected_ir_id="ir-1",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

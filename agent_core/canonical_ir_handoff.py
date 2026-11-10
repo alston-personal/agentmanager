@@ -9,6 +9,8 @@ from agent_core.resolve_facade import resolve_continuation
 
 HANDOFF_SCHEMA = "agentos.canonical-ir-handoff/v1"
 IR_SCHEMA = "agentos.ir/v1"
+MAX_STORED_DECISIONS = 20
+MAX_STORED_EVIDENCE = 12
 _SENSITIVE_KEYS = {
     "token",
     "node_token",
@@ -147,14 +149,19 @@ def advance_canonical_ir(
     constraints = _clean_strings(canonical_ir.get("constraints") or [], field="current.constraints")
     decisions = _clean_strings(canonical_ir.get("decisions") or [], field="current.decisions")
     for decision in decisions_append:
-        if decision not in decisions:
-            decisions.append(decision)
+        if decision in decisions:
+            decisions.remove(decision)
+        decisions.append(decision)
+    decisions = decisions[-MAX_STORED_DECISIONS:]
     existing_evidence = canonical_ir.get("evidence") or []
     if not isinstance(existing_evidence, list):
         raise ValueError("current canonical IR evidence must be a list")
     if _contains_sensitive(existing_evidence):
         raise ValueError("current canonical IR evidence contains a sensitive field")
-    evidence = [dict(item) for item in existing_evidence if isinstance(item, dict)] + evidence_append
+    evidence = (
+        [dict(item) for item in existing_evidence if isinstance(item, dict)]
+        + evidence_append
+    )[-MAX_STORED_EVIDENCE:]
 
     capability = str(params.get("capability") or canonical_ir.get("capability") or "agentos.one.resolve").strip()
     publish_params = {

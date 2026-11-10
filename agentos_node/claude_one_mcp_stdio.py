@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_core.active_continuation import resolve_active_continuation
+from agentos_node.ir_stop_sync import advance_active_ir_checkpoint
 from agentos_node.one_mcp import OracleLocalGateway
 
 SURFACE = "anthropic-claude-code-extension"
@@ -161,6 +162,20 @@ def create_server(gateway: OracleLocalGateway | None = None):
     def one_resolve(project: str) -> dict[str, Any]:
         """Explicitly resolve a named canonical project through ONE."""
         return _project_claude_client(one.resolve(project))
+
+    @server.tool()
+    def one_checkpoint(summary: str, next_action: str = "", decision: str = "") -> dict[str, Any]:
+        """Advance the ONE Canonical IR and active selector with a bounded work checkpoint."""
+        receipt = advance_active_ir_checkpoint(
+            surface=SURFACE,
+            model_name=EXECUTOR_CLASS,
+            user_intent="claude_checkpoint",
+            assistant_summary=summary,
+            explicit_next_action=next_action,
+            explicit_decision=decision,
+            data_root=one.data_root,
+        )
+        return _project_claude_client(receipt)
 
     return server
 

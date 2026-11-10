@@ -72,6 +72,12 @@ def _inspect_transcript(transcript_path: Any) -> tuple[bool, bool, int]:
 
 
 def _build_budget_guard_step(tokens: int) -> dict[str, Any] | None:
+    iron_laws = (
+        " Enforce the 3 Multi-Agent Budget Iron Laws: "
+        "(1) One-Pending-Task-Per-Turn: execute ONLY pending_tasks[0] in a single turn; "
+        "(2) One-Shot Subagent Only (No Followup Ping-Pong): spawn at most 1 one-shot invoke_subagent with a self-contained prompt and NEVER send followup send_message tasks to an existing subagent; "
+        "(3) Coordinator-Only When Delegating: never run duplicate shell commands, file searches, or test suites in the parent thread."
+    )
     if tokens >= RED_CONTEXT_TOKENS:
         return {
             "systemMessage": {
@@ -80,12 +86,13 @@ def _build_budget_guard_step(tokens: int) -> dict[str, Any] | None:
                     "(>= 100,000 Red Zone). Strictly use invoke_subagent for any multi-step "
                     "work or keep tool calls minimal, and remind the user to run `/compact` "
                     "(without trailing spaces) or open a new window."
+                    + iron_laws
                 ),
                 "metadata": {
                     "user_markdown": (
                         f"🚨 **Context 紅燈警戒 ({tokens:,} tokens)**：單次呼叫成本過高！"
                         "強烈建議立即輸入 `/compact`（請勿包含尾部空白）或開啟新對話視窗"
-                        "（AgentOS ONE 將自動延續狀態）。本輪已強制啟用 Subagent 最小化模式。"
+                        "（AgentOS ONE 將自動延續狀態）。本輪已強制啟用 Subagent 最小化模式（一輪一事、即用即棄）。"
                     )
                 },
             }
@@ -97,11 +104,12 @@ def _build_budget_guard_step(tokens: int) -> dict[str, Any] | None:
                     f"CONTEXT_BUDGET_GUARD: Current context is {tokens} tokens. "
                     "Delegate any multi-step investigation or code modification (>3 tool calls) "
                     "to invoke_subagent so the main conversation context does not grow."
+                    + iron_laws
                 ),
                 "metadata": {
                     "user_markdown": (
                         f"⚠️ **Context 水位預警 ({tokens:,} tokens)**："
-                        "已自動啟用 Subagent 分流模式；建議適時輸入 `/compact`（勿加空白）。"
+                        "已自動啟用 Subagent 分流模式（一輪一事、子代理即用即棄）；建議適時輸入 `/compact`（勿加空白）。"
                     )
                 },
             }
@@ -358,7 +366,11 @@ def build_injection(
         "the Canonical IR with workspace enumeration, Pulse/PM2 scans, local-memory "
         "reconstruction, or vendor history. Newer explicit user intent still wins. "
         "Continue from canonical_ir.goal / pending_tasks / continuation / next_action "
-        "and obey mutation_allowed. When reporting bootstrap provenance, state "
+        "and obey mutation_allowed. Enforce the Three Multi-Agent Budget Iron Laws: "
+        "(1) One-Pending-Task-Per-Turn: execute ONLY pending_tasks[0] in a single turn unless explicitly asked otherwise; "
+        "(2) One-Shot Subagent Only (No Followup Ping-Pong): delegate >4-step work to at most 1 one-shot invoke_subagent with a self-contained prompt and NEVER send followup send_message rounds to an existing subagent; "
+        "(3) Coordinator-Only When Delegating: do not run duplicate shell commands, file searches, or test suites in the main thread while a subagent executes. "
+        "When reporting bootstrap provenance, state "
         "source=ONE_PREINVOCATION_IR, selection_source=ONE_ACTIVE_CONTINUATION, and "
         "include project_id + index_id + ir_id + executor_class + model_name. If "
         "executor_identity_bound=false, do not guess the executor identity.\n"
