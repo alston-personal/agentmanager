@@ -619,6 +619,20 @@ small{display:block;margin-top:22px;color:#90a0ba}
 <a class="primary" href="/dashboard/api/auth/signin/google?site=agentos&amp;returnTo=%2F">以 Google 登入</a>
 <a class="secondary" href="/dashboard/api/auth/signin/github?site=agentos&amp;returnTo=%2F">以 GitHub 登入</a>
 <small>一般使用者不需要 Operator Token。登入後的 Realm 權限必須由 ONE 驗證，未取得授權時不得進入管理 Console。</small>
+<p id="session-state" aria-live="polite"></p>
+<script>
+(async () => {
+  try {
+    const response = await fetch('/dashboard/api/auth/session', {credentials:'same-origin', cache:'no-store'});
+    if (!response.ok) return;
+    const session = await response.json();
+    if (session.loggedIn !== true) return;
+    document.querySelectorAll('a.primary,a.secondary').forEach(link => { link.hidden = true; });
+    const state = document.getElementById('session-state');
+    state.textContent = '帳號已登入。Realm 建立或加入授權尚未完成；不會自動進入管理者 Console。';
+  } catch { /* Keep sign-in options visible if OAuth endpoint is unavailable. */ }
+})();
+</script>
 </main>
 </body>
 </html>
