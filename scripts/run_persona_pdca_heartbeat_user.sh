@@ -4,6 +4,7 @@ set -euo pipefail
 [ "$(id -u)" = "1001" ] || { echo "persona_pdca_runtime=WRONG_USER"; exit 2; }
 PERSONA_PATH="${PERSONA_PATH:-personas/sunlake-milkcat}"
 TICK="${AGENTOS_PERSONA_PDCA_TICK:-$HOME/.local/lib/agentos/persona_pdca_tick.py}"
+EVENT_FACILITY="${AGENTOS_EVENT_FACILITY:-$HOME/.local/lib/agentos/agentos_event_facility.py}"
 SOCIAL_EXECUTOR="${AGENTOS_PERSONA_SOCIAL_EXECUTOR:-$HOME/.local/lib/agentos/persona_social_executor.py}"
 INTERNAL_EXECUTOR="${AGENTOS_PERSONA_INTERNAL_EXECUTOR:-$HOME/.local/lib/agentos/persona_internal_activity_executor.py}"
 REPLY_INTENT_GENERATOR="${AGENTOS_PERSONA_REPLY_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_reply_intent_generator.py}"
@@ -19,6 +20,7 @@ if ! flock -w 120 9; then
 fi
 
 test -f "$TICK"
+test -f "$EVENT_FACILITY"
 test -f "$SOCIAL_EXECUTOR"
 test -f "$INTERNAL_EXECUTOR"
 test -f "$REPLY_INTENT_GENERATOR"

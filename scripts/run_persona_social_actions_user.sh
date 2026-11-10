@@ -204,6 +204,9 @@ fi
 
 git commit -m "persona(mio): persist autonomous social action" >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' push >/dev/null
+# Publish-before-notify: only a successful durable push may wake the subscriber.
+# -no-block avoids waiting on the Persona service. Release the same lock first;
+# the wake executes the pre-existing PDCA service, not any user-defined script.
 
 if [ "$STATUS" = "NO_ACTION" ]; then
   echo "persona_social_action_runtime=METRICS_ONLY"

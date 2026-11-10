@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_post_intent_generator.py'
+      - 'scripts/agentos_event_facility.py'
+      - 'scripts/persona_pdca_tick.py'
+      - 'tests/test_persona_stochastic_life_events.py'
       - 'scripts/persona_reply_intent_generator.py'
       - 'scripts/persona_social_executor.py'
       - 'tests/test_persona_post_reasoning.py'
@@ -15,6 +18,9 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_post_intent_generator.py'
+      - 'scripts/agentos_event_facility.py'
+      - 'scripts/persona_pdca_tick.py'
+      - 'tests/test_persona_stochastic_life_events.py'
       - 'scripts/persona_reply_intent_generator.py'
       - 'scripts/persona_social_executor.py'
       - 'tests/test_persona_post_reasoning.py'
@@ -37,5 +43,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Verify subscription event facility without social writes
+        run: |
+          python3 -m unittest tests.test_persona_stochastic_life_events -v
+          python3 -m py_compile scripts/agentos_event_facility.py scripts/persona_pdca_tick.py
       - name: Verify reasoning failover without live providers or public writes
         run: python3 -m unittest tests.test_persona_post_reasoning tests.test_persona_reply_reasoning tests.test_mio_reply_fairness -v
