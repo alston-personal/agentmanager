@@ -1,15 +1,56 @@
-# WoW AgentOS installer preflight — candidate only
+# AgentOS WoW V1 Windows offline Addon installer — preview, NOT official release
 
-The Windows double-click preflight lives at `scripts/WoW-AgentOS-Setup.cmd`, which runs the read-only `wow_agentos_installer_preflight.ps1`.
+The original preflight remains at `scripts/wow_agentos_installer_preflight.ps1`.
+The new local **offline Addon installer** is `scripts/wow_agentos_install.ps1`,
+with a double-click entry `scripts/WoW-AgentOS-Setup.cmd`.
 
-It distinguishes missing Node, unenrolled Node, invalid enrollment, existing authenticated Node, unreachable Node, mismatched Realm, and unsupported WoW client. **No game file is installed** and no Realm credential is altered.
+This is a candidate source implementation, **not yet a finished signed
+download or an authenticated WoW ↔ ONE Bridge**. Do not publish to the official
+website until the full acceptance gates below pass.
 
-To inspect a custom game directory: `powershell -File scripts/wow_agentos_installer_preflight.ps1 -WowRoot "C:\\Games\\World of Warcraft" -Json`.
+## Supported installation scope
 
-## Required for production one-click installer
-- Complete user-facing official-site `/join` logged-in approval flow, reuse existing Node `join` request/status/claim.
-- Version-pinned, verified compatible WoW Addon and local Bridge that talk only through governed ONE status route.
-- Integrate the existing Node bootstrap only after consent, not if a Node is merely offline.
-- Host a versioned downloadable, SHA256-verified signed installer on official site with staged rollback.
-- Prove Windows real game install, same-Realm reuse, new Node enrollment, blocked cross-Realm without mutation, uninstallation, and an actual ONE receipt.
-- No finished installer, public download, or WoW status receipt is claimed by this change.
+- Target: an explicitly selected existing WoW root containing
+  `_forever_/Wow.exe`, `_forever_/Interface/AddOns/`. Retail/Classic remain
+  unverified and are rejected.
+- Prerequisite: existing enrolled Windows AgentOS Node, matching Realm/ONE URL,
+  and existing `agentos-client.cmd verify` returns success. No new Node
+  enrollment, realm switching or credential mutation.
+- Requires WoW to be closed and explicit interactive `INSTALL` approval
+  (or an explicitly supplied `-ConfirmInstall` opt-in from trusted automation).
+- Installs only `AgentOSWoW` and `AgentOSWoW_R001`, from the bundled
+  `integrations/wow/` directory. Refuses to overwrite existing addon folders.
+- Stages both folders under AddOns; compares SHA-256 of copied files and
+  attempts rollback of only newly installed folders on error.
+- Offline UI: `/agentos` panel, status probe, one-shot reply slot reader.
+  No installed, connected or authenticated Bridge/executor is claimed.
+
+## Manual preview invocation from a complete source checkout
+
+```powershell
+powershell -NoProfile -File scripts/wow_agentos_install.ps1 -Mode Install -WowRoot "C:\Games\World of Warcraft"
+powershell -NoProfile -File scripts/wow_agentos_install.ps1 -Mode Uninstall -WowRoot "C:\Games\World of Warcraft"
+```
+
+Uninstall is intentionally fail-closed: refuse to remove unfamiliar files,
+modified addon content or files touched by a live publisher. For an updated
+slot, cleanup will require an authorized upgrade/uninstall migration;
+do **not** arbitrarily delete game files or existing Node data.
+
+## Required before shipping official installable V1
+
+1. Run the existing Transport Routing Guard + PowerShell syntax and functional
+   Windows integration tests. Static Python contract tests are **not** a
+   substitute for invoking PowerShell on Windows.
+2. Verify the game client and Load-on-Demand API using a real version-pinned
+   installation, including launch, display, data slot update, rollback and
+   uninstall/reinstall.
+3. Bind to the existing authenticated Windows Node and governed ONE Reader;
+   confirm 2 genuine correlated game-visible exchanges and formal receipts.
+4. Package a complete versioned installer payload with hash manifest and
+   signed artifact; validate from a fresh Windows client.
+5. Release through the already-governed official AgentOS website route, with
+   rollback and published hash/signature; do not display a link before release.
+
+No public download, verified WoW install, authenticated response or official
+ONE Receipt is asserted by the source commits.
