@@ -12,6 +12,12 @@ on:
       - 'scripts/core_services/port_manager.py'
       - 'scripts/retire_legacy_dashboard_pm2_user.sh'
       - '.github/workflows/oracle-deploy-realm-gateway.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'scripts/deploy_realm_gateway_user.sh'
+      - '.github/workflows/oracle-deploy-realm-gateway.yml'
   workflow_dispatch:
 
 permissions:
@@ -30,6 +36,13 @@ jobs:
         working-directory: dashboard
     steps:
       - uses: actions/checkout@v4
+      - name: Validate pinned gateway deployment preflight contract
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/deploy_realm_gateway_user.sh
+          python3 -m unittest tests.test_realm_gateway_deploy_preflight -v
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -76,6 +89,7 @@ jobs:
 
   deploy:
     needs: build-check
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -111,8 +125,8 @@ jobs:
           assert r.get('source_commit') == source_commit, r
           assert r.get('ok') is True, r
           assert s.get('node') == 'oracle', s
-          assert s.get('worker_role') == 'control', s
-          assert s.get('worker_id') == 'oracle-control', s
+          assert s.get('worker_role') == 'maintenance', s
+          assert s.get('worker_id') == 'oracle-maintenance', s
           assert 'oracle-core-runtime' in set(s.get('locks') or []), s
           text='\n'.join((step.get('stdout','')+'\n'+step.get('stderr','')) for step in r.get('steps',[]))
           assert f'route_source={source_commit}:dashboard/app/api/agentos/[...path]/route.ts' in text, text[-12000:]
