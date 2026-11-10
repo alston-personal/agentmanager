@@ -9,6 +9,8 @@ from pathlib import Path
 import socket
 import subprocess
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, parse_qs
+from urllib.request import build_opener, HTTPRedirectHandler
 from urllib.request import Request, urlopen
 
 
@@ -65,6 +67,38 @@ def probe(url, token, *, kind):
         return {'ok': False, 'error': type(exc).__name__}
 
 
+
+class _NeverFollowProviderRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def probe_oauth_origin(base, provider, *, local):
+    """Inspect only OAuth callback origin and state; never log provider URLs."""
+    if provider not in {'google', 'github', 'facebook', 'line'}:
+        raise ValueError('unknown OAuth provider')
+    uri = base.rstrip('/') + '/dashboard/api/auth/signin/' + provider + '?site=agentos&returnTo=%2F'
+    headers = {'Host': 'agentos.milkcat.org'} if local else {}
+    try:
+        opener = build_opener(_NeverFollowProviderRedirect())
+        try:
+            response = opener.open(Request(uri, headers=headers), timeout=10)
+        except HTTPError as exc:
+            response = exc
+        with response:
+            status = response.status
+            if status not in (302, 307):
+                return {'ok': False, 'status': status, 'error': 'oauth_redirect_unavailable'}
+            query = parse_qs(urlsplit(response.headers.get('Location', '')).query)
+            expected = 'https://agentos.milkcat.org/dashboard/api/auth/callback/' + provider
+            correct_callback = query.get('redirect_uri', [''])[0] == expected
+            has_state = bool(query.get('state', [''])[0])
+            return {'ok': correct_callback and has_state, 'status': status,
+                    'agentos_callback': correct_callback, 'oauth_state_present': has_state}
+    except (HTTPError, URLError, OSError, TimeoutError, ValueError):
+        return {'ok': False, 'error': 'oauth_transport_error'}
+
+
 def inspect(expected_sha, public_url):
     def command(*args):
         return subprocess.check_output(args, text=True).strip()
@@ -85,6 +119,8 @@ def inspect(expected_sha, public_url):
                          [('shell', '/'), ('companion', '/companion'),
                           ('auth_session', '/dashboard/api/auth/session'),
                           ('nodes', '/v1/nodes'), ('approval', '/v1/nodes/approve')]}
+        for provider in ('google', 'github', 'facebook', 'line'):
+            probes[label]['oauth_' + provider] = probe_oauth_origin(base, provider, local=label == 'local')
     source_match = observed_sha == expected_sha and clean and cwd == Path(props['WorkingDirectory']).resolve()
     healthy = props['ActiveState'] == 'active' and all(p['ok'] for group in probes.values() for p in group.values())
     return {'schema': 'agentos.execution-receipt/v1', 'project_id': 'agentos-core',
