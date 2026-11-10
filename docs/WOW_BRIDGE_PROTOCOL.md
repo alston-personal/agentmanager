@@ -28,3 +28,25 @@ Addon, the host must authenticate its own Windows Node/Realm state, verify the
 actual ONE status route, and bind a version-compatible, user-authorized reply
 mechanism. The codec alone does not authenticate a sender, install Addon files,
 deliver status into WoW, or supply a real Receipt.
+
+## Host-side atomic slot publisher (candidate)
+
+`agentos_node/wow_slot_publisher.py` now connects the existing
+`NodeBoundStatusGateway` to the existing bounded reply renderer. The caller
+must supply an already-authorized host gateway and the specifically
+preinstalled `AgentOSWoW_R001` directory. An unauthorized/replayed/mismatched
+request does not modify the slot. A valid response produces **data-only** Lua
+and uses a same-directory temporary file plus atomic replace of `Reply.lua`;
+the helper will not create addon directories, install a TOC, follow a symlinked
+slot file, write arbitrary filenames, or embed any executable/secret-bearing
+Node response. Regression tests are registered in the existing Transport
+Routing Guard.
+
+**Unverified production boundaries:** Python unit tests do not establish a
+Windows deployment or an authenticated Node/ONE route. The trusted Windows
+caller must verify the installed game root and Realm/Node identity, protect
+the slot directory against untrusted modification, isolate publisher
+permissions, maintain durable replay handling, and validate the Addon's
+actual load-on-demand refresh behavior on the pinned game client. Atomic
+replacement is not itself cross-process synchronization or an end-to-end
+Receipt; do not mark MVP ready on code/CI alone.
