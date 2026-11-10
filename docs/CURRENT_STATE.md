@@ -1126,3 +1126,74 @@ Real Oracle [immutable run 42576275799](https://github.com/alston-personal/agent
 - Restored `scripts/lobster.py` durable completion selection (`next_durable_completion_task`), executor lease handoff, and external wait directives.
 - Aligned `scripts/work_completion.py` `wake_due` watchdog to fail closed into `blocked` status upon machine retry budget exhaustion.
 - Enabled alias resolution in `agent_core/role_runtime.py` and restored `github.technology.scan` capability to `sector.hermes` under Rhea's physical seal.
+
+## Gaia proposal intake classifier (#420 candidate, 2026-11-09)
+
+`agent_core/gaia_intake.py` is a **read-only, fail-closed proposal classifier** on draft PR #2157. Given an explicitly supplied canonical asset snapshot and its completeness assertion, it can suggest reuse of an existing capability, extension of an identified project, or a requirement for evidence/human approval. Its reference test fixture routes proposed mobile secretary work to the pre-existing Mobile Node parent, rather than creating a second mobile project.
+
+**Not implemented or verified:** real Atlas/Project Registry snapshot ingestion, system-wide Creation Gate enforcement at write entrypoints, review/approval persistence, Gaia Employee registration and scheduler continuity, ONE dispatch, Oracle deployment, or lifecycle receipt. The classifier's output is advice, not authorization, and no actor may self-declare the registry complete without a verified provenance contract. The existing fail-closed, port-check-only `scripts/issue_work_intake.py` is unchanged and must not be relaxed for idea intake. Related work: #420, #889, #200, #1528, #2156.
+
+
+### Local Project Store adapter (candidate)
+
+`agent_core/gaia_project_adapter.py` reads the existing `agent_core.project_store.list_projects()` and declares provenance/errors for the local Project Store. It can recommend extending an explicitly matched project, but deliberately returns `NEEDS_EVIDENCE` for unmatched proposals because local inventory does not attest Atlas/global completeness. The adapter neither registers projects nor supplies a Creation Gate/authorization token. Unit tests are run in the existing Documentation Reality Guard workflow. This remains source/CI evidence only, not a live Oracle ONE receipt.
+
+
+### Governance Directory projection adapter (candidate, #420)
+
+`agent_core/gaia_directory_adapter.py` reads the pre-existing Governance Directory as a *non-authoritative query projection* with source-path and structural error evidence. It can identify a known project/role/capability and recommend reuse/extension, but a missing match is NOT proof that a new asset is unique. It does not mint approval, change `register_canonical_project`, or enable new repository/role creation. Additional adapter tests run through the existing Documentation Reality Guard. The write-path Creation Gate, canonical source reconciliation, scheduler/ONE receipt and Gaia deployment remain unimplemented/unverified.
+
+
+### Gaia cross-source reconciliation (#420 candidate)
+
+`agent_core/gaia_reconcile.py` cross-checks a proposed parent between existing local Project Store and Governance Directory query evidence. Only consistent positive matches yield read-only reuse/extension recommendations; missing, conflicting, or unreadable sources are `NEEDS_EVIDENCE`. A new trust boundary requires human authorization. Neither adapter nor reconciler asserts Atlas/global inventory completeness, grants authority, intercepts write paths, or runs a durable Employee. CI runs its targeted tests. This is an incremental source candidate, not a deployed Gaia creation gate.
+
+
+### Gaia content-addressed review evidence (#420 candidate)
+
+`agent_core/gaia_decision_record.py` now defines `agentos.gaia-review/v1` as an **informational, content-addressed review record** bound to explicit source references and timezone-aware review time. Its SHA-256 content hash detects altered record contents but cannot authenticate source provenance, establish fresh Atlas coverage, or serve as a Creation Gate approval. `authority` is fixed to `none`, and downstream work still requires a separate authorization attestation and existing guarded Work Intake. Its tests run under the existing Documentation Reality Guard. No project-write enforcement, stateful scheduling, runtime deployment, or ONE verified receipt is claimed.
+
+
+### Gaia guarded create entrypoint (#420 candidate, not active enforcement)
+
+`agent_core/gaia_creation_gate.py` adds `register_reviewed_project()` as an opt-in guarded wrapper of the existing `register_canonical_project()`. It validates a content-addressed informational review, requires a distinct scoped/time-limited authorization record, and invokes a caller-injected verifier before any write. Unit tests demonstrate rejection of missing/expired/unverified/wrong-scope approvals and extensions misclassified as new projects. **It does not yet implement the trusted ONE verifier or migrate all legacy callers; `register_canonical_project()` remains directly callable.** Thus the system-wide Creation Gate is NOT deployed or enforced. No one should label this a production authorization boundary until trusted verifier wiring and caller migration are completed and tested against bypass. Existing approved-issue intake and governance policy remain unchanged.
+
+
+### Gaia guarded create scope hardening (2026-11-09)
+
+Draft PR #2157 strengthens its **optional** reviewed-create wrapper to reject wrong project kind/title, proposals still identifying related existing assets, future/stale review timestamps and already-invalid approval scopes. This is not the production Creation Gate: the old canonical write function is still callable and the injected authority verifier is not bound to authenticated ONE decisions. `agent_core/approval_broker.py` persists an operator approval inbox in local JSON and must not be construed as a trusted signed, replay-safe, scoped authorization source. Do not wire its history directly to write permission. Needed next: canonical authority identity, freshness, one-time consumption, atomic admission, and migration of all trusted project-create callers; neither CI nor hash proves this is live.
+
+
+### Executable Gaia read-only idea intake (#420 draft, 2026-11-09)
+
+`python3 scripts/gaia_proposal_intake.py --proposal /path/to/idea.json` now composes existing local Project Store and Governance Directory read adapters, cross-source reconciliation, and content-addressed informational review into one bounded CLI. It accepts JSON project proposals (title/kind/optional explicit related IDs/capabilities), emits `REVIEWED_INFORMATIONAL_ONLY` with the proposed existing parent or `NEEDS_EVIDENCE`, local snapshot fingerprints, and explicit `creation_authorized: false` / `execution_authorized: false`. No project, queue item, role, approval or receipt is written. Registry source checks do **not** establish Atlas-global completeness, and CLI data is not an authoritative source proof; stale or incomplete inventories must not approve creation. Tests are wired into existing Documentation Reality Guard. Still pending: Atlas authoritative discovery, durable idea inbox, ONE permission verifier, protected canonical write boundary, Supervisor handoff, live receipts, deployed Gaia employee. This candidate is not a live autonomous worker.
+
+
+### Gaia existing-project Work Intake handoff (#420 draft, 2026-11-09)
+
+`agent_core/gaia_work_handoff.py` now converts a validated informational `EXTEND_PROJECT` review record into a deterministic bounded `agentos.work-intake/v1` candidate, using the existing Completion Controller intake schema rather than a new queue. It cannot submit an unrelated `CREATE_NEW_PROJECT` proposal, inject an executor/command/owner, or mutate state without a separately supplied admission verification callback. Tests exercise idempotent handoff to the existing work-completion ledger under a simulated trusted admission and denial without writes. **The admission callback is NOT yet bound to authenticated ONE policy, nor is the real Oracle Scheduler/Employee loop deployed or proven; a test lambda is not evidence of production authority.** The API is an integration seam, not a live secure entrypoint, and only the existing Completion Controller owns queued accepted work. Dedicated durable intake, authorized automatic forwarding, and genuine ONE receipts remain pending.
+
+
+### Gaia Work Intake exact-envelope binding (2026-11-09, draft)
+
+The candidate `admit_existing_project_work` now requires the source `ReviewRecord` at admission time and reconstructs the exact bounded Work Intake envelope from that review. Mutated project IDs, actions, acceptance, owners or other extra fields fail before an admission callback or ledger write. This blocks caller-provided envelope substitution but **does not authenticate the callback**; a trusted ONE identity/authority integration is still missing, and no live work was dispatched. The old read-only approved-issue workflow remains unchanged by design.
+
+
+### Gaia work-item re-review deduplication (2026-11-09)
+
+Draft Gaia handoff work identity is now derived from the canonical GitHub Issue URL and matched parent project ID, not from the review-record content hash (which changes each time a new review timestamp or inventory snapshot is recorded). Therefore the same source issue and parent map to the same existing WorkItem across repeated reviews; the proposal's review hash still remains in the bounded `next_action` evidence and must be checked by trusted admission. Canonical GitHub Issue URLs are validated structurally before handoff. This is source/CI continuity only: real autonomous scheduler admission, one-time trusted authorization and persisted ONE receipts remain unverified.
+
+
+### Gaia Runtime bridge convergence checkpoint (2026-11-10)
+
+The Gaia candidate PR branch now carries a preserving-history merge of the current main runtime source instead of using the outdated branch bootstrap_control.py. The read-only `scripts/gaia_intake_probe.py` is NOT registered as an executable Runner Window action; production ONE authorization and dispatch receipts remain pending. Do not mistake Git merge CI for deployed Oracle Runtime.
+
+
+### Gaia ONE Runner Window inspection route (2026-11-10; source candidate)
+
+After safely converging #2157 onto the current main Runtime, Gaia's **read-only** inspection route is registered consistently across `agent_core/runner_window.py` (`agentos.gaia` / `intake.inspect`), `agentos_node/bootstrap_control.py` (allowlisted action running installed trusted Python code, not a caller-supplied source-commit script), and `agentos_node/bootstrap_scheduler.py` (control-role policy). The operation accepts no user-provided command/payload keys, and the probe prints informational review status only. Unit tests verify routing and non-authority. The route is **not** a work-item admission, creation gate, or permission grant; no real ONE request ID, Oracle release SHA, or deployment/receipt has yet been observed. The Oracle runtime must deploy this exact candidate under existing governance before any live inspection claim. Production scope for Gaia write-side admission remains separately unimplemented.
+
+
+### Gaia #2157 IP provenance declaration (2026-11-10)
+
+The project owner confirmed Gaia/AgentOS work in this PR was developed independently and has declared `IP-Scope: personal-independent` in the PR description for the existing IP Provenance Guard. This declaration does not establish release authorization or runtime acceptance: the PR remains subject to CI, mainline protection, ONE permissions and live Receipt verification.
