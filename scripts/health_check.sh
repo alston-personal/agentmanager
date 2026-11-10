@@ -58,7 +58,7 @@ if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
     check_required_service os-chronos.service
     check_required_service tg-commander.service
     check_required_service cat-ink-syncer.service
-    check_required_service os-lobster.service
+    check_required_service lobster-engine.service
 else
     if systemctl --user is-active --quiet os-chronos.service; then
         echo "✅ Service active: os-chronos.service"

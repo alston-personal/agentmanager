@@ -4,6 +4,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import shlex
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -34,6 +35,13 @@ Do not infer the current project from the IDE workspace. Do not reconstruct cont
 If `one_resolve_active` is unavailable, missing, stale, or fails, report `ONE_ACTIVE_CONTINUATION_UNRESOLVED` and do not fabricate continuation.
 
 Never request, print, copy, or expose Realm/node credentials. The MCP process exposes only the trusted local read-only ONE projection.
+
+**Context Budget & Subagent Delegation ("One-Task-One-Subwindow" + Three Multi-Agent Budget Iron Laws)**:
+1. **`One-Pending-Task-Per-Turn` (一輪只推進一項待辦)**: When continuing from Canonical IR (`繼續`, `continue`, `已更新IR`), execute **ONLY `pending_tasks[0]`** (the single first pending item) in a single turn unless the user explicitly asks to run multiple items at once. Never fan out across all `pending_tasks` in one turn.
+2. **`One-Shot Subagent Only — No Followup Ping-Pong` (子代理即用即棄，禁止追加養肥)**: When delegating a >4-step task to a subagent (`Task` tool), give a complete self-contained prompt and let it return once and terminate. **NEVER** send new tasks or repeated `send_message` / `followup_task` rounds to an existing subagent. Spawn at most 1 subagent at a time unless the user explicitly requests parallel subagents.
+3. **`Coordinator-Only When Delegating` (主代理不重複下場)**: While a subagent is executing a task, the parent agent MUST NOT run duplicate shell commands, file searches, or test suites in the main thread.
+
+**Automatic & Explicit Canonical IR Write-Back**: Completed turns automatically sync to ONE via the `Stop` hook (`agentos_node.ir_stop_sync`), and major milestones can also be explicitly checkpointed via `{SERVER_NAME}.one_checkpoint(summary, next_action, decision)`.
 {BOOTSTRAP_END}
 """
 
@@ -152,7 +160,10 @@ def install_user_mcp(claude: Path, *, python: Path, repo_root: Path) -> dict[str
     if marker_path.is_file():
         try:
             marker = json.loads(marker_path.read_text(encoding="utf-8"))
-            owned = marker.get("server") == SERVER_NAME and marker.get("payload") == payload
+            owned = (
+                marker.get("schema") == "agentos.claude-one-managed-mcp/v1"
+                and marker.get("server") == SERVER_NAME
+            )
         except (OSError, json.JSONDecodeError):
             owned = False
 
@@ -172,6 +183,60 @@ def install_user_mcp(claude: Path, *, python: Path, repo_root: Path) -> dict[str
     )
     os.chmod(marker_path, 0o600)
     return {"server": SERVER_NAME, "already_present": exists, "managed": True, "payload": payload}
+
+
+def install_stop_hook(settings_path: Path, *, python: Path, repo_root: Path) -> dict[str, object]:
+    existing: dict[str, object] = {}
+    if settings_path.is_file():
+        try:
+            loaded = json.loads(settings_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+
+    hooks = existing.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        hooks = {}
+        existing["hooks"] = hooks
+
+    stop_cmd = (
+        f"cd {shlex.quote(str(repo_root))} && "
+        f"PYTHONPATH={shlex.quote(str(repo_root))} "
+        f"AGENT_DATA_ROOT={shlex.quote(str(_data_root()))} "
+        f"{shlex.quote(str(python))} -m agentos_node.ir_stop_sync"
+    )
+    stop_entries = hooks.get("Stop")
+    if not isinstance(stop_entries, list):
+        stop_entries = []
+    filtered: list[object] = []
+    for entry in stop_entries:
+        if isinstance(entry, dict):
+            inner = entry.get("hooks")
+            if isinstance(inner, list) and any(
+                isinstance(h, dict) and "ir_stop_sync" in str(h.get("command") or "")
+                for h in inner
+            ):
+                continue
+        filtered.append(entry)
+    filtered.append(
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": stop_cmd,
+                }
+            ]
+        }
+    )
+    hooks["Stop"] = filtered
+
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    _backup(settings_path)
+    tmp = settings_path.with_suffix(settings_path.suffix + ".agentos.tmp")
+    tmp.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(settings_path)
+    return {"settings_path": str(settings_path), "stop_hook_installed": True}
 
 
 def probe_projection(python: Path, repo_root: Path) -> dict[str, object]:
@@ -235,9 +300,10 @@ def main() -> int:
     claude = _discover_claude()
     bootstrap = write_bootstrap(_claude_home() / "CLAUDE.md")
     mcp = install_user_mcp(claude, python=python, repo_root=repo_root)
+    stop_hook = install_stop_hook(_claude_home() / "settings.json", python=python, repo_root=repo_root)
 
     print(json.dumps({
-        "schema": "agentos.claude-one-oracle-install/v0.1",
+        "schema": "agentos.claude-one-oracle-install/v0.2",
         "ok": True,
         "mode": "oracle-local",
         "probe": evidence,
@@ -246,6 +312,7 @@ def main() -> int:
         "bootstrap_path": str(bootstrap),
         "mcp_server": mcp["server"],
         "mcp_managed": mcp["managed"],
+        "stop_hook_installed": stop_hook["stop_hook_installed"],
         "canonical_ir_copied": False,
         "credential_in_config": False,
         "backend_identity_inferred_from_surface": False,

@@ -17,6 +17,103 @@ AUDIT_SCHEMA = "agentos.antigravity-preinvocation-attestation/v1"
 SOURCE = "ONE_PREINVOCATION_IR"
 IR_SCHEMA = "agentos.ir/v1"
 EXECUTION_HEAD_SCHEMA = "agentos.execution-head/v1"
+YELLOW_CONTEXT_TOKENS = 60_000
+RED_CONTEXT_TOKENS = 100_000
+
+
+def _inspect_transcript(transcript_path: Any) -> tuple[bool, bool, int]:
+    """Return (readable, hydrated_since_checkpoint, latest_context_tokens)."""
+    raw_path = str(transcript_path or "").strip()
+    if not raw_path:
+        return False, False, 0
+    path = Path(raw_path).expanduser()
+    if not path.is_file():
+        return False, False, 0
+    hydrated_since_checkpoint = False
+    latest_tokens = 0
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    step = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(step, dict):
+                    continue
+                step_type = str(step.get("type") or "")
+                if step_type == "CHECKPOINT":
+                    hydrated_since_checkpoint = False
+                    latest_tokens = 0
+                    continue
+                if step_type in ("EPHEMERAL_MESSAGE", "SYSTEM_MESSAGE") or "ephemeralMessage" in step:
+                    content = str(step.get("content") or step.get("ephemeralMessage") or "")
+                    if SOURCE in content:
+                        hydrated_since_checkpoint = True
+                if step_type == "PLANNER_RESPONSE":
+                    usage = (
+                        step.get("model_usage")
+                        if isinstance(step.get("model_usage"), dict)
+                        else {}
+                    )
+                    try:
+                        inp = int(usage.get("input_tokens") or step.get("input_tokens") or 0)
+                        cache = int(usage.get("cache_read_tokens") or step.get("cache_read_tokens") or 0)
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    if inp + cache > 0:
+                        latest_tokens = inp + cache
+    except OSError:
+        return False, False, 0
+    return True, hydrated_since_checkpoint, latest_tokens
+
+
+def _build_budget_guard_step(tokens: int) -> dict[str, Any] | None:
+    iron_laws = (
+        " Enforce the 3 Multi-Agent Budget Iron Laws: "
+        "(1) One-Pending-Task-Per-Turn: execute ONLY pending_tasks[0] in a single turn; "
+        "(2) One-Shot Subagent Only (No Followup Ping-Pong): spawn at most 1 one-shot invoke_subagent with a self-contained prompt and NEVER send followup send_message tasks to an existing subagent; "
+        "(3) Coordinator-Only When Delegating: never run duplicate shell commands, file searches, or test suites in the parent thread."
+    )
+    if tokens >= RED_CONTEXT_TOKENS:
+        return {
+            "systemMessage": {
+                "systemMessage": (
+                    f"CONTEXT_BUDGET_GUARD: CRITICAL! Current context is {tokens} tokens "
+                    "(>= 100,000 Red Zone). Strictly use invoke_subagent for any multi-step "
+                    "work or keep tool calls minimal, and remind the user to run `/compact` "
+                    "(without trailing spaces) or open a new window."
+                    + iron_laws
+                ),
+                "metadata": {
+                    "user_markdown": (
+                        f"🚨 **Context 紅燈警戒 ({tokens:,} tokens)**：單次呼叫成本過高！"
+                        "強烈建議立即輸入 `/compact`（請勿包含尾部空白）或開啟新對話視窗"
+                        "（AgentOS ONE 將自動延續狀態）。本輪已強制啟用 Subagent 最小化模式（一輪一事、即用即棄）。"
+                    )
+                },
+            }
+        }
+    if tokens >= YELLOW_CONTEXT_TOKENS:
+        return {
+            "systemMessage": {
+                "systemMessage": (
+                    f"CONTEXT_BUDGET_GUARD: Current context is {tokens} tokens. "
+                    "Delegate any multi-step investigation or code modification (>3 tool calls) "
+                    "to invoke_subagent so the main conversation context does not grow."
+                    + iron_laws
+                ),
+                "metadata": {
+                    "user_markdown": (
+                        f"⚠️ **Context 水位預警 ({tokens:,} tokens)**："
+                        "已自動啟用 Subagent 分流模式（一輪一事、子代理即用即棄）；建議適時輸入 `/compact`（勿加空白）。"
+                    )
+                },
+            }
+        }
+    return None
 
 
 def _now() -> str:
@@ -196,10 +293,22 @@ def build_injection(
     *,
     selector: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    # Hydrate exactly once per fresh conversation. The authoritative project is
-    # selected by ONE state, never by the IDE's current workspace path.
+    # Hydrate once per fresh conversation or once after a /compact CHECKPOINT.
+    # On subsequent user turns, only evaluate the Context Budget Gatekeeper.
     if int(payload.get("invocationNum") or 0) != 0:
         return {}
+
+    readable, hydrated_since_checkpoint, latest_tokens = _inspect_transcript(
+        payload.get("transcriptPath")
+    )
+    if readable:
+        needs_hydration = not hydrated_since_checkpoint
+    else:
+        needs_hydration = int(payload.get("initialNumSteps") or 0) <= 1
+
+    budget_step = _build_budget_guard_step(latest_tokens)
+    if not needs_hydration:
+        return {"injectSteps": [budget_step]} if budget_step else {}
 
     one = gateway or OracleLocalGateway()
     status = one.status()
@@ -256,13 +365,20 @@ def build_injection(
         "the Canonical IR with workspace enumeration, Pulse/PM2 scans, local-memory "
         "reconstruction, or vendor history. Newer explicit user intent still wins. "
         "Continue from canonical_ir.goal / pending_tasks / continuation / next_action "
-        "and obey mutation_allowed. When reporting bootstrap provenance, state "
+        "and obey mutation_allowed. Enforce the Three Multi-Agent Budget Iron Laws: "
+        "(1) One-Pending-Task-Per-Turn: execute ONLY pending_tasks[0] in a single turn unless explicitly asked otherwise; "
+        "(2) One-Shot Subagent Only (No Followup Ping-Pong): delegate >4-step work to at most 1 one-shot invoke_subagent with a self-contained prompt and NEVER send followup send_message rounds to an existing subagent; "
+        "(3) Coordinator-Only When Delegating: do not run duplicate shell commands, file searches, or test suites in the main thread while a subagent executes. "
+        "When reporting bootstrap provenance, state "
         "source=ONE_PREINVOCATION_IR, selection_source=ONE_ACTIVE_CONTINUATION, and "
         "include project_id + index_id + ir_id + executor_class + model_name. If "
         "executor_identity_bound=false, do not guess the executor identity.\n"
         + json.dumps(envelope, ensure_ascii=False, sort_keys=True)
     )
-    return {"injectSteps": [{"ephemeralMessage": message}]}
+    inject_steps: list[dict[str, Any]] = [{"ephemeralMessage": message}]
+    if budget_step:
+        inject_steps.append(budget_step)
+    return {"injectSteps": inject_steps}
 
 
 def main() -> int:
@@ -282,8 +398,8 @@ def main() -> int:
                     envelope = parsed if isinstance(parsed, dict) else None
                 except json.JSONDecodeError:
                     envelope = None
-        if int(payload.get("invocationNum") or 0) == 0:
-            _write_attestation(payload, envelope, outcome="hydrated" if envelope else "no-injection")
+        if int(payload.get("invocationNum") or 0) == 0 and envelope is not None:
+            _write_attestation(payload, envelope, outcome="hydrated")
     except Exception as exc:
         try:
             _write_attestation(payload, None, outcome="fail-closed")

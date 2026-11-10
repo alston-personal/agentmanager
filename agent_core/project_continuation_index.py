@@ -15,6 +15,23 @@ PUBLISH_SCHEMA = "agentos.project-continuation-publish/v1"
 EXECUTION_HEAD_SCHEMA = "agentos.execution-head/v1"
 IR_SCHEMA = "agentos.ir/v1"
 INITIAL_PROJECT_ID = "agentos-core"
+MAX_STORED_DECISIONS = 20
+MAX_STORED_EVIDENCE = 12
+
+
+def _parse_iso_utc(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _now() -> str:
@@ -132,6 +149,7 @@ def publish_project_continuation(
     governance_path: str | Path | None = None,
     expected_index_id: str | None = None,
     expected_ir_id: str | None = None,
+    allow_older_timestamp: bool = False,
 ) -> dict[str, Any]:
     project_id, execution_head, continuation = validate_publish_params(params)
     if (expected_index_id is None) != (expected_ir_id is None):
@@ -139,6 +157,10 @@ def publish_project_continuation(
     expected_index = str(expected_index_id or "").strip()
     expected_ir = str(expected_ir_id or "").strip()
     canonical_ir = continuation.get("canonical_ir") if isinstance(continuation.get("canonical_ir"), dict) else continuation
+    if isinstance(canonical_ir.get("decisions"), list) and len(canonical_ir["decisions"]) > MAX_STORED_DECISIONS:
+        canonical_ir["decisions"] = list(canonical_ir["decisions"][-MAX_STORED_DECISIONS:])
+    if isinstance(canonical_ir.get("evidence"), list) and len(canonical_ir["evidence"]) > MAX_STORED_EVIDENCE:
+        canonical_ir["evidence"] = list(canonical_ir["evidence"][-MAX_STORED_EVIDENCE:])
     new_index = str(execution_head.get("index_id") or "").strip()
     new_ir_id = str(canonical_ir.get("ir_id") or "").strip()
     if expected_index:
@@ -204,6 +226,16 @@ def publish_project_continuation(
                 # than on a child-shape mismatch derived from stale expectations.
                 if str(canonical_ir.get("parent_ir_id") or "").strip() != expected_ir:
                     raise ValueError("canonical_ir.parent_ir_id must match expected_ir_id")
+            if continuation_path.exists() and not allow_older_timestamp:
+                existing_cont = _read_json_object(continuation_path)
+                existing_dt = _parse_iso_utc(existing_cont.get("published_at"))
+                incoming_dt = _parse_iso_utc(continuation.get("published_at"))
+                if existing_dt is not None and incoming_dt is not None and incoming_dt < existing_dt:
+                    raise ValueError(
+                        "monotonic timestamp violation: incoming published_at "
+                        f"({continuation.get('published_at')!r}) is older than current "
+                        f"continuation ({existing_cont.get('published_at')!r})"
+                    )
 
             execution_tmp = _write_temp(project_dir, execution_path.name, execution_head)
             continuation_tmp = _write_temp(continuity_dir, continuation_path.name, continuation)

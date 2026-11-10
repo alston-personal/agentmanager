@@ -1,12 +1,72 @@
 #!/usr/bin/env bash
 # ============================================================
-# AgentOS Context Injector Hook
+# AgentOS Context Injector Hook (Single-Shot + Budget Guard)
 # Triggered by: Claude Code UserPromptSubmit hook
-# Purpose: Force-inject pulse state + project STATUS into context
-#          so ANY model (local or cloud) gets instant awareness.
+# Purpose:
+#   1. Inject pulse state + project STATUS.md ONCE per session
+#      (or once after /compact shrinks the transcript).
+#   2. Stay silent (0 extra tokens) on normal subsequent turns.
+#   3. Emit a 2-line Context Budget + Subagent delegation notice
+#      when the session transcript exceeds 300KB (~75k tokens).
 # ============================================================
 
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+HOOK_INPUT=""
+if [ ! -t 0 ]; then
+    HOOK_INPUT="$(cat 2>/dev/null || true)"
+fi
+
+SESSION_ID=""
+TRANSCRIPT_PATH=""
+HOOK_CWD=""
+if [ -n "$HOOK_INPUT" ] && command -v python3 >/dev/null 2>&1; then
+    eval "$(HOOK_INPUT="$HOOK_INPUT" python3 - <<'PY'
+import json, os, shlex
+raw = os.environ.get("HOOK_INPUT", "")
+try:
+    data = json.loads(raw) if raw.strip() else {}
+except Exception:
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+sid = str(data.get("session_id") or data.get("sessionId") or "").strip()
+tpath = str(data.get("transcript_path") or data.get("transcriptPath") or "").strip()
+cwd = str(data.get("cwd") or "").strip()
+print(f"SESSION_ID={shlex.quote(sid)}")
+print(f"TRANSCRIPT_PATH={shlex.quote(tpath)}")
+print(f"HOOK_CWD={shlex.quote(cwd)}")
+PY
+)"
+fi
+
+if [ -z "$SESSION_ID" ] && [ -n "$TRANSCRIPT_PATH" ]; then
+    SESSION_ID="$(basename "$TRANSCRIPT_PATH" .jsonl)"
+fi
+
+TRANSCRIPT_SIZE=0
+if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+    TRANSCRIPT_SIZE=$(wc -c < "$TRANSCRIPT_PATH" 2>/dev/null | tr -d ' ' || echo 0)
+fi
+
+if [ -n "$SESSION_ID" ]; then
+    SAFE_SID="$(printf '%s' "$SESSION_ID" | tr -cd 'a-zA-Z0-9._-')"
+    STAMP_FILE="/tmp/agentos-claude-hydrated-${SAFE_SID}.stamp"
+    if [ -f "$STAMP_FILE" ]; then
+        PREV_SIZE=$(cat "$STAMP_FILE" 2>/dev/null | tr -d ' ' || echo 0)
+        case "$PREV_SIZE" in ''|*[!0-9]*) PREV_SIZE=0 ;; esac
+        # Re-hydrate only if transcript shrank by >50% after /compact
+        if [ "$PREV_SIZE" -le 30000 ] || [ "$TRANSCRIPT_SIZE" -ge $((PREV_SIZE / 2)) ]; then
+            printf '%s\n' "$TRANSCRIPT_SIZE" > "$STAMP_FILE" 2>/dev/null || true
+            if [ "$TRANSCRIPT_SIZE" -ge 307200 ]; then
+                printf '%s\n' "⚠️ [AgentOS Context Budget Guard] Session transcript is $((TRANSCRIPT_SIZE / 1024))KB (~$((TRANSCRIPT_SIZE / 4)) tokens)."
+                printf '%s\n' "Delegate multi-step investigations or edits (>3 tool calls) to the \`Task\` subagent tool to prevent context bloat, and remind the user to run \`/compact\`."
+            fi
+            exit 0
+        fi
+    fi
+    printf '%s\n' "$TRANSCRIPT_SIZE" > "$STAMP_FILE" 2>/dev/null || true
+fi
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${HOOK_CWD:-$(pwd)}}"
 PROJECT_NAME=$(basename "$PROJECT_DIR")
 
 # --- Resolve Data Layer Path ---
@@ -58,14 +118,14 @@ else
     STATUS="No STATUS.md found for project: $PROJECT_NAME"
 fi
 
-# --- Output Injection Block ---
-# Claude Code reads stdout from UserPromptSubmit hooks and prepends it to context
+# --- Output Single-Shot Injection Block ---
 printf '%s\n' "
 ---
-## 🤖 AgentOS Auto-Context Injection ($(date '+%Y-%m-%d %H:%M'))
+## 🤖 AgentOS Single-Shot Session Hydration ($(date '+%Y-%m-%d %H:%M'))
 
 **Current Project**: \`$PROJECT_NAME\`
 **Project Dir**: \`$PROJECT_DIR\`
+**Context Policy**: Hydrated once per session. For multi-step investigations or refactors (>4 tool calls), delegate to the \`Task\` subagent tool and return only a concise summary.
 
 ### 🌐 Swarm Pulse State
 \`\`\`json
@@ -77,6 +137,6 @@ $PULSE
 $STATUS
 \`\`\`
 
-*This context was automatically injected by AgentOS. You are now fully up to speed.*
+*This context was injected once at session start by AgentOS.*
 ---
 "

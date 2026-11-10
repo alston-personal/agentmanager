@@ -399,10 +399,19 @@ fi
 systemctl --user enable os-chronos.service agent-maintenance.timer >/dev/null
 
 if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
-  systemctl --user enable tg-commander.service cat-ink-syncer.service os-lobster.service milkcat-credits.service >/dev/null
+  systemctl --user enable tg-commander.service cat-ink-syncer.service milkcat-credits.service >/dev/null
   systemctl --user restart tg-commander.service
   systemctl --user restart cat-ink-syncer.service
-  systemctl --user restart os-lobster.service
+  if [ -f "$USER_SYSTEMD_DIR/lobster-engine.service" ]; then
+    # Governed immutable completion-executor (lobster-engine.service) owns the
+    # singleton Lobster loop; disable legacy os-lobster.service to prevent
+    # parallel duplicate executors.
+    systemctl --user disable --now os-lobster.service 2>/dev/null || true
+    echo "Lobster Engine owner: lobster-engine.service present (os-lobster.service disabled)"
+  else
+    systemctl --user enable os-lobster.service >/dev/null
+    systemctl --user restart os-lobster.service
+  fi
   systemctl --user enable agentos-core-supervisor.service >/dev/null
   systemctl --user restart agentos-core-supervisor.service
   if [ "${AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE:-0}" = "1" ]; then

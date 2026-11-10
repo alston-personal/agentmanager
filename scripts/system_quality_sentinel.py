@@ -143,25 +143,153 @@ class SystemQualitySentinel:
         else:
             self.log_error("首頁預設視圖未指向 3D 世界！")
 
-    # ── 5. 背景程序死循環與檔案衝突檢測 ──
+    # ── 5. 背景程序死循環、多實例與任務風暴檢測 (Cerberus 監督與自癒) ──
+    def _discover_lobster_loop_pids(self) -> list[int]:
+        import subprocess
+        import shlex
+        try:
+            proc = subprocess.run(
+                ["ps", "-u", str(os.getuid()), "-o", "pid,args"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            pids: list[int] = []
+            for raw in proc.stdout.splitlines()[1:]:
+                line = raw.strip()
+                if not line:
+                    continue
+                parts = line.split(None, 1)
+                if len(parts) < 2:
+                    continue
+                pid_str, cmd = parts
+                if not pid_str.isdigit():
+                    continue
+                try:
+                    argv = shlex.split(cmd)
+                except ValueError:
+                    continue
+                if (len(argv) >= 3 and re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", Path(argv[0]).name)
+                        and Path(argv[1]).resolve() == (AGENTMANAGER_ROOT / "scripts/lobster.py").resolve()
+                        and "--loop" in argv[2:]):
+                    pids.append(int(pid_str))
+            return sorted(pids)
+        except Exception:
+            return []
+
+    def _canonical_lobster_pid(self, candidates: list[int]) -> int | None:
+        import subprocess
+        try:
+            env = os.environ.copy()
+            env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+            proc = subprocess.run(
+                ["systemctl", "--user", "show", "-p", "MainPID", "--value", "lobster-engine.service"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=env,
+                check=False,
+            )
+            raw = proc.stdout.strip()
+            if proc.returncode == 0 and raw.isdigit() and int(raw) in candidates:
+                return int(raw)
+        except Exception:
+            pass
+        # A stale lock-file PID or PID ordering cannot establish runtime authority.
+        return None
+
     def check_file_conflicts_and_deadlocks(self):
-        print("\n🔄 [檢查 5] 檢測背景任務是否狂刷 STATUS.md 造成存檔衝突...")
-        lobster_log = AGENTMANAGER_ROOT / "logs" / "lobster.log"
-        if lobster_log.exists():
-            # 讀取最後 100 行
+        import signal
+        import time
+        from collections import Counter
+
+        print("\n🔄 [檢查 5] 檢測 Lobster 單例狀態、背景死循環與任務風暴...")
+
+        # 5a. 多重 Lobster 進程監督與自癒
+        lobster_pids = self._discover_lobster_loop_pids()
+        if len(lobster_pids) > 1:
+            keep_pid = self._canonical_lobster_pid(lobster_pids)
+            self.log_error(
+                f"偵測到 {len(lobster_pids)} 個 Lobster Engine 同時運行 (PIDs={lobster_pids})，違反單例原則！",
+                target="lobster-engine",
+                incident_type="PROCESS_DEADLOCK",
+            )
+            for pid in lobster_pids:
+                if keep_pid is None or pid == keep_pid:
+                    continue
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    self.log_fix(f"已自動終止重複/孤兒 Lobster 進程 PID {pid} (保留 canonical PID {keep_pid})")
+                except OSError as exc:
+                    self.log_finding(f"終止重複 Lobster PID {pid} 失敗: {exc}")
+        else:
+            self.log_finding(f"Lobster Engine 單例檢查正常 (運行數={len(lobster_pids)})。")
+
+        # 5b. 近期 500 行日誌死循環與拒絕重試監督
+        log_candidates = [
+            AGENT_DATA_ROOT / "logs" / "lobster.log",
+            AGENTMANAGER_ROOT / "logs" / "lobster.log",
+        ]
+        lobster_log = next((p for p in log_candidates if p.exists()), None)
+        if lobster_log is not None:
             try:
                 with open(lobster_log, "r", encoding="utf-8", errors="ignore") as f:
-                    lines = f.readlines()[-100:]
-                log_text = "".join(lines)
-
-                # 檢測短時間內是否有頻繁任務失敗
-                fail_matches = re.findall(r"任務失敗|Not a directory|BLOCKED", log_text)
-                if len(fail_matches) > 15:
-                    self.log_error(f"Lobster 背景程序近 100 行中出現 {len(fail_matches)} 次失敗/阻斷，可能正在死循環狂刷 STATUS.md！")
+                    lines = f.readlines()[-500:]
+                now_dt = datetime.now()
+                recent_lines: list[str] = []
+                for line in lines:
+                    ts_m = re.match(r"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", line)
+                    if ts_m:
+                        try:
+                            line_dt = datetime.strptime(ts_m.group(1), "%Y-%m-%d %H:%M:%S")
+                            if (now_dt - line_dt).total_seconds() > 1800:
+                                continue
+                        except ValueError:
+                            pass
+                    recent_lines.append(line)
+                log_text = "".join(recent_lines)
+                fail_matches = re.findall(
+                    r"completion begin denied|RESOURCE_EXHAUSTED|Your AI credits balance is too low|任務失敗|Not a directory|BLOCKED",
+                    log_text,
+                )
+                if len(fail_matches) > 6:
+                    self.log_error(
+                        f"Lobster 背景程序近 30 分鐘（500 行窗口）出現 {len(fail_matches)} 次失敗/阻斷/拒絕認領，疑似死循環！",
+                        target="lobster-engine",
+                        incident_type="PROCESS_DEADLOCK",
+                    )
                 else:
                     self.log_finding("Lobster 背景日誌無高頻短週期死循環現象。")
             except Exception as e:
                 self.log_finding(f"讀取 lobster 日誌跳過: {e}")
+
+        # 5c. 任務日誌目錄 (/home/ubuntu/agent-data/logs/tasks) 風暴檢測
+        tasks_log_dir = AGENT_DATA_ROOT / "logs" / "tasks"
+        if tasks_log_dir.is_dir():
+            try:
+                now_ts = time.time()
+                slug_counts: Counter[str] = Counter()
+                for log_f in tasks_log_dir.glob("*.log"):
+                    try:
+                        if (now_ts - log_f.stat().st_mtime) <= 1800:
+                            parts = log_f.stem.split("_", 2)
+                            slug = parts[2] if len(parts) >= 3 else log_f.stem
+                            slug_counts[slug] += 1
+                    except OSError:
+                        continue
+                storm_slugs = [(slug, cnt) for slug, cnt in slug_counts.items() if cnt > 6]
+                if storm_slugs:
+                    detail = ", ".join(f"{s}({c}次)" for s, c in storm_slugs[:3])
+                    self.log_error(
+                        f"偵測到任務執行風暴：30 分鐘內單一任務重複執行過多 [{detail}]！",
+                        target="lobster-engine",
+                        incident_type="PROCESS_DEADLOCK",
+                    )
+                else:
+                    self.log_finding("近 30 分鐘無單一任務執行風暴。")
+            except Exception as e:
+                self.log_finding(f"掃描任務風暴目錄跳過: {e}")
 
     # ── 6. 角色真實性與紙上談兵防線檢測 ──
     def check_role_reality_guard(self):
@@ -231,4 +359,3 @@ if __name__ == "__main__":
     sentinel = SystemQualitySentinel()
     success = sentinel.run_all()
     sys.exit(0 if success else 1)
-

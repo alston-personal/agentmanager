@@ -34,6 +34,13 @@ Do not infer the current project from the IDE workspace. Do not reconstruct cont
 If `one_resolve_active` is unavailable, missing, stale, or fails, report `ONE_ACTIVE_CONTINUATION_UNRESOLVED` and do not fabricate the continuation.
 
 Never request, print, copy, or expose Realm/node credentials. The MCP process owns only the trusted local read-only projection.
+
+**Context Budget & Subagent Delegation ("One-Task-One-Subwindow" + Three Multi-Agent Budget Iron Laws)**:
+1. **`One-Pending-Task-Per-Turn` (一輪只推進一項待辦)**: When continuing from Canonical IR (`繼續`, `continue`, `已更新IR`), execute **ONLY `pending_tasks[0]`** (the single first pending item) in a single turn unless the user explicitly asks to run multiple items at once. Never fan out across all `pending_tasks` in one turn.
+2. **`One-Shot Subagent Only — No Followup Ping-Pong` (子代理即用即棄，禁止追加養肥)**: When delegating a >4-step task to a subagent (`spawn_agent` / `multi_agent`), give a complete self-contained prompt and let it return once and terminate. **NEVER** send new tasks or repeated `send_message` / `followup_task` rounds to an existing subagent. Spawn at most 1 subagent at a time unless the user explicitly requests parallel subagents.
+3. **`Coordinator-Only When Delegating` (主代理不重複下場)**: While a subagent is executing a task, the parent agent MUST NOT run duplicate shell commands, file searches, or test suites in the main thread.
+
+**Canonical IR Write-Back (`one_checkpoint`)**: After completing a meaningful user request or milestone, call `agentos-one.one_checkpoint(summary, next_action, decision)` to advance the ONE Canonical IR and active selector so Gemini and Claude surfaces stay synchronized in real time.
 {AGENTS_END}
 """
 

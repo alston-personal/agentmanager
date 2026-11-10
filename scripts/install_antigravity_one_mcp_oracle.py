@@ -32,6 +32,13 @@ If the active selector is missing, malformed, stale relative to the referenced p
 The `agentos-one` MCP tools remain available for explicit live queries (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). They are not a replacement for the injected canonical IR on fresh continuation.
 
 Never expose Realm/node credentials. `agy`, standalone `gemini`, Claude, built-in Gemini, and built-in Codex are distinct executor identities. The PreInvocation hook may bind Gemini/Codex identity only from its current `modelName`; the generic MCP process remains caller-identity unbound.
+
+**Context Budget & Subagent Delegation ("One-Task-One-Subwindow" + Three Multi-Agent Budget Iron Laws)**:
+1. **`One-Pending-Task-Per-Turn` (一輪只推進一項待辦)**: When continuing from Canonical IR (`繼續`, `continue`, `已更新IR`), execute **ONLY `pending_tasks[0]`** (the single first pending item) in a single turn unless the user explicitly asks to run multiple items at once. Never fan out across all `pending_tasks` in one turn.
+2. **`One-Shot Subagent Only — No Followup Ping-Pong` (子代理即用即棄，禁止追加養肥)**: When delegating a >4-step task to a subagent (`invoke_subagent`), give a complete self-contained prompt and let it return once and terminate. **NEVER** send new tasks or repeated `send_message` / `followup_task` rounds to an existing subagent. Spawn at most 1 subagent at a time unless the user explicitly requests parallel subagents.
+3. **`Coordinator-Only When Delegating` (主代理不重複下場)**: While a subagent is executing a task, the parent agent MUST NOT run duplicate shell commands, file searches, or test suites in the main thread.
+
+**Automatic Canonical IR Write-Back (`Stop` Hook)**: Completed turns (`terminationReason=NO_TOOL_CALL`) automatically advance the ONE Canonical IR and active selector with a bounded rolling turn summary.
 <!-- AGENTOS_ONE_BOOTSTRAP_END -->
 """
 
@@ -182,6 +189,23 @@ def _hook_command(python: Path, repo_root: Path) -> str:
     )
 
 
+def _stop_hook_command(python: Path, repo_root: Path) -> str:
+    assignments = {
+        "PYTHONPATH": str(repo_root),
+        "AGENT_DATA_ROOT": str(_data_root()),
+        "AGENTOS_CORE_NODE_ID": str(
+            os.environ.get("AGENTOS_CORE_NODE_ID", "oracle-core-node")
+        ),
+    }
+    env_prefix = " ".join(
+        f"{key}={shlex.quote(value)}" for key, value in assignments.items()
+    )
+    return (
+        f"cd {shlex.quote(str(repo_root))} && {env_prefix} "
+        f"{shlex.quote(str(python))} -m agentos_node.ir_stop_sync"
+    )
+
+
 def write_hooks_config(path: Path, *, python: Path, repo_root: Path) -> dict[str, Any]:
     config = _load_json(path)
     hook = {
@@ -190,6 +214,13 @@ def write_hooks_config(path: Path, *, python: Path, repo_root: Path) -> dict[str
             {
                 "type": "command",
                 "command": _hook_command(python, repo_root),
+                "timeout": 10,
+            }
+        ],
+        "Stop": [
+            {
+                "type": "command",
+                "command": _stop_hook_command(python, repo_root),
                 "timeout": 10,
             }
         ],
@@ -321,6 +352,7 @@ def main() -> int:
         repo_root / "agentos_node" / "one_mcp.py",
         repo_root / "agentos_node" / "one_mcp_stdio.py",
         repo_root / "agentos_node" / "antigravity_one_hook.py",
+        repo_root / "agentos_node" / "ir_stop_sync.py",
     ):
         if not required.is_file():
             raise FileNotFoundError(f"required AgentOS runtime file missing: {required}")

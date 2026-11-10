@@ -86,7 +86,11 @@ def build_session_start(payload: dict[str, Any], *, gateway=None, selector=None)
     context = _compact_context(result, active)
     message = (
         "AgentOS ONE canonical continuation is authoritative for this AgentOS task. "
-        "Do not replace it with workspace scanning or vendor history. Newer explicit user intent wins.\n"
+        "Do not replace it with workspace scanning or vendor history. Newer explicit user intent wins. "
+        "Enforce the Three Multi-Agent Budget Iron Laws: "
+        "(1) One-Pending-Task-Per-Turn: execute ONLY pending_tasks[0] per turn when continuing from Canonical IR unless explicitly asked otherwise; "
+        "(2) One-Shot Subagent Only — No Followup Ping-Pong: delegate >4-step tasks to at most 1 one-shot subagent with a self-contained prompt and never send followup rounds to an existing subagent; "
+        "(3) Coordinator-Only When Delegating: do not run duplicate shell commands, file searches, or test suites in the main thread while a subagent executes.\n"
         + json.dumps(context, ensure_ascii=False, sort_keys=True)
     )
     return {
