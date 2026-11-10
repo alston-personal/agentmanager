@@ -1111,3 +1111,4 @@ Real Oracle [immutable run 42576275799](https://github.com/alston-personal/agent
 - Hardened Rhea physical role seal in `agent_core/role_seal.py` to recognize stateless CI runners where external `agent-data` is not mounted, ensuring full test portability without weakening node physical tamper-proofing.
 - Restored `scripts/lobster.py` durable completion selection (`next_durable_completion_task`), executor lease handoff, and external wait directives.
 - Aligned `scripts/work_completion.py` `wake_due` watchdog to fail closed into `blocked` status upon machine retry budget exhaustion.
+- Enabled alias resolution in `agent_core/role_runtime.py` and restored `github.technology.scan` capability to `sector.hermes` under Rhea's physical seal.

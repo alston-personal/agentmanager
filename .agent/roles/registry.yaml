@@ -274,6 +274,7 @@ roles:
   - discovery.tech.recon
   - discovery.filter.evaluate
   - discovery.rfc.draft
+  - github.technology.scan
   outputs:
   - tech_scout_memo
   - rfc_candidate
