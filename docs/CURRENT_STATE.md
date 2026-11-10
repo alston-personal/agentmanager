@@ -2,6 +2,8 @@
 
 ## Cross-Surface Single-Shot Hydration & Context Budget Gatekeeper (2026-11-10)
 
+The Approved Issue Intake CI installs PyYAML explicitly because the completion regression suite imports Lobster's YAML role router; a clean runner must not depend on developer-installed packages.
+
 **Acceptance boundary:** These are source-level candidates, not a runtime deployment receipt. The focused handoff review covers the two hydration hooks, Lobster, completion projection and Sentinel. Installer, watchdog and service migration changes are separate pending work. Claude transcript byte size is a heuristic; append-only compaction cannot be reliably detected by size reduction alone. Five existing retry/port-verifier regression failures were also reproduced on clean baseline `689675b7` and remain open.
 
 - **Antigravity PreInvocation Hook (`agentos_node/antigravity_one_hook.py`)**: Fixes repeat per-turn injection (`invocationNum` resets to `0` on each user turn) by inspecting `transcriptPath` (or `initialNumSteps` fallback) so `ONE_PREINVOCATION_IR` hydrates **once per fresh conversation** and **re-hydrates once after a `/compact` `CHECKPOINT` step**, remaining silent on normal subsequent user turns. Also enforces an automatic **Context Budget Gatekeeper** based on the latest `PLANNER_RESPONSE` token usage (`input_tokens + cache_read_tokens`): Yellow Zone (`>= 60,000` tokens) injects a `CONTEXT_BUDGET_GUARD` system message + user markdown badge instructing subagent delegation (`invoke_subagent`); Red Zone (`>= 100,000` tokens) emits a critical `/compact` / new-window warning and strict subagent delegation directive. Verified in `tests/test_antigravity_one_hook.py`.
