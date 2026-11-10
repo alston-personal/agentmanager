@@ -172,7 +172,9 @@ cat > "$EVENT_TIMER" <<EOF
 Description=AgentOS Shared Event Facility Subscription Evaluation
 
 [Timer]
-OnCalendar=*-*-* *:0/5:00
+# Avoid cloning a second Persona repository every five minutes; the separate
+# 15-minute facility window is sufficient for bounded daily life events.
+OnCalendar=*-*-* *:2/15:00
 Persistent=true
 AccuracySec=45s
 Unit=agentos-event-facility.service
@@ -245,4 +247,4 @@ echo "persona_social_action_timer_install=PASS"
 echo "persona_social_action_timer_interval=5m"
 echo "persona_social_action_timer_schedule=calendar_5m_persistent"
 echo "agentos_event_facility_timer_install=PASS"
-echo "agentos_event_facility_timer_schedule=calendar_5m_persistent"
+echo "agentos_event_facility_timer_schedule=calendar_15m_persistent"
