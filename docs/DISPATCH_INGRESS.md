@@ -111,3 +111,32 @@ requested
 When touching a grandfathered direct-Oracle workflow, prefer migrating its execution request to this dispatch contract rather than creating another runner-specific workflow.
 
 The legacy allowlist is a retirement list, not a template.
+
+
+## Registered slash commands via ONE (initial /status-diff adapter)
+
+Chat clients must NOT execute a registry's `runner` or select Oracle directly.
+`scripts/resolve_agentos_command.py /status-diff` validates the existing
+`.agentos/commands/status-diff.json` and emits a bounded public intent:
+
+```json
+{"capability":"agentos.command","operation":"invoke","payload":{"command":"/status-diff","command_action":"themis.inventory.diff"}}
+```
+
+`scripts/submit_agentos_command.sh /status-diff <source_commit>` delegates
+to the **existing** `scripts/agentos_dispatch.sh` (authenticated ONE Runner Window)
+and waits for a correlated Receipt. It does not run a local shell command.
+The trusted Runtime must re-validate the command/action pair independently;
+initially only `/status-diff` / `themis.inventory.diff` is authorized.
+Themis uses the already-present `scripts/themis_status_diff.py` implementation
+and stores its snapshot in the AgentOS data root; the bounded response contains
+the change summary, source SHA evidence and report text.
+
+**Operational boundary:** The ChatGPT GitHub connector can read repository
+records but does not presently expose an authorized general ONE Dispatch
+submit action; seeing the manifest or compiling an intent is NOT proof that
+this conversation invoked the Runtime. The Runtime capability must be deployed
+and tested through the existing governed deployment path. Preserve independent
+statuses for `registered`, `routed`, `executed`, and `receipt_readback`.
+New slash commands must be admitted by runtime capability policy; adding a
+registry JSON alone must never authorize arbitrary code execution.
