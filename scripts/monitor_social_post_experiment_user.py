@@ -85,8 +85,9 @@ def main():
     snapshot=build_snapshot(experiment_id=args.experiment_id,account_username=args.account.lstrip('@'),post=post_item,replies=reply_items,previous_reply_ids=set(previous.get('reply_ids') or []))
     latest.write_text(json.dumps(snapshot,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); os.chmod(latest,0o600)
     with (state_dir/'snapshots.jsonl').open('a',encoding='utf-8') as fh: fh.write(json.dumps(snapshot,ensure_ascii=False,separators=(',',':'))+'\n')
-    record=learning_record(snapshot,elapsed_minutes=args.elapsed_minutes,observed_metrics=insight_metrics,hypothesis=args.hypothesis,changed_variables=args.changed_variable)
-    record['insights_status']=insight_status
+    record=learning_record(snapshot,elapsed_minutes=args.elapsed_minutes,
+        observed_metrics=insight_metrics,hypothesis=args.hypothesis,
+        changed_variables=args.changed_variable,insights_status=insight_status)
     with (state_dir/'learning.jsonl').open('a',encoding='utf-8') as fh: fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
     nxt=next_observation(CheckpointPolicy(),elapsed_minutes=args.elapsed_minutes,snapshot=snapshot)
     (state_dir/'next.json').write_text(json.dumps(nxt,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
