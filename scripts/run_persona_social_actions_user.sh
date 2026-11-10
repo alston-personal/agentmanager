@@ -71,12 +71,13 @@ if [ -d "$EVENT_DIR" ] && [ -f "$EVENT_FACILITY" ]; then
   shopt -s nullglob
   for subscription in "$EVENT_DIR"/*.json; do
     name="$(basename "$subscription" .json)"
-    record="$ROOT/pdca/event_receipts/$(date -u +%Y%m%dT%H%M%SZ)-$name.json"
+    record="$ROOT/pdca/event_receipts/$name-$(date -u +%Y%m%d).json"
     relative="pdca/event_subscriptions/$(basename "$subscription")"
     if RESULT="$(python3 "$EVENT_FACILITY" --persona-dir "$ROOT" --subscription "$relative" --receipt-out "$record")"; then
       count="$(python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("due_emitted",0)))' <<<"$RESULT")"
       EVENT_EMITTED=$((EVENT_EMITTED+count))
       if [ "$count" -gt 0 ]; then
+        cp "$record" "$ROOT/pdca/event_receipts/$(date -u +%Y%m%dT%H%M%SZ)-$name-emission.json"
         wake="$(python3 - "$subscription" <<'PY'
 import json,sys
 with open(sys.argv[1],encoding="utf-8") as f:
