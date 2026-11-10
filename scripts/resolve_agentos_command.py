@@ -37,7 +37,7 @@ def resolve_command(command: str, *, registry: Path=REGISTRY) -> dict:
             "schema":"agentos.runner-window-dispatch/v1",
             "capability":"agentos.command",
             "operation":"invoke",
-            "payload":{"command":command,"action":record["action"]}
+            "payload":{"command":command,"command_action":record["action"]}
         },
         "authority":"ONE_CAPABILITY_AND_RUNTIME_AUTHORIZATION_REQUIRED"
     }
