@@ -786,6 +786,8 @@ def next_item(path: Path, *, include_blocked: bool = False) -> dict[str, Any] | 
             continue
         if status == "blocked" and not include_blocked:
             continue
+        if not retry_admission_allowed(item) or not lobster_execution_permitted(item):
+            continue
         candidates.append(item)
     if not candidates:
         return None
@@ -835,21 +837,34 @@ def board_projection(path: Path) -> str:
 
 
 def project_board(path: Path, board: Path) -> None:
+    # Replace the data-layer target atomically, never its repository bridge.
+    board = board.resolve()
     managed = board_projection(path)
-    current = board.read_text(encoding="utf-8") if board.exists() else "# AgentOS Task Board\n"
-    start = "<!-- WORK_COMPLETION_START -->"
-    end = "<!-- WORK_COMPLETION_END -->"
-    if start in current and end in current:
-        before, tail = current.split(start, 1)
-        _, after = tail.split(end, 1)
-        current = before.rstrip() + "\n\n" + after.lstrip()
-    if managed:
-        lines = current.splitlines()
-        insert_at = 1 if lines and lines[0].startswith("#") else 0
-        new_lines = lines[:insert_at] + ["", managed.rstrip(), ""] + lines[insert_at:]
-        current = "\n".join(new_lines).rstrip() + "\n"
     board.parent.mkdir(parents=True, exist_ok=True)
-    board.write_text(current, encoding="utf-8")
+    with locked(board):
+        current = board.read_text(encoding="utf-8") if board.exists() else "# AgentOS Task Board\n"
+        current = re.sub(
+            r"<?!-- WORK_COMPLETION_START -->.*?<!-- WORK_COMPLETION_END -->\s*",
+            "",
+            current,
+            flags=re.S,
+        )
+        current = current.strip() + "\n" if current.strip() else "# AgentOS Task Board\n"
+        if managed:
+            lines = current.splitlines()
+            insert_at = 1 if lines and lines[0].startswith("#") else 0
+            new_lines = lines[:insert_at] + ["", managed.rstrip(), ""] + lines[insert_at:]
+            current = "\n".join(new_lines).rstrip() + "\n"
+        fd, temp = tempfile.mkstemp(prefix=".task-board-", dir=board.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(current)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temp, board)
+        finally:
+            if os.path.exists(temp):
+                os.unlink(temp)
 
 
 def item_id_from_task(text: str) -> str | None:

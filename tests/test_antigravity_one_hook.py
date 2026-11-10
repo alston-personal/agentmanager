@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from agentos_node.antigravity_one_hook import build_injection, _safe_failure_code
 from agentos_node.one_mcp import OneGatewayError
@@ -67,6 +69,18 @@ def envelope_from(output):
 
 
 class AntigravityOneHookTests(unittest.TestCase):
+    def test_malformed_usage_does_not_break_existing_hydration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transcript = Path(tmp) / "transcript.jsonl"
+            transcript.write_text("\n".join([
+                json.dumps({"type": "EPHEMERAL_MESSAGE", "content": "ONE_PREINVOCATION_IR"}),
+                json.dumps({"type": "PLANNER_RESPONSE", "input_tokens": "unknown"}),
+            ]))
+            gateway = FakeGateway()
+            self.assertEqual(build_injection({"invocationNum": 0, "transcriptPath": str(transcript)},
+                                             gateway, selector=selector()), {})
+            self.assertEqual(gateway.resolved, [])
+
     def test_first_invocation_hydrates_active_canonical_ir(self):
         gateway = FakeGateway()
         output = build_injection(
@@ -198,6 +212,157 @@ class AntigravityOneHookTests(unittest.TestCase):
 
         one_error = OneGatewayError("one_http_503")
         self.assertEqual(_safe_failure_code(one_error), "one_http_503")
+
+    def test_already_hydrated_transcript_does_not_reinject_on_next_user_turn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transcript = Path(tmp) / "transcript.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "USER_INPUT", "content": "hi"}),
+                        json.dumps(
+                            {
+                                "type": "EPHEMERAL_MESSAGE",
+                                "content": "AgentOS ONE canonical IR hydration... ONE_PREINVOCATION_IR",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "PLANNER_RESPONSE",
+                                "input_tokens": 2000,
+                                "cache_read_tokens": 12000,
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            gateway = FakeGateway()
+            output = build_injection(
+                {
+                    "invocationNum": 0,
+                    "initialNumSteps": 5,
+                    "transcriptPath": str(transcript),
+                    "modelName": "gemini-test",
+                },
+                gateway,
+                selector=selector(),
+            )
+            self.assertEqual(output, {})
+            self.assertEqual(gateway.resolved, [])
+
+    def test_checkpoint_after_hydration_rehydrates_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transcript = Path(tmp) / "transcript.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "EPHEMERAL_MESSAGE",
+                                "content": "AgentOS ONE canonical IR hydration... ONE_PREINVOCATION_IR",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "PLANNER_RESPONSE",
+                                "input_tokens": 5000,
+                                "cache_read_tokens": 85000,
+                            }
+                        ),
+                        json.dumps({"type": "CHECKPOINT", "content": "compacted"}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            gateway = FakeGateway()
+            output = build_injection(
+                {
+                    "invocationNum": 0,
+                    "initialNumSteps": 12,
+                    "transcriptPath": str(transcript),
+                    "modelName": "gemini-test",
+                },
+                gateway,
+                selector=selector(),
+            )
+            self.assertIn("injectSteps", output)
+            self.assertEqual(len(output["injectSteps"]), 1)
+            self.assertIn("ONE_PREINVOCATION_IR", output["injectSteps"][0]["ephemeralMessage"])
+            self.assertEqual(gateway.resolved, ["agentos-core"])
+
+    def test_context_budget_gatekeeper_yellow_and_red_zones(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transcript = Path(tmp) / "transcript.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "EPHEMERAL_MESSAGE",
+                                "content": "AgentOS ONE canonical IR hydration... ONE_PREINVOCATION_IR",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "PLANNER_RESPONSE",
+                                "model_usage": {
+                                    "input_tokens": 4500,
+                                    "cache_read_tokens": 62000,
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            gateway = FakeGateway()
+            yellow_out = build_injection(
+                {
+                    "invocationNum": 0,
+                    "initialNumSteps": 10,
+                    "transcriptPath": str(transcript),
+                    "modelName": "gemini-test",
+                },
+                gateway,
+                selector=selector(),
+            )
+            self.assertEqual(gateway.resolved, [])
+            self.assertEqual(len(yellow_out["injectSteps"]), 1)
+            sys_msg = yellow_out["injectSteps"][0]["systemMessage"]
+            self.assertIn("CONTEXT_BUDGET_GUARD", sys_msg["systemMessage"])
+            self.assertIn("66500", sys_msg["systemMessage"])
+            self.assertIn("66,500 tokens", sys_msg["metadata"]["user_markdown"])
+            self.assertIn("/compact", sys_msg["metadata"]["user_markdown"])
+
+            # Red zone (>= 100,000 tokens)
+            with transcript.open("a", encoding="utf-8") as fh:
+                fh.write(
+                    json.dumps(
+                        {
+                            "type": "PLANNER_RESPONSE",
+                            "input_tokens": 6000,
+                            "cache_read_tokens": 105000,
+                        }
+                    )
+                    + "\n"
+                )
+            red_out = build_injection(
+                {
+                    "invocationNum": 0,
+                    "initialNumSteps": 14,
+                    "transcriptPath": str(transcript),
+                    "modelName": "gemini-test",
+                },
+                gateway,
+                selector=selector(),
+            )
+            red_msg = red_out["injectSteps"][0]["systemMessage"]
+            self.assertIn("CRITICAL", red_msg["systemMessage"])
+            self.assertIn("111,000 tokens", red_msg["metadata"]["user_markdown"])
 
 
 if __name__ == "__main__":

@@ -230,18 +230,42 @@ def classify_inspector_failure(reason: str) -> str:
     return "UNCLASSIFIED"
 
 
+QUOTA_EXHAUSTED_PATTERNS = (
+    "your ai credits balance is too low",
+    "resource_exhausted",
+    "rate_limit_error",
+    "insufficient_quota",
+    "quota exceeded",
+    "credit balance is too low",
+)
+QUOTA_COOLDOWN_UNTIL = 0.0
+
+
+def is_quota_exhausted_output(output: str) -> bool:
+    lower = str(output or "").casefold()
+    return any(pat in lower for pat in QUOTA_EXHAUSTED_PATTERNS)
+
+
 def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
     """
     執行任務並用 Inspector 驗證。最多重試 3 次。
     返回 (success, result_string)
-    result_string 格式: "PASS: reason" | "FAIL: reason" | "BLOCKED: reason" | "SKIP: reason"
+    result_string 格式: "PASS: reason" | "FAIL: reason" | "BLOCKED: reason" | "SKIP: reason" | "QUOTA_EXHAUSTED: reason"
 
     ⚠️ 重要行為：
-    - TIMEOUT → 立刻 SKIP（不重試，避免 3×5min=15min 卡在同一任務）
+    - 工作目錄不存在 → 立刻 BLOCKED
+    - AI 額度耗盡 (QUOTA_EXHAUSTED) → 立刻啟動斷路器，不消耗重試次數
+    - TIMEOUT → 立刻 BLOCKED（不重試，避免 3×5min=15min 卡在同一任務）
     - 3 次 FAIL → BLOCKED（發 Telegram + 跳下一個任務）
     """
+    global QUOTA_COOLDOWN_UNTIL
     if dry_run:
         return False, "SKIP: dry_run_not_verified"
+
+    if not proj_dir.is_dir():
+        msg = f"工作目錄不存在 ({proj_dir})"
+        logger.warning(f"  🚫 BLOCKED: {msg}")
+        return False, f"BLOCKED: {msg}"
 
     failure_count = 0
     last_inspector_reason = ""
@@ -256,6 +280,10 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
                 return False, f"WAIT_EXTERNAL_UNTIL={until} REASON={reason}"
         if not success:
             logger.warning(f"  Lobster 執行失敗: {output[:100]}")
+            if is_quota_exhausted_output(output):
+                QUOTA_COOLDOWN_UNTIL = time.monotonic() + 1800
+                logger.warning("  ⏸️ 偵測到 AI 額度/速率限制耗盡 (QUOTA_EXHAUSTED)，啟動斷路器，不消耗任務重試次數。")
+                return False, f"QUOTA_EXHAUSTED: {output[:200]}"
             # TIMEOUT 立刻 SKIP，不浪費時間重試
             if output == "TIMEOUT":
                 msg = f"任務逾時（{TASK_TIMEOUT_SECONDS}s），跳過此任務並標記為阻斷"
@@ -491,6 +519,10 @@ def reconcile_completion_queue() -> None:
     except Exception as exc:
         logger.error(f"completion ledger projection failed: {exc}")
 
+def is_completion_work_item(task_text: str) -> bool:
+    return WorkCompletion is not None and WorkCompletion.item_id_from_task(task_text) is not None
+
+
 def completion_begin(task_text: str) -> Optional[str]:
     if WorkCompletion is None:
         return None
@@ -506,6 +538,18 @@ def completion_begin(task_text: str) -> Optional[str]:
             return None
         if not WorkCompletion.retry_admission_allowed(item):
             logger.warning("completion begin denied: exhausted machine retry budget work_id=%s", work_id)
+            if item.get("status") in {"accepted", "in_progress", "verifying"}:
+                try:
+                    WorkCompletion.transition(
+                        COMPLETION_STATE,
+                        work_id=work_id,
+                        target="blocked",
+                        actor="role://lobster",
+                        next_action=item["next_action"],
+                        blocker="exhausted_machine_retry_budget",
+                    )
+                except Exception:
+                    pass
             return None
         if item["status"] not in {"accepted", "blocked", "in_progress", "verifying"}:
             logger.warning("completion begin denied: non-executable state work_id=%s status=%s", work_id, item["status"])
@@ -624,6 +668,19 @@ def completion_finish(work_id: Optional[str], success: bool, output: str) -> Non
                 not_before=until,
                 next_action=item["next_action"],
                 reason=reason[:500],
+            )
+        elif output.startswith("QUOTA_EXHAUSTED:"):
+            from datetime import timedelta
+            until = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+            state = WorkCompletion.load(COMPLETION_STATE)
+            item = state["items"][work_id]
+            WorkCompletion.wait_external(
+                COMPLETION_STATE,
+                work_id=work_id,
+                actor="role://lobster",
+                not_before=until,
+                next_action=item["next_action"],
+                reason=output[:500],
             )
         elif "BLOCKED:" in output:
             state = WorkCompletion.load(COMPLETION_STATE)
@@ -1094,8 +1151,11 @@ def process_project(proj_name: str, dry_run: bool = False) -> bool:
     
     # 執行任務。Durable completion work resumes before ordinary backlog.
     work_id = completion_begin(task["text"])
-    success, output = run_with_inspector(workspace, task["text"], dry_run)
-    completion_finish(work_id, success, output)
+    if is_completion_work_item(task["text"]) and work_id is None:
+        success, output = False, "BLOCKED: completion_begin_denied"
+    else:
+        success, output = run_with_inspector(workspace, task["text"], dry_run)
+        completion_finish(work_id, success, output)
     
     if success:
         mark_task_done(status_md, task)
@@ -1104,15 +1164,42 @@ def process_project(proj_name: str, dry_run: bool = False) -> bool:
         sync_task_done_to_global_todo(task["text"])
     else:
         # 失敗處理：若為 BLOCKED，標記為 [!] 避免無限重複嘗試同一失敗任務
-        if "BLOCKED:" in output:
+        if output.startswith("QUOTA_EXHAUSTED:"):
+            content = status_md.read_text(encoding="utf-8")
+            old_line = task["raw_line"]
+            new_line = re.sub(r"\[[ /]\]", "[ ]", old_line, count=1)
+            if old_line != new_line:
+                status_md.write_text(content.replace(old_line, new_line, 1), encoding="utf-8")
+            logger.warning(f"⏸️ [{proj_name}] AI 額度耗盡，任務重置為 [ ] 並進入長冷卻")
+        elif "BLOCKED:" in output:
             mark_task_blocked(status_md, task)
             log_activity(status_md, f"任務阻斷（{output[:120]}）")
             logger.warning(f"🚫 [{proj_name}] 任務 BLOCKED，標記 [!] 避免阻塞後續任務")
         else:
-            log_activity(status_md, f"任務執行失敗（{output[:120]}）")
-            logger.warning(f"⚠️ [{proj_name}] 任務失敗，保留進行中狀態等待人工介入")
+            mark_task_blocked(status_md, task)
+            log_activity(status_md, f"任務執行失敗阻斷（{output[:120]}）")
+            logger.warning(f"🚫 [{proj_name}] 任務失敗，標記 [!] 避免無限重試")
     
     return True
+
+
+def acquire_singleton_lock() -> Optional[object]:
+    """Acquire an exclusive non-blocking flock so only one Lobster Engine runs."""
+    import fcntl
+    lock_path = AGENT_DATA_ROOT / "runtime" / "lobster.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock_path, "a+", encoding="utf-8")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fh.seek(0)
+        fh.truncate(0)
+        fh.write(f"{os.getpid()}\n")
+        fh.flush()
+        return fh
+    except BlockingIOError:
+        fh.close()
+        return None
+
 
 def main():
     global ACTIVE_ENGINE
@@ -1127,6 +1214,13 @@ def main():
     args = parser.parse_args()
 
     ACTIVE_ENGINE = args.engine
+
+    lock_handle = None
+    if not args.dry_run:
+        lock_handle = acquire_singleton_lock()
+        if lock_handle is None:
+            logger.warning("🔒 另一個 Lobster Engine 實例正在運行中 (singleton lock held)，本進程立即退出。")
+            return
     
     # 優雅關閉
     running = [True]
@@ -1144,6 +1238,7 @@ def main():
         logger.info(f"━━━ 迭代 #{iteration} ━━━")
         
         did_work = False
+        quota_cooldown = False
         reconcile_completion_queue()
         
         if args.project:
@@ -1168,8 +1263,16 @@ def main():
                     
                     # 執行任務。Completion Controller 項目先進入 durable in_progress。
                     work_id = completion_begin(task["text"])
-                    success, output = run_with_inspector(completion_workspace(work_id, proj_name), task["text"], args.dry_run)
-                    completion_finish(work_id, success, output)
+                    if is_completion_work_item(task["text"]) and work_id is None:
+                        success, output = False, "BLOCKED: completion_begin_denied"
+                    else:
+                        workspace = completion_workspace(work_id, proj_name)
+                        if not workspace.is_dir():
+                            success, output = False, f"BLOCKED: 工作目錄不存在 ({workspace})"
+                            completion_finish(work_id, success, output)
+                        else:
+                            success, output = run_with_inspector(workspace, task["text"], args.dry_run)
+                            completion_finish(work_id, success, output)
                     
                     # 在 TASK_BOARD 更新狀態
                     if success:
@@ -1181,7 +1284,11 @@ def main():
                         logger.info(f"🎉 [{proj_name}] 任務完成！")
                         sync_task_done_to_global_todo(task["text"])
                     else:
-                        if "BLOCKED:" in output:
+                        if output.startswith("QUOTA_EXHAUSTED:"):
+                            mark_board_task(proj_name, task["text"], "todo", current_status="in_progress")
+                            quota_cooldown = True
+                            logger.warning(f"⏸️ [{proj_name}] AI 額度耗盡，任務重置為 [ ] 並啟動 1800s 斷路器冷卻")
+                        elif "BLOCKED:" in output:
                             # BLOCKED → 標記 [!]，跳過繼續（不停機）
                             mark_board_task(proj_name, task["text"], "blocked", current_status="in_progress")
                             logger.warning(f"🚫 [{proj_name}] 任務 BLOCKED，標記 [!] 並繼續下一個")
@@ -1190,12 +1297,13 @@ def main():
                             mark_board_task(proj_name, task["text"], "todo", current_status="in_progress")
                             logger.warning(f"⏭️ [{proj_name}] 任務 SKIP，重置為 [ ] 等下次")
                         else:
-                            mark_board_task(proj_name, task["text"], "in_progress", current_status="in_progress")  # 保留 [/] 狀態
+                            mark_board_task(proj_name, task["text"], "blocked", current_status="in_progress")
+                            logger.warning(f"🚫 [{proj_name}] 任務失敗，標記 [!] 避免無限重試")
                         # 同步回各專案的 STATUS.md
                         status_md = PROJECTS_DIR / proj_name / "STATUS.md"
                         if status_md.exists():
                             log_activity(status_md, f"任務執行失敗（{output[:120]}）")
-                        logger.warning(f"⚠️ [{proj_name}] 任務失敗，保留狀態: {output[:100]}")
+                        logger.warning(f"⚠️ [{proj_name}] 任務未完成: {output[:100]}")
                     
                     did_work = True
                     pending_found = True
@@ -1218,7 +1326,11 @@ def main():
         if not args.loop:
             break
         
-        if not did_work:
+        remaining_quota_wait = max(0, int(QUOTA_COOLDOWN_UNTIL - time.monotonic()) + 1)
+        if quota_cooldown or remaining_quota_wait:
+            sleep_sec = max(args.cool_down, 1800 if quota_cooldown else remaining_quota_wait)
+            logger.info(f"⏸️ AI 額度耗盡斷路器啟動，休眠 {sleep_sec}s 後重試...")
+        elif not did_work:
             # 所有專案都沒有待辦任務，進入休眠
             sleep_sec = args.cool_down * 3  # 空閒時睡更久
             logger.info(f"😴 所有任務已完成，休眠 {sleep_sec}s 後重新掃描...")

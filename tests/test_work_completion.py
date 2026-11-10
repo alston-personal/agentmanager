@@ -524,5 +524,111 @@ class WorkCompletionTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             evaluate("unknown_state", "role://completion.controller")
 
+    def test_project_board_cleans_torn_blocks_and_next_item_respects_retry_budget(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            board = Path(temp) / "TASK_BOARD.md"
+            board.write_text(
+                "# AgentOS Task Board\n\n"
+                "!-- WORK_COMPLETION_START -->\n"
+                "### 📦 agentos-core\n"
+                "- [~] [WI:wi-1] stale torn block\n"
+                "<!-- WORK_COMPLETION_END -->\n",
+                encoding="utf-8",
+            )
+            self.register(path)
+            state = mod.load(path)
+            state["items"]["wi-1"]["last_blocker_kind"] = "VERIFICATION"
+            state["items"]["wi-1"]["machine_retry_count"] = mod.VERIFICATION_RETRY_LIMIT
+            mod.save(path, state)
+            self.assertIsNone(mod.next_item(path))
+            mod.project_board(path, board)
+            cleaned = board.read_text(encoding="utf-8")
+            self.assertNotIn("WORK_COMPLETION_START", cleaned)
+            self.assertNotIn("wi-1", cleaned)
+
+    def test_lobster_missing_workspace_and_quota_circuit_breaker(self):
+        from unittest import mock
+        import scripts.lobster as lobster
+
+        # Missing workspace immediately returns BLOCKED without invoking engine
+        with mock.patch.object(lobster, "run_claude_task_wrapper") as wrapper:
+            ok, out = lobster.run_with_inspector(Path("/nonexistent/workspace-xyz"), "test task", dry_run=False)
+            self.assertFalse(ok)
+            self.assertTrue(out.startswith("BLOCKED:"))
+            wrapper.assert_not_called()
+
+        # Quota exhaustion triggers circuit breaker on attempt 1 without burning 3 retries
+        with tempfile.TemporaryDirectory() as temp:
+            ws = Path(temp)
+            with mock.patch.object(lobster, "QUOTA_COOLDOWN_UNTIL", 0), mock.patch.object(
+                lobster,
+                "run_claude_task_wrapper",
+                return_value=(False, "EXIT_3: error: Your AI credits balance is too low to continue. RESOURCE_EXHAUSTED"),
+            ) as wrapper:
+                ok, out = lobster.run_with_inspector(ws, "test task", dry_run=False)
+                self.assertFalse(ok)
+                self.assertTrue(out.startswith("QUOTA_EXHAUSTED:"))
+                self.assertEqual(wrapper.call_count, 1)
+                self.assertGreater(lobster.QUOTA_COOLDOWN_UNTIL, lobster.time.monotonic() + 1790)
+
+    def test_cerberus_sentinel_detects_duplicate_lobsters_and_task_storms(self):
+        from unittest import mock
+        import os as _os
+        import scripts.system_quality_sentinel as sqs
+
+        sentinel = sqs.SystemQualitySentinel()
+        with tempfile.TemporaryDirectory() as temp:
+            temp_root = Path(temp)
+            (temp_root / "logs" / "tasks").mkdir(parents=True)
+            for i in range(8):
+                (temp_root / "logs" / "tasks" / f"20261110_14000{i}_proj_storm-task.log").write_text("log", encoding="utf-8")
+            with mock.patch.object(sqs, "AGENT_DATA_ROOT", temp_root), \
+                 mock.patch.object(sqs, "enqueue_incident"), \
+                 mock.patch.object(sentinel, "_discover_lobster_loop_pids", return_value=[1001, 1002, 1003]), \
+                 mock.patch.object(sentinel, "_canonical_lobster_pid", return_value=1003), \
+                 mock.patch.object(_os, "kill") as mock_kill:
+                sentinel.check_file_conflicts_and_deadlocks()
+                self.assertEqual(mock_kill.call_count, 2)
+                self.assertEqual(len(sentinel.auto_fixes), 2)
+                self.assertTrue(any("違反單例原則" in e for e in sentinel.errors))
+                self.assertTrue(any("任務執行風暴" in e for e in sentinel.errors))
+
+    def test_project_board_preserves_data_layer_symlink(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            target = Path(temp) / "data" / "TASK_BOARD.md"
+            target.parent.mkdir()
+            target.write_text("# Tasks\n\nUser-owned note\n", encoding="utf-8")
+            bridge = Path(temp) / "TASK_BOARD.md"
+            bridge.symlink_to(target)
+            self.register(path)
+            mod.project_board(path, bridge)
+            self.assertTrue(bridge.is_symlink())
+            self.assertIn("User-owned note", target.read_text())
+            self.assertIn("wi-1", target.read_text())
+
+    def test_sentinel_does_not_kill_without_authoritative_service_pid(self):
+        from unittest import mock
+        import scripts.system_quality_sentinel as sqs
+        sentinel = sqs.SystemQualitySentinel()
+        with tempfile.TemporaryDirectory() as temp, \
+             mock.patch.object(sqs, "AGENT_DATA_ROOT", Path(temp)), \
+             mock.patch.object(sqs, "AGENTMANAGER_ROOT", Path(temp)), \
+             mock.patch.object(sqs, "enqueue_incident"), \
+             mock.patch.object(sentinel, "_discover_lobster_loop_pids", return_value=[1001, 1002]), \
+             mock.patch.object(sentinel, "_canonical_lobster_pid", return_value=None), \
+             mock.patch.object(sqs.os, "kill") as kill:
+            sentinel.check_file_conflicts_and_deadlocks()
+            kill.assert_not_called()
+
+    def test_sentinel_discovery_rejects_command_text_mentions(self):
+        from unittest import mock
+        import scripts.system_quality_sentinel as sqs
+        output = "PID COMMAND\n1001 python3 /home/ubuntu/agentmanager/scripts/lobster.py --loop\n1002 bash -c 'python3 /home/ubuntu/agentmanager/scripts/lobster.py --loop'\n1003 python3 /tmp/lobster.py --loop\n"
+        with mock.patch("subprocess.run", return_value=mock.Mock(stdout=output)):
+            self.assertEqual(sqs.SystemQualitySentinel()._discover_lobster_loop_pids(), [1001])
+
+
 if __name__ == "__main__":
     unittest.main()
