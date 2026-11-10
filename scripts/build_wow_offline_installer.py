@@ -13,6 +13,8 @@ from pathlib import Path
 
 FILES = (
     "Install-AgentOS-WoW.cmd",
+    "Join-AgentOS-Node.cmd",
+    "scripts/AgentOS-Join.cmd",
     "scripts/WoW-AgentOS-Setup.cmd",
     "scripts/wow_agentos_install.ps1",
     "scripts/wow_agentos_select_game.ps1",
