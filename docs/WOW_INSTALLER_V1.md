@@ -103,3 +103,15 @@ The manifest verification requirement means the installer is designed to run
 from an extracted ZIP bundle, not directly from a bare source checkout lacking
 the generated manifest. No live WoW client, Windows deployment or public
 download is claimed by these source changes.
+
+## Root-level Windows entry
+
+The extracted ZIP includes `Install-AgentOS-WoW.cmd` directly at its root.
+It delegates to the existing `scripts/WoW-AgentOS-Setup.cmd`; no second
+installer, registry changes or privilege escalation is introduced.
+Its own content is included in `manifest.json`, so tampering is detected
+before game files are modified.
+
+This is an **offline preview**, not an authenticated Bridge or official-site
+release. The user still supplies a confirmed Forever game root and approves
+installation; the existing Node and Realm are reused unchanged.
