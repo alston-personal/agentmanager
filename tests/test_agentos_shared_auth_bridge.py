@@ -10,6 +10,10 @@ import agent_core.shared_auth_bridge as bridge
 def test_auth_route_allowlist_and_host_isolation(tmp_path: Path):
     assert bridge.is_shared_auth_path("/dashboard/api/auth/signin/google")
     assert bridge.is_shared_auth_path("/dashboard/api/auth/callback/github")
+    assert bridge.is_shared_auth_path("/dashboard/api/auth/signin/facebook")
+    assert bridge.is_shared_auth_path("/dashboard/api/auth/callback/facebook")
+    assert bridge.is_shared_auth_path("/dashboard/api/auth/signin/line")
+    assert bridge.is_shared_auth_path("/dashboard/api/auth/callback/line")
     assert bridge.is_shared_auth_path("/dashboard/api/auth/session")
     for path in (
         "/dashboard/api/auth/login", "/dashboard/api/auth/pwa/start",
@@ -40,7 +44,8 @@ def test_proxy_preserves_oauth_redirect_and_multiple_cookies(tmp_path: Path, mon
     class AuthStub(BaseHTTPRequestHandler):
         def do_GET(self):
             calls.append((self.path, self.headers.get("Host"),
-                          self.headers.get("Cookie"), self.headers.get("Authorization")))
+                          self.headers.get("Cookie"), self.headers.get("Authorization"),
+                          self.headers.get("X-Forwarded-Host"), self.headers.get("X-Forwarded-Proto")))
             self.send_response(302)
             self.send_header("Location", "https://agentos.milkcat.org/")
             self.send_header("Set-Cookie", "auth_token=one; Path=/; HttpOnly")
@@ -71,6 +76,7 @@ def test_proxy_preserves_oauth_redirect_and_multiple_cookies(tmp_path: Path, mon
         assert calls == [(
             "/dashboard/api/auth/callback/google?code=x&state=y",
             "agentos.milkcat.org", "oauth_return_to=test", None,
+            "agentos.milkcat.org", "https",
         )]
     finally:
         server.shutdown()
