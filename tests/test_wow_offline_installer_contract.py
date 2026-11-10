@@ -31,6 +31,14 @@ class WowOfflineInstallerContractTests(unittest.TestCase):
         self.assertLess(src.index(' Assert-BundleIntegrity'),
                         src.index(' $staged=New-Object'))
 
+    def test_root_launcher_is_present_and_routes_to_existing_setup(self):
+        root_launcher=(ROOT/'Install-AgentOS-WoW.cmd').read_text(encoding='utf-8')
+        self.assertIn('scripts\\WoW-AgentOS-Setup.cmd', root_launcher)
+        self.assertIn('call ', root_launcher)
+        self.assertIn('exit /b %ERRORLEVEL%', root_launcher)
+        package_script=(SCRIPTS/'build_wow_offline_installer.py').read_text(encoding='utf-8')
+        self.assertIn('"Install-AgentOS-WoW.cmd"', package_script)
+
     def test_launcher_uses_installer_instead_of_preflight_only(self):
         launcher=(SCRIPTS/'WoW-AgentOS-Setup.cmd').read_text(encoding='utf-8')
         self.assertIn('wow_agentos_install.ps1', launcher)
