@@ -51,6 +51,24 @@ try{
  Assert-True (-not (Test-Path (Join-Path $addonRoot 'AgentOSWoW'))) 'uninstall did not remove main addon'
  Assert-True (-not (Test-Path (Join-Path $addonRoot 'AgentOSWoW_R001'))) 'uninstall did not remove reply addon'
  Assert-True (Test-Path (Join-Path $installRoot 'state\client.json')) 'Node configuration was modified'
+ # Offline addon UI is installable without Node, but must not fake an online connection.
+ $nodeConfig=Join-Path $installRoot 'state\client.json'
+ $nodeLauncher=Join-Path $installRoot 'agentos-client.cmd'
+ $nodeConfigBackup=Join-Path $temp 'node-config-backup.json'
+ $nodeLauncherBackup=Join-Path $temp 'node-launcher-backup.cmd'
+ Move-Item -LiteralPath $nodeConfig -Destination $nodeConfigBackup
+ Move-Item -LiteralPath $nodeLauncher -Destination $nodeLauncherBackup
+ try {
+   $offlineResult=(& $installer -Mode Install -WowRoot $gameRoot -InstallRoot $installRoot -OneUrl $url -TargetRealmId 'mock-realm' -ConfirmInstall 3>&1 | Out-String)
+   Assert-True ($offlineResult -like '*OFFLINE Addon UI only*') 'missing explicit offline warning'
+   Assert-True (Test-Path (Join-Path $addonRoot 'AgentOSWoW\AgentOSWoW.lua')) 'offline addon UI not installed'
+   Assert-True (-not (Test-Path $nodeConfig)) 'offline installation created Node credentials'
+   Assert-True (-not (Test-Path $nodeLauncher)) 'offline installation created Node launcher'
+   & $installer -Mode Uninstall -WowRoot $gameRoot -InstallRoot $installRoot -ConfirmInstall
+ }finally{
+   Move-Item -LiteralPath $nodeConfigBackup -Destination $nodeConfig
+   Move-Item -LiteralPath $nodeLauncherBackup -Destination $nodeLauncher
+ }
  & $installer -Mode Install -WowRoot $gameRoot -InstallRoot $installRoot -OneUrl $url -TargetRealmId 'mock-realm' -ConfirmInstall
  Add-Content -LiteralPath (Join-Path $addonRoot 'AgentOSWoW\AgentOSWoW.lua') -Value '-- custom local content'
  $wasRejected=$false
