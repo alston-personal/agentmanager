@@ -7,7 +7,9 @@ from pathlib import Path
 ROOT=Path('/home/ubuntu/agent-data/runtime/social/post-experiments')
 QUEUE=ROOT/'queue'
 DONE=ROOT/'completed'
-REPO=Path('/home/ubuntu/agentmanager')
+# The queue is itself installed into a versioned, immutable Galaxy Monitor
+# release. Child monitors must use that SAME release, never a mutable checkout.
+REPO=Path(__file__).resolve().parents[1]
 
 def parse_iso(value):
     return datetime.fromisoformat(str(value).replace('Z','+00:00')).astimezone(timezone.utc)
@@ -20,6 +22,8 @@ def save(path,payload):
 
 def main():
     QUEUE.mkdir(parents=True,exist_ok=True); DONE.mkdir(parents=True,exist_ok=True)
+    if not (REPO / 'GENERATION').is_file() or not (REPO / 'scripts/monitor_social_post_experiment_user.py').is_file():
+        raise SystemExit('social_experiment_queue=IMMUTABLE_RUNTIME_UNAVAILABLE')
     os.chmod(QUEUE,0o700); os.chmod(DONE,0o700)
     now=datetime.now(timezone.utc)
     checked=0; advanced=0; failed=0
