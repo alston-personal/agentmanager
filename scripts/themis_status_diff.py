@@ -320,6 +320,8 @@ def run_inventory_diff(
     data_root: Path = AGENT_DATA_DEFAULT,
     save: bool = True,
     output_json: bool = False,
+    base_target: Optional[str] = None,
+    previous_n: Optional[int] = None,
 ) -> Tuple[Dict[str, Any], str]:
     """執行全流程盤點、比對與快照儲存。"""
     snapshot_dir = data_root / "snapshots" / "inventory"
@@ -328,7 +330,38 @@ def run_inventory_diff(
 
     # 1. 讀取 baseline
     baseline = None
-    if latest_file.exists():
+    all_snapshots = sorted(snapshot_dir.glob("snapshot-*.json"))
+
+    if base_target:
+        if base_target in ("start-of-day", "today"):
+            # 尋找今日最早的快照
+            today_str = datetime.datetime.now(
+                datetime.timezone(datetime.timedelta(hours=8))
+            ).strftime("%Y%m%d")
+            today_snaps = [s for s in all_snapshots if s.name.startswith(f"snapshot-{today_str}")]
+            if today_snaps:
+                try:
+                    baseline = json.loads(today_snaps[0].read_text(encoding="utf-8"))
+                except Exception:
+                    baseline = None
+        else:
+            cand = Path(base_target)
+            if not cand.exists() and (snapshot_dir / base_target).exists():
+                cand = snapshot_dir / base_target
+            if cand.exists():
+                try:
+                    baseline = json.loads(cand.read_text(encoding="utf-8"))
+                except Exception:
+                    baseline = None
+    elif previous_n is not None and previous_n > 0:
+        # 指定比對倒數第 N 個歷史快照
+        if len(all_snapshots) >= previous_n:
+            target_snap = all_snapshots[-previous_n]
+            try:
+                baseline = json.loads(target_snap.read_text(encoding="utf-8"))
+            except Exception:
+                baseline = None
+    elif latest_file.exists():
         try:
             baseline = json.loads(latest_file.read_text(encoding="utf-8"))
         except Exception:
@@ -369,9 +402,16 @@ def main():
     parser = argparse.ArgumentParser(description="Themis State Inventory & Temporal Delta Diff Engine")
     parser.add_argument("--no-save", action="store_true", help="Do not persist the current snapshot to disk")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON instead of markdown")
+    parser.add_argument("--base", type=str, default=None, help="Baseline snapshot (snapshot filename, path, or 'start-of-day')")
+    parser.add_argument("--previous", type=int, default=None, help="Compare with Nth snapshot from the end (e.g. 1 for previous snapshot)")
     args = parser.parse_args()
 
-    result, report_md = run_inventory_diff(save=not args.no_save, output_json=args.json)
+    result, report_md = run_inventory_diff(
+        save=not args.no_save,
+        output_json=args.json,
+        base_target=args.base,
+        previous_n=args.previous,
+    )
 
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
