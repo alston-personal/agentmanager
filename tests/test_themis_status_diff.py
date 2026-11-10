@@ -12,6 +12,7 @@ from scripts.themis_status_diff import (
     scan_projects,
     compute_delta,
     format_markdown_report,
+    run_inventory_diff,
 )
 from agent_core.base_pdca import get_worker, ThemisCommandWorker
 
@@ -110,6 +111,31 @@ class TestThemisStatusDiff(unittest.TestCase):
         self.assertIn("proj-2", md)
         self.assertIn("11111111", md)
         self.assertIn("22222222", md)
+
+    def test_run_inventory_diff_with_base_and_previous(self):
+        snapshot_dir = self.mock_data / "snapshots" / "inventory"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        s1 = {
+            "schema": "agentos.inventory-snapshot/v1",
+            "timestamp": "2026-11-09T08:00:00+08:00",
+            "git": {"commit_sha": "aaaa1111", "branch": "main", "is_clean": True},
+            "projects_summary": {"total_projects": 1, "total_open": 10, "total_closed": 0, "total_with_ac": 0},
+            "projects": {},
+            "atlas": {"latest_cycle": 1},
+        }
+        s1_file = snapshot_dir / "snapshot-20261109_080000.json"
+        s1_file.write_text(json.dumps(s1), encoding="utf-8")
+
+        # 執行並比對 s1
+        res, md = run_inventory_diff(
+            project_root=Path("/home/ubuntu/agentmanager"),
+            data_root=self.mock_data,
+            save=False,
+            base_target=s1_file.name,
+        )
+        self.assertTrue(res["delta"]["has_baseline"])
+        self.assertEqual(res["delta"]["git_delta"]["old_sha"], "aaaa1111")
+        self.assertIn("aaaa1111", md)
 
     def test_worker_registration(self):
         worker = get_worker("themis")

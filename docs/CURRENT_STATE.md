@@ -1096,9 +1096,10 @@ Implemented `scripts/themis_status_diff.py` (verified by `tests/test_themis_stat
 Features:
 - Scans full project island inventory (61+ projects, STATUS.md presence, Open/Closed/AC TODOs).
 - Persists historical snapshots in Data Layer (`$AGENT_DATA_ROOT/snapshots/inventory/`) preserving physical Logic/Data separation.
-- Computes atomic temporal deltas (Git SHA, project count, TODO progression, and Atlas closure cycles) against baseline `latest.json`.
+- Computes atomic temporal deltas (Git SHA, project count, TODO progression, and Atlas closure cycles) against baseline `latest.json`, with flexible baseline selection (`--base <snapshot|start-of-day>` and `--previous <N>`).
 - Integrated `ThemisCommandWorker` into `agent_core/base_pdca.py` under Rhea's physical seal (`scripts/rhea_role_steward.py --seal`).
 - Hardened `scripts/role_pdca_runner.py` and `scripts/aggregate_tasks.py` with anti-head-of-line blocking, sub-heading markdown support, and PATH execution environment injection.
+- Extended ecosystem island governance to `social-galaxy` (Project 62/63), initiating multi-platform architecture decoupling from single-network Threads binding to generic Social Graph Engine.
 
 ## Hermes #2120: first live scan and post-claim clock fix (2026-11-09)
 
