@@ -113,7 +113,11 @@ def evaluate(config, at, existing=()):
             "id":"evt-"+eid,"type":"persona.stochastic_event" if config["target"].startswith("persona:") else "facility.stochastic_event",
             "schema":"agentos.event.occurrence/v1","subscription_id":config["subscription_id"],
             "target":config["target"],"local_date":day,
-            "timestamp":scheduled.astimezone(timezone.utc).isoformat().replace("+00:00","Z"),
+            # Event cursor uses actual committed-emission time; scheduled_at is
+            # informational. A delayed carrier must not make a newly emitted
+            # occurrence look older than the subscriber's event cursor.
+            "timestamp":at.astimezone(timezone.utc).isoformat().replace("+00:00","Z"),
+            "scheduled_at":scheduled.astimezone(timezone.utc).isoformat().replace("+00:00","Z"),
             "category":definition["id"],"severity":level,"summary":definition["summary"],
             "temporary_effect":definition.get("temporary_effect",{}),
             "fictional_character_event":bool(definition.get("fictional")),
