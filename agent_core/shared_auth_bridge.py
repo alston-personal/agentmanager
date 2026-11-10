@@ -15,7 +15,7 @@ BLUE_GREEN_ACTIVE_PORT = Path("/home/ubuntu/agent-data/runtime/dashboard-blue-gr
 AUTHORIZED_PORTS = {3000, 3040, 3041}
 AUTHORIZED_HOST = "agentos.milkcat.org"
 _ALLOWED_AUTH_ROUTES = re.compile(
-    r"/dashboard/api/auth/(?:signin/(?:google|github|facebook|line)|callback/(?:google|github)|session|logout)/?\Z"
+    r"/dashboard/api/auth/(?:signin/(?:google|github|facebook|line)|callback/(?:google|github|facebook|line)|session|logout)/?\Z"
 )
 _ALLOWED_RESPONSE_HEADERS = {"content-type", "location", "set-cookie", "cache-control", "vary"}
 
