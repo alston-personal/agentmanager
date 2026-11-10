@@ -84,6 +84,19 @@ jobs:
           ! grep -q 'Realm gateway route not allowlisted' /tmp/agentos-rb
           echo 'clean_next_gateway_route=PASS'
           echo 'clean_next_bootstrap_allowlist=PASS'
+          # A bare GET must pass the public Gateway allowlist to the
+          # upstream ONE authorization layer; a local missing ONE returns 502.
+          # The Gateway must NOT invent a 401 or permit POST dispatch.
+          dispatch_code=$(curl -sS -D /tmp/agentos-dh -o /tmp/agentos-db -w '%{http_code}' --max-time 4 http://127.0.0.1:3000/dashboard/api/agentos/v1/dispatch || true)
+          grep -qi '^x-agentos-realm-gateway: v0.1' /tmp/agentos-dh
+          test "$dispatch_code" = 502
+          ! grep -q 'Realm gateway route not allowlisted' /tmp/agentos-db
+          post_dispatch_code=$(curl -sS -o /tmp/agentos-pdb -w '%{http_code}' --max-time 4 -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/dashboard/api/agentos/v1/dispatch || true)
+          test "$post_dispatch_code" = 404
+          grep -q 'Realm gateway route not allowlisted' /tmp/agentos-pdb
+          echo 'clean_next_dispatch_get_catalog=PASS'
+          echo 'clean_next_dispatch_post_denied=PASS'
+
           echo 'clean_next_resolve_allowlist=PASS'
 
 
