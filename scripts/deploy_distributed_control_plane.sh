@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Service-specific release controller; does not switch Realm Fabric/Core pointers.
 set -euo pipefail
-SOURCE_REPO="$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)"
+SOURCE_REPO="${AGENTOS_REPO:-$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)}"
 COMMIT="${1:?Usage: deploy_distributed_control_plane.sh FULL_COMMIT_SHA}"
 [[ "$COMMIT" =~ ^[a-f0-9]{40}$ ]] || { echo 'An exact commit is required' >&2; exit 2; }
 [[ "$(git -C "$SOURCE_REPO" rev-parse "$COMMIT^{commit}")" == "$COMMIT" ]]
