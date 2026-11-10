@@ -22,6 +22,7 @@ on:
       - '.github/workflows/oracle-social-runtime-rollout.yml'
   pull_request:
     branches:
+      - main
       - core/integration
     paths:
       - 'agentos_node/social/**'
@@ -89,6 +90,13 @@ jobs:
           assert f"THREADS_REDIRECT_URI='{callback}'" in deploy
           assert "raise SystemExit('social_runtime_threads_redirect=NON_CANONICAL')" in deploy
           assert "print('social_runtime_threads_redirect=CANONICAL')" in deploy
+          # Dashboard's governed Nginx upstream can be 3000/3040/3041:
+          # local health must use the *active* HTTPS route with exact TLS/SNI.
+          assert 'LOCAL_GATEWAY="$PUBLIC_HEALTH"' in deploy
+          assert 'LOCAL_RESOLVE="studio.milkcat.org:443:127.0.0.1"' in deploy
+          assert 'curl --noproxy' in deploy and '--resolve "$LOCAL_RESOLVE"' in deploy
+          assert 'nginx_tls_or_active_upstream_unavailable' in deploy
+          assert "LOCAL_GATEWAY='http://127.0.0.1:3000" not in deploy
           for leaking in ('print(observed)', 'print(f"{observed}', "print(f'{observed}", '% observed'):
               assert leaking not in deploy, leaking
           assert callback in docs

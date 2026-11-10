@@ -7,6 +7,23 @@ on:
     paths:
       - 'agentos_node/social/post_experiment.py'
       - 'scripts/monitor_social_post_experiment_user.py'
+      - 'scripts/run_social_post_experiment_queue_user.py'
+      - 'scripts/migrate_galaxy_monitor_immutable_runtime_user.sh'
+      - 'tests/test_galaxy_monitor_immutable_runtime.py'
+      - 'tests/test_social_post_experiment.py'
+      - 'docs/SOCIAL_POST_EXPERIMENT_CAPABILITY.md'
+      - '.github/workflows/social-post-experiment-guard.yml'
+
+  pull_request:
+    branches:
+      - main
+      - core/integration
+    paths:
+      - 'agentos_node/social/post_experiment.py'
+      - 'scripts/monitor_social_post_experiment_user.py'
+      - 'scripts/run_social_post_experiment_queue_user.py'
+      - 'scripts/migrate_galaxy_monitor_immutable_runtime_user.sh'
+      - 'tests/test_galaxy_monitor_immutable_runtime.py'
       - 'tests/test_social_post_experiment.py'
       - 'docs/SOCIAL_POST_EXPERIMENT_CAPABILITY.md'
       - '.github/workflows/social-post-experiment-guard.yml'
@@ -26,5 +43,7 @@ jobs:
         run: |
           python -m py_compile agentos_node/social/post_experiment.py
           python -m py_compile scripts/monitor_social_post_experiment_user.py
+          python -m py_compile scripts/run_social_post_experiment_queue_user.py
+          bash -n scripts/migrate_galaxy_monitor_immutable_runtime_user.sh
       - name: Run focused tests
-        run: python -m unittest -v tests.test_social_post_experiment
+        run: python -m unittest -v tests.test_social_post_experiment tests.test_galaxy_monitor_immutable_runtime
