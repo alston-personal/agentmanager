@@ -1,0 +1,41 @@
+from pathlib import Path
+import unittest
+
+ROOT=Path(__file__).resolve().parents[1]
+SCRIPTS=ROOT/'scripts'
+ADDONS=ROOT/'integrations'/'wow'
+
+
+class WowOfflineInstallerContractTests(unittest.TestCase):
+    def test_installer_requires_existing_node_and_explicit_consent(self):
+        script=(SCRIPTS/'wow_agentos_install.ps1').read_text(encoding='utf-8')
+        for required in (
+            'NODE_VERIFIED', "wow_client -ne 'forever'", 'ConfirmInstall',
+            'Read-Host', 'NOT_APPROVED', 'CLOSE_WOW_BEFORE_CHANGING_ADDONS',
+            'COPY_HASH_MISMATCH', 'Get-FileHash', 'Move-Item', 'Remove-Item',
+            'ADDON_ALREADY_EXISTS', 'AgentOSWoW_R001', 'AGENTOS_WOW_INSTALLER',
+            'ADDON_CONTENT_CHANGED_REFUSE_UNINSTALL',
+        ):
+            self.assertIn(required,script)
+        for forbidden in ('Invoke-WebRequest','Invoke-RestMethod','node_token =','agentos-client.cmd join'):
+            self.assertNotIn(forbidden,script)
+
+    def test_launcher_uses_installer_instead_of_preflight_only(self):
+        launcher=(SCRIPTS/'WoW-AgentOS-Setup.cmd').read_text(encoding='utf-8')
+        self.assertIn('wow_agentos_install.ps1', launcher)
+        self.assertIn('-Mode Install', launcher)
+        self.assertIn('World of Warcraft root', launcher)
+
+    def test_addon_sources_are_complete_and_version_marked(self):
+        main=ADDONS/'AgentOSWoW'
+        reply=ADDONS/'AgentOSWoW_R001'
+        self.assertTrue((main/'AgentOSWoW.lua').is_file())
+        self.assertTrue((reply/'Reply.lua').is_file())
+        self.assertIn('## Interface: 16001',
+                      (main/'AgentOSWoW.toc').read_text(encoding='utf-8'))
+        self.assertIn('## LoadOnDemand: 1',
+                      (reply/'AgentOSWoW_R001.toc').read_text(encoding='utf-8'))
+
+
+if __name__=='__main__':
+    unittest.main()
