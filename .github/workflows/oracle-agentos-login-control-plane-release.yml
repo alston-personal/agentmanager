@@ -51,7 +51,7 @@ jobs:
           DASH_DEPLOY=/tmp/agentos-shared-auth-dashboard-"$SOURCE_SHA".sh
           git -C "$REPO" show "$SOURCE_SHA:scripts/deploy_dashboard_blue_green_user.sh" > "$DASH_DEPLOY"
           chmod 700 "$DASH_DEPLOY"
-          DASH_RUN_ID="$(date +%s)$"
+          DASH_RUN_ID="$(date +%s%N)"
           "$DASH_DEPLOY" "$SOURCE_SHA" "$DASH_RUN_ID" 1
           echo "shared_dashboard_auth_source=$SOURCE_SHA"
 
