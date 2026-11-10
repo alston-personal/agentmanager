@@ -1,5 +1,9 @@
 # AgentOS Current Architecture & Reality
 
+## Event Facility subscription-root correction (2026-11-10)
+
+After #2178 and #2187 deployment, the new independent facility timer was installed on Oracle, but there were no canonical `pdca/event_receipts/` or `pdca/event_deliveries/` records. Source inspection found the facility shell worker resolved `personas/<slug>/pdca/event_subscriptions/<name>.json` by walking up only **two** parents, producing `.../pdca` instead of `.../<slug>`. That mislabels `slug=pdca` and causes the standalone CLI's subscriber target identity validation to fail. The correction walks up **three** parents and adds a path-identity regression test. This is a confirmed source defect, **not yet proven as the runtime's only failure** until Oracle logs and persisted post-deployment receipts are inspected. Source+authoritative docs are updated together; do not infer event facility live success solely from merge, install or CI.
+
 ## Social Runtime convergence source contract (2026-11-10)
 
 The Social Gateway deployment health check now reaches the configured local Nginx HTTPS route with the canonical Host/SNI and certificate verification, so blue/green Dashboard upstream selection does not require a guessed listener port (`scripts/deploy_social_runtime_user.sh`). Galaxy Monitor migration rewrites its existing owner enablement drop-in to the same immutable release and rejects effective units referencing the mutable checkout; queued post monitors resolve their child script from that release (`scripts/migrate_galaxy_monitor_immutable_runtime_user.sh`, `scripts/run_social_post_experiment_queue_user.py`).
