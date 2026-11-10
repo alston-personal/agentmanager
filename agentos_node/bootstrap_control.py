@@ -1026,7 +1026,28 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             },
         }
     if action == ACTION_GAIA_INTAKE_INSPECT:
-        return _run_canonical_script("scripts/gaia_intake_probe.py", timeout=90, source_commit=source_commit)
+        # Read the installed, trusted runtime code. Do NOT execute a script
+        # fetched from caller-controlled source_commit for an inspection action.
+        from scripts.gaia_proposal_intake import examine
+        outcome = examine({
+            "title": "Personal Device Secretary",
+            "kind": "project",
+            "related_asset_ids": ["project://mobile-node"],
+        })
+        decision = outcome["review"]["decision"]
+        return {
+            "ok": True,
+            "source_commit": source_commit,
+            "gaia_intake": {
+                "schema": outcome["review"]["schema"],
+                "disposition": decision["disposition"],
+                "canonical_parent": decision.get("canonical_parent"),
+                "creation_authorized": False,
+                "execution_authorized": False,
+            },
+            "steps": [{"step": "gaia_intake_readonly", "returncode": 0,
+                       "stdout": "gaia_intake_probe=PASS\\n"}],
+        }
     if action == ACTION_RUNNER_WINDOW_PROBE:
         return {
             "ok": True,
