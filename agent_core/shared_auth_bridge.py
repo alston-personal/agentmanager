@@ -51,7 +51,12 @@ def proxy_shared_auth_request(
         return 400, [("Content-Type", "application/json")], b'{"error":"invalid_auth_host"}'
 
     port = resolve_dashboard_port(state_file)
-    headers = {"Host": AUTHORIZED_HOST, "Accept": "application/json, text/html;q=0.9"}
+    headers = {
+        "Host": AUTHORIZED_HOST,
+        "X-Forwarded-Host": AUTHORIZED_HOST,
+        "X-Forwarded-Proto": "https",
+        "Accept": "application/json, text/html;q=0.9",
+    }
     if cookie:
         headers["Cookie"] = cookie[:8192]
     conn = HTTPConnection("127.0.0.1", port, timeout=5)
