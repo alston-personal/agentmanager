@@ -17,8 +17,24 @@ try{
  $config=@{node_id='mock-node';realm_id='mock-realm';one_url=$url;node_token='ci-mock-not-real'} | ConvertTo-Json
  Set-Content -LiteralPath (Join-Path $installRoot 'state\client.json') -Value $config
  Set-Content -LiteralPath (Join-Path $installRoot 'agentos-client.cmd') -Encoding Ascii -Value '@echo off','exit /b 0'
+ # Tamper with a packaged file before first install: manifest verification must fail.
+ $bundleLua=Join-Path $repo 'integrations\\wow\\AgentOSWoW\\AgentOSWoW.lua'
+ $originalBytes=[IO.File]::ReadAllBytes($bundleLua)
+ try{
+   Add-Content -LiteralPath $bundleLua -Value '--tampered bundle'
+   $wasRejected=$false
+   try{
+     & $installer -Mode Install -WowRoot $gameRoot -InstallRoot $installRoot -OneUrl $url -TargetRealmId 'mock-realm' -ConfirmInstall
+   }catch{
+     $wasRejected=($_.Exception.Message -like '*BUNDLE_HASH_MISMATCH*')
+   }
+   Assert-True $wasRejected 'tampered bundle must be rejected before installation'
+   Assert-True (-not (Test-Path (Join-Path $addonRoot 'AgentOSWoW'))) 'tampered package changed game files'
+ }finally{
+   [IO.File]::WriteAllBytes($bundleLua,$originalBytes)
+ }
  & $installer -Mode Install -WowRoot $gameRoot -InstallRoot $installRoot -OneUrl $url -TargetRealmId 'mock-realm' -ConfirmInstall
- Assert-True (Test-Path (Join-Path $addonRoot 'AgentOSWoW\AgentOSWoW.lua')) 'missing main addon'
+ Assert-True (Test-Path (Join-Path $addonRoot 'AgentOSWoW\\AgentOSWoW.lua')) 'missing main addon'
  Assert-True (Test-Path (Join-Path $addonRoot 'AgentOSWoW_R001\Reply.lua')) 'missing reply slot'
  $wasRejected=$false
  try{& $installer -Mode Install -WowRoot $gameRoot -InstallRoot $installRoot -OneUrl $url -TargetRealmId 'mock-realm' -ConfirmInstall}catch{$wasRejected=($_.Exception.Message -like '*ADDON_ALREADY_EXISTS*')}
