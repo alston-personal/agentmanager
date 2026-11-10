@@ -80,6 +80,23 @@ class EventFacilityTest(unittest.TestCase):
         self.assertEqual(result["events"],[])
         self.assertEqual(result["due_emitted"],0)
 
+    def test_subscription_path_resolves_actual_persona_root(self):
+        import tempfile
+        from pathlib import Path
+        import subprocess
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/"personas"/"sunlake-milkcat"/"pdca"/"event_subscriptions"/"mio-daily-life.json"
+            p.parent.mkdir(parents=True)
+            p.write_text("{}")
+            result=subprocess.run(
+                ["bash","-c",'dirname "$(dirname "$(dirname "$1")")"',"_",str(p)],
+                capture_output=True,text=True,check=True)
+            self.assertEqual(Path(result.stdout.strip()),p.parents[2])
+            script=(Path(__file__).resolve().parents[1]/
+                    "scripts/run_agentos_event_facility_user.sh").read_text()
+            self.assertIn('persona_dir="$(dirname "$(dirname "$(dirname "$subscription")")")"',script)
+            self.assertIn('slug="$(basename "$persona_dir")"',script)
+
     def test_invalid_subscription_rejected(self):
         data=subscription()
         data["definitions"][0]["temporary_effect"]["execute_shell"]="rm -rf /"
