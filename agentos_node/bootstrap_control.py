@@ -21,6 +21,7 @@ ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_RUNTIME_CONVERGE = "agentos.runtime.converge"
 ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
 ACTION_GAIA_INTAKE_INSPECT = "agentos.gaia_intake.inspect"
+ACTION_COMMAND_INVOKE = "agentos.command.invoke"
 ACTION_RELAY_STATUS = "agentos.relay.status"
 ACTION_SCHEDULER_STATUS = "agentos.scheduler.status"
 ACTION_RELAY_RESTART = "agentos.relay.restart"
@@ -91,6 +92,7 @@ ALLOWED_ACTIONS = {
     ACTION_RUNTIME_CONVERGE,
     ACTION_RUNNER_WINDOW_PROBE,
     ACTION_GAIA_INTAKE_INSPECT,
+    ACTION_COMMAND_INVOKE,
     ACTION_RELAY_STATUS,
     ACTION_SCHEDULER_STATUS,
     ACTION_RELAY_RESTART,
@@ -227,6 +229,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit"}
     elif action == ACTION_VISION_STUDIO_PRODUCE:
         allowed_params={"source_commit","project_id"}
+    elif action == ACTION_COMMAND_INVOKE:
+        allowed_params={"source_commit","command","command_action"}
     elif action == ACTION_EXECUTOR_JOB_SUBMIT:
         allowed_params={"source_commit","job_type"}
     elif action == ACTION_EXECUTOR_JOB_INSPECT:
@@ -275,6 +279,11 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         project_id=str(params.get("project_id") or "")
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", project_id):
             raise ValueError("invalid Vision Studio project_id")
+    if action == ACTION_COMMAND_INVOKE:
+        command=str(params.get("command") or "")
+        command_action=str(params.get("command_action") or "")
+        if command!="/status-diff" or command_action!="themis.inventory.diff":
+            raise ValueError("registered command is not authorized for this runtime action")
     if action == ACTION_EXECUTOR_JOB_SUBMIT:
         job_type=str(params.get("job_type") or "")
         from agent_core.executor_job_contract import canonical_executor_job_request
@@ -1024,6 +1033,32 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
                 "state": "completed" if receipt is not None else "timeout",
                 "receipt": receipt,
             },
+        }
+    if action == ACTION_COMMAND_INVOKE:
+        params=params or {}
+        command=str(params.get("command") or "")
+        command_action=str(params.get("command_action") or "")
+        if (command,command_action)!=("/status-diff","themis.inventory.diff"):
+            raise ValueError("unregistered or unsupported command")
+        # The trusted runtime selects the installed Themis implementation;
+        # never use any caller-provided runner, path, node or shell string.
+        from scripts.themis_status_diff import run_inventory_diff
+        result,report=run_inventory_diff(save=True)
+        return {
+            "ok": True,
+            "source_commit": source_commit,
+            "command": command,
+            "action": command_action,
+            "receipt": {
+                "schema":result["schema"],
+                "steward":result["steward"],
+                "projects_summary":result["current"]["projects_summary"],
+                "git":result["current"]["git"],
+                "atlas":result["current"]["atlas"],
+                "delta":result["delta"],
+                "report_markdown":report[:8000],
+            },
+            "steps":[{"step":"themis_status_diff","returncode":0,"stdout":"themis_status_diff=PASS\\n","stderr":""}],
         }
     if action == ACTION_GAIA_INTAKE_INSPECT:
         # Read the installed, trusted runtime code. Do NOT execute a script
