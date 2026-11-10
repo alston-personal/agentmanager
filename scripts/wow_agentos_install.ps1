@@ -24,6 +24,8 @@ function Assert-BundleIntegrity {
     $manifest.release_status -cne 'UNVERIFIED_PREVIEW_NOT_OFFICIAL'){Stop-Install 'BUNDLE_MANIFEST_INVALID'}
  $expected=@(
   'Install-AgentOS-WoW.cmd',
+  'Join-AgentOS-Node.cmd',
+  'scripts/AgentOS-Join.cmd',
   'scripts/WoW-AgentOS-Setup.cmd',
   'scripts/wow_agentos_install.ps1',
   'scripts/wow_agentos_select_game.ps1',
