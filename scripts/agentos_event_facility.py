@@ -106,7 +106,7 @@ def evaluate(config, at, existing=()):
         level=rng.choices(levels,weights=[weights[k] for k in levels],k=1)[0]
         eid=hashlib.sha256(
             (config["subscription_id"]+"|"+day+"|"+str(index)).encode()).hexdigest()[:24]
-        if local<scheduled or eid in seen:
+        if local<scheduled or "evt-"+eid in seen:
             continue
         emitted.append({
             "id":"evt-"+eid,"type":"persona.stochastic_event" if config["target"].startswith("persona:") else "facility.stochastic_event",
@@ -126,3 +126,47 @@ def evaluate(config, at, existing=()):
             "seed":seed,"planned_count":len(slots),"due_emitted":len(emitted),
             "status":"DRAWN" if slots else "NO_EVENT",
             "events":emitted}
+
+def main():
+    import argparse
+    from pathlib import Path
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--persona-dir",required=True)
+    ap.add_argument("--subscription",required=True)
+    ap.add_argument("--receipt-out")
+    args=ap.parse_args()
+    root=Path(args.persona_dir).resolve()
+    subscription=(root/args.subscription).resolve()
+    if not subscription.is_relative_to(root) or not subscription.is_file() or subscription.is_symlink():
+        raise SystemExit("EVENT_SUBSCRIPTION_PATH_INVALID")
+    config=json.loads(subscription.read_text(encoding="utf-8"))
+    if config.get("target")!="persona:"+root.name:
+        raise SystemExit("EVENT_SUBSCRIPTION_TARGET_MISMATCH")
+    ledger=root/"events/events.jsonl"
+    existing=[]
+    if ledger.exists():
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            try:
+                row=json.loads(line)
+                if isinstance(row,dict): existing.append(row)
+            except (ValueError,TypeError):
+                continue
+    result=evaluate(config,datetime.now(timezone.utc),existing)
+    if result["events"]:
+        ledger.parent.mkdir(parents=True,exist_ok=True)
+        with ledger.open("a",encoding="utf-8") as out:
+            for event in result["events"]:
+                out.write(json.dumps(event,ensure_ascii=False,separators=(",",":"))+"\n")
+    if args.receipt_out:
+        receipt_path=Path(args.receipt_out).resolve()
+        if not receipt_path.is_relative_to(root):
+            raise SystemExit("EVENT_RECEIPT_PATH_INVALID")
+        receipt_path.parent.mkdir(parents=True,exist_ok=True)
+        receipt_path.write_text(json.dumps({
+            k:v for k,v in result.items() if k!="events"
+        },ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    print(json.dumps({k:v for k,v in result.items() if k!="events"},ensure_ascii=False))
+    return 0
+
+if __name__=="__main__":
+    raise SystemExit(main())
