@@ -20,7 +20,9 @@ ROUTE="$REPO/$ROUTE_REL"
 PUBLIC_HEALTH='https://studio.milkcat.org/dashboard/api/social/healthz'
 PUBLIC_INTERNAL='https://studio.milkcat.org/dashboard/api/social/internal/v1/social/acceptances'
 THREADS_REDIRECT_URI='https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/callback'
-LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/social/healthz'
+# Validate the *configured* TLS/Nginx upstream, not a guessed Dashboard
+# listener. Blue/green cutover can legitimately select 3040 or 3041.
+LOCAL_GATEWAY="$PUBLIC_HEALTH"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -348,12 +350,32 @@ chmod 0664 "$ROUTE" || true
 echo "social_gateway_dashboard_build=PASS"
 restart_dashboard
 
+# --resolve pins only this request to the local Nginx TLS ingress while
+# keeping the real Host/SNI and HTTPS certificate verification intact.
+# --noproxy disables environment HTTP proxies; no public-network fallback.
+LOCAL_RESOLVE="studio.milkcat.org:443:127.0.0.1"
+local_ok=0
 for _ in $(seq 1 30); do
-  if curl -fsS --max-time 3 "$LOCAL_GATEWAY" > "$TMP_ROOT/local-gateway-health.json" 2>/dev/null; then break; fi
+  if curl --noproxy '*' --resolve "$LOCAL_RESOLVE" -fsS --max-time 3 \
+    "$LOCAL_GATEWAY" > "$TMP_ROOT/local-gateway-health.json" 2>/dev/null; then
+    local_ok=1
+    break
+  fi
   sleep 1
 done
-curl -fsS --max-time 3 "$LOCAL_GATEWAY" > "$TMP_ROOT/local-gateway-health.json"
-grep -q 'agentos.social-runtime-status/v1' "$TMP_ROOT/local-gateway-health.json"
+if [ "$local_ok" -ne 1 ]; then
+  echo "social_gateway_local=FAIL" >&2
+  echo "social_gateway_local_failure=nginx_tls_or_active_upstream_unavailable" >&2
+  exit 7
+fi
+python3 - "$TMP_ROOT/local-gateway-health.json" <<'PY_LOCAL_GATEWAY'
+import json,sys
+data=json.load(open(sys.argv[1],encoding='utf-8'))
+if (data.get('schema')!='agentos.social-runtime-status/v1'
+        or data.get('service')!='agentos-social-runtime'
+        or not isinstance((data.get('threads') or {}).get('configured'),bool)):
+    raise SystemExit('social_gateway_local=INVALID_HEALTH_SCHEMA')
+PY_LOCAL_GATEWAY
 echo "social_gateway_local=PASS"
 
 INTERNAL_CODE=$(curl -sS -o "$TMP_ROOT/internal-block.json" -w '%{http_code}' --max-time 5 -X POST "$PUBLIC_INTERNAL" -H 'content-type: application/json' --data '{}')
