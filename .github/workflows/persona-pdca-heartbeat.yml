@@ -62,6 +62,7 @@ jobs:
           set -euo pipefail
           test -f scripts/persona_pdca_tick.py
           test -f scripts/agentos_event_facility.py
+          python3 -m unittest discover -s tests -p 'test_persona_stochastic_life_events.py'
           test -f scripts/persona_external_observation_inbox.py
           test -f scripts/persona_social_executor.py
           test -f scripts/persona_internal_activity_executor.py
