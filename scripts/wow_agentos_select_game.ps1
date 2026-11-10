@@ -28,7 +28,7 @@ function Test-ForeverRoot([string]$Root){
 $roots=New-Object System.Collections.Generic.List[string]
 if($WowRoot){$roots.Add($WowRoot)}
 foreach($candidate in $CandidateRoots){if($candidate){$roots.Add($candidate)}}
-foreach($prefix in @($env:ProgramFiles,$env:ProgramFiles(x86),$env:ProgramW6432,'C:\Games','D:\Games','D:\')){
+foreach($prefix in @($env:ProgramFiles,${env:ProgramFiles(x86)},$env:ProgramW6432,'C:\Games','D:\Games','D:\')){
  if($prefix){$roots.Add((Join-Path $prefix 'World of Warcraft'))}
 }
 foreach($root in $roots){
