@@ -180,6 +180,20 @@ def main():
             state["temporary_mood_delta"]=max(-12,min(12,
                 float(state.get("temporary_mood_delta") or 0)+max(-12,min(12,mood_delta))))
         state["last_stochastic_event_id"]=event.get("id")
+    # ACK occurrences in the existing Persona data transaction. This is a
+    # consumer acknowledgement, not proof the event was publicly published.
+    for event in transient_events:
+        ref=root/"pdca/event_deliveries"/(str(event.get("id"))+".json")
+        if ref.is_file() and not ref.is_symlink():
+            try:
+                delivery=load_json(ref)
+                if delivery.get("event_id")==event.get("id") and delivery.get("target")=="persona:"+root.name:
+                    delivery["status"]="CONSUMED"
+                    delivery["ack_cycle"]=int(state.get("cycle",0))+1
+                    delivery["ack_at"]=now_utc.isoformat().replace("+00:00","Z")
+                    dump_json(ref,delivery)
+            except (OSError,ValueError,TypeError):
+                pass
     # Expire temporary mood separately from immutable event history.
     last_event_times=[event_ts(e) for e in transient_events]
     last_event_times=[t for t in last_event_times if t is not None and t.tzinfo is not None]
