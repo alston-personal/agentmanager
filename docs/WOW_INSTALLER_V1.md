@@ -138,3 +138,23 @@ completed SUCCESS across all three jobs, including
 `a92f16e15291f3dc93cc83920e35de7d34f1a9bafc8227970f6dc6b19261cd28`.
 This remains a synthetic Windows Runner test, not a real player computer,
 official signed installer, authenticated ONE Bridge or in-game screenshot.
+
+## Windows PowerShell 5.1 parity — verified CI, 2026-11-10
+
+The double-click `.cmd` entry invokes Windows built-in `powershell.exe`,
+not PowerShell 7. The original Windows runner test used `pwsh`, leaving
+a real distribution parity gap. The existing `Transport Routing Guard`
+now runs its extracted-ZIP functional installer acceptance with the GitHub
+Actions `powershell` shell.
+
+Evidence: [Run #42768939292](https://github.com/alston-personal/agentmanager/actions/runs/42768939292),
+all three jobs SUCCESS. The Windows install job log explicitly shows
+`C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE`,
+`WINDOWS_WOW_OFFLINE_INSTALLER=PASS`, and the reproducible ZIP SHA-256
+`a92f16e15291f3dc93cc83920e35de7d34f1a9bafc8227970f6dc6b19261cd28`.
+
+This proves the candidate offline installer works with the Windows built-in
+shell on a synthetic Forever game directory and mock Node. It **does not**
+prove real game client compatibility, host Node/Realm authorization, signed
+release or successful official-site distribution. The acceptance gate for
+actual WoW game load remains open.
