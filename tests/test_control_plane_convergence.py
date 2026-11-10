@@ -47,7 +47,11 @@ def test_public_shell_never_exposes_credentials(gateway):
     for path in ['/', '/companion', '/companion/']:
         status, headers, html = request(path)
         assert status == 200
-        assert 'Node Map' in html
+        if path == '/':
+            assert '以 Google 登入' in html
+            assert 'Node Map' not in html
+        else:
+            assert 'Node Map' in html
         assert 'test-root-only' not in html
         assert headers['X-Robots-Tag'] == 'noindex, nofollow'
         assert headers['Cache-Control'] == 'no-store'

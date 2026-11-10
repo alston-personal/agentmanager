@@ -590,3 +590,41 @@ def render_companion_html(auth_token: str = "") -> str:
     """
     del auth_token
     return HTML_TEMPLATE
+
+
+# Public homepage is intentionally separate from the privileged operator UI.
+# The OAuth routes must be mounted at this hostname before public sign-in
+# is considered ready; this HTML alone cannot grant a Realm membership.
+PUBLIC_ENTRY_HTML = """<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentOS — 登入</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{margin:0;background:#080c14;color:#e5e7eb;display:grid;place-items:center;min-height:100vh}
+main{box-sizing:border-box;width:min(92vw,500px);padding:36px;border:1px solid #293244;border-radius:16px;background:#101827}
+h1{margin-top:0;font-size:1.8rem}p{line-height:1.7;color:#aab6cb}
+a{display:block;text-decoration:none;border-radius:9px;padding:13px;margin-top:12px;text-align:center}
+.primary{background:#5564e8;color:white}.secondary{border:1px solid #42516a;color:#e5e7eb}
+small{display:block;margin-top:22px;color:#90a0ba}
+</style>
+</head>
+<body>
+<main>
+<h1>AgentOS</h1>
+<p>使用自己的帳號登入 AgentOS。首次使用時，須完成獨立 Realm 的建立或加入授權。</p>
+<a class="primary" href="/dashboard/api/auth/signin/google?site=agentos&amp;returnTo=%2F">以 Google 登入</a>
+<a class="secondary" href="/dashboard/api/auth/signin/github?site=agentos&amp;returnTo=%2F">以 GitHub 登入</a>
+<small>一般使用者不需要 Operator Token。登入後的 Realm 權限必須由 ONE 驗證，未取得授權時不得進入管理 Console。</small>
+</main>
+</body>
+</html>
+"""
+
+
+def render_public_entry_html() -> str:
+    """Unauthenticated landing: no operator UI, token prompt, or Realm data."""
+    return PUBLIC_ENTRY_HTML
