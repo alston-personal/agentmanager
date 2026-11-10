@@ -14,7 +14,13 @@ const ORIGINS: Record<AuthSite, string> = {
  */
 export function resolveAuthSite(request: NextRequest): { site: AuthSite; origin: string } | null {
   const url = new URL(request.url);
-  const hostname = url.hostname.toLowerCase();
+  // The fixed-origin AgentOS Gateway forwards the trusted virtual Host to
+  // Next running on 127.0.0.1:3040/3041. Next may internally construct
+  // request.url from its Studio deployment origin; routing must use the
+  // incoming virtual Host, NOT the deployment's canonical URL.
+  // The Gateway rejects non-AgentOS hosts before forwarding.
+  const hostname = (request.headers.get('host') || url.hostname)
+    .toLowerCase().replace(/:\\d+$/, '');
   const site: AuthSite | null =
     hostname === 'agentos.milkcat.org' ? 'agentos' :
     hostname === 'studio.milkcat.org' ? 'studio' :
