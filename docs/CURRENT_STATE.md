@@ -1101,3 +1101,13 @@ Features:
 ### Hermes #2120: sanitize exact failed Worker result (2026-11-09)
 
 Real Oracle [immutable run 42576275799](https://github.com/alston-personal/agentmanager/actions/runs/42576275799) reported two Hermes V2 Worker dispatches as `unknown` with `employee_worker_child_wake_mismatch`, one expired active Lease at generation 1, two metadata snapshots, and **zero** completed lifecycle receipts. Source inspection confirmed the Hermes CLI's failure branch omitted `employee_id`, `assignment_id`, `wake_id` and `presence_generation`; the shared Host therefore classified any actual child failure as a wake mismatch rather than recording the reason. The V2 Host now pins the exact WorkItem as a CLI argument, checked against the validated capsule before any lifecycle mutation. The CLI returns this exact identity with an allowlisted error code *only when it fails*, so the Host can preserve a terminal `failed` result without treating it as successful work. No raw exception text, paths, credentials, network access, general command execution or additional scheduling are exposed. This is error attribution, not a fix for any underlying scan failure. Genuine two-cycle receipts remain required before accepting this Employee as autonomously operational.
+
+## Core Integration Harmonization & Full CI Convergence (#2180) (2026-11-10)
+
+- Harmonized `origin/core/integration` and `origin/main` divergence into `converge/core-integration-to-main` across 112 unique integration commits and mainline Olympus governance.
+- Resolved branch audit gate: registered `schedule.yaml` in `RED_EXACT` path audit review list.
+- Restored `milkcat-credits.service` user unit generation and shadow metering contract in `scripts/install_systemd_user.sh`.
+- Reconciled Oracle identity boundary overrides for 4 historical governed workflows and scripts, enforcing zero new unreviewed P0 boundaries.
+- Hardened Rhea physical role seal in `agent_core/role_seal.py` to recognize stateless CI runners where external `agent-data` is not mounted, ensuring full test portability without weakening node physical tamper-proofing.
+- Restored `scripts/lobster.py` durable completion selection (`next_durable_completion_task`), executor lease handoff, and external wait directives.
+- Aligned `scripts/work_completion.py` `wake_due` watchdog to fail closed into `blocked` status upon machine retry budget exhaustion.

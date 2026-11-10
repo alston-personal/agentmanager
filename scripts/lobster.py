@@ -531,9 +531,66 @@ def completion_begin(task_text: str) -> Optional[str]:
                 COMPLETION_STATE, work_id=work_id, target="in_progress",
                 actor="role://lobster", next_action=item["next_action"],
             )
+
+        owner = str(item.get("owner") or "")
+        if owner != "role://lobster":
+            item = WorkCompletion.handoff(
+                COMPLETION_STATE,
+                work_id=work_id,
+                actor="role://completion.controller",
+                new_owner="role://lobster",
+                next_action=str(item["next_action"]),
+            )
+        else:
+            item = WorkCompletion.heartbeat(
+                COMPLETION_STATE,
+                work_id=work_id,
+                actor="role://lobster",
+            )
+        logger.info(
+            f"🧭 [COMPLETION] claimed {work_id} owner={item.get('owner')} "
+            f"generation={item.get('owner_generation')}"
+        )
         return work_id
     except Exception as exc:
         logger.error(f"completion begin failed for {work_id}: {exc}")
+        return None
+
+def next_durable_completion_task() -> Optional[tuple[str, dict]]:
+    """Return the authoritative next durable completion item.
+
+    TASK_BOARD is only a projection/UI. Durable work ordering comes from the
+    completion ledger so project-name ordering cannot silently become scheduler
+    policy.
+    """
+    if WorkCompletion is None or not COMPLETION_STATE.exists():
+        return None
+    try:
+        item = WorkCompletion.next_item(COMPLETION_STATE)
+        if not item:
+            return None
+        owner = str(item.get("owner") or "")
+        if owner not in WorkCompletion.EXECUTION_OWNERS:
+            return None
+        status = str(item.get("status") or "")
+        status_map = {
+            "accepted": "todo",
+            "in_progress": "in_progress",
+            "verifying": "in_progress",
+        }
+        if status not in status_map:
+            return None
+        work_id = str(item["work_id"])
+        task_text = f"[WI:{work_id}] {item['next_action']}"
+        return str(item["project_id"]), {
+            "status": status_map[status],
+            "text": task_text,
+            "raw_line": "",
+            "source": "completion-ledger",
+            "work_id": work_id,
+        }
+    except Exception as exc:
+        logger.error(f"completion ledger selection failed: {exc}")
         return None
 
 def completion_workspace(work_id: Optional[str], fallback_project: str) -> Path:
@@ -555,6 +612,18 @@ def completion_finish(work_id: Optional[str], success: bool, output: str) -> Non
             WorkCompletion.verified_done(
                 COMPLETION_STATE, work_id=work_id, actor="role://lobster+inspector",
                 evidence=f"lobster_inspector_pass:{output[:240]}",
+            )
+        elif external_wait_directive(output):
+            until, reason = external_wait_directive(output) or ("", "")
+            state = WorkCompletion.load(COMPLETION_STATE)
+            item = state["items"][work_id]
+            WorkCompletion.wait_external(
+                COMPLETION_STATE,
+                work_id=work_id,
+                actor="role://lobster",
+                not_before=until,
+                next_action=item["next_action"],
+                reason=reason[:500],
             )
         elif "BLOCKED:" in output:
             state = WorkCompletion.load(COMPLETION_STATE)

@@ -234,6 +234,29 @@ EOF
   fi
 }
 
+cat > "$USER_SYSTEMD_DIR/milkcat-credits.service" <<EOF
+[Unit]
+Description=Milkcat Credits shadow metering service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$LOGIC_ROOT
+EnvironmentFile=$ENV_FILE
+EnvironmentFile=-%h/.agentos.secrets
+Environment=MILKCAT_CREDITS_MODE=shadow
+ExecStart=$PYTHON_BIN -m agent_core.credit_http --host 127.0.0.1 --port 8767
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=append:$DATA_ROOT/logs/milkcat_credits.log
+StandardError=append:$DATA_ROOT/logs/milkcat_credits.log
+
+[Install]
+WantedBy=default.target
+EOF
+
 cat > "$USER_SYSTEMD_DIR/os-chronos.service" <<EOF
 [Unit]
 Description=AgentOS Central Chronos Scheduler
