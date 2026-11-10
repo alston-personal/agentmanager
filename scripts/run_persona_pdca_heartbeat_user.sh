@@ -49,8 +49,8 @@ test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 # is no new timer and no claim of priority-driven immediate wake in v1.
 SUBSCRIPTION="$DATA_REPO/$PERSONA_PATH/pdca/event_subscriptions/mio-daily-life.json"
 if [ -f "$SUBSCRIPTION" ]; then
-  python3 "$EVENT_FACILITY" --persona-dir "$DATA_REPO/$PERSONA_PATH" \\
-    --subscription "pdca/event_subscriptions/mio-daily-life.json" \\
+  python3 "$EVENT_FACILITY" --persona-dir "$DATA_REPO/$PERSONA_PATH" \
+    --subscription "pdca/event_subscriptions/mio-daily-life.json" \
     --receipt-out "$DATA_REPO/$PERSONA_PATH/pdca/event_receipts/$(date -u +%Y%m%dT%H%M%SZ).json"
 fi
 python3 "$TICK" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT" --trigger oracle_local_timer
