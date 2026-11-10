@@ -1192,3 +1192,8 @@ The Gaia candidate PR branch now carries a preserving-history merge of the curre
 ### Gaia ONE Runner Window inspection route (2026-11-10; source candidate)
 
 After safely converging #2157 onto the current main Runtime, Gaia's **read-only** inspection route is registered consistently across `agent_core/runner_window.py` (`agentos.gaia` / `intake.inspect`), `agentos_node/bootstrap_control.py` (allowlisted action running installed trusted Python code, not a caller-supplied source-commit script), and `agentos_node/bootstrap_scheduler.py` (control-role policy). The operation accepts no user-provided command/payload keys, and the probe prints informational review status only. Unit tests verify routing and non-authority. The route is **not** a work-item admission, creation gate, or permission grant; no real ONE request ID, Oracle release SHA, or deployment/receipt has yet been observed. The Oracle runtime must deploy this exact candidate under existing governance before any live inspection claim. Production scope for Gaia write-side admission remains separately unimplemented.
+
+
+### Gaia #2157 IP provenance declaration (2026-11-10)
+
+The project owner confirmed Gaia/AgentOS work in this PR was developed independently and has declared `IP-Scope: personal-independent` in the PR description for the existing IP Provenance Guard. This declaration does not establish release authorization or runtime acceptance: the PR remains subject to CI, mainline protection, ONE permissions and live Receipt verification.
