@@ -11,7 +11,8 @@ class WowInstallerContractTests(unittest.TestCase):
         self.assertIn(' verify ',src)
         for forbidden in ('Remove-Item','-SwitchRealm','Set-Content','Invoke-WebRequest','Invoke-RestMethod'):
             self.assertNotIn(forbidden,src)
-    def test_launcher_disclaims_real_install(self):
+    def test_launcher_declares_offline_install_only(self):
         cmd=(ROOT/'scripts/WoW-AgentOS-Setup.cmd').read_text(encoding='utf-8')
-        self.assertIn('full installer is not released',cmd)
+        self.assertIn('wow_agentos_install.ps1',cmd)
+        self.assertIn('Bridge is NOT yet connected',cmd)
 if __name__=='__main__':unittest.main()
