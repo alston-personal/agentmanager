@@ -1087,3 +1087,4 @@ Features:
 - Persists historical snapshots in Data Layer (`$AGENT_DATA_ROOT/snapshots/inventory/`) preserving physical Logic/Data separation.
 - Computes atomic temporal deltas (Git SHA, project count, TODO progression, and Atlas closure cycles) against baseline `latest.json`.
 - Integrated `ThemisCommandWorker` into `agent_core/base_pdca.py` under Rhea's physical seal (`scripts/rhea_role_steward.py --seal`).
+- Hardened `scripts/role_pdca_runner.py` and `scripts/aggregate_tasks.py` with anti-head-of-line blocking, sub-heading markdown support, and PATH execution environment injection.

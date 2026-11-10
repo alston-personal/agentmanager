@@ -57,9 +57,19 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
     selected_task = None
     todo_lines = []
     in_qualified_section = False
+    completed_task_ids = set()
+
     if GLOBAL_TODO.exists():
         todo_content = GLOBAL_TODO.read_text(encoding="utf-8")
         todo_lines = todo_content.splitlines()
+
+        # 先收集所有已完成的任務 ID
+        import re
+        for line in todo_lines:
+            if line.startswith("- [x]"):
+                for m in re.findall(r"\[(task\-[a-zA-Z0-9_\-]+)\]", line):
+                    completed_task_ids.add(m)
+
         for idx, line in enumerate(todo_lines):
             if "## 🎯 Qualified Executable Tasks" in line:
                 in_qualified_section = True
@@ -68,6 +78,14 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
                 in_qualified_section = False
                 break
             if in_qualified_section and line.startswith("- [ ]"):
+                # 檢查是否有前置任務依賴
+                dep_match = re.search(r"前置:\s*([a-zA-Z0-9_\-]+)", line)
+                if dep_match:
+                    dep_id = dep_match.group(1).strip()
+                    if dep_id.lower() != "none" and dep_id not in completed_task_ids:
+                        # 前置未完成，跳過這條（防止隊頭阻塞），繼續尋找下一條合格任務
+                        continue
+
                 selected_task = {
                     "line_idx": idx,
                     "text": line.replace("- [ ]", "").strip(),
@@ -108,11 +126,33 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
 
         # Determine target project working directory
         project_cwd = AGENTMANAGER
+        target_tag = None
         for tag in re.findall(r"\[([a-zA-Z0-9_\-]+)\]", selected_task["text"]):
             candidate = Path(f"/home/ubuntu/{tag}")
             if candidate.is_dir():
                 project_cwd = candidate
+                target_tag = tag
                 break
+            elif (AGENT_DATA / "projects" / tag).is_dir():
+                target_tag = tag
+
+        # 建立健全執行環境變數 (含 .local/bin 與 venv)
+        exec_env = os.environ.copy()
+        exec_env["PATH"] = f"/home/ubuntu/.local/bin:/home/ubuntu/agentmanager/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:{exec_env.get('PATH', '')}"
+
+        if verify_cmd:
+            # 若指定了專案 tag 但本地代碼倉庫不存在（例如遠端節點專案）
+            if target_tag and project_cwd == AGENTMANAGER and not (AGENTMANAGER / target_tag).is_dir():
+                status_file = AGENT_DATA / "projects" / target_tag / "STATUS.md"
+                if status_file.exists() and "Target Node" in status_file.read_text(encoding="utf-8"):
+                    execution_result = {
+                        "action": "remote_node_dispatch_required",
+                        "command": verify_cmd,
+                        "project": target_tag,
+                        "details": f"專案 {target_tag} 宣告為跨節點/遠端專案，Oracle 本機無工作區，需透過 Realm 分派。",
+                        "success": False
+                    }
+                    verify_cmd = None
 
         if verify_cmd:
             print(f"🐾 [Do] Executing verification command in {project_cwd}: {verify_cmd}")
@@ -121,6 +161,7 @@ def run_paw_cycle(dry_run: bool = False) -> dict[str, Any]:
                     verify_cmd,
                     shell=True,
                     cwd=str(project_cwd),
+                    env=exec_env,
                     capture_output=True,
                     text=True,
                     timeout=30
