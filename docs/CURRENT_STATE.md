@@ -1,5 +1,9 @@
 # AgentOS Current Architecture & Reality
 
+## Vendor Oracle script-file transport (2026-11-10; candidate)
+
+Oracle Vendor deployment runs 42785844403 and 42786199377 both returned empty sanitized JSON output, including after redirecting stdin for Docker Compose operations. The release transport was still executing the remote Bash program directly from SSH stdin, where any child can consume the command stream. The bounded fix delivers the existing script as a base64-encoded temporary shell file over authorized SSH, runs Bash from the file, deletes it on exit, emits non-secret stage markers to stderr, and fails closed on an empty Receipt. No alternate executor or authorization bypass is introduced. Migration 008 and API delivery remain unverified until the workflow reports terminal success and actual JSON/health readback.
+
 ## Vendor Oracle SSH stdin isolation (2026-11-10; candidate)
 
 The first post-merge Vendor Oracle deployment run 42785844403 returned an empty remote JSON stream and failed receipt parsing; no successful migration/API deployment was asserted. The existing publisher sends its remote Bash program over SSH stdin. Nested Docker Compose commands that inherit stdin may consume the remainder of the remote program. The bounded correction redirects stdin from `/dev/null` for commands that do not need it, while preserving explicit SQL-file stdin for migration execution. Acceptance requires an independent successful Oracle run, validated JSON receipt including Migration 008 and live API readback. This is a source-level suspected cause until the rerun proves completion.

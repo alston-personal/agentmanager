@@ -34,8 +34,11 @@ jobs:
           set -euo pipefail
           mkdir -p .agentos/evidence
           test -n "${DEPLOY_USER:-}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$SERVICE_REPO" "$SERVICE_SHA" <<'REMOTE' > .agentos/evidence/vendor-service-deploy.json
+          # Bash must read its program from a regular file, not SSH stdin: nested
+          # docker/gh subprocesses may consume stdin and silently truncate the script.
+          SCRIPT_FILE=$(mktemp)
+          trap 'rm -f "$SCRIPT_FILE"' EXIT
+          cat > "$SCRIPT_FILE" <<'REMOTE'
           set -euo pipefail
           REPO="$1"; SHA="$2"
           BASE=/home/ubuntu/vendor-reputation-service
@@ -53,6 +56,7 @@ jobs:
           git -C "$BASE" fetch --depth=1 origin "$SHA" >/tmp/vendor-service-fetch.log 2>&1
           git -C "$BASE" checkout --detach "$SHA" >/tmp/vendor-service-checkout.log 2>&1
           test "$(git -C "$BASE" rev-parse HEAD)" = "$SHA"
+          echo 'vendor_release_stage=checkout_verified' >&2
 
           mkdir -p "$(dirname "$SECRET")"
           if [ ! -s "$SECRET" ]; then
@@ -81,7 +85,7 @@ jobs:
             -Atqc "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='vendor_mentions' AND column_name='review_version'" </dev/null | grep -qx 1
           docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation \
             -Atqc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='review_decisions'" </dev/null | grep -qx 1
-          echo 'vendor_review_schema_migration=PASS'
+          echo 'vendor_review_schema_migration=PASS' >&2
           docker compose up -d --build </dev/null >/tmp/vendor-service-compose.log 2>&1
           for i in $(seq 1 40); do
             if curl -fsS http://127.0.0.1:18765/healthz >/dev/null 2>&1; then break; fi
@@ -109,6 +113,7 @@ jobs:
           fi
 
           STATUS=$(curl -fsS http://127.0.0.1:18765/v1/status)
+          echo 'vendor_release_stage=api_status_read' >&2
           python3 - "$SHA" "$PICK" "$IMPORT_JSON" "$STATUS" <<'PY'
           import json,sys
           sha,pick,imp,status=sys.argv[1:]
@@ -132,6 +137,11 @@ jobs:
           },ensure_ascii=False,indent=2))
           PY
           REMOTE
+          PAYLOAD=$(base64 -w0 "$SCRIPT_FILE")
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "set -e; stage=\$(mktemp /tmp/vendor-deploy-XXXXXXXX.sh); trap 'rm -f \"\$stage\"' EXIT; printf '%s' '$PAYLOAD' | base64 -d > \"\$stage\"; bash \"\$stage\" '$SERVICE_REPO' '$SERVICE_SHA'" \
+            > .agentos/evidence/vendor-service-deploy.json
+          test -s .agentos/evidence/vendor-service-deploy.json || { echo 'vendor_release_receipt_empty' >&2; exit 1; }
           python3 -m json.tool .agentos/evidence/vendor-service-deploy.json >/dev/null
           cat .agentos/evidence/vendor-service-deploy.json
 
