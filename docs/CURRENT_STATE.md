@@ -1,3 +1,7 @@
+## Registered AgentOS slash command through ONE — source implemented, live acceptance pending (2026-11-10)
+
+PR #2195 reuses Themis `/status-diff` manifest and `scripts/themis_status_diff.py` without introducing a ChatGPT-specific executor. `scripts/resolve_agentos_command.py` produces a declarative `agentos.command/invoke` Runner Window intent; `scripts/submit_agentos_command.sh` delegates submission and bounded Receipt polling to existing `scripts/agentos_dispatch.sh`. ONE Runner Window action `agentos.command.invoke` is admitted through `agent_core/runner_window.py`, `agentos_node/bootstrap_scheduler.py` and the trusted `bootstrap_control.py`, which **independently** allowlists only `/status-diff` paired with `themis.inventory.diff` and calls installed Themis, never a caller-provided runner or shell. Returned Receipt projects a bounded Markdown report, inventory summary, Git state, Atlas cycle and delta. Registration is not execution authorization, and this chat's GitHub connector is currently read-oriented rather than an authorized ONE submit tool. **NOT DEPLOYED / NOT LIVE ACCEPTED** until main merge, real installed SHA + ONE dispatch ID + oracle-origin receipt + caller readback. Existing Themis and ONE infrastructure remain authoritative; no new scheduler, role, or task engine.
+
 # AgentOS Current Architecture & Reality
 
 ## Event Facility subscription-root correction (2026-11-10)
