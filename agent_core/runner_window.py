@@ -16,6 +16,7 @@ class RunnerWindowIntent:
 
 INTENTS: tuple[RunnerWindowIntent, ...] = (
     RunnerWindowIntent("agentos.dispatch", "probe", bc.ACTION_RUNNER_WINDOW_PROBE),
+    RunnerWindowIntent("agentos.command", "invoke", bc.ACTION_COMMAND_INVOKE, frozenset({"command","command_action"})),
     RunnerWindowIntent("agentos.gaia", "intake.inspect", bc.ACTION_GAIA_INTAKE_INSPECT),
     RunnerWindowIntent("agentos.relay", "status", bc.ACTION_RELAY_STATUS),
     RunnerWindowIntent("agentos.scheduler", "status", bc.ACTION_SCHEDULER_STATUS),
