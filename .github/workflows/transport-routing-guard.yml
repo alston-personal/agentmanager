@@ -16,6 +16,9 @@ on:
       - tests/test_wow_reply_slot.py
       - tests/test_wow_slot_publisher.py
       - tests/test_wow_offline_end_to_end.py
+      - tests/test_wow_offline_installer_contract.py
+      - scripts/wow_agentos_install.ps1
+      - scripts/WoW-AgentOS-Setup.cmd
       - agentos_node/wow_slot_publisher.py
       - agentos_node/wow_reply_slot.py
       - tests/test_wow_pixel_probe.py
@@ -45,6 +48,9 @@ on:
       - tests/test_wow_reply_slot.py
       - tests/test_wow_slot_publisher.py
       - tests/test_wow_offline_end_to_end.py
+      - tests/test_wow_offline_installer_contract.py
+      - scripts/wow_agentos_install.ps1
+      - scripts/WoW-AgentOS-Setup.cmd
       - agentos_node/wow_slot_publisher.py
       - agentos_node/wow_reply_slot.py
       - tests/test_wow_pixel_probe.py
@@ -78,7 +84,7 @@ jobs:
         run: python3 -m unittest tests.test_transport_routing -v
 
       - name: Validate WoW bounded adapter and offline game UI
-        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell tests.test_wow_bridge_protocol tests.test_wow_status_reply tests.test_wow_reply_slot tests.test_wow_slot_publisher tests.test_wow_offline_end_to_end tests.test_wow_pixel_probe tests.test_wow_capture_probe -v
+        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell tests.test_wow_bridge_protocol tests.test_wow_status_reply tests.test_wow_reply_slot tests.test_wow_slot_publisher tests.test_wow_offline_end_to_end tests.test_wow_offline_installer_contract tests.test_wow_pixel_probe tests.test_wow_capture_probe -v
 
       - name: Validate documentation coupling
         shell: bash
