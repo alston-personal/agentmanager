@@ -1100,6 +1100,8 @@ Features:
 - Integrated `ThemisCommandWorker` into `agent_core/base_pdca.py` under Rhea's physical seal (`scripts/rhea_role_steward.py --seal`).
 - Hardened `scripts/role_pdca_runner.py` and `scripts/aggregate_tasks.py` with anti-head-of-line blocking, sub-heading markdown support, and PATH execution environment injection.
 - Extended ecosystem island governance to `social-galaxy` (Project 62/63), initiating multi-platform architecture decoupling from single-network Threads binding to generic Social Graph Engine.
+- Implemented `agent_core/social_galaxy/` multi-platform adapter suite (Threads, X, Bluesky, Generic JSON) with unified entity space identity resolution and S/A/B/C/D graph tiering (`tests/test_social_galaxy_adapters.py`).
+- Implemented `web/telemetry.js` lightweight (<1KB) privacy-friendly, cookie-free web telemetry probe (`agentos.web-telemetry/v1`) verified by `tests/test_web_telemetry.py`, with `web/` path registered in branch convergence gate.
 
 ## Hermes #2120: first live scan and post-claim clock fix (2026-11-09)
 
