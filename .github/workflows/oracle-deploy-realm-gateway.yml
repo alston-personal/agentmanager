@@ -43,6 +43,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/deploy_realm_gateway_user.sh
           python3 -m unittest tests.test_realm_gateway_deploy_preflight -v
+          python3 -m unittest tests.test_realm_gateway_receipt_contract -v
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
