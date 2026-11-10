@@ -95,7 +95,16 @@ if($Mode -eq 'Install'){
  if(-not (Test-Path -LiteralPath $preflight -PathType Leaf)){Stop-Install 'PREFLIGHT_MISSING'}
  $raw=& $preflight -WowRoot $root -InstallRoot $InstallRoot -OneUrl $OneUrl -TargetRealmId $TargetRealmId -Json | Out-String
  try {$result=$raw | ConvertFrom-Json} catch {Stop-Install 'PREFLIGHT_INVALID'}
- if($result.state -ne 'NODE_VERIFIED' -or $result.wow_client -ne 'forever'){Stop-Install ('PREFLIGHT_'+[string]$result.state)}
+ if($result.wow_client -ne 'forever'){Stop-Install ('PREFLIGHT_'+[string]$result.state)}
+ $offlineOnly=@('NODE_NOT_INSTALLED','NODE_UNENROLLED') -contains [string]$result.state
+ if($result.state -ne 'NODE_VERIFIED' -and -not $offlineOnly){
+   Stop-Install ('PREFLIGHT_'+[string]$result.state)
+ }
+ if($offlineOnly){
+   Write-Warning 'AgentOS Node is not enrolled at the default installation path.'
+   Write-Warning 'Installing OFFLINE Addon UI only. ONE status and chat are NOT connected.'
+   Write-Warning 'No Node will be created or modified. Connect an existing enrolled Node separately.'
+ }
  foreach($name in $addonNames){
    if(Test-Path -LiteralPath $targets[$name]){Stop-Install 'ADDON_ALREADY_EXISTS'}
  }
