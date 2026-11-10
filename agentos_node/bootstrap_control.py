@@ -20,6 +20,7 @@ RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_RUNTIME_CONVERGE = "agentos.runtime.converge"
 ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
+ACTION_GAIA_INTAKE_INSPECT = "agentos.gaia_intake.inspect"
 ACTION_RELAY_STATUS = "agentos.relay.status"
 ACTION_SCHEDULER_STATUS = "agentos.scheduler.status"
 ACTION_RELAY_RESTART = "agentos.relay.restart"
@@ -89,6 +90,7 @@ ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_RUNTIME_CONVERGE,
     ACTION_RUNNER_WINDOW_PROBE,
+    ACTION_GAIA_INTAKE_INSPECT,
     ACTION_RELAY_STATUS,
     ACTION_SCHEDULER_STATUS,
     ACTION_RELAY_RESTART,
@@ -1022,6 +1024,29 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
                 "state": "completed" if receipt is not None else "timeout",
                 "receipt": receipt,
             },
+        }
+    if action == ACTION_GAIA_INTAKE_INSPECT:
+        # Read the installed, trusted runtime code. Do NOT execute a script
+        # fetched from caller-controlled source_commit for an inspection action.
+        from scripts.gaia_proposal_intake import examine
+        outcome = examine({
+            "title": "Personal Device Secretary",
+            "kind": "project",
+            "related_asset_ids": ["project://mobile-node"],
+        })
+        decision = outcome["review"]["decision"]
+        return {
+            "ok": True,
+            "source_commit": source_commit,
+            "gaia_intake": {
+                "schema": outcome["review"]["schema"],
+                "disposition": decision["disposition"],
+                "canonical_parent": decision.get("canonical_parent"),
+                "creation_authorized": False,
+                "execution_authorized": False,
+            },
+            "steps": [{"step": "gaia_intake_readonly", "returncode": 0,
+                       "stdout": "gaia_intake_probe=PASS\\n"}],
         }
     if action == ACTION_RUNNER_WINDOW_PROBE:
         return {

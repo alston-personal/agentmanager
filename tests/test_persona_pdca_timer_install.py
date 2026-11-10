@@ -63,3 +63,13 @@ def test_installer_recovers_only_stale_heartbeat():
     assert 'persona_pdca_stale_recovery=TRIGGERED' in text
     assert 'persona_pdca_stale_recovery=SKIPPED_FRESH' in text
     assert "systemctl --user start agentos-persona-pdca-heartbeat.service" in text
+
+
+def test_installer_does_not_fail_on_historical_failed_latch_with_fresh_state():
+    repo=Path(__file__).resolve().parents[1]
+    text=(repo/"scripts"/"install_persona_pdca_timer_user.sh").read_text(encoding="utf-8")
+    assert 'systemctl --user is-failed --quiet agentos-persona-pdca-heartbeat.service' in text
+    assert 'if [ "$RECOVER_STALE" -eq 0 ]; then' in text
+    assert "persona_pdca_install_prior_unit_failure=HISTORICAL_FRESH_CANONICAL_STATE" in text
+    assert "persona_pdca_install_prior_unit_failure=ACTIVE_STALE_CANONICAL_STATE" in text
+    assert "exit 5" in text
