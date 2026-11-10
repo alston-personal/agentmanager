@@ -43,7 +43,8 @@ class WowOfflineInstallerContractTests(unittest.TestCase):
         launcher=(SCRIPTS/'WoW-AgentOS-Setup.cmd').read_text(encoding='utf-8')
         self.assertIn('wow_agentos_install.ps1', launcher)
         self.assertIn('-Mode Install', launcher)
-        self.assertIn('World of Warcraft root', launcher)
+        self.assertIn('wow_agentos_select_game.ps1', launcher)
+        self.assertIn('Compatible WoW Forever folder not selected', launcher)
 
     def test_addon_sources_are_complete_and_version_marked(self):
         main=ADDONS/'AgentOSWoW'
