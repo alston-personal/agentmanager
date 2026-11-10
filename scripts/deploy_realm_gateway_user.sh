@@ -8,6 +8,26 @@ fi
 
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
+DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
+
+# Blue/green foundation is now canonical for public Dashboard continuity.
+# Preserve the scheduler action contract but delegate implementation.
+if [ -f /home/ubuntu/agent-data/runtime/dashboard-blue-green/active-port ]; then
+  BG_SCRIPT_REL="scripts/deploy_realm_gateway_blue_green_user.sh"
+  BG_SCRIPT="/tmp/agentos-realm-gateway-bg-$SOURCE_COMMIT.sh"
+  git -C "${AGENTOS_REPO:-/home/ubuntu/agentmanager}" show "$SOURCE_COMMIT:$BG_SCRIPT_REL" > "$BG_SCRIPT"
+  chmod 700 "$BG_SCRIPT"
+  exec "$BG_SCRIPT"
+fi
+DASH="$REPO/dashboard"
+PORT_MANAGER_REL="scripts/core_services/port_manager.py"
+PORT_MANAGER_EXACT="/tmp/agentos-port-manager-$SOURCE_COMMIT.py"
+RETIRE_PM2_REL="scripts/retire_legacy_dashboard_pm2_user.sh"
+RETIRE_PM2_EXACT="/tmp/agentos-retire-dashboard-pm2-$SOURCE_COMMIT.sh"
+ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
+ROUTE="$REPO/$ROUTE_REL"
+PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
+PUBLIC_BOOTSTRAP='https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
 PUBLIC_DISPATCH='https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch'
 LOCAL='http://127.0.0.1:8780/v1/health'
 LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/agentos/v1/health'
@@ -283,6 +303,91 @@ for entry in Path('/proc').iterdir():
 PY
   systemctl --user list-units --type=service --all --no-pager | grep -Ei 'dashboard|studio|release' || true
   echo "dashboard_release_supervisor_identity_end"
+}
+
+
+fast_restart_dashboard() {
+  systemctl --user restart agentos-dashboard.service
+  for i in $(seq 1 30); do
+    if systemctl --user is-active --quiet agentos-dashboard.service &&        curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+
+  systemctl --user is-active --quiet agentos-dashboard.service || {
+    systemctl --user --no-pager --full status agentos-dashboard.service >&2 || true
+    journalctl --user -u agentos-dashboard.service -n 80 --no-pager >&2 || true
+    return 4
+  }
+  curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null
+  echo "dashboard_fast_restart=PASS"
+}
+
+TMP=$(mktemp -d)
+STAGE="$TMP/dashboard-stage"
+BACKUP_ROUTE="$TMP/route.backup"
+BACKUP_NEXT="$TMP/next.backup"
+HAD_ROUTE=0
+HAD_NEXT=0
+CUTOVER_STARTED=0
+CORE_STAGE="$TMP/core-runtime"
+CORE_BACKUP="$TMP/core-runtime-backup"
+CORE_RUNTIME_RELS=(
+  "agent_core/controller_service.py"
+  "agent_core/controller_api.py"
+  "agent_core/realm_server.py"
+)
+
+cleanup() { rm -rf "$TMP"; }
+trap cleanup EXIT
+
+if [ -f "$ROUTE" ]; then
+  cp "$ROUTE" "$BACKUP_ROUTE"
+  HAD_ROUTE=1
+fi
+
+# Stage the ONE Python runtime from the same immutable generation as the
+# dashboard route. Never claim an exact-generation gateway deploy while the
+# controller process is still importing stale files from the mutable checkout.
+mkdir -p "$CORE_STAGE"
+for rel in "${CORE_RUNTIME_RELS[@]}"; do
+  mkdir -p "$CORE_STAGE/$(dirname "$rel")"
+  git -C "$REPO" show "$SOURCE_COMMIT:$rel" > "$CORE_STAGE/$rel"
+done
+python3 -m py_compile   "$CORE_STAGE/agent_core/controller_service.py"   "$CORE_STAGE/agent_core/controller_api.py"   "$CORE_STAGE/agent_core/realm_server.py"
+echo "realm_core_runtime_staged=PASS"
+
+# Build away from the canonical runtime. The live Next server must continue
+# serving port 3000 while the new generation compiles.
+cp -a "$DASH" "$STAGE"
+rm -rf "$STAGE/.next"
+STAGE_ROUTE="$STAGE/app/api/agentos/[...path]/route.ts"
+mkdir -p "$(dirname "$STAGE_ROUTE")"
+git -C "$REPO" show "$SOURCE_COMMIT:$ROUTE_REL" > "$STAGE_ROUTE"
+chmod 0664 "$STAGE_ROUTE" || true
+
+rollback() {
+  set +e
+  if [ "$CUTOVER_STARTED" = 1 ]; then
+    systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
+    rm -rf "$DASH/.next"
+    if [ "$HAD_NEXT" = 1 ] && [ -d "$BACKUP_NEXT" ]; then
+      mv "$BACKUP_NEXT" "$DASH/.next"
+    fi
+    if [ "$HAD_ROUTE" = 1 ]; then
+      mkdir -p "$(dirname "$ROUTE")"
+      cp "$BACKUP_ROUTE" "$ROUTE"
+    else
+      rm -f "$ROUTE"
+    fi
+    restart_dashboard >/tmp/agentos-realm-gateway-rollback-restart.log 2>&1 || true
+  fi
+  set -e
+}
+
+trap 'rc=$?; if [ $rc -ne 0 ]; then rollback; fi; cleanup; exit $rc' EXIT
+
 echo "route_source=$SOURCE_COMMIT:$ROUTE_REL"
 python3 - "$STAGE_ROUTE" <<'PY'
 from pathlib import Path
@@ -412,11 +517,35 @@ echo "local_bootstrap_http=$LB_CODE prefix=$(head -c 240 "$LB_BODY" 2>/dev/null 
 ! grep -q 'Realm gateway route not allowlisted' "$LB_BODY"
 echo "realm_gateway_bootstrap_local=PASS"
 
+LD_BODY=/tmp/agentos-realm-local-dispatch
+LD_CODE=$(curl -sS -o "$LD_BODY" -w '%{http_code}' --max-time 5 "$LOCAL_GATEWAY_DISPATCH" || true)
+echo "local_dispatch_http=$LD_CODE prefix=$(head -c 240 "$LD_BODY" 2>/dev/null | tr '
+' ' ' | tr '' ' ' || true)"
+[ "$LD_CODE" = 401 ]
+! grep -q 'Realm gateway route not allowlisted' "$LD_BODY"
+echo "realm_gateway_dispatch_local=PASS"
+
+for i in $(seq 1 30); do
+  BODY=$(curl -fsS --max-time 5 "$PUBLIC" 2>/dev/null || true)
+  if printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1' && printf '%s' "$BODY" | grep -q 'realm-alston'; then break; fi
+  sleep 1
+done
+BODY=$(curl -fsS --max-time 5 "$PUBLIC")
+printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1'
+printf '%s' "$BODY" | grep -q 'realm-alston'
+echo "realm_gateway_public=PASS"
+
+PB_BODY=/tmp/agentos-realm-public-bootstrap
+PB_CODE=$(curl -sS -o "$PB_BODY" -w '%{http_code}' --max-time 8 "$PUBLIC_BOOTSTRAP" || true)
+echo "public_bootstrap_http=$PB_CODE prefix=$(head -c 240 "$PB_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+[ "$PB_CODE" = 401 ]
+! grep -q 'Realm gateway route not allowlisted' "$PB_BODY"
+echo "realm_gateway_bootstrap_public=PASS"
+
 PD_BODY=/tmp/agentos-realm-public-dispatch
 PD_CODE=$(curl -sS -o "$PD_BODY" -w '%{http_code}' --max-time 8 "$PUBLIC_DISPATCH" || true)
 echo "public_dispatch_http=$PD_CODE prefix=$(head -c 240 "$PD_BODY" 2>/dev/null | tr '
-' ' ' | tr '
-' ' ' || true)"
+' ' ' | tr '' ' ' || true)"
 [ "$PD_CODE" = 401 ]
 ! grep -q 'Realm gateway route not allowlisted' "$PD_BODY"
 echo "realm_gateway_dispatch_public=PASS"

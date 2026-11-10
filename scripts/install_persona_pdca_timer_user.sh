@@ -231,10 +231,19 @@ fi
 # Installation acceptance is structural only.
 # Do not start the heartbeat here: deployments must not advance autonomous cycles
 # or reset the natural systemd timer cadence.
-systemctl --user is-failed --quiet agentos-persona-pdca-heartbeat.service && {
-  systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true
-  exit 5
-}
+if systemctl --user is-failed --quiet agentos-persona-pdca-heartbeat.service; then
+  # systemd can retain a historical failure even after a newer canonical
+  # PDCA cycle was durably committed. The fresh, read-back state is stronger
+  # evidence of recent service liveness than the old unit's failed latch.
+  # Do not mask a failure when the canonical state itself is stale.
+  if [ "$RECOVER_STALE" -eq 0 ]; then
+    echo "persona_pdca_install_prior_unit_failure=HISTORICAL_FRESH_CANONICAL_STATE"
+  else
+    systemctl --user --no-pager --full status agentos-persona-pdca-heartbeat.service || true
+    echo "persona_pdca_install_prior_unit_failure=ACTIVE_STALE_CANONICAL_STATE" >&2
+    exit 5
+  fi
+fi
 echo "persona_pdca_install_live_cycle=SKIPPED"
 echo "persona_pdca_install_reason=installer_must_not_advance_autonomous_cycle"
 

@@ -34,6 +34,7 @@ MAINTENANCE = 70
 
 POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_RUNNER_WINDOW_PROBE: ActionPolicy("control", 8, "high", ("agentos.dispatch.probe",), ()),
+    bc.ACTION_GAIA_INTAKE_INSPECT: ActionPolicy("control", 20, "high", ("agentos.gaia.intake.inspect",), ("gaia-intake-read",)),
     bc.ACTION_RELAY_STATUS: ActionPolicy("control", 9, "high", ("agentos.relay.inspect",), ()),
     bc.ACTION_SCHEDULER_STATUS: ActionPolicy("control", 9, "high", ("agentos.scheduler.inspect",), ()),
     bc.ACTION_RELAY_RESTART: ActionPolicy("control", 7, "high", ("agentos.relay.restart",), ("oracle-antigravity-relay",)),

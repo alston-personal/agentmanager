@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from agent_core.active_continuation import read_active_continuation
-from agentos_node.ir_stop_sync import handle_stop_payload, is_stop_payload
 from agentos_node.one_mcp import OneGatewayError, OracleLocalGateway
 
 HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.6"
@@ -388,11 +387,6 @@ def main() -> int:
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict):
             raise ValueError("hook input must be a JSON object")
-        if is_stop_payload(payload):
-            output = handle_stop_payload(payload)
-            json.dump(output, sys.stdout, ensure_ascii=False)
-            sys.stdout.write("\n")
-            return 0
         output = build_injection(payload)
         envelope: dict[str, Any] | None = None
         steps = output.get("injectSteps") if isinstance(output, dict) else None
