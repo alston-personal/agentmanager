@@ -21,9 +21,7 @@ function Assert-BundleIntegrity {
  try{$manifest=Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json}
  catch{Stop-Install 'BUNDLE_MANIFEST_INVALID'}
  if($manifest.schema -cne 'agentos.wow.offline-installer-preview/v1' -or
-    $manifest.release_status -cne 'UNVERIFIED_PREVIEW_NOT_OFFICIAL'){
-    Stop-Install 'BUNDLE_MANIFEST_INVALID'
- }
+    $manifest.release_status -cne 'UNVERIFIED_PREVIEW_NOT_OFFICIAL'){Stop-Install 'BUNDLE_MANIFEST_INVALID'}
  $expected=@(
   'scripts/WoW-AgentOS-Setup.cmd',
   'scripts/wow_agentos_install.ps1',
@@ -34,14 +32,25 @@ function Assert-BundleIntegrity {
   'integrations/wow/AgentOSWoW_R001/Reply.lua'
  )
  $hashes=$manifest.files_sha256
- if($null -eq $hashes -or
-    @( $hashes.PSObject.Properties ).Count -ne $expected.Count){
+ if($null -eq $hashes -or @($hashes.PSObject.Properties).Count -ne $expected.Count){
    Stop-Install 'BUNDLE_MANIFEST_INVALID'
  }
  foreach($relative in $expected){
    $property=$hashes.PSObject.Properties[$relative]
-   if($null -eq $property -or
-      [string]$property.Value -cnotmatch '^[a-f0-9]{64}function Get-SafeDirectory([string]$Folder) {
+   if($null -eq $property -or ([string]$property.Value -cnotmatch '^[a-f0-9]{64}$')){
+     Stop-Install 'BUNDLE_MANIFEST_INVALID'
+   }
+   $file=Join-Path $bundleRoot ($relative.Replace('/',[IO.Path]::DirectorySeparatorChar))
+   if(-not (Test-Path -LiteralPath $file -PathType Leaf)){Stop-Install 'BUNDLE_FILE_MISSING'}
+   $item=Get-Item -LiteralPath $file -Force
+   if($item.PSIsContainer -or (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+     Stop-Install 'BUNDLE_UNSAFE_FILE'
+   }
+   $actual=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+   if($actual -cne [string]$property.Value){Stop-Install 'BUNDLE_HASH_MISMATCH'}
+ }
+}
+function Get-SafeDirectory([string]$Folder) {
  if(-not (Test-Path -LiteralPath $Folder -PathType Container)){Stop-Install 'GAME_PATH_NOT_FOUND'}
  $item=Get-Item -LiteralPath $Folder -Force
  if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){Stop-Install 'REPARSE_GAME_PATH'}
