@@ -108,74 +108,6 @@ def event_ts(e):
             return parse_ts(str(e[k]))
     return None
 
-STOCHASTIC_EVENT_VERSION="mio-stochastic-lifecycle/v1"
-STOCHASTIC_EVENT_THEMES={
-    "mood_positive":("虛構日常：今天忽然有點好心情",1,1),
-    "mood_negative":("虛構日常：一陣短暫的低落心情",-1,-1),
-    "social":("虛構日常：忽然想起值得關心的人與話題",0,1),
-    "creative":("虛構日常：突然冒出一個還沒整理好的創意",0,2),
-    "activity":("虛構日常：想換個節奏活動一下",-1,1),
-    "virtual_body_minor":("虛構角色世界：需要稍微放慢腳步休息",-2,-1),
-    "environment":("虛構日常：注意到周圍光線與氛圍的變化",0,1),
-    "serendipity":("虛構日常：發現一件意料之外的小趣事",0,2),
-    "frustration":("虛構日常：一件小事不如預期，需要重新調整",-1,-1),
-}
-
-def draw_stochastic_life_event(persona,state,now_local,events):
-    """One reproducible daily chance, never an hourly probability multiplier.
-
-    Events describe Mio's fictional inner world; they cannot grant outside
-    social write authority or assert a real-world first-person experience.
-    """
-    policy=persona.get("stochastic_life_events") or {}
-    day=now_local.date().isoformat()
-    if policy.get("enabled") is not True or now_local.hour<8:
-        return None
-    if state.get("stochastic_last_roll_date")==day:
-        return None
-    seed_material=f"{persona.get('character_id')}|{day}|{STOCHASTIC_EVENT_VERSION}"
-    seed=int(hashlib.sha256(seed_material.encode()).hexdigest()[:16],16)
-    event_id=f"mio-stochastic-{day}"
-    state["stochastic_last_roll_date"]=day
-    state["stochastic_last_roll_seed"]=seed
-    if any(e.get("id")==event_id for e in events if isinstance(e,dict)):
-        return None
-    rng=random.Random(seed)
-    probability=float(policy.get("daily_event_probability",0))
-    if not 0<=probability<=1 or rng.random()>=probability:
-        return None
-    max_daily=max(0,int(policy.get("max_events_per_day",0)))
-    observed=[e for e in events if isinstance(e,dict) and e.get("type")=="persona.stochastic_event"]
-    today=[e for e in observed if str(e.get("local_date"))==day]
-    if len(today)>=max_daily:
-        return None
-    last_times=[event_ts(e) for e in observed]
-    last_times=[t for t in last_times if t is not None and t.tzinfo is not None]
-    if last_times:
-        gap=(now_local.astimezone(timezone.utc)-max(last_times).astimezone(timezone.utc)).total_seconds()/3600
-        if gap<float(policy.get("minimum_gap_hours",4)):
-            return None
-    categories=[c for c in policy.get("categories",[]) if c in STOCHASTIC_EVENT_THEMES]
-    if not categories:
-        return None
-    severity=policy.get("severity_distribution") or {}
-    choices=[k for k in ("minor","moderate","major") if float(severity.get(k,0))>0]
-    if not choices:
-        return None
-    category=rng.choice(categories)
-    level=rng.choices(choices,weights=[float(severity[k]) for k in choices],k=1)[0]
-    summary,energy_delta,mood_delta=STOCHASTIC_EVENT_THEMES[category]
-    return {
-        "id":event_id,"type":"persona.stochastic_event",
-        "timestamp":now_local.astimezone(timezone.utc).isoformat().replace("+00:00","Z"),
-        "local_date":day,"category":category,"severity":level,
-        "summary":summary,"source":"persona_stochastic_lifecycle",
-        "fictional_character_event":True,"real_world_observation":False,
-        "reply_allowed":False,"ir_adoption_allowed":False,
-        "temporary_effect":{"energy_delta":energy_delta,"mood_delta":mood_delta},
-        "generator_version":STOCHASTIC_EVENT_VERSION,"seed":seed
-    }
-
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir", required=True)
@@ -220,15 +152,9 @@ def main():
             rate = math.floor(rate * float(energy_cfg.get("recovery",{}).get("negative_energy_multiplier",1/3)))
         energy=min(capacity,energy+elapsed_h*rate)
 
+    # The independent Event Facility produces and persists occurrences.
+    # Persona PDCA is only a subscriber/consumer; it must never draw events.
     events=read_events(events_path)
-    random_event=draw_stochastic_life_event(persona,state,now_local,events)
-    if random_event is not None:
-        events_path.parent.mkdir(parents=True,exist_ok=True)
-        with open(events_path,"a",encoding="utf-8") as stream:
-            stream.write(json.dumps(random_event,ensure_ascii=False,separators=(",",":"))+"\n")
-        events.append(random_event)
-        energy=max(-capacity,min(capacity,energy+random_event["temporary_effect"]["energy_delta"]))
-        state["last_stochastic_event_id"]=random_event["id"]
     since=parse_ts(state.get("last_event_timestamp"))
     unseen=[]; latest_event_ts=since
     for e in events:
@@ -239,6 +165,31 @@ def main():
     counts={}
     for e in unseen:
         typ=e.get("type","unknown"); counts[typ]=counts.get(typ,0)+1
+    # Apply observed event effects once, only to bounded transient Persona state.
+    # This is NOT permanent IR growth and confers no social write authority.
+    transient_events=[e for e in unseen if e.get("type")=="persona.stochastic_event"
+                      and e.get("target")=="persona:"+root.name
+                      and e.get("source")=="agentos.event_facility"]
+    for event in transient_events:
+        effect=event.get("temporary_effect") or {}
+        energy_delta=effect.get("energy_delta",0)
+        if isinstance(energy_delta,(float,int)) and not isinstance(energy_delta,bool):
+            energy=max(-capacity,min(capacity,energy+max(-12,min(12,energy_delta))))
+        mood_delta=effect.get("mood_delta",0)
+        if isinstance(mood_delta,(float,int)) and not isinstance(mood_delta,bool):
+            state["temporary_mood_delta"]=max(-12,min(12,
+                float(state.get("temporary_mood_delta") or 0)+max(-12,min(12,mood_delta))))
+        state["last_stochastic_event_id"]=event.get("id")
+    # Expire temporary mood separately from immutable event history.
+    last_event_times=[event_ts(e) for e in transient_events]
+    last_event_times=[t for t in last_event_times if t is not None and t.tzinfo is not None]
+    if last_event_times:
+        from datetime import timedelta
+        state["temporary_mood_expires_at"]=(max(last_event_times)+timedelta(hours=6)).isoformat()
+    expiry=parse_ts(state.get("temporary_mood_expires_at"))
+    if expiry is not None and expiry.tzinfo is not None and expiry<=now_utc:
+        state["temporary_mood_delta"]=0
+        state["temporary_mood_expires_at"]=None
     observed=counts.get("reply.observed",0)
     posted=counts.get("post.sent",0)+counts.get("post.published",0)
     wardrobe=counts.get("wardrobe.window_shopping",0)
