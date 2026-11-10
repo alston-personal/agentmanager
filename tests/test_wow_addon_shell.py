@@ -18,5 +18,18 @@ class WowAddonShellTest(unittest.TestCase):
         for forbidden in ("RunMacroText","CastSpellByName","SendChatMessage","loadstring(","bypassPermissions","http://"):
             self.assertNotIn(forbidden,lua)
 
+    def test_reply_slot_is_precreated_and_single_use(self):
+        slot=ROOT/"integrations"/"wow"/"AgentOSWoW_R001"
+        toc=(slot/"AgentOSWoW_R001.toc").read_text(encoding="utf-8")
+        placeholder=(slot/"Reply.lua").read_text(encoding="utf-8")
+        lua=(ADDON/"AgentOSWoW.lua").read_text(encoding="utf-8")
+        self.assertIn("## LoadOnDemand: 1", toc)
+        self.assertIn("Reply.lua", toc)
+        self.assertIn("AgentOSWoWReplySlot = nil", placeholder)
+        self.assertIn("replySlotUsed = true", lua)
+        self.assertIn("data.request_id ~= probeId", lua)
+        self.assertIn('Read reply slot (once)', lua)
+        self.assertIn('askButton:Disable()', lua)
+
 if __name__=="__main__":
     unittest.main()
