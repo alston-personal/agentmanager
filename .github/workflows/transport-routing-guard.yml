@@ -40,6 +40,7 @@ on:
   push:
     branches:
       - core/integration
+      - core/issue-2134-wow-control-contract
     paths:
       - agent_core/transport_routing.py
       - agentos_node/wow_control_adapter.py
