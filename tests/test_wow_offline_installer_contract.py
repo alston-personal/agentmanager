@@ -46,6 +46,16 @@ class WowOfflineInstallerContractTests(unittest.TestCase):
         self.assertIn('wow_agentos_select_game.ps1', launcher)
         self.assertIn('Compatible WoW Forever folder not selected', launcher)
 
+    def test_windows_launcher_handles_execution_policy_and_invalid_selector(self):
+        launcher=(SCRIPTS/'WoW-AgentOS-Setup.cmd').read_text(encoding='utf-8')
+        self.assertEqual(launcher.count('-ExecutionPolicy Bypass'), 2)
+        self.assertIn('2^>nul', launcher)
+        self.assertIn('if not defined WOWROOT goto no_game', launcher)
+        self.assertIn('if not exist "%WOWROOT%\\_forever_\\Wow.exe" goto no_game', launcher)
+        self.assertIn('if not exist "%WOWROOT%\\_forever_\\Interface\\AddOns\\" goto no_game', launcher)
+        self.assertIn('Group Policy', launcher)
+        self.assertNotIn('Set-ExecutionPolicy', launcher)
+
     def test_addon_sources_are_complete_and_version_marked(self):
         main=ADDONS/'AgentOSWoW'
         reply=ADDONS/'AgentOSWoW_R001'
