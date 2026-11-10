@@ -20,7 +20,7 @@ export function resolveAuthSite(request: NextRequest): { site: AuthSite; origin:
   // incoming virtual Host, NOT the deployment's canonical URL.
   // The Gateway rejects non-AgentOS hosts before forwarding.
   const hostname = (request.headers.get('host') || url.hostname)
-    .toLowerCase().replace(/:\\d+$/, '');
+    .toLowerCase().replace(/:[0-9]+$/, '');
   const site: AuthSite | null =
     hostname === 'agentos.milkcat.org' ? 'agentos' :
     hostname === 'studio.milkcat.org' ? 'studio' :
