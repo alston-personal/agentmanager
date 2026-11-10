@@ -3,7 +3,9 @@ import { NextRequest } from "next/server";
 const UPSTREAM = "http://127.0.0.1:8780";
 
 const ALLOWED: Record<string, Set<string>> = {
-  GET: new Set(["/v1/health", "/v1/tasks", "/v1/bootstrap"]),
+  // GET /v1/dispatch exposes the authenticated Runner Window catalog only.
+  // All authorization remains enforced by the upstream ONE; no POST dispatch is added.
+  GET: new Set(["/v1/health", "/v1/tasks", "/v1/bootstrap", "/v1/dispatch"]),
   POST: new Set([
     "/v1/join/request",
     "/v1/join/status",
