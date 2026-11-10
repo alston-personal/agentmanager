@@ -16,6 +16,7 @@ on:
 
   pull_request:
     branches:
+      - main
       - core/integration
     paths:
       - 'agentos_node/social/post_experiment.py'

@@ -22,6 +22,7 @@ on:
       - '.github/workflows/oracle-social-runtime-rollout.yml'
   pull_request:
     branches:
+      - main
       - core/integration
     paths:
       - 'agentos_node/social/**'

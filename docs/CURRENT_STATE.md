@@ -1,5 +1,11 @@
 # AgentOS Current Architecture & Reality
 
+## Social Runtime convergence source contract (2026-11-10)
+
+The Social Gateway deployment health check now reaches the configured local Nginx HTTPS route with the canonical Host/SNI and certificate verification, so blue/green Dashboard upstream selection does not require a guessed listener port (`scripts/deploy_social_runtime_user.sh`). Galaxy Monitor migration rewrites its existing owner enablement drop-in to the same immutable release and rejects effective units referencing the mutable checkout; queued post monitors resolve their child script from that release (`scripts/migrate_galaxy_monitor_immutable_runtime_user.sh`, `scripts/run_social_post_experiment_queue_user.py`).
+
+Social post observations retain v1 compatibility while adding exact returned-caption SHA-256, age-based maturity and conservative source-evidence readiness. Numeric provider metrics never grant analysis eligibility or causal claims; precision remains unverified (`agentos_node/social/post_experiment.py`, `docs/SOCIAL_POST_EXPERIMENT_CAPABILITY.md`). Focused coverage lives in `tests/test_social_post_experiment.py` and `tests/test_galaxy_monitor_immutable_runtime.py`. The Social Post Experiment and Core Social Runtime PR guards also cover `main`, so convergence runs their validation before merge. These are source contracts: merging does not establish a deployed generation, successful migration or live runtime acceptance; those require node-authoritative execution receipts.
+
 ## Event Facility / Mio subscription — independent facility source implementation (2026-11-10)
 
 **Owner-defined contract:** Subscriber `persona:sunlake-milkcat` registers its own nine fictional daily-life event definitions, 42% per-day probability, maximum two occurrences/day, four-hour separation, severity weights and temporary effects in `my-agent-data/personas/sunlake-milkcat/pdca/event_subscriptions/mio-daily-life.json`. The shared, independent `scripts/agentos_event_facility.py` enforces declarative schemas, target identity, allowed effects, deterministic daily count and stable occurrence identifiers. Its code cannot publish to Threads, execute arbitrary subscriber code or promote persona IR.
