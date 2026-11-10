@@ -1,5 +1,6 @@
 name: AgentOS Control Plane Immutable Login Release (#2198)
 
+# Follow-up release after correcting canonical virtual Host on local OAuth probe.
 # This file is a one-time exact-generation release carrier for the AgentOS
 # Control Plane, distinct from Studio / Dashboard blue-green deployment.
 on:

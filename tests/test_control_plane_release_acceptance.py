@@ -9,6 +9,10 @@ from scripts.inspect_distributed_control_plane import probe
 def test_release_inspector_requires_signin_shell_and_oauth_session():
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            if self.path == "/dashboard/api/auth/session" and self.headers.get("Host") != "agentos.milkcat.org":
+                self.send_response(400)
+                self.end_headers()
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/json" if self.path.endswith("/session") else "text/html")
             self.send_header("X-Robots-Tag", "noindex, nofollow")
