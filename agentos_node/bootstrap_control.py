@@ -20,6 +20,7 @@ RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_RUNTIME_CONVERGE = "agentos.runtime.converge"
 ACTION_RUNNER_WINDOW_PROBE = "agentos.runner_window.probe"
+ACTION_GAIA_INTAKE_INSPECT = "agentos.gaia_intake.inspect"
 ACTION_RELAY_STATUS = "agentos.relay.status"
 ACTION_SCHEDULER_STATUS = "agentos.scheduler.status"
 ACTION_RELAY_RESTART = "agentos.relay.restart"
@@ -89,6 +90,7 @@ ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_RUNTIME_CONVERGE,
     ACTION_RUNNER_WINDOW_PROBE,
+    ACTION_GAIA_INTAKE_INSPECT,
     ACTION_RELAY_STATUS,
     ACTION_SCHEDULER_STATUS,
     ACTION_RELAY_RESTART,
@@ -1023,6 +1025,8 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
                 "receipt": receipt,
             },
         }
+    if action == ACTION_GAIA_INTAKE_INSPECT:
+        return _run_canonical_script("scripts/gaia_intake_probe.py", timeout=90, source_commit=source_commit)
     if action == ACTION_RUNNER_WINDOW_PROBE:
         return {
             "ok": True,
