@@ -75,6 +75,8 @@ jobs:
           print("agentos_dispatch_envelope=PASS")
           PY
           bash -n scripts/agentos_dispatch.sh
+          bash -n scripts/submit_agentos_command.sh
+          python3 -m unittest tests.test_agentos_command_intent -v
 
       - name: Mint GitHub OIDC Runner Window credential
         shell: bash

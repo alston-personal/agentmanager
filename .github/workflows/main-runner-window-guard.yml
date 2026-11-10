@@ -8,6 +8,12 @@ on:
       - '.github/workflows/**'
       - '.agentos/governance/main-legacy-direct-oracle-workflows.txt'
       - 'scripts/check_main_runner_window_guard.py'
+      - 'scripts/resolve_agentos_command.py'
+      - 'scripts/submit_agentos_command.sh'
+      - 'tests/test_agentos_command_intent.py'
+      - 'agent_core/runner_window.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
   pull_request:
     branches: [main]
     paths:
@@ -25,3 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/check_main_runner_window_guard.py
+      - name: Validate registered command dispatch authorization and Themis receipt
+        run: |
+          python3 -m unittest tests.test_agentos_command_intent -v
+          bash -n scripts/submit_agentos_command.sh
