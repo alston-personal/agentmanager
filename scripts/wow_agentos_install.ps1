@@ -108,8 +108,9 @@ foreach($name in $addonNames){
  $src=Join-Path $sourceRoot $name
  $expected=@(Get-ChildItem -LiteralPath $src -File | ForEach-Object {$_.Name} | Sort-Object)
  $actual=@(Get-ChildItem -LiteralPath $target -Force)
- if(@($actual | Where-Object {$_.PSIsContainer}).Count -gt 0 -or
-    @($actual | ForEach-Object {$_.Name} | Sort-Object) -join '|' -cne ($expected -join '|')){
+ $containsDirectories=@($actual | Where-Object {$_.PSIsContainer}).Count -gt 0
+ $actualNames=@($actual | ForEach-Object {$_.Name} | Sort-Object)
+ if($containsDirectories -or (($actualNames -join '|') -cne ($expected -join '|'))){
     Stop-Install 'ADDON_MODIFIED_REFUSE_UNINSTALL'
  }
  foreach($file in $actual){
