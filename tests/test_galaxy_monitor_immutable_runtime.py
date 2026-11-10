@@ -53,6 +53,15 @@ class GalaxyMonitorImmutableRuntimeTests(unittest.TestCase):
         self.assertIn("release_pattern.sub(release, text)", migration)
         self.assertIn("unit runtime root not recognized", migration)
 
+    def test_existing_owner_dropin_converges_without_changing_other_services(self):
+        migration = (ROOT / "scripts" / "migrate_galaxy_monitor_immutable_runtime_user.sh").read_text(encoding="utf-8")
+        self.assertIn("'60-owner-social-enabled.conf'", migration)
+        self.assertIn("owner_dropin.is_file()", migration)
+        self.assertIn("text=text.replace(legacy, release)", migration)
+        self.assertIn("release_pattern.sub(release, text)", migration)
+        self.assertIn("galaxy_monitor_effective_unit=STALE_MUTABLE_CHECKOUT", migration)
+        self.assertIn("systemctl --user cat \"$unit\"", migration)
+
     def test_migration_helper_does_not_trigger_social_cycle(self):
         migration = (ROOT / "scripts" / "migrate_galaxy_monitor_immutable_runtime_user.sh").read_text(encoding="utf-8")
         self.assertIn("galaxy_monitor_runtime_social_cycle_triggered=NO", migration)
