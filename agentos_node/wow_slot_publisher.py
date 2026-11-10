@@ -32,7 +32,7 @@ def _existing_slot_file(slot_dir: Path) -> Path:
         if path.is_symlink():
             raise SlotPublishError("UNSAFE_SLOT_PATH")
         try:
-            mode = path.stat(follow_symlinks=False).st_mode
+            mode = os.lstat(path).st_mode
         except OSError as exc:
             raise SlotPublishError("SLOT_NOT_INSTALLED") from exc
         if not stat.S_ISREG(mode):
