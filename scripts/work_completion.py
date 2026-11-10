@@ -35,7 +35,7 @@ DEFAULT_LEASE_SECONDS = 1800
 INTAKE_SCHEMA = "agentos.work-intake/v1"
 INTAKE_FIELDS = {
     "schema", "work_id", "project_id", "title", "next_action",
-    "acceptance", "source", "workspace", "lease_seconds",
+    "acceptance", "source", "workspace", "lease_seconds", "intake_kind",
 }
 
 
@@ -200,6 +200,8 @@ def register(
     source: str = "",
     workspace: str = "",
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    execution_authorized: bool = True,
+    intake_kind: str = "legacy",
 ) -> dict[str, Any]:
     if not all(str(v).strip() for v in (work_id, project_id, title, owner, next_action)):
         raise ValueError("required_work_fields_missing")
@@ -216,6 +218,8 @@ def register(
         stamp = now()
         item = {
             "work_id": work_id,
+            "execution_authorized": execution_authorized,
+            "intake_kind": intake_kind,
             "project_id": project_id,
             "title": title,
             "status": "accepted",
@@ -265,6 +269,16 @@ def register_intake_envelope(path: Path, payload: dict[str, Any]) -> dict[str, A
     if workspace and not Path(workspace).is_absolute():
         raise ValueError("work_intake_workspace_must_be_absolute")
 
+    intake_kind = str(payload.get("intake_kind") or "legacy")
+    if intake_kind not in {"legacy", "engineering"}:
+        raise ValueError("work_intake_kind_invalid")
+    if intake_kind == "engineering":
+        work_id = str(payload.get("work_id") or "")
+        source = str(payload.get("source") or "")
+        match = re.fullmatch(r"gh-issue-([0-9]+)-engineering", work_id)
+        if not match or source != f"https://github.com/alston-personal/agentmanager/issues/{match.group(1)}":
+            raise ValueError("engineering_source_identity_mismatch")
+
     lease_seconds = int(payload.get("lease_seconds") or DEFAULT_LEASE_SECONDS)
     return register(
         path,
@@ -277,7 +291,20 @@ def register_intake_envelope(path: Path, payload: dict[str, Any]) -> dict[str, A
         source=str(payload.get("source") or "").strip(),
         workspace=workspace,
         lease_seconds=lease_seconds,
+        execution_authorized=(intake_kind != "engineering"),
+        intake_kind=intake_kind,
     )
+
+
+def lobster_execution_permitted(item: dict[str, Any]) -> bool:
+    """Keep GitHub engineering intake distinct from governed Executor authority.
+
+    Also blocks engineering work registered before this flag existed.
+    """
+    work_id = str(item.get("work_id") or "")
+    if item.get("intake_kind") == "engineering" or re.fullmatch(r"gh-issue-[0-9]+-engineering", work_id):
+        return False
+    return item.get("execution_authorized") is not False
 
 
 def transition(
@@ -763,6 +790,7 @@ def board_projection(path: Path) -> str:
     active = [
         item for item in state["items"].values()
         if item.get("status") in ACTIVE and str(item.get("owner") or "") in EXECUTION_OWNERS
+        and retry_admission_allowed(item) and lobster_execution_permitted(item)
     ]
     if not active:
         return ""

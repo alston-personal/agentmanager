@@ -2,9 +2,9 @@ name: Documentation Reality Guard
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, core/integration]
   push:
-    branches: [main]
+    branches: [main, core/integration]
   workflow_dispatch:
 
 permissions:

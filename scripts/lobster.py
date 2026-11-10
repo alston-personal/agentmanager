@@ -501,6 +501,9 @@ def completion_begin(task_text: str) -> Optional[str]:
         item = WorkCompletion.load(COMPLETION_STATE)["items"].get(work_id)
         if not item:
             raise KeyError("work_item_not_found")
+        if not WorkCompletion.lobster_execution_permitted(item):
+            logger.warning("completion begin denied: engineering intake lacks executor authority work_id=%s", work_id)
+            return None
         if not WorkCompletion.retry_admission_allowed(item):
             logger.warning("completion begin denied: exhausted machine retry budget work_id=%s", work_id)
             return None

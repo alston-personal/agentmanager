@@ -255,9 +255,15 @@ roles:
   - gateway_health_receipt
 - id: sector.hermes
   name: 赫密士 Hermes (Recon & Technology Scout / 外部探索與技術信使)
+  aliases:
+  - sector-hermes
+  - hermes
+  - research.hermes
   status: active
   kind: discovery
   source: .agent/roles/parents/lcs_hermes.md
+  instance_source: .agent/roles/instances/hermes_technology_scout.md
+  employee_bootstrap: governance/hermes-technology-scout-employee.json
   purpose: 奧林匹斯信使與邊界旅者：向外探索 GitHub、開源生態與前沿架構，蒐集可借鏡技術並執行三級分流初評，防止資訊倒灌壓垮 Weaver。
   must_obey:
   - capability_boundary

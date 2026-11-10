@@ -16,10 +16,23 @@ on:
       - 'scripts/install_systemd_user.sh'
       - 'scripts/install_services.py'
       - 'scripts/work_completion.py'
+      - 'scripts/issue_work_intake.py'
+      - 'scripts/approved_wow_paw_handoff.py'
+      - 'scripts/completion_watchdog_tick.py'
+      - 'schedule.yaml'
+      - 'tests/test_completion_watchdog_tick.py'
+      - 'tests/test_approved_wow_paw_handoff.py'
+      - 'tests/test_issue_work_intake.py'
       - '.agent/roles/**'
       - 'agent_core/role_runtime.py'
       - 'agent_core/employee_skills.py'
       - 'agentos_node/employee_wake_node.py'
+      - 'agentos_node/hermes_worker.py'
+      - 'agentos_node/hermes_worker_cli.py'
+      - 'agentos_node/hermes_metadata_feed.py'
+      - 'agent_core/hermes_scan_policy.py'
+      - 'agent_core/hermes_github_scan.py'
+      - 'agent_core/hermes_due_cycle.py'
       - 'agentos_node/product_employee_worker.py'
       - 'agentos_node/completion_470_status_provider.py'
       - 'agentos_node/product_employee_worker_cli.py'
@@ -208,8 +221,40 @@ jobs:
           printf '%s\n' "$PAW_BOOTSTRAP"
           printf '%s' "$PAW_BOOTSTRAP" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("schema")=="agentos.product-employee-bootstrap-receipt/v1"; assert any(e.get("employee_id")=="the-paw" for e in d.get("employees",[])), "paw_bootstrap_identity_missing"; assert d.get("executor_bound") is False and d.get("verified_marker_emitted") is False'
           echo "core_bundle_paw_bootstrap=PASS"
+
+          # Hermes is a research Employee, not a separately scheduled daemon.
+          # Bootstrap through the SAME canonical durable EmployeeRuntime as Paw;
+          # source checkout remains immutable, independent from local tracked drift.
+          HERMES_BOOTSTRAP="$(PYTHONPATH="$RELEASE" python3 -m agent_core.hermes_employee_bootstrap \
+            --runtime-root "$DATA_ROOT/employee-runtime" \
+            --role-registry "$RELEASE/.agent/roles/registry.yaml" \
+            --bootstrap-json "$RELEASE/governance/hermes-technology-scout-employee.json")"
+          printf '%s\n' "$HERMES_BOOTSTRAP"
+          printf '%s' "$HERMES_BOOTSTRAP" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema")=="agentos.hermes-bootstrap-result/v1", d; assert d.get("employee_id")=="hermes-technology-scout", d; assert d.get("assignment_id")=="hermes-2120-discovery-v1", d; assert d.get("employee_state") in ("created","exists"), d; assert d.get("assignment_state") in ("created","preserved"), d; assert d.get("runtime_wake_verified") is False and d.get("continuous_operation_verified") is False, d'
+          echo "core_bundle_hermes_bootstrap=PASS"
+
           echo "core_bundle_install_services=START"
-          INSTALL_JSON="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          # Preserve previously accepted ONE S4 delivery authority when both
+          # the real Wake Node and its governed Worker Host were active before
+          # this deployment. The installer otherwise removes the one_direct
+          # drop-in and silently degrades autonomous Employees to S3-only.
+          # This does not invent new authority: missing services/Realm fail closed.
+          S4_RESTORE=0
+          if grep -Fxq 'agentos-employee-wake-node.service' "$BACKUP/active-services" \
+            && { grep -Fxq 'agentos-employee-worker-host.service' "$BACKUP/active-services" || [ "$WORKER_SYSTEM_ACTIVE" = 1 ]; } \
+            && [ -f "$DATA_ROOT/realm/fabric.json" ] \
+            && [ -f "$DATA_ROOT/realm/nodes.json" ]; then
+            S4_RESTORE=1
+          fi
+          echo "core_bundle_s4_delivery_restore_requested=$S4_RESTORE"
+          INSTALL_JSON="$(AGENTOS_CORE_SUPERVISOR_ENABLE_ONE_DIRECT="$S4_RESTORE" AGENTOS_SERVICE_DEPENDENCY_GUARD=1 PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          if [ "$S4_RESTORE" = 1 ]; then
+            test -f /home/ubuntu/.config/agentos/core-supervisor-delivery.env
+            grep -Fxq 'AGENTOS_SUPERVISOR_DELIVERY_MODE=one_direct' /home/ubuntu/.config/agentos/core-supervisor-delivery.env
+            echo "core_bundle_s4_delivery_config=ONE_DIRECT"
+          else
+            echo "core_bundle_s4_delivery_config=NOT_AUTO_ENABLED"
+          fi
           echo "core_bundle_install_services=DONE"
           printf '%s\n' "$INSTALL_JSON"
           printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("mode")=="systemd", d'
@@ -234,7 +279,41 @@ jobs:
           # Preserve availability: everything that was active before must be active after.
           while read -r unit; do
             [ -n "$unit" ] || continue
-            systemctl --user is-active --quiet "$unit"
+            if ! systemctl --user is-active --quiet "$unit"; then
+              # Recover only units recorded as active BEFORE this deployment.
+              # At most one restart; if still down, fail and roll back.
+              echo "core_bundle_preserved_service_recover=$unit:START"
+              if ! systemctl --user restart "$unit"; then
+                echo "core_bundle_preserved_service_recover=$unit:RESTART_FAILED" >&2
+                exit 28
+              fi
+              sleep 2
+              if ! systemctl --user is-active --quiet "$unit"; then
+                echo "core_bundle_preserved_service_recover=$unit:NOT_ACTIVE" >&2
+                if [ "$unit" = "tg-commander.service" ]; then
+                  # Earlier than the later active-service fence: also classify
+                  # failure when the single bounded restart has just failed.
+                  tg_state="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+                  tg_result="$(systemctl --user show "$unit" -p Result --value 2>/dev/null || true)"
+                  tg_exit="$(systemctl --user show "$unit" -p ExecMainStatus --value 2>/dev/null || true)"
+                  case "$tg_state" in active|inactive|failed|activating|deactivating) ;; *) tg_state=unknown;; esac
+                  case "$tg_result" in success|exit-code|signal|core-dump|timeout|start-limit-hit|watchdog) ;; *) tg_result=unknown;; esac
+                  case "$tg_exit" in ''|*[!0-9]*) tg_exit=unknown;; esac
+                  printf 'tg_commander_first_gate=state:%s,result:%s,exit:%s\n' "$tg_state" "$tg_result" "$tg_exit"
+                  if [ -f "$DATA_ROOT/logs/tg_bridge.log" ]; then
+                    /usr/bin/python3 - "$DATA_ROOT/logs/tg_bridge.log" <<'TG_EARLY_DIAG'
+          import pathlib,re,sys
+          tail=pathlib.Path(sys.argv[1]).read_bytes()[-65536:].decode('utf-8','replace')
+          names=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
+          allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
+          print('tg_commander_first_gate_exception='+next((n for n in reversed(names) if n in allowed),'unclassified'))
+          TG_EARLY_DIAG
+                  fi
+                fi
+                exit 29
+              fi
+              echo "core_bundle_preserved_service_recover=$unit:PASS"
+            fi
             echo "core_bundle_preserved_active=$unit"
           done < "$BACKUP/active-services"
 
@@ -298,6 +377,33 @@ jobs:
             if ! systemctl --user is-active --quiet "$unit"; then
               if grep -Fxq "$unit" "$BACKUP/active-services"; then
                 echo "ERROR: previously active $unit is now unavailable" >&2
+                # The deployment must fail and roll back; emit only bounded
+                # unit enums and exception CLASS (never raw log or journal text).
+                if [ "$unit" = "tg-commander.service" ]; then
+                  tg_active="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+                  tg_sub="$(systemctl --user show "$unit" -p SubState --value 2>/dev/null || true)"
+                  tg_result="$(systemctl --user show "$unit" -p Result --value 2>/dev/null || true)"
+                  tg_status="$(systemctl --user show "$unit" -p ExecMainStatus --value 2>/dev/null || true)"
+                  tg_restarts="$(systemctl --user show "$unit" -p NRestarts --value 2>/dev/null || true)"
+                  case "$tg_active" in active|inactive|failed|activating|deactivating) ;; *) tg_active=unknown;; esac
+                  case "$tg_sub" in running|dead|failed|auto-restart|start|stop) ;; *) tg_sub=unknown;; esac
+                  case "$tg_result" in success|exit-code|signal|core-dump|timeout|start-limit-hit|watchdog) ;; *) tg_result=unknown;; esac
+                  case "$tg_status" in ''|*[!0-9]*) tg_status=unknown;; esac
+                  case "$tg_restarts" in ''|*[!0-9]*) tg_restarts=unknown;; esac
+                  printf 'tg_commander_liveness=active:%s,sub:%s,result:%s,exit:%s,restarts:%s\n' "$tg_active" "$tg_sub" "$tg_result" "$tg_status" "$tg_restarts"
+                  tg_log="$DATA_ROOT/logs/tg_bridge.log"
+                  if [ -f "$tg_log" ]; then
+                    /usr/bin/python3 - "$tg_log" <<'TG_DIAG'
+          import pathlib, re, sys
+          path=pathlib.Path(sys.argv[1])
+          # Extract ONLY exception type names; never echo raw logs or credentials.
+          tail=path.read_bytes()[-65536:].decode('utf-8','replace')
+          classes=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
+          allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
+          print('tg_commander_recent_exception_class='+next((c for c in reversed(classes) if c in allowed),'unclassified'))
+          TG_DIAG
+                  fi
+                fi
                 exit 20
               fi
               echo "core_bundle_runtime=$unit:preexisting_inactive"
@@ -362,6 +468,126 @@ jobs:
           echo "core_bundle_release=$RELEASE"
           echo "core_bundle_current=$CURRENT"
           echo "core_bundle_immutable_runtime=PASS"
+
+          # Read-only, sanitized employee acceptance snapshot. This is not a
+          # synthetic Hermes lifecycle receipt and never changes assignment state.
+          PYTHONPATH="$RELEASE" python3 - "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" "$DATA_ROOT/employee-worker-host" <<'HERMES_ACCEPTANCE'
+          import json
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from agent_core.employee_runtime import EmployeeRuntime
+          from agent_core.employee_lifecycle import EmployeeLifecycle
+
+          root, state, host_root = map(Path, sys.argv[1:])
+          runtime = EmployeeRuntime(root)
+          lifecycle = EmployeeLifecycle(runtime)
+          employee_id = "hermes-technology-scout"
+          assignment_prefix = "hermes-2120-discovery-v1"
+          result = {
+              "schema": "agentos.hermes-readonly-acceptance-snapshot/v1",
+              "employee_registered": False,
+              "wake_presence_live": False,
+              "s4_awaiting_claim": 0,
+              "s4_delivery_states": {},
+              "supervisor_intents": 0,
+              "supervisor_last_cycle": None,
+              "supervisor_authority_boundary": "unknown",
+              "completed_lifecycle_receipts": 0,
+              "assignment_states": {},
+              "metadata_snapshots": 0,
+              "worker_dispatch_states": {},
+              "worker_error_codes": {},
+              "lease_statuses": {},
+              "lease_generations": {},
+              "lease_expired": {},
+              "live_verification": False,
+          }
+          try:
+              employee = runtime.get_employee(employee_id)
+              result["employee_registered"] = (employee.role_ids == ["research.hermes"]
+                  and employee.skill_ids == ["github.technology.scan"])
+              presence = root / "realm" / "employee-presence" / (employee_id + ".json")
+              if presence.is_file():
+                  value = json.loads(presence.read_text())
+                  expires = datetime.fromisoformat(str(value.get("expires_at", "")).replace("Z","+00:00"))
+                  result["wake_presence_live"] = (
+                      expires.tzinfo is not None and expires > datetime.now(timezone.utc)
+                  )
+              state_file = root / "supervisor" / "state.json"
+              if state_file.is_file():
+                  state_data = json.loads(state_file.read_text())
+                  result["supervisor_last_cycle"] = state_data.get("last_cycle_at")
+                  result["supervisor_authority_boundary"] = state_data.get("authority_boundary", "unknown")
+              for item in (root / "supervisor" / "intents").glob("reconcile_*.json"):
+                  try:
+                      rec = json.loads(item.read_text())
+                      if (rec.get("intent") or {}).get("employee_id") == employee_id:
+                          result["supervisor_intents"] += 1
+                  except (ValueError, OSError):
+                      continue
+              deliveries = root / "supervisor" / "deliveries"
+              for item in deliveries.glob("reconcile_*.json"):
+                  try:
+                      delivery = json.loads(item.read_text())
+                      if delivery.get("employee_id") == employee_id:
+                          state_value = str(delivery.get("status") or "unknown")
+                          result["s4_delivery_states"][state_value] = result["s4_delivery_states"].get(state_value, 0) + 1
+                          if state_value == "awaiting_claim":
+                              result["s4_awaiting_claim"] += 1
+                  except (ValueError, OSError):
+                      continue
+              for item in sorted((root / "assignments").glob(assignment_prefix + "*.json")):
+                  try:
+                      assignment = runtime.get_assignment(item.stem)
+                      result["assignment_states"][item.stem] = assignment.state
+                      lease = lifecycle.get_lease(item.stem)
+                      if lease:
+                          result["lease_statuses"][item.stem] = lease.status
+                          result["lease_generations"][item.stem] = lease.generation
+                          result["lease_expired"][item.stem] = lifecycle.lease_expired(lease)
+                      if assignment.state == "completed" and lease and lease.status == "completed":
+                          receipt = lifecycle._receipt_path(item.stem, lease.generation)
+                          if receipt.is_file():
+                              body = json.loads(receipt.read_text())
+                              if (body.get("employee_id") == employee_id
+                                  and body.get("outcome") == "completed"
+                                  and body.get("assignment_id") == item.stem):
+                                  result["completed_lifecycle_receipts"] += 1
+                  except (OSError, ValueError, KeyError):
+                      continue
+              result["metadata_snapshots"] = len(list(
+                  (state / employee_id).glob("metadata-*.json")
+              ))
+              # Existing V2 Worker Host owns the durable dispatch ledger.
+              # Project ONLY status and bounded error classes, never raw child
+              # stdout, credentials, paths, URLs or source API responses.
+              import re
+              for item in sorted((host_root / "dispatches" / employee_id).glob("*.json")):
+                  try:
+                      data = json.loads(item.read_text(encoding="utf-8"))
+                      if not isinstance(data, dict) or data.get("employee_id") != employee_id:
+                          continue
+                      state_value = str(data.get("status") or "unknown")
+                      if state_value not in {"launching", "checkpointed", "completed", "blocked",
+                                             "handoff", "failed", "unknown", "rejected"}:
+                          state_value = "invalid"
+                      counts = result["worker_dispatch_states"]
+                      counts[state_value] = counts.get(state_value, 0) + 1
+                      code = data.get("error_code")
+                      if isinstance(code, str) and re.fullmatch(r"[a-z0-9_]{1,80}", code):
+                          errors = result["worker_error_codes"]
+                          errors[code] = errors.get(code, 0) + 1
+                  except (OSError, ValueError):
+                      result["worker_dispatch_states"]["invalid"] = (
+                          result["worker_dispatch_states"].get("invalid", 0) + 1
+                      )
+          except (OSError, ValueError, KeyError) as exc:
+              result["probe_error_class"] = type(exc).__name__
+          print("hermes_live_acceptance=" + json.dumps(result,sort_keys=True))
+          HERMES_ACCEPTANCE
+
           trap - EXIT
           rm -rf "$BACKUP"
           REMOTE

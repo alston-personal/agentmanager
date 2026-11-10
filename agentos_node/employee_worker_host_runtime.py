@@ -25,6 +25,7 @@ V2_RUNNER_KINDS = {
     "youtube_ai_manager_scan_v1",
     "paw_inspect_v1",
     "claw_review_readonly_v1",
+    "hermes_github_scan",
 }
 PRODUCT_RUNNER_KINDS = {"zeus_writer_v1", "youtube_ai_manager_scan_v1", "paw_inspect_v1"}
 V2_RESULT_SCHEMAS = {
@@ -33,6 +34,7 @@ V2_RESULT_SCHEMAS = {
     "youtube_ai_manager_scan_v1": "agentos.youtube-ai-manager-scan-worker-cli-result/v1",
     "paw_inspect_v1": "agentos.paw-inspect-worker-cli-result/v1",
     "claw_review_readonly_v1": "agentos.claw-review-readonly-worker-cli-result/v1",
+    "hermes_github_scan": "agentos.hermes-worker-cli-result/v1",
 }
 
 
@@ -105,6 +107,41 @@ class ProductEmployeeWorkerAdapterRegistry:
             raise RuntimeError("employee_worker_adapter_v2_resolution_ambiguous")
         if matches:
             return matches[0]
+        # Hermes continuation: source-registered template and exact canonical work.
+        if self.runtime_root is not None and assignment_id.startswith("hermes-2120-discovery-v1-cycle-"):
+            suffix=assignment_id.removeprefix("hermes-2120-discovery-v1-cycle-")
+            templates=[a for a in self._adapters if (
+                a.status=="active" and a.runner_kind=="hermes_github_scan"
+                and a.employee_id=="hermes-technology-scout"
+                and a.assignment_id=="hermes-2120-discovery-v1"
+                and set(a.role_ids)==role_ids and set(a.skill_ids)==skill_ids
+            )]
+            if len(templates)!=1 or len(suffix)!=6 or not suffix.isdigit():
+                return None
+            runtime=EmployeeRuntime(self.runtime_root)
+            store=WorkItemStore(runtime)
+            try:
+                item=store.get(assignment_id)
+                assignment=runtime.get_assignment(assignment_id)
+                employee=runtime.get_employee(employee_id)
+            except (OSError,ValueError,KeyError,TypeError,FileNotFoundError):
+                return None
+            if (item.assignment_id!=assignment_id or item.employee_id!=employee_id
+                or item.source_kind!="schedule" or item.state!="open"
+                or "github.technology.scan" not in item.required_capabilities
+                or "one-governed-dispatch" not in item.authority_requirements
+                or "hermes-scheduled-continuation-authorized" not in item.authority_requirements
+                or assignment.employee_id!=employee_id or assignment.state!="pending"
+                or employee.role_ids!=["research.hermes"]
+                or employee.skill_ids!=["github.technology.scan"]):
+                return None
+            template=templates[0]
+            return EmployeeWorkerAdapter(
+                adapter_id=template.adapter_id,status=template.status,
+                runner_kind=template.runner_kind,employee_id=employee_id,
+                assignment_id=assignment_id,role_ids=template.role_ids,
+                skill_ids=template.skill_ids,
+            )
         # No dynamic assignment is admitted without its canonical WorkItem,
         # projected pending assignment, and an active Paw runner template.
         if self.runtime_root is None or not isinstance(assignment_id, str) or not assignment_id:
@@ -203,6 +240,25 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
         self._pinned_candidate: WorkerHostCandidate | None = None
 
     def _product_preclaim_ready(self, candidate: WorkerHostCandidate) -> bool:
+        if candidate.adapter.runner_kind == "hermes_github_scan":
+            from agentos_node.hermes_worker import _verify_delivery
+            from agentos_node.hermes_metadata_feed import snapshot_path, validate_snapshot
+            try:
+                capsule=candidate.capsule
+                _verify_delivery(self.runtime_root, capsule,
+                                 capsule.get("wake_intent") or {})
+                snapshot=snapshot_path(self.worker_state_root,
+                    str(capsule["assignment_id"]),str(capsule["wake_id"]))
+                if not snapshot.is_file():
+                    return False
+                import json
+                validate_snapshot(json.loads(snapshot.read_text(encoding="utf-8")),
+                    assignment_id=str(capsule["assignment_id"]),
+                    wake_id=str(capsule["wake_id"]),
+                    presence_generation=int(capsule["presence_generation"]))
+            except (OSError,ValueError,PermissionError,TypeError,KeyError):
+                return False
+            return True
         if candidate.adapter.runner_kind not in PRODUCT_RUNNER_KINDS:
             return True
         try:
@@ -246,6 +302,16 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
                 "--once",
                 "--repository", str(ROOT),
                 "--work-item-id", adapter.assignment_id.removeprefix("claw-review-"),
+            ]
+        elif adapter.runner_kind == "hermes_github_scan":
+            command = [
+                sys.executable, "-m", "agentos_node.hermes_worker_cli",
+                "--runtime-root", str(self.runtime_root),
+                "--wake-root", str(self.wake_root),
+                "--worker-state-root", str(self.worker_state_root),
+                "--node-id", self.node_id,
+                "--assignment-id", adapter.assignment_id,
+                "--once",
             ]
         elif adapter.runner_kind in PRODUCT_RUNNER_KINDS:
             command = [
