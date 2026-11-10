@@ -15,6 +15,7 @@ FILES = (
     "Install-AgentOS-WoW.cmd",
     "scripts/WoW-AgentOS-Setup.cmd",
     "scripts/wow_agentos_install.ps1",
+    "scripts/wow_agentos_select_game.ps1",
     "scripts/wow_agentos_installer_preflight.ps1",
     "integrations/wow/AgentOSWoW/AgentOSWoW.toc",
     "integrations/wow/AgentOSWoW/AgentOSWoW.lua",
