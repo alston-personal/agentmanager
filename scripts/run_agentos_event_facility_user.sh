@@ -24,7 +24,9 @@ EMITTED=0
 SUBSCRIBERS=0
 shopt -s nullglob
 for subscription in "$DATA_REPO"/personas/*/pdca/event_subscriptions/*.json; do
-  persona_dir="$(dirname "$(dirname "$subscription")")"
+  # Subscription files live at PERSONA_ROOT/pdca/event_subscriptions/*.json.
+  # Walk up THREE directories to reach the Persona root, not pdca/.
+  persona_dir="$(dirname "$(dirname "$(dirname "$subscription")")")"
   slug="$(basename "$persona_dir")"
   [[ "$slug" =~ ^[a-z0-9-]+$ ]] || { echo "agentos_event_subscription=INVALID_SLUG" >&2; continue; }
   name="$(basename "$subscription" .json)"
