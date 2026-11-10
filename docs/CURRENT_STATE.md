@@ -1,5 +1,9 @@
 # AgentOS Current Architecture & Reality
 
+## Vendor release Receipt governance (2026-11-10; candidate)
+
+The first file-transport Oracle run 42786582114 successfully checked out Vendor source 42e88fd, applied Migration 008 (schema readback PASS), brought up and read back the API, and returned source registry v2 with `active_sources=2`, `canonical_state=resolved`, `registered_input_alias=1`, `unique_source_objects=2`. The overall workflow remained FAILED because the old source assertion expected the removed `new_source_registered` key and the final evidence commit tried to push directly to protected `main` (GH013; protected-branch rule correctly rejected it). The bounded correction validates the actual canonical v2 contract and retains sanitized JSON receipts as GitHub Actions artifacts, with no protected-main bypass or secret printing. Require terminal workflow SUCCESS and artifact inspection before marking this release fully accepted. The shared AgentOS execution / readback mechanism is already implemented and is not being rebuilt.
+
 ## Vendor Oracle script-file transport (2026-11-10; candidate)
 
 Oracle Vendor deployment runs 42785844403 and 42786199377 both returned empty sanitized JSON output, including after redirecting stdin for Docker Compose operations. The release transport was still executing the remote Bash program directly from SSH stdin, where any child can consume the command stream. The bounded fix delivers the existing script as a base64-encoded temporary shell file over authorized SSH, runs Bash from the file, deletes it on exit, emits non-secret stage markers to stderr, and fails closed on an empty Receipt. No alternate executor or authorization bypass is introduced. Migration 008 and API delivery remain unverified until the workflow reports terminal success and actual JSON/health readback.
