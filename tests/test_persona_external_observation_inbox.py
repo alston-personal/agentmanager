@@ -72,7 +72,7 @@ class TestInbox(unittest.TestCase):
                         social.index('python3 "$POST_INTENT_GENERATOR"'))
         self.assertIn('install -m 0755 "$SOURCE_EXTERNAL_INBOX"', install)
         self.assertIn('"$REMOTE_WARDROBE_SOURCES" "$REMOTE_EXTERNAL_INBOX"', workflow)
-        self.assertIn('"$REMOTE_EXTERNAL_INBOX" "$REMOTE_EVENT_FACILITY" "$REMOTE_INSTALLER"', workflow)
+        self.assertIn('"$REMOTE_EXTERNAL_INBOX" "$REMOTE_EVENT_FACILITY" "$REMOTE_EVENT_RUNNER" "$REMOTE_INSTALLER"', workflow)
 
 
 if __name__ == "__main__":
