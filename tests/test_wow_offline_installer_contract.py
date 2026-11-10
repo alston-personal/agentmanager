@@ -44,7 +44,7 @@ class WowOfflineInstallerContractTests(unittest.TestCase):
         self.assertIn('wow_agentos_install.ps1', launcher)
         self.assertIn('-Mode Install', launcher)
         self.assertIn('wow_agentos_select_game.ps1', launcher)
-        self.assertIn('Compatible WoW Forever folder not selected', launcher)
+        self.assertIn('WoW Forever was not found or the selection script was blocked', launcher)
 
     def test_windows_launcher_handles_execution_policy_and_invalid_selector(self):
         launcher=(SCRIPTS/'WoW-AgentOS-Setup.cmd').read_text(encoding='utf-8')
