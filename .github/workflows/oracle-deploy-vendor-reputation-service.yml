@@ -67,9 +67,9 @@ jobs:
           cd "$BASE"
           # Upgrade the existing database before promoting the new API image.
           # Do not rely on docker-entrypoint-initdb.d for persistent volumes.
-          docker compose up -d db >/tmp/vendor-service-db.log 2>&1
+          docker compose up -d db </dev/null >/tmp/vendor-service-db.log 2>&1
           for i in $(seq 1 40); do
-            if docker compose exec -T db pg_isready -U vendor_service -d vendor_reputation >/dev/null 2>&1; then break; fi
+            if docker compose exec -T db pg_isready -U vendor_service -d vendor_reputation </dev/null >/dev/null 2>&1; then break; fi
             sleep 2
           done
           docker compose exec -T db pg_isready -U vendor_service -d vendor_reputation >/dev/null
@@ -78,11 +78,11 @@ jobs:
               < "sql/$migration" >/dev/null
           done
           docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation \
-            -Atqc "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='vendor_mentions' AND column_name='review_version'" | grep -qx 1
+            -Atqc "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='vendor_mentions' AND column_name='review_version'" </dev/null | grep -qx 1
           docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation \
-            -Atqc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='review_decisions'" | grep -qx 1
+            -Atqc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='review_decisions'" </dev/null | grep -qx 1
           echo 'vendor_review_schema_migration=PASS'
-          docker compose up -d --build >/tmp/vendor-service-compose.log 2>&1
+          docker compose up -d --build </dev/null >/tmp/vendor-service-compose.log 2>&1
           for i in $(seq 1 40); do
             if curl -fsS http://127.0.0.1:18765/healthz >/dev/null 2>&1; then break; fi
             sleep 2
@@ -94,7 +94,7 @@ jobs:
             set +e
             IMPORT_JSON=$(docker compose run --rm -T \
               -v "$PICK:/private-evidence.json:ro" \
-              api python /srv/app/scripts/import_private_threads_evidence.py /private-evidence.json 2>/tmp/vendor-import.err)
+              api python /srv/app/scripts/import_private_threads_evidence.py /private-evidence.json </dev/null 2>/tmp/vendor-import.err)
             RC=$?
             set -e
             if [ "$RC" -ne 0 ]; then
