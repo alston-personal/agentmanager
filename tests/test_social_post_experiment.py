@@ -28,7 +28,7 @@ class SocialPostExperimentTests(unittest.TestCase):
         self.assertEqual(snap["post"]["caption_sha256"],
             hashlib.sha256(caption.encode("utf-8")).hexdigest())
         different=build_snapshot(experiment_id="x",account_username="mio.milkcat",
-            post={"id":"p1","text":caption.replace("\\n"," ")},replies=[],
+            post={"id":"p1","text":caption.replace(chr(10)," ")},replies=[],
             previous_reply_ids=set(),captured_at="2026-11-10T00:00:00Z")
         self.assertNotEqual(snap["post"]["caption_sha256"],different["post"]["caption_sha256"])
         empty=build_snapshot(experiment_id="x",account_username="mio.milkcat",
