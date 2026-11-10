@@ -59,21 +59,4 @@
     "node_id": "vopc5750",
     "runtime": {
       "install_mode": "stage2-deferred-restart",
-      "installed_at": "2026-08-30T07:28:18Z",
-      "provenance_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\runtime-provenance.json",
-      "schema": "agentos.thin-client-runtime/v0.1",
-      "source_commit": "9a49e639e630431450308b00673689ae47bf10a9",
-      "source_ref": "feature/realm-node-fabric-readiness",
-      "status": "observed"
-    },
-    "schema": "agentos.node-workspace-authority-acceptance/v1",
-    "workspace_roots": {
-      "readable": [
-        "C:\\Users\\alston.huang\\AgentOS"
-      ],
-      "writable": [
-        "C:\\Users\\alston.huang\\AgentOS"
-      ]
-    }
-  }
-}
+      "installed_at": "2026-08-
