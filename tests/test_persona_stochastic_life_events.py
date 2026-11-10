@@ -63,6 +63,7 @@ class EventFacilityTest(unittest.TestCase):
         self.assertIn('install -m 0755 "$SOURCE_EVENT_FACILITY"',installer)
         self.assertIn('install -m 0755 "$SOURCE_EVENT_RUNNER"',installer)
         self.assertIn('agentos-event-facility.timer',installer)
+        self.assertIn('OnCalendar=*-*-* *:2/15:00',installer)
         self.assertIn('"$REMOTE_EVENT_FACILITY" "$REMOTE_EVENT_RUNNER"',workflow)
         for sh in ("scripts/run_agentos_event_facility_user.sh",
                    "scripts/run_persona_social_actions_user.sh",
@@ -70,6 +71,14 @@ class EventFacilityTest(unittest.TestCase):
                    "scripts/install_persona_pdca_timer_user.sh"):
             result=subprocess.run(["bash","-n",str(root/sh)],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_subscriber_may_disable_events_without_deleting_history(self):
+        config=subscription()
+        config["enabled"]=False
+        result=evaluate(config,datetime(2026,11,10,21,0,tzinfo=TZ))
+        self.assertEqual(result["status"],"DISABLED")
+        self.assertEqual(result["events"],[])
+        self.assertEqual(result["due_emitted"],0)
 
     def test_invalid_subscription_rejected(self):
         data=subscription()
