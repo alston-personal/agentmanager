@@ -7,6 +7,7 @@ on:
     paths:
       - 'agentos_node/social/post_experiment.py'
       - 'scripts/monitor_social_post_experiment_user.py'
+      - 'scripts/run_social_post_experiment_queue_user.py'
       - 'tests/test_social_post_experiment.py'
       - 'docs/SOCIAL_POST_EXPERIMENT_CAPABILITY.md'
       - '.github/workflows/social-post-experiment-guard.yml'
@@ -17,6 +18,7 @@ on:
     paths:
       - 'agentos_node/social/post_experiment.py'
       - 'scripts/monitor_social_post_experiment_user.py'
+      - 'scripts/run_social_post_experiment_queue_user.py'
       - 'tests/test_social_post_experiment.py'
       - 'docs/SOCIAL_POST_EXPERIMENT_CAPABILITY.md'
       - '.github/workflows/social-post-experiment-guard.yml'
@@ -36,5 +38,6 @@ jobs:
         run: |
           python -m py_compile agentos_node/social/post_experiment.py
           python -m py_compile scripts/monitor_social_post_experiment_user.py
+          python -m py_compile scripts/run_social_post_experiment_queue_user.py
       - name: Run focused tests
         run: python -m unittest -v tests.test_social_post_experiment
