@@ -14,6 +14,10 @@ from urllib.request import Request, urlopen
 
 def probe(url, token, *, kind):
     headers = {'Authorization': 'Bearer ' + token} if kind not in ('shell', 'companion', 'auth_session') else {}
+    if kind == 'auth_session':
+        # Local probe must mimic the public virtual host; the OAuth bridge
+        # intentionally refuses arbitrary Host headers on 127.0.0.1.
+        headers['Host'] = 'agentos.milkcat.org'
     data = b'{}' if kind == 'approval' else None
     if data is not None:
         headers['Content-Type'] = 'application/json'
