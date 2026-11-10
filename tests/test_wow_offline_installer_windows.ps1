@@ -2,6 +2,7 @@
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $repo=Split-Path -Parent $PSScriptRoot
+if($env:WOW_INSTALLER_ROOT){$repo=$env:WOW_INSTALLER_ROOT}
 $installer=Join-Path $repo 'scripts\wow_agentos_install.ps1'
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('wow-installer-ci-'+[guid]::NewGuid().ToString('N'))
 $gameRoot=Join-Path $temp 'World of Warcraft'
