@@ -20,7 +20,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 25
     env:
       ORACLE_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -46,10 +46,23 @@ jobs:
           test -d "$REPO/.git"
           git -C "$REPO" fetch --no-tags origin "$SOURCE_SHA"
           git -C "$REPO" cat-file -e "$SOURCE_SHA^{commit}"
+          # Reuse the existing Studio Dashboard blue/green release to update
+          # the shared Next OAuth origin resolver, with its existing rollback.
+          DASH_DEPLOY=/tmp/agentos-shared-auth-dashboard-"$SOURCE_SHA".sh
+          git -C "$REPO" show "$SOURCE_SHA:scripts/deploy_dashboard_blue_green_user.sh" > "$DASH_DEPLOY"
+          chmod 700 "$DASH_DEPLOY"
+          "$DASH_DEPLOY" "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          echo "shared_dashboard_auth_source=$SOURCE_SHA"
+
+          # Fail closed when provider credentials are absent, without printing
+          # credential values or session cookies.
+          curl -fsS --max-time 8 https://studio.milkcat.org/dashboard/api/auth/session |
+            python3 -c 'import json,sys; p=json.load(sys.stdin).get("providers") or {}; required=("google","github","facebook","line"); missing=[v for v in required if p.get(v) is not True]; print("shared_auth_providers_configured="+str(4-len(missing))+"/4"); sys.exit(33 if missing else 0)'
+
           DEPLOY=/tmp/agentos-control-plane-deploy-"$SOURCE_SHA".sh
           git -C "$REPO" show "$SOURCE_SHA:scripts/deploy_distributed_control_plane.sh" > "$DEPLOY"
           chmod 700 "$DEPLOY"
-          trap 'rm -f "$DEPLOY"' EXIT
+          trap 'rm -f "$DEPLOY" "$DASH_DEPLOY"' EXIT
           echo "deployment_target=agentos-control-plane.service"
           echo "deployment_source=$SOURCE_SHA"
           # Existing service-specific deploy controller implements immutable
@@ -61,5 +74,5 @@ jobs:
           systemctl --user is-active --quiet agentos-control-plane.service
           echo "accepted_release=$ACCEPTED"
           echo "agentos_control_plane_login_release=PASS"
-          echo "studio_dashboard_mutation=NONE"
+          echo "studio_dashboard_mutation=CONTROLLED_BLUE_GREEN"
           REMOTE
