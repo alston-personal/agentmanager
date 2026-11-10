@@ -1,5 +1,9 @@
 # AgentOS Current Architecture & Reality
 
+## Mio stochastic life events — implementation pending deployment (2026-11-10)
+
+Previously the Persona configuration enabled a 42% daily stochastic life event chance, but `persona_pdca_tick.py` only randomized routine actions. Canonical Mio event ledger had no `persona.stochastic_event` entries through cycle 798. PR #2178 connects a deterministic, once-per-local-day event roll to the existing PDCA tick and append-only event ledger. It observes the configured event probability, maximum events per day, minimum gap, bounded predefined fictional event themes and severities; the event is never evidence of an actual physical-world incident and grants no social reply, publication, or IR adoption permission. A recorded daily roll is not proof an event occurred. Implementation on a feature branch is **not production acceptance** until authorized main merge, Oracle deployment, and a real event receipt after a probabilistically successful roll. Existing visual post #1644 and external reply #1825 retain separate platform-visible acceptance criteria.
+
 ## Runtime repair discovery contract
 
 Golden Path development must resolve the existing `agentos.runtime / repair` Runner Window route to the Oracle Bootstrap repair script and independent Action Relay installer before declaring deployment unsupported. The persistent contract and fail-closed checks are in `docs/GOLDEN_PATH_RUNTIME_REPAIR_DISCOVERY.md` and `tests/test_golden_path_runtime_repair_discovery.py`. Existing source and hosted OIDC path are implemented; fresh Oracle installed-release and Node receipts are still required. Do not substitute `node.runtime/converge` or workflow-run acknowledgement for installed Action Relay proof.
