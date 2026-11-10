@@ -46,21 +46,26 @@ class EventFacilityTest(unittest.TestCase):
         for e in receipt["events"]:
             self.assertEqual(e["timestamp"],now.astimezone(ZoneInfo("UTC")).isoformat().replace("+00:00","Z"))
 
-    def test_existing_oracle_lane_routes_wake_after_durable_push(self):
+    def test_independent_oracle_facility_routes_wake_after_durable_push(self):
         root=Path(__file__).resolve().parents[1]
+        facility=(root/"scripts/run_agentos_event_facility_user.sh").read_text()
         social=(root/"scripts/run_persona_social_actions_user.sh").read_text()
         pdca=(root/"scripts/run_persona_pdca_heartbeat_user.sh").read_text()
         installer=(root/"scripts/install_persona_pdca_timer_user.sh").read_text()
         workflow=(root/".github/workflows/persona-pdca-heartbeat.yml").read_text()
-        self.assertIn('python3 "$EVENT_FACILITY"',social)
-        self.assertIn('git -c \'credential.helper=!gh auth git-credential\' push',social)
-        self.assertLess(social.index('git -c \'credential.helper=!gh auth git-credential\' push'),
-                        social.rindex('if [ "$EVENT_WAKE_REQUIRED" -eq 1 ]; then request_event_wake; fi'))
-        self.assertIn('systemctl --user start --no-block agentos-persona-pdca-heartbeat.service',social)
+        self.assertIn('python3 "$ENGINE"',facility)
+        self.assertIn('git -c \\'credential.helper=!gh auth git-credential\\' push',facility)
+        self.assertLess(facility.index('git -c \\'credential.helper=!gh auth git-credential\\' push'),
+                        facility.index('systemctl --user start --no-block agentos-persona-pdca-heartbeat.service'))
+        self.assertIn('flock -u 9',facility)
         self.assertNotIn('python3 "$EVENT_FACILITY"',pdca)
+        self.assertNotIn('python3 "$EVENT_FACILITY"',social)
         self.assertIn('install -m 0755 "$SOURCE_EVENT_FACILITY"',installer)
-        self.assertIn('"$REMOTE_EXTERNAL_INBOX" "$REMOTE_EVENT_FACILITY"',workflow)
-        for sh in ("scripts/run_persona_social_actions_user.sh",
+        self.assertIn('install -m 0755 "$SOURCE_EVENT_RUNNER"',installer)
+        self.assertIn('agentos-event-facility.timer',installer)
+        self.assertIn('"$REMOTE_EVENT_FACILITY" "$REMOTE_EVENT_RUNNER"',workflow)
+        for sh in ("scripts/run_agentos_event_facility_user.sh",
+                   "scripts/run_persona_social_actions_user.sh",
                    "scripts/run_persona_pdca_heartbeat_user.sh",
                    "scripts/install_persona_pdca_timer_user.sh"):
             result=subprocess.run(["bash","-n",str(root/sh)],capture_output=True,text=True)
