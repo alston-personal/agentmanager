@@ -54,8 +54,8 @@ class EventFacilityTest(unittest.TestCase):
         installer=(root/"scripts/install_persona_pdca_timer_user.sh").read_text()
         workflow=(root/".github/workflows/persona-pdca-heartbeat.yml").read_text()
         self.assertIn('python3 "$ENGINE"',facility)
-        self.assertIn('git -c \\'credential.helper=!gh auth git-credential\\' push',facility)
-        self.assertLess(facility.index('git -c \\'credential.helper=!gh auth git-credential\\' push'),
+        self.assertIn("git -c 'credential.helper=!gh auth git-credential' push",facility)
+        self.assertLess(facility.index("git -c 'credential.helper=!gh auth git-credential' push"),
                         facility.index('systemctl --user start --no-block agentos-persona-pdca-heartbeat.service'))
         self.assertIn('flock -u 9',facility)
         self.assertNotIn('python3 "$EVENT_FACILITY"',pdca)
