@@ -1201,3 +1201,8 @@ After safely converging #2157 onto the current main Runtime, Gaia's **read-only*
 ### Gaia #2157 IP provenance declaration (2026-11-10)
 
 The project owner confirmed Gaia/AgentOS work in this PR was developed independently and has declared `IP-Scope: personal-independent` in the PR description for the existing IP Provenance Guard. This declaration does not establish release authorization or runtime acceptance: the PR remains subject to CI, mainline protection, ONE permissions and live Receipt verification.
+
+
+### Realm Gateway deployment preflight regression repair (2026-11-10, candidate)
+
+The mainline `scripts/deploy_realm_gateway_user.sh` lost required source-path and Dashboard variable declarations while retaining `set -u`. The merged Gaia main SHA `6a5b9cc8aa698e1c3852e1e84f3d21966d877261` consequently failed Oracle request `realm-gateway-42759733953-1` with `DASH: unbound variable`. The matching `core/integration` script still contained the original declarations. The bounded repair restores only those definitions, adds nondeploying PR-time syntax/variable-order tests, and reconciles the workflow's maintenance worker receipt expectation to the existing scheduler policy. The workflow still deploys on an approved main push; passing a PR build check is not Oracle execution proof. The repair must receive the existing protected-main approval; no unapproved main mutation or live retry is asserted.
