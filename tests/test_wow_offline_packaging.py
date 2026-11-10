@@ -23,6 +23,7 @@ class OfflineInstallerPackageTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(a.read_bytes()).hexdigest(),ha)
             with zipfile.ZipFile(a) as z:
                 expected={PACKAGE_ROOT+"/"+name for name in FILES}
+                self.assertIn(PACKAGE_ROOT+"/Install-AgentOS-WoW.cmd", expected)
                 expected.add(PACKAGE_ROOT+"/manifest.json")
                 self.assertEqual(set(z.namelist()),expected)
                 manifest=json.loads(z.read(PACKAGE_ROOT+"/manifest.json"))
