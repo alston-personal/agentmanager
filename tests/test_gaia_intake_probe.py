@@ -7,6 +7,30 @@ from scripts import gaia_intake_probe
 
 
 class GaiaRunnerProbeTest(unittest.TestCase):
+    def test_runner_window_intent_registered_as_read_only(self):
+        from agent_core.runner_window import resolve_intent
+        from agentos_node import bootstrap_control as bc
+        from agentos_node.bootstrap_scheduler import policy_for
+        intent, params = resolve_intent(
+            "agentos.gaia", "intake.inspect", source_commit="a" * 40, payload={})
+        self.assertEqual(intent.action, bc.ACTION_GAIA_INTAKE_INSPECT)
+        self.assertIn(intent.action, bc.ALLOWED_ACTIONS)
+        self.assertEqual(params, {"source_commit": "a" * 40})
+        self.assertEqual(policy_for(intent.action).role, "control")
+        self.assertEqual(intent.allowed_payload_keys, frozenset())
+        with self.assertRaises(ValueError):
+            resolve_intent("agentos.gaia", "intake.inspect",
+                           source_commit="a" * 40, payload={"command": "create"})
+
+    @patch("agentos_node.bootstrap_control._run_canonical_script")
+    def test_oracle_handler_only_invokes_read_only_probe(self, run):
+        from agentos_node import bootstrap_control as bc
+        run.return_value = {"ok": True, "steps": []}
+        receipt = bc._execute(bc.ACTION_GAIA_INTAKE_INSPECT, "a" * 40)
+        self.assertTrue(receipt["ok"])
+        run.assert_called_once_with(
+            "scripts/gaia_intake_probe.py", timeout=90, source_commit="a" * 40)
+
     def test_probe_is_bounded_and_reports_non_authority(self):
         review = {
             "schema": "agentos.gaia-review/v1",
