@@ -11,6 +11,16 @@ on:
       - 'docs/SOCIAL_POST_EXPERIMENT_CAPABILITY.md'
       - '.github/workflows/social-post-experiment-guard.yml'
 
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/social/post_experiment.py'
+      - 'scripts/monitor_social_post_experiment_user.py'
+      - 'tests/test_social_post_experiment.py'
+      - 'docs/SOCIAL_POST_EXPERIMENT_CAPABILITY.md'
+      - '.github/workflows/social-post-experiment-guard.yml'
+
 permissions:
   contents: read
 
