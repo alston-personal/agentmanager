@@ -24,6 +24,7 @@ jobs:
           python -m pytest -q
           tests/test_control_plane_convergence.py
           tests/test_agentos_public_entry.py tests/test_agentos_shared_auth_bridge.py
+          tests/test_control_plane_release_acceptance.py
           tests/test_distributed_control_plane.py tests/test_distributed_gateway.py
           tests/test_distributed_runtime.py tests/test_project_state.py
           tests/test_project_state_http.py tests/test_runtime_dispatcher.py

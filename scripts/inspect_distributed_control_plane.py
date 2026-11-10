@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 
 
 def probe(url, token, *, kind):
-    headers = {'Authorization': 'Bearer ' + token} if kind != 'shell' else {}
+    headers = {'Authorization': 'Bearer ' + token} if kind not in ('shell', 'companion', 'auth_session') else {}
     data = b'{}' if kind == 'approval' else None
     if data is not None:
         headers['Content-Type'] = 'application/json'
@@ -26,10 +26,26 @@ def probe(url, token, *, kind):
             body = response.read().decode('utf-8')
             status = response.status
             if kind == 'shell':
-                valid = status == 200 and 'Node Map' in body and bool(token) and token not in body
-                details = {'node_map_ui': 'Node Map' in body, 'credential_absent': bool(token) and token not in body,
+                valid = (status == 200 and '以 Google 登入' in body
+                         and 'window.prompt(' not in body and 'Node Map' not in body
+                         and bool(token) and token not in body)
+                details = {'public_signin_ui': '以 Google 登入' in body,
+                           'operator_prompt_absent': 'window.prompt(' not in body,
+                           'operator_dashboard_absent': 'Node Map' not in body,
+                           'credential_absent': bool(token) and token not in body,
                            'noindex': 'noindex' in response.headers.get('X-Robots-Tag', '')}
                 valid = valid and details['noindex']
+            elif kind == 'companion':
+                valid = status == 200 and 'Node Map' in body and bool(token) and token not in body
+                details = {'legacy_operator_ui': 'Node Map' in body,
+                           'credential_absent': bool(token) and token not in body}
+            elif kind == 'auth_session':
+                payload = json.loads(body)
+                valid = (status == 200 and isinstance(payload.get('loggedIn'), bool)
+                         and isinstance(payload.get('providers'), dict)
+                         and payload['loggedIn'] is False)
+                details = {'anonymous_session': payload.get('loggedIn') is False,
+                           'providers_present': isinstance(payload.get('providers'), dict)}
             elif kind == 'nodes':
                 payload = json.loads(body)
                 valid = status == 200 and payload.get('schema') == 'agentos.node-map/v0.1'
@@ -62,7 +78,9 @@ def inspect(expected_sha, public_url):
     probes = {}
     for label, base in [('local', local_url), ('public', public_url.rstrip('/'))]:
         probes[label] = {kind: probe(base + path, token, kind=kind) for kind, path in
-                         [('shell', '/'), ('nodes', '/v1/nodes'), ('approval', '/v1/nodes/approve')]}
+                         [('shell', '/'), ('companion', '/companion'),
+                          ('auth_session', '/dashboard/api/auth/session'),
+                          ('nodes', '/v1/nodes'), ('approval', '/v1/nodes/approve')]}
     source_match = observed_sha == expected_sha and clean and cwd == Path(props['WorkingDirectory']).resolve()
     healthy = props['ActiveState'] == 'active' and all(p['ok'] for group in probes.values() for p in group.values())
     return {'schema': 'agentos.execution-receipt/v1', 'project_id': 'agentos-core',
