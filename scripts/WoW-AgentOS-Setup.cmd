@@ -24,9 +24,6 @@ echo Offline Addon UI installed. No default AgentOS Node enrollment was found.
 echo The existing AgentOS Join process can connect this PC to the ONE Realm.
 echo Joining may require downloading components and approval from the Realm administrator.
 echo If this PC already has a Node installed elsewhere, do NOT join a second Node.
-set "JOINANSWER="
-set /p "JOINANSWER=Type JOIN to start existing AgentOS Node enrollment, or Enter to skip: "
-if /I not "%JOINANSWER%"=="JOIN" goto finish
 call "%~dp0..\Join-AgentOS-Node.cmd"
 if errorlevel 1 echo Node enrollment did not complete. The offline Addon is still installed.
 goto finish
