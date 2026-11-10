@@ -91,13 +91,14 @@ def evaluate(config, at, existing=()):
         raise ValueError("EVENT_EARLIEST_HOUR")
     gap=trigger["min_gap_hours"]
     slots=[]
+    # A common minute preserves the configured minimum spacing across slots.
+    daily_minute=rng.randrange(0,60)
     for index in range(count):
         # Fixed allocation within local day; do not claim a 24h continuous Poisson process.
         target_hour=earliest_hour+index*gap
         if target_hour>=24:
             break
-        minute=rng.randrange(0,60)
-        scheduled=local.replace(hour=int(target_hour),minute=minute,second=0,microsecond=0)
+        scheduled=local.replace(hour=int(target_hour),minute=daily_minute,second=0,microsecond=0)
         slots.append((index,scheduled))
     seen={x.get("id") for x in existing if isinstance(x,dict)}
     emitted=[]
@@ -153,6 +154,20 @@ def main():
                 continue
     result=evaluate(config,datetime.now(timezone.utc),existing)
     if result["events"]:
+        # Durable delivery intent is persisted in the SAME canonical data repo
+        # transaction as the occurrence. It is not a platform-write grant.
+        pending=root/"pdca/event_deliveries"
+        pending.mkdir(parents=True,exist_ok=True)
+        for event in result["events"]:
+            path=pending/(event["id"]+".json")
+            if not path.exists():
+                path.write_text(json.dumps({
+                    "schema":"agentos.event.delivery-receipt/v1",
+                    "event_id":event["id"],"subscription_id":event["subscription_id"],
+                    "target":event["target"],"status":"PENDING_WAKE",
+                    "delivery_policy":event["delivery_policy"],
+                    "emitted_at":event["timestamp"],"ack_cycle":None
+                },ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         ledger.parent.mkdir(parents=True,exist_ok=True)
         with ledger.open("a",encoding="utf-8") as out:
             for event in result["events"]:
