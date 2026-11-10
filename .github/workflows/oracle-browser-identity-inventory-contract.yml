@@ -1,0 +1,23 @@
+name: Oracle Browser Identity Inventory Contract
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'scripts/oracle_browser_identity_inventory.py'
+      - 'tests/test_oracle_browser_identity_inventory.py'
+      - '.github/workflows/oracle-browser-identity-inventory-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile diagnostic script
+        run: python3 -m py_compile scripts/oracle_browser_identity_inventory.py
+      - name: Validate identity and privacy invariants
+        run: python3 -m unittest discover -s tests -p 'test_oracle_browser_identity_inventory.py' -v

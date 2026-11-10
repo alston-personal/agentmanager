@@ -11,6 +11,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_pdca_tick.py'
+      - 'scripts/agentos_event_facility.py'
+      - 'scripts/run_agentos_event_facility_user.sh'
       - 'scripts/persona_external_observation_inbox.py'
       - 'scripts/persona_social_executor.py'
       - 'scripts/persona_media_request_worker.py'
@@ -60,6 +62,9 @@ jobs:
         run: |
           set -euo pipefail
           test -f scripts/persona_pdca_tick.py
+          test -f scripts/agentos_event_facility.py
+          test -f scripts/run_agentos_event_facility_user.sh
+          python3 -m unittest discover -s tests -p 'test_persona_stochastic_life_events.py'
           test -f scripts/persona_external_observation_inbox.py
           test -f scripts/persona_social_executor.py
           test -f scripts/persona_internal_activity_executor.py
@@ -75,6 +80,10 @@ jobs:
         run: |
           set -euo pipefail
           REMOTE_TICK="/tmp/persona_pdca_tick-install-$GITHUB_RUN_ID.py"
+          REMOTE_EVENT_FACILITY="/tmp/agentos_event_facility-$GITHUB_RUN_ID.py"
+          REMOTE_EVENT_RUNNER="/tmp/run_agentos_event_facility-$GITHUB_RUN_ID.sh"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/run_agentos_event_facility_user.sh "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_EVENT_RUNNER"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/agentos_event_facility.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_EVENT_FACILITY"
           REMOTE_EXTERNAL_INBOX="/tmp/persona_external_observation_inbox-$GITHUB_RUN_ID.py"
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/persona_external_observation_inbox.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_EXTERNAL_INBOX"
           REMOTE_RUNNER="/tmp/run_persona_pdca_heartbeat-$GITHUB_RUN_ID.sh"
@@ -124,10 +133,10 @@ jobs:
             scripts/install_persona_pdca_timer_user.sh "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_INSTALLER"
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash "$REMOTE_INSTALLER" "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_GROWTH_METRICS" "$REMOTE_MEDIA_WORKER" "$REMOTE_IMAGE_EXECUTOR" "$REMOTE_EXPERIENCE_LEDGER" "$REMOTE_MEDIA_ASSET" "$REMOTE_VISUAL_VALIDATOR" "$REMOTE_MEDIA_REVIEW" "$REMOTE_REFERENCE_INSTALLER" "$REMOTE_WARDROBE_SOURCES"
+            bash "$REMOTE_INSTALLER" "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_GROWTH_METRICS" "$REMOTE_MEDIA_WORKER" "$REMOTE_IMAGE_EXECUTOR" "$REMOTE_EXPERIENCE_LEDGER" "$REMOTE_MEDIA_ASSET" "$REMOTE_VISUAL_VALIDATOR" "$REMOTE_MEDIA_REVIEW" "$REMOTE_REFERENCE_INSTALLER" "$REMOTE_WARDROBE_SOURCES" "$REMOTE_EXTERNAL_INBOX" "$REMOTE_EVENT_FACILITY" "$REMOTE_EVENT_RUNNER"
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_GROWTH_METRICS" "$REMOTE_MEDIA_WORKER" "$REMOTE_IMAGE_EXECUTOR" "$REMOTE_EXPERIENCE_LEDGER" "$REMOTE_MEDIA_ASSET" "$REMOTE_VISUAL_VALIDATOR" "$REMOTE_MEDIA_REVIEW" "$REMOTE_REFERENCE_INSTALLER" "$REMOTE_WARDROBE_SOURCES" "$REMOTE_INSTALLER"
+            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_GROWTH_METRICS" "$REMOTE_MEDIA_WORKER" "$REMOTE_IMAGE_EXECUTOR" "$REMOTE_EXPERIENCE_LEDGER" "$REMOTE_MEDIA_ASSET" "$REMOTE_VISUAL_VALIDATOR" "$REMOTE_MEDIA_REVIEW" "$REMOTE_REFERENCE_INSTALLER" "$REMOTE_WARDROBE_SOURCES" "$REMOTE_EXTERNAL_INBOX" "$REMOTE_EVENT_FACILITY" "$REMOTE_EVENT_RUNNER" "$REMOTE_INSTALLER"
 
       - name: Install approved Mio reference privately
         shell: bash

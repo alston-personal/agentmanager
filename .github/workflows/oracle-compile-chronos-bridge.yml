@@ -2,10 +2,6 @@ name: Oracle Compile Chronos Bridge
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-compile-chronos-bridge.yml'
-
 permissions:
   contents: write
 

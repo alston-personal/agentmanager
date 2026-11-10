@@ -1,0 +1,220 @@
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REPAIR = ROOT / "scripts" / "repair_antigravity_relay_user.sh"
+BOOTSTRAP = ROOT / "agentos_node" / "bootstrap_control.py"
+REALM_SERVER = ROOT / "agent_core" / "realm_server.py"
+ACTION_INSTALLER = ROOT / "scripts" / "install_action_relay_user.sh"
+WORKFLOW = ROOT / ".github" / "workflows" / "oracle-exact-generation-executor-job-rollout.yml"
+LEGACY_BOOTSTRAP_WORKFLOW = ROOT / ".github" / "workflows" / "oracle-bootstrap-transport-control-plane.yml"
+
+
+def _text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
+    def test_transport_repair_fails_closed_on_generation_drift(self):
+        text = _text(REPAIR)
+        self.assertIn('EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"', text)
+        self.assertIn('^[0-9a-f]{40}$', text)
+        self.assertIn('git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"', text)
+        self.assertIn('[ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]', text)
+        self.assertIn('exact runtime source fetch mismatch', text)
+        self.assertIn('git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"', text)
+        self.assertIn('exact runtime source commit is not in governed ref', text)
+        self.assertNotIn('runtime source generation mismatch: ref=$SOURCE_REF observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT', text)
+        self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', text)
+
+    def test_relay_status_fails_closed_on_inactive_worker_or_stale_processing(self):
+        bootstrap = _text(BOOTSTRAP)
+        workflow = _text(ROOT / ".github" / "workflows" / "main-agent-relay-status-acceptance.yml")
+        self.assertIn('RELAY_STALE_PROCESSING_SECONDS = 600', bootstrap)
+        self.assertIn('stale_processing = processing_count > 0 and processing_oldest >= RELAY_STALE_PROCESSING_SECONDS', bootstrap)
+        self.assertIn('antigravity == "active" and action_relay == "active" and not stale_processing', bootstrap)
+        self.assertIn('relay_status_stale_processing=', bootstrap)
+        self.assertIn("relay_state=vals.get('relay_status_antigravity_service')", workflow)
+        self.assertIn("relay_state in {'active','activating','failed','inactive'}", workflow)
+        self.assertIn("assert vals.get('relay_status_action_service')=='active'", workflow)
+        self.assertIn("assert vals.get('relay_status_stale_processing')=='NO'", workflow)
+
+    def test_relay_stale_processing_survives_runner_window_projection(self):
+        text = _text(REALM_SERVER)
+        self.assertIn("'relay_status_stale_processing=',", text)
+
+    def test_relay_status_projects_exact_runtime_generations(self):
+        bootstrap = _text(BOOTSTRAP)
+        realm = _text(REALM_SERVER)
+        workflow = _text(ROOT / ".github" / "workflows" / "main-agent-relay-status-acceptance.yml")
+        self.assertIn('relay_status_antigravity_source_commit=', bootstrap)
+        self.assertIn('relay_status_action_source_commit=', bootstrap)
+        self.assertIn('AGENTOS_RUNTIME_SOURCE_COMMIT', bootstrap)
+        self.assertIn('AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT', bootstrap)
+        self.assertIn('runtime-vnext/runtime-provenance.json', bootstrap)
+        self.assertIn('agent-data/runtime/action-relay/capabilities.json', bootstrap)
+        self.assertIn('marker_source_commit(', bootstrap)
+        self.assertIn('unit_source_commit(', bootstrap)
+        self.assertIn("'relay_status_antigravity_source_commit=',", realm)
+        self.assertIn("'relay_status_action_source_commit=',", realm)
+        self.assertIn("'relay_status_antigravity_source_commit=',", workflow)
+        self.assertIn("'relay_status_action_source_commit=',", workflow)
+        self.assertIn("bash scripts/agentos_dispatch.sh agentos.runtime repair", workflow)
+        self.assertIn("relay_runtime_provenance_repair=PASS", workflow)
+        self.assertIn("vals.get('relay_status_antigravity_source_commit')==expected", workflow)
+        self.assertIn("vals.get('relay_status_action_source_commit')==expected", workflow)
+
+
+    def test_bootstrap_scheduler_keeps_stable_direct_worker_lifecycle(self):
+        installer = _text(ROOT / "scripts" / "install_bootstrap_scheduler_user.sh")
+        self.assertIn("ExecStart=/usr/bin/python3 -m agentos_node.bootstrap_scheduler", installer)
+        self.assertNotIn("ExecStart=/usr/bin/sg agentos -c", installer)
+
+    def test_relay_restart_uses_bounded_agentos_group_quarantine_helper(self):
+        bootstrap = _text(BOOTSTRAP)
+        worker = _text(ROOT / "agentos_node" / "antigravity_relay_worker.py")
+        self.assertIn('["/usr/bin/sg", "agentos", "-c", reconcile_cmd]', bootstrap)
+        self.assertIn('"--reconcile-only"', bootstrap)
+        self.assertIn("relay_restart_quarantined_stale=", bootstrap)
+        self.assertIn('parser.add_argument("--reconcile-only", action="store_true")', worker)
+        self.assertIn("reconcile_stranded_processing(stale_after=600.0)", worker)
+
+    def test_relay_quarantine_helper_failure_is_bounded_classification_only(self):
+        bootstrap = _text(BOOTSTRAP)
+        self.assertIn('failure = "permission_denied"', bootstrap)
+        self.assertIn('failure = "group_entry_failed"', bootstrap)
+        self.assertIn('failure = "invalid_spool"', bootstrap)
+        self.assertIn('failure = "unexpected"', bootstrap)
+        self.assertIn('class={failure}', bootstrap)
+        self.assertNotIn('reconcile.stderr}', bootstrap)
+        self.assertNotIn('reconcile.stdout}', bootstrap)
+
+    def test_transport_repair_restarts_and_requires_active_antigravity_relay(self):
+        text = _text(REPAIR)
+        self.assertIn('REPAIR_STAGE="restart_antigravity_relay"', text)
+        self.assertIn('systemctl --user daemon-reload', text)
+        self.assertIn('systemctl --user enable agentos-antigravity-relay.service', text)
+        self.assertIn('timeout 30s systemctl --user restart agentos-antigravity-relay.service', text)
+        self.assertIn('systemctl --user show -p ActiveState --value agentos-antigravity-relay.service', text)
+        self.assertIn('systemctl --user is-active --quiet agentos-antigravity-relay.service', text)
+        self.assertIn('antigravity_restart_converged=PASS', text)
+        self.assertNotIn('antigravity_restart_pending=YES', text)
+
+    def test_action_relay_installer_accepts_exact_ancestor_after_lane_advances(self):
+        text = _text(ACTION_INSTALLER)
+        self.assertIn('SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)', text)
+        self.assertIn('git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"', text)
+        self.assertIn('git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"', text)
+        self.assertIn('Action Relay exact source fetch mismatch', text)
+        self.assertIn('Action Relay source commit is not in governed ref', text)
+        self.assertNotIn('Action Relay source generation mismatch: expected=', text)
+
+    def test_bootstrap_exact_repair_owns_integration_lane_selection(self):
+        text = _text(BOOTSTRAP)
+        self.assertIn('env_extra["AGENTOS_REF"] = "core/integration"', text)
+        self.assertIn('env["AGENTOS_SOURCE_COMMIT"] = source_commit', text)
+
+        # Caller-facing bootstrap params must never select a source ref.  Full
+        # runtime convergence may mention source_ref internally only because its
+        # canonical request fixes that authority value to core/integration.
+        validate_block = text.split("def _validate_request", 1)[1].split(
+            "def _run_canonical_script", 1
+        )[0]
+        self.assertNotIn('"source_ref"', validate_block)
+        self.assertNotIn("'source_ref'", validate_block)
+
+        converge_block = text.split("if action == ACTION_RUNTIME_CONVERGE:", 1)[1].split(
+            "if action == ACTION_REPAIR_TRANSPORT:", 1
+        )[0]
+        self.assertIn('"source_ref": "core/integration"', converge_block)
+        self.assertNotIn('params.get("source_ref")', converge_block)
+        self.assertNotIn("params.get('source_ref')", converge_block)
+
+    def test_rollout_is_integration_only_and_never_writes_main(self):
+        text = _text(WORKFLOW)
+        trigger = text.split('permissions:', 1)[0]
+        self.assertIn('workflow_dispatch:', trigger)
+        self.assertNotIn('\n  push:', trigger)
+        self.assertNotIn('\n  pull_request:', trigger)
+        self.assertIn('"params": {"source_commit": sha}', text)
+        self.assertIn('agentos_source_ref=core/integration', text)
+        self.assertNotIn('git push', text)
+        self.assertNotIn('HEAD:main', text)
+        self.assertNotIn('origin/main', text)
+
+    def test_rollout_respects_cross_owner_runtime_boundary(self):
+        text = _text(WORKFLOW)
+        self.assertNotIn('/home/ubuntu/.local/share/agentos/action-runtime', text)
+        self.assertNotIn('git -c safe.directory="$RUNTIME" -C "$RUNTIME" rev-parse HEAD', text)
+        self.assertNotIn('git config --global --add safe.directory', text)
+        self.assertIn('ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay', text)
+
+    def test_live_submission_enters_one_controller_before_action_relay(self):
+        text = _text(WORKFLOW)
+        self.assertIn('http://127.0.0.1:8780/v1/controller/dispatch', text)
+        self.assertIn('"schema": "agentos.controller-dispatch/v0.1"', text)
+        self.assertIn('"node_id": "oracle-core-node"', text)
+        self.assertIn('"action": "agentos.executor.job"', text)
+        self.assertIn('assert submission.get("schema") == "agentos.executor-job-submission/v1"', text)
+        self.assertIn('assert submission.get("task_id") == job_id', text)
+        self.assertIn('one_controller_dispatch=PASS', text)
+        submit_section = text.split('Submit through ONE and collect bounded executor receipt', 1)[1]
+        self.assertNotIn('dispatcher.submit(', submit_section)
+
+    def test_typesafe_acceptance_does_not_wait_for_experience_regression(self):
+        text = _text(WORKFLOW)
+        section = text.split('Submit through ONE and collect bounded executor receipt', 1)[1]
+        before_shell = section.split('shell: bash', 1)[0]
+        self.assertIn("if: steps.changes.outputs.typesafe != 'true'", before_shell)
+        self.assertIn("if: ${{ always() && steps.changes.outputs.typesafe == 'true' }}", text)
+        self.assertIn("cancel-in-progress: true", text)
+
+    def test_rollout_records_bounded_executor_job_receipt_without_requiring_workload_success(self):
+        text = _text(WORKFLOW)
+        self.assertIn('canonical_experience_regression_request', text)
+        self.assertIn('ActionRelayExecutorJobDispatcher', text)
+        self.assertIn('ActionRelayExecutorJobDispatcher(root).inspect(job_id)', text)
+        self.assertIn('ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay', text)
+        self.assertNotIn('/v1/controller/receipts/$JOB_ID', text)
+        self.assertIn('credential_exposed', text)
+        self.assertIn('executor_job_transport_receipt=PASS', text)
+        self.assertIn('actions/upload-artifact@v4', text)
+        self.assertNotIn("assert receipt['successful'] is True", text)
+
+    def test_rollout_validates_and_preserves_bounded_attribution_evidence(self):
+        text = _text(WORKFLOW)
+        # Manual compatibility lanes no longer carry push path filters; retain
+        # the bounded attribution contract checks on the actual executor logic.
+        self.assertIn('parse_attribution_evidence_json', text)
+        self.assertIn('sanitize_attribution_evidence_json', text)
+        self.assertIn('attribution_json = receipt.get("attribution_evidence_json")', text)
+        self.assertIn('assert attribution_json is not None', text)
+        self.assertIn('parsed_attr.get("schema") == "agentos.experience-attribution-evidence/v2"', text)
+        self.assertIn('ablation.get("withheld_experience_id") == "core.branch-authority.v2"', text)
+        self.assertIn('ablation.get("target_dimension") == "canonical_development_branch"', text)
+        self.assertIn('ablation.get("repeat_count") == 3', text)
+        self.assertIn('safe["attribution_evidence_json"] = safe_attr', text)
+        self.assertIn('executor_job_attribution_evidence=PASS', text)
+        self.assertIn('executor_job_ablation_evidence=PASS', text)
+        self.assertNotIn('safe = dict(receipt)', text)
+
+    def test_legacy_bootstrap_is_manual_read_only_and_exact_generation_only(self):
+        text = _text(LEGACY_BOOTSTRAP_WORKFLOW)
+        compact = text.replace(' ', '')
+        trigger = text.split('permissions:', 1)[0]
+        self.assertIn('workflow_dispatch:', trigger)
+        self.assertNotIn('\n  push:', trigger)
+        self.assertIn('permissions:\n  contents: read', text)
+        self.assertIn("test \"$GITHUB_REF\" = 'refs/heads/core/integration'", text)
+        self.assertIn("'params':{'source_commit':sha}", compact)
+        self.assertIn("assertr.get('source_commit')==expected", compact)
+        self.assertNotIn('contents: write', text)
+        self.assertNotIn('git push', text)
+        self.assertNotIn('HEAD:main', text)
+        self.assertNotIn('git reset --hard origin/main', text)
+        self.assertIn('bootstrap_evidence_scope=RUNNER_WORKSPACE_ONLY', text)
+
+
+if __name__ == "__main__":
+    unittest.main()

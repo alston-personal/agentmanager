@@ -35,7 +35,7 @@ def load_registry(path: Path = REGISTRY_PATH) -> dict:
 def save_registry(data: dict, path: Path = REGISTRY_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data["updated_at"] = _now()
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
 
@@ -82,6 +82,76 @@ def _git(repo: str, *args: str) -> tuple[int, str]:
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8,
     )
     return proc.returncode, proc.stdout.strip() if proc.returncode == 0 else proc.stderr.strip()
+
+
+def _set_verification(resource: dict, *, observed: dict[str, Any], errors: list[str]) -> dict:
+    _set_verification(resource, observed=observed, errors=errors)
+    return resource
+
+
+def resource_ready(resource_id: str, path: Path = REGISTRY_PATH) -> tuple[bool, str]:
+    resource = get(resource_id, path)
+    if not resource:
+        return False, "RESOURCE_NOT_REGISTERED"
+    verification = resource.get("verification", {})
+    if verification.get("status") != "verified":
+        return False, "RESOURCE_NOT_READY"
+    return True, "RESOURCE_READY"
+
+
+def verify_mount(resource_id: str, path: Path = REGISTRY_PATH) -> dict:
+    data = load_registry(path)
+    resource = data.get("resources", {}).get(resource_id)
+    if not resource:
+        raise KeyError(resource_id)
+    if resource.get("kind") != "storage":
+        raise ValueError(f"not a storage resource: {resource_id}")
+
+    declared = resource.get("declared", {})
+    mountpoint = str(declared.get("mountpoint") or "").strip()
+    service = str(declared.get("service") or "").strip()
+    expected_fstype = str(declared.get("fstype") or "").strip()
+    errors: list[str] = []
+    observed: dict[str, Any] = {"mountpoint": mountpoint}
+
+    if not mountpoint:
+        errors.append("mountpoint: missing")
+    else:
+        proc = subprocess.run(
+            ["mountpoint", "-q", mountpoint],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        observed["mounted"] = proc.returncode == 0
+        if proc.returncode != 0:
+            errors.append("mountpoint: not mounted")
+        else:
+            fm = subprocess.run(
+                ["findmnt", "-n", "-o", "FSTYPE", "--target", mountpoint],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5,
+            )
+            fstype = fm.stdout.strip() if fm.returncode == 0 else ""
+            observed["fstype"] = fstype
+            if expected_fstype and fstype != expected_fstype:
+                errors.append(f"fstype: expected {expected_fstype}, got {fstype or 'unknown'}")
+
+    if service:
+        svc = subprocess.run(
+            ["systemctl", "--user", "is-active", "--quiet", service],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        observed["service"] = {"name": service, "active": svc.returncode == 0}
+        if svc.returncode != 0:
+            errors.append(f"service: inactive: {service}")
+
+    _set_verification(resource, observed=observed, errors=errors)
+    data["resources"][resource_id] = resource
+    save_registry(data, path)
+    return resource
 
 
 def verify_site(resource_id: str, path: Path = REGISTRY_PATH) -> dict:

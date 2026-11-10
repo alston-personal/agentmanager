@@ -19,6 +19,9 @@ SOURCE_VISUAL_VALIDATOR="${14:-}"
 SOURCE_MEDIA_REVIEW="${15:-}"
 SOURCE_REFERENCE_INSTALLER="${16:-}"
 SOURCE_WARDROBE_SOURCES="${17:-}"
+SOURCE_EXTERNAL_INBOX="${18:-}"
+SOURCE_EVENT_FACILITY="${19:-}"
+SOURCE_EVENT_RUNNER="${20:-}"
 test -f "$SOURCE_TICK"
 test -f "$SOURCE_RUNNER"
 test -f "$SOURCE_SOCIAL_EXECUTOR"
@@ -36,6 +39,9 @@ test -f "$SOURCE_VISUAL_VALIDATOR"
 test -f "$SOURCE_MEDIA_REVIEW"
 test -f "$SOURCE_REFERENCE_INSTALLER"
 test -f "$SOURCE_WARDROBE_SOURCES"
+test -f "$SOURCE_EXTERNAL_INBOX"
+test -f "$SOURCE_EVENT_FACILITY"
+test -f "$SOURCE_EVENT_RUNNER"
 
 LIB="$HOME/.local/lib/agentos"
 BIN="$HOME/.local/bin"
@@ -56,6 +62,9 @@ install -m 0755 "$SOURCE_VISUAL_VALIDATOR" "$LIB/validate_mio_visual_manifest.py
 install -m 0755 "$SOURCE_MEDIA_REVIEW" "$LIB/persona_media_review.py"
 install -m 0755 "$SOURCE_REFERENCE_INSTALLER" "$LIB/persona_reference_install.py"
 install -m 0755 "$SOURCE_WARDROBE_SOURCES" "$LIB/persona_wardrobe_sources.py"
+install -m 0755 "$SOURCE_EXTERNAL_INBOX" "$LIB/persona_external_observation_inbox.py"
+install -m 0755 "$SOURCE_EVENT_FACILITY" "$LIB/agentos_event_facility.py"
+install -m 0755 "$SOURCE_EVENT_RUNNER" "$BIN/agentos-event-facility"
 CANONICAL_HEARTBEAT="$BIN/agentos-persona-pdca-heartbeat-v2"
 install -m 0755 "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT"
 cmp -s "$SOURCE_RUNNER" "$CANONICAL_HEARTBEAT" || {
@@ -68,6 +77,8 @@ SERVICE="$UNIT_DIR/agentos-persona-pdca-heartbeat.service"
 TIMER="$UNIT_DIR/agentos-persona-pdca-heartbeat.timer"
 SOCIAL_SERVICE="$UNIT_DIR/agentos-persona-social-actions.service"
 SOCIAL_TIMER="$UNIT_DIR/agentos-persona-social-actions.timer"
+EVENT_SERVICE="$UNIT_DIR/agentos-event-facility.service"
+EVENT_TIMER="$UNIT_DIR/agentos-event-facility.timer"
 
 cat > "$SERVICE" <<EOF
 [Unit]
@@ -142,8 +153,38 @@ Unit=agentos-persona-social-actions.service
 WantedBy=timers.target
 EOF
 
+# ONE shared facility timer, never a per-Persona scheduler.
+cat > "$EVENT_SERVICE" <<EOF
+[Unit]
+Description=AgentOS Shared Event Facility Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=AGENTOS_EVENT_FACILITY=$LIB/agentos_event_facility.py
+ExecStart=$BIN/agentos-event-facility
+NoNewPrivileges=true
+EOF
+
+cat > "$EVENT_TIMER" <<EOF
+[Unit]
+Description=AgentOS Shared Event Facility Subscription Evaluation
+
+[Timer]
+# Avoid cloning a second Persona repository every five minutes; the separate
+# 15-minute facility window is sufficient for bounded daily life events.
+OnCalendar=*-*-* *:2/15:00
+Persistent=true
+AccuracySec=45s
+Unit=agentos-event-facility.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 systemctl --user daemon-reload
-systemctl --user enable agentos-persona-pdca-heartbeat.timer agentos-persona-social-actions.timer >/dev/null
+systemctl --user enable agentos-persona-pdca-heartbeat.timer agentos-persona-social-actions.timer agentos-event-facility.timer >/dev/null
 
 # Maintenance must not reset an already-running natural cadence. Start only
 # timers that are currently inactive; leave active timer scheduling untouched.
@@ -153,11 +194,16 @@ fi
 if ! systemctl --user is-active --quiet agentos-persona-social-actions.timer; then
   systemctl --user start agentos-persona-social-actions.timer
 fi
+if ! systemctl --user is-active --quiet agentos-event-facility.timer; then
+  systemctl --user start agentos-event-facility.timer
+fi
 
 systemctl --user is-enabled --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-enabled --quiet agentos-persona-social-actions.timer
 systemctl --user is-active --quiet agentos-persona-social-actions.timer
+systemctl --user is-enabled --quiet agentos-event-facility.timer
+systemctl --user is-active --quiet agentos-event-facility.timer
 
 # One-time liveness recovery: deployment is not a heartbeat source. Canonical
 # persona state is the source of truth; systemd unit timestamps can be reset by
@@ -200,3 +246,5 @@ echo "persona_pdca_timer_schedule=calendar_:25_persistent"
 echo "persona_social_action_timer_install=PASS"
 echo "persona_social_action_timer_interval=5m"
 echo "persona_social_action_timer_schedule=calendar_5m_persistent"
+echo "agentos_event_facility_timer_install=PASS"
+echo "agentos_event_facility_timer_schedule=calendar_15m_persistent"

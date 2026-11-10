@@ -35,7 +35,7 @@ DEFAULT_LEASE_SECONDS = 1800
 INTAKE_SCHEMA = "agentos.work-intake/v1"
 INTAKE_FIELDS = {
     "schema", "work_id", "project_id", "title", "next_action",
-    "acceptance", "source", "workspace", "lease_seconds",
+    "acceptance", "source", "workspace", "lease_seconds", "intake_kind",
 }
 
 
@@ -200,6 +200,8 @@ def register(
     source: str = "",
     workspace: str = "",
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    execution_authorized: bool = True,
+    intake_kind: str = "legacy",
 ) -> dict[str, Any]:
     if not all(str(v).strip() for v in (work_id, project_id, title, owner, next_action)):
         raise ValueError("required_work_fields_missing")
@@ -216,6 +218,8 @@ def register(
         stamp = now()
         item = {
             "work_id": work_id,
+            "execution_authorized": execution_authorized,
+            "intake_kind": intake_kind,
             "project_id": project_id,
             "title": title,
             "status": "accepted",
@@ -265,6 +269,16 @@ def register_intake_envelope(path: Path, payload: dict[str, Any]) -> dict[str, A
     if workspace and not Path(workspace).is_absolute():
         raise ValueError("work_intake_workspace_must_be_absolute")
 
+    intake_kind = str(payload.get("intake_kind") or "legacy")
+    if intake_kind not in {"legacy", "engineering"}:
+        raise ValueError("work_intake_kind_invalid")
+    if intake_kind == "engineering":
+        work_id = str(payload.get("work_id") or "")
+        source = str(payload.get("source") or "")
+        match = re.fullmatch(r"gh-issue-([0-9]+)-engineering", work_id)
+        if not match or source != f"https://github.com/alston-personal/agentmanager/issues/{match.group(1)}":
+            raise ValueError("engineering_source_identity_mismatch")
+
     lease_seconds = int(payload.get("lease_seconds") or DEFAULT_LEASE_SECONDS)
     return register(
         path,
@@ -277,7 +291,20 @@ def register_intake_envelope(path: Path, payload: dict[str, Any]) -> dict[str, A
         source=str(payload.get("source") or "").strip(),
         workspace=workspace,
         lease_seconds=lease_seconds,
+        execution_authorized=(intake_kind != "engineering"),
+        intake_kind=intake_kind,
     )
+
+
+def lobster_execution_permitted(item: dict[str, Any]) -> bool:
+    """Keep GitHub engineering intake distinct from governed Executor authority.
+
+    Also blocks engineering work registered before this flag existed.
+    """
+    work_id = str(item.get("work_id") or "")
+    if item.get("intake_kind") == "engineering" or re.fullmatch(r"gh-issue-[0-9]+-engineering", work_id):
+        return False
+    return item.get("execution_authorized") is not False
 
 
 def transition(
@@ -302,6 +329,8 @@ def transition(
             return item
         if target not in ALLOWED.get(current, set()):
             raise ValueError(f"invalid_transition:{current}->{target}")
+        if target == "in_progress" and not retry_admission_allowed(item):
+            raise ValueError("machine_retry_budget_exhausted")
         if next_action is not None:
             item["next_action"] = next_action.strip()
         if target in ACTIVE and not str(item.get("next_action") or "").strip():
@@ -406,6 +435,28 @@ MACHINE_RETRY_BASE_SECONDS = {
     "PROVIDER_CAPACITY": 900,
 }
 MACHINE_RETRY_MAX_SECONDS = 3600
+# A deterministic verifier failure cannot recover from repeated identical retries.
+VERIFICATION_RETRY_LIMIT = 5
+# An unchanged machine failure must not consume unlimited retries forever.
+# Exhaustion stays BLOCKED under the same work ID; a verified repair can then
+# be deliberately resumed through existing governed transitions.
+MACHINE_RETRY_BUDGET = 12
+
+
+def retry_admission_allowed(item: dict[str, Any]) -> bool:
+    """Fail closed for exhausted machine retries across wake and executor paths.
+
+    The kind is durable because wake_due clears the human-readable blocker.
+    Remediation must use a separately governed, evidence-backed resume path;
+    normal wake/board projection must not erase history or bypass this limit.
+    """
+    kind = str(item.get("last_blocker_kind") or "")
+    if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
+        kind = classify_blocker(item.get("blocker"))
+    limit = VERIFICATION_RETRY_LIMIT if kind == "VERIFICATION" else MACHINE_RETRY_BUDGET
+    if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
+        return True
+    return max(0, int(item.get("machine_retry_count") or 0)) < limit
 
 
 def defer_machine_blockers(
@@ -425,13 +476,27 @@ def defer_machine_blockers(
     deferred: list[dict[str, Any]] = []
     with locked(path):
         state = load(path)
+        exhausted_updated = False
         for work_id, item in sorted(state["items"].items()):
             if item.get("status") != "blocked":
                 continue
             kind = classify_blocker(item.get("blocker"))
             if kind not in MACHINE_RETRYABLE_BLOCKER_KINDS:
                 continue
-            retry_count = max(0, int(item.get("machine_retry_count") or 0)) + 1
+            previous_retries = max(0, int(item.get("machine_retry_count") or 0))
+            retry_budget = VERIFICATION_RETRY_LIMIT if kind == "VERIFICATION" else MACHINE_RETRY_BUDGET
+            if previous_retries >= retry_budget:
+                if not any(event.get("event") == "machine_retry_budget_exhausted" for event in item.get("history", [])):
+                    item.setdefault("history", []).append({
+                        "at": now(), "event": "machine_retry_budget_exhausted",
+                        "actor": actor, "blocker_kind": kind,
+                        "retry_count": previous_retries,
+                    })
+                    item["last_blocker_kind"] = kind
+                    item["updated_at"] = now()
+                    exhausted_updated = True
+                continue
+            retry_count = previous_retries + 1
             base = MACHINE_RETRY_BASE_SECONDS[kind]
             delay = min(MACHINE_RETRY_MAX_SECONDS, base * (2 ** min(retry_count - 1, 4)))
             wake_at = point + timedelta(seconds=delay)
@@ -467,7 +532,7 @@ def defer_machine_blockers(
                 "retry_count": retry_count,
                 "delay_seconds": delay,
             })
-        if deferred:
+        if deferred or exhausted_updated:
             save(path, state)
     return deferred
 
@@ -482,6 +547,7 @@ def wake_due(
     """Wake due non-human waits so the normal durable queue can resume them."""
     point = at or datetime.now(timezone.utc)
     awakened: list[str] = []
+    exhausted_updated = False
     with locked(path):
         state = load(path)
         for work_id, item in sorted(state["items"].items()):
@@ -497,6 +563,25 @@ def wake_due(
                 continue
             if due > point:
                 continue
+            if not retry_admission_allowed(item):
+                kind = str(item.get("last_blocker_kind") or classify_blocker(item.get("blocker")))
+                item["status"] = "blocked"
+                item["wake_condition"] = None
+                item["blocker"] = f"{kind} retry budget exhausted; governed repair required"
+                item["owner"] = "role://completion.controller"
+                item["lease_expires_at"] = lease_deadline(lease_seconds)
+                item["updated_at"] = now()
+                if not any(e.get("event") == "machine_retry_budget_exhausted" for e in item.get("history", [])):
+                    item.setdefault("history", []).append({
+                        "at": now(), "event": "machine_retry_budget_exhausted",
+                        "actor": actor, "blocker_kind": kind,
+                        "retry_count": int(item.get("machine_retry_count") or 0),
+                    })
+                problems = validate_item(item)
+                if problems:
+                    raise ValueError(",".join(problems))
+                exhausted_updated = True
+                continue
             item["status"] = "accepted"
             item["wake_condition"] = None
             item["blocker"] = None
@@ -507,7 +592,7 @@ def wake_due(
                 {"at": now(), "event": "wake", "actor": actor, "reason": "time_condition_due"}
             )
             awakened.append(work_id)
-        if awakened:
+        if awakened or exhausted_updated:
             save(path, state)
     return awakened
 
@@ -725,6 +810,7 @@ def board_projection(path: Path) -> str:
     active = [
         item for item in state["items"].values()
         if item.get("status") in ACTIVE and str(item.get("owner") or "") in EXECUTION_OWNERS
+        and retry_admission_allowed(item) and lobster_execution_permitted(item)
     ]
     if not active:
         return ""

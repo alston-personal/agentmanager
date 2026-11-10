@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.recovery-acceptance",
+  "node_id": "vopc5750",
+  "nonce": "2026-10-02T09:22+08:00-self-healing-recheck"
+}

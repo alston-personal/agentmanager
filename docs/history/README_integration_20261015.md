@@ -1,0 +1,208 @@
+# AgentOS
+
+> **Switch models. Switch machines. Continue the same work.**
+
+AgentOS is an experimental runtime and control plane for durable AI-agent work. Its central goal is to move the working state that matters **outside any single chat session or model**, so an executor can be replaced without rebuilding the project from raw conversation history.
+
+The project began as a logic/data-separated memory system. It has since evolved into a broader architecture for **continuation state, governed capability resolution, cross-node execution, persistent coordination, evidence/receipts, and replaceable executors**.
+
+## Why AgentOS exists
+
+A normal AI session can understand a command such as `continue` because the current conversation supplies the working context. A new session, another model, or another machine does not automatically share that position.
+
+AgentOS is exploring the missing layer:
+
+```text
+conversation / events
+        ↓
+ durable external state
+        ↓
+ continuation + governance + evidence
+        ↓
+ replaceable executor
+        ↓
+      continue
+```
+
+The target is not identical hidden activations across models. The target is **functional continuity**: the next executor knows the current goal, does not roll back newer intent, respects established constraints, and can continue useful work with minimal resynchronization cost.
+
+## What exists today
+
+The repository currently contains working, tested slices of that architecture:
+
+- **Continuation-state reconciliation** — compacted state cannot roll back newer user goals/corrections (`scripts/continuation_state.py`, `tests/test_continuation_state.py`).
+- **Persistent control plane** — SQLite-backed node registry, heartbeat, capability-aware task submission/leasing, idempotency, and task state transitions (`agent_core/control_plane.py`).
+- **Session lifecycle / handoff records** — session-close state is persisted through a host-neutral context-provider interface (`agent_core/session_lifecycle.py`, `runtime_core/`).
+- **Governance and responsibility resolution** — canonical role/capability ownership and resource discovery through `agentos-node` (`docs/AGENTOS_NODE.md`).
+- **Resource registry / world-state lookup** — query registered resources first and verify only when stale or missing.
+- **Cross-node / Realm fabric work** — node manifests, enrollment/control surfaces, and remote command artifacts.
+- **Platform abstraction** — Linux, Windows, and macOS runtime/service drivers.
+- **Evidence-first operation** — `.agentos/evidence/` records acceptance and live-control-plane results rather than relying only on prose claims.
+
+See **[Current Architecture & Reality](docs/CURRENT_STATE.md)** for the maintained implementation map and current research boundary.
+
+## Current research frontier
+
+The next continuity problem is more ambitious than ordinary memory retrieval:
+
+> What is the minimum model-independent representation required so that a different model can receive the current working position and continue directly?
+
+We currently refer to this research direction as a **Cognitive IR / portable working-state representation**. It is a research target, not a claim that hidden model state can already be transferred.
+
+## Architecture
+
+```text
+                         ┌─────────────────────┐
+                         │   Data / State      │
+                         │ project state,      │
+                         │ handoffs, evidence  │
+                         └─────────┬───────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │          AgentOS            │
+                    │                             │
+                    │ continuation state          │
+                    │ control plane               │
+                    │ governance / resources      │
+                    │ runtime + platform drivers  │
+                    │ receipts / evidence         │
+                    └──────────────┬──────────────┘
+                                   │
+                   ┌───────────────┼───────────────┐
+                   ▼               ▼               ▼
+              model / agent    model / agent    node / tool
+                 A                B                C
+```
+
+**Logic/Data separation still matters**, but it is now a foundation rather than the whole product definition:
+
+- **Logic (this repo)**: runtime semantics, control-plane code, governance, workflows, tests.
+- **Data (`AGENT_DATA_ROOT`)**: mutable project state, memory, handoffs, registries, and operational records.
+
+## Quick start for contributors
+
+```bash
+git clone https://github.com/alston-personal/agentmanager.git
+cd agentmanager
+cp .env.example .env
+python3 scripts/setup_env.py
+python3 scripts/bootstrap.py
+```
+
+Run the narrow continuity regression without requiring a full deployment:
+
+```bash
+python3 scripts/continuation_state.py --self-test
+python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
+```
+
+For a Core node, platform/service installation and live infrastructure require the separate data layer and environment-specific configuration. See `docs/RESTORE_NEW_MACHINE.md`, `docs/PLATFORM_DRIVERS.md`, and `docs/AGENTOS_NODE.md`.
+
+## Documentation is part of the contract
+
+AgentOS previously suffered a severe implementation/documentation split: the runtime evolved while entry-point documentation still described the early memory-only architecture.
+
+That is now treated as a regression. Architecture-sensitive changes are checked by **Documentation Reality Guard** in CI. Changes to core runtime/control/governance/continuity surfaces must also update an authoritative current-state document.
+
+Local check:
+
+```bash
+python3 scripts/documentation_reality_guard.py
+```
+
+## Evidence over claims
+
+When documentation and implementation disagree, implementation plus executable tests/evidence wins. Documentation must then be corrected. Current evidence lives under `.agentos/evidence/`, and contract tests live under `tests/`.
+
+## Status
+
+AgentOS is an active research and engineering project. Some subsystems are production-like and live-tested; the cross-model **Cognitive IR** layer remains experimental. The project intentionally distinguishes **implemented**, **verified**, and **research** capabilities instead of presenting all roadmap ideas as finished features.
+
+---
+
+*Models are replaceable executors. Durable work should not be trapped inside one session.*
+
+
+## Mio Telegram private bridge (deployment candidate; live acceptance pending)
+
+The dedicated @Mio_MilkcatBot uses scripts/mio_telegram_user.py and
+scripts/install_mio_telegram_user.sh. It does **not** reuse the privileged
+scripts/tg_bridge.py command handlers or its TELEGRAM_BOT_TOKEN.
+
+- Oracle ubuntu-owned credential: ~/.config/agentos/mio-telegram.env,
+  containing MIO_TELEGRAM_BOT_TOKEN. Never commit or print this value.
+- One-time owner pairing: the installer validates Telegram getMe, observes
+  private /start messages, requires exactly one candidate, then requires
+  local SSH confirmation before writing MIO_TELEGRAM_OWNER_ID (a private
+  Telegram user/chat ID). Unknown sender IDs and groups receive no response.
+- Existing persona source: ~/agent-data/personas/sunlake-milkcat/
+  (character_core.json, persona_state.json, reply_policy.json, recent
+  provenance-bearing public events). Local, private Telegram dialogue
+  history resides in ~/agent-data/runtime/persona/sunlake-milkcat/telegram/,
+  never in the public persona event-sync file or Git repository.
+- Existing private model execution boundary:
+  agentos-mio-agy-relay.service and
+  ~/agent-data/runtime/mio-antigravity-relay/. The Telegram transport only
+  submits a text-only persona request and checks its receipt; the transport
+  has no shell, workflow, Threads-publish, or AgentOS commander command.
+  The relay executor has its own separate security/permission boundary;
+  a prompt prohibiting tools is not, by itself, an OS-enforced sandbox.
+- **ChatGPT-first authority correction (Issue #422):** Telegram transport and
+  conversational model are separate. Default `MIO_TELEGRAM_CHAT_MODE` is
+  `chatgpt_pending`: paired owner's messages are kept in the existing
+  Oracle-local private FIFO, but no model is called and **there is no
+  ChatGPT auto-reply or ChatGPT-Plus API path yet**. The bot's /mode and
+  /status show this limitation. This mode does not modify or stop the
+  separate AGY relay used by other authorized Persona/Threads tasks.
+  Owner's explicit local `MIO_TELEGRAM_CHAT_MODE=agy_opt_in` is required to
+  enable the former Telegram AGY route; it must never be labeled ChatGPT.
+  Private Telegram text/IDs/receipts must NOT go into this public repo,
+  public GitHub Issue #50, CI logs, or unprotected callback URLs. Native
+  ChatGPT inbound auth, privacy, and actual reply must be independently
+  accepted before this mode can change from `chatgpt_pending`.
+- Normal owner-only chat and technical diagnostics are separate:
+  /debug on enables sanitized per-message status, /debug status shows the last
+  Telegram-specific result, and /debug off disables it. All private chats
+  default to normal mode. The status contains a bounded category, elapsed
+  seconds, relay provider, exit code and output size; it never includes raw
+  executor stdout/stderr, prompt, token or private conversation.
+  The displayed AGY stdout character count is the size of a CLI execution
+  envelope, NOT the persona reply size or model token usage. The compact
+  Telegram prompt reads only selected fields from the canonical persona IR
+  and bounded recent observed events/private turns; it never copies the
+  complete persona state into each short chat request. AGY returncode=1 is
+  an execution failure even if stdout is nonempty. Diagnostic stderr hints
+  are coarse guesses from sanitized patterns, never a raw log or confirmed
+  root cause. /debug status may refresh the last Telegram-specific status
+  from its exact capsule receipt without sending a new message or confusing
+  it with an unrelated Threads decision.
+- Persona responses are processed serially by a worker thread while the bot
+  continues polling and processing /debug commands. After a prolonged response
+  wait the owner receives a short normal acknowledgement rather than silence;
+  the reply itself still depends on a valid executor receipt and JSON parsing.
+  The relay waits up to 170 seconds. Owner-only text input now enters
+  ~/agent-data/runtime/persona/sunlake-milkcat/telegram/pending.json (mode
+  0600) before Telegram update offset advances. On an exact Telegram
+  executor_failed receipt classified as quota_or_rate, Mio retains that
+  original message and retries on a bounded 15m/1h/3h/6h/12h schedule;
+  after that it stops automatically and keeps the original for owner review.
+  Unknown send outcomes are marked delivery_uncertain and never resent
+  automatically. Only verified successful replies enter private chat history.
+  Successful offline tests do not establish that an AGY quota has reset,
+  that model-generated Telegram delivery has succeeded, or that all
+  possible crash windows can be distinguished from the Telegram API.
+- One-time install or reinstallation on Oracle as ubuntu from an accepted,
+  verified source worktree: AGENTOS_REPO=/path/to/worktree
+  bash scripts/install_mio_telegram_user.sh. Reinstallation uses getMe-only
+  verification; it does not compete with the running bot's getUpdates polling.
+  This installer does not merge branches, touch the old Telegram commander,
+  or install a new model/API credential.
+- Run offline safety regression:
+  python3 -m unittest discover -s tests -p test_mio_telegram_user.py -v
+  and bash -n scripts/install_mio_telegram_user.sh.
+
+Acceptance requires an actual on-Oracle getMe identity check, confirmed
+owner-only binding, active service and private relay, a Telegram /start
+delivery and a real owner message receiving a request-ID-bound Persona
+reply with a model receipt. The source commit/PR and static tests alone
+are **not** proof that the bot is online.

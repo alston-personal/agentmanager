@@ -1,0 +1,42 @@
+name: Oracle MBPR Vision OCR Probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture Threads and run local Vision OCR
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-vision-ocr-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          sha=str(cmd.get('source_commit') or '')
+          tid='mbpr-vision-ocr-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
+          url='https://raw.githubusercontent.com/alston-personal/agentmanager/'+sha+'/scripts/probe_macos_vision_ocr.py'
+          code="import urllib.request,runpy,tempfile,sys; p=tempfile.mktemp(suffix='.py'); urllib.request.urlretrieve('"+url+"',p); sys.argv=[p,'--source-commit','"+sha+"']; runpy.run_path(p,run_name='__main__')"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':150,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(85):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  print(out)
+                  if r.get('ok') is True and int(r.get('returncode') or 0)==0 and 'VISION_OCR_LINES=' in out:
+                      print('mbpr_vision_ocr_probe=PASS')
+                      raise SystemExit(0)
+                  print('mbpr_vision_ocr_probe=ERROR')
+                  raise SystemExit(2)
+              time.sleep(2)
+          raise SystemExit('Vision OCR probe timeout')
+          PY

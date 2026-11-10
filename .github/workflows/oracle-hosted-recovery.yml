@@ -1,0 +1,196 @@
+name: Oracle Hosted Recovery
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-hosted-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Recover Oracle self-hosted runner and collect post-reboot evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo "oracle_recovery_host=$(hostname)"
+          echo "oracle_recovery_user=$(id -un)"
+
+          mapfile -t UNITS < <(systemctl list-unit-files 'actions.runner.*.service' --no-legend 2>/dev/null | awk '{print $1}' | sed '/^$/d')
+          if [ "${#UNITS[@]}" -gt 0 ]; then
+            for unit in "${UNITS[@]}"; do
+              sudo -n systemctl enable --now "$unit"
+              sudo -n systemctl is-active "$unit"
+              echo "oracle_runner_unit=$unit"
+            done
+          else
+            test -x /home/agentos-node/runner/run.sh
+            if ! pgrep -u agentos-node -f 'Runner.Listener|Runner.Worker|/home/agentos-node/runner/run.sh' >/dev/null; then
+              sudo -n -u agentos-node bash -lc 'cd /home/agentos-node/runner && nohup ./run.sh > runner-recovery.log 2>&1 </dev/null &'
+              sleep 3
+            fi
+            pgrep -u agentos-node -af 'Runner.Listener|Runner.Worker|/home/agentos-node/runner/run.sh' || true
+            echo "oracle_runner_fallback=started"
+          fi
+
+          echo "=== previous boot oom ==="
+          sudo -n journalctl -k -b -1 --no-pager 2>/dev/null | grep -Ei 'out of memory|oom|killed process' | tail -n 80 || true
+          echo "=== previous boot warnings ==="
+          sudo -n journalctl -b -1 -p warning..alert --no-pager 2>/dev/null | tail -n 120 || true
+          echo "=== current memory ==="
+          free -h || true
+          swapon --show || true
+          echo "=== gui worker services ==="
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          systemctl --user --no-pager --plain status agentos-gui-display.service agentos-gui-window-manager.service agentos-gui-browser.service agentos-gui-vnc.service agentos-gui-novnc.service 2>&1 | tail -n 120 || true
+          echo "oracle_hosted_recovery=PASS"
+          REMOTE
+
+      - name: Probe role-runner registration authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          token=""
+          if command -v gh >/dev/null 2>&1; then
+            token="$(gh auth token 2>/dev/null || true)"
+          fi
+          if [ -z "$token" ]; then
+            cred="$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null || true)"
+            token="$(printf '%s\n' "$cred" | sed -n 's/^password=//p' | head -n 1)"
+            unset cred
+          fi
+          if [ -z "$token" ]; then
+            echo "role_runner_registration_auth=UNAVAILABLE"
+            exit 0
+          fi
+          code="$(curl -sS -o /tmp/role-runner-reg.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $token" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            'https://api.github.com/repos/alston-personal/agentmanager/actions/runners/registration-token' || true)"
+          unset token
+          echo "role_runner_registration_http=$code"
+          python3 -c "import json,pathlib; p=pathlib.Path('/tmp/role-runner-reg.json'); d=json.loads(p.read_text()) if p.exists() else {}; print('role_runner_registration_token_available=' + ('true' if bool(d.get('token')) else 'false'))"
+          rm -f /tmp/role-runner-reg.json
+          REMOTE
+
+      - name: Deploy Mio try-on worker from exact Core generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          CORE_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          TMP=/tmp/deploy_mio_tryon_worker_user.sh
+          git -C "$REPO" fetch origin "$CORE_SHA" >/dev/null
+          git -C "$REPO" show "$CORE_SHA:scripts/deploy_mio_tryon_worker_user.sh" > "$TMP"
+          chmod 700 "$TMP"
+          "$TMP"
+          rm -f "$TMP"
+          REMOTE
+
+      - name: Enroll Oracle execution node into ONE
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          CORE_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          TMP=/tmp/install_thin_client_linux_oracle.sh
+          LOG=/tmp/oracle-exec-enrollment.log
+
+          git -C "$REPO" fetch origin "$CORE_SHA" >/dev/null
+          git -C "$REPO" show "$CORE_SHA:scripts/install_thin_client_linux_oracle.sh" > "$TMP"
+          chmod 700 "$TMP"
+
+          if [ -s "$HOME/.agentos-oracle-exec/client.json" ]; then
+            echo "oracle_exec_enrollment=already_configured"
+            export AGENTOS_CLIENT_HOME="$HOME/.agentos-oracle-exec"
+            "$HOME/.local/share/AgentOS/agentos-client" health
+            "$HOME/.local/share/AgentOS/agentos-client" once
+          else
+            rm -f "$LOG"
+            AGENTOS_ONE_URL='https://studio.milkcat.org/dashboard/api/agentos'             AGENTOS_NODE_ID='oracle-exec'               nohup "$TMP" "$CORE_SHA" >"$LOG" 2>&1 </dev/null &
+            PID=$!
+
+            CODE=""
+            for i in $(seq 1 120); do
+              CODE="$(sed -n 's/^Code: //p' "$LOG" | tail -n 1)"
+              [ -n "$CODE" ] && break
+              if ! kill -0 "$PID" 2>/dev/null; then
+                cat "$LOG"
+                exit 4
+              fi
+              sleep 1
+            done
+            printf '%s' "$CODE" | grep -Eq '^[A-Z2-9]{4}-[A-Z2-9]{4} || {
+              echo "oracle_exec_enrollment=code_missing"
+              cat "$LOG"
+              exit 5
+            }
+
+            AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$REPO"               python3 -m agent_core.realm_cli approve --code "$CODE" >/tmp/oracle-exec-approval.json
+
+            for i in $(seq 1 120); do
+              if ! kill -0 "$PID" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            if kill -0 "$PID" 2>/dev/null; then
+              echo "oracle_exec_enrollment=installer_timeout"
+              kill "$PID" 2>/dev/null || true
+              exit 6
+            fi
+            wait "$PID"
+            echo "oracle_exec_enrollment=approved"
+          fi
+
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          systemctl --user is-enabled agentos-thin-client.service
+          systemctl --user is-active agentos-thin-client.service
+          export AGENTOS_CLIENT_HOME="$HOME/.agentos-oracle-exec"
+          "$HOME/.local/share/AgentOS/agentos-client" manifest >/tmp/oracle-exec-manifest.json
+          python3 - /tmp/oracle-exec-manifest.json <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert d.get('node_id')=='oracle-exec',d
+          caps=set(d.get('capabilities') or [])
+          assert 'node.ssh.inspect' in caps,caps
+          assert 'node.ssh.recover' in caps,caps
+          assert 'shell.exec' in caps,caps
+          print('oracle_exec_manifest=PASS')
+          print('oracle_exec_node_id='+str(d.get('node_id')))
+          print('oracle_exec_ssh_maintenance=PASS')
+          PY
+          "$HOME/.local/share/AgentOS/agentos-client" once >/tmp/oracle-exec-once.json
+          echo "oracle_exec_heartbeat=PASS"
+          rm -f "$TMP"
+          REMOTE
+
+# runner-pool recovery trigger 2026-09-30T03:56Z

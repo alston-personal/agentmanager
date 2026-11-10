@@ -1,0 +1,76 @@
+name: Oracle App Slice Cgroup Propagation Test
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-app-slice-cgroup-propagation-test.json'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Propagate cpu/io through app.slice at runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          UNIT=agentos-employee-worker-host.service
+          UM=/sys/fs/cgroup/user.slice/user-1001.slice/user@1001.service
+          APP="$UM/app.slice"
+
+          echo "before_user_manager_subtree=$(cat "$UM/cgroup.subtree_control")"
+          echo "before_app_controllers=$(cat "$APP/cgroup.controllers")"
+          echo "before_app_subtree=$(cat "$APP/cgroup.subtree_control")"
+
+          systemctl --user set-property --runtime app.slice CPUWeight=100 IOWeight=100
+          echo "runtime_app_slice_property=APPLIED"
+
+          echo "after_user_manager_subtree=$(cat "$UM/cgroup.subtree_control")"
+          echo "after_app_controllers=$(cat "$APP/cgroup.controllers")"
+          echo "after_app_subtree=$(cat "$APP/cgroup.subtree_control")"
+
+          systemctl --user daemon-reload
+          systemctl --user restart "$UNIT"
+          sleep 2
+
+          cg="$(systemctl --user show "$UNIT" -p ControlGroup --value)"
+          root="/sys/fs/cgroup$cg"
+          echo "worker_control_group=$cg"
+          echo "worker_cpu_max=$(cat "$root/cpu.max" 2>/dev/null || echo missing)"
+          echo "worker_cpu_weight_kernel=$(cat "$root/cpu.weight" 2>/dev/null || echo missing)"
+          echo "worker_io_weight_kernel=$(cat "$root/io.weight" 2>/dev/null || echo missing)"
+          echo "worker_memory_max_kernel=$(cat "$root/memory.max" 2>/dev/null || echo missing)"
+
+          if [ -f "$root/cpu.stat" ]; then
+            u0="$(awk '/^usage_usec /{print $2}' "$root/cpu.stat")"
+            t0="$(awk '/^throttled_usec /{print $2}' "$root/cpu.stat" 2>/dev/null || true)"
+            n0="$(awk '/^nr_throttled /{print $2}' "$root/cpu.stat" 2>/dev/null || true)"
+            sleep 10
+            u1="$(awk '/^usage_usec /{print $2}' "$root/cpu.stat")"
+            t1="$(awk '/^throttled_usec /{print $2}' "$root/cpu.stat" 2>/dev/null || true)"
+            n1="$(awk '/^nr_throttled /{print $2}' "$root/cpu.stat" 2>/dev/null || true)"
+            python3 - "$u0" "$u1" "${t0:-0}" "${t1:-0}" "${n0:-0}" "${n1:-0}" <<'PY'
+          import sys
+          u0,u1,t0,t1,n0,n1=map(int,sys.argv[1:])
+          print(f"worker_cgroup_cpu_percent_10s={(u1-u0)/100000:.2f}")
+          print(f"worker_throttled_usec_delta={t1-t0}")
+          print(f"worker_nr_throttled_delta={n1-n0}")
+          PY
+          fi
+
+          echo "app_slice_cgroup_propagation_test=PASS"
+          REMOTE

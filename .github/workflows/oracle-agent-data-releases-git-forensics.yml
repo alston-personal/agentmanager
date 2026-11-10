@@ -1,0 +1,54 @@
+name: Oracle Agent Data Releases Git Forensics
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-agent-data-releases-git-forensics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: ${{ vars.ORACLE_HOST || '161.33.24.170' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect releases and git storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -u
+          ROOT="$HOME/agent-data"
+          echo '=== disk ==='
+          df -h /
+          echo '=== releases top-level count ==='
+          find "$ROOT/releases" -mindepth 1 -maxdepth 1 -printf '%y\t%TY-%Tm-%TdT%TH:%TM:%TS\t%f\n' 2>/dev/null | wc -l
+          echo '=== releases recent/old samples ==='
+          find "$ROOT/releases" -mindepth 1 -maxdepth 1 -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -n | head -n 40 || true
+          find "$ROOT/releases" -mindepth 1 -maxdepth 1 -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort -nr | head -n 40 || true
+          echo '=== releases child sizes KB (20s cap each, parallel) ==='
+          find "$ROOT/releases" -mindepth 1 -maxdepth 1 -print0 2>/dev/null |
+            xargs -0 -r -P 12 -n 1 bash -c '
+              p="$1"
+              out="$(timeout 20 du -x -sk "$p" 2>/dev/null || true)"
+              if [ -n "$out" ]; then printf "OK\t%s\n" "$out"; else printf "TIMEOUT\t%s\n" "$p"; fi
+            ' _ | sort -t$'\t' -k2,2nr | head -n 120 || true
+          echo '=== git count-objects ==='
+          git -C "$ROOT" count-objects -vH 2>/dev/null || true
+          echo '=== git directory sizes ==='
+          for p in "$ROOT/.git/objects" "$ROOT/.git/objects/pack" "$ROOT/.git/logs" "$ROOT/.git/refs"; do
+            [ -e "$p" ] || continue
+            du -x -sh "$p" 2>/dev/null || true
+          done
+          echo '=== largest git pack files ==='
+          find "$ROOT/.git/objects/pack" -maxdepth 1 -type f -printf '%s\t%p\n' 2>/dev/null | sort -nr | head -n 40 || true
+          REMOTE

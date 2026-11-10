@@ -119,45 +119,16 @@ def load_env():
 load_env()
 
 def send_telegram_alert(message: str, project_name: str = None, interactive: bool = False):
-    import requests
-    logger.info(f"🚨 [Self-Pushing] 嘗試發送 Telegram 通知...")
-    payload = {"message": message}
-    if project_name:
-        payload["project_name"] = project_name
-    if interactive:
-        payload["interactive"] = True
-    
-    # Method 1: 本地 HTTP Bridge 警報端點 (由 tg_bridge.py 提供，Port 8085)
     try:
-        res = requests.post("http://127.0.0.1:8085/alert", json=payload, timeout=5)
-        if res.status_code == 200:
-            logger.info("✅ 成功透過本地 HTTP Bridge 發送通知。")
-            return True
-    except Exception as e:
-        logger.warning(f"⚠️ 本地 HTTP Bridge 無法存取: {e}。改用直接呼叫 Telegram API 備援...")
-
-    # Method 2: 直接呼叫 Telegram API 備援
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TG_BOT_SUNLAKE_CC_TOKEN")
-    channel_id = os.getenv("TELEGRAM_CHANNEL_ID")
-    if bot_token and channel_id:
-        try:
-            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            direct_payload = {
-                "chat_id": channel_id,
-                "text": f"⚠️ **[AgentOS 備援通知]**\n\n{message}",
-                "parse_mode": "Markdown"
-            }
-            res = requests.post(url, json=direct_payload, timeout=10)
-            if res.status_code == 200:
-                logger.info("✅ 成功透過 Telegram API 直接發送通知。")
-                return True
-            else:
-                logger.error(f"❌ Telegram API 回傳錯誤: {res.text}")
-        except Exception as ex:
-            logger.error(f"❌ Telegram API 直接呼叫失敗: {ex}")
-    else:
-        logger.error("❌ 無法發送通知：環境變數中缺少 Telegram 憑證。")
-    return False
+        from agent_core.telegram_gate import send_governed_telegram
+        return send_governed_telegram(
+            f"⚠️ **[Chronos 警報]**\n\n{message}",
+            project_name=project_name,
+            interactive=interactive,
+        )
+    except Exception as exc:
+        logger.error(f"❌ Telegram Gate 調用失敗: {exc}")
+        return False
 
 def check_project_git_changes(logic_dir: str):
     """

@@ -1,0 +1,48 @@
+schema: agentos.persona-agent/v1
+agent_id: persona.engineering.paw
+character_id: agentos-paw-builder-001
+display_name: The Paw (工匠貓爪)
+status: active
+kind: persona_agent
+
+core:
+  archetype: archetype.base.engineering
+  identity_source: agent-data/personas/the-paw/character_core.json
+  persona_state_source: agent-data/personas/the-paw/persona_state.json
+  event_ledger_source: agent-data/personas/the-paw/events/events.jsonl
+
+runtime:
+  autonomy_mode: policy_bounded
+  receipts_required_for_external_actions: true
+  owner_observability_required: true
+  public_projection_allowed: true
+
+capability_attachments:
+  - id: engineering.worktree.isolate
+    status: attached
+    provider: agentos.engineering_runtime
+    mode: governed_write
+  - id: engineering.code.synthesis
+    status: attached
+    provider: agentos.engineering_runtime
+    mode: governed_write
+  - id: engineering.test.verify
+    status: attached
+    provider: agentos.test_runner
+    mode: read
+  - id: engineering.receipt.emit
+    status: attached
+    provider: agentos.evidence_ledger
+    mode: write
+
+human_reserved:
+  - protected_branch_merge
+  - production_secret_rotation
+  - infrastructure_destruction
+
+invariants:
+  - no_direct_protected_branch_write
+  - worktree_isolation_mandatory
+  - fake_assertions_strictly_forbidden
+  - receipts_required_for_mutations
+

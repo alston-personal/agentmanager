@@ -1,0 +1,43 @@
+name: Core Oracle Runner SSH Audit 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-oracle-runner-ssh-audit-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Audit runner process and services read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" '
+              set -eu
+              echo "=== identity ==="
+              id
+              echo "=== disk ==="
+              df -h / /home/agentos-node 2>/dev/null || true
+              echo "=== runner processes ==="
+              ps -eo user,pid,ppid,lstart,args | grep -E "[R]unner\.(Listener|Worker)|[r]un\.sh|[r]unsvc\.sh" || true
+              echo "=== system services ==="
+              systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei "actions\.runner|github.*runner|agentos.*runner" || true
+              echo "=== user services ==="
+              systemctl --user list-units --type=service --all --no-pager 2>/dev/null | grep -Ei "actions\.runner|github.*runner|agentos.*runner" || true
+              echo "=== runner dirs ==="
+              ls -ld /home/agentos-node/runner /home/agentos-node/runner/_diag /home/agentos-node/runner/_work 2>/dev/null || true
+            '

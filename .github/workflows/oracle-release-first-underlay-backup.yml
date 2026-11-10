@@ -1,0 +1,57 @@
+name: Oracle Release Verified First Underlay Backup
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-release-first-underlay-backup.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify then release first local-only backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          name=agentos_backup_20260930_030001.tar.gz
+          local_file="$HOME/gdrive/backups/$name"
+          remote_file="gdrive:backups/recovered-oracle-underlay-20261001/$name"
+
+          if pgrep -af "rclone copyto .*${name}" >/dev/null; then
+            echo 'release_refused=first_copy_still_running'
+            exit 42
+          fi
+
+          test -f "$local_file"
+          local_size="$(stat -c %s "$local_file")"
+          remote_size="$(timeout 30 rclone lsf "$remote_file" --files-only --format s 2>/dev/null | head -n1 || true)"
+          echo "verify_size local=$local_size remote=$remote_size"
+          test "$remote_size" = "$local_size"
+
+          local_md5="$(md5sum "$local_file" | awk '{print $1}')"
+          remote_md5="$(timeout 90 rclone md5sum "$remote_file" 2>/dev/null | awk 'NR==1{print $1}' || true)"
+          echo "local_md5=$local_md5"
+          echo "remote_md5=$remote_md5"
+          test -n "$remote_md5"
+          test "$remote_md5" = "$local_md5"
+          echo 'verify_md5=PASS'
+
+          rm -f "$local_file"
+          test ! -e "$local_file"
+          echo 'first_local_underlay_released=PASS'
+          df -h /
+          REMOTE

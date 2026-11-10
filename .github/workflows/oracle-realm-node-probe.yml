@@ -1,10 +1,7 @@
 name: Oracle Realm Node Probe
 
 on:
-  push:
-    paths:
-      - '.agentos/commands/realm-node-probe.json'
-
+  workflow_dispatch:
 permissions:
   contents: write
 
@@ -80,4 +77,4 @@ jobs:
           git add .agentos/evidence/realm-node-probe-current.json
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): queue first Windows node probe'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

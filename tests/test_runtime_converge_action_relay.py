@@ -1,0 +1,819 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from agent_core.controller_service import ControllerService
+from agent_core.runtime_converge_contract import ALLOWED_REPOSITORY, SCHEMA
+from agentos_node import action_relay
+from agentos_node import runtime_converge_action_relay as relay
+
+
+SHA = "a" * 40
+PREVIOUS = "b" * 40
+TARGET_BLOB = "1" * 40
+HEAD_BLOB = "2" * 40
+
+
+def request(**overrides):
+    payload = {
+        "schema": SCHEMA,
+        "request_id": "ctl_runtime_1",
+        "node_id": "oracle-core-node",
+        "repository": ALLOWED_REPOSITORY,
+        "source_ref": "core/integration",
+        "source_commit": SHA,
+    }
+    payload.update(overrides)
+    return payload
+
+
+class Proc(SimpleNamespace):
+    returncode: int = 0
+    stdout: str = ""
+    stderr: str = ""
+
+
+def test_failed_action_relay_receipt_preserves_action_identity(tmp_path, monkeypatch):
+    monkeypatch.setattr(action_relay, "_share", lambda *_args, **_kwargs: None)
+    root = tmp_path / "relay"
+    client = relay.ActionRelayClient(root)
+    capsule = client.submit(relay.ACTION, {"request": request()})
+
+    def boom(_params):
+        raise RuntimeError("synthetic failure")
+
+    monkeypatch.setitem(relay.ACTIONS, relay.ACTION, boom)
+    worker = action_relay.ActionRelayWorker(root)
+    receipt = worker.process_one()
+
+    assert receipt is not None
+    assert receipt["ok"] is False
+    assert receipt["action"] == relay.ACTION
+    assert "synthetic failure" in receipt["error"]
+    persisted = client.receipt(capsule["capsule_id"])
+    assert persisted is not None
+    assert persisted["action"] == relay.ACTION
+
+
+def test_relay_registers_fixed_semantic_action_without_generic_carrier():
+    assert relay.ACTION == "agentos.runtime.converge"
+    assert relay.ACTION in relay.ACTIONS
+    assert "shell.exec" not in relay.ACTIONS
+    assert "argv" not in relay.SAFE_RESULT_FIELDS
+    assert "stdout" not in relay.SAFE_RESULT_FIELDS
+    assert "stderr" not in relay.SAFE_RESULT_FIELDS
+
+
+def test_fixed_runtime_install_converges_product_employee_profile_after_realm(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(argv, *, cwd, timeout=180):
+        calls.append((list(argv), cwd, timeout))
+        return Proc(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(relay, "_run", fake_run)
+    monkeypatch.setattr(relay, "_health", lambda: True)
+    assert relay._install_fixed_runtime_diagnostic(tmp_path) == (True, "ready")
+    assert calls == [
+        (["python3", "scripts/install_services.py"], tmp_path, 240),
+        (["bash", "scripts/install_realm_fabric_user.sh"], tmp_path, 120),
+        (["bash", "scripts/activate_product_employees_oracle.sh"], tmp_path, 240),
+    ]
+
+
+def test_current_generation_still_reconciles_fixed_runtime(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True, False))
+    installs = []
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: (installs.append(repo) or True, "ready"))
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert installs == [tmp_path]
+    assert result["classification"] == "CURRENT_GENERATION_RECONCILED"
+    assert result["status"] == "completed"
+    assert result["health"] == "passed"
+    assert result["idempotent"] is True
+    assert result["resulting_commit"] == SHA
+
+
+def test_current_generation_reconcile_failure_is_not_reported_healthy(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True, False))
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: (False, "health_gate"))
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert result["classification"] == "CURRENT_GENERATION_RECONCILE_FAILED"
+    assert result["status"] == "failed"
+    assert result["health"] == "failed"
+    assert result["idempotent"] is True
+    assert result["rollback"] == "not_needed"
+    assert result["failure_stage"] == "health_gate"
+
+
+
+def _real_git(repo: Path, *args: str) -> str:
+    proc = relay._git(repo, *args)
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout.strip()
+
+
+def _node_local_drift_repo(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _real_git(repo, "init", "-b", "core/integration")
+    _real_git(repo, "config", "user.email", "test@example.invalid")
+    _real_git(repo, "config", "user.name", "AgentOS Test")
+    (repo / "agentos_node").mkdir()
+    (repo / "dashboard/app/api/social/[...path]").mkdir(parents=True)
+    (repo / "agentos.code-workspace.template").write_text("base workspace\n", encoding="utf-8")
+    (repo / "agentos_node/bootstrap_control.py").write_text("old bootstrap\n", encoding="utf-8")
+    (repo / "dashboard/app/api/social/[...path]/route.ts").write_text("old route\n", encoding="utf-8")
+    _real_git(repo, "add", ".")
+    _real_git(repo, "commit", "-m", "base")
+    previous = _real_git(repo, "rev-parse", "HEAD")
+
+    (repo / "agentos_node/bootstrap_control.py").write_text("target bootstrap\n", encoding="utf-8")
+    (repo / "dashboard/app/api/social/[...path]/route.ts").write_text("target route\n", encoding="utf-8")
+    _real_git(repo, "add", ".")
+    _real_git(repo, "commit", "-m", "target")
+    target = _real_git(repo, "rev-parse", "HEAD")
+
+    _real_git(repo, "checkout", "--detach", previous)
+    (repo / "agentos.code-workspace.template").write_text(
+        "base workspace\nRootNexus=../root-nexus\n",
+        encoding="utf-8",
+    )
+    (repo / "agentos_node/bootstrap_control.py").write_text("target bootstrap\n", encoding="utf-8")
+    (repo / "dashboard/app/api/social/[...path]/route.ts").write_text("target route\n", encoding="utf-8")
+    return repo, previous, target
+
+
+def test_quarantine_known_workspace_drift_preserves_bytes_and_leaves_target_equivalent_partial_rollout(tmp_path):
+    repo, previous, target = _node_local_drift_repo(tmp_path)
+    status = relay._tracked_status(repo)
+    assert " M agentos.code-workspace.template\0" in status
+    assert relay._target_equivalent_dirty(repo, target, status) is False
+
+    backup_root = tmp_path / "backups"
+    changed = relay._quarantine_allowed_node_local_drift(
+        repo,
+        target,
+        status,
+        backup_root=backup_root,
+    )
+    assert changed is True
+    assert (repo / "agentos.code-workspace.template").read_text(encoding="utf-8") == "base workspace\n"
+    remaining = relay._tracked_status(repo)
+    assert "agentos.code-workspace.template" not in remaining
+    assert relay._target_equivalent_dirty(repo, target, remaining) is True
+
+    bundles = list(backup_root.iterdir())
+    assert len(bundles) == 1
+    bundle = bundles[0]
+    raw = (bundle / "files" / "agentos.code-workspace.template").read_text(encoding="utf-8")
+    assert "RootNexus=../root-nexus" in raw
+    metadata = json.loads((bundle / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["path"] == "agentos.code-workspace.template"
+    assert metadata["current_head"] == previous
+    assert metadata["target_source_commit"] == target
+    assert metadata["content_exposed"] is False
+    assert metadata["credential_exposed"] is False
+    assert (bundle / "working-tree.patch").is_file()
+
+    # Reappearing identical node-local drift reuses verified evidence and does not overwrite it.
+    (repo / "agentos.code-workspace.template").write_text(raw, encoding="utf-8")
+    status2 = relay._tracked_status(repo)
+    assert relay._quarantine_allowed_node_local_drift(
+        repo,
+        target,
+        status2,
+        backup_root=backup_root,
+    ) is True
+    assert len(list(backup_root.iterdir())) == 1
+
+
+def test_quarantine_refuses_unknown_non_target_dirty_path(tmp_path):
+    repo, _, target = _node_local_drift_repo(tmp_path)
+    other = repo / "README.md"
+    other.write_text("base\n", encoding="utf-8")
+    _real_git(repo, "add", "README.md")
+    _real_git(repo, "commit", "-m", "local head fixture")
+    other.write_text("real local development\n", encoding="utf-8")
+    status = relay._tracked_status(repo)
+    before = other.read_bytes()
+    assert relay._quarantine_allowed_node_local_drift(
+        repo,
+        target,
+        status,
+        backup_root=tmp_path / "backups",
+    ) is False
+    assert other.read_bytes() == before
+    assert not (tmp_path / "backups").exists()
+
+
+def test_preflight_refuses_unknown_dirty_checkout_after_exact_target_is_resolved(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    calls = []
+
+    def fake_git_value(repo, *args):
+        calls.append(("value", args))
+        if args[:3] == ("remote", "get-url", "origin"):
+            return "https://github.com/alston-personal/agentmanager.git"
+        if args == ("rev-parse", "HEAD"):
+            return PREVIOUS
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return SHA
+        raise AssertionError(args)
+
+    def fake_git(repo, *args, timeout=120):
+        calls.append(("git", args))
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc(returncode=0, stdout="")
+        if args == ("cat-file", "-e", f"{SHA}^{{commit}}"):
+            return Proc(returncode=0, stdout="")
+        if args == ("merge-base", "--is-ancestor", SHA, SHA):
+            return Proc(returncode=0, stdout="")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git_value", fake_git_value)
+    monkeypatch.setattr(relay, "_git", fake_git)
+    monkeypatch.setattr(relay, "_tracked_status", lambda repo: " M agent_core/realm_server.py\0")
+    monkeypatch.setattr(relay, "_target_equivalent_dirty", lambda repo, target, status: False)
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert result["status"] == "failed"
+    assert result["classification"] == "tracked_checkout_dirty"
+    assert result["credential_exposed"] is False
+    assert ("value", ("rev-parse", "FETCH_HEAD")) in calls
+
+
+def test_preflight_accepts_only_proven_target_equivalent_dirty(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+
+    def fake_git_value(repo, *args):
+        if args[:3] == ("remote", "get-url", "origin"):
+            return "git@github.com:alston-personal/agentmanager.git"
+        if args == ("rev-parse", "HEAD"):
+            return PREVIOUS
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return SHA
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git_value", fake_git_value)
+    def fake_git(repo, *args, timeout=120):
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc(returncode=0, stdout="")
+        if args == ("cat-file", "-e", f"{SHA}^{{commit}}"):
+            return Proc(returncode=0, stdout="")
+        if args == ("merge-base", "--is-ancestor", SHA, SHA):
+            return Proc(returncode=0, stdout="")
+        raise AssertionError(args)
+    monkeypatch.setattr(relay, "_git", fake_git)
+    status = " M agentos_node/bootstrap_control.py\0"
+    monkeypatch.setattr(relay, "_tracked_status", lambda repo: status)
+    seen = []
+    monkeypatch.setattr(
+        relay,
+        "_target_equivalent_dirty",
+        lambda repo, target, observed: seen.append((target, observed)) or True,
+    )
+    assert relay._preflight(tmp_path, request()) == (PREVIOUS, False, True)
+    assert seen == [(SHA, status)]
+
+
+def test_target_equivalent_dirty_requires_plain_unstaged_content_and_equal_target_blob(monkeypatch, tmp_path):
+    rel = "agentos_node/bootstrap_control.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("target content\n", encoding="utf-8")
+
+    def fake_git(repo, *args, timeout=120):
+        if args == ("diff", "--summary", "--", rel):
+            return Proc(returncode=0, stdout="")
+        if args == ("hash-object", "--", rel):
+            return Proc(returncode=0, stdout=TARGET_BLOB + "\n")
+        if args == ("rev-parse", f"{SHA}:{rel}"):
+            return Proc(returncode=0, stdout=TARGET_BLOB + "\n")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git", fake_git)
+    assert relay._target_equivalent_dirty(tmp_path, SHA, f" M {rel}\0") is True
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "M  agentos_node/bootstrap_control.py\0",
+        " D agentos_node/bootstrap_control.py\0",
+        "D  agentos_node/bootstrap_control.py\0",
+        "R  agentos_node/bootstrap_control.py\0",
+        "UU agentos_node/bootstrap_control.py\0",
+    ],
+)
+def test_target_equivalent_dirty_rejects_staged_delete_rename_and_conflict(monkeypatch, tmp_path, status):
+    monkeypatch.setattr(relay, "_git", lambda *a, **k: (_ for _ in ()).throw(AssertionError("git must not run")))
+    assert relay._target_equivalent_dirty(tmp_path, SHA, status) is False
+
+
+def test_target_equivalent_dirty_rejects_mode_change(monkeypatch, tmp_path):
+    rel = "agentos_node/bootstrap_control.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("target content\n", encoding="utf-8")
+    monkeypatch.setattr(
+        relay,
+        "_git",
+        lambda repo, *args, timeout=120: Proc(returncode=0, stdout=" mode change 100644 => 100755 x\n"),
+    )
+    assert relay._target_equivalent_dirty(tmp_path, SHA, f" M {rel}\0") is False
+
+
+def test_target_equivalent_dirty_rejects_different_blob(monkeypatch, tmp_path):
+    rel = "agentos_node/bootstrap_control.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("different content\n", encoding="utf-8")
+
+    def fake_git(repo, *args, timeout=120):
+        if args == ("diff", "--summary", "--", rel):
+            return Proc(returncode=0, stdout="")
+        if args == ("hash-object", "--", rel):
+            return Proc(returncode=0, stdout=HEAD_BLOB + "\n")
+        if args == ("rev-parse", f"{SHA}:{rel}"):
+            return Proc(returncode=0, stdout=TARGET_BLOB + "\n")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git", fake_git)
+    assert relay._target_equivalent_dirty(tmp_path, SHA, f" M {rel}\0") is False
+
+
+def test_target_equivalent_dirty_converges_with_explicit_classification(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, True))
+    checkouts = []
+    monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: checkouts.append(sha) or True)
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: (True, "ready"))
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert checkouts == [SHA]
+    assert result["classification"] == "CONVERGED_FROM_TARGET_EQUIVALENT_DIRTY"
+    assert result["status"] == "completed"
+    assert result["health"] == "passed"
+    assert result["resulting_commit"] == SHA
+    assert result["credential_exposed"] is False
+
+
+def test_preflight_accepts_requested_sha_when_ref_head_has_advanced(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    advanced = "c" * 40
+
+    def fake_git_value(repo, *args):
+        if args[:3] == ("remote", "get-url", "origin"):
+            return "git@github.com:alston-personal/agentmanager.git"
+        if args == ("rev-parse", "HEAD"):
+            return PREVIOUS
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return advanced
+        raise AssertionError(args)
+
+    calls = []
+    def fake_git(repo, *args, timeout=120):
+        calls.append(args)
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc(returncode=0, stdout="")
+        if args == ("cat-file", "-e", f"{SHA}^{{commit}}"):
+            return Proc(returncode=0, stdout="")
+        if args == ("merge-base", "--is-ancestor", SHA, advanced):
+            return Proc(returncode=0, stdout="")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git_value", fake_git_value)
+    monkeypatch.setattr(relay, "_git", fake_git)
+    monkeypatch.setattr(relay, "_tracked_status", lambda repo: "")
+    assert relay._preflight(tmp_path, request()) == (PREVIOUS, False, False)
+    assert ("merge-base", "--is-ancestor", SHA, advanced) in calls
+
+
+def test_preflight_rejects_requested_sha_outside_allowed_ref_history(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    advanced = "c" * 40
+
+    def fake_git_value(repo, *args):
+        if args[:3] == ("remote", "get-url", "origin"):
+            return "git@github.com:alston-personal/agentmanager.git"
+        if args == ("rev-parse", "HEAD"):
+            return PREVIOUS
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return advanced
+        raise AssertionError(args)
+
+    def fake_git(repo, *args, timeout=120):
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc(returncode=0, stdout="")
+        if args == ("cat-file", "-e", f"{SHA}^{{commit}}"):
+            return Proc(returncode=0, stdout="")
+        if args == ("merge-base", "--is-ancestor", SHA, advanced):
+            return Proc(returncode=1, stdout="")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git_value", fake_git_value)
+    monkeypatch.setattr(relay, "_git", fake_git)
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert result["classification"] == "source_commit_not_in_allowed_ref_history"
+
+
+def test_health_failure_rolls_back_exact_previous_generation(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, False))
+    checkouts = []
+    monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: checkouts.append(sha) or True)
+    outcomes = iter([(False, "product_employee_activation"), (True, "ready")])
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: next(outcomes))
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert checkouts == [SHA, PREVIOUS]
+    assert result["classification"] == "TARGET_HEALTH_FAILED_ROLLED_BACK"
+    assert result["rollback"] == "completed"
+    assert result["resulting_commit"] == PREVIOUS
+    assert result["failure_stage"] == "product_employee_activation"
+
+
+def test_rollback_ambiguity_is_unknown_and_not_success(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, False))
+    monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: True)
+    monkeypatch.setattr(relay, "_install_fixed_runtime_diagnostic", lambda repo: (False, "health_gate"))
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert result["classification"] == "ROLLBACK_OUTCOME_UNKNOWN"
+    assert result["rollback"] == "unknown"
+    assert result["status"] == "failed"
+
+
+class _FileOnlyRelayClient:
+    """Exercise dispatcher spool semantics without Oracle's production Unix group."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        for name in ("inbox", "processing", "receipts", "quarantine"):
+            (root / name).mkdir(parents=True, exist_ok=True)
+
+    def submit(self, action, params):
+        existing = sum(
+            len(list((self.root / name).glob("action-test-*.json")))
+            for name in ("inbox", "processing", "receipts", "quarantine")
+        )
+        capsule_id = f"action-test-{existing + 1}"
+        payload = {
+            "schema": "agentos.action-relay/v1",
+            "capsule_id": capsule_id,
+            "action": action,
+            "params": params,
+        }
+        (self.root / "inbox" / f"{capsule_id}.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
+        return payload
+
+    def receipt(self, capsule_id):
+        path = self.root / "receipts" / f"{capsule_id}.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+def _dispatcher(tmp_path: Path) -> relay.ActionRelayRuntimeConvergeDispatcher:
+    root = tmp_path / "relay"
+    dispatcher = relay.ActionRelayRuntimeConvergeDispatcher(root)
+    dispatcher.client = _FileOnlyRelayClient(root)
+    return dispatcher
+
+
+
+def test_request_submit_lock_accepts_secure_foreign_owner_in_shared_group(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(relay.os, "open", lambda *args, **kwargs: 77)
+    monkeypatch.setattr(
+        relay.os,
+        "fstat",
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100660),
+    )
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getegid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getgroups", lambda: [4242])
+    monkeypatch.setattr(relay.os, "fchmod", lambda *args: calls.append(("chmod", args)))
+    monkeypatch.setattr(relay.os, "close", lambda fd: calls.append(("close", fd)))
+    monkeypatch.setattr(relay.fcntl, "flock", lambda fd, op: calls.append(("flock", fd, op)))
+
+    with relay._request_submit_lock(tmp_path):
+        calls.append(("inside",))
+
+    assert not [call for call in calls if call[0] == "chmod"]
+    assert ("inside",) in calls
+    assert ("close", 77) in calls
+
+
+def test_request_submit_lock_rejects_foreign_owner_outside_shared_group(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay.os, "open", lambda *args, **kwargs: 78)
+    monkeypatch.setattr(
+        relay.os,
+        "fstat",
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100660),
+    )
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getegid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getgroups", lambda: [])
+    monkeypatch.setattr(relay.os, "close", lambda fd: None)
+    monkeypatch.setattr(relay.fcntl, "flock", lambda *args: (_ for _ in ()).throw(AssertionError("must not lock")))
+
+    with pytest.raises(PermissionError, match="lock_group_not_authorized"):
+        with relay._request_submit_lock(tmp_path):
+            pass
+
+
+def test_request_submit_lock_rejects_world_accessible_shared_lock(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay.os, "open", lambda *args, **kwargs: 79)
+    monkeypatch.setattr(
+        relay.os,
+        "fstat",
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100666),
+    )
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getegid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getgroups", lambda: [4242])
+    monkeypatch.setattr(relay.os, "close", lambda fd: None)
+    monkeypatch.setattr(relay.fcntl, "flock", lambda *args: (_ for _ in ()).throw(AssertionError("must not lock")))
+
+    with pytest.raises(PermissionError, match="lock_mode_not_shared"):
+        with relay._request_submit_lock(tmp_path):
+            pass
+
+
+def test_runtime_converge_duplicate_request_reuses_same_inbox_capsule(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    second = dispatcher.submit(request=request())
+    assert second["task_id"] == first["task_id"]
+    assert second["state"] == "queued"
+    assert second["deduplicated"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 1
+
+
+def test_runtime_converge_duplicate_request_reuses_processing_capsule(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    inbox = dispatcher.root / "inbox" / f'{first["task_id"]}.json'
+    processing = dispatcher.root / "processing" / inbox.name
+    inbox.replace(processing)
+    second = dispatcher.submit(request=request())
+    assert second["task_id"] == first["task_id"]
+    assert second["state"] == "processing"
+    assert second["deduplicated"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 0
+
+
+def test_runtime_converge_terminal_receipt_is_reused_not_resubmitted(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    inbox = dispatcher.root / "inbox" / f'{first["task_id"]}.json'
+    inbox.unlink()
+    receipt = {
+        "schema": "agentos.action-receipt/v1",
+        "capsule_id": first["task_id"],
+        "action": relay.ACTION,
+        **request(),
+        "status": "completed",
+        "classification": "CURRENT_GENERATION_RECONCILED",
+        "credential_exposed": False,
+    }
+    (dispatcher.root / "receipts" / f'{first["task_id"]}.json').write_text(
+        json.dumps(receipt), encoding="utf-8"
+    )
+    second = dispatcher.submit(request=request())
+    assert second["task_id"] == first["task_id"]
+    assert second["state"] == "completed"
+    assert second["deduplicated"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 0
+
+
+def test_runtime_converge_quarantined_unknown_wins_and_is_never_replayed(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    inbox = dispatcher.root / "inbox" / f'{first["task_id"]}.json'
+    quarantine = dispatcher.root / "quarantine" / inbox.name
+    inbox.replace(quarantine)
+    unknown_receipt = {
+        "schema": "agentos.action-receipt/v1",
+        "capsule_id": first["task_id"],
+        "action": relay.ACTION,
+        "outcome": "unknown",
+        "replayed": False,
+        "ok": False,
+    }
+    (dispatcher.root / "receipts" / f'{first["task_id"]}.json').write_text(
+        json.dumps(unknown_receipt), encoding="utf-8"
+    )
+    second = dispatcher.submit(request=request())
+    assert second["task_id"] == first["task_id"]
+    assert second["state"] == "unknown"
+    assert second["ok"] is False
+    assert second["deduplicated"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 0
+
+
+def test_runtime_converge_request_id_collision_fails_closed(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    dispatcher.submit(request=request())
+    with pytest.raises(RuntimeError, match="request_id_collision"):
+        dispatcher.submit(request=request(source_commit="b" * 40))
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 1
+
+
+class NodeRegistry:
+    def node_map(self):
+        return {
+            "nodes": [
+                {
+                    "node_id": "oracle-core-node",
+                    "status": "online",
+                    "capabilities": ["node.runtime.converge"],
+                }
+            ]
+        }
+
+
+class Fabric:
+    node_registry = NodeRegistry()
+
+    def queue_task(self, *args, **kwargs):
+        raise AssertionError("runtime converge must not enter generic Node task queue")
+
+
+class RuntimeDispatcher:
+    def __init__(self):
+        self.seen = None
+        self.inspected = None
+        self.inspect_result = {
+            "schema": "agentos.runtime-converge-receipt/v1",
+            "ok": True,
+            "action": "node.runtime.converge",
+            "task_id": "action-123",
+            "status": "completed",
+            "classification": "CURRENT_GENERATION_RECONCILED",
+        }
+
+    def submit(self, *, request):
+        self.seen = request
+        return {
+            "ok": True,
+            "action": "node.runtime.converge",
+            "task_id": "action-123",
+            "state": "queued",
+        }
+
+    def inspect(self, task_id):
+        self.inspected = task_id
+        return self.inspect_result
+
+    def inspect_request(self, *, request):
+        self.seen = request
+        return {
+            "schema": "agentos.runtime-converge-reconnect/v1",
+            "ok": True,
+            "action": "node.runtime.converge",
+            "request_id": request["request_id"],
+            "task_id": "action-existing",
+            "status": "processing",
+            "reconnected": True,
+        }
+
+
+def test_controller_routes_typed_converge_to_fixed_relay_not_node_queue():
+    dispatcher = RuntimeDispatcher()
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=dispatcher)
+    result = controller.dispatch(
+        {
+            "node_id": "oracle-core-node",
+            "task_id": "ctl_runtime_1",
+            "action": "node.runtime.converge",
+            "repository": ALLOWED_REPOSITORY,
+            "source_ref": "core/integration",
+            "source_commit": SHA,
+        }
+    )
+    assert result["task_id"] == "action-123"
+    assert dispatcher.seen["request_id"] == "ctl_runtime_1"
+    assert set(dispatcher.seen) == {
+        "schema",
+        "request_id",
+        "node_id",
+        "repository",
+        "source_ref",
+        "source_commit",
+    }
+
+
+def test_controller_inspects_existing_runtime_converge_receipt_without_resubmit():
+    dispatcher = RuntimeDispatcher()
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=dispatcher)
+    result = controller.dispatch(
+        {
+            "node_id": "oracle-core-node",
+            "action": "node.runtime.converge.inspect",
+            "task_id": "action-123",
+        }
+    )
+    assert dispatcher.seen is None
+    assert dispatcher.inspected == "action-123"
+    assert result["status"] == "completed"
+    assert result["classification"] == "CURRENT_GENERATION_RECONCILED"
+
+
+def test_controller_runtime_converge_inspect_reports_pending_when_receipt_absent():
+    dispatcher = RuntimeDispatcher()
+    dispatcher.inspect_result = None
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=dispatcher)
+    result = controller.dispatch(
+        {
+            "node_id": "oracle-core-node",
+            "action": "node.runtime.converge.inspect",
+            "task_id": "action-abc123",
+        }
+    )
+    assert dispatcher.seen is None
+    assert dispatcher.inspected == "action-abc123"
+    assert result["status"] == "pending"
+    assert result["ok"] is True
+
+
+def test_dispatcher_reconnects_existing_request_without_submit(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    inbox = dispatcher.root / "inbox" / f'{first["task_id"]}.json'
+    processing = dispatcher.root / "processing" / inbox.name
+    inbox.replace(processing)
+    reconnected = dispatcher.inspect_request(request=request())
+    assert reconnected["task_id"] == first["task_id"]
+    assert reconnected["status"] == "processing"
+    assert reconnected["reconnected"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 0
+
+
+def test_controller_reconnects_runtime_converge_by_original_request_identity():
+    dispatcher = RuntimeDispatcher()
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=dispatcher)
+    result = controller.dispatch(
+        {
+            "node_id": "oracle-core-node",
+            "action": "node.runtime.converge.inspect",
+            "request_id": "chatgpt-original-request",
+            "repository": ALLOWED_REPOSITORY,
+            "source_ref": "core/integration",
+            "source_commit": SHA,
+        }
+    )
+    assert dispatcher.seen["request_id"] == "chatgpt-original-request"
+    assert result["task_id"] == "action-existing"
+    assert result["status"] == "processing"
+    assert result["reconnected"] is True
+
+
+def test_controller_runtime_converge_inspect_rejects_extra_execution_fields():
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=RuntimeDispatcher())
+    with pytest.raises(ValueError):
+        controller.dispatch(
+            {
+                "node_id": "oracle-core-node",
+                "action": "node.runtime.converge.inspect",
+                "task_id": "action-123",
+                "shell": "rm -rf /",
+            }
+        )
+
+
+@pytest.mark.parametrize("field", ["shell", "argv", "command", "module", "token", "environment"])
+def test_controller_rejects_execution_carrier_fields(field):
+    controller = ControllerService(Fabric(), runtime_converge_dispatcher=RuntimeDispatcher())
+    body = {
+        "node_id": "oracle-core-node",
+        "action": "node.runtime.converge",
+        "repository": ALLOWED_REPOSITORY,
+        "source_ref": "core/integration",
+        "source_commit": SHA,
+        field: "forbidden",
+    }
+    with pytest.raises(ValueError):
+        controller.dispatch(body)
+
+
+def test_root_runtime_commands_drop_to_canonical_ubuntu_user(monkeypatch):
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 0)
+    argv = relay._runtime_user_argv([
+        "systemctl", "--user", "is-active", "agentos-realm-fabric.service"
+    ])
+    assert argv[:5] == ["/usr/sbin/runuser", "-u", "ubuntu", "--", "/usr/bin/env"]
+    assert "HOME=/home/ubuntu" in argv
+    assert "XDG_RUNTIME_DIR=/run/user/1001" in argv
+    assert "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus" in argv
+    assert argv[-4:] == [
+        "systemctl", "--user", "is-active", "agentos-realm-fabric.service"
+    ]
+
+
+def test_non_root_runtime_commands_remain_direct(monkeypatch):
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 1001)
+    argv = ["git", "status", "--porcelain"]
+    assert relay._runtime_user_argv(argv) == argv

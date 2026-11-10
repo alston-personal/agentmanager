@@ -1,0 +1,73 @@
+name: Oracle Publish Mio Approved Post Remote
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-publish-mio-approved-remote.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      POST_KEY: mio-post-20261002-wardrobe-choice
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify remote ingress carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test -f "personas/mio/approved/$POST_KEY.txt"
+          test "$(wc -m < "personas/mio/approved/$POST_KEY.txt")" -le 500
+          bash -n scripts/submit_oracle_bootstrap_request_remote.sh
+          grep -Fq 'ACTION_PUBLISH_MIO_APPROVED' agentos_node/bootstrap_control.py
+          echo mio_approved_remote_preflight=PASS
+
+      - name: Publish through remote AgentOS bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST_ID="mio-approved-remote-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/mio-approved-remote-receipt.json"
+          PARAMS="$(python3 -c 'import json,os; print(json.dumps({"post_key":os.environ["POST_KEY"]},separators=(",",":")))')"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=660 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.social_threads_mio_approved.publish \
+              "$REQUEST_ID" "$GITHUB_SHA" "$PARAMS" > "$RECEIPT"
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.social_threads_mio_approved.publish',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('executor_uid')==1001,r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          text='\n'.join(str(s.get('stdout',''))+'\n'+str(s.get('stderr','')) for s in r.get('steps',[]))
+          assert ('galaxy_day1_publish=PASS' in text) or ('galaxy_day1_publish=ALREADY_PRESENT' in text),text[-12000:]
+          obj=next((line.split('=',1)[1].strip() for line in text.splitlines() if line.startswith('galaxy_day1_object_id=')),None)
+          link=next((line.split('=',1)[1].strip() for line in text.splitlines() if line.startswith('galaxy_day1_permalink=')),None)
+          user=next((line.split('=',1)[1].strip() for line in text.splitlines() if line.startswith('galaxy_day1_username=')),None)
+          assert obj and obj.isdigit(),obj
+          assert link and link.startswith('https://www.threads.com/@'),link
+          print('mio_approved_remote_receipt=PASS')
+          print('mio_approved_remote_username='+str(user or ''))
+          print('mio_approved_remote_object_id='+obj)
+          print('mio_approved_remote_permalink='+link)
+          PY

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentos.wardrobe-visual-review-request/v1",
+  "type": "object",
+  "required": ["schema", "selectedLayers", "renderedLayers", "pendingLayers"],
+  "properties": {
+    "schema": {"const": "agentos.wardrobe-visual-review-request/v1"},
+    "selectedLayers": {"type": "object", "minProperties": 1},
+    "renderedLayers": {"type": "array", "items": {"type": "string"}},
+    "pendingLayers": {"type": "array", "items": {"type": "string"}},
+    "machineChecks": {"type": "array", "items": {"type": "object"}},
+    "semanticReceipt": {"type": ["object", "null"]}
+  },
+  "additionalProperties": true
+}

@@ -108,46 +108,141 @@ def screenshot(workspace: Path, *, quality: int = 55) -> dict[str, Any]:
         raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
     workspace = workspace.expanduser().resolve()
     workspace.mkdir(parents=True, exist_ok=True)
-    target = workspace / 'agentos-desktop-current.jpg'
-    quality = max(20, min(int(quality), 85))
-    script = r'''
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$bounds=[System.Windows.Forms.SystemInformation]::VirtualScreen
-$bmp=New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
-$g=[System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($bounds.Left,$bounds.Top,0,0,$bmp.Size)
-$enc=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
-$ep=New-Object System.Drawing.Imaging.EncoderParameters 1
-$ep.Param[0]=New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality,[long]$env:AGENTOS_JPEG_QUALITY)
-$bmp.Save($env:AGENTOS_SCREENSHOT_PATH,$enc,$ep)
-$g.Dispose(); $bmp.Dispose()
-Write-Output ($bounds.Width.ToString()+','+$bounds.Height.ToString())
-'''
-    env = os.environ.copy()
-    env['AGENTOS_SCREENSHOT_PATH'] = str(target)
-    env['AGENTOS_JPEG_QUALITY'] = str(quality)
-    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], text=True, capture_output=True, timeout=20, env=env, check=False, creationflags=flags)
-    if cp.returncode != 0 or not target.is_file():
-        raise RuntimeError(f'screenshot failed rc={cp.returncode}: {cp.stderr[-2000:]}')
-    raw = target.read_bytes()
-    if len(raw) > 1_500_000:
+    target = workspace / 'agentos-desktop-current.bmp'
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN = 76, 77
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 78, 79
+    x, y = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN)), int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+    width, height = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)), int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f'invalid virtual screen bounds: {x},{y} {width}x{height}')
+    hdc = user32.GetDC(0)
+    mem = gdi32.CreateCompatibleDC(hdc)
+    bmp = gdi32.CreateCompatibleBitmap(hdc, width, height)
+    old = gdi32.SelectObject(mem, bmp)
+    try:
+        if not gdi32.BitBlt(mem, 0, 0, width, height, hdc, x, y, 0x00CC0020):
+            raise ctypes.WinError()
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_=[('biSize',ctypes.c_uint32),('biWidth',ctypes.c_int32),('biHeight',ctypes.c_int32),('biPlanes',ctypes.c_uint16),('biBitCount',ctypes.c_uint16),('biCompression',ctypes.c_uint32),('biSizeImage',ctypes.c_uint32),('biXPelsPerMeter',ctypes.c_int32),('biYPelsPerMeter',ctypes.c_int32),('biClrUsed',ctypes.c_uint32),('biClrImportant',ctypes.c_uint32)]
+        row=((width*3+3)//4)*4
+        size=row*height
+        buf=ctypes.create_string_buffer(size)
+        bih=BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER),width,height,1,24,0,size,0,0,0,0)
+        if not gdi32.GetDIBits(mem,bmp,0,height,buf,ctypes.byref(bih),0):
+            raise ctypes.WinError()
+        import struct
+        offset=14+40
+        header=b'BM'+struct.pack('<IHHI',offset+size,0,0,offset)
+        dib=struct.pack('<IiiHHIIiiII',40,width,height,1,24,0,size,0,0,0,0)
+        raw=header+dib+buf.raw
+        target.write_bytes(raw)
+    finally:
+        gdi32.SelectObject(mem,old); gdi32.DeleteObject(bmp); gdi32.DeleteDC(mem); user32.ReleaseDC(0,hdc)
+    if len(raw) > 12_000_000:
         raise RuntimeError(f'screenshot exceeds evidence limit: {len(raw)} bytes')
-    dims = (cp.stdout or '').strip().split(',')
-    width = int(dims[-2]) if len(dims) >= 2 else None
-    height = int(dims[-1]) if len(dims) >= 2 else None
+    return {'path':str(target),'mime_type':'image/bmp','bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'width':width,'height':height,'image_base64':base64.b64encode(raw).decode('ascii'),'session':info}
+
+
+
+
+def preview_capture(workspace: Path, *, max_width: int = 480, max_height: int = 270, quality: int = 30) -> dict[str, Any]:
+    _require_windows()
+    info = session_info()
+    if not info['interactive']:
+        raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
+    max_width = max(160, min(640, int(max_width)))
+    max_height = max(90, min(360, int(max_height)))
+    quality = max(20, min(45, int(quality)))
+    try:
+        from PIL import Image
+    except Exception as exc:
+        raise RuntimeError('desktop preview requires Pillow') from exc
+
+    shot = screenshot(workspace, quality=quality)
+    raw = base64.b64decode(str(shot.get('image_base64') or ''), validate=True)
+    import io
+    source = Image.open(io.BytesIO(raw)).convert('RGB')
+    source.thumbnail((max_width, max_height))
+    current_quality = quality
+    preview = b''
+    while True:
+        buf = io.BytesIO()
+        source.save(buf, format='JPEG', quality=current_quality, optimize=True)
+        preview = buf.getvalue()
+        if len(preview) <= 40_000:
+            break
+        if source.width <= 160 or source.height <= 90:
+            raise RuntimeError(f'preview exceeds transport limit: {len(preview)} bytes')
+        source.thumbnail((max(160, source.width * 4 // 5), max(90, source.height * 4 // 5)))
+        current_quality = max(20, current_quality - 5)
     return {
-        'path': str(target),
         'mime_type': 'image/jpeg',
-        'bytes': len(raw),
-        'sha256': hashlib.sha256(raw).hexdigest(),
-        'width': width,
-        'height': height,
-        'image_base64': base64.b64encode(raw).decode('ascii'),
+        'bytes': len(preview),
+        'sha256': hashlib.sha256(preview).hexdigest(),
+        'width': int(source.width),
+        'height': int(source.height),
+        'image_base64': base64.b64encode(preview).decode('ascii'),
         'session': info,
     }
 
+
+
+def tile_windows(task: dict[str, Any]) -> dict[str, Any]:
+    _require_windows()
+    info = session_info()
+    if not info['interactive']:
+        raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
+    entries = list(task.get('windows') or [])
+    if not entries or len(entries) > 4:
+        raise ValueError('windows must contain 1..4 layout entries')
+    reserve_top = max(0, min(160, int(task.get('reserve_top_px') or 80)))
+    margin = max(0, min(40, int(task.get('margin_px') or 8)))
+    user32 = ctypes.windll.user32
+    screen_w = int(user32.GetSystemMetrics(0))
+    screen_h = int(user32.GetSystemMetrics(1))
+    usable_y = reserve_top + margin
+    usable_h = max(200, screen_h - usable_y - margin)
+
+    visible: list[tuple[int, str]] = []
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def callback(hwnd: int, _lparam: int) -> bool:
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = int(user32.GetWindowTextLengthW(hwnd))
+        if length <= 0:
+            return True
+        buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buf, length + 1)
+        title = buf.value.strip()
+        if title:
+            visible.append((int(hwnd), title))
+        return True
+    proc = EnumWindowsProc(callback)
+    user32.EnumWindows(proc, 0)
+
+    zones = {
+        'left': (margin, usable_y, max(300, screen_w * 2 // 5 - margin * 2), usable_h),
+        'right': (screen_w * 2 // 5 + margin, usable_y, max(400, screen_w * 3 // 5 - margin * 2), usable_h),
+        'full': (margin, usable_y, max(400, screen_w - margin * 2), usable_h),
+    }
+    moved: list[dict[str, Any]] = []
+    for entry in entries:
+        needle = str(entry.get('title_contains') or '').strip()
+        zone = str(entry.get('zone') or '').strip().lower()
+        if not needle or zone not in zones:
+            raise ValueError('each window requires title_contains and zone=left|right|full')
+        match = next(((hwnd, title) for hwnd, title in visible if needle.lower() in title.lower()), None)
+        if match is None:
+            moved.append({'title_contains': needle, 'zone': zone, 'matched': False})
+            continue
+        hwnd, title = match
+        x, y, w, h = zones[zone]
+        user32.ShowWindow(hwnd, 9)
+        ok = bool(user32.MoveWindow(hwnd, int(x), int(y), int(w), int(h), True))
+        moved.append({'title_contains': needle, 'zone': zone, 'matched': True, 'title': title[:200], 'hwnd': hwnd, 'moved': ok, 'rect': [int(x), int(y), int(w), int(h)]})
+    return {'session': info, 'screen': [screen_w, screen_h], 'reserve_top_px': reserve_top, 'windows': moved}
 
 def mouse(task: dict[str, Any]) -> dict[str, Any]:
     _require_windows()
@@ -182,39 +277,34 @@ def keyboard(task: dict[str, Any]) -> dict[str, Any]:
     if not info['interactive']:
         raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
     op = str(task.get('operation') or '')
-    if op not in {'type', 'paste'}:
-        raise ValueError('desktop.keyboard supports operation=type or paste')
     text = str(task.get('text') or '')
-    if not text or len(text) > 8000:
-        raise ValueError('text must contain 1..8000 characters')
-
-    # Non-ASCII text must never depend on the user's current IME. Clipboard
-    # paste is also substantially more reliable for long prompts and URLs.
-    use_clipboard = op == 'paste' or any(ord(ch) > 127 for ch in text) or len(text) > 120
+    if not text or len(text) > 1000:
+        raise ValueError('text must contain 1..1000 characters')
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
-    if use_clipboard:
+    if op == 'type':
+        escaped = text.replace("'", "''")
+        script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + escaped.replace('{','{{}').replace('}','{}}') + "')"
+    elif op == 'paste':
+        # Use the Windows clipboard for reliable Unicode/browser input, then
+        # emit only the fixed Ctrl+V gesture. The text is never returned in
+        # the receipt.
         import base64
         encoded = base64.b64encode(text.encode('utf-8')).decode('ascii')
         script = (
             "Add-Type -AssemblyName System.Windows.Forms; "
-            "$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "')); "
-            "Set-Clipboard -Value $t; Start-Sleep -Milliseconds 50; "
+            "$b=[Convert]::FromBase64String('" + encoded + "'); "
+            "$t=[Text.Encoding]::UTF8.GetString($b); "
+            "[System.Windows.Forms.Clipboard]::SetText($t); "
+            "Start-Sleep -Milliseconds 80; "
             "[System.Windows.Forms.SendKeys]::SendWait('^v')"
         )
-        mode = 'unicode-clipboard'
     else:
-        escaped = text.replace("'", "''")
-        script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + escaped.replace('{','{{}').replace('}','{}}') + "')"
-        mode = 'sendkeys'
+        raise ValueError('desktop.keyboard v0.1 only supports operation=type|paste')
 
     cp = subprocess.run(
-        ['powershell.exe', '-STA', '-NoProfile', '-NonInteractive', '-Command', script],
-        text=True,
-        capture_output=True,
-        timeout=10,
-        check=False,
-        creationflags=flags,
+        ['powershell.exe', '-NoProfile', '-NonInteractive', '-STA', '-Command', script],
+        text=True, capture_output=True, timeout=10, check=False, creationflags=flags,
     )
     if cp.returncode != 0:
         raise RuntimeError(f'keyboard input failed rc={cp.returncode}: {cp.stderr[-2000:]}')

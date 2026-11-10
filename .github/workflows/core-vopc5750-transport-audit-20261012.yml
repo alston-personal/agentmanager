@@ -1,0 +1,59 @@
+name: Core VOPC5750 Transport Audit 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-vopc5750-transport-audit-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Inspect node heartbeat and queued leases only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_map=NodeRegistry().node_map()
+          node=next((n for n in node_map.get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
+
+          fabric=RealmFabricStore().load()
+          queue=list((fabric.get('tasks') or {}).get('vopc5750') or [])
+          tasks=[
+              {
+                  'task_id':x.get('task_id'),
+                  'action':x.get('action'),
+                  'queued_at':x.get('queued_at'),
+                  'lease_count':x.get('_lease_count'),
+                  'leased_at':x.get('_leased_at'),
+                  'lease_until':x.get('_lease_until'),
+              }
+              for x in queue if isinstance(x,dict)
+          ]
+
+          print(json.dumps({
+              'node': {
+                  'status': (node or {}).get('status'),
+                  'last_heartbeat_at': (node or {}).get('last_heartbeat_at'),
+                  'heartbeat_age_seconds': (node or {}).get('heartbeat_age_seconds'),
+                  'uptime_seconds': (node or {}).get('uptime_seconds'),
+                  'runtime': (node or {}).get('runtime'),
+              },
+              'queued_tasks': tasks,
+              'queued_task_count': len(tasks),
+          },indent=2,sort_keys=True))
+          PY

@@ -1,0 +1,23 @@
+name: Golden Path Node Inspect Live Acceptance
+
+# One-shot, reviewable integration acceptance: no direct Oracle runner.
+# Edit this file only for a new explicit acceptance wave.
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/golden-path-node-inspect-live-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect-oracle-exec:
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: node.realm
+      operation: inspect
+      payload_json: '{"node_id":"oracle-exec"}'
+      wait_seconds: 120

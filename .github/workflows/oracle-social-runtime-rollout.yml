@@ -1,0 +1,123 @@
+name: Oracle Social Runtime Rollout
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-social-runtime-rollout.yml'
+      - 'scripts/deploy_social_runtime_user.sh'
+      - 'agentos_node/social/**'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - 'dashboard/app/api/social/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight canonical generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          python3 -m compileall -q agentos_node/social agentos_node/bootstrap_control.py agentos_node/bootstrap_scheduler.py
+          bash -n scripts/deploy_social_runtime_user.sh
+          bash -n scripts/agentos_dispatch.sh
+          test -f 'dashboard/app/api/social/[...path]/route.ts'
+          echo "social_runtime_ingress=github-hosted"
+          echo "social_runtime_rollout_source_commit=$GITHUB_SHA"
+
+      - name: Mint GitHub OIDC scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"             "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+      - name: Dispatch social runtime intent through Runner Window
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=720 bash scripts/agentos_dispatch.sh social.runtime deploy "$GITHUB_SHA"               > "$RUNNER_TEMP/social-runtime-roundtrip.txt"
+
+          python3 - "$RUNNER_TEMP/social-runtime-roundtrip.txt" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          lines=[x.strip() for x in open(sys.argv[1],encoding='utf-8') if x.strip()]
+          docs=[json.loads(x) for x in lines if x.startswith('{')]
+          r=docs[-1]['receipt']; expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          sch=r.get('scheduler') or {}
+          assert sch.get('worker_role')=='maintenance',sch
+          assert sch.get('worker_id')=='oracle-maintenance',sch
+          evidence=set(r.get('evidence') or [])
+          for marker in (
+              'social_runtime_deploy=PASS',
+              'social_runtime_service_identity=ubuntu',
+              'social_runtime_root_privilege=NONE',
+              'social_gateway_route_guard=PASS',
+              'social_gateway_dashboard_build=PASS',
+              'social_gateway_local=PASS',
+              'social_gateway_internal_control_public=BLOCKED',
+              'social_gateway_public=PASS',
+              'social_gateway_nginx_mutation=NONE',
+              f'social_runtime_source_commit={expected}',
+          ):
+              assert marker in evidence,(marker,evidence)
+          print('social_runtime_runner_window_receipt=PASS')
+          print('social_runtime_worker='+sch['worker_id'])
+          PY
+      - name: Verify public boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 8 https://studio.milkcat.org/dashboard/api/social/healthz > "$RUNNER_TEMP/social-gateway-public-health.json"
+          python3 - "$RUNNER_TEMP/social-gateway-public-health.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert p.get('schema')=='agentos.social-runtime-status/v1',p
+          assert p.get('service')=='agentos-social-runtime',p
+          threads=p.get('threads')
+          assert isinstance(threads,dict) and set(threads)=={'configured'},p
+          text=json.dumps(p,sort_keys=True).lower()
+          for forbidden in ('app_secret','access_token','refresh_token','authorization_code'):
+              assert forbidden not in text,text
+          print('oracle_social_gateway_public=PASS')
+          PY
+          code=$(curl -sS -o "$RUNNER_TEMP/social-gateway-internal-block.json" -w '%{http_code}' --max-time 8             -X POST https://studio.milkcat.org/dashboard/api/social/internal/v1/social/acceptances             -H 'content-type: application/json' --data '{}')
+          test "$code" = 404
+          grep -q 'Social gateway route not allowlisted' "$RUNNER_TEMP/social-gateway-internal-block.json"
+          echo 'oracle_social_gateway_internal_control=BLOCKED'
+
+      - name: Upload sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-social-runtime-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/social-runtime-roundtrip.txt
+            ${{ runner.temp }}/social-gateway-public-health.json
+            ${{ runner.temp }}/social-gateway-internal-block.json
+          if-no-files-found: warn
+          retention-days: 14

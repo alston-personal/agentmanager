@@ -1,0 +1,27 @@
+name: Social Platform Matrix Guard
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/social/platform_matrix.py'
+      - 'tests/test_social_platform_matrix.py'
+      - 'docs/SOCIAL_AGENT_PLATFORM_BOUNDARIES.md'
+      - '.github/workflows/social-platform-matrix-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile
+        run: python -m py_compile agentos_node/social/platform_matrix.py
+      - name: Test capability matrix
+        run: python -m unittest -v tests.test_social_platform_matrix

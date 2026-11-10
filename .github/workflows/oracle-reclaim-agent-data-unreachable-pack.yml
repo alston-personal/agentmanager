@@ -1,0 +1,122 @@
+name: Oracle Reclaim Proven Unreachable Agent Data Pack
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/reclaim-agent-data-unreachable-pack.json'
+
+permissions:
+  contents: read
+
+jobs:
+  reclaim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Reclaim exact unreachable pack with rollback gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          REPO="$HOME/agent-data"
+          PACK="$REPO/.git/objects/pack/pack-05712690d52472e874ca91a3f728329bfa7c0a00.pack"
+          IDX="${PACK%.pack}.idx"
+          EXPECTED_SIZE=19236299381
+          QUAR="$REPO/.git/agentos-pack-quarantine"
+          SHAS=(
+            a8bca9ae259c
+            64f144e35ef5
+            3f2fd5c8559f
+            752dec56513c
+          )
+
+          echo "disk_before=$(df -P / | awk 'NR==2 {print $3"/"$2" "$5}')"
+          test -f "$PACK"
+          test -f "$IDX"
+          test "$(stat -c %s "$PACK")" -eq "$EXPECTED_SIZE"
+
+          # Fail closed if any live git process currently works inside agent-data.
+          busy=0
+          for p in /proc/[0-9]*; do
+            comm="$(cat "$p/comm" 2>/dev/null || true)"
+            [ "$comm" = git ] || continue
+            cwd="$(readlink -f "$p/cwd" 2>/dev/null || true)"
+            cmd="$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null || true)"
+            case "$cwd $cmd" in
+              *"$REPO"*) busy=$((busy+1));;
+            esac
+          done
+          echo "agent_data_git_processes=$busy"
+          test "$busy" -eq 0
+
+          # Re-prove ref/reflog and every present worktree index immediately before mutation.
+          git -C "$REPO" rev-list --objects --all --reflog > /tmp/agent-data-reachable.objects
+          total_hits=0
+          for prefix in "${SHAS[@]}"; do
+            hits="$(grep -Ec "^$prefix[0-9a-f]*([[:space:]]|$)" /tmp/agent-data-reachable.objects || true)"
+            echo "recheck_${prefix}_ref_reflog_hits=$hits"
+            total_hits=$((total_hits+hits))
+          done
+          rm -f /tmp/agent-data-reachable.objects
+
+          mapfile -t WORKTREES < <(git -C "$REPO" worktree list --porcelain | awk '/^worktree /{sub(/^worktree /,""); print}')
+          for wt in "${WORKTREES[@]}"; do
+            [ -d "$wt" ] || continue
+            tmp="$(mktemp)"
+            git -C "$wt" ls-files -s > "$tmp"
+            for prefix in "${SHAS[@]}"; do
+              hits="$(grep -Ec "^[0-9]+ $prefix[0-9a-f]* [0-9]+[[:space:]]" "$tmp" || true)"
+              total_hits=$((total_hits+hits))
+            done
+            rm -f "$tmp"
+          done
+          echo "recheck_total_dependency_hits=$total_hits"
+          test "$total_hits" -eq 0
+
+          # Prune only stale worktree registrations; no working tree content is deleted.
+          git -C "$REPO" worktree prune --expire now
+          echo "worktree_registry_prune=PASS"
+
+          mkdir -p "$QUAR"
+          qpack="$QUAR/$(basename "$PACK")"
+          qidx="$QUAR/$(basename "$IDX")"
+          test ! -e "$qpack"
+          test ! -e "$qidx"
+
+          rollback() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              [ -f "$qpack" ] && mv "$qpack" "$PACK" || true
+              [ -f "$qidx" ] && mv "$qidx" "$IDX" || true
+              echo "agent_data_pack_reclaim_rollback=DONE" >&2
+            fi
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          mv "$PACK" "$qpack"
+          mv "$IDX" "$qidx"
+          echo "agent_data_pack_quarantine=MOVED"
+
+          # Connectivity must remain valid without the quarantined pack.
+          timeout 120 git -C "$REPO" fsck --connectivity-only --no-dangling
+          git -C "$REPO" status --porcelain=v1 -uno >/tmp/agent-data-status-after.txt
+          echo "agent_data_connectivity_after_quarantine=PASS"
+
+          rm -f "$qpack" "$qidx"
+          rmdir "$QUAR" 2>/dev/null || true
+          sync
+          echo "agent_data_unreachable_pack_deleted=PASS"
+          echo "disk_after=$(df -P / | awk 'NR==2 {print $3"/"$2" "$5}')"
+          trap - EXIT
+          REMOTE

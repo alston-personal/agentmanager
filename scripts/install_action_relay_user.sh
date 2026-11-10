@@ -8,13 +8,23 @@ fi
 
 REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 DATA="${AGENT_DATA_ROOT:-$HOME/agent-data}"
-# Action Relay owns a dedicated runtime. Do not reuse action-runtime: that
-# path is application/runtime asset space (for example character-blueprint).
-RUNTIME_ROOT="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-relay-runtime}"
+RUNTIME_ROOT="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
+LEGACY_RUNTIME_ROOT="${RUNTIME_ROOT}.legacy-pre-worktree"
 RELAY_ROOT="$DATA/runtime/action-relay"
+CAPABILITY_MARKER="$RELAY_ROOT/capabilities.json"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-action-relay.service"
-LEGACY_BACKUP=""
+SOURCE_REF="${AGENTOS_ACTION_SOURCE_REF:-main}"
+EXPECTED_SOURCE_COMMIT="${AGENTOS_ACTION_SOURCE_COMMIT:-}"
+
+case "$SOURCE_REF" in
+  main|core/integration|feature/realm-node-fabric-readiness) ;;
+  *) echo "ERROR: AGENTOS_ACTION_SOURCE_REF is not allowlisted: $SOURCE_REF" >&2; exit 4 ;;
+esac
+if [ -n "$EXPECTED_SOURCE_COMMIT" ] && ! printf '%s' "$EXPECTED_SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "ERROR: AGENTOS_ACTION_SOURCE_COMMIT must be a lowercase 40-character git SHA" >&2
+  exit 4
+fi
 
 for user in ubuntu agentos-node; do
   id -Gn "$user" | tr ' ' '\n' | grep -qx agentos || { echo "ERROR: $user must belong to agentos group" >&2; exit 3; }
@@ -23,62 +33,219 @@ done
 test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
 mkdir -p "$(dirname "$RUNTIME_ROOT")" "$UNIT_DIR"
 
+ensure_shared_dir() {
+  local path="$1"
+  mkdir -p "$path"
+  local owner group mode
+  owner=$(stat -c '%U' "$path")
+  group=$(stat -c '%G' "$path")
+  mode=$(stat -c '%a' "$path")
+
+  if [ "$group" != agentos ]; then
+    if [ "$owner" != ubuntu ]; then
+      echo "ERROR: $path has group=$group owner=$owner; ubuntu cannot repair foreign-owned shared boundary" >&2
+      exit 5
+    fi
+    chgrp agentos "$path"
+    group=agentos
+  fi
+
+  if [ "$mode" != 2770 ]; then
+    if [ "$owner" != ubuntu ]; then
+      echo "ERROR: $path has mode=$mode owner=$owner; expected 2770 and ubuntu cannot chmod foreign-owned inode" >&2
+      exit 5
+    fi
+    chmod 2770 "$path"
+    mode=2770
+  fi
+
+  echo "action_relay_spool_dir=PASS path=$path owner=$owner group=$group mode=$mode"
+}
+
 if [ "${AGENTOS_ACTION_SPOOL_PREPROVISIONED:-0}" = 1 ]; then
   echo "action_relay_spool_preprovisioned=YES"
 else
-  mkdir -p "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
-  chgrp agentos "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
-  chmod 2770 "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
+  ensure_shared_dir "$RELAY_ROOT"
+  ensure_shared_dir "$RELAY_ROOT/inbox"
+  ensure_shared_dir "$RELAY_ROOT/processing"
+  ensure_shared_dir "$RELAY_ROOT/receipts"
+  ensure_shared_dir "$RELAY_ROOT/quarantine"
 fi
 
-git -C "$REPO" fetch origin main
-if [ -e "$RUNTIME_ROOT/.git" ]; then
-  git -C "$RUNTIME_ROOT" reset --hard origin/main
-else
-  if [ -e "$RUNTIME_ROOT" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-    # Migrate only a narrowly-recognized Action Relay runtime shape and keep a
-    # timestamped rollback snapshot. Unknown content is never removed.
-    if [ ! -f "$RUNTIME_ROOT/agentos_node/action_relay.py" ]; then
-      echo '=== UNKNOWN ACTION RELAY RUNTIME SHAPE (READ-ONLY) ===' >&2
-      stat -c 'runtime_root=%n owner=%U:%G mode=%a type=%F' "$RUNTIME_ROOT" >&2 || true
-      find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 2 -printf 'runtime_entry=%y %P\n' 2>/dev/null | LC_ALL=C sort | head -n 120 >&2 || true
-      for marker in \
-        agentos_node/action_relay.py \
-        current/agentos_node/action_relay.py \
-        src/agentos_node/action_relay.py \
-        runtime/agentos_node/action_relay.py \
-        .git; do
-        if [ -e "$RUNTIME_ROOT/$marker" ]; then
-          echo "runtime_marker=$marker" >&2
-        fi
-      done
-      echo "ERROR: non-empty runtime root is neither a worktree nor recognized Action Relay runtime: $RUNTIME_ROOT" >&2
-      exit 2
-    fi
-    unexpected="$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 ! -name agentos_node ! -name __pycache__ -print -quit 2>/dev/null || true)"
-    if [ -n "$unexpected" ]; then
-      echo "ERROR: refusing Action Relay runtime migration because unexpected entry exists: $unexpected" >&2
-      exit 2
-    fi
-    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-    LEGACY_BACKUP="${RUNTIME_ROOT}.legacy-${stamp}"
-    mv "$RUNTIME_ROOT" "$LEGACY_BACKUP"
-    echo "action_runtime_legacy_backup=$LEGACY_BACKUP"
-  else
-    rmdir "$RUNTIME_ROOT" 2>/dev/null || true
+if [ -n "$EXPECTED_SOURCE_COMMIT" ]; then
+  git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+  SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)
+  git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"
+  SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
+  if [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
+    echo "ERROR: Action Relay exact source fetch mismatch: expected=$EXPECTED_SOURCE_COMMIT observed=$SOURCE_COMMIT" >&2
+    exit 4
   fi
-  git -C "$REPO" worktree prune
-  git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" origin/main
+  if ! git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"; then
+    echo "ERROR: Action Relay source commit is not in governed ref: ref=$SOURCE_REF ref_head=$SOURCE_REF_HEAD commit=$SOURCE_COMMIT" >&2
+    exit 4
+  fi
+else
+  git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+  SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
 fi
+
+# Historical Action Relay generations were materialized as a plain directory.
+# Migrate that legitimate pre-worktree layout without deleting it. The migration
+# is deliberately narrow: only an ubuntu-owned, non-symlink directory may move,
+# and an existing deterministic backup makes the operation fail closed rather
+# than overwriting prior evidence.
+if [ -e "$RUNTIME_ROOT" ] && [ ! -e "$RUNTIME_ROOT/.git" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+  test -d "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root is not a directory: $RUNTIME_ROOT" >&2; exit 2; }
+  test ! -L "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root must not be a symlink: $RUNTIME_ROOT" >&2; exit 2; }
+  owner=$(stat -c '%U' "$RUNTIME_ROOT")
+  test "$owner" = ubuntu || { echo "ERROR: legacy runtime root must be ubuntu-owned: path=$RUNTIME_ROOT owner=$owner" >&2; exit 5; }
+  test ! -e "$LEGACY_RUNTIME_ROOT" || { echo "ERROR: legacy runtime backup already exists: $LEGACY_RUNTIME_ROOT" >&2; exit 2; }
+  mv "$RUNTIME_ROOT" "$LEGACY_RUNTIME_ROOT"
+  echo "action_relay_legacy_runtime_migrated=PASS backup=$LEGACY_RUNTIME_ROOT"
+fi
+
+if [ -e "$RUNTIME_ROOT/.git" ]; then
+  git -C "$RUNTIME_ROOT" reset --hard "$SOURCE_COMMIT"
+else
+  rmdir "$RUNTIME_ROOT" 2>/dev/null || true
+  git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" "$SOURCE_COMMIT"
+fi
+
+test "$(git -C "$RUNTIME_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT"
+echo "action_relay_runtime_worktree=PASS"
 
 (
   cd "$RUNTIME_ROOT"
   PYTHONPATH="$RUNTIME_ROOT" python3 - <<'PY'
-from agentos_node.action_relay import ACTIONS
+from agentos_node.executor_job_action_relay import ACTION, ACTIONS
+from agentos_node.runtime_converge_action_relay import ACTION as CONVERGE_ACTION
+from agentos_node.content_publish_action_relay import ACTION as X_AUTH_ACTION
+from agentos_node.content_publish_social_action_relay import BOOTSTRAP_ACTION, INSPECT_ACTION
+assert ACTION == 'agentos.executor.job'
+assert CONVERGE_ACTION == 'agentos.runtime.converge'
+assert X_AUTH_ACTION == 'agentos.content.x.auth.inspect'
+assert BOOTSTRAP_ACTION == 'agentos.content.social.bootstrap'
+assert INSPECT_ACTION == 'agentos.content.social.inspect'
+assert ACTION in ACTIONS
+assert CONVERGE_ACTION in ACTIONS
+assert X_AUTH_ACTION in ACTIONS
+assert BOOTSTRAP_ACTION in ACTIONS
+assert INSPECT_ACTION in ACTIONS
 print('action_runtime_import=ok')
+print('executor_job_action_loaded=PASS')
+print('runtime_converge_action_loaded=PASS')
+print('content_publish_x_auth_action_loaded=PASS')
+print('content_publish_social_actions_loaded=PASS')
 print('actions='+','.join(sorted(ACTIONS)))
 PY
 )
+
+# Converge to exactly one governed consumer for this spool.
+# Never terminate a live consumer while a capsule may have unknown side effects.
+# If the managed worker is already inactive, any leftover processing capsule is
+# by definition interrupted. Reuse ActionRelayWorker's native at-most-once
+# recovery: emit outcome=unknown, replayed=false, then quarantine.
+if ! systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; then
+  PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - "$RELAY_ROOT" <<'PY'
+from pathlib import Path
+import sys
+from agentos_node.action_relay import ActionRelayWorker
+
+recovered = ActionRelayWorker(Path(sys.argv[1])).recover_interrupted()
+print("action_relay_interrupted_recovered=" + str(len(recovered)))
+PY
+  echo "action_relay_offline_interrupted_recovery=PASS"
+fi
+
+# With a live managed worker, allow fresh processing to finish normally.
+processing_clear=0
+for i in $(seq 1 90); do
+  if ! find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
+    processing_clear=1
+    break
+  fi
+  sleep 1
+done
+if [ "$processing_clear" -ne 1 ]; then
+  echo "ERROR: Action Relay processing did not drain before managed stop" >&2
+  exit 62
+fi
+echo "action_relay_processing_drain=PASS"
+
+if [ -f "$UNIT" ]; then
+  if ! systemctl --user stop agentos-action-relay.service; then
+    echo "ERROR: unable to stop managed Action Relay service" >&2
+    exit 61
+  fi
+fi
+if systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; then
+  echo "ERROR: managed Action Relay service remained active after stop" >&2
+  exit 61
+fi
+echo "action_relay_managed_service_stopped=PASS"
+
+# Close the drain/stop race fail-closed. Never clean up consumers if a capsule
+# entered processing after the last pre-stop observation.
+if find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
+  echo "ERROR: Action Relay processing appeared during drain/stop handoff" >&2
+  exit 62
+fi
+echo "action_relay_processing_handoff=PASS"
+
+relay_consumer_pids() {
+  local pid comm cmdline
+  while read -r pid; do
+    [ -n "$pid" ] || continue
+    state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)
+    [ "$state" = "Z" ] && continue
+    comm=$(cat "/proc/$pid/comm" 2>/dev/null || true)
+    case "$comm" in
+      python|python3|python3.*) ;;
+      *) continue ;;
+    esac
+    cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+    case "$cmdline" in
+      *"python3 -m agentos_node.action_relay --root $RELAY_ROOT"*|*"python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT"*)
+        printf '%s\n' "$pid"
+        ;;
+    esac
+  done < <(
+    pgrep -u "$(id -u)" -f "agentos_node\.(action_relay|executor_job_action_relay).*--root $RELAY_ROOT" || true
+  )
+}
+
+mapfile -t stale_relay_pids < <(relay_consumer_pids)
+for pid in "${stale_relay_pids[@]:-}"; do
+  [ -n "$pid" ] || continue
+  kill -TERM "$pid" 2>/dev/null || true
+done
+
+for i in $(seq 1 20); do
+  mapfile -t remaining_relay_pids < <(relay_consumer_pids)
+  if [ "${#remaining_relay_pids[@]}" -eq 0 ]; then
+    break
+  fi
+  sleep 0.25
+done
+mapfile -t stubborn_relay_pids < <(relay_consumer_pids)
+for pid in "${stubborn_relay_pids[@]:-}"; do
+  [ -n "$pid" ] || continue
+  kill -KILL "$pid" 2>/dev/null || true
+done
+for i in $(seq 1 20); do
+  mapfile -t remaining_relay_pids < <(relay_consumer_pids)
+  if [ "${#remaining_relay_pids[@]}" -eq 0 ]; then
+    break
+  fi
+  sleep 0.25
+done
+mapfile -t remaining_relay_pids < <(relay_consumer_pids)
+if [ "${#remaining_relay_pids[@]}" -ne 0 ]; then
+  echo "ERROR: stale Action Relay consumer remains after bounded cleanup" >&2
+  exit 63
+fi
+echo "action_relay_prior_consumers_cleared=PASS"
 
 cat > "$UNIT" <<EOF
 [Unit]
@@ -89,10 +256,12 @@ After=default.target
 Type=simple
 WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
+Environment=AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF
+Environment=AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT
 Environment=XDG_RUNTIME_DIR=/run/user/1001
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 UMask=0007
-ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root $RELAY_ROOT'
+ExecStart=/usr/bin/sg agentos -c 'cd "$RUNTIME_ROOT" && exec /usr/bin/env PYTHONPATH="$RUNTIME_ROOT" AGENTOS_ACTION_RUNTIME_SOURCE_REF="$SOURCE_REF" AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT="$SOURCE_COMMIT" /usr/bin/python3 -m agentos_node.executor_job_action_relay --root "$RELAY_ROOT"'
 Restart=on-failure
 RestartSec=3
 PrivateTmp=true
@@ -102,8 +271,8 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now agentos-action-relay.service
-systemctl --user restart agentos-action-relay.service
+systemctl --user enable agentos-action-relay.service
+systemctl --user start agentos-action-relay.service
 
 stable=0
 for i in $(seq 1 20); do
@@ -118,6 +287,7 @@ done
 
 systemctl --user --no-pager --full status agentos-action-relay.service || true
 if [ "$stable" -lt 3 ]; then
+  rm -f "$CAPABILITY_MARKER"
   echo '=== ACTION RELAY STARTUP JOURNAL ===' >&2
   journalctl --user -u agentos-action-relay.service -n 80 --no-pager >&2 || true
   if [ -n "$LEGACY_BACKUP" ]; then
@@ -127,14 +297,68 @@ if [ "$stable" -lt 3 ]; then
   exit 4
 fi
 
+mapfile -t live_relay_pids < <(relay_consumer_pids)
+if [ "${#live_relay_pids[@]}" -ne 1 ]; then
+  echo "ERROR: expected exactly one canonical Action Relay consumer; observed=${#live_relay_pids[@]}" >&2
+  exit 64
+fi
+relay_pid="${live_relay_pids[0]}"
+cmdline=$(tr '\0' ' ' < "/proc/$relay_pid/cmdline" 2>/dev/null || true)
+case "$cmdline" in
+  *"python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT"*) ;;
+  *) echo "ERROR: canonical Action Relay consumer command mismatch" >&2; exit 65 ;;
+esac
+# Do not inspect /proc/<pid>/environ here. The canonical worker is launched
+# through sg(1), so the observed Python consumer may be a peer uid even though
+# this installer owns the ubuntu user unit. hidepid/Yama configurations can
+# legitimately deny cross-uid environ reads. Verify the exact generation at
+# source-owned boundaries instead: the installed unit must pin both variables,
+# its WorkingDirectory must be the immutable worktree, and that worktree HEAD
+# must equal the requested exact commit.
+unit_ref=$(systemctl --user show agentos-action-relay.service -p Environment --value)
+case " $unit_ref " in
+  *" AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF "*) ;;
+  *) echo "ERROR: canonical Action Relay unit source-ref environment mismatch" >&2; exit 66 ;;
+esac
+case " $unit_ref " in
+  *" AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT "*) ;;
+  *) echo "ERROR: canonical Action Relay unit source-commit environment mismatch" >&2; exit 67 ;;
+esac
+unit_cwd=$(systemctl --user show agentos-action-relay.service -p WorkingDirectory --value)
+test "$(readlink -f "$unit_cwd")" = "$(readlink -f "$RUNTIME_ROOT")" || {
+  echo "ERROR: canonical Action Relay working directory mismatch" >&2
+  exit 68
+}
+test "$(git -C "$RUNTIME_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT" || {
+  echo "ERROR: canonical Action Relay runtime HEAD mismatch" >&2
+  exit 69
+}
+echo "action_relay_single_consumer=PASS"
+echo "action_relay_runtime_generation_unit=PASS"
+echo "action_relay_runtime_generation_env=PASS"
+
+# Capability availability is installed-state evidence, not a source-code claim.
+# Publish only after the exact immutable runtime imports both fixed semantic
+# actions and the worker demonstrates stable liveness. Publication runs in the
+# same fixed `agentos` effective-group boundary as the Action Relay worker; no
+# caller-controlled shell, argv, path, or credential surface is introduced.
+PUBLISHER="$RUNTIME_ROOT/scripts/publish_action_relay_capability.py"
+test -f "$PUBLISHER" || { echo "ERROR: capability publisher missing from exact runtime" >&2; exit 4; }
+grep -Fq 'capability_marker_payload' "$PUBLISHER" || { echo "ERROR: capability publisher is not bound to canonical capability_marker_payload" >&2; exit 4; }
+/usr/bin/sg agentos -c "PYTHONPATH='$RUNTIME_ROOT' /usr/bin/python3 '$PUBLISHER' --marker '$CAPABILITY_MARKER' --source-ref '$SOURCE_REF' --source-commit '$SOURCE_COMMIT'"
+
 echo "action_relay_install=PASS"
+echo "action_relay_executor_job_extension=PASS"
+echo "action_relay_runtime_converge_extension=PASS"
+echo "action_relay_content_publish_extension=PASS"
+echo "action_relay_capability_marker=PASS"
+echo "action_relay_capability_atomic_publish=PASS"
+echo "action_relay_capability_group_context=PASS"
 echo "action_relay_group_context=agentos"
 echo "action_relay_user_bus=ubuntu:/run/user/1001/bus"
 echo "action_relay_stable_liveness=PASS"
-if [ -n "$LEGACY_BACKUP" ]; then
-  echo "action_runtime_migration=PASS"
-  echo "action_runtime_legacy_backup=$LEGACY_BACKUP"
-fi
+echo "action_relay_source_ref=$SOURCE_REF"
+echo "action_relay_source_commit=$SOURCE_COMMIT"
 echo "runtime=$RUNTIME_ROOT"
 echo "spool=$RELAY_ROOT"
 echo "unit=$UNIT"

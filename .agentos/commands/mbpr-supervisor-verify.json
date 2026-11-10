@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.supervisor.verify",
+  "node_id": "mbpr",
+  "nonce": "mbpr-supervisor-1790555517459"
+}

@@ -1,0 +1,632 @@
+# Incident rollout trigger: deploy PR #2077 verification classification
+# Incident rollout trigger: deploy Product Employee preclaim evidence index from PR #1908
+# Incident rollout trigger: deploy Employee Worker wake-path cache fix from PR #1892
+# Incident rollout trigger: deploy Employee Worker hot-set/backpressure fix from PR #1789
+name: Oracle Core Bundle Immutable Runtime Convergence
+# employee-worker-hotset-recovery-20261012
+# system-worker-post-cutover-verification-20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
+      - '.agent/scripts/agentos-employee-worker-host.service'
+      - '.agent/scripts/agentos-employee-worker-host-system.service'
+      - 'scripts/install_systemd_user.sh'
+      - 'scripts/install_services.py'
+      - 'scripts/work_completion.py'
+      - 'scripts/issue_work_intake.py'
+      - 'scripts/approved_wow_paw_handoff.py'
+      - 'scripts/completion_watchdog_tick.py'
+      - 'schedule.yaml'
+      - 'tests/test_completion_watchdog_tick.py'
+      - 'tests/test_approved_wow_paw_handoff.py'
+      - 'tests/test_issue_work_intake.py'
+      - '.agent/roles/**'
+      - 'agent_core/role_runtime.py'
+      - 'agent_core/employee_skills.py'
+      - 'agentos_node/employee_wake_node.py'
+      - 'agentos_node/hermes_worker.py'
+      - 'agentos_node/hermes_worker_cli.py'
+      - 'agentos_node/hermes_metadata_feed.py'
+      - 'agent_core/hermes_scan_policy.py'
+      - 'agent_core/hermes_github_scan.py'
+      - 'agent_core/hermes_due_cycle.py'
+      - 'agentos_node/product_employee_worker.py'
+      - 'agentos_node/completion_470_status_provider.py'
+      - 'agentos_node/product_employee_worker_cli.py'
+      - 'agentos_node/employee_worker_host_runtime.py'
+      - 'governance/employee-worker-adapters-v2.json'
+      - 'governance/employee-skills.json'
+      - 'governance/paw-employee.json'
+      - 'scripts/bootstrap_product_employees.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: oracle-core-bundle-immutable-runtime-convergence
+  cancel-in-progress: false
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Converge Core service bundle to exact immutable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_COMMIT="$1"
+          REPO=/home/ubuntu/agentmanager
+          DATA_ROOT=/home/ubuntu/agent-data
+          RELEASE_ROOT="$DATA_ROOT/releases/core"
+          RUNTIME_ROOT="$DATA_ROOT/runtime/core"
+          RELEASE="$RELEASE_ROOT/$SOURCE_COMMIT"
+          CURRENT="$RUNTIME_ROOT/current"
+          PREVIOUS_CURRENT="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+          UNIT_DIR=/home/ubuntu/.config/systemd/user
+          WORKER_SYSTEM_MARKER=/home/ubuntu/.config/agentos/employee-worker-host-system-boundary
+          WORKER_SYSTEM_UNIT=/etc/systemd/system/agentos-employee-worker-host.service
+          BACKUP="$(mktemp -d /tmp/agentos-core-units.XXXXXX)"
+          UNITS=(
+            os-chronos.service
+            agent-maintenance.service
+            agent-maintenance.timer
+            tg-commander.service
+            teams-commander.service
+            cat-ink-syncer.service
+            os-lobster.service
+            agentos-core-supervisor.service
+            agentos-employee-worker-host.service
+            agentos-employee-wake-node.service
+          )
+          SERVICES=(
+            os-chronos.service
+            tg-commander.service
+            teams-commander.service
+            cat-ink-syncer.service
+            os-lobster.service
+            agentos-core-supervisor.service
+            agentos-employee-worker-host.service
+            agentos-employee-wake-node.service
+          )
+          mkdir -p "$RELEASE_ROOT" "$RUNTIME_ROOT"
+
+          test -d "$REPO/.git"
+          test -f "$REPO/.env"
+          git -C "$REPO" fetch --no-tags origin "$SOURCE_COMMIT" >/dev/null
+          git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
+
+          for unit in "${UNITS[@]}"; do
+            [ -f "$UNIT_DIR/$unit" ] && cp -a "$UNIT_DIR/$unit" "$BACKUP/$unit"
+          done
+          [ -f "$WORKER_SYSTEM_UNIT" ] && sudo -n cp -a "$WORKER_SYSTEM_UNIT" "$BACKUP/agentos-employee-worker-host.system.service" || true
+          : > "$BACKUP/active-services"
+          for unit in "${SERVICES[@]}"; do
+            systemctl --user is-active --quiet "$unit" 2>/dev/null && echo "$unit" >> "$BACKUP/active-services" || true
+          done
+          systemctl --user is-active --quiet agent-maintenance.timer 2>/dev/null && echo agent-maintenance.timer >> "$BACKUP/active-services" || true
+
+          # Preserve the live Employee Worker Host intent during migration. The
+          # historical host may have been activated before the enable toggle was
+          # persisted in the shared .env. Reuse only its existing bounded
+          # host-local environment; do not infer or invent wake/node identity.
+          WORKER_ENV=/home/ubuntu/.config/agentos/employee-worker-host.env
+          WORKER_SYSTEM_ACTIVE=0
+          if [ -f "$WORKER_SYSTEM_MARKER" ] && sudo -n systemctl is-active --quiet agentos-employee-worker-host.service 2>/dev/null; then
+            WORKER_SYSTEM_ACTIVE=1
+          fi
+          if grep -qx 'agentos-employee-worker-host.service' "$BACKUP/active-services" || [ "$WORKER_SYSTEM_ACTIVE" = 1 ]; then
+            test -f "$WORKER_ENV"
+            set -a
+            source "$WORKER_ENV"
+            export AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE=1
+            set +a
+            echo "core_bundle_worker_intent=PRESERVE_ACTIVE"
+          fi
+          if [ -f "$WORKER_SYSTEM_MARKER" ]; then
+            echo "core_bundle_worker_owner=system"
+          else
+            echo "core_bundle_worker_owner=user"
+          fi
+
+          rollback() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "core_bundle_rollback=START" >&2
+              for unit in "${UNITS[@]}"; do
+                if [ -f "$BACKUP/$unit" ]; then
+                  cp -a "$BACKUP/$unit" "$UNIT_DIR/$unit"
+                fi
+              done
+              systemctl --user daemon-reload || true
+              if [ -f "$WORKER_SYSTEM_MARKER" ]; then
+                if [ -f "$BACKUP/agentos-employee-worker-host.system.service" ]; then
+                  sudo -n cp -a "$BACKUP/agentos-employee-worker-host.system.service" "$WORKER_SYSTEM_UNIT" || true
+                  sudo -n systemctl daemon-reload || true
+                fi
+                if [ -n "$PREVIOUS_CURRENT" ] && [ -e "$PREVIOUS_CURRENT" ]; then
+                  ln -sfn "$PREVIOUS_CURRENT" "$CURRENT" || true
+                fi
+                sudo -n systemctl restart agentos-employee-worker-host.service || true
+              fi
+              while read -r unit; do
+                [ -n "$unit" ] && systemctl --user restart "$unit" || true
+              done < "$BACKUP/active-services"
+              echo "core_bundle_rollback=DONE" >&2
+            fi
+            rm -rf "$BACKUP"
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          if [ ! -e "$RELEASE/.git" ]; then
+            git -C "$REPO" worktree add --detach "$RELEASE" "$SOURCE_COMMIT"
+          fi
+          test "$(git -C "$RELEASE" rev-parse HEAD)" = "$SOURCE_COMMIT"
+          # Fail closed if stale Lobster role-name references return in this release.
+          if grep -Fq '{role}' "$RELEASE/scripts/lobster.py"; then
+            echo "core_bundle_lobster_role_name_regression=FAIL"
+            exit 24
+          fi
+          echo "core_bundle_lobster_role_name_regression=PASS"
+          # Guard the noninteractive Claude CLI invocation of durable Lobster.
+          if ! grep -Fq '"--print",' "$RELEASE/scripts/lobster.py"; then
+            echo "core_bundle_lobster_headless_cli=FAIL"
+            exit 25
+          fi
+          echo "core_bundle_lobster_headless_cli=PASS"
+          # Local MVP-1 must use the independent validator in this exact release.
+          grep -Fq 'def verify_local_port_check(' "$RELEASE/scripts/lobster.py"
+          echo "core_bundle_lobster_local_port_validator=PASS"
+          test -f "$RELEASE/scripts/issue_work_intake.py"
+          grep -Fq 'def eligible(' "$RELEASE/scripts/issue_work_intake.py"
+          echo "core_bundle_issue_intake=PASS"
+          # The validator must match real WorkItem port text, not escaped literals.
+          if grep -Fq '檢查連接埠\\\\s' "$RELEASE/scripts/lobster.py"; then
+            echo "core_bundle_local_port_regex=FAIL"
+            exit 26
+          fi
+          echo "core_bundle_local_port_regex=PASS"
+          [ -e "$RELEASE/.env" ] || ln -s "$REPO/.env" "$RELEASE/.env"
+
+          set -a
+          source "$REPO/.env"
+          [ -f /home/ubuntu/.agentos.secrets ] && source /home/ubuntu/.agentos.secrets
+          set +a
+          test "${AGENT_MODE:-CLIENT}" = CORE
+
+          # Track the candidate's own appended stderr, not old log errors.
+          LOBSTER_LOG="$DATA_ROOT/logs/lobster.log"
+          LOBSTER_LOG_OFFSET="$(stat -c %s "$LOBSTER_LOG" 2>/dev/null || echo 0)"
+          # Bootstrap the persistent Paw Employee from THIS exact immutable release
+          # before restarting the governed host. The bootstrap is idempotent and
+          # never creates wakes, dispatches, or an executor privilege grant.
+          PAW_BOOTSTRAP="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/bootstrap_product_employees.py" --runtime-root "$DATA_ROOT/employee-runtime")"
+          printf '%s\n' "$PAW_BOOTSTRAP"
+          printf '%s' "$PAW_BOOTSTRAP" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("schema")=="agentos.product-employee-bootstrap-receipt/v1"; assert any(e.get("employee_id")=="the-paw" for e in d.get("employees",[])), "paw_bootstrap_identity_missing"; assert d.get("executor_bound") is False and d.get("verified_marker_emitted") is False'
+          echo "core_bundle_paw_bootstrap=PASS"
+
+          # Hermes is a research Employee, not a separately scheduled daemon.
+          # Bootstrap through the SAME canonical durable EmployeeRuntime as Paw;
+          # source checkout remains immutable, independent from local tracked drift.
+          HERMES_BOOTSTRAP="$(PYTHONPATH="$RELEASE" python3 -m agent_core.hermes_employee_bootstrap \
+            --runtime-root "$DATA_ROOT/employee-runtime" \
+            --role-registry "$RELEASE/.agent/roles/registry.yaml" \
+            --bootstrap-json "$RELEASE/governance/hermes-technology-scout-employee.json")"
+          printf '%s\n' "$HERMES_BOOTSTRAP"
+          printf '%s' "$HERMES_BOOTSTRAP" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema")=="agentos.hermes-bootstrap-result/v1", d; assert d.get("employee_id")=="hermes-technology-scout", d; assert d.get("assignment_id")=="hermes-2120-discovery-v1", d; assert d.get("employee_state") in ("created","exists"), d; assert d.get("assignment_state") in ("created","preserved"), d; assert d.get("runtime_wake_verified") is False and d.get("continuous_operation_verified") is False, d'
+          echo "core_bundle_hermes_bootstrap=PASS"
+
+          echo "core_bundle_install_services=START"
+          # Preserve previously accepted ONE S4 delivery authority when both
+          # the real Wake Node and its governed Worker Host were active before
+          # this deployment. The installer otherwise removes the one_direct
+          # drop-in and silently degrades autonomous Employees to S3-only.
+          # This does not invent new authority: missing services/Realm fail closed.
+          S4_RESTORE=0
+          if grep -Fxq 'agentos-employee-wake-node.service' "$BACKUP/active-services" \
+            && { grep -Fxq 'agentos-employee-worker-host.service' "$BACKUP/active-services" || [ "$WORKER_SYSTEM_ACTIVE" = 1 ]; } \
+            && [ -f "$DATA_ROOT/realm/fabric.json" ] \
+            && [ -f "$DATA_ROOT/realm/nodes.json" ]; then
+            S4_RESTORE=1
+          fi
+          echo "core_bundle_s4_delivery_restore_requested=$S4_RESTORE"
+          INSTALL_JSON="$(AGENTOS_CORE_SUPERVISOR_ENABLE_ONE_DIRECT="$S4_RESTORE" AGENTOS_SERVICE_DEPENDENCY_GUARD=1 PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          if [ "$S4_RESTORE" = 1 ]; then
+            test -f /home/ubuntu/.config/agentos/core-supervisor-delivery.env
+            grep -Fxq 'AGENTOS_SUPERVISOR_DELIVERY_MODE=one_direct' /home/ubuntu/.config/agentos/core-supervisor-delivery.env
+            echo "core_bundle_s4_delivery_config=ONE_DIRECT"
+          else
+            echo "core_bundle_s4_delivery_config=NOT_AUTO_ENABLED"
+          fi
+          echo "core_bundle_install_services=DONE"
+          printf '%s\n' "$INSTALL_JSON"
+          printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("mode")=="systemd", d'
+
+          # The wake node has its own enrolled identity. Only adopt an already-active
+          # unit; never bootstrap enrollment or start an unknown inactive node.
+          if grep -Fxq 'agentos-employee-wake-node.service' "$BACKUP/active-services"; then
+            test -f "$BACKUP/agentos-employee-wake-node.service"
+            test -f "$DATA_ROOT/employee-wake-node/client.json"
+            test -f "$RELEASE/.agent/scripts/agentos-employee-wake-node.service"
+            sed "s|WorkingDirectory=/home/ubuntu/agentmanager|WorkingDirectory=$RELEASE|; s|EnvironmentFile=/home/ubuntu/agentmanager/.env|EnvironmentFile=$RELEASE/.env|"               "$RELEASE/.agent/scripts/agentos-employee-wake-node.service" > "$UNIT_DIR/agentos-employee-wake-node.service"
+            systemctl --user daemon-reload
+            systemctl --user restart agentos-employee-wake-node.service
+            systemctl --user is-active --quiet agentos-employee-wake-node.service
+            wake_wd="$(systemctl --user show agentos-employee-wake-node.service -p WorkingDirectory --value)"
+            test "$wake_wd" = "$RELEASE"
+            echo "core_bundle_paw_wake_node=ACTIVE_IMMUTABLE"
+          else
+            echo "core_bundle_paw_wake_node=NOT_PREVIOUSLY_ACTIVE"
+          fi
+
+          # Preserve availability: everything that was active before must be active after.
+          while read -r unit; do
+            [ -n "$unit" ] || continue
+            if ! systemctl --user is-active --quiet "$unit"; then
+              # Recover only units recorded as active BEFORE this deployment.
+              # At most one restart; if still down, fail and roll back.
+              echo "core_bundle_preserved_service_recover=$unit:START"
+              if ! systemctl --user restart "$unit"; then
+                echo "core_bundle_preserved_service_recover=$unit:RESTART_FAILED" >&2
+                exit 28
+              fi
+              sleep 2
+              if ! systemctl --user is-active --quiet "$unit"; then
+                echo "core_bundle_preserved_service_recover=$unit:NOT_ACTIVE" >&2
+                if [ "$unit" = "tg-commander.service" ]; then
+                  # Earlier than the later active-service fence: also classify
+                  # failure when the single bounded restart has just failed.
+                  tg_state="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+                  tg_result="$(systemctl --user show "$unit" -p Result --value 2>/dev/null || true)"
+                  tg_exit="$(systemctl --user show "$unit" -p ExecMainStatus --value 2>/dev/null || true)"
+                  case "$tg_state" in active|inactive|failed|activating|deactivating) ;; *) tg_state=unknown;; esac
+                  case "$tg_result" in success|exit-code|signal|core-dump|timeout|start-limit-hit|watchdog) ;; *) tg_result=unknown;; esac
+                  case "$tg_exit" in ''|*[!0-9]*) tg_exit=unknown;; esac
+                  printf 'tg_commander_first_gate=state:%s,result:%s,exit:%s\n' "$tg_state" "$tg_result" "$tg_exit"
+                  if [ -f "$DATA_ROOT/logs/tg_bridge.log" ]; then
+                    /usr/bin/python3 - "$DATA_ROOT/logs/tg_bridge.log" <<'TG_EARLY_DIAG'
+          import pathlib,re,sys
+          tail=pathlib.Path(sys.argv[1]).read_bytes()[-65536:].decode('utf-8','replace')
+          names=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
+          allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
+          print('tg_commander_first_gate_exception='+next((n for n in reversed(names) if n in allowed),'unclassified'))
+          TG_EARLY_DIAG
+                  fi
+                fi
+                exit 29
+              fi
+              echo "core_bundle_preserved_service_recover=$unit:PASS"
+            fi
+            echo "core_bundle_preserved_active=$unit"
+          done < "$BACKUP/active-services"
+
+          # Critical autonomous-control services must be live regardless of old state.
+          systemctl --user is-active --quiet os-chronos.service
+          systemctl --user is-active --quiet agentos-core-supervisor.service
+          # A pre-existing crash loop is not an active service preserved by the installer.
+          # Explicitly restart the bounded Lobster unit against the exact candidate release.
+          systemctl --user reset-failed os-lobster.service || true
+          echo "core_bundle_lobster_restart=START"
+          systemctl --user restart os-lobster.service
+          echo "core_bundle_lobster_restart=DONE"
+          # Lobster must actually survive startup; a momentary active state is not acceptance.
+          systemctl --user is-active --quiet os-lobster.service
+          lobster_pid="$(systemctl --user show os-lobster.service -p MainPID --value)"
+          test -n "$lobster_pid" && test "$lobster_pid" != 0
+          lobster_cwd="$(readlink -f "/proc/$lobster_pid/cwd")"
+          test "$lobster_cwd" = "$RELEASE"
+          lobster_restarts_before="$(systemctl --user show os-lobster.service -p NRestarts --value)"
+          sleep 12
+          # On startup regression, show only the newest safe exception class
+          # and an allowlisted identifier; keep full logs private on Oracle.
+          if ! systemctl --user is-active --quiet os-lobster.service; then
+            echo "core_bundle_lobster_stability=FAIL"
+            LOBSTER_LOG_OFFSET="$LOBSTER_LOG_OFFSET" /usr/bin/python3 - "$LOBSTER_LOG" <<'LOBSTER_DIAG'
+          import os, pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          offset = int(os.environ.get("LOBSTER_LOG_OFFSET", "0"))
+          raw = path.read_bytes() if path.is_file() else b""
+          if len(raw) < offset:
+              offset = 0
+          lines = raw[offset:].decode("utf-8", "replace").splitlines()
+          matches = []
+          allowed = {"NameError", "ModuleNotFoundError", "ImportError", "SyntaxError", "IndentationError", "AttributeError", "TypeError", "ValueError", "PermissionError", "FileNotFoundError", "RuntimeError", "KeyError", "TimeoutError", "AssertionError", "SystemExit", "OSError"}
+          for line in lines:
+              m = re.match(r"^([A-Za-z]+(?:Error|Exit)): (.*)$", line.strip())
+              if m and m.group(1) in allowed:
+                  matches.append(m.groups())
+          latest = matches[-1] if matches else None
+          print("core_bundle_lobster_candidate_exception=" + (latest[0] if latest else "unknown"))
+          if latest and latest[0] == "NameError":
+              m = re.fullmatch(r"name '([A-Za-z_][A-Za-z_0-9]*)' is not defined", latest[1])
+              print("core_bundle_lobster_candidate_undefined=" + (m.group(1) if m else "unknown"))
+          LOBSTER_DIAG
+            exit 23
+          fi
+          lobster_restarts_after="$(systemctl --user show os-lobster.service -p NRestarts --value)"
+          test "$lobster_restarts_before" = "$lobster_restarts_after"
+          echo "core_bundle_lobster_stable=PASS"
+          if [ "${AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE:-0}" = 1 ]; then
+            if [ -f "$WORKER_SYSTEM_MARKER" ]; then
+              sudo -n systemctl is-active --quiet agentos-employee-worker-host.service
+              ! systemctl --user is-active --quiet agentos-employee-worker-host.service 2>/dev/null
+            else
+              systemctl --user is-active --quiet agentos-employee-worker-host.service
+            fi
+          fi
+
+          # Actual running processes, not merely unit text, must execute from the immutable release.
+          for unit in os-chronos.service tg-commander.service cat-ink-syncer.service agentos-core-supervisor.service; do
+            if ! systemctl --user is-active --quiet "$unit"; then
+              if grep -Fxq "$unit" "$BACKUP/active-services"; then
+                echo "ERROR: previously active $unit is now unavailable" >&2
+                # The deployment must fail and roll back; emit only bounded
+                # unit enums and exception CLASS (never raw log or journal text).
+                if [ "$unit" = "tg-commander.service" ]; then
+                  tg_active="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+                  tg_sub="$(systemctl --user show "$unit" -p SubState --value 2>/dev/null || true)"
+                  tg_result="$(systemctl --user show "$unit" -p Result --value 2>/dev/null || true)"
+                  tg_status="$(systemctl --user show "$unit" -p ExecMainStatus --value 2>/dev/null || true)"
+                  tg_restarts="$(systemctl --user show "$unit" -p NRestarts --value 2>/dev/null || true)"
+                  case "$tg_active" in active|inactive|failed|activating|deactivating) ;; *) tg_active=unknown;; esac
+                  case "$tg_sub" in running|dead|failed|auto-restart|start|stop) ;; *) tg_sub=unknown;; esac
+                  case "$tg_result" in success|exit-code|signal|core-dump|timeout|start-limit-hit|watchdog) ;; *) tg_result=unknown;; esac
+                  case "$tg_status" in ''|*[!0-9]*) tg_status=unknown;; esac
+                  case "$tg_restarts" in ''|*[!0-9]*) tg_restarts=unknown;; esac
+                  printf 'tg_commander_liveness=active:%s,sub:%s,result:%s,exit:%s,restarts:%s\n' "$tg_active" "$tg_sub" "$tg_result" "$tg_status" "$tg_restarts"
+                  tg_log="$DATA_ROOT/logs/tg_bridge.log"
+                  if [ -f "$tg_log" ]; then
+                    /usr/bin/python3 - "$tg_log" <<'TG_DIAG'
+          import pathlib, re, sys
+          path=pathlib.Path(sys.argv[1])
+          # Extract ONLY exception type names; never echo raw logs or credentials.
+          tail=path.read_bytes()[-65536:].decode('utf-8','replace')
+          classes=re.findall(r'(?m)^(?:[A-Za-z_][A-Za-z_0-9.]*\.)?([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Exit))\s*:',tail)
+          allowed={'RuntimeError','ValueError','TypeError','ImportError','ModuleNotFoundError','OSError','PermissionError','FileNotFoundError','TimeoutError','SystemExit','InvalidToken','Conflict','NetworkError','Unauthorized','BadRequest','Forbidden','TelegramError','NameError','AttributeError'}
+          print('tg_commander_recent_exception_class='+next((c for c in reversed(classes) if c in allowed),'unclassified'))
+          TG_DIAG
+                  fi
+                fi
+                exit 20
+              fi
+              echo "core_bundle_runtime=$unit:preexisting_inactive"
+              continue
+            fi
+            pid="$(systemctl --user show "$unit" -p MainPID --value)"
+            test -n "$pid" && test "$pid" != 0
+            cwd="$(readlink -f "/proc/$pid/cwd")"
+            case "$cwd" in
+              "$RELEASE"|"$RELEASE"/*) ;;
+              *) echo "ERROR: $unit still runs from non-release cwd=$cwd" >&2; exit 20;;
+            esac
+            echo "core_bundle_runtime=$unit:immutable"
+          done
+          if [ ! -f "$WORKER_SYSTEM_MARKER" ] && systemctl --user is-active --quiet agentos-employee-worker-host.service; then
+            worker_wd="$(systemctl --user show agentos-employee-worker-host.service -p WorkingDirectory --value)"
+            test "$(readlink -f "$worker_wd")" = "$RELEASE" || {
+              echo "ERROR: worker host unit WorkingDirectory is not exact release: $worker_wd" >&2
+              exit 21
+            }
+            worker_exec="$(systemctl --user show agentos-employee-worker-host.service -p ExecStart --value)"
+            case "$worker_exec" in
+              *"/usr/bin/sg agentos -c"*employee_worker_host_daemon*) ;;
+              *) echo "ERROR: worker host lost bounded agentos execution boundary" >&2; exit 22;;
+            esac
+            worker_pid="$(systemctl --user show agentos-employee-worker-host.service -p MainPID --value)"
+            test -n "$worker_pid" && test "$worker_pid" != 0
+            systemctl --user --no-pager --full status agentos-employee-worker-host.service | grep -q 'employee_worker_host_daemon'
+            echo "core_bundle_runtime=agentos-employee-worker-host.service:user-immutable"
+            echo "core_bundle_worker_group_boundary=PASS"
+          fi
+
+          ln -sfn "$RELEASE" "$CURRENT"
+          test "$(readlink -f "$CURRENT")" = "$RELEASE"
+
+          if [ -f "$WORKER_SYSTEM_MARKER" ]; then
+            test -f "$RELEASE/.agent/scripts/agentos-employee-worker-host-system.service"
+            sudo -n install -o root -g root -m 0644 \
+              "$RELEASE/.agent/scripts/agentos-employee-worker-host-system.service" "$WORKER_SYSTEM_UNIT"
+            sudo -n systemctl daemon-reload
+            sudo -n systemctl restart agentos-employee-worker-host.service
+            sudo -n systemctl is-active --quiet agentos-employee-worker-host.service
+            worker_pid="$(sudo -n systemctl show agentos-employee-worker-host.service -p MainPID --value)"
+            test -n "$worker_pid" && test "$worker_pid" != 0
+            worker_cwd="$(readlink -f "/proc/$worker_pid/cwd")"
+            test "$worker_cwd" = "$RELEASE"
+            worker_cg="$(sudo -n systemctl show agentos-employee-worker-host.service -p ControlGroup --value)"
+            case "$worker_cg" in
+              /system.slice/*) ;;
+              *) echo "ERROR: system worker outside system.slice: $worker_cg" >&2; exit 27 ;;
+            esac
+            worker_root="/sys/fs/cgroup$worker_cg"
+            test "$(cat "$worker_root/cpu.max")" = "50000 100000"
+            test "$(cat "$worker_root/cpu.weight")" = "20"
+            test "$(cat "$worker_root/memory.max")" = "1073741824"
+            grep -Eq '^default[[:space:]]+20$' "$worker_root/io.weight"
+            echo "core_bundle_runtime=agentos-employee-worker-host.service:system-immutable"
+            echo "core_bundle_worker_kernel_resource_boundary=PASS"
+          fi
+
+          echo "core_bundle_source_commit=$SOURCE_COMMIT"
+          echo "core_bundle_release=$RELEASE"
+          echo "core_bundle_current=$CURRENT"
+          echo "core_bundle_immutable_runtime=PASS"
+
+          # Read-only, sanitized employee acceptance snapshot. This is not a
+          # synthetic Hermes lifecycle receipt and never changes assignment state.
+          PYTHONPATH="$RELEASE" python3 - "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-state" "$DATA_ROOT/employee-worker-host" <<'HERMES_ACCEPTANCE'
+          import json
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from agent_core.employee_runtime import EmployeeRuntime
+          from agent_core.employee_lifecycle import EmployeeLifecycle
+
+          root, state, host_root = map(Path, sys.argv[1:])
+          runtime = EmployeeRuntime(root)
+          lifecycle = EmployeeLifecycle(runtime)
+          employee_id = "hermes-technology-scout"
+          assignment_prefix = "hermes-2120-discovery-v1"
+          result = {
+              "schema": "agentos.hermes-readonly-acceptance-snapshot/v1",
+              "employee_registered": False,
+              "wake_presence_live": False,
+              "s4_awaiting_claim": 0,
+              "s4_delivery_states": {},
+              "supervisor_intents": 0,
+              "supervisor_last_cycle": None,
+              "supervisor_authority_boundary": "unknown",
+              "completed_lifecycle_receipts": 0,
+              "assignment_states": {},
+              "metadata_snapshots": 0,
+              "worker_dispatch_states": {},
+              "worker_error_codes": {},
+              "lease_statuses": {},
+              "lease_generations": {},
+              "lease_expired": {},
+              "live_verification": False,
+          }
+          try:
+              employee = runtime.get_employee(employee_id)
+              result["employee_registered"] = (employee.role_ids == ["research.hermes"]
+                  and employee.skill_ids == ["github.technology.scan"])
+              presence = root / "realm" / "employee-presence" / (employee_id + ".json")
+              if presence.is_file():
+                  value = json.loads(presence.read_text())
+                  expires = datetime.fromisoformat(str(value.get("expires_at", "")).replace("Z","+00:00"))
+                  result["wake_presence_live"] = (
+                      expires.tzinfo is not None and expires > datetime.now(timezone.utc)
+                  )
+              state_file = root / "supervisor" / "state.json"
+              if state_file.is_file():
+                  state_data = json.loads(state_file.read_text())
+                  result["supervisor_last_cycle"] = state_data.get("last_cycle_at")
+                  result["supervisor_authority_boundary"] = state_data.get("authority_boundary", "unknown")
+              for item in (root / "supervisor" / "intents").glob("reconcile_*.json"):
+                  try:
+                      rec = json.loads(item.read_text())
+                      if (rec.get("intent") or {}).get("employee_id") == employee_id:
+                          result["supervisor_intents"] += 1
+                  except (ValueError, OSError):
+                      continue
+              deliveries = root / "supervisor" / "deliveries"
+              for item in deliveries.glob("reconcile_*.json"):
+                  try:
+                      delivery = json.loads(item.read_text())
+                      if delivery.get("employee_id") == employee_id:
+                          state_value = str(delivery.get("status") or "unknown")
+                          result["s4_delivery_states"][state_value] = result["s4_delivery_states"].get(state_value, 0) + 1
+                          if state_value == "awaiting_claim":
+                              result["s4_awaiting_claim"] += 1
+                  except (ValueError, OSError):
+                      continue
+              for item in sorted((root / "assignments").glob(assignment_prefix + "*.json")):
+                  try:
+                      assignment = runtime.get_assignment(item.stem)
+                      result["assignment_states"][item.stem] = assignment.state
+                      lease = lifecycle.get_lease(item.stem)
+                      if lease:
+                          result["lease_statuses"][item.stem] = lease.status
+                          result["lease_generations"][item.stem] = lease.generation
+                          result["lease_expired"][item.stem] = lifecycle.lease_expired(lease)
+                      if assignment.state == "completed" and lease and lease.status == "completed":
+                          receipt = lifecycle._receipt_path(item.stem, lease.generation)
+                          if receipt.is_file():
+                              body = json.loads(receipt.read_text())
+                              if (body.get("employee_id") == employee_id
+                                  and body.get("outcome") == "completed"
+                                  and body.get("assignment_id") == item.stem):
+                                  result["completed_lifecycle_receipts"] += 1
+                  except (OSError, ValueError, KeyError):
+                      continue
+              result["metadata_snapshots"] = len(list(
+                  (state / employee_id).glob("metadata-*.json")
+              ))
+              # Existing V2 Worker Host owns the durable dispatch ledger.
+              # Project ONLY status and bounded error classes, never raw child
+              # stdout, credentials, paths, URLs or source API responses.
+              import re
+              for item in sorted((host_root / "dispatches" / employee_id).glob("*.json")):
+                  try:
+                      data = json.loads(item.read_text(encoding="utf-8"))
+                      if not isinstance(data, dict) or data.get("employee_id") != employee_id:
+                          continue
+                      state_value = str(data.get("status") or "unknown")
+                      if state_value not in {"launching", "checkpointed", "completed", "blocked",
+                                             "handoff", "failed", "unknown", "rejected"}:
+                          state_value = "invalid"
+                      counts = result["worker_dispatch_states"]
+                      counts[state_value] = counts.get(state_value, 0) + 1
+                      code = data.get("error_code")
+                      if isinstance(code, str) and re.fullmatch(r"[a-z0-9_]{1,80}", code):
+                          errors = result["worker_error_codes"]
+                          errors[code] = errors.get(code, 0) + 1
+                  except (OSError, ValueError):
+                      result["worker_dispatch_states"]["invalid"] = (
+                          result["worker_dispatch_states"].get("invalid", 0) + 1
+                      )
+          except (OSError, ValueError, KeyError) as exc:
+              result["probe_error_class"] = type(exc).__name__
+          print("hermes_live_acceptance=" + json.dumps(result,sort_keys=True))
+          HERMES_ACCEPTANCE
+
+          trap - EXIT
+          rm -rf "$BACKUP"
+          REMOTE
+
+  publish-convergence-receipt:
+    needs: [converge]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      issues: write
+    steps:
+      - name: Publish immutable deploy outcome to existing #470 evidence ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CONVERGE_RESULT: ${{ needs.converge.result }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          case "$CONVERGE_RESULT" in
+            success|failure|cancelled|skipped) ;;
+            *) echo "Unexpected deployment outcome" >&2; exit 2 ;;
+          esac
+          case "$SOURCE_SHA" in
+            *[!0-9a-f]*|'') exit 2 ;;
+          esac
+          test "${#SOURCE_SHA}" = 40
+          # This report describes GitHub's completed deployment job only.
+          # It deliberately does not claim Paw has woken, claimed work, or passed Claw verification.
+          body="agentos.core-immutable-deploy-evidence/v1
+          source_commit=$SOURCE_SHA
+          convergence_result=$CONVERGE_RESULT
+          workflow_run=https://github.com/$GH_REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT
+          oracle_runtime_verified=$([ "$CONVERGE_RESULT" = success ] && echo true || echo false)
+          paw_wake_verified=false
+          paw_claim_verified=false
+          claw_verified=false
+          "
+          gh api "repos/$GH_REPO/issues/470/comments" -f body="$body" >/dev/null

@@ -46,6 +46,24 @@ class TestNodeRegistryV01(unittest.TestCase):
             self.assertTrue(node_map['nodes'][0]['benchmark']['one_uplift_observed'])
             self.assertEqual(node_map['nodes'][0]['reported_status'], 'online')
 
+    def test_executor_inventory_is_persisted_from_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = NodeRegistry(Path(tmp) / 'nodes.json')
+            manifest = self._manifest('executor-node')
+            manifest['executor_inventory'] = {
+                'schema': 'agentos.executor-inventory/v0.2',
+                'executors': [{
+                    'executor_id': 'claude-code',
+                    'state': 'DISCOVERED',
+                    'routable': False,
+                }],
+            }
+            registry.register_manifest(manifest)
+            node = registry.node_map()['nodes'][0]
+            self.assertEqual(node['executor_inventory']['schema'], 'agentos.executor-inventory/v0.2')
+            self.assertEqual(node['executor_inventory']['executors'][0]['executor_id'], 'claude-code')
+            self.assertFalse(node['executor_inventory']['executors'][0]['routable'])
+
     def test_stale_online_node_is_effectively_offline(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = NodeRegistry(Path(tmp) / 'nodes.json')

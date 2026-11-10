@@ -152,6 +152,8 @@ def main():
             rate = math.floor(rate * float(energy_cfg.get("recovery",{}).get("negative_energy_multiplier",1/3)))
         energy=min(capacity,energy+elapsed_h*rate)
 
+    # The independent Event Facility produces and persists occurrences.
+    # Persona PDCA is only a subscriber/consumer; it must never draw events.
     events=read_events(events_path)
     since=parse_ts(state.get("last_event_timestamp"))
     unseen=[]; latest_event_ts=since
@@ -163,6 +165,45 @@ def main():
     counts={}
     for e in unseen:
         typ=e.get("type","unknown"); counts[typ]=counts.get(typ,0)+1
+    # Apply observed event effects once, only to bounded transient Persona state.
+    # This is NOT permanent IR growth and confers no social write authority.
+    transient_events=[e for e in unseen if e.get("type")=="persona.stochastic_event"
+                      and e.get("target")=="persona:"+root.name
+                      and e.get("source")=="agentos.event_facility"]
+    for event in transient_events:
+        effect=event.get("temporary_effect") or {}
+        energy_delta=effect.get("energy_delta",0)
+        if isinstance(energy_delta,(float,int)) and not isinstance(energy_delta,bool):
+            energy=max(-capacity,min(capacity,energy+max(-12,min(12,energy_delta))))
+        mood_delta=effect.get("mood_delta",0)
+        if isinstance(mood_delta,(float,int)) and not isinstance(mood_delta,bool):
+            state["temporary_mood_delta"]=max(-12,min(12,
+                float(state.get("temporary_mood_delta") or 0)+max(-12,min(12,mood_delta))))
+        state["last_stochastic_event_id"]=event.get("id")
+    # ACK occurrences in the existing Persona data transaction. This is a
+    # consumer acknowledgement, not proof the event was publicly published.
+    for event in transient_events:
+        ref=root/"pdca/event_deliveries"/(str(event.get("id"))+".json")
+        if ref.is_file() and not ref.is_symlink():
+            try:
+                delivery=load_json(ref)
+                if delivery.get("event_id")==event.get("id") and delivery.get("target")=="persona:"+root.name:
+                    delivery["status"]="CONSUMED"
+                    delivery["ack_cycle"]=int(state.get("cycle",0))+1
+                    delivery["ack_at"]=now_utc.isoformat().replace("+00:00","Z")
+                    dump_json(ref,delivery)
+            except (OSError,ValueError,TypeError):
+                pass
+    # Expire temporary mood separately from immutable event history.
+    last_event_times=[event_ts(e) for e in transient_events]
+    last_event_times=[t for t in last_event_times if t is not None and t.tzinfo is not None]
+    if last_event_times:
+        from datetime import timedelta
+        state["temporary_mood_expires_at"]=(max(last_event_times)+timedelta(hours=6)).isoformat()
+    expiry=parse_ts(state.get("temporary_mood_expires_at"))
+    if expiry is not None and expiry.tzinfo is not None and expiry<=now_utc:
+        state["temporary_mood_delta"]=0
+        state["temporary_mood_expires_at"]=None
     observed=counts.get("reply.observed",0)
     posted=counts.get("post.sent",0)+counts.get("post.published",0)
     wardrobe=counts.get("wardrobe.window_shopping",0)
@@ -365,7 +406,15 @@ def main():
              "check":{"internal_action_verified":selected!="observe","external_action_completed":False,
                       "new_event_counts":counts,"unseen_events":len(unseen),
                       "energy_before":round(energy,2),"energy_after":round(energy_after,2),
-                      "policy_boundary_respected":True},
+                      "policy_boundary_respected":True,
+                       "event_facility_consumption":{
+                           "status":"CONSUMED" if transient_events else "NO_NEW_EVENT",
+                           "event_ids":[str(e.get("id")) for e in transient_events],
+                           "count":len(transient_events),
+                           "temporary_mood_delta":state.get("temporary_mood_delta",0),
+                           "temporary_mood_expires_at":state.get("temporary_mood_expires_at"),
+                           "permanent_ir_modified":False,
+                           "social_write_authorized":False}},
              "act":{"next_focus":focus,"consecutive_noops":noops,
                     "pending_external_actions":len(pending),"external_candidate":external,
                     "observation_candidate":observation_candidate},

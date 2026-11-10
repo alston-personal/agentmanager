@@ -119,8 +119,8 @@ class MattersBot:
         # Clean self-closing tags for Matters HTML parser
         content_html = re.sub(r'<img\s+([^>]+?)\s*/?>', r'<img \1>', content_html)
         content_html = re.sub(r'<hr\s*/?>', r'<hr>', content_html)
-        # Convert <p><img ...></p> to <figure class="image"><img ...></figure> for Matters renderer
-        content_html = re.sub(r'<p>\s*<img\s+([^>]+)>\s*</p>', r'<figure class="image"><img \1></figure>', content_html)
+        # Convert <p><img ...></p> to <figure class="image"><img ...><figcaption></figcaption></figure> for Matters renderer
+        content_html = re.sub(r'<p>\s*<img\s+([^>]+)>\s*</p>', r'<figure class="image"><img \1><figcaption></figcaption></figure>', content_html)
         print(f"DEBUG_HTML (Draft {draft_id}): {content_html[:200]}...")
         
         mutation = """

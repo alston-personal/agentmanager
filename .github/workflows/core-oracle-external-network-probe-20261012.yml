@@ -1,0 +1,59 @@
+name: Core Oracle External Network Probe 20261012
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/core-oracle-external-network-probe-20261012.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Probe public ONE and scheduler endpoints
+        shell: bash
+        run: |
+          set +e
+          for url in             https://studio.milkcat.org/dashboard/api/agentos/v1/health             https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch             https://studio.milkcat.org/dashboard/api/auth/session; do
+            echo "=== $url ==="
+            curl -sS -o /tmp/body -D /tmp/headers               -w 'http=%{http_code} connect=%{time_connect} ttfb=%{time_starttransfer} total=%{time_total}\n'               --connect-timeout 5 --max-time 15 "$url"
+            rc=$?
+            echo "curl_rc=$rc"
+            head -c 500 /tmp/body 2>/dev/null; echo
+          done
+          exit 0
+
+      - name: Probe Oracle TCP ports
+        shell: bash
+        run: |
+          set +e
+          port="${DEPLOY_PORT:-22}"
+          echo "ssh_port=$port"
+          python3 - "$ORACLE_HOST" "$port" <<'PY'
+          import socket,sys,time
+          host=sys.argv[1]; port=int(sys.argv[2])
+          for label,p in [('ssh',port),('http',80),('https',443)]:
+              s=socket.socket()
+              s.settimeout(8)
+              t=time.time()
+              try:
+                  s.connect((host,p))
+                  print(f'{label}_tcp=OPEN latency={time.time()-t:.3f}s')
+                  if label=='ssh':
+                      try:
+                          data=s.recv(256)
+                          print('ssh_banner='+repr(data))
+                      except Exception as exc:
+                          print('ssh_banner_error='+type(exc).__name__+': '+str(exc))
+              except Exception as exc:
+                  print(f'{label}_tcp=FAIL latency={time.time()-t:.3f}s error={type(exc).__name__}: {exc}')
+              finally:
+                  s.close()
+          PY

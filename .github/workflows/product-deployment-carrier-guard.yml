@@ -1,0 +1,36 @@
+name: Product Deployment Carrier Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'governance/product-deployment-carriers.json'
+      - 'tests/test_product_deployment_carriers.py'
+      - '.github/workflows/product-deployment-carrier-guard.yml'
+  push:
+    branches:
+      - core/issue-175-legacy-carrier-reconciliation
+      - core/integration
+    paths:
+      - 'governance/product-deployment-carriers.json'
+      - 'tests/test_product_deployment_carriers.py'
+      - '.github/workflows/product-deployment-carrier-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  carrier-registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate registry JSON
+        run: python -m json.tool governance/product-deployment-carriers.json >/dev/null
+      - name: Run carrier governance regressions
+        run: python -m unittest tests.test_product_deployment_carriers -v

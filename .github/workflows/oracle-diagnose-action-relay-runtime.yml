@@ -2,10 +2,6 @@ name: Diagnose Live Action Relay Runtime
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-diagnose-action-relay-runtime.yml'
-
 permissions:
   contents: write
 
@@ -73,4 +69,4 @@ jobs:
           git add "$E"
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): live Action Relay wait-state diagnostic'
-          git push origin HEAD:main
+          # Direct push to main retired by Protected Branch Authority

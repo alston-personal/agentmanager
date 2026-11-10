@@ -1,0 +1,61 @@
+name: Issue 152 Continuity Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/active_continuation.py'
+      - 'agent_core/canonical_ir_handoff.py'
+      - 'agent_core/project_continuation_index.py'
+      - 'agentos_node/antigravity_one_hook.py'
+      - 'agentos_node/codex_one_mcp_stdio.py'
+      - 'agentos_node/one_mcp.py'
+      - 'agentos_node/one_mcp_stdio.py'
+      - 'scripts/seed_active_continuation.py'
+      - 'scripts/seed_agentos_core_ir_head.py'
+      - 'scripts/install_antigravity_one_mcp.py'
+      - 'scripts/install_antigravity_one_mcp_oracle.py'
+      - 'scripts/install_codex_one_oracle.py'
+      - 'tests/test_active_continuation.py'
+      - 'tests/test_antigravity_one_hook.py'
+      - 'tests/test_antigravity_preinvocation_attestation.py'
+      - 'tests/test_canonical_ir_handoff.py'
+      - 'tests/test_codex_one_mcp_stdio.py'
+      - 'tests/test_install_codex_one_oracle.py'
+      - 'tests/test_one_mcp.py'
+      - 'tests/test_one_mcp_stdio_identity.py'
+      - 'tests/test_project_continuation_index.py'
+      - 'tests/test_seed_agentos_core_ir_head.py'
+      - '.github/workflows/issue-152-continuity-guard.yml'
+  push:
+    branches:
+      - core/issue-152-executor-awareness
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  continuity-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run #152 hosted continuity regressions
+        run: |
+          python -m unittest \
+            tests.test_active_continuation \
+            tests.test_antigravity_one_hook \
+            tests.test_antigravity_preinvocation_attestation \
+            tests.test_canonical_ir_handoff \
+            tests.test_codex_one_mcp_stdio \
+            tests.test_install_codex_one_oracle \
+            tests.test_one_mcp \
+            tests.test_one_mcp_stdio_identity \
+            tests.test_project_continuation_index \
+            tests.test_seed_agentos_core_ir_head \
+            -v

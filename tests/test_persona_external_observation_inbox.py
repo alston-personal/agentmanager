@@ -51,5 +51,29 @@ class TestInbox(unittest.TestCase):
             self.assertEqual(ingest(src, root)["rejected"], 1)
 
 
+    def test_owner_historical_reading_is_scoped_and_never_grants_reply(self):
+        # Older verified observations remain visible only if their exact URL
+        # is explicitly approved by Mio's persona configuration.
+        root = Path(__file__).resolve().parents[1]
+        generator = (root / "scripts/persona_post_intent_generator.py").read_text()
+        self.assertIn('cfg.get("approved_historical_external_read_urls")', generator)
+        self.assertIn('observed["source_url"] not in approved_historical_urls', generator)
+        self.assertIn('"historical_context_only":not fresh', generator)
+        self.assertIn('"freshness":"recent" if fresh else "historical_owner_approved"', generator)
+        self.assertIn('"reply_allowed":False,"ir_adoption_allowed":False', generator)
+
+    def test_oracle_local_social_lane_installs_and_imports_before_reasoning(self):
+        root = Path(__file__).resolve().parents[1]
+        social = (root / "scripts/run_persona_social_actions_user.sh").read_text()
+        install = (root / "scripts/install_persona_pdca_timer_user.sh").read_text()
+        workflow = (root / ".github/workflows/persona-pdca-heartbeat.yml").read_text()
+        self.assertIn('python3 "$EXTERNAL_INBOX"', social)
+        self.assertLess(social.index('python3 "$EXTERNAL_INBOX"'),
+                        social.index('python3 "$POST_INTENT_GENERATOR"'))
+        self.assertIn('install -m 0755 "$SOURCE_EXTERNAL_INBOX"', install)
+        self.assertIn('"$REMOTE_WARDROBE_SOURCES" "$REMOTE_EXTERNAL_INBOX"', workflow)
+        self.assertIn('"$REMOTE_EXTERNAL_INBOX" "$REMOTE_EVENT_FACILITY" "$REMOTE_EVENT_RUNNER" "$REMOTE_INSTALLER"', workflow)
+
+
 if __name__ == "__main__":
     unittest.main()

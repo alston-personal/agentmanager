@@ -1,0 +1,273 @@
+import pytest
+
+from agent_core.executor_job_contract import (
+    EXECUTOR_JOB_RECEIPT_SCHEMA,
+    ExecutorJobContractError,
+    canonical_executor_job_request,
+    canonical_experience_regression_request,
+    canonical_typesafe_skill_install_request,
+    project_executor_job_receipt,
+    validate_executor_job,
+)
+
+
+def test_public_canonical_job_builder_accepts_registered_types_and_rejects_unknown():
+    assert canonical_executor_job_request("experience.regression") == canonical_experience_regression_request()
+    with pytest.raises(ExecutorJobContractError, match="unsupported executor job type"):
+        canonical_executor_job_request("future.unknown")
+
+
+def test_canonical_experience_regression_is_exact_and_read_only():
+    request = canonical_experience_regression_request()
+    spec = validate_executor_job(request)
+    assert spec.job_type == "experience.regression"
+    assert spec.capability == "agentos.experience.regression"
+    assert spec.executor_class == "openai-codex-local"
+    assert spec.project_id == "agentos-core"
+    assert spec.workload_ref == "issue://117"
+    assert spec.authority == "read-only-regression"
+    assert spec.read_only is True
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("command", "bash -lc whoami"),
+        ("argv", ["bash", "-lc", "whoami"]),
+        ("executable", "/bin/bash"),
+        ("cwd", "/home/ubuntu"),
+        ("env", {"TOKEN": "x"}),
+        ("credential", "secret"),
+    ],
+)
+def test_generic_execution_and_credentials_are_rejected(field, value):
+    request = canonical_experience_regression_request()
+    request[field] = value
+    with pytest.raises(ExecutorJobContractError):
+        validate_executor_job(request)
+
+
+def test_nested_forbidden_execution_field_is_rejected_before_unknown_field_handling():
+    request = canonical_experience_regression_request()
+    request["options"] = {"shell": "whoami"}
+    with pytest.raises(ExecutorJobContractError, match="forbidden generic-execution field"):
+        validate_executor_job(request)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("project_id", "other-project"),
+        ("executor_class", "anthropic-claude-code-extension"),
+        ("workload_ref", "issue://999"),
+        ("authority", "admin"),
+    ],
+)
+def test_registered_semantics_cannot_be_overridden(field, value):
+    request = canonical_experience_regression_request()
+    request[field] = value
+    with pytest.raises(ExecutorJobContractError):
+        validate_executor_job(request)
+
+
+def test_unknown_job_type_fails_closed():
+    request = canonical_experience_regression_request()
+    request["job_type"] = "shell.exec"
+    with pytest.raises(ExecutorJobContractError, match="unsupported executor job type"):
+        validate_executor_job(request)
+
+
+def test_receipt_keeps_availability_routing_authority_and_success_independent():
+    request = canonical_experience_regression_request()
+    receipt = project_executor_job_receipt(
+        job_id="job-12345678",
+        request=request,
+        executor_available=True,
+        routable=False,
+        authorized=False,
+        successful=False,
+        result={
+            "experiment_id": "exp-1",
+            "verdict": "FAIL",
+            "baseline_score": 0.0,
+            "hydrated_score": 0.0,
+            "uplift": 0.0,
+            "hydration_receipt_ok": False,
+            "classification": "EXECUTOR_NOT_ROUTABLE",
+            "stdout": "must not cross boundary",
+            "credential": "must not cross boundary",
+        },
+    )
+    assert receipt["schema"] == EXECUTOR_JOB_RECEIPT_SCHEMA
+    assert receipt["executor_available"] is True
+    assert receipt["routable"] is False
+    assert receipt["authorized"] is False
+    assert receipt["successful"] is False
+    assert receipt["credential_exposed"] is False
+    assert "stdout" not in receipt
+    assert "credential" not in receipt
+
+
+def test_canonical_typesafe_skill_install_is_exact_and_mutating_but_bounded():
+    request = canonical_typesafe_skill_install_request()
+    spec = validate_executor_job(request)
+    assert spec.job_type == "typesafe.skill.install"
+    assert spec.capability == "agentos.skill.install.typesafe"
+    assert spec.executor_class == "oracle-antigravity-skill-installer"
+    assert spec.project_id == "agentos-core"
+    assert spec.workload_ref == "skill://typesafe-ai"
+    assert spec.authority == "oracle-user-skill-install"
+    assert spec.read_only is False
+
+
+@pytest.mark.parametrize("field,value", [
+    ("command", "npx anything"),
+    ("argv", ["npx", "skills"]),
+    ("path", "/tmp/other"),
+    ("env", {"HOME": "/tmp"}),
+])
+def test_typesafe_job_cannot_override_fixed_installer(field, value):
+    request = canonical_typesafe_skill_install_request()
+    request[field] = value
+    with pytest.raises(ExecutorJobContractError):
+        validate_executor_job(request)
+
+
+def test_health_receipt_preserves_only_bounded_provider_classifications():
+    request = canonical_executor_job_request("engineering.executor.health")
+    receipt = project_executor_job_receipt(
+        job_id="job-health-1234",
+        request=request,
+        executor_available=True,
+        routable=False,
+        authorized=False,
+        successful=False,
+        result={
+            "classification": "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+            "claude_health_classification": "TIMEOUT",
+            "agy_health_classification": "CLI_CONTRACT",
+            "gemini_health_classification": "READY",
+            "gemini_state": "READY",
+            "gemini_ready_count": 2,
+            "stdout": "private",
+            "stderr": "private",
+        },
+    )
+    assert receipt["claude_health_classification"] == "TIMEOUT"
+    assert receipt["agy_health_classification"] == "CLI_CONTRACT"
+    assert receipt["gemini_health_classification"] == "READY"
+    assert receipt["gemini_state"] == "READY"
+    assert receipt["gemini_ready_count"] == 2
+    assert "stdout" not in receipt
+    assert "stderr" not in receipt
+
+
+def test_health_receipt_may_project_runtime_source_commit_only_as_scalar():
+    request = canonical_executor_job_request("engineering.executor.health")
+    receipt = project_executor_job_receipt(
+        job_id="job-health-generation-123",
+        request=request,
+        executor_available=True,
+        routable=False,
+        authorized=False,
+        successful=False,
+        result={
+            "classification": "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+            "runtime_source_commit": "a" * 40,
+            "stdout": "must not cross",
+        },
+    )
+    assert receipt["runtime_source_commit"] == "a" * 40
+    assert "stdout" not in receipt
+
+
+def test_gemini_cli_version_is_a_bounded_receipt_scalar():
+    request = canonical_executor_job_request("gemini.cli.install")
+    receipt = project_executor_job_receipt(
+        job_id="job-gemini-version-1234",
+        request=request,
+        executor_available=True,
+        routable=True,
+        authorized=True,
+        successful=True,
+        result={
+            "classification": "GEMINI_CLI_ONE_INSTALL_PASS",
+            "gemini_cli_version": "0.99.0",
+            "stdout": "must-not-cross",
+        },
+    )
+    assert receipt["gemini_cli_version"] == "0.99.0"
+    assert "stdout" not in receipt
+
+
+def test_executor_receipt_projects_bounded_codex_health_fields():
+    request = canonical_executor_job_request("engineering.executor.health")
+    receipt = project_executor_job_receipt(
+        job_id="action-12345678",
+        request=request,
+        executor_available=True,
+        routable=False,
+        authorized=False,
+        successful=False,
+        result={
+            "classification": "ENGINEERING_EXECUTOR_NO_HEALTHY_PROVIDER",
+            "codex_liveness": "READY",
+            "codex_state": "AUTH_REQUIRED",
+            "codex_returncode": 1,
+            "codex_timed_out": False,
+            "codex_ready_count": 0,
+            "codex_probe_attempts": 2,
+            "codex_health_classification": "AUTH_REQUIRED",
+            "stdout": "must-not-cross",
+            "stderr": "must-not-cross",
+        },
+    )
+    assert receipt["codex_liveness"] == "READY"
+    assert receipt["codex_state"] == "AUTH_REQUIRED"
+    assert receipt["codex_returncode"] == 1
+    assert receipt["codex_timed_out"] is False
+    assert receipt["codex_ready_count"] == 0
+    assert receipt["codex_probe_attempts"] == 2
+    assert receipt["codex_health_classification"] == "AUTH_REQUIRED"
+    assert "stdout" not in receipt
+    assert "stderr" not in receipt
+
+
+def test_layoutlib_parity_job_is_fixed_read_only_contract():
+    request = canonical_executor_job_request("layoutlib.production.parity.inspect")
+    spec = validate_executor_job(request)
+    assert spec.project_id == "layoutlib"
+    assert spec.capability == "layoutlib.production.parity.inspect"
+    assert spec.executor_class == "layoutlib-parity-inspector"
+    assert spec.workload_ref == "release://layoutlib/v0.7.9"
+    assert spec.authority == "bounded-read-only"
+    assert spec.read_only is True
+
+
+def test_layoutlib_parity_receipt_projects_only_bounded_scalars():
+    request = canonical_executor_job_request("layoutlib.production.parity.inspect")
+    receipt = project_executor_job_receipt(
+        job_id="job-layoutlib-1234",
+        request=request,
+        executor_available=True,
+        routable=True,
+        authorized=True,
+        successful=True,
+        result={
+            "verdict": "PASS",
+            "classification": "LAYOUTLIB_PRODUCTION_PARITY_EXACT",
+            "layoutlib_release": "v0.7.9",
+            "layoutlib_manifest_files": 7,
+            "layoutlib_matching_files": 7,
+            "layoutlib_public_http": 200,
+            "layoutlib_parity": "EXACT",
+            "observed_head": "a" * 40,
+            "stdout": "must-not-cross",
+        },
+    )
+    assert receipt["layoutlib_release"] == "v0.7.9"
+    assert receipt["layoutlib_manifest_files"] == 7
+    assert receipt["layoutlib_matching_files"] == 7
+    assert receipt["layoutlib_public_http"] == 200
+    assert receipt["layoutlib_parity"] == "EXACT"
+    assert "stdout" not in receipt

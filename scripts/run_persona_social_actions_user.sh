@@ -6,6 +6,7 @@ PERSONA_PATH="${PERSONA_PATH:-personas/sunlake-milkcat}"
 SOCIAL_EXECUTOR="${AGENTOS_PERSONA_SOCIAL_EXECUTOR:-$HOME/.local/lib/agentos/persona_social_executor.py}"
 REPLY_INTENT_GENERATOR="${AGENTOS_PERSONA_REPLY_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_reply_intent_generator.py}"
 POST_INTENT_GENERATOR="${AGENTOS_PERSONA_POST_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_post_intent_generator.py}"
+EXTERNAL_INBOX="${AGENTOS_PERSONA_EXTERNAL_INBOX:-$HOME/.local/lib/agentos/persona_external_observation_inbox.py}"
 GROWTH_METRICS="${AGENTOS_PERSONA_GROWTH_METRICS:-$HOME/.local/lib/agentos/persona_growth_metrics_collector.py}"
 MEDIA_WORKER="${AGENTOS_PERSONA_MEDIA_WORKER:-$HOME/.local/lib/agentos/persona_media_request_worker.py}"
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
@@ -56,6 +57,19 @@ PY
 if ! check_persona_state; then
   echo "persona_social_action_runtime=DEGRADED_STATE" >&2
   exit 3
+fi
+
+# Consume the existing verified Oracle public observation evidence BEFORE social cognition.
+# Import is read-only toward Threads and never grants IR adoption or reply permission.
+# On source or importer outage, record the degradation but keep the social lane alive.
+if [ -f "$EXTERNAL_INBOX" ]; then
+  if ! python3 "$EXTERNAL_INBOX" \
+      --oracle-dir "/home/ubuntu/agent-data/personas/sunlake-milkcat/external_observations" \
+      --persona-dir "$ROOT"; then
+    echo 'mio_pdca_external_inbox_runtime=DEGRADED reason=IMPORTER_FAILED' >&2
+  fi
+else
+  echo 'mio_pdca_external_inbox_runtime=DEGRADED reason=IMPORTER_NOT_INSTALLED' >&2
 fi
 
 # Resolve the PDCA-selected read before cognition. This is the existing worker
@@ -190,6 +204,9 @@ fi
 
 git commit -m "persona(mio): persist autonomous social action" >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' push >/dev/null
+# Publish-before-notify: only a successful durable push may wake the subscriber.
+# -no-block avoids waiting on the Persona service. Release the same lock first;
+# the wake executes the pre-existing PDCA service, not any user-defined script.
 
 if [ "$STATUS" = "NO_ACTION" ]; then
   echo "persona_social_action_runtime=METRICS_ONLY"

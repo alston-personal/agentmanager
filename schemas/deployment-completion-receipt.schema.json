@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"agentos.deployment-completion-receipt/v1",
+  "type":"object",
+  "required":["schema","state","source_revision","target","acceptance"],
+  "properties":{
+    "schema":{"const":"agentos.deployment-completion-receipt/v1"},
+    "state":{"enum":["SOURCE_READY","CI_VERIFIED","DEPLOY_QUEUED","DEPLOY_FAILED","DEPLOYED_UNVERIFIED","PRODUCTION_VERIFIED"]},
+    "source_revision":{"type":"string","pattern":"^[0-9a-f]{7,64}$"},
+    "deployment_carrier":{"type":["string","null"]},
+    "deployment_receipt":{"type":["string","null"]},
+    "target":{"type":"string","minLength":1},
+    "acceptance":{"type":"object","additionalProperties":true},
+    "rollback":{"type":["string","null"]},
+    "incident":{"type":["string","null"]}
+  },
+  "additionalProperties":true
+}

@@ -199,7 +199,8 @@ class WardrobeSourceTests(unittest.TestCase):
         arguments = re.findall(r'"\$(REMOTE_[A-Z_]+)"', invocation)
         parameters = {name: int(position) for name, position in re.findall(
             r'(SOURCE_[A-Z_]+)="\$\{(\d+):-\}"', installer)}
-        self.assertEqual(len(arguments), 17)
+        self.assertEqual(len(arguments), len(parameters))
+        self.assertEqual(set(parameters.values()), set(range(1, len(arguments) + 1)))
         self.assertEqual(source_paths[arguments[parameters["SOURCE_WARDROBE_SOURCES"] - 1]],
                          REPO / "scripts/persona_wardrobe_sources.py")
         library = self.base / "installed"

@@ -1,0 +1,144 @@
+name: Vision Studio Flow Recover
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/vision-studio-flow-recover.json'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AGENTOS_RUNNER_WINDOW_BASE: https://studio.milkcat.org/dashboard/api/agentos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery command
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re
+          p=json.load(open('.agentos/commands/vision-studio-flow-recover.json',encoding='utf-8'))
+          assert p.get("schema")=="agentos.vision-studio-flow-recover/v1"
+          assert p.get("project_id")=="rain-exit-v001"
+          assert p.get("shot_id")=="s01"
+          assert re.fullmatch(r"recover-rain-exit-s01-[0-9]{8}-r[0-9]+",str(p.get("nonce") or ""))
+          print("vision_studio_flow_recover_command=APPROVED")
+          PY
+      - name: Mint OIDC credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          value=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert value.count('.')==2
+          print(value)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'AGENTOS_CONTROLLER_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+      - name: Recover latest Flow result
+        shell: bash
+        run: |
+          set -euo pipefail
+          AGENTOS_DISPATCH_WAIT_SECONDS=1200 \
+            bash scripts/agentos_dispatch.sh media.google-flow recover "$GITHUB_SHA" \
+            | tee "$RUNNER_TEMP/flow-recover.txt"
+          grep -q 'runner_window_dispatch=PASS' "$RUNNER_TEMP/flow-recover.txt"
+      - name: Upload recovery receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-studio-flow-recover-${{ github.run_id }}
+          path: ${{ runner.temp }}/flow-recover.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+  recover_fallback:
+    needs: recover
+    if: ${{ always() && needs.recover.result == 'failure' }}
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recover through governed ubuntu bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="flow-recover-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS" -a -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          path,request_id,sha=sys.argv[1],sys.argv[2],sys.argv[3]
+          payload={
+            "schema":"agentos.bootstrap-request/v1",
+            "request_id":request_id,
+            "action":"agentos.google_flow.recover",
+            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
+            "params":{"source_commit":sha},
+            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
+          }
+          tmp=path+".tmp"
+          open(tmp,"w",encoding="utf-8").write(json.dumps(payload,sort_keys=True,indent=2)+"\n")
+          os.chmod(tmp,0o644); os.replace(tmp,path); os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 900); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "vision_studio_flow_recover_fallback=TIMEOUT"; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY' | tee "$RUNNER_TEMP/flow-recover-fallback.txt"
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
+          assert r.get("action")=="agentos.google_flow.recover",r
+          assert r.get("executor_user")=="ubuntu",r
+          assert r.get("source_commit")==expected,r
+          text="\n".join(str(s.get("stdout") or "")+"\n"+str(s.get("stderr") or "") for s in r.get("steps",[]))
+          print(text)
+          assert r.get("ok") is True,text[-16000:]
+          assert "google_flow_recover=PASS" in text,text[-16000:]
+          PY
+
+      - name: Stage recovered video
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest="$(find /tmp/agentos-shared-artifacts/google-flow-recovery -type f -name '*.mp4' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-)"
+          test -n "$latest" -a -f "$latest"
+          cp "$latest" "$RUNNER_TEMP/rain-exit-s01-current.mp4"
+          sha256sum "$latest" | tee "$RUNNER_TEMP/rain-exit-s01.sha256"
+          printf '%s\n' "$latest" > "$RUNNER_TEMP/rain-exit-s01.source.txt"
+          echo "vision_studio_flow_recover_fallback=PASS"
+
+      - name: Upload recovered video
+        uses: actions/upload-artifact@v4
+        with:
+          name: rain-exit-s01-current-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/rain-exit-s01-current.mp4
+            ${{ runner.temp }}/rain-exit-s01.sha256
+            ${{ runner.temp }}/rain-exit-s01.source.txt
+            ${{ runner.temp }}/flow-recover-fallback.txt
+          if-no-files-found: error
+          retention-days: 7

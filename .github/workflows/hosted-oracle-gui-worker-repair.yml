@@ -1,0 +1,21 @@
+name: Hosted Oracle GUI Worker Repair
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-gui-worker-install.json'
+      - '.github/workflows/hosted-oracle-gui-worker-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  repair:
+    uses: ./.github/workflows/agentos-dispatch.yml
+    with:
+      capability: browser.gui
+      operation: install
+      payload_json: '{}'

@@ -1,5 +1,20 @@
 # AgentOS Current Architecture & Reality
 
+## Event Facility / Mio subscription — independent facility source implementation (2026-11-10)
+
+**Owner-defined contract:** Subscriber `persona:sunlake-milkcat` registers its own nine fictional daily-life event definitions, 42% per-day probability, maximum two occurrences/day, four-hour separation, severity weights and temporary effects in `my-agent-data/personas/sunlake-milkcat/pdca/event_subscriptions/mio-daily-life.json`. The shared, independent `scripts/agentos_event_facility.py` enforces declarative schemas, target identity, allowed effects, deterministic daily count and stable occurrence identifiers. Its code cannot publish to Threads, execute arbitrary subscriber code or promote persona IR.
+
+**Independent facility execution:** The **single shared** `agentos-event-facility.timer` invokes `scripts/run_agentos_event_facility_user.sh` every fifteen minutes in Oracle user systemd (offset to reduce concurrent Git/I/O load), via the existing Persona installer/deployment workflow; it does not depend on either Mio PDCA timer or Social Executor. It scans registered Persona subscriptions from the canonical `my-agent-data` clone, uses the existing shared lock, appends occurrences under `events/events.jsonl`, records bounded draws/emissions under `pdca/event_receipts/` and creates immutable-ID delivery intentions under `pdca/event_deliveries/`. All writes are persisted before any notification.
+
+**Notification and ACK:** Only an allowlisted, installed recipient service is invoked; initially `sunlake-milkcat` maps to the existing `agentos-persona-pdca-heartbeat.service`, invoked by `systemctl --user start --no-block` after successful Git persistence and release of the shared lock. A failed or lost wake is retried on the next shared facility tick when a subscribed event remains newer than the Persona event-consumption cursor, without regenerating the occurrence. Other registered targets are deliberately reported `UNROUTABLE` until their authorized transport mapping is explicitly installed. `persona_pdca_tick.py` no longer draws life events; it observes the canonical ledger, applies bounded once-only energy/mood deltas with mood expiration, records consumed IDs in `check.event_facility_consumption` and marks matching delivery intentions `CONSUMED` in the same Persona data transaction. `WAKE_REQUESTED` means systemd accepted a start request; it does **not** prove the Persona consumed the event.
+
+**Limits/acceptance:** Independent facility service and Mio subscription adapter are implemented only on PR #2178 (DRAFT, UNMERGED, NOT DEPLOYED). Multi-node delivery, transport ACKs, generalized Worker/App routing, dead-letter handling and actual observed Oracle wake and Persona receipt still require verification or further implementation. Do not declare full multi-subscriber availability or event-driven growth from code/CI alone. Platform-visible image publication #1644 and external discussion reply #1825 remain separate uncompleted goals.
+
+
+## Runtime repair discovery contract
+
+Golden Path development must resolve the existing `agentos.runtime / repair` Runner Window route to the Oracle Bootstrap repair script and independent Action Relay installer before declaring deployment unsupported. The persistent contract and fail-closed checks are in `docs/GOLDEN_PATH_RUNTIME_REPAIR_DISCOVERY.md` and `tests/test_golden_path_runtime_repair_discovery.py`. Existing source and hosted OIDC path are implemented; fresh Oracle installed-release and Node receipts are still required. Do not substitute `node.runtime/converge` or workflow-run acknowledgement for installed Action Relay proof.
+
 **Status date:** 2026-10-02  
 **Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
 
@@ -30,11 +45,22 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Web static index render capability | Implemented candidate + tested | `capabilities/web_static_index/`, `scripts/web_static_index.py`, `agent_core/capability_manifest_adapter.py` | `tests/test_web_static_index.py`, `tests/test_capability_manifest_adapter.py` |
 | Google Colab remote compute provider | Declared integration candidate | `capabilities/colab_compute/capability-manifest.json`, `docs/COLAB_GPU_PROVIDER.md` | live Oracle preflight/session/output receipt required |
 | MiniMax H3 video generation via Colab | Declared integration candidate | `capabilities/minimax_h3_colab/capability-manifest.json`, upstream `killkli/minimax-h3-colab-skill` | pinned upstream install + end-to-end MP4 receipt required |
+| Canonical Project Identity | Implemented + tested | `agent_core/project_store.py`, `agent_core/resolve_facade.py` | `tests/test_resolve_facade.py`, `tests/test_project_continuation_index.py`, governed Core registration workflow/evidence |
+| Project release-lane authority | Implemented + tested | `.agent/governance/project_release_lanes.yaml`, `scripts/check_project_release_lane.py` | `tests/test_project_release_lane.py`, `Project Release Lane Guard` |
+| Runtime ownership isolation | Implemented policy + CI guard; Dashboard immutable-runtime migration candidate | `.agent/governance/runtime_ownership.json`, `scripts/check_runtime_ownership.py`, `scripts/deploy_dashboard_blue_green_user.sh` | `tests/test_core_runtime_ownership.py`, `Runtime and Completion Governance`, issue #470 |
+| Durable work completion ownership | Implemented + live accepted | `scripts/work_completion.py`, Lobster integration in `scripts/lobster.py`, immutable completion-executor runtime | `tests/test_work_completion.py`, Oracle run `36130001931`, issue #470 |
+| Autonomous Task Engine / Role PDCA loop | Implemented + live verified | `agent_core/base_pdca.py`, `agent_core/role_seal.py`, `scripts/rhea_role_steward.py`, `scripts/spec_steward.py`, `scripts/role_pdca_runner.py`, `docs/PANTHEON.md`, `personas/` | Base Role PDCA worker inheritance, SpecSteward live spec closure audit & False Completion Detector (`--check`), ConstitutionKeeper physical barrier check, Rhea Pantheon Steward with Quadruple Invariant Barrier (chmod 444 write-protect, runtime seal fast-fail, pre-commit/CI guard, Rhea delegation workflow), Hermes Tech Scout, Titan Atlas Arch-Pillar Closure Owner, Olympus & LCS dual-layer aliases, role reality guard verified |
+| Pinned project POC candidate deployment | Implemented for LayoutLib candidate path | `.github/workflows/oracle-release-layoutlab-v08-dev.yml` | release-lane static acceptance + public POC acceptance after dispatch |
+| Node registry / capability discovery | Implemented + tested | `agent_core/node_registry.py`, `scripts/agentos_node.py` | `tests/test_agentos_node.py`, `tests/test_node_registry_v01.py` |
+| Web static index render capability | Mainline merged candidate (PR #500, pending branch sync) | `capabilities/web_static_index/` (origin/main) | `tests/test_web_static_index.py` |
+| Google Colab remote compute provider | Proposed / Unimplemented specification | Proposed design; manifests not present on disk | Blocked on real GPU provider requirements |
+| MiniMax H3 video generation via Colab | Proposed / Unimplemented specification | Upstream `killkli/minimax-h3-colab-skill` | Blocked on compute provider implementation |
 | Governance responsibility resolution | Implemented + tested | `agent_core/governance_directory.py` | `tests/test_governance_directory.py`, governance audit workflow/evidence |
 | Resource registry / world-state lookup | Implemented + tested | `agent_core/resource_registry.py` | `tests/test_resource_registry.py` |
 | Realm / cross-node fabric | Implemented slices + tested | `agent_core/realm_fabric.py`, `agent_core/realm_server.py`, `agent_core/realm_cli.py` | `tests/test_realm_fabric.py`, `.agentos/commands/` |
 | Controller dispatch route | Implemented + tested; capability-first selection candidate | `agent_core/controller_service.py`, Realm server `/v1/controller/dispatch` | `tests/test_controller_service.py`; historical Control Inbox evidence proves the route, while capability-auto routing still requires post-merge live acceptance |
 | Core deployment authority / generation fence | Implemented + live accepted | governed claim/install/release path, Action Relay deployment fence | `docs/CORE_DEPLOYMENT_AUTHORITY.md`, active-lease conflict proof, Issue #64 acceptance |
+| Core deployment authority / generation fence | Implemented + live accepted | governed claim/install/release path, Action Relay deployment fence | `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`, active-lease conflict proof |
 | Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
 | Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
 | Protected-branch authority guard | Implemented | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
@@ -51,6 +77,16 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 Protected `main` is gaining the existing Character Fusion dispatch entrypoint as a bounded #1682 capability migration rather than by merging `core/integration` wholesale. The candidate adds the reusable `agentos-dispatch.yml`, the Character Fusion runner-window smoke workflow, its dispatch/smoke scripts, `agent_core/runner_window.py`, and the runner-window regression tests. Existing `main` copies of `scripts/character_fusion_worker.py` and `agentos_node/bootstrap_control.py` are intentionally not overwritten; their branch differences remain subject to RECONCILE if hosted validation finds an incompatible contract.
 
 This source migration only makes the default branch capable of exposing the governed execution entrypoint. It does **not** prove a successful production image, deployment, or browser-facing demo. #1438 remains open until a post-merge workflow dispatch yields an Oracle receipt for `studio.character-fusion/smoke`, a real accepted PNG with SHA-256 and renderer provenance, and a successful browser-facing `/drop/` acceptance. No new scheduler or parallel Character Fusion architecture is introduced.
+
+| Documentation Reality Guard & Atomic Doc-Code Parity | Implemented + triple-barrier guarded | `scripts/documentation_reality_guard.py`, `.agent/scripts/pre_commit_guard.sh`, `agent_core/base_pdca.py`, `.github/copilot-instructions.md` | `.github/workflows/documentation-reality-guard.yml`, `tests/test_documentation_reality_guard.py`, pre-commit hook staged check, Claw worktree audit, universal scope covering scripts/ and workflows, retired legacy direct main push hardcoding |
+| Off-chain Credits ledger | Implemented unit logic (Isolated) | `agent_core/credit_ledger.py` | `tests/test_credit_ledger.py`; not wired to live production daemons |
+| Credits pricing + shadow metering | Implemented unit logic (Isolated) | `agent_core/credit_service.py`, `.agent/governance/credit_pricing.json` | `tests/test_credit_service.py`; not integrated into live API gateways |
+| Local Credits service boundary | Implemented unit logic (Isolated) | `agent_core/credit_http.py` | `tests/test_credit_http.py`; no active daemon bound |
+| Zero-Residual Baton SOP & Lifecycle Governance | Implemented | `docs/sop/AGENTOS_SOP.md` | `scripts/documentation_reality_guard.py`, continuation self-test |
+| Telegram Notification Gate & ONE Node Fence | Implemented + tested | `agent_core/telegram_gate.py`, `scripts/chronos.py`, `scripts/lobster.py`, `scripts/pipeline.py` | `tests/test_telegram_gate.py`, node role fence fail-closed |
+| Multi-Novel Swarm & Gaia Persona Matrix | Implemented + live verified | `agent_core/base_pdca.py`, `zeus-writer/` writing personas | `ZeusWriterWorker` multi-novel audit, outline-driven event chaining |
+| Model-independent Cognitive IR | Research | operational handoff envelopes exist, but general sufficiency is not canonical | requires repeatable cross-model continuity benchmark |
+| Zero-cost model switch with only `continue` | Target / not yet proven generally | depends on portable working-state + canonical resolution layer | continuity benchmark still required |
 
 ## Canonical Project Identity contract
 
@@ -612,6 +648,10 @@ Promised implementation work is also durable state. Once accepted, a work item r
 
 The canonical work ledger is `/home/ubuntu/agent-data/governance/work-items.json` with schema `agentos.work-completion/v1`. `scripts/work_completion.py` performs atomic state transitions and can project unfinished items back into the central `TASK_BOARD.md`. Lobster consumes those `[WI:<id>]` entries before ordinary backlog and may only close the durable item after its existing Inspector/physical-output verification path succeeds. The governed Oracle installation lane is `.github/workflows/oracle-install-completion-controller.yml`; it installs Lobster from an immutable release root and installs a periodic stale-owner watchdog without using the shared checkout as runtime authority. Oracle run `36130001931` accepted the immutable Lobster runtime, active watchdog timer and expired-owner reclaim/projection probe. This closes the failure mode where switching to another project leaves a prior promise as a plan with no executor.
 
+### Autonomous task pipeline and role routing (Lobster ➔ Paw/Claw)
+
+As of 2026-11-04, Lobster (`scripts/lobster.py`) resolves idle starvation by seamlessly penetrating to the 57 project islands' `STATUS.md` and `GLOBAL_TODO_LIST.md` whenever the central `TASK_BOARD.md` has no eligible backlog. Non-writing engineering tasks automatically route to **The Paw (`persona.engineering.paw`)** as the primary engineering builder, executing via `agy` with governed boundaries and safety invariants, while **The Claw (`persona.security.claw`)** and Inspector enforce independent verification before tasks advance. Verified completions atomically synchronize `STATUS.md` and `GLOBAL_TODO_LIST.md`, promoting the next task (A ➔ B) for headless continuous execution.
+
 ## Dashboard production runtime boundary
 
 The Milkcat Dashboard production process name is `agentos-dashboard`. New Dashboard generations are built from an exact Git commit into service-owned directories below `/home/ubuntu/agent-data/releases/dashboard/apps/`; `/home/ubuntu/agent-data/runtime/dashboard/current` identifies the selected generation. PM2 must run the selected immutable release directory and must not use `/home/ubuntu/agentmanager/dashboard` as its production cwd.
@@ -1033,7 +1073,59 @@ unknown or exempt paths.
 ### Provider-capacity failure continuity (#470 source candidate, 2026-11-06)
 
 The existing `scripts/work_completion.py` has a candidate generation-fenced recovery call for abrupt executor capacity failure, preserving work in a blocked reconciliation state rather than replaying uncertain operations. `scripts/persona_post_intent_generator.py` and `scripts/persona_reply_intent_generator.py` now classify sanitized reasoning availability on posts and replies. The existing Claude/Gemini/Codex fallback and `DEFER` behavior remain: no provider quota failure becomes an invented `NO_POST`, `NO_REPLY`, or public post. Tests cover the outage case, but this is **not** a live Oracle acceptance or write-path enforcement proof. Runtime failure receipt verification, GitHub/Oracle authoritative fencing, Orion local state reconciliation, and Mio real Threads/media liveness are pending. See `docs/PROVIDER_QUOTA_HANDOFF_470.md`.
+## Unified Realm Fabric active-resolve, fast-forward deployment guard, and Canonical IR CLI (2026-10-30)
 
+`agent_core/realm_server.py` supports both project-scoped and active-selector
+(`selection == "active"`, `ONE_ACTIVE_CONTINUATION`) resolution on `POST /v1/resolve`
+alongside all 22 declarative `agentos.executor.job` contracts on
+`POST /v1/controller/dispatch`.
+
+`agentos_node/action_relay.py` (`_install_realm_fabric_release`) enforces a
+fast-forward git ancestry guard (`git merge-base --is-ancestor`) when an existing
+observed Core commit is present on `agentos-realm-fabric.service`, rejecting
+older unmerged branch commits with `rejected_non_fast_forward`.
+
+`scripts/advance_ir_cli.py` (verified by `tests/test_advance_ir_cli.py`) provides
+a standard CLI to inspect and advance `agentos-core` Canonical IR generations
+with CAS parent checks and atomic `active-continuation.json` activation.
+
+### Themis Sacred Invocations & Temporal Inventory Diff Engine (2026-11-09)
+
+Consecrated **Themis 忒彌斯** (`governance.themis_command_steward`) as the Sacred Invocations and Slash Command Steward.
+Implemented `scripts/themis_status_diff.py` (verified by `tests/test_themis_status_diff.py`) and command specification `.agentos/commands/status-diff.json`.
+Features:
+- Scans full project island inventory (61+ projects, STATUS.md presence, Open/Closed/AC TODOs).
+- Persists historical snapshots in Data Layer (`$AGENT_DATA_ROOT/snapshots/inventory/`) preserving physical Logic/Data separation.
+- Computes atomic temporal deltas (Git SHA, project count, TODO progression, and Atlas closure cycles) against baseline `latest.json`, with flexible baseline selection (`--base <snapshot|start-of-day>` and `--previous <N>`).
+- Integrated `ThemisCommandWorker` into `agent_core/base_pdca.py` under Rhea's physical seal (`scripts/rhea_role_steward.py --seal`).
+- Hardened `scripts/role_pdca_runner.py` and `scripts/aggregate_tasks.py` with anti-head-of-line blocking, sub-heading markdown support, and PATH execution environment injection.
+- Extended ecosystem island governance to `social-galaxy` (Project 62/63), initiating multi-platform architecture decoupling from single-network Threads binding to generic Social Graph Engine.
+- Implemented `agent_core/social_galaxy/` multi-platform adapter suite (Threads, X, Bluesky, Generic JSON) with unified entity space identity resolution and S/A/B/C/D graph tiering (`tests/test_social_galaxy_adapters.py`).
+- Implemented `web/telemetry.js` lightweight (<1KB) privacy-friendly, cookie-free web telemetry probe (`agentos.web-telemetry/v1`) verified by `tests/test_web_telemetry.py`, with `web/` path registered in branch convergence gate.
+
+## Hermes #2120: first live scan and post-claim clock fix (2026-11-09)
+
+- Hermes `research.hermes` is deployed through the existing immutable Core and existing ONE/Supervisor/V2 Worker Host, retaining the shared Worker Host `PrivateNetwork=true`. The ONE Wake Node obtains fixed public GitHub metadata only after governed S4 delivery and passes a bounded digest-bound snapshot to Hermes.
+- Live Oracle job [run 42569086970, attempt 2](https://github.com/alston-personal/agentmanager/actions/runs/42569086970) confirmed the initial assignment `hermes-2120-discovery-v1` is `active`, an S4 delivery was `claimed`, and one GitHub metadata snapshot existed. At observation time it had **zero terminal Lifecycle Receipts**. Do not call this two-cycle accepted or fully autonomous.
+- Root-cause correction: the worker had computed `propose_scan(now=datetime.now(...), last_scan_at=datetime.now(...))`. Independent clock reads could make `last_scan_at` greater than `now`, raising `future_last_scan_at` *after lease claim*. Now one `completed_at` observation is passed to `plan_after_completed_scan` for both values, with regression coverage.
+- Immutable Core deployment workflow now tracks changes to Hermes Worker/scan/policy/recurrence modules, so subsequent fixes trigger the existing governed deployment path rather than remaining in an un-deployed source branch. No additional daemon or schedule created.
+- Remaining acceptance: prove true first successful terminal scan receipt, due-only second scan with independently persisted Receipt and checkpoint, safe recovery of the pre-fix interrupted lease, and restart continuity. Keep canonical #2120 open until live evidence meets the minimum autonomy gate.
+
+
+### Hermes #2120: sanitize exact failed Worker result (2026-11-09)
+
+Real Oracle [immutable run 42576275799](https://github.com/alston-personal/agentmanager/actions/runs/42576275799) reported two Hermes V2 Worker dispatches as `unknown` with `employee_worker_child_wake_mismatch`, one expired active Lease at generation 1, two metadata snapshots, and **zero** completed lifecycle receipts. Source inspection confirmed the Hermes CLI's failure branch omitted `employee_id`, `assignment_id`, `wake_id` and `presence_generation`; the shared Host therefore classified any actual child failure as a wake mismatch rather than recording the reason. The V2 Host now pins the exact WorkItem as a CLI argument, checked against the validated capsule before any lifecycle mutation. The CLI returns this exact identity with an allowlisted error code *only when it fails*, so the Host can preserve a terminal `failed` result without treating it as successful work. No raw exception text, paths, credentials, network access, general command execution or additional scheduling are exposed. This is error attribution, not a fix for any underlying scan failure. Genuine two-cycle receipts remain required before accepting this Employee as autonomously operational.
+
+## Core Integration Harmonization & Full CI Convergence (#2180) (2026-11-10)
+
+- Harmonized `origin/core/integration` and `origin/main` divergence into `converge/core-integration-to-main` across 112 unique integration commits and mainline Olympus governance.
+- Resolved branch audit gate: registered `schedule.yaml` in `RED_EXACT` path audit review list.
+- Restored `milkcat-credits.service` user unit generation and shadow metering contract in `scripts/install_systemd_user.sh`.
+- Reconciled Oracle identity boundary overrides for 4 historical governed workflows and scripts, enforcing zero new unreviewed P0 boundaries.
+- Hardened Rhea physical role seal in `agent_core/role_seal.py` to recognize stateless CI runners where external `agent-data` is not mounted, ensuring full test portability without weakening node physical tamper-proofing.
+- Restored `scripts/lobster.py` durable completion selection (`next_durable_completion_task`), executor lease handoff, and external wait directives.
+- Aligned `scripts/work_completion.py` `wake_due` watchdog to fail closed into `blocked` status upon machine retry budget exhaustion.
+- Enabled alias resolution in `agent_core/role_runtime.py` and restored `github.technology.scan` capability to `sector.hermes` under Rhea's physical seal.
 
 ## Gaia proposal intake classifier (#420 candidate, 2026-11-09)
 
@@ -1092,6 +1184,6 @@ The candidate `admit_existing_project_work` now requires the source `ReviewRecor
 Draft Gaia handoff work identity is now derived from the canonical GitHub Issue URL and matched parent project ID, not from the review-record content hash (which changes each time a new review timestamp or inventory snapshot is recorded). Therefore the same source issue and parent map to the same existing WorkItem across repeated reviews; the proposal's review hash still remains in the bounded `next_action` evidence and must be checked by trusted admission. Canonical GitHub Issue URLs are validated structurally before handoff. This is source/CI continuity only: real autonomous scheduler admission, one-time trusted authorization and persisted ONE receipts remain unverified.
 
 
-### Gaia Runner Window live-bridge baseline risk (2026-11-09)
+### Gaia Runtime bridge convergence checkpoint (2026-11-10)
 
-The standalone `scripts/gaia_intake_probe.py` is a bounded *read-only* candidate for a future ONE Runner Window action, with tests in Documentation Reality Guard. It is NOT registered as a publicly dispatchable capability or Oracle scheduler action. **Do not copy the outdated `agentos_node/bootstrap_control.py` from this PR head into deployed main:** GitHub compare reported the PR branch 3,957 commits behind main, and the branch's bootstrap_control.py is materially older than the current main file, while `bootstrap_scheduler.py` exists in main but not on this branch. Before any bootstrap action/policy changes, converge or otherwise safely transplant Gaia-only commits onto the current main head with original integration dependencies preserved. No live receipt or autonomous Gaia exists yet.
+The Gaia candidate PR branch now carries a preserving-history merge of the current main runtime source instead of using the outdated branch bootstrap_control.py. The read-only `scripts/gaia_intake_probe.py` is NOT registered as an executable Runner Window action; production ONE authorization and dispatch receipts remain pending. Do not mistake Git merge CI for deployed Oracle Runtime.

@@ -1,0 +1,59 @@
+name: Oracle Agent Data Unreachable Blob Proof
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-agent-data-unreachable-blob-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Prove four giant blobs are unreachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          REPO="$HOME/agent-data"
+          SHAS=(
+            a8bca9ae259c
+            64f144e35ef5
+            3f2fd5c8559f
+            752dec56513c
+          )
+
+          git -C "$REPO" worktree list --porcelain | awk '/^worktree /{n++} END{print "worktree_count=" (n+0)}'
+
+          git -C "$REPO" rev-list --objects --all --reflog > /tmp/agent-data-all-reflog.objects
+          git -C "$REPO" ls-files -s > /tmp/agent-data-index.objects
+
+          all_clear=1
+          for prefix in "${SHAS[@]}"; do
+            ref_hits="$(grep -Ec "^$prefix[0-9a-f]*([[:space:]]|$)" /tmp/agent-data-all-reflog.objects || true)"
+            index_hits="$(grep -Ec "^[0-9]+ $prefix[0-9a-f]* [0-9]+[[:space:]]" /tmp/agent-data-index.objects || true)"
+            echo "blob_${prefix}_reflog_or_ref_hits=$ref_hits"
+            echo "blob_${prefix}_index_hits=$index_hits"
+            if [ "$ref_hits" -ne 0 ] || [ "$index_hits" -ne 0 ]; then
+              all_clear=0
+            fi
+          done
+          rm -f /tmp/agent-data-all-reflog.objects /tmp/agent-data-index.objects
+
+          echo "giant_blob_recovery_dependencies_clear=$([ "$all_clear" = 1 ] && echo true || echo false)"
+          test "$all_clear" = 1
+          echo "agent_data_unreachable_blob_proof=PASS"
+          REMOTE

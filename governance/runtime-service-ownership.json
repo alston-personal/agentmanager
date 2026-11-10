@@ -1,0 +1,56 @@
+{
+  "schema": "agentos.runtime-service-ownership/v1",
+  "principles": [
+    "every_persistent_runtime_has_exactly_one_process_manager_owner",
+    "migration_to_a_new_process_manager_requires_explicit_retirement_of_the_previous_owner",
+    "port_ownership_is_verified_from_the_live_listener_not_inferred_from_service_active_state",
+    "service_active_without_listener_ownership_is_not_healthy",
+    "release_artifacts_must_not_self-resurrect_after_canonical_service_takeover",
+    "deployment_success_requires_runtime_owner_identity_and_target_acceptance"
+  ],
+  "process_managers": ["systemd-user", "systemd-system", "pm2", "docker", "supervisor", "manual"],
+  "required_runtime_evidence": [
+    "service_id",
+    "expected_process_manager",
+    "expected_working_directory_or_release",
+    "expected_listener",
+    "observed_pid",
+    "observed_parent_or_cgroup",
+    "observed_working_directory",
+    "observed_listener",
+    "acceptance_result"
+  ],
+  "migration_contract": {
+    "before_cutover": [
+      "identify_existing_process_manager_owner",
+      "identify_restart_or_resurrection_mechanism",
+      "disable_and_persist_retirement_of_old_owner",
+      "verify_old_listener_is_gone"
+    ],
+    "after_cutover": [
+      "start_canonical_owner",
+      "verify_port_listener_pid_belongs_to_canonical_owner",
+      "verify_working_directory_or_release_identity",
+      "run_target_specific_acceptance",
+      "record_receipt"
+    ]
+  },
+  "canonical_services": {
+    "agentos-dashboard": {
+      "process_manager": "systemd-user",
+      "unit": "agentos-dashboard.service",
+      "port": 3000,
+      "forbidden_competing_owners": ["pm2"],
+      "acceptance": [
+        "/dashboard/api/agentos/v1/health",
+        "/dashboard/api/agentos/v1/bootstrap"
+      ]
+    },
+    "agentos-realm-fabric": {
+      "process_manager": "systemd-user",
+      "unit": "agentos-realm-fabric.service",
+      "port": 8780,
+      "acceptance": ["/v1/health"]
+    }
+  }
+}

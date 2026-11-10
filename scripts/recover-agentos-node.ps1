@@ -9,6 +9,8 @@ $pkg = Join-Path $install 'agentos_node'
 $base = "https://raw.githubusercontent.com/alston-personal/agentmanager/$Ref"
 $files = @(
   'agentos_node/thin_client.py',
+  'agentos_node/runtime_provenance.py',
+  'agentos_node/node_adapter.py',
   'agentos_node/interactive_desktop.py',
   'agentos_node/thin_client_transport.py',
   'agentos_node/client_cli.py',

@@ -14,8 +14,8 @@ RED_PREFIXES = (
     "executor/", "node/", "agentos_node/", "scripts/deploy_",
     "scripts/check_", "docs/CORE_DEPLOYMENT",
 )
-RED_EXACT = {".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"}
-AMBER_PREFIXES = ("tests/", "dashboard/", "scripts/", "services/", "apps/", "studio/", "docs/")
+RED_EXACT = {".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS", "schedule.yaml"}
+AMBER_PREFIXES = ("tests/", "dashboard/", "scripts/", "services/", "apps/", "studio/", "docs/", "web/")
 GREEN_PREFIXES = ("content/", "stories/", "research/", "examples/")
 
 def classify(path):

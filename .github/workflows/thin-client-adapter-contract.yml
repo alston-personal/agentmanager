@@ -1,0 +1,39 @@
+name: Thin Client Adapter Contract
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/node_adapter.py'
+      - 'agentos_node/thin_client.py'
+      - 'agent_core/node_registry.py'
+      - 'scripts/install_thin_client_windows.ps1'
+      - 'tests/test_node_adapter.py'
+      - '.github/workflows/thin-client-adapter-contract.yml'
+  pull_request:
+    paths:
+      - 'agentos_node/node_adapter.py'
+      - 'agentos_node/thin_client.py'
+      - 'agent_core/node_registry.py'
+      - 'scripts/install_thin_client_windows.ps1'
+      - 'tests/test_node_adapter.py'
+      - '.github/workflows/thin-client-adapter-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  python-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -q pytest
+      - name: Compile adapter runtime
+        run: python -m py_compile agentos_node/node_adapter.py agentos_node/thin_client.py agent_core/node_registry.py
+      - name: Run adapter contract tests
+        run: python -m pytest -q tests/test_node_adapter.py tests/test_thin_client.py tests/test_node_registry_v01.py

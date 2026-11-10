@@ -1,0 +1,88 @@
+name: Hosted Finalize Dashboard Cutover
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-finalize-dashboard-cutover-hosted.yml'
+      - 'scripts/retire_legacy_dashboard_pm2_user.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Stage bounded PM2 retirement helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_PORT:-22}"             scripts/retire_legacy_dashboard_pm2_user.sh             "${DEPLOY_USER}@${ORACLE_HOST}:/tmp/retire_legacy_dashboard_pm2_user.sh"
+
+      - name: Finalize canonical Dashboard ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+
+          exec 9>/tmp/agentos-dashboard-deploy.lock
+          flock -w 360 9
+          echo 'dashboard_cutover_lock=PASS'
+
+          systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
+          chmod 700 /tmp/retire_legacy_dashboard_pm2_user.sh
+          /tmp/retire_legacy_dashboard_pm2_user.sh
+
+          systemctl --user restart agentos-dashboard.service
+          for _ in $(seq 1 30); do
+            if systemctl --user is-active --quiet agentos-dashboard.service && curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          systemctl --user is-active --quiet agentos-dashboard.service
+
+          LISTENER="$(ss -ltnp 2>/dev/null | grep ':3000 ' || true)"
+          echo "dashboard_listener=$LISTENER"
+          PID="$(printf '%s\n' "$LISTENER" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1)"
+          test -n "$PID"
+          CWD="$(readlink -f "/proc/$PID/cwd" 2>/dev/null || true)"
+          echo "dashboard_listener_pid=$PID"
+          echo "dashboard_listener_cwd=$CWD"
+          test "$CWD" = "/home/ubuntu/agentmanager/dashboard"
+
+          BODY=/tmp/local-bootstrap-final
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 8 'http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__probe__' || true)
+          echo "local_bootstrap_http=$CODE"
+          cat "$BODY"; echo
+          test "$CODE" = 401
+          ! grep -q 'Realm gateway route not allowlisted' "$BODY"
+          echo 'dashboard_canonical_cutover=PASS'
+          REMOTE
+
+      - name: Verify public bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY=/tmp/public-bootstrap-final
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 10 'https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__probe__' || true)
+          echo "public_bootstrap_http=$CODE"
+          cat "$BODY"; echo
+          test "$CODE" = 401
+          ! grep -q 'Realm gateway route not allowlisted' "$BODY"
+          echo 'realm_gateway_bootstrap_public=PASS'

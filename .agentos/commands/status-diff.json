@@ -1,0 +1,8 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "command": "/status-diff",
+  "steward": "governance.themis_command_steward",
+  "action": "themis.inventory.diff",
+  "runner": "scripts/themis_status_diff.py",
+  "description": "全域專案狀態盤點並比對與前次盤點的時序差異 (State Delta & Inventory Audit)"
+}

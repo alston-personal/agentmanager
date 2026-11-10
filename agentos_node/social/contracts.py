@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+import hashlib
+import json
+from typing import Any, Mapping
+
+
+WRITE_OPERATIONS = frozenset({"publish", "reply", "disconnect"})
+READ_OPERATIONS = frozenset({"status", "identity.read", "post.read", "post.insights.read", "replies.read", "public_post.read", "keyword.search", "connect"})
+SUPPORTED_OPERATIONS = READ_OPERATIONS | WRITE_OPERATIONS
+FORBIDDEN_RECEIPT_KEYS = frozenset({
+    "access_token", "refresh_token", "token", "app_secret", "client_secret",
+    "authorization", "authorization_code", "code", "credential", "credentials",
+    "cookie", "set_cookie", "oauth_url", "authorization_url",
+})
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _assert_secret_free(value: Any, path: str = "receipt") -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized = str(key).lower().replace("-", "_")
+            if normalized in FORBIDDEN_RECEIPT_KEYS or normalized.endswith("_token") or normalized.endswith("_secret"):
+                raise ValueError(f"secret-bearing receipt field forbidden: {path}.{key}")
+            _assert_secret_free(item, f"{path}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _assert_secret_free(item, f"{path}[{index}]")
+
+
+@dataclass(frozen=True)
+class SocialRequest:
+    """Provider-neutral request presented by a product to the shared social runtime."""
+
+    product_id: str
+    platform: str
+    operation: str
+    account_binding_id: str | None = None
+    target_account_id: str | None = None
+    primary_text: str | None = None
+    text_attachment: dict[str, str] | None = None
+    image_url: str | None = None
+    image_alt_text: str | None = None
+    image_urls: list[str] | None = None
+    image_alt_texts: list[str] | None = None
+    object_id: str | None = None
+    reply_to_id: str | None = None
+    return_to: str | None = None
+    write_intent_id: str | None = None
+    query: str | None = None
+    search_type: str | None = None
+    search_mode: str | None = None
+    auth_profile: str | None = None
+    schema: str = "agentos.social-request/v1"
+
+    def validate(self) -> "SocialRequest":
+        if self.schema != "agentos.social-request/v1":
+            raise ValueError("unsupported_social_request_schema")
+        if not self.product_id.strip():
+            raise ValueError("product_id_required")
+        if self.platform not in {"threads", "facebook", "instagram"}:
+            raise ValueError("unsupported_social_platform")
+        if self.operation not in SUPPORTED_OPERATIONS:
+            raise ValueError("unsupported_social_operation")
+        if self.operation in WRITE_OPERATIONS and not self.write_intent_id:
+            raise ValueError("explicit_write_intent_required")
+        if self.operation in {"publish", "reply"}:
+            if not self.account_binding_id or not self.target_account_id:
+                raise ValueError("explicit_target_account_required")
+            if not str(self.primary_text or "").strip():
+                raise ValueError("primary_text_required")
+            if self.text_attachment is not None:
+                if not isinstance(self.text_attachment, dict) or not str(self.text_attachment.get("plaintext") or "").strip():
+                    raise ValueError("text_attachment_plaintext_required")
+                if set(self.text_attachment) - {"plaintext", "link_attachment_url"}:
+                    raise ValueError("unsupported_text_attachment_field")
+        if self.image_urls is not None:
+            from urllib.parse import urlsplit
+            if (self.operation != "publish" or self.platform != "threads"
+                    or self.image_url is not None or self.image_alt_text is not None
+                    or self.text_attachment is not None
+                    or not isinstance(self.image_urls, list)
+                    or not 2 <= len(self.image_urls) <= 20
+                    or not isinstance(self.image_alt_texts, list)
+                    or len(self.image_alt_texts) != len(self.image_urls)):
+                raise ValueError("invalid_publish_carousel")
+            for media_url, alt in zip(self.image_urls, self.image_alt_texts):
+                if not isinstance(media_url, str) or not isinstance(alt, str):
+                    raise ValueError("invalid_publish_carousel_item")
+                parsed = urlsplit(media_url)
+                if (parsed.scheme != "https" or not parsed.hostname
+                        or parsed.username or parsed.password or parsed.fragment
+                        or len(media_url) > 2048 or not 0 < len(alt.strip()) <= 1000):
+                    raise ValueError("invalid_publish_carousel_item")
+        elif self.image_alt_texts is not None:
+            raise ValueError("carousel_alt_texts_without_images")
+        if self.image_url is not None:
+            from urllib.parse import urlsplit
+            url = urlsplit(self.image_url)
+            if self.operation != "publish" or self.platform != "threads" or url.scheme != "https" or not url.hostname or url.username or url.password or url.fragment or len(self.image_url) > 2048:
+                raise ValueError("invalid_publish_image_url")
+            if not str(self.image_alt_text or "").strip() or len(self.image_alt_text or "") > 1000:
+                raise ValueError("image_alt_text_required")
+            if self.text_attachment is not None:
+                raise ValueError("image_text_attachment_combination_unsupported")
+        elif self.image_alt_text is not None:
+            raise ValueError("image_alt_text_without_image")
+        if self.operation == "reply" and not self.reply_to_id:
+            raise ValueError("reply_target_required")
+        if self.operation == "keyword.search":
+            if not str(self.query or "").strip():
+                raise ValueError("search_query_required")
+            if str(self.search_type or "RECENT").upper() not in {"RECENT", "TOP"}:
+                raise ValueError("unsupported_search_type")
+            if str(self.search_mode or "KEYWORD").upper() not in {"KEYWORD", "TAG"}:
+                raise ValueError("unsupported_search_mode")
+        if self.auth_profile is not None and self.auth_profile not in {"viewer", "persona"}:
+            raise ValueError("unsupported_social_auth_profile")
+        if self.return_to:
+            value = self.return_to.strip()
+            if not value.startswith("/") or value.startswith("//"):
+                raise ValueError("unsafe_oauth_return_route")
+        return self
+
+
+def social_request_digest(request: SocialRequest) -> str:
+    """Stable digest of the exact validated provider-neutral request.
+
+    This binds runtime write acceptance to content, media, target, operation and
+    write intent rather than only to broad account/operation scope.
+    """
+    request.validate()
+    payload = json.dumps(
+        asdict(request),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+@dataclass
+class SocialReceipt:
+    """Bounded, secret-free result. Provider credentials are never serialized here."""
+
+    product_id: str
+    platform: str
+    operation: str
+    ok: bool
+    started_at: str
+    completed_at: str
+    capability: str
+    account_binding_id: str | None = None
+    target_account_id: str | None = None
+    platform_object_id: str | None = None
+    permalink: str | None = None
+    result: dict[str, Any] = field(default_factory=dict)
+    error_code: str | None = None
+    schema: str = "agentos.social-receipt/v1"
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        _assert_secret_free(payload)
+        return payload
+
+
+def receipt_for(request: SocialRequest, *, started_at: str, ok: bool, capability: str, result: dict[str, Any] | None = None, error_code: str | None = None, platform_object_id: str | None = None, permalink: str | None = None) -> SocialReceipt:
+    receipt = SocialReceipt(
+        product_id=request.product_id, platform=request.platform, operation=request.operation,
+        ok=ok, started_at=started_at, completed_at=utc_now(), capability=capability,
+        account_binding_id=request.account_binding_id, target_account_id=request.target_account_id,
+        platform_object_id=platform_object_id, permalink=permalink, result=result or {}, error_code=error_code,
+    )
+    receipt.to_dict()
+    return receipt

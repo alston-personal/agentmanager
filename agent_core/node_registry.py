@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
+from agent_core.runtime_ota import RuntimeOTAPolicyStore
 
 
 def _utc_now() -> str:
@@ -26,10 +27,11 @@ def _parse_utc(value: str | None) -> datetime | None:
 class NodeRegistry:
     """Persistent ONE-side Realm Node Map with heartbeat freshness semantics."""
 
-    def __init__(self, path: str | Path | None = None):
-        data_root = Path(os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
+    def __init__(self, path: str | Path | None = None, *, ota_policy: RuntimeOTAPolicyStore | None = None):
+        data_root = Path(os.environ.get('AGENTOS_DATA_ROOT') or os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
         self.path = Path(path) if path else data_root / 'realm' / 'nodes.json'
         self.lock_path = self.path.with_suffix(self.path.suffix + '.lock')
+        self.ota_policy = ota_policy or RuntimeOTAPolicyStore()
 
     def _empty(self) -> dict[str, Any]:
         return {'schema': 'agentos.node-registry/v0.1', 'realm_id': None, 'nodes': {}}
@@ -107,8 +109,7 @@ class NodeRegistry:
         self._validate(data)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
-        # unique_temp_publish_v1: tempfile.mkstemp provides the same unique-file
-        # safety property the acceptance guard describes as tempfile.NamedTemporaryFile.
+        # unique_temp_publish_v1: mkstemp provides unique-file safety.
         fd, tmp_name = tempfile.mkstemp(
             prefix=self.path.name + '.',
             suffix='.tmp',
@@ -159,17 +160,23 @@ class NodeRegistry:
             raise ValueError('manifest belongs to a different Realm')
 
         inventory = manifest.get('surface_inventory') or {}
+        executor_inventory = manifest.get('executor_inventory') or {}
+        adapters = manifest.get('adapters') or []
         runtime = manifest.get('runtime')
+        workspace_roots = manifest.get('workspace_roots')
         if not isinstance(inventory, dict):
             raise ValueError('surface_inventory must be an object')
+        if not isinstance(executor_inventory, dict):
+            raise ValueError('executor_inventory must be an object')
+        if not isinstance(adapters, list) or any(not isinstance(item, dict) for item in adapters):
+            raise ValueError('adapters must be an array of objects')
         if runtime is not None and not isinstance(runtime, dict):
             raise ValueError('runtime must be an object')
+        if workspace_roots is not None and not isinstance(workspace_roots, dict):
+            raise ValueError('workspace_roots must be an object')
 
         data['realm_id'] = realm_id
         existing = data['nodes'].get(node_id, {})
-        # issue70_runtime_provenance_persistence_v1: semantic equivalent of
-        # 'runtime': dict(runtime), while preserving the previously observed
-        # provenance when a manifest legitimately omits the optional field.
         entry = {
             'node_id': node_id,
             'role': role,
@@ -179,7 +186,12 @@ class NodeRegistry:
             'capabilities': sorted(set(manifest.get('capabilities') or [])),
             'tool_presence': dict(manifest.get('tool_presence') or {}),
             'surface_inventory': dict(inventory),
+            'executor_inventory': dict(executor_inventory),
+            'adapters': [dict(item) for item in adapters],
             'runtime': dict(runtime) if isinstance(runtime, dict) else dict(existing.get('runtime') or {}),
+            # workspace_root_authority_v1: persist the Node's own policy projection so
+            # controller maintenance tasks can choose a legal cwd without guessing a user path.
+            'workspace_roots': dict(workspace_roots) if isinstance(workspace_roots, dict) else dict(existing.get('workspace_roots') or {}),
             'status': existing.get('status', 'unknown'),
             'first_seen_at': existing.get('first_seen_at', _utc_now()),
             'last_manifest_at': manifest.get('observed_at') or _utc_now(),
@@ -255,10 +267,11 @@ class NodeRegistry:
             result['status_reason'] = 'heartbeat_stale'
         else:
             result['status'] = reported
-        return result
+        return RuntimeOTAPolicyStore.annotate_node(result, self.ota_policy.load())
 
     def node_map(self) -> dict[str, Any]:
         data = self.load()
+        policy = self.ota_policy.load()
         nodes = [self._effective_node(node) for node in data['nodes'].values()]
         nodes.sort(key=lambda n: (n.get('role') != 'core', n.get('node_id', '')))
         realm_caps = sorted({cap for node in nodes for cap in node.get('capabilities', []) if node.get('status') != 'offline'})
@@ -279,4 +292,8 @@ class NodeRegistry:
             'realm_capabilities': realm_caps,
             'realm_tool_presence': tools,
             'realm_surface_providers': surface_providers,
+            'runtime_ota': policy,
+            'runtime_converged_count': sum(1 for node in nodes if node.get('runtime_status') == 'converged'),
+            'runtime_drifted_count': sum(1 for node in nodes if node.get('runtime_status') == 'drifted'),
+            'runtime_unknown_count': sum(1 for node in nodes if node.get('runtime_status') == 'unknown'),
         }

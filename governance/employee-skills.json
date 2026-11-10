@@ -1,0 +1,155 @@
+{
+  "schema": "agentos.employee-skills/v1",
+  "default_effect": "deny",
+  "skills": {
+    "spec.audit": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Audit formal specifications for owner, target, implementation evidence, drift and closure gaps.",
+      "required_capabilities": [
+        "governance.spec.audit"
+      ],
+      "allowed_intents": [
+        "audit"
+      ],
+      "input_fields": [
+        "scope",
+        "target_refs"
+      ],
+      "output_types": [
+        "spec_drift_report",
+        "stale_spec_finding",
+        "closure_gap"
+      ],
+      "mutation_authority": false
+    },
+    "writing.project.continue": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Continue an explicitly assigned writing project from durable project and editorial state and produce bounded writing progress or a blocker.",
+      "required_capabilities": [
+        "writing.project.continue"
+      ],
+      "allowed_intents": [
+        "continue",
+        "revise",
+        "checkpoint"
+      ],
+      "input_fields": [
+        "project_id",
+        "assignment_id",
+        "thread_head",
+        "editorial_constraints"
+      ],
+      "output_types": [
+        "writing_checkpoint",
+        "chapter_candidate",
+        "editorial_blocker"
+      ],
+      "mutation_authority": false
+    },
+    "youtube.optimization.scan": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Inspect explicitly authorized YouTube channel or video state and produce grounded optimization candidates without granting API-side mutation authority.",
+      "required_capabilities": [
+        "youtube.optimization.scan"
+      ],
+      "allowed_intents": [
+        "scan",
+        "analyze",
+        "recommend"
+      ],
+      "input_fields": [
+        "project_id",
+        "assignment_id",
+        "channel_scope",
+        "video_scope"
+      ],
+      "output_types": [
+        "optimization_scan",
+        "metadata_candidate",
+        "subtitle_candidate",
+        "playlist_candidate",
+        "authorization_blocker"
+      ],
+      "mutation_authority": false
+    },
+    "engineering.work.inspect": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Inspect an explicitly assigned engineering work item and return bounded diagnostic evidence; cannot itself mutate repositories or claim Inspector PASS.",
+      "required_capabilities": [
+        "engineering.work.inspect"
+      ],
+      "allowed_intents": [
+        "inspect",
+        "plan"
+      ],
+      "input_fields": [
+        "project_id",
+        "assignment_id",
+        "work_id"
+      ],
+      "output_types": [
+        "engineering_plan",
+        "work_status_evidence",
+        "authorization_blocker"
+      ],
+      "mutation_authority": false
+    },
+    "security.audit": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Perform scoped, evidence-based independent code and security review without granting write, merge, deployment or self-approval authority.",
+      "required_capabilities": [
+        "claw.review.readonly"
+      ],
+      "allowed_intents": [
+        "review",
+        "inspect"
+      ],
+      "input_fields": [
+        "assignment_id",
+        "target_assignment_id",
+        "target_commit_sha"
+      ],
+      "output_types": [
+        "validation_report",
+        "blocking_finding",
+        "risk_assessment"
+      ],
+      "mutation_authority": false
+    },
+    "github.technology.scan": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Read a bounded list of public GitHub repository metadata and emit provenance-grounded technology candidate findings; no execution or work item write authority.",
+      "required_capabilities": [
+        "github.technology.scan"
+      ],
+      "allowed_intents": [
+        "scan"
+      ],
+      "input_fields": [
+        "assignment_id",
+        "topic_scope",
+        "repository_names"
+      ],
+      "output_types": [
+        "technology_candidate_evaluation",
+        "research_checkpoint_receipt",
+        "source_unavailable"
+      ],
+      "mutation_authority": false
+    }
+  },
+  "invariants": [
+    "skill_id_never_grants_capability_authority",
+    "employee_role_capabilities_must_cover_all_skill_required_capabilities",
+    "skill_contract_contains_no_executable_argv_shell_url_endpoint_or_credentials",
+    "skill_request_is_intent_only_and_requires_downstream_governed_execution",
+    "unknown_or_inactive_skill_fails_closed",
+    "product_employee_skill_never_grants_repository_or_external_api_write_authority"
+  ]
+}

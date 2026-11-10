@@ -2,10 +2,6 @@ name: Oracle Verify LayoutLib PNG JPEG Curl
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-verify-layoutlib-images-curl.yml'
-
 permissions:
   contents: write
 

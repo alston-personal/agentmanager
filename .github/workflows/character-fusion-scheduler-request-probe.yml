@@ -1,0 +1,115 @@
+name: Character Fusion Scheduler Request Probe
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/character-fusion-scheduler-request-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      BASE: https://studio.milkcat.org/dashboard/api/agentos
+      REQUEST_ID: agentos.character_fusion.smoke-1791776490-350feb4f
+    steps:
+      - name: Mint scheduler credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=agentos-scheduler"
+          curl -fsS --max-time 15 \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "$url" > "$RUNNER_TEMP/oidc.json"
+          token="$(python3 - "$RUNNER_TEMP/oidc.json" <<'PY'
+          import json,sys
+          v=str(json.load(open(sys.argv[1],encoding='utf-8')).get('value') or '')
+          assert v.count('.')==2
+          print(v)
+          PY
+          )"
+          echo "::add-mask::$token"
+          printf 'TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Read timed-out request
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20 \
+            -H "Authorization: Bearer $TOKEN" \
+            "$BASE/v1/dispatch/requests/$REQUEST_ID" > "$RUNNER_TEMP/request.json"
+          python3 - "$RUNNER_TEMP/request.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print("request_state="+str(d.get("state") or "unknown"))
+          r=d.get("receipt") or {}
+          print("request_receipt_present="+str(bool(r)).lower())
+          if r:
+              print("request_receipt_ok="+str(r.get("ok")).lower())
+              print("request_failure_class="+str(r.get("failure_class") or "none"))
+              s=r.get("scheduler") or {}
+              print("request_worker_id="+str(s.get("worker_id") or "none"))
+              print("request_worker_role="+str(s.get("worker_role") or "none"))
+              print("request_node="+str(s.get("node") or "none"))
+              print("request_locks="+",".join(map(str,s.get("locks") or [])))
+          print("character_fusion_request_probe=PASS")
+          PY
+
+      - name: Read scheduler state
+        shell: bash
+        run: |
+          set -euo pipefail
+          body='{"schema":"agentos.runner-window-dispatch/v1","capability":"agentos.scheduler","operation":"status","source_commit":"0000000000000000000000000000000000000000","payload":{}}'
+          code="$(curl -sS -o "$RUNNER_TEMP/submit.json" -w '%{http_code}' --max-time 15 \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d "$body" "$BASE/v1/dispatch")"
+          test "$code" = 202
+          req="$(python3 - "$RUNNER_TEMP/submit.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(d['request_id'])
+          PY
+          )"
+          for _ in $(seq 1 60); do
+            code="$(curl -sS -o "$RUNNER_TEMP/status.json" -w '%{http_code}' --max-time 10 \
+              -H "Authorization: Bearer $TOKEN" "$BASE/v1/dispatch/requests/$req" || true)"
+            if [ "$code" = 200 ] && python3 - "$RUNNER_TEMP/status.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          raise SystemExit(0 if d.get('state')=='completed' else 1)
+          PY
+            then break; fi
+            sleep 2
+          done
+          python3 - "$RUNNER_TEMP/status.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          r=d.get('receipt') or {}
+          out=r.get('output') or r.get('result') or {}
+          if isinstance(out,str):
+              try: out=json.loads(out)
+              except Exception: out={}
+          print("scheduler_probe_state="+str(d.get("state") or "unknown"))
+          print("scheduler_receipt_ok="+str(r.get("ok")).lower())
+          if isinstance(out,dict):
+              print("scheduler_busy_worker_count="+str(out.get("busy_worker_count","unknown")))
+              q=out.get("queue_depth") or {}
+              print("scheduler_control_queue="+str(q.get("control","unknown")))
+              locks=out.get("lock_holders") or {}
+              print("scheduler_oracle_core_lock_holder="+str(locks.get("oracle-core-runtime") or "none"))
+              workers=out.get("workers") or {}
+              for wid,row in workers.items():
+                  if isinstance(row,dict) and row.get("role")=="control":
+                      cur=row.get("current_job") or {}
+                      print("control_worker_id="+str(wid))
+                      print("control_worker_state="+str(row.get("state") or "unknown"))
+                      print("control_worker_request_id="+str(cur.get("request_id") or "none"))
+                      print("control_worker_action="+str(cur.get("action") or "none"))
+          print("scheduler_status_probe=PASS")
+          PY

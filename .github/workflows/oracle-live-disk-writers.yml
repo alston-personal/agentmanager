@@ -1,0 +1,68 @@
+name: Oracle Live Disk Writers
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-live-disk-writers.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: ${{ vars.ORACLE_HOST || '161.33.24.170' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Sample process write deltas
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" python3 - <<'PY'
+          import os, time
+
+          def snap():
+              out = {}
+              for name in os.listdir('/proc'):
+                  if not name.isdigit():
+                      continue
+                  pid = int(name)
+                  try:
+                      vals = {}
+                      with open(f'/proc/{pid}/io', 'r', encoding='utf-8') as f:
+                          for line in f:
+                              k, v = line.split(':', 1)
+                              vals[k.strip()] = int(v.strip())
+                      with open(f'/proc/{pid}/cmdline', 'rb') as f:
+                          raw = f.read().replace(b'\x00', b' ').decode('utf-8', 'replace').strip()
+                      if not raw:
+                          with open(f'/proc/{pid}/comm', 'r', encoding='utf-8') as f:
+                              raw = f.read().strip()
+                      out[pid] = (vals.get('write_bytes', 0), vals.get('cancelled_write_bytes', 0), raw[:500])
+                  except Exception:
+                      pass
+              return out
+
+          a = snap()
+          t0 = time.time()
+          time.sleep(8)
+          b = snap()
+          dt = max(0.001, time.time() - t0)
+          rows = []
+          for pid, (wb2, cw2, cmd) in b.items():
+              wb1, cw1, _ = a.get(pid, (wb2, cw2, cmd))
+              delta = max(0, wb2 - wb1)
+              cancelled = max(0, cw2 - cw1)
+              if delta:
+                  rows.append((delta, cancelled, pid, cmd))
+          print('=== top live writers over %.2fs ===' % dt)
+          for delta, cancelled, pid, cmd in sorted(rows, reverse=True)[:80]:
+              print(f'{delta}\t{delta/dt:.1f} B/s\tcancelled={cancelled}\tpid={pid}\t{cmd}')
+          PY

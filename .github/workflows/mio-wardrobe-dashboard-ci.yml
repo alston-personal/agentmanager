@@ -1,0 +1,41 @@
+name: Mio Wardrobe Dashboard CI
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'dashboard/app/api/wardrobe/**'
+      - 'dashboard/app/api/auth/session/route.ts'
+      - 'dashboard/lib/tryon-jobs.ts'
+      - 'dashboard/lib/wardrobe-*.ts'
+      - 'dashboard/lib/wardrobe-*.mjs'
+      - 'dashboard/lib/auth/**'
+      - '.github/workflows/mio-wardrobe-dashboard-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Assert wardrobe route sources
+        run: |
+          test -f app/api/wardrobe/catalog/route.ts
+          test -f app/api/wardrobe/auth-handoff/route.ts
+          test -f app/api/wardrobe/tryon/render/route.ts
+          test -f 'app/api/wardrobe/tryon/jobs/[jobId]/route.ts'
+          test -f 'app/api/wardrobe/tryon/assets/[jobId]/route.ts'
+          grep -Fq "role: roleForIdentity(user)" app/api/auth/session/route.ts

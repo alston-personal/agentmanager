@@ -1,0 +1,39 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "wardrobe.visual-review",
+  "display_name": "Wardrobe Visual Review",
+  "semantic_owner": "wardrobe",
+  "version": "0.1.0",
+  "lifecycle": "candidate",
+  "contract": {
+    "input_schema": "agentos.wardrobe-visual-review-request/v1",
+    "outputs": [
+      "agentos.wardrobe-visual-review-receipt/v1"
+    ],
+    "side_effects": []
+  },
+  "invocation": {
+    "kind": "python-library",
+    "entrypoint": "capabilities.wardrobe_visual_review.evaluate_review",
+    "example": "Evaluate machine checks plus an optional semantic backend receipt before promoting a try-on candidate."
+  },
+  "discovery": {
+    "governance_directory": true,
+    "provider_id": "service://wardrobe.visual-review",
+    "reuse_before_build": true
+  },
+  "policy": {
+    "generated_image_is_not_success": true,
+    "all_selected_layers_must_be_verified": true,
+    "identity_preservation_required": true,
+    "detached_reference_forbidden": true,
+    "semantic_backend_optional_for_candidate_state": true,
+    "semantic_backend_required_for_verified_state": true
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}

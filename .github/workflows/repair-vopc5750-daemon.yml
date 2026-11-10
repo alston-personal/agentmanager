@@ -1,0 +1,119 @@
+name: Repair vopc5750 Thin Client Daemon
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Queue governed Windows daemon repair
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_id='vopc5750'
+          task_id='repair-thin-client-daemon-' + str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $taskName='AgentOS Thin Client'
+          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $launcher=Join-Path $install 'agentos-client.cmd'
+          if(-not (Test-Path $launcher)){ throw "missing launcher: $launcher" }
+
+          $action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/d /c `"$launcher`" run" -WorkingDirectory $install
+          $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+          $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+          Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client persistent user-session daemon' -Force | Out-Null
+
+          $watchdogName='AgentOS Thin Client Watchdog'
+          $watchdogScript=Join-Path $install 'thin-client-watchdog.ps1'
+          @'
+          $taskName='AgentOS Thin Client'
+          $info=Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+          $task=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+          if($null -eq $task -or $null -eq $info){ exit 2 }
+          if($task.State -ne 'Running'){
+            Start-ScheduledTask -TaskName $taskName
+            Start-Sleep -Seconds 3
+          }
+          '@ | Set-Content -Encoding UTF8 $watchdogScript
+          $wdAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$watchdogScript`""
+          $wdTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+          $wdSettings=New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+          Register-ScheduledTask -TaskName $watchdogName -Action $wdAction -Trigger $wdTrigger -Settings $wdSettings -Description 'Restarts AgentOS Thin Client if it is not running' -Force | Out-Null
+
+          if((Get-ScheduledTask -TaskName $taskName).State -ne 'Running'){
+            Start-ScheduledTask -TaskName $taskName
+            Start-Sleep -Seconds 3
+          }
+          $main=Get-ScheduledTask -TaskName $taskName
+          $mainInfo=Get-ScheduledTaskInfo -TaskName $taskName
+          $wd=Get-ScheduledTask -TaskName $watchdogName
+          Write-Output ("thin_client_state=" + $main.State)
+          Write-Output ("thin_client_last_result=" + $mainInfo.LastTaskResult)
+          Write-Output ("watchdog_state=" + $wd.State)
+          Write-Output 'daemon_repair=PASS'
+          '''
+          task={
+            'schema':'agentos.node-task/v0.1',
+            'task_id':task_id,
+            'action':'shell.exec',
+            'executable':'powershell',
+            'argv':['-NoProfile','-NonInteractive','-Command',ps],
+            'cwd':r'C:\Users\alston.huang\AgentOS',
+            'timeout_seconds':60,
+            'cognition_ids_used':[]
+          }
+          queued=RealmFabricStore().queue_task(node_id,task)
+          print('repair_task='+json.dumps(queued,sort_keys=True))
+          for _ in range(40):
+            r=RealmFabricStore().get_receipt(task_id)
+            if r:
+              print('repair_receipt='+json.dumps(r,sort_keys=True))
+              if r.get('ok') is not True:
+                raise SystemExit('daemon repair failed')
+              print('daemon_repair_receipt=PASS')
+              raise SystemExit(0)
+            time.sleep(2)
+          raise SystemExit('daemon repair receipt timeout')
+          PY
+
+      - name: Verify autonomous restart
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          node_id='vopc5750'
+          task_id='verify-daemon-autonomy-'+str(int(time.time()))
+          task={
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'desktop.open_url',
+            'url':'https://example.com/?agentos=daemon-repair','cognition_ids_used':[]}
+          RealmFabricStore().queue_task(node_id,task)
+          for _ in range(30):
+            r=RealmFabricStore().get_receipt(task_id)
+            if r:
+              print('verify_receipt='+json.dumps(r,sort_keys=True))
+              if r.get('ok') is True and r.get('action') == 'desktop.open_url':
+                print('vopc_autonomous_control=PASS')
+                raise SystemExit(0)
+              raise SystemExit('autonomous control failed')
+            time.sleep(2)
+          raise SystemExit('autonomous control receipt timeout')
+          PY

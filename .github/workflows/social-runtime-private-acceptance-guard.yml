@@ -1,0 +1,43 @@
+name: Social Runtime Private Acceptance Guard
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'scripts/social_runtime_accept.py'
+      - 'tests/test_social_runtime_accept.py'
+      - '.github/workflows/social-runtime-private-acceptance-guard.yml'
+  push:
+    branches:
+      - 'core/267-private-acceptance-cli'
+      - 'core/integration'
+    paths:
+      - 'scripts/social_runtime_accept.py'
+      - 'tests/test_social_runtime_accept.py'
+      - '.github/workflows/social-runtime-private-acceptance-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run private acceptance CLI unit tests
+        run: python3 -m unittest -v tests.test_social_runtime_accept
+      - name: Verify fixed private control boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('scripts/social_runtime_accept.py').read_text(encoding='utf-8')
+          assert "http://127.0.0.1:8771/internal/v1/social/acceptances" in s
+          assert 'X-AgentOS-Control-Token' in s
+          assert 'print(token)' not in s
+          assert 'sys.argv' not in s
+          assert 'LOCAL_ACCEPTANCE_URL' in s
+          print('social_runtime_private_acceptance_boundary=PASS')
+          PY

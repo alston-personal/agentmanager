@@ -1,0 +1,10 @@
+{
+  "schema":"agentos.monitor/v1",
+  "monitor":{"id":"threads-auth-health","owner":"system"},
+  "goal":{"description":"Monitor Threads GUI session authentication"},
+  "schedule":{"type":"interval","every":"30m","timezone":"Asia/Taipei","run_immediately":true},
+  "execution":{"capability":"threads.dm.login.probe"},
+  "payload":{},
+  "condition":{"classify":"AUTH_REQUIRED"},
+  "notification_policy":{"severity":"medium","cooldown":"6h","dedupe":true}
+}

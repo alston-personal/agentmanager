@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.vision-ocr-probe",
+  "node_id": "mbpr",
+  "source_commit": "d80649ef86968a1c96ff95a035cbdc10575c3d60",
+  "nonce": "vision-ocr-1790568340062"
+}

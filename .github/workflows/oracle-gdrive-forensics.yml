@@ -1,0 +1,147 @@
+name: Oracle Google Drive Forensics
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-gdrive-forensics.json'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Read-only Google Drive mount forensics
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -u
+          echo '=== identity/time ==='
+          date -Is
+          hostname
+          uptime -s || true
+          who -b || true
+          last -x reboot -n 8 2>/dev/null || true
+
+          echo '=== current mount state ==='
+          mountpoint -q "$HOME/gdrive"; echo "gdrive_mountpoint_rc=$?"
+          findmnt "$HOME/gdrive" 2>/dev/null || true
+          mount | grep -Ei 'rclone|gdrive|google|fuse' || true
+          df -hT "$HOME/gdrive" "$HOME/agent-data" "$HOME/agentmanager" 2>/dev/null || true
+
+          echo '=== rclone config/remotes (redacted values) ==='
+          command -v rclone || true
+          rclone version 2>/dev/null | head -n 5 || true
+          rclone listremotes 2>/dev/null || true
+          RC_CFG="$(rclone config file 2>/dev/null | tail -n1 || true)"
+          echo "rclone_config_file=$RC_CFG"
+          if [ -n "$RC_CFG" ] && [ -f "$RC_CFG" ]; then
+            sed -E 's/(token|client_secret|password|pass|secret)[[:space:]]*=.*/\1 = REDACTED/I' "$RC_CFG" | head -n 120
+          fi
+
+          echo '=== persistence config ==='
+          echo '-- user systemd units --'
+          find "$HOME/.config/systemd/user" -maxdepth 2 -type f -print 2>/dev/null | sort | while read -r f; do
+            if grep -Eqi 'rclone|gdrive|google-drive|/home/.*/gdrive' "$f"; then
+              echo "### $f"
+              sed -E 's/(token|client_secret|password|pass|secret)=.*/\1=REDACTED/I' "$f" | head -n 160
+            fi
+          done
+          echo '-- enabled user units --'
+          systemctl --user list-unit-files 2>/dev/null | grep -Ei 'rclone|gdrive|google|mount' || true
+          systemctl --user list-units --all 2>/dev/null | grep -Ei 'rclone|gdrive|google|mount' || true
+          echo '-- system units --'
+          systemctl list-unit-files 2>/dev/null | grep -Ei 'rclone|gdrive|google|mount' || true
+          echo '-- cron --'
+          crontab -l 2>/dev/null | grep -Ei 'rclone|gdrive|google|mount' || true
+          echo '-- fstab --'
+          grep -Ei 'rclone|gdrive|google|fuse' /etc/fstab 2>/dev/null || true
+          echo '-- shell/profile references --'
+          grep -RniE 'rclone .*mount|gdrive|google-drive' "$HOME/.profile" "$HOME/.bashrc" "$HOME/.config" 2>/dev/null | head -n 200 || true
+
+          echo '=== mount history current + previous boots ==='
+          echo '-- current boot journal --'
+          journalctl --user -b --no-pager 2>/dev/null | grep -Ei 'rclone|gdrive|google|fuse|mount' | tail -n 250 || true
+          echo '-- previous boot journal --'
+          journalctl --user -b -1 --no-pager 2>/dev/null | grep -Ei 'rclone|gdrive|google|fuse|mount' | tail -n 300 || true
+          echo '-- system previous boot relevant --'
+          journalctl -b -1 --no-pager 2>/dev/null | grep -Ei 'rclone|gdrive|google.*drive|fuse.*mount' | tail -n 200 || true
+
+          echo '=== local gdrive underlay summary ==='
+          stat "$HOME/gdrive" 2>/dev/null || true
+          timeout 20 du -sh "$HOME/gdrive" 2>/dev/null || true
+          echo '-- top-level local --'
+          find "$HOME/gdrive" -mindepth 1 -maxdepth 1 -printf '%y\t%TY-%Tm-%TdT%TH:%TM:%TS\t%s\t%f\n' 2>/dev/null | sort | head -n 200
+          echo '-- newest local files --'
+          find "$HOME/gdrive" -xdev -type f -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%s\t%P\n' 2>/dev/null | sort -nr | head -n 120
+          echo '-- oldest local files --'
+          find "$HOME/gdrive" -xdev -type f -printf '%T@\t%TY-%Tm-%TdT%TH:%TM:%TS\t%s\t%P\n' 2>/dev/null | sort -n | head -n 80
+          echo '-- local file count/bytes --'
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path.home()/'gdrive'
+          n=0; total=0
+          for p in root.rglob('*'):
+              try:
+                  if p.is_file():
+                      st=p.stat(); n+=1; total+=st.st_size
+              except OSError:
+                  pass
+          print(f'local_files={n}')
+          print(f'local_bytes={total}')
+          PY
+
+          echo '=== remote gdrive top level ==='
+          rclone lsf gdrive: --max-depth 2 --format 'pst' 2>/dev/null | head -n 300 || true
+
+          echo '=== targeted local-vs-remote existence sample ==='
+          python3 - <<'PY' > /tmp/gdrive-local-sample.txt
+          from pathlib import Path
+          root=Path.home()/'gdrive'
+          rows=[]
+          for p in root.rglob('*'):
+              try:
+                  if p.is_file():
+                      st=p.stat()
+                      rows.append((st.st_mtime, st.st_size, p.relative_to(root).as_posix()))
+              except OSError:
+                  pass
+          rows.sort(reverse=True)
+          for m,s,rel in rows[:80]:
+              print(f'{s}\t{rel}')
+          PY
+          while IFS=$'\t' read -r size rel; do
+            [ -n "$rel" ] || continue
+            if rclone lsf "gdrive:$rel" --files-only --format s 2>/dev/null | grep -q .; then
+              remote_size="$(rclone lsf "gdrive:$rel" --files-only --format s 2>/dev/null | head -n1 || true)"
+              if [ "$remote_size" = "$size" ]; then
+                echo "SAME_SIZE\t$size\t$rel"
+              else
+                echo "DIFF_SIZE\tlocal=$size\tremote=$remote_size\t$rel"
+              fi
+            else
+              echo "LOCAL_ONLY\t$size\t$rel"
+            fi
+          done < /tmp/gdrive-local-sample.txt
+
+          echo '=== rclone non-destructive check shallow ==='
+          timeout 90 rclone check "$HOME/gdrive" gdrive: --size-only --one-way --max-depth 3 --combined /tmp/gdrive-check.txt 2>&1 || true
+          if [ -f /tmp/gdrive-check.txt ]; then
+            echo '-- combined counts --'
+            cut -c1 /tmp/gdrive-check.txt | sort | uniq -c || true
+            echo '-- first differences --'
+            grep -E '^[+*-]' /tmp/gdrive-check.txt | head -n 200 || true
+          fi
+          REMOTE

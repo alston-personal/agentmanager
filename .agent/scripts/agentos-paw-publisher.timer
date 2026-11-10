@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll existing Paw handoff receipts for separately authorized Draft PR publication
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=60s
+Persistent=true
+Unit=agentos-paw-publisher.service
+
+[Install]
+WantedBy=timers.target
