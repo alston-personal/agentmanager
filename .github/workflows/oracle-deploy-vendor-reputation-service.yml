@@ -159,19 +159,20 @@ jobs:
           import json
           x=json.load(open('.agentos/evidence/vendor-source-register.json'))
           assert x['active_sources'] >= 2, x
-          assert x['new_source_registered'] in (0,1), x
+          assert x['canonical_state'] == 'resolved', x
+          assert x['registered_input_alias'] >= 1, x
+          assert x['unique_source_objects'] >= 2, x
+          assert x['raw_threads_content_emitted'] is False, x
           assert x['core_modified'] is False, x
           PY
 
-      - name: Commit sanitized deployment evidence
+      - name: Preserve sanitized deployment evidence
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          test -s .agentos/evidence/vendor-service-deploy.json && git add .agentos/evidence/vendor-service-deploy.json || true
-          test -s .agentos/evidence/vendor-source-register.json && git add .agentos/evidence/vendor-source-register.json || true
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(vendors): service deployment and source registry'
-          git push
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-release-receipts-${{ github.run_id }}
+          path: |
+            .agentos/evidence/vendor-service-deploy.json
+            .agentos/evidence/vendor-source-register.json
+          if-no-files-found: error
+          retention-days: 30
