@@ -18,11 +18,11 @@ try{
  Set-Content -LiteralPath (Join-Path $installRoot 'state\client.json') -Value $config
  Set-Content -LiteralPath (Join-Path $installRoot 'agentos-client.cmd') -Encoding Ascii -Value '@echo off','exit /b 0'
  $selector=Join-Path $repo 'scripts\wow_agentos_select_game.ps1'
- $selected=@(& $selector -CandidateRoots @($gameRoot) -NoFolderPicker | Out-String).Trim()
+ $selected=(& $selector -CandidateRoots @($gameRoot) -NoFolderPicker | Out-String).Trim()
  Assert-True ($selected -eq $gameRoot) 'automatic discovery did not select the synthetic Forever root'
  $noGame=Join-Path $temp 'not-a-forever-install'
  New-Item -ItemType Directory -Force -Path $noGame | Out-Null
- $none=@(& $selector -WowRoot $noGame -NoFolderPicker | Out-String).Trim()
+ $none=(& $selector -WowRoot $noGame -NoFolderPicker | Out-String).Trim()
  Assert-True (-not $none) 'invalid game directory was accepted'
 
  # Tamper with a packaged file before first install: manifest verification must fail.
