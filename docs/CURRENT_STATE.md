@@ -1,5 +1,9 @@
 # AgentOS Current Architecture & Reality
 
+## Event Facility installer acceptance — historical systemd failed latch (2026-11-10)
+
+Post-merge Persona PDCA Heartbeat run `42738460689` confirmed Oracle created/enabled the `agentos-event-facility.timer` symlink, but its installer failed before structural PASS because `agentos-persona-pdca-heartbeat.service` retained a historical failed state (older non-fast-forward `my-agent-data` push). A newer canonical Persona state was subsequently observed at cycle 803, `2026-11-10T06:26:58Z`. This patch keeps a stale canonical state as a hard installer failure but treats an older failed systemd latch as an advisory condition when the authoritative canonical state is fresh within the existing 5400-second recovery window. This does **not** establish Event Facility timer liveness, a persisted daily draw, event emission, wake execution or Persona ACK. Re-run the existing installation workflow and inspect Oracle user units and emitted data before asserting mind-body acceptance. Do not restart Persona PDCA merely to turn an installation check green.
+
 ## Event Facility / Mio subscription — independent facility source implementation (2026-11-10)
 
 **Owner-defined contract:** Subscriber `persona:sunlake-milkcat` registers its own nine fictional daily-life event definitions, 42% per-day probability, maximum two occurrences/day, four-hour separation, severity weights and temporary effects in `my-agent-data/personas/sunlake-milkcat/pdca/event_subscriptions/mio-daily-life.json`. The shared, independent `scripts/agentos_event_facility.py` enforces declarative schemas, target identity, allowed effects, deterministic daily count and stable occurrence identifiers. Its code cannot publish to Threads, execute arbitrary subscriber code or promote persona IR.
