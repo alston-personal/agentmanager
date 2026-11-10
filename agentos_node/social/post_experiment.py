@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -69,14 +70,22 @@ def learning_record(snapshot: dict[str, Any], *, elapsed_minutes: int,
     metrics = dict(observed_metrics or {})
     if not all(isinstance(name, str) and name for name in metrics):
         raise ValueError("social_experiment_metric_name_invalid")
-    if any(isinstance(v, bool) or not isinstance(v, (int, float, type(None))) for v in metrics.values()):
-        raise ValueError("social_experiment_metric_value_unverified")
+    # Existing Threads adapters may return nested or textual metric values.
+    # Retain those observations without breaking v1 callers, but never treat
+    # them as verified quantitative evidence.
+    numeric_metrics = bool(metrics) and all(
+        isinstance(v, (int, float)) and not isinstance(v, bool)
+        and math.isfinite(v) for v in metrics.values()
+    )
     # Maturity is the age at the *actual* snapshot, not the publishing hour.
     maturity = ("early" if elapsed_minutes < 1440 else
                 "developing" if elapsed_minutes < 10080 else "mature")
     post = snapshot["post"]
     caption_digest = post.get("caption_sha256")
-    eligible = bool(caption_digest and insights_status == "pass" and metrics)
+    evidence_ready = bool(caption_digest and insights_status == "pass" and numeric_metrics)
+    # A validated source read is not an approved causal/strategy learning case.
+    # The latter needs an independent coverage/confound review before promotion.
+    eligible = False
     return {
         "schema": "agentos.social-post-learning-observation/v1",
         "experiment_id": snapshot["experiment_id"],
@@ -86,7 +95,8 @@ def learning_record(snapshot: dict[str, Any], *, elapsed_minutes: int,
         "captured_at": snapshot["captured_at"],
         "platform": "threads",
         "maturity": maturity,
-        "analysis_status": "candidate" if eligible else "pending",
+        "analysis_status": "candidate" if evidence_ready else "pending",
+        "source_evidence_ready": evidence_ready,
         "analysis_eligible": eligible,
         "causal_claim_allowed": False,
         "insights_status": insights_status,
