@@ -83,3 +83,23 @@ The workflow artifact is expressly labeled **unverified preview**, retained
 temporarily for CI review, and must not be linked or distributed as the
 finished official-site installer. Promotion requires Windows CI PASS and
 real-client acceptance, governed release approval and signature.
+
+## Install-time package integrity requirement
+
+The installer now refuses installation unless the extracted preview bundle
+contains `manifest.json` with the exact required seven payload files and
+their matching SHA-256 digests. It rejects missing, malformed, tampered or
+symlinked payload files **before** it writes to a game directory. The Windows
+functional suite deliberately alters the extracted Addon Lua file, requires
+`BUNDLE_HASH_MISMATCH`, checks the game remains untouched, then restores the
+package and proceeds with normal installation.
+
+The manifest prevents accidental and undetected changes **relative to the
+shipped manifest**, but it is not a trust anchor: both a payload and an unsigned
+manifest could be replaced by an attacker. Official release additionally
+requires a trusted digital signature and versioned distribution.
+
+The manifest verification requirement means the installer is designed to run
+from an extracted ZIP bundle, not directly from a bare source checkout lacking
+the generated manifest. No live WoW client, Windows deployment or public
+download is claimed by these source changes.
