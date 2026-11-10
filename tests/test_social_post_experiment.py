@@ -1,5 +1,7 @@
 import unittest
 import hashlib
+from pathlib import Path
+from scripts.run_social_post_experiment_queue_user import REPO as MONITOR_RELEASE_ROOT
 from agentos_node.social.post_experiment import CheckpointPolicy, build_snapshot, learning_record, next_observation
 
 class SocialPostExperimentTests(unittest.TestCase):
@@ -72,5 +74,15 @@ class SocialPostExperimentTests(unittest.TestCase):
             captured_at="2026-11-10T00:00:00Z")
         with self.assertRaises(ValueError):
             learning_record(snap,elapsed_minutes=-1)
+
+    def test_queue_uses_same_immutable_release_for_monitor_child(self):
+        # Under Oracle, both files are loaded from the same pinned release.
+        # The mutable host checkout is never accepted as the monitor path.
+        expected=Path(__file__).resolve().parents[1]
+        self.assertEqual(MONITOR_RELEASE_ROOT,expected)
+        script=(expected/"scripts/run_social_post_experiment_queue_user.py").read_text()
+        self.assertIn("REPO=Path(__file__).resolve().parents[1]",script)
+        self.assertIn("social_experiment_queue=IMMUTABLE_RUNTIME_UNAVAILABLE",script)
+        self.assertNotIn("REPO=Path('/home/ubuntu/agentmanager')",script)
 
 if __name__=='__main__': unittest.main()
