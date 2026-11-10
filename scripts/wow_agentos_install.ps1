@@ -23,6 +23,7 @@ function Assert-BundleIntegrity {
  if($manifest.schema -cne 'agentos.wow.offline-installer-preview/v1' -or
     $manifest.release_status -cne 'UNVERIFIED_PREVIEW_NOT_OFFICIAL'){Stop-Install 'BUNDLE_MANIFEST_INVALID'}
  $expected=@(
+  'Install-AgentOS-WoW.cmd',
   'scripts/WoW-AgentOS-Setup.cmd',
   'scripts/wow_agentos_install.ps1',
   'scripts/wow_agentos_installer_preflight.ps1',
