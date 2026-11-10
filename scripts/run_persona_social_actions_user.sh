@@ -9,6 +9,7 @@ POST_INTENT_GENERATOR="${AGENTOS_PERSONA_POST_INTENT_GENERATOR:-$HOME/.local/lib
 EXTERNAL_INBOX="${AGENTOS_PERSONA_EXTERNAL_INBOX:-$HOME/.local/lib/agentos/persona_external_observation_inbox.py}"
 GROWTH_METRICS="${AGENTOS_PERSONA_GROWTH_METRICS:-$HOME/.local/lib/agentos/persona_growth_metrics_collector.py}"
 MEDIA_WORKER="${AGENTOS_PERSONA_MEDIA_WORKER:-$HOME/.local/lib/agentos/persona_media_request_worker.py}"
+EVENT_FACILITY="${AGENTOS_EVENT_FACILITY:-$HOME/.local/lib/agentos/agentos_event_facility.py}"
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
 exec 9>"$LOCK"
@@ -57,6 +58,39 @@ PY
 if ! check_persona_state; then
   echo "persona_social_action_runtime=DEGRADED_STATE" >&2
   exit 3
+fi
+
+# Shared event facility runs from the EXISTING 5-minute social timer carrier,
+# independently of the hourly Persona PDCA, under the shared lock and Git
+# transaction. Only subscriber-owned declarative definitions can produce events.
+# A due event is persisted before any wake is attempted; no social write here.
+EVENT_WAKE_REQUIRED=0
+EVENT_EMITTED=0
+EVENT_DIR="$ROOT/pdca/event_subscriptions"
+if [ -d "$EVENT_DIR" ] && [ -f "$EVENT_FACILITY" ]; then
+  shopt -s nullglob
+  for subscription in "$EVENT_DIR"/*.json; do
+    name="$(basename "$subscription" .json)"
+    record="$ROOT/pdca/event_receipts/$(date -u +%Y%m%dT%H%M%SZ)-$name.json"
+    relative="pdca/event_subscriptions/$(basename "$subscription")"
+    if RESULT="$(python3 "$EVENT_FACILITY" --persona-dir "$ROOT" --subscription "$relative" --receipt-out "$record")"; then
+      count="$(python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("due_emitted",0)))' <<<"$RESULT")"
+      EVENT_EMITTED=$((EVENT_EMITTED+count))
+      if [ "$count" -gt 0 ]; then
+        wake="$(python3 - "$subscription" <<'PY'
+import json,sys
+with open(sys.argv[1],encoding="utf-8") as f:
+    config=json.load(f)
+print(int(config.get("delivery",{}).get("mode")=="immediate"))
+PY
+)"
+        if [ "$wake" = "1" ]; then EVENT_WAKE_REQUIRED=1; fi
+      fi
+    else
+      echo "agentos_event_facility=DEGRADED subscription=$name" >&2
+    fi
+  done
+  shopt -u nullglob
 fi
 
 # Consume the existing verified Oracle public observation evidence BEFORE social cognition.
@@ -204,6 +238,17 @@ fi
 
 git commit -m "persona(mio): persist autonomous social action" >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' push >/dev/null
+# Publish-before-notify: only a successful durable push may wake the subscriber.
+# -no-block avoids waiting on the Persona service. Release the same lock first;
+# the wake executes the pre-existing PDCA service, not any user-defined script.
+if [ "$EVENT_WAKE_REQUIRED" -eq 1 ]; then
+  flock -u 9
+  if systemctl --user start --no-block agentos-persona-pdca-heartbeat.service; then
+    echo "agentos_event_delivery=WAKE_REQUESTED due_events=$EVENT_EMITTED"
+  else
+    echo "agentos_event_delivery=WAKE_FAILED due_events=$EVENT_EMITTED" >&2
+  fi
+fi
 
 if [ "$STATUS" = "NO_ACTION" ]; then
   echo "persona_social_action_runtime=METRICS_ONLY"
