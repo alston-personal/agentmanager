@@ -1,0 +1,64 @@
+name: AgentOS Control Plane Immutable Login Release (#2198)
+
+# This file is a one-time exact-generation release carrier for the AgentOS
+# Control Plane, distinct from Studio / Dashboard blue-green deployment.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-agentos-login-control-plane-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentos-control-plane-immutable-release
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy immutable AgentOS Control Plane exact source, verify and rollback on failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          # Distinct from the Studio Dashboard and ONE 8780 deployment.
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+              -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+              bash -s -- "${GITHUB_SHA}" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_SHA="$1"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(id -un)" = ubuntu
+          REPO=/home/ubuntu/agentmanager
+          test -d "$REPO/.git"
+          git -C "$REPO" fetch --no-tags origin "$SOURCE_SHA"
+          git -C "$REPO" cat-file -e "$SOURCE_SHA^{commit}"
+          DEPLOY=/tmp/agentos-control-plane-deploy-"$SOURCE_SHA".sh
+          git -C "$REPO" show "$SOURCE_SHA:scripts/deploy_distributed_control_plane.sh" > "$DEPLOY"
+          chmod 700 "$DEPLOY"
+          trap 'rm -f "$DEPLOY"' EXIT
+          echo "deployment_target=agentos-control-plane.service"
+          echo "deployment_source=$SOURCE_SHA"
+          # Existing service-specific deploy controller implements immutable
+          # worktree, single-writer lock, systemd cutover and rollback on error.
+          AGENTOS_REPO="$REPO" "$DEPLOY" "$SOURCE_SHA"
+          ACCEPTED="$(cat /home/ubuntu/agent-data/runtime/control-plane/accepted-release)"
+          EXPECTED="/home/ubuntu/agent-data/releases/control-plane/$SOURCE_SHA"
+          test "$ACCEPTED" = "$EXPECTED"
+          systemctl --user is-active --quiet agentos-control-plane.service
+          echo "accepted_release=$ACCEPTED"
+          echo "agentos_control_plane_login_release=PASS"
+          echo "studio_dashboard_mutation=NONE"
+          REMOTE
