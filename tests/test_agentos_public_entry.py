@@ -16,6 +16,8 @@ def test_public_entry_has_login_not_operator_token():
     assert "window.prompt(" not in html
     assert "agentos_operator_token" not in html
     assert "Approve Node Join" not in html
+    assert "agentos_operator_token" not in html
+    assert "AgentOS Console" not in html
 
 
 def test_gateway_public_home_is_separate_from_privileged_companion(tmp_path: Path):
