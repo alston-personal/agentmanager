@@ -51,11 +51,19 @@ import os, re, sys, tempfile
 release=sys.argv[3]
 legacy='/home/ubuntu/agentmanager'
 release_pattern=re.compile(r'/home/ubuntu/\.local/share/agentos/galaxy-experiment-monitor/releases/[0-9a-f]{40}')
-for raw in sys.argv[1:3]:
-    path=Path(raw)
+monitor=Path(sys.argv[1])
+relay=Path(sys.argv[2])
+# The existing owner's monitor enablement drop-in is part of the effective
+# unit, not the unit fragment. Its legacy ExecStart/Environment overrides
+# must converge with the same pinned immutable release.
+owner_dropin=monitor.parent / (monitor.name + '.d') / '60-owner-social-enabled.conf'
+for path in [monitor,relay,*([owner_dropin] if owner_dropin.is_file() else [])]:
     text=path.read_text(encoding='utf-8')
     known = legacy in text or release in text or bool(release_pattern.search(text))
     if not known:
+        if path == owner_dropin:
+            # Do not rewrite unrelated custom owner settings.
+            continue
         raise SystemExit(f'unit runtime root not recognized: {path.name}')
     text=text.replace(legacy, release)
     text=release_pattern.sub(release, text)
@@ -71,7 +79,13 @@ for raw in sys.argv[1:3]:
 PY
 
 systemctl --user daemon-reload
+# Fail closed if any effective unit fragment or drop-in still reaches back
+# into the mutable source checkout; do not begin a social cycle here.
 for unit in agentos-galaxy-experiment-monitor.service agentos-mio-agy-relay.service; do
+  if systemctl --user cat "$unit" | grep -Fq '/home/ubuntu/agentmanager'; then
+    echo "galaxy_monitor_effective_unit=STALE_MUTABLE_CHECKOUT" >&2
+    exit 21
+  fi
   wd="$(systemctl --user show "$unit" -p WorkingDirectory --value)"
   test "$(readlink -f "$wd")" = "$RELEASE"
   systemctl --user cat "$unit" | grep -Fq "$RELEASE"
