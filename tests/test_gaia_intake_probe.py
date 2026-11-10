@@ -22,14 +22,24 @@ class GaiaRunnerProbeTest(unittest.TestCase):
             resolve_intent("agentos.gaia", "intake.inspect",
                            source_commit="a" * 40, payload={"command": "create"})
 
+    @patch("scripts.gaia_proposal_intake.examine")
     @patch("agentos_node.bootstrap_control._run_canonical_script")
-    def test_oracle_handler_only_invokes_read_only_probe(self, run):
+    def test_oracle_handler_uses_installed_code_not_remote_script(self, run, examine):
         from agentos_node import bootstrap_control as bc
-        run.return_value = {"ok": True, "steps": []}
+        examine.return_value = {
+            "review": {
+                "schema": "agentos.gaia-review/v1",
+                "decision": {"disposition": "NEEDS_EVIDENCE", "canonical_parent": None},
+            }
+        }
         receipt = bc._execute(bc.ACTION_GAIA_INTAKE_INSPECT, "a" * 40)
         self.assertTrue(receipt["ok"])
-        run.assert_called_once_with(
-            "scripts/gaia_intake_probe.py", timeout=90, source_commit="a" * 40)
+        self.assertEqual(receipt["gaia_intake"]["disposition"], "NEEDS_EVIDENCE")
+        self.assertFalse(receipt["gaia_intake"]["execution_authorized"])
+        self.assertFalse(receipt["gaia_intake"]["creation_authorized"])
+        self.assertEqual(receipt["source_commit"], "a" * 40)
+        run.assert_not_called()
+        examine.assert_called_once()
 
     def test_probe_is_bounded_and_reports_non_authority(self):
         review = {
