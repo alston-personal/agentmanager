@@ -56,6 +56,22 @@ class WowOfflineInstallerContractTests(unittest.TestCase):
         self.assertIn('Group Policy', launcher)
         self.assertNotIn('Set-ExecutionPolicy', launcher)
 
+    def test_existing_join_is_explicit_opt_in_and_bundled(self):
+        root_join=(ROOT/'Join-AgentOS-Node.cmd').read_text(encoding='utf-8')
+        source_join=(SCRIPTS/'AgentOS-Join.cmd').read_text(encoding='utf-8')
+        launcher=(SCRIPTS/'WoW-AgentOS-Setup.cmd').read_text(encoding='utf-8')
+        builder=(SCRIPTS/'build_wow_offline_installer.py').read_text(encoding='utf-8')
+        install=(SCRIPTS/'wow_agentos_install.ps1').read_text(encoding='utf-8')
+        self.assertIn('Type JOIN',root_join)
+        self.assertIn('scripts\\AgentOS-Join.cmd',root_join)
+        self.assertIn('bootstrap_clean_windows_node.ps1',source_join)
+        self.assertIn('Join-AgentOS-Node.cmd',launcher)
+        self.assertIn('if exist "%LOCALAPPDATA%\\AgentOS\\state\\client.json" goto finish',launcher)
+        for name in ('Join-AgentOS-Node.cmd','scripts/AgentOS-Join.cmd'):
+            self.assertIn(name,builder)
+            self.assertIn(name,install)
+        self.assertNotIn('agentos-client.cmd join',launcher)
+
     def test_addon_sources_are_complete_and_version_marked(self):
         main=ADDONS/'AgentOSWoW'
         reply=ADDONS/'AgentOSWoW_R001'
