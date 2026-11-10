@@ -13,6 +13,9 @@ def test_public_entry_has_login_not_operator_token():
     assert 'site=agentos' in html
     assert '/dashboard/api/auth/signin/google' in html
     assert '/dashboard/api/auth/signin/github' in html
+    assert '/dashboard/api/auth/signin/facebook' in html
+    assert '/dashboard/api/auth/signin/line' in html
+    assert html.count('site=agentos') == 4
     assert "window.prompt(" not in html
     assert "agentos_operator_token" not in html
     assert "Approve Node Join" not in html

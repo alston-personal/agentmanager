@@ -15,7 +15,7 @@ BLUE_GREEN_ACTIVE_PORT = Path("/home/ubuntu/agent-data/runtime/dashboard-blue-gr
 AUTHORIZED_PORTS = {3000, 3040, 3041}
 AUTHORIZED_HOST = "agentos.milkcat.org"
 _ALLOWED_AUTH_ROUTES = re.compile(
-    r"/dashboard/api/auth/(?:signin/(?:google|github)|callback/(?:google|github)|session|logout)/?\Z"
+    r"/dashboard/api/auth/(?:signin/(?:google|github|facebook|line)|callback/(?:google|github|facebook|line)|session|logout)/?\Z"
 )
 _ALLOWED_RESPONSE_HEADERS = {"content-type", "location", "set-cookie", "cache-control", "vary"}
 
@@ -51,7 +51,12 @@ def proxy_shared_auth_request(
         return 400, [("Content-Type", "application/json")], b'{"error":"invalid_auth_host"}'
 
     port = resolve_dashboard_port(state_file)
-    headers = {"Host": AUTHORIZED_HOST, "Accept": "application/json, text/html;q=0.9"}
+    headers = {
+        "Host": AUTHORIZED_HOST,
+        "X-Forwarded-Host": AUTHORIZED_HOST,
+        "X-Forwarded-Proto": "https",
+        "Accept": "application/json, text/html;q=0.9",
+    }
     if cookie:
         headers["Cookie"] = cookie[:8192]
     conn = HTTPConnection("127.0.0.1", port, timeout=5)

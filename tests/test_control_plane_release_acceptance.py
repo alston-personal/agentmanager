@@ -66,3 +66,44 @@ def test_release_inspector_rejects_legacy_root_console_and_broken_auth_session()
         server.shutdown()
         server.server_close()
         worker.join(timeout=3)
+
+
+def test_oauth_origin_probe_rejects_studio_and_accepts_agentos():
+    from scripts.inspect_distributed_control_plane import probe_oauth_origin
+    from urllib.parse import urlsplit
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            provider = urlsplit(self.path).path.rsplit("/", 1)[-1]
+            if provider == "facebook":
+                target = "https://studio.milkcat.org"
+            else:
+                target = "https://agentos.milkcat.org"
+            callback = target + "/dashboard/api/auth/callback/" + provider
+            from urllib.parse import urlencode
+            location = "https://example.org/oauth/authorize?" + urlencode({
+                "redirect_uri": callback, "state": "12345",
+            })
+            self.send_response(307)
+            self.send_header("Location", location)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        for provider in ("google", "github", "line"):
+            receipt = probe_oauth_origin(base, provider, local=True)
+            assert receipt["ok"], (provider, receipt)
+            assert receipt["agentos_callback"]
+        receipt = probe_oauth_origin(base, "facebook", local=True)
+        assert receipt["ok"] is False
+        assert receipt["agentos_callback"] is False
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=3)
