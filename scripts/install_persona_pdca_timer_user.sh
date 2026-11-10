@@ -189,9 +189,7 @@ systemctl --user enable agentos-persona-pdca-heartbeat.timer agentos-persona-soc
 if ! systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer; then
   systemctl --user start agentos-persona-pdca-heartbeat.timer
 fi
-if ! systemctl --user is-active --quiet agentos-persona-social-actions.timer
-systemctl --user is-enabled --quiet agentos-event-facility.timer
-systemctl --user is-active --quiet agentos-event-facility.timer; then
+if ! systemctl --user is-active --quiet agentos-persona-social-actions.timer; then
   systemctl --user start agentos-persona-social-actions.timer
 fi
 if ! systemctl --user is-active --quiet agentos-event-facility.timer; then
@@ -202,6 +200,8 @@ systemctl --user is-enabled --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-active --quiet agentos-persona-pdca-heartbeat.timer
 systemctl --user is-enabled --quiet agentos-persona-social-actions.timer
 systemctl --user is-active --quiet agentos-persona-social-actions.timer
+systemctl --user is-enabled --quiet agentos-event-facility.timer
+systemctl --user is-active --quiet agentos-event-facility.timer
 
 # One-time liveness recovery: deployment is not a heartbeat source. Canonical
 # persona state is the source of truth; systemd unit timestamps can be reset by
