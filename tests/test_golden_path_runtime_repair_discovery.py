@@ -1,8 +1,6 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-
 
 def test_golden_path_deploy_discovery_contract():
     intent = (ROOT / "agent_core/runner_window.py").read_text()
@@ -19,7 +17,6 @@ def test_golden_path_deploy_discovery_contract():
     assert 'audience=agentos-scheduler' in workflow
     assert '"operation":"repair"' in workflow
     assert 'action_relay_install=PASS' in workflow
-
 
 def test_golden_path_documented_capability_vs_carrier():
     doc = (ROOT / "docs/GOLDEN_PATH_RUNTIME_REPAIR_DISCOVERY.md").read_text()
