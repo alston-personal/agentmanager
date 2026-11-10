@@ -8,6 +8,18 @@ fi
 
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
+# Restore the canonical deployment preflight from the existing integration
+# implementation. These paths must be bound before any -u reference.
+DASH="$REPO/dashboard"
+PORT_MANAGER_REL="scripts/core_services/port_manager.py"
+PORT_MANAGER_EXACT="/tmp/agentos-port-manager-$SOURCE_COMMIT.py"
+RETIRE_PM2_REL="scripts/retire_legacy_dashboard_pm2_user.sh"
+RETIRE_PM2_EXACT="/tmp/agentos-retire-dashboard-pm2-$SOURCE_COMMIT.sh"
+ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
+ROUTE="$REPO/$ROUTE_REL"
+DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
+PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
+PUBLIC_BOOTSTRAP='https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
 PUBLIC_DISPATCH='https://studio.milkcat.org/dashboard/api/agentos/v1/dispatch'
 LOCAL='http://127.0.0.1:8780/v1/health'
 LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/agentos/v1/health'
