@@ -618,6 +618,8 @@ small{display:block;margin-top:22px;color:#90a0ba}
 <p>使用自己的帳號登入 AgentOS。首次使用時，須完成獨立 Realm 的建立或加入授權。</p>
 <a class="primary" href="/dashboard/api/auth/signin/google?site=agentos&amp;returnTo=%2F">以 Google 登入</a>
 <a class="secondary" href="/dashboard/api/auth/signin/github?site=agentos&amp;returnTo=%2F">以 GitHub 登入</a>
+<a class="secondary" href="/dashboard/api/auth/signin/facebook?site=agentos&amp;returnTo=%2F">以 Facebook 登入</a>
+<a class="secondary" href="/dashboard/api/auth/signin/line?site=agentos&amp;returnTo=%2F">以 LINE 登入</a>
 <small>一般使用者不需要 Operator Token。登入後的 Realm 權限必須由 ONE 驗證，未取得授權時不得進入管理 Console。</small>
 <p id="session-state" aria-live="polite"></p>
 <script>
