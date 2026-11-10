@@ -54,3 +54,32 @@ do **not** arbitrarily delete game files or existing Node data.
 
 No public download, verified WoW install, authenticated response or official
 ONE Receipt is asserted by the source commits.
+
+## Reproducible offline-preview packaging and Windows acceptance
+
+A packaging script now builds an allowlisted, self-contained offline ZIP, not a
+repository checkout and not an installer for the authenticated ONE Bridge:
+
+```sh
+python scripts/build_wow_offline_installer.py --output dist/AgentOS-WoW-V1-preview.zip
+python -m unittest tests.test_wow_offline_packaging -v
+```
+
+The ZIP contains only the launcher, PowerShell install/preflight scripts,
+`AgentOSWoW` and `AgentOSWoW_R001`, plus `manifest.json` with SHA-256
+digests. A companion `.zip.sha256` checks archive integrity. The hash manifest
+is **not a digital signature** and must not be represented as authenticating
+a release, Node identity or Realm.
+
+The existing `Transport Routing Guard` now includes a `windows-latest`
+job that extracts this exact ZIP and runs
+`tests/test_wow_offline_installer_windows.ps1` against a synthetic game
+directory and mock local Node. It exercises installation, refusal to overwrite,
+uninstall, Node preservation and refusal to delete modified files.
+Synthetic CI is NOT a real WoW client/ONE handshake and cannot replace the
+eventual signed official release with host acceptance receipts.
+
+The workflow artifact is expressly labeled **unverified preview**, retained
+temporarily for CI review, and must not be linked or distributed as the
+finished official-site installer. Promotion requires Windows CI PASS and
+real-client acceptance, governed release approval and signature.
