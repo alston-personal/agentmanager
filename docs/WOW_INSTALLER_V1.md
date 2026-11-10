@@ -115,3 +115,26 @@ before game files are modified.
 This is an **offline preview**, not an authenticated Bridge or official-site
 release. The user still supplies a confirmed Forever game root and approves
 installation; the existing Node and Realm are reused unchanged.
+
+## Windows one-click client discovery — 2026-11-10
+
+The ZIP root entry `Install-AgentOS-WoW.cmd` now launches the existing
+setup, which uses `scripts/wow_agentos_select_game.ps1` to locate a valid
+Forever installation in common Windows paths (including Program Files x86
+and common Games directories). If not found, it prompts with the Windows
+folder picker. It validates `_forever_/Wow.exe` and the existing AddOns
+directory, and refuses a symlink/reparse-point game root. It does not
+install or modify a new game client.
+
+The selection helper is included in the allowlisted package manifest and
+pre-install SHA-256 verification. The existing Windows runner functional
+test now covers choosing a synthetic game root and rejecting an invalid
+root without opening a picker.
+
+**Actual CI evidence**: [Transport Routing Guard #42765981178](https://github.com/alston-personal/agentmanager/actions/runs/42765981178)
+completed SUCCESS across all three jobs, including
+`wow-offline-installer-windows`, with log marker
+`WINDOWS_WOW_OFFLINE_INSTALLER=PASS`. The tested ZIP SHA-256 was
+`a92f16e15291f3dc93cc83920e35de7d34f1a9bafc8227970f6dc6b19261cd28`.
+This remains a synthetic Windows Runner test, not a real player computer,
+official signed installer, authenticated ONE Bridge or in-game screenshot.
