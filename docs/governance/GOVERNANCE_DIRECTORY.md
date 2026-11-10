@@ -30,6 +30,23 @@ Canonical sources remain separated by concern:
 
 The Directory **indexes and resolves** these authorities; it must not silently redefine them.
 
+## Project presence versus execution authorization (source-selection guard)
+
+**PROJECT_PRESENCE_NOT_EXECUTION_ALLOWLIST**: Project existence, registration, execution permission, and live health are independent questions. Never infer "project not registered", "project deleted", or "data polluted" from absence in `governance/execution-authority.json`. That file is a *bounded governed execution capability allowlist*, **not** a complete Project Registry.
+
+Use this read-only lookup sequence before any project registration, recreation, migration, or authorization edit:
+
+1. **Existence / identity:** Check the canonical Oracle Project state at `/home/ubuntu/agent-data/projects/<project_id>/project.yaml` (or configured `AGENT_DATA_ROOT`), and Project/Governance Directory `project://<project_id>` as a secondary index. Resolve aliases and canonical repository. Do not silently create an absent record.
+2. **Resource / service identity:** Resolve `repo://`, `service://`, `path://` from the Resource Registry and Port Manager; report timestamps and evidence freshness. Repository source code and workflow references are historical/provenance evidence, not live Oracle verification.
+3. **Execution authorization:** Only *after identity resolution*, check `governance/execution-authority.json` or the appropriate ONE capability policy for the **specific operation**. Missing capability means "not authorized in this checked surface/ref", *not* "project missing". Name the exact branch, registry version, scope and checked capability.
+4. **Actual runtime:** Require a current authenticated ONE/Runtime receipt for online/deployed/executed claims. State "unverified" if runtime is unreachable; do not promote stale prior receipts to current health.
+5. **Conflict handling:** If canonical Project data and indexes disagree, classify `registry_projection_drift` or `unverified_source_conflict`, capture evidence and reconcile through the existing owner. Never overwrite or duplicate-register based solely on a missing secondary projection.
+
+Regression example: `if-tv-station` was incorrectly called "not registered" because it was missing from the `core/integration` execution-authority allowlist. That finding only supports "not present in that branch's *specific execution allowlist*". GitHub repo `alston-personal/if-tv-station` and historical Oracle service/paths are positive provenance, while live canonical registration must be checked independently. For the leopard-cat outro work, reuse product Issue `alston-personal/if-tv-station#3`; do not re-register the project or invent a dispatch receipt.
+
+**Answer provenance rule:** For negative existence claims, record `lookup_target`, `source_kind`, `branch_or_version`, `observed_at`, `freshness`, `result` and whether canonical authority was actually queried. If canonical source was not accessible, the only supported conclusion is `canonical_state_unverified`.
+
+
 ## Entity namespaces
 
 - `role://` — versioned organizational roles mirrored from the canonical role registry.

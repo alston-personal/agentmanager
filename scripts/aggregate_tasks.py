@@ -64,8 +64,8 @@ def aggregate_tasks():
         priority_label = f"P{meta['priority']}"
         cat_label = f"#{meta['category']}"
 
-        # 尋找 Todo List 區塊 (支持多種格式)
-        todo_match = re.search(r"## (?:📅 )?Todo List\n(.*?)(?=\n##|\Z)", content, re.S | re.I)
+        # 尋找 Todo List 區塊 (支持多種格式，且不會被 ### 三級子標題提前截斷)
+        todo_match = re.search(r"## (?:📅 )?Todo List\n(.*?)(?=\n## [^#]|\n#[^#]|\Z)", content, re.S | re.I)
         if todo_match:
             tasks = todo_match.group(1).strip().split('\n')
             for task in tasks:

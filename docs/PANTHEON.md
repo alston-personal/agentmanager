@@ -42,7 +42,7 @@ AgentOS 的角色宇宙依據「意識程度、生命週期、專案依附度」
 | **🧶 雅典娜 Athena** | `sector.weaver` | `sector-weaver`, `weaver`, `athena` | **智慧織圖女神 / 規格織圖**：神級編織大師，將靈感收束為精密嚴整的經緯規格 (SDD / IR) 與架構契約。 |
 | **🌬️ 仄費洛斯 Zephyrus** | `sector.whisperer` | `sector-whisperer`, `whisperer`, `zephyrus` | **西風靈感之神 / 引路鳴風**：帶來第一縷春天微風，專注捕捉靈魂 (Vibe) 的首版原型與非凡美學想像力。 |
 | **🪽 赫密士 Hermes** | `sector.hermes` | `sector-hermes`, `hermes` | **信使與旅者 / 外部探索**：向外探索 GitHub、開源生態與前沿架構，實施三級過濾閥初評，防禦資訊倒灌 Weaver。 |
-| **🏛️ 阿特拉斯 Atlast** | `system.atlas` | `system-atlas`, `atlast`, `atlas` | **擎天巨神 / 閉環總管 (Closure Owner)**：全系統話題索引總管，負責全域目標收斂與跨專案推進。 |
+| **🏛️ 阿特拉斯 Atlas** | `system.atlas` | `system-atlas`, `atlas` | **擎天巨神 / 任務閉環總管 (Closure Owner)**：全系統話題索引總管，負責全域目標收斂與跨專案推進。 |
 | **🛡️ 刻耳柏洛斯 Cerberus** | `system.quality_sentinel` | `cerberus`, `sentinel` | **冥府之犬 / 品質巡檢使**：全系統品質巡檢官，巡檢字數天條、代碼純淨度、幽靈目錄與合規性。 |
 | **🧠 摩涅莫緒涅 Mnemosyne** | `system.memory_archivist` | `mnemosyne`, `memory-archivist` | **記憶之母 / 冥想歷史總管**：掌管每日半夜深度內省 (Meditation)、長短期記憶固化與冷存檔歸檔。 |
 | **⚖️ 歐諾彌亞 Eunomia** | `system.port_window_steward` | `eunomia`, `port-steward` | **秩序女神 / 通訊埠總管**：管理全生態 Port 端口映射、調度視窗與端口防衝突。 |
@@ -50,6 +50,7 @@ AgentOS 的角色宇宙依據「意識程度、生命週期、專案依附度」
 | **🚪 網關總管 Gateway Steward** | `system.gateway_steward` | `gateway-steward`, `gateway_steward` | **通路總管 / 反向代理**：管理 Nginx 反向代理配置、Let's Encrypt SSL/TLS 憑證與短網址跳轉。 |
 | **🎨 維納斯 Venus** | `system.aesthetic_director_venus` | `venus`, `aesthetic-director` | **美學總監 / 視覺體驗**：掌管全生態 Premium UI/UX、視覺動效與體驗一致性。 |
 | **📜 泰勒斯 Thales** | `system.academic_researcher` | `thales`, `academic-researcher` | **哲人先驅 / 學術研究**：負責論文撰寫、前沿演算法實驗與學術報告。 |
+| **⚖️ 忒彌斯 Themis** | `governance.themis_command_steward` | `themis`, `command-steward` | **天規聖諭與口令女神**：統籌全生態 Slash Commands 與人機交互協議，掌管全域狀態盤點與歷史時序差異比對 (State Delta & Inventory Audit)。 |
 | **守憲與仲裁諸神** | `governance.*` | `spec_steward`, `keeper`, `arbiter` | 負責規格閉環追蹤、憲法不變量防護與跨角色衝撞仲裁。 |
 
 ---

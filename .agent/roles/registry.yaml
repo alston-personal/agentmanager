@@ -178,7 +178,7 @@ roles:
   - resource_record
   - freshness_status
 - id: system.atlas
-  name: Atlast (總管 / Closure Owner)
+  name: 阿特拉斯 Atlas (擎天神 / 任務閉環總管 Closure Owner)
   status: active
   kind: orchestrator
   source: .agent/roles/instances/atlas_closure_owner.md
@@ -255,9 +255,15 @@ roles:
   - gateway_health_receipt
 - id: sector.hermes
   name: 赫密士 Hermes (Recon & Technology Scout / 外部探索與技術信使)
+  aliases:
+  - sector-hermes
+  - hermes
+  - research.hermes
   status: active
   kind: discovery
   source: .agent/roles/parents/lcs_hermes.md
+  instance_source: .agent/roles/instances/hermes_technology_scout.md
+  employee_bootstrap: governance/hermes-technology-scout-employee.json
   purpose: 奧林匹斯信使與邊界旅者：向外探索 GitHub、開源生態與前沿架構，蒐集可借鏡技術並執行三級分流初評，防止資訊倒灌壓垮 Weaver。
   must_obey:
   - capability_boundary
@@ -268,6 +274,7 @@ roles:
   - discovery.tech.recon
   - discovery.filter.evaluate
   - discovery.rfc.draft
+  - github.technology.scan
   outputs:
   - tech_scout_memo
   - rfc_candidate
@@ -289,6 +296,27 @@ roles:
   outputs:
   - pantheon_registry_delta
   - role_audit_receipt
+- id: governance.themis_command_steward
+  name: 忒彌斯 Themis (Sacred Invocations & Command Steward / 天規、聖諭與口令女神)
+  aliases:
+  - themis
+  - command-steward
+  status: active
+  kind: governance
+  source: .agent/roles/instances/themis_command_steward.md
+  purpose: 奧林匹斯天規與口令女神：執掌 Slash Commands、人機交互聖諭與狀態時序差異盤點（State Delta & Inventory Audit），確保每次狀態盤點留下歷史快照並揭示前後差異。
+  must_obey:
+  - governance_scales_with_capability
+  - responsibility_resolution
+  - truth_provenance
+  - logic_data_separation
+  - receipts_over_claims
+  capabilities:
+  - themis.command.audit
+  - themis.inventory.diff
+  outputs:
+  - inventory_snapshot_receipt
+  - inventory_diff_report
 - id: system.memory_archivist
   name: 摩涅莫緒涅 Mnemosyne (Memory & Meditation Archivist / 記憶之母與冥想總管)
   status: active

@@ -1,0 +1,7 @@
+# WoW approved engineering WorkItem -> existing Paw inspection assignment
+
+Only the exact already-accepted Oracle Completion WorkItem `gh-issue-2134-engineering` with the canonical Issue URL, project, owner, `intake_kind=engineering`, and `execution_authorized=false` can be projected into the existing Employee Runtime. The recipient is the already-existing `the-paw` with its existing `sector.paw` / `engineering.work.inspect` role and skill. The canonical WorkItem and pending Assignment both use `paw-wow-2134-inspect-v1`. Repeated projection is idempotent.
+
+**Authority boundary:** This grants no new executor permission, no terminal receipt, no assignment lease, no repository modification, no shell/model invocation and no deployment. The existing Supervisor/ONE wake and worker adapter validate role/skill and governed delivery independently. Paw is limited to a read-only engineering inspection and separate authorization-blocker identification, NOT completing the WoW installer. The actual WoW MVP still requires an approved engineering execution capability.
+
+The script is invoked from the *existing approved Issue Intake job*, after the work-completion registration succeeds, on the same authorized Oracle host. The job reports receipt fields without credentials or arbitrary file paths. If contract/employee prerequisites fail, preserve the durable original WorkItem and fail visibly rather than forge a claim.

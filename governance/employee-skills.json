@@ -120,6 +120,28 @@
         "risk_assessment"
       ],
       "mutation_authority": false
+    },
+    "github.technology.scan": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Read a bounded list of public GitHub repository metadata and emit provenance-grounded technology candidate findings; no execution or work item write authority.",
+      "required_capabilities": [
+        "github.technology.scan"
+      ],
+      "allowed_intents": [
+        "scan"
+      ],
+      "input_fields": [
+        "assignment_id",
+        "topic_scope",
+        "repository_names"
+      ],
+      "output_types": [
+        "technology_candidate_evaluation",
+        "research_checkpoint_receipt",
+        "source_unavailable"
+      ],
+      "mutation_authority": false
     }
   },
   "invariants": [

@@ -219,6 +219,26 @@
       "risk": "P2",
       "classification": "retired-carrier",
       "reason": "legacy Layout Lab deploy helper is a non-operational fail-safe stub; canonical publication is materialize -> promote -> parity through bounded executor jobs"
+    },
+    ".github/workflows/oracle-repair-governance-shared-boundary.yml": {
+      "risk": "P1",
+      "classification": "bounded-control-boundary",
+      "reason": "governance repair workflow operating under bounded Action Relay identity boundaries"
+    },
+    ".github/workflows/realm-controller-live-acceptance.yml": {
+      "risk": "P1",
+      "classification": "bounded-control-boundary",
+      "reason": "realm controller live acceptance test under explicit node boundaries"
+    },
+    "scripts/install_realm_fabric_via_action_relay.py": {
+      "risk": "P1",
+      "classification": "governed-action-relay-boundary",
+      "reason": "realm fabric installer executed through governed action relay channel"
+    },
+    "scripts/patch_issue71_node_registry_repair_action.py": {
+      "risk": "P1",
+      "classification": "governed-action-relay-boundary",
+      "reason": "node registry repair patch bounded by action relay policy"
     }
   },
   "closure_classifications": {

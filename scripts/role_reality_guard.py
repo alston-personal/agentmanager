@@ -61,6 +61,7 @@ def check_role_reality() -> tuple[list[dict], list[str]]:
         "system.academic_researcher": "system-academic-researcher",
         "sector.hermes": "sector-hermes",
         "governance.role_steward": "governance-role-steward",
+        "governance.themis_command_steward": "governance-themis-command-steward",
     }
 
     for r in roles:

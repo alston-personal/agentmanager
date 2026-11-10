@@ -62,9 +62,15 @@ class RoleRegistry:
         return sorted(result)
 
     def resolve(self, role_id: str) -> EffectiveRoleContract:
-        if role_id not in self._roles:
-            raise KeyError(role_id)
-        role = self._roles[role_id]
+        target_id = role_id
+        if target_id not in self._roles:
+            for r_id, r in self._roles.items():
+                if role_id in r.get("aliases", []):
+                    target_id = r_id
+                    break
+            else:
+                raise KeyError(role_id)
+        role = self._roles[target_id]
         if role.get("status") != "active":
             raise ValueError(f"role is not active: {role_id}")
 
@@ -94,7 +100,7 @@ class RoleRegistry:
             visited.add(current_id)
             ordered.append(current)
 
-        walk(role_id)
+        walk(target_id)
 
         def merged_list(key: str) -> list[str]:
             result: list[str] = []
