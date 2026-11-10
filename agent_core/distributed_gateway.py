@@ -18,7 +18,7 @@ from .context_compiler import compile_execution_context
 from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 from .approval_broker import list_approvals, resolve_approval, park_approval
-from .companion_web import render_companion_html
+from .companion_web import render_companion_html, render_public_entry_html
 
 MAX_REQUEST_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -354,7 +354,16 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
 
     def do_HEAD(self) -> None:
         path, parts = self._route()
-        if path in ("", "/", "/companion", "/companion/"):
+        if path in ("", "/"):
+            data = render_public_entry_html().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Robots-Tag", "noindex, nofollow")
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return
+        if path in ("/companion", "/companion/"):
             data = render_companion_html().encode("utf-8")
             self.send_response(200)
             self.send_header("Cache-Control", "no-store")
@@ -368,7 +377,10 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path, parts = self._route()
-        if path in ("", "/", "/companion", "/companion/"):
+        if path in ("", "/"):
+            self._html(200, render_public_entry_html())
+            return
+        if path in ("/companion", "/companion/"):
             self._html(200, render_companion_html())
             return
         if path == "/v1/approvals" or parts == ["v1", "approvals"]:
