@@ -18,6 +18,7 @@ on:
       - tests/test_wow_offline_end_to_end.py
       - tests/test_wow_offline_installer_contract.py
       - scripts/wow_agentos_install.ps1
+      - scripts/wow_agentos_select_game.ps1
       - scripts/build_wow_offline_installer.py
       - tests/test_wow_offline_packaging.py
       - tests/test_wow_offline_installer_windows.ps1
@@ -55,6 +56,7 @@ on:
       - tests/test_wow_offline_end_to_end.py
       - tests/test_wow_offline_installer_contract.py
       - scripts/wow_agentos_install.ps1
+      - scripts/wow_agentos_select_game.ps1
       - scripts/build_wow_offline_installer.py
       - tests/test_wow_offline_packaging.py
       - tests/test_wow_offline_installer_windows.ps1
