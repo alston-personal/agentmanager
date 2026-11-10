@@ -20,6 +20,8 @@ ALLOWED_SEVERITY={"minor","moderate","major"}
 def validate_subscription(config):
     if not isinstance(config,dict) or config.get("schema")!=SCHEMA:
         raise ValueError("EVENT_SUBSCRIPTION_SCHEMA")
+    if type(config.get("enabled",True)) is not bool:
+        raise ValueError("EVENT_SUBSCRIPTION_ENABLED")
     if not isinstance(config.get("subscription_id"),str) or not config["subscription_id"]:
         raise ValueError("EVENT_SUBSCRIPTION_ID")
     if not isinstance(config.get("target"),str) or not config["target"].startswith(("persona:","worker:","app:")):
@@ -77,6 +79,11 @@ def evaluate(config, at, existing=()):
     trigger=config["trigger"]
     local=at.astimezone(ZoneInfo(trigger.get("timezone","UTC")))
     day=local.date().isoformat()
+    if config.get("enabled",True) is False:
+        return {"schema":"agentos.event.draw-receipt/v1",
+                "subscription_id":config["subscription_id"],
+                "local_date":day,"seed":None,"planned_count":0,
+                "due_emitted":0,"status":"DISABLED","events":[]}
     seed=int(hashlib.sha256(
         (config["subscription_id"]+"|"+day+"|"+ENGINE_VERSION).encode()).hexdigest()[:16],16)
     rng=random.Random(seed)
