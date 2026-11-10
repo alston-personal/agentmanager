@@ -90,10 +90,48 @@ local function sendStatusProbe()
     end
 end
 
+-- Minimal one-shot LoadOnDemand reply slot, installed before game launch.
+-- A slot is untrusted until a separately authenticated Windows Bridge
+-- publishes the data. This function never authorizes a task.
+local replySlotUsed = false
+local function safeLabel(text, limit, pattern)
+    return type(text) == "string" and #text <= limit
+        and string.match(text, pattern) ~= nil
+end
+
+local function loadStatusReplySlot()
+    if probeId == 0 then setState("Send a status probe first"); return end
+    if replySlotUsed then setState("Reply slot spent; /reload before another read"); return end
+    replySlotUsed = true
+    local loader = (C_AddOns and C_AddOns.LoadAddOn) or LoadAddOn
+    if type(loader) ~= "function" then setState("Reply slot API unavailable"); return end
+    local ok = loader("AgentOSWoW_R001")
+    if not ok then setState("Reply slot unavailable; compatible client required"); return end
+    local data = AgentOSWoWReplySlot
+    AgentOSWoWReplySlot = nil
+    if type(data) ~= "table"
+        or data.schema ~= "agentos.wow.status.reply/v1"
+        or type(data.request_id) ~= "number"
+        or data.request_id ~= probeId
+        or (data.state ~= nil and not safeLabel(data.state, 64, "^[%w_%-]+$"))
+        or (data.paw ~= nil and not safeLabel(data.paw, 64, "^[%w_%-]+$"))
+        or (data.receipt ~= nil and data.receipt ~= false
+            and not safeLabel(data.receipt, 128, "^[%w_%.:%-]+$")) then
+        setState("Reply missing, stale or rejected")
+        return
+    end
+    if answerLine then
+        answerLine:SetText("State: " .. (data.state or "unknown") ..
+            " | Paw: " .. (data.paw or "unknown") ..
+            " | Receipt: " .. ((data.receipt == false and "none") or data.receipt or "none"))
+    end
+    setState("Local reply slot decoded; live ONE verification pending")
+end
+
 local function createPanel()
     if panel then return panel end
     panel = CreateFrame("Frame", "AgentOSWoWPanel", UIParent, "BackdropTemplate")
-    panel:SetSize(445, 280)
+    panel:SetSize(445, 325)
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     panel:SetMovable(true)
     panel:EnableMouse(true)
@@ -142,6 +180,11 @@ local function createPanel()
     probe:SetPoint("LEFT", askButton, "RIGHT", 14, 0)
     probe:SetText("Status probe")
     probe:SetScript("OnClick", sendStatusProbe)
+    local readSlot = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    readSlot:SetSize(160, 26)
+    readSlot:SetPoint("TOPLEFT", answerLine, "BOTTOMLEFT", 0, -18)
+    readSlot:SetText("Read reply slot (once)")
+    readSlot:SetScript("OnClick", loadStatusReplySlot)
     panel:Hide()
     return panel
 end
