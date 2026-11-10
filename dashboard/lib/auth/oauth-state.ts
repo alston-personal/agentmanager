@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { AGENT_DATA_ROOT } from '@/lib/data-root';
+import type { AuthSite } from '@/lib/auth/site';
 
 const ROOT = path.join(AGENT_DATA_ROOT, 'auth', 'oauth-states');
 const TTL_MS = 10 * 60 * 1000;
@@ -10,6 +11,7 @@ type OAuthStateRecord = {
   schema: 'agentos.oauth-state/v1';
   state: string;
   returnTo: string;
+  site?: AuthSite;
   createdAt: string;
   expiresAt: string;
 };
@@ -38,7 +40,7 @@ function cleanupExpired() {
   }
 }
 
-export function createOAuthState(returnTo: string) {
+export function createOAuthState(returnTo: string, site: AuthSite = 'studio') {
   cleanupExpired();
   const state = randomBytes(32).toString('base64url');
   const now = new Date();
@@ -46,6 +48,7 @@ export function createOAuthState(returnTo: string) {
     schema: 'agentos.oauth-state/v1',
     state,
     returnTo,
+    site,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + TTL_MS).toISOString(),
   };

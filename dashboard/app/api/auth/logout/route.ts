@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveAuthSite, safeLocalReturnTo } from '@/lib/auth/site';
 
 export async function GET(request: NextRequest) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://studio.milkcat.org';
-  const requestedReturnTo = new URL(request.url).searchParams.get('returnTo') || '/';
-  const returnTo = requestedReturnTo.startsWith('/') && !requestedReturnTo.startsWith('//') ? requestedReturnTo : '/';
-  const response = NextResponse.redirect(new URL(returnTo, siteUrl));
-  
-  // Clear cookie across the entire domain
-  response.cookies.set({
-    name: 'auth_token',
-    value: '',
-    httpOnly: true,
-    secure: true,
-    domain: '.milkcat.org',
-    path: '/',
-    maxAge: 0, // Expire immediately
-  });
+  const resolved = resolveAuthSite(request);
+  if (!resolved) return NextResponse.json({ error: 'Unsupported auth site' }, { status: 400 });
 
+  const returnTo = safeLocalReturnTo(new URL(request.url).searchParams.get('returnTo'));
+  const response = NextResponse.redirect(new URL(returnTo, resolved.origin));
+  // Retire parent-domain legacy credentials, then clear this site's session.
+  response.cookies.set({
+    name: 'auth_token', value: '', httpOnly: true, secure: true,
+    domain: '.milkcat.org', path: '/', sameSite: 'lax', maxAge: 0,
+  });
+  response.cookies.set({
+    name: 'auth_token', value: '', httpOnly: true, secure: true,
+    path: '/', sameSite: 'lax', maxAge: 0,
+  });
   return response;
 }
