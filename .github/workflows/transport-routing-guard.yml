@@ -18,6 +18,9 @@ on:
       - tests/test_wow_offline_end_to_end.py
       - tests/test_wow_offline_installer_contract.py
       - scripts/wow_agentos_install.ps1
+      - scripts/build_wow_offline_installer.py
+      - tests/test_wow_offline_packaging.py
+      - tests/test_wow_offline_installer_windows.ps1
       - scripts/WoW-AgentOS-Setup.cmd
       - agentos_node/wow_slot_publisher.py
       - agentos_node/wow_reply_slot.py
@@ -50,6 +53,9 @@ on:
       - tests/test_wow_offline_end_to_end.py
       - tests/test_wow_offline_installer_contract.py
       - scripts/wow_agentos_install.ps1
+      - scripts/build_wow_offline_installer.py
+      - tests/test_wow_offline_packaging.py
+      - tests/test_wow_offline_installer_windows.ps1
       - scripts/WoW-AgentOS-Setup.cmd
       - agentos_node/wow_slot_publisher.py
       - agentos_node/wow_reply_slot.py
@@ -84,7 +90,7 @@ jobs:
         run: python3 -m unittest tests.test_transport_routing -v
 
       - name: Validate WoW bounded adapter and offline game UI
-        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell tests.test_wow_bridge_protocol tests.test_wow_status_reply tests.test_wow_reply_slot tests.test_wow_slot_publisher tests.test_wow_offline_end_to_end tests.test_wow_offline_installer_contract tests.test_wow_pixel_probe tests.test_wow_capture_probe -v
+        run: python3 -m unittest tests.test_wow_control_adapter tests.test_wow_addon_shell tests.test_wow_bridge_protocol tests.test_wow_status_reply tests.test_wow_reply_slot tests.test_wow_slot_publisher tests.test_wow_offline_end_to_end tests.test_wow_offline_installer_contract tests.test_wow_offline_packaging tests.test_wow_pixel_probe tests.test_wow_capture_probe -v
 
       - name: Validate documentation coupling
         shell: bash
@@ -126,3 +132,28 @@ jobs:
         run: python3 -m json.tool governance/product-deployment-carriers.json >/dev/null
       - name: Assert no-job legacy Actions noise is not transport evidence
         run: python3 -m unittest tests.test_product_deployment_carriers -v
+
+  wow-offline-installer-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build allowlisted offline preview ZIP
+        shell: pwsh
+        run: |
+          python scripts/build_wow_offline_installer.py --output "$env:RUNNER_TEMP\AgentOS-WoW-V1-preview.zip"
+      - name: Verify and extract the packaged installer
+        shell: pwsh
+        run: |
+          python -m unittest tests.test_wow_offline_packaging -v
+          Expand-Archive -LiteralPath "$env:RUNNER_TEMP\AgentOS-WoW-V1-preview.zip" -DestinationPath "$env:RUNNER_TEMP\wow-installer" -Force
+          $env:WOW_INSTALLER_ROOT=Join-Path "$env:RUNNER_TEMP\wow-installer" 'AgentOS-WoW-V1-preview'
+          & "$env:GITHUB_WORKSPACE\tests\test_wow_offline_installer_windows.ps1"
+      - name: Upload internal preview test artifact (not an official release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wow-offline-installer-unverified-preview
+          path: |
+            ${{ runner.temp }}/AgentOS-WoW-V1-preview.zip
+            ${{ runner.temp }}/AgentOS-WoW-V1-preview.zip.sha256
+          retention-days: 3
