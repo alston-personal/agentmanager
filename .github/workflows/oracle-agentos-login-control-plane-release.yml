@@ -53,7 +53,7 @@ jobs:
           echo "deployment_source=$SOURCE_SHA"
           # Existing service-specific deploy controller implements immutable
           # worktree, single-writer lock, systemd cutover and rollback on error.
-          "$DEPLOY" "$SOURCE_SHA"
+          AGENTOS_REPO="$REPO" "$DEPLOY" "$SOURCE_SHA"
           ACCEPTED="$(cat /home/ubuntu/agent-data/runtime/control-plane/accepted-release)"
           EXPECTED="/home/ubuntu/agent-data/releases/control-plane/$SOURCE_SHA"
           test "$ACCEPTED" = "$EXPECTED"
