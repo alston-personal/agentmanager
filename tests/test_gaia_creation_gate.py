@@ -26,7 +26,7 @@ class GaiaCreationGateTest(unittest.TestCase):
             Proposal("New Service", "project"),
             Decision(Disposition.NEEDS_HUMAN_APPROVAL, None, ("not_found",)),
             source_refs=("atlas://snapshot/abc",),
-            reviewed_at="2026-11-09T00:00:00+00:00")
+            reviewed_at=datetime.now(timezone.utc).isoformat())
         self.authorization = CreationAuthorization(
             decision_hash=self.record.content_hash,
             project_id="new-service", actor_id="role://governance.keeper",
@@ -104,7 +104,7 @@ class GaiaCreationGateTest(unittest.TestCase):
             Proposal("Extension", "project"),
             Decision(Disposition.EXTEND_PROJECT, "project://mobile-node", ("existing",)),
             source_refs=("project://mobile-node",),
-            reviewed_at="2026-11-09T00:00:00+00:00")
+            reviewed_at=datetime.now(timezone.utc).isoformat())
         with self.assertRaisesRegex(CreationDenied, "review_is_not_new_project_proposal"):
             self.run_registration(record=rec, verified=True)
 
