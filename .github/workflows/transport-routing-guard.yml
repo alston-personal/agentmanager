@@ -147,8 +147,8 @@ jobs:
         shell: pwsh
         run: |
           python scripts/build_wow_offline_installer.py --output "$env:RUNNER_TEMP\AgentOS-WoW-V1-preview.zip"
-      - name: Verify and extract the packaged installer
-        shell: pwsh
+      - name: Verify and extract the packaged installer on Windows PowerShell 5.1
+        shell: powershell
         run: |
           python -m unittest tests.test_wow_offline_packaging -v
           Expand-Archive -LiteralPath "$env:RUNNER_TEMP\AgentOS-WoW-V1-preview.zip" -DestinationPath "$env:RUNNER_TEMP\wow-installer" -Force
