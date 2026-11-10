@@ -1187,3 +1187,8 @@ Draft Gaia handoff work identity is now derived from the canonical GitHub Issue 
 ### Gaia Runtime bridge convergence checkpoint (2026-11-10)
 
 The Gaia candidate PR branch now carries a preserving-history merge of the current main runtime source instead of using the outdated branch bootstrap_control.py. The read-only `scripts/gaia_intake_probe.py` is NOT registered as an executable Runner Window action; production ONE authorization and dispatch receipts remain pending. Do not mistake Git merge CI for deployed Oracle Runtime.
+
+
+### Gaia ONE Runner Window inspection route (2026-11-10; source candidate)
+
+After safely converging #2157 onto the current main Runtime, Gaia's **read-only** inspection route is registered consistently across `agent_core/runner_window.py` (`agentos.gaia` / `intake.inspect`), `agentos_node/bootstrap_control.py` (allowlisted action and bounded canonical-script handler), and `agentos_node/bootstrap_scheduler.py` (control-role policy). The operation accepts no user-provided command/payload keys, and the probe prints informational review status only. Unit tests verify routing and non-authority. The route is **not** a work-item admission, creation gate, or permission grant; no real ONE request ID, Oracle release SHA, or deployment/receipt has yet been observed. The Oracle runtime must deploy this exact candidate under existing governance before any live inspection claim. Production scope for Gaia write-side admission remains separately unimplemented.
