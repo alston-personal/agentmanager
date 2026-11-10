@@ -20,6 +20,17 @@ class WowOfflineInstallerContractTests(unittest.TestCase):
         for forbidden in ('Invoke-WebRequest','Invoke-RestMethod','node_token =','agentos-client.cmd join'):
             self.assertNotIn(forbidden,script)
 
+    def test_installer_validates_package_manifest_before_install(self):
+        src=(SCRIPTS/'wow_agentos_install.ps1').read_text(encoding='utf-8')
+        self.assertEqual(src.count('function Assert-BundleIntegrity'), 1)
+        self.assertEqual(src.count('function Get-SafeDirectory'), 1)
+        for required in ('manifest.json', 'BUNDLE_HASH_MISMATCH',
+                         'BUNDLE_MANIFEST_MISSING', 'BUNDLE_UNSAFE_FILE',
+                         'Assert-BundleIntegrity', 'files_sha256'):
+            self.assertIn(required, src)
+        self.assertLess(src.index(' Assert-BundleIntegrity'),
+                        src.index(' $staged=New-Object'))
+
     def test_launcher_uses_installer_instead_of_preflight_only(self):
         launcher=(SCRIPTS/'WoW-AgentOS-Setup.cmd').read_text(encoding='utf-8')
         self.assertIn('wow_agentos_install.ps1', launcher)
