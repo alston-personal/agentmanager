@@ -15,7 +15,7 @@ SOURCES = {
     'layoutlab-editor-ui-v0.7.js': ROOT / 'web_assets/layoutlab-editor-ui-v0.7.js',
     'layoutlab-capability-bridge-v0.7.js': ROOT / 'web_assets/layoutlab-capability-bridge-v0.7.js',
 }
-TARGET_DIR = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
+TARGET_DIR = Path('/home/ubuntu/studio-web/dist/layout-lab')
 
 
 def _identity(name: str, data: bytes) -> None:
