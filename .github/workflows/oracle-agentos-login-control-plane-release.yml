@@ -142,6 +142,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           DEPLOY_RESULT: ${{ needs.deploy.result }}
+          ADMIN_CONFIGURED: ${{ needs.deploy.outputs.admin_configured }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -158,7 +159,7 @@ jobs:
               result === 'success'
                 ? '- Acceptance: deploy job completed; inspect the run logs for exact accepted-release SHA. Authenticated admin/tenant sessions remain separate acceptance gates.'
                 : '- Acceptance: **not established**. Inspect the linked deploy job failure and retain the existing rollback contract.',
-              `- Active Dashboard owner admin configuration: ${{ needs.deploy.outputs.admin_configured || 'UNKNOWN' }} (configuration only; live OAuth session role not attested)`,
+              `- Active Dashboard owner admin configuration: ${['PASS', 'MISSING', 'UNKNOWN'].includes(process.env.ADMIN_CONFIGURED) ? process.env.ADMIN_CONFIGURED : 'UNKNOWN'} (configuration only; live OAuth session role not attested)`,
               '- Work item: #2198 (existing; no new issue or deployment lane).',
             ].join('\n');
             const comments = await github.paginate(github.rest.issues.listComments, {
