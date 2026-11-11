@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getProvider } from '@/lib/auth/providers';
 import { generateToken } from '@/lib/auth';
 import { consumeOAuthState } from '@/lib/auth/oauth-state';
-import { resolveAuthSite, safeLocalReturnTo } from '@/lib/auth/site';
+import { authCookieName, resolveAuthSite, safeLocalReturnTo } from '@/lib/auth/site';
 
 export async function GET(
   request: NextRequest,
@@ -54,14 +54,15 @@ export async function GET(
     });
     const response = NextResponse.redirect(new URL(safeLocalReturnTo(record.returnTo), resolved.origin));
 
-    // Clear legacy parent-domain token and replace with a host-only session.
+    // Clear legacy parent-domain token and replace with a site-specific,
+    // host-only session so a Studio login cannot impersonate AgentOS.
     // Studio and AgentOS must not share a browser cookie.
     response.cookies.set({
       name: 'auth_token', value: '', httpOnly: true, secure: true,
       domain: '.milkcat.org', path: '/', sameSite: 'lax', maxAge: 0,
     });
     response.cookies.set({
-      name: 'auth_token', value: token, httpOnly: true, secure: true,
+      name: authCookieName(resolved.site), value: token, httpOnly: true, secure: true,
       path: '/', sameSite: 'lax', maxAge: 86400,
     });
     response.cookies.set({
