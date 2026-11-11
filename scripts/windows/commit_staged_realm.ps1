@@ -46,6 +46,9 @@ if ($lease.schema -ne 'agentos.node-heartbeat-lease/v0.1' -or
 # Reauthenticate target bearer before stopping the original Node.
 & $stageLauncher --config $stageFile health | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Staged target Realm is not reachable using the claimed credential' }
+# The original endpoint must be readable too, so rollback can be verified.
+& $launcher health | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Original Realm health not available; refusing an irreversible cutover' }
 
 # This transaction is only safe with the canonical hidden task pair. Unknown
 # task layouts must not be stopped or replaced by guessing.
@@ -82,6 +85,90 @@ try {
   if ((Get-ScheduledTask -TaskName $primaryName).State -eq 'Running' -or
       ($hasWatchdog -and (Get-ScheduledTask -TaskName $watchdogName).State -eq 'Running')) {
     throw 'Supervisor failed to stop cleanly'
+  }
+  # Task Scheduler can stop its PowerShell parent before the child Python
+  # process exits. Refuse to switch credentials beneath a live daemon.
+  $stragglers = @(Get-CimInstance Win32_Process -ErrorAction Stop |
+    Where-Object { $_.Name -match '^(python|pythonw)(\d+)?\.exe
+  # In-place copy is forbidden. Keep the exact original bytes for rollback.
+  Copy-Item -LiteralPath $stageFile -Destination $temp -ErrorAction Stop
+  # File.Replace atomically installs the new file AND captures old bytes.
+  [IO.File]::Replace($temp, $originalFile, $backup)
+  $committed = $true
+  Start-ScheduledTask -TaskName $primaryName -ErrorAction Stop
+  if ($hasWatchdog) { Start-ScheduledTask -TaskName $watchdogName -ErrorAction Stop }
+  Start-Sleep -Seconds 3
+  if ((Get-ScheduledTask -TaskName $primaryName).State -ne 'Running') {
+    throw 'Target supervisor did not restart'
+  }
+  # Recheck the live active configuration through the original launcher,
+  # then cause a fresh authenticated heartbeat on the destination Realm.
+  & $launcher health | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'New active credential health failed' }
+  $pythonExe = $null
+  $launcherText = Get-Content -Raw -LiteralPath $launcher
+  if ($launcherText -match '(?m)^"([^"]+\.exe)" -m agentos_node\.client_cli') {
+    $pythonExe = $Matches[1]
+  }
+  if (-not $pythonExe -or -not (Test-Path -LiteralPath $pythonExe)) {
+    throw 'Unable to verify active Node heartbeat with its pinned interpreter'
+  }
+  $oldPythonPath = $env:PYTHONPATH
+  $oldHome = $env:AGENTOS_CLIENT_HOME
+  try {
+    $env:PYTHONPATH = $root
+    $env:AGENTOS_CLIENT_HOME = $state
+    $probe = 'from agentos_node.client_cli import _load_policy,build_client; from agentos_node.thin_client_transport import ClientConfig; from pathlib import Path; c=ClientConfig.load(Path("state")/"client.json"); t=build_client(c,_load_policy(Path("state")/"policy.json")); r=t.heartbeat(); raise SystemExit(0 if r.get("heartbeat_recorded") else 2)'
+    Push-Location $root
+    try { & $pythonExe -c $probe | Out-Null } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw 'New active Realm heartbeat was not acknowledged' }
+  } finally {
+    $env:PYTHONPATH = $oldPythonPath
+    $env:AGENTOS_CLIENT_HOME = $oldHome
+  }
+  Write-Host 'agentos_realm_switch=COMMITTED_VERIFIED'
+  Write-Host "agentos_node_id=$($target.node_id)"
+  Write-Host "agentos_realm_id=$($target.realm_id)"
+  Write-Host 'agentos_active_binding=TARGET'
+  # Backup intentionally retained for manual incident recovery.
+} catch {
+  $failure = $_.Exception.Message
+  if ($stopped) {
+    if ($hasWatchdog) { Stop-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue }
+    Stop-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
+    if ($committed -and (Test-Path -LiteralPath $backup)) {
+      $failedTarget = Join-Path $state ('client.failed-cutover-' + [guid]::NewGuid().ToString('N') + '.json')
+      [IO.File]::Replace($backup, $originalFile, $failedTarget)
+    }
+    Start-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
+    if ($hasWatchdog) { Start-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue }
+  }
+  $restored = $false
+  try {
+    $check = Get-Content -Raw -LiteralPath $originalFile | ConvertFrom-Json
+    $restored = ([string]$check.realm_id -eq [string]$original.realm_id -and
+                 [string]$check.node_id -eq [string]$original.node_id -and
+                 [string]$check.node_token -eq [string]$original.node_token)
+    if ($restored) {
+      & $launcher health | Out-Null
+      $restored = ($LASTEXITCODE -eq 0 -and (Get-ScheduledTask -TaskName $primaryName).State -eq 'Running')
+    }
+  } catch { $restored = $false }
+  if ($restored) {
+    Write-Host 'agentos_realm_switch=ROLLED_BACK_VERIFIED'
+    Write-Host 'agentos_active_binding=ORIGINAL'
+  } else {
+    Write-Host 'agentos_realm_switch=ROLLBACK_UNVERIFIED'
+    Write-Host 'agentos_active_binding=REQUIRES_OPERATOR_REVIEW'
+  }
+  throw "Realm cutover not accepted: $failure"
+} finally {
+  Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+}
+ -and
+                   $_.CommandLine -match 'agentos_node\.client_cli\s+run' })
+  if ($stragglers.Count -gt 0) {
+    throw 'Thin Client daemon still running after task stop; refusing credential swap'
   }
   # In-place copy is forbidden. Keep the exact original bytes for rollback.
   Copy-Item -LiteralPath $stageFile -Destination $temp -ErrorAction Stop
