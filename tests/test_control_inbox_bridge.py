@@ -242,6 +242,52 @@ def test_queued_command_is_followed_to_late_receipt_without_redispatch(tmp_path:
     assert github.results[-1]['task_id'] == _task_id(command['command_id'])
 
 
+def test_receipt_http_500_preserves_one_task_and_recovers_without_gpu_redispatch(tmp_path: Path):
+    """Regression for IFTV #3: a dispatched ONE job may have side effects
+    even when its receipt endpoint temporarily fails with HTTP 500.
+    """
+    command = _command(command_id='iftv-h3-one-receipt-500')
+    github = FakeGitHub([_comment(17110, command)])
+
+    class FlakyReceiptOne(FakeOne):
+        unavailable = True
+
+        def receipt(self, task_id):
+            if self.unavailable:
+                raise OneControllerError('one_receipt_http_500')
+            return self._receipt
+
+    one = FlakyReceiptOne(receipt=None)
+    config = _config(tmp_path)
+    bridge = ControlInboxBridge(config, github=github, one=one)
+
+    assert bridge.process_once() == 1
+    assert len(one.dispatched) == 1
+    assert github.results[-1]['status'] == 'queued'
+    assert github.results[-1]['task_id'] == _task_id(command['command_id'])
+    stored = json.loads(config.state_path.read_text(encoding='utf-8'))
+    assert stored['commands'][command['command_id']]['phase'] == 'queued'
+    assert stored['commands'][command['command_id']]['task_id'] == _task_id(command['command_id'])
+
+    # A restart with an unrecovered HTTP 500 must only read, never POST again.
+    restarted = ControlInboxBridge(config, github=github, one=one)
+    assert restarted.process_once() == 0
+    assert len(one.dispatched) == 1
+
+    one.unavailable = False
+    one._receipt = {
+        'schema': 'agentos.node-receipt/v0.1',
+        'node_id': 'node-a',
+        'task_id': _task_id(command['command_id']),
+        'action': 'agent.surface.inspect',
+        'ok': True,
+    }
+    assert restarted.process_once() == 0
+    assert len(one.dispatched) == 1
+    assert github.results[-1]['status'] == 'completed'
+    assert github.results[-1]['task_id'] == _task_id(command['command_id'])
+
+
 def test_restart_after_claim_reports_unknown_and_never_redispatches(tmp_path: Path):
     command = _command(command_id='interrupted')
     github = FakeGitHub([])

@@ -704,24 +704,34 @@ class ControlInboxBridge:
                 else:
                     dispatch = self.one.dispatch(command['node_id'], command)
                     task_id = str(dispatch.get('task_id') or _task_id(command_id))
+                    # Persist the actual ONE task identity IMMEDIATELY after
+                    # dispatch. A GET-receipt 5xx must not destroy the only
+                    # correlation key or turn a billable job into terminal
+                    # failure. Never retry the mutating POST.
+                    state['commands'][command_id] = {
+                        'phase': 'queued',
+                        'command': command,
+                        'task_id': task_id,
+                        'queued_at': _iso(),
+                        'posted_queued': False,
+                    }
+                    self._save_state(state)
                     deadline = time.monotonic() + self.config.receipt_wait_seconds
                     receipt = None
                     while time.monotonic() < deadline:
-                        receipt = self.one.receipt(task_id)
+                        try:
+                            receipt = self.one.receipt(task_id)
+                        except OneControllerError as exc:
+                            # Retain queued identity for a future read-only
+                            # lookup; do NOT redispatch on backend 5xx.
+                            if str(exc).startswith('one_receipt_http_5'):
+                                break
+                            raise
                         if receipt is not None:
                             break
                         time.sleep(1)
                     status = 'completed' if receipt is not None else 'queued'
                     result = self._result(command, status=status, task_id=task_id, receipt=receipt)
-                    if receipt is None:
-                        state['commands'][command_id] = {
-                            'phase': 'queued',
-                            'command': command,
-                            'task_id': task_id,
-                            'queued_at': _iso(),
-                            'posted_queued': False,
-                        }
-                        self._save_state(state)
             except OneControllerError as exc:
                 result = self._result(command, status='error', error=str(exc))
             except Exception:
