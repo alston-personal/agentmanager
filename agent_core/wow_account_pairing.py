@@ -7,6 +7,7 @@ the secret, OAuth cookie, Node token, or execution authority.
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import hmac
 import html
 import json
@@ -15,6 +16,7 @@ import re
 import secrets
 import time
 from pathlib import Path
+from contextlib import contextmanager
 from typing import Any
 
 from .account_realm_onboarding import _current_identity
@@ -27,6 +29,18 @@ _CODE = re.compile(r"^[A-Z2-9]{12}$")
 _SECRET = re.compile(r"^[a-f0-9]{64}$")
 TTL = 600
 SESSION_TTL = 86400
+
+
+@contextmanager
+def _exclusive(root: Path):
+    """Serialize approve/revoke so a pending login cannot reappear after logout."""
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (root / ".pairing.lock").open("a+", encoding="ascii") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def _path(root: Path, code: str) -> Path:
@@ -84,24 +98,25 @@ def start_pairing(*, host: str, root: Path = ROOT, now: int | None = None) -> tu
     if not _valid_host(host):
         return 400, {"ok": False, "error": "invalid_site"}
     now = int(time.time()) if now is None else now
-    _prune(root, now)
-    if len(list(root.glob("*.json"))) >= 256:
-        return 429, {"ok": False, "error": "pairing_capacity_reached"}
-    code = "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(12))
-    secret = secrets.token_hex(32)
-    row = {
-        "schema": "agentos.wow.browser-pair/v1", "state": "pending",
-        "secret_sha256": hashlib.sha256(secret.encode("ascii")).hexdigest(),
-        "created": now, "expires": now + TTL,
-    }
-    try:
-        # Exclusive write: no overwriting an outstanding code.
-        with os.fdopen(os.open(_path(root, code), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as stream:
-            json.dump(row, stream, separators=(",", ":"))
-    except FileExistsError:
-        return 503, {"ok": False, "error": "pairing_collision_retry"}
-    except OSError:
-        return 503, {"ok": False, "error": "pairing_unavailable"}
+    with _exclusive(root):
+        _prune(root, now)
+        if len(list(root.glob("*.json"))) >= 256:
+            return 429, {"ok": False, "error": "pairing_capacity_reached"}
+        code = "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(12))
+        secret = secrets.token_hex(32)
+        row = {
+            "schema": "agentos.wow.browser-pair/v1", "state": "pending",
+            "secret_sha256": hashlib.sha256(secret.encode("ascii")).hexdigest(),
+            "created": now, "expires": now + TTL,
+        }
+        try:
+            # Exclusive write: no overwriting an outstanding code.
+            with os.fdopen(os.open(_path(root, code), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as stream:
+                json.dump(row, stream, separators=(",", ":"))
+        except FileExistsError:
+            return 503, {"ok": False, "error": "pairing_collision_retry"}
+        except OSError:
+            return 503, {"ok": False, "error": "pairing_unavailable"}
     return 201, {"ok": True, "code": code, "claim_secret": secret,
                  "verification_url": ORIGIN + "/wow/account/authorize?code=" + code,
                  "expires_at_unix": now + TTL}
