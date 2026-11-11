@@ -1522,3 +1522,30 @@ This fixes only the **existing briefing → Mio advisory cognition** source gap.
 The existing Oracle 5-minute social runner clones `my-agent-data` into a **temporary worktree**, while Trend Digest writes the morning briefing under `/home/ubuntu/agent-data/personas/sunlake-milkcat/morning_reading.json`. A consumer that reads only the worktree could miss fresh local reports indefinitely. The same Draft PR now stages only a correctly scoped, <=36-hour fresh local `mio_lifestyle` JSON into that temporary checkout, if newer than its existing file, immediately before post cognition. It never edits the durable source or commits the staged briefing to GitHub. A subprocess regression test executes the exact heredoc with fresh, stale, wrong-subscription fixtures and tests non-overwrite semantics. The stage print is bounded sanitized status and does not expose news text. No new scheduler and no self-authorizing write actions.
 
 The same pre-existing `persona-pdca-heartbeat.yml` deploy workflow has a bounded **read-only Oracle Trend Digest inventory step**. It reports whether `/home/ubuntu/trend-digest` exists, whether the local `mio_lifestyle` output is fresh/stale/invalid and approximate counts of matching user/system systemd timers or user crontab entries (including -1 for inaccessible commands). It discloses neither source contents nor credentials and does not create/enable/restart any service. The step executes only when the normal protected-main deployment workflow runs following approved merge; its mere presence on the PR is not an Oracle inventory receipt.
+
+## Oracle Colab H3 Smoke reliability boundary (2026-11-11)
+
+The pre-existing `oracle-colab-minimax-h3-smoke.yml` remains the **manual-only,
+governed GPU acceptance** route. For the already-authorized IFTV #3 work, the
+latest observed run [#42990501470](https://github.com/alston-personal/agentmanager/actions/runs/42990501470)
+consumed 17.54 Colab compute units, produced no MP4 and ended after 7,260 seconds
+with remote Jupyter kernel `Connection was lost`. The same pinned H3 upstream
+revision previously produced a four-second MP4 with audio on
+[run #36832326925](https://github.com/alston-personal/agentmanager/actions/runs/36832326925).
+This is evidence of intermittent execution failure, **not** proof that ADC
+authentication failed or a new model must be written.
+
+The existing smoke is now explicitly **bounded**: a 1,500-second runner timeout,
+a 45-minute enclosing job limit, no retry, and a mandatory successful
+`colab --auth=adc usage` preflight *before* any GPU inference. Receipts retain
+runner progress and sanitized tail, and add a conservative failure class
+(`COLAB_KERNEL_CONNECTION_LOST`, `COLAB_EXECUTION_TIMEOUT`,
+`COLAB_USAGE_PREFLIGHT_FAILED`, etc.). This categorization is observational
+and does not prove root cause. Its pull-request checks only execute offline
+static safety tests: the GPU `smoke` job remains guarded by
+`github.event_name == 'workflow_dispatch'`, never by a PR event.
+
+This source-level guard does not trigger a new GPU run, resolve previously
+failed jobs, verify Oracle's loaded runtime, or deliver the final six-second
+spoken IFTV leopard-cat outro. Existing ONE/Supervisor approval and original
+IFTV #3 receipt/QA requirements remain unchanged.
