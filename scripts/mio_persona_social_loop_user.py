@@ -616,6 +616,13 @@ def main():
             # have published on Threads while the transport response was lost.
             continue
         if item.get('status')!='scheduled':continue
+        if item.get('outbound_discovery'):
+            # Existing queued intents may predate the new URL-only gate.
+            # No legacy proactive reply may use an unverified source ID.
+            item['status']='skipped'
+            item['result']='external_parent_not_attested_legacy'
+            print('mio_social_publish=BLOCKED_LEGACY_UNVERIFIED_PARENT')
+            continue
         try:due=datetime.fromisoformat(str(item['scheduled_at']).replace('Z','+00:00'))
         except Exception:due=now
         if due>now:continue
