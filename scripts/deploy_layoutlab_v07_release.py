@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BASE_DEPLOY = ROOT / 'scripts' / 'deploy_layoutlab_static.py'
 OVERLAY = ROOT / 'web_assets' / 'layoutlab-v0.7-release-fix.js'
-TARGET = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
+TARGET = Path('/home/ubuntu/studio-web/dist/layout-lab')
 INDEX = TARGET / 'index.html'
 TARGET_OVERLAY = TARGET / OVERLAY.name
 RELEASE = '0.7.9'
