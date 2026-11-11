@@ -1639,3 +1639,20 @@ IFTV #3 receipt/QA requirements remain unchanged.
   its worker must receive vetted, real worktree mapping and be deployed
   through the existing immutable-release process. No host path has been
   guessed or silently configured.
+
+
+- **Important pre-existing Action Relay mainline gap (discovered by queued-worker
+  acceptance tests):** `agentos_node/action_relay.py` on current `main` has
+  seven `ACTIONS` registry references to undefined handlers: one GitHub
+  workflow dispatch handler and six Realm Fabric deployment handlers. The
+  corresponding handlers are present on `core/integration`, demonstrating
+  a concrete incomplete capability convergence. Restoring all those older
+  privileged deployment functions wholesale would exceed the #2269
+  version-guard scope and risks re-enabling retired production execution.
+  It requires owner-specific source equivalence/security review and actual
+  Oracle consumer evidence under #1682 before changing the canonical relay.
+  For now, the queued-worker fence is tested against its exact production
+  `_execute` function AST in isolation; **this is not a passing full
+  Action Relay import or live execution acceptance**. The missing handler
+  registry remains an explicit blocker to claiming the mainline worker is
+  runnable.
