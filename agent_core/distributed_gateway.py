@@ -23,6 +23,7 @@ from .shared_auth_bridge import is_shared_auth_path, proxy_shared_auth_request
 from .account_realm_onboarding import account_request
 from .platform_realm_review import platform_review
 from .realm_provisioning import account_virtual_one
+from .virtual_one_nodes import owner_node_map, owner_approve_code, device_join
 
 MAX_REQUEST_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -422,6 +423,12 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         if path in ("/welcome", "/welcome/"):
             self._html(200, render_welcome_html())
             return
+        if path == "/v1/account/virtual-one/nodes":
+            code, payload = owner_node_map(
+                host=self.headers.get("Host", ""), cookie=self.headers.get("Cookie")
+            )
+            self._json(code, payload)
+            return
         if path == "/v1/account/virtual-one":
             code, result = account_virtual_one(
                 host=self.headers.get("Host", ""), cookie=self.headers.get("Cookie")
@@ -514,6 +521,23 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         path, parts = self._route()
         try:
             body = self._read_body()
+            if path == "/v1/account/virtual-one/join/approve":
+                code, result = owner_approve_code(
+                    host=self.headers.get("Host", ""), cookie=self.headers.get("Cookie"),
+                    origin=self.headers.get("Origin"), code=str(body.get("code") or "")
+                )
+                self._json(code, result)
+                return
+            if len(parts) == 5 and parts[0:2] == ["v1", "realms"] and parts[3] == "join":
+                # Device flow never receives an operator bearer or realm map.
+                # Realm-specific request IDs and high-entropy claim secrets
+                # are verified exclusively inside the selected tenant store.
+                code, result = device_join(
+                    host=self.headers.get("Host", ""), realm_id=parts[2],
+                    action=parts[4], body=body
+                )
+                self._json(code, result)
+                return
             if path == "/v1/platform/realm-requests":
                 code, result = platform_review(
                     method="POST", host=self.headers.get("Host", ""),

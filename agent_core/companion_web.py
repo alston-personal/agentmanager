@@ -947,10 +947,15 @@ body{background:#080c14;color:#e5e7eb;min-height:100vh;margin:0}
 main{max-width:760px;margin:7vh auto;padding:28px;background:#101827;border:1px solid #293244;border-radius:14px}
 a{color:#b5c7fa}p{color:#aab6cb;line-height:1.6}
 dl{display:grid;grid-template-columns:180px 1fr;gap:12px}dd{margin:0}
+section{padding:16px 0;border-top:1px solid #293244;margin-top:18px}
+button,input{font:inherit;padding:10px;background:#1c2d49;color:#edf2ff;border:1px solid #526582;border-radius:8px}
+button{cursor:pointer;margin:6px 6px 6px 0}input{min-width:170px;max-width:95%}
+article{border:1px solid #34465c;background:#142036;padding:12px;border-radius:8px;margin:10px 0}
+small{color:#9eafc5}
 </style></head><body><main>
 <h1>我的 Virtual ONE</h1>
 <nav><a href="/welcome">我的 AgentOS</a> · <a href="/platform">平台治理（需管理權限）</a></nav>
-<p>此介面僅顯示已完成帳號綁定的獨立 Realm 基本資訊。ONE 執行服務、任務派送及節點管理仍須正式部署與權限驗收。</p>
+<p>此頁提供獨立 Realm 的 Node Map 與 Node 加入核准。ONE 執行服務及任務派送仍須正式驗收。</p>
 <p id="status" role="status">正在確認 Realm Owner 權限…</p>
 <dl id="details" hidden>
 <dt>Realm ID</dt><dd id="realm-id"></dd>
@@ -958,7 +963,63 @@ dl{display:grid;grid-template-columns:180px 1fr;gap:12px}dd{margin:0}
 <dt>已加入節點</dt><dd id="node-count"></dd>
 <dt>ONE 執行服務</dt><dd id="one-runtime"></dd>
 </dl>
+<section id="node-management" hidden>
+<h2>Node Map</h2>
+<p id="map-status" role="status">讀取節點中…</p>
+<div id="node-map"></div>
+<h2>加入 Node</h2>
+<p>在新 Node 安裝程式選擇此 Realm，產生一次性 Code 後，在此輸入核准。核准後 Node 仍須完成 claim 才算加入。</p>
+<p><small>Realm ID：<code id="join-target"></code></small></p>
+<p><small>此 Realm 的 Node 申請 API：<code id="join-endpoint"></code></small></p>
+<label for="node-code">Node 上顯示的 8 碼 Code</label>
+<input id="node-code" placeholder="ABCD-EFGH" maxlength="9" autocomplete="off">
+<button type="button" id="approve-node">核准加入 Node</button>
+<p id="join-status" role="status"></p>
+<h3>待處理 Node 申請</h3><div id="pending-joins"></div>
+</section>
 <script>
+async function refreshNodeMap(){
+ const res=await fetch('/v1/account/virtual-one/nodes',{credentials:'same-origin',cache:'no-store'});
+ if(!res.ok)throw Error('無法取得這個 Realm 的 Node Map');
+ const data=await res.json();
+ document.getElementById('map-status').textContent='已加入 '+data.node_count+' 台，線上 '+data.online_node_count+' 台。';
+ const map=document.getElementById('node-map'),pending=document.getElementById('pending-joins');
+ map.replaceChildren();pending.replaceChildren();
+ for(const node of data.nodes){
+  const entry=document.createElement('article');
+  const name=document.createElement('strong');name.textContent=node.node_id||'未命名 Node';
+  const detail=document.createElement('p');
+  detail.textContent=(node.status||'unknown')+' · '+(node.role||'client')+
+   ' · 能力：'+(Array.isArray(node.capabilities)?node.capabilities.join('、'):'—');
+  entry.append(name,detail);map.append(entry);
+ }
+ if(!data.nodes.length){const p=document.createElement('p');p.textContent='此 Realm 尚未有 Node。';map.append(p);}
+ for(const request of data.pending_joins){
+  const p=document.createElement('p');
+  p.textContent=request.node_id+' · '+request.user_code+
+     ' · '+(request.approved?'已核准，等待 Node 領取':'等待核准')+
+     ' · 到期 '+request.expires_at;pending.append(p);
+ }
+ if(!data.pending_joins.length){const p=document.createElement('p');p.textContent='目前沒有待處理加入申請。';pending.append(p);}
+}
+document.getElementById('approve-node').onclick=async()=>{
+ const input=document.getElementById('node-code');
+ const code=input.value.trim().toUpperCase();
+ const msg=document.getElementById('join-status');
+ if(!/^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(code)){msg.textContent='請輸入有效的 Node 加入 Code。';return;}
+ const btn=document.getElementById('approve-node');btn.disabled=true;
+ try{
+  const res=await fetch('/v1/account/virtual-one/join/approve',{
+   method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({code})
+  });
+  const data=await res.json();
+  if(!res.ok)throw Error(data.error||'核准失敗');
+  msg.textContent='已核准 '+data.node_id+'，等待 Node 領取憑證。';
+  input.value='';await refreshNodeMap();
+ }catch(e){msg.textContent=e.message||'無法完成核准';}
+ finally{btn.disabled=false;}
+};
 (async()=>{
 const status=document.getElementById('status');
 try{
@@ -971,6 +1032,10 @@ document.getElementById('node-count').textContent=String(data.node_count);
 document.getElementById('one-runtime').textContent=data.one_runtime_attested?'已驗證':'尚未驗收';
 document.getElementById('details').hidden=false;
 status.textContent='已完成獨立 Realm 資料初始化及帳號擁有者綁定。';
+document.getElementById('join-target').textContent=data.realm_id;
+document.getElementById('join-endpoint').textContent=location.origin+'/v1/realms/'+data.realm_id+'/join/request';
+document.getElementById('node-management').hidden=false;
+try{await refreshNodeMap();}catch(e){document.getElementById('map-status').textContent=e.message;}
 }catch(e){status.textContent=e.message;}
 })();
 </script></main></body></html>
