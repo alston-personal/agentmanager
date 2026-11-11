@@ -77,7 +77,7 @@ def test_platform_ui_has_review_operations_but_no_provisioning_claim():
     html = render_platform_review_html()
     assert "平台治理" in html
     assert "/v1/platform/realm-requests" in html
-    assert "核准（待 ONE 開通）" in html
+    assert "核准申請（不代表開通）" in html
     assert "operator token" not in html.lower()
 
 
@@ -107,3 +107,32 @@ def test_platform_access_denial_pages_offer_login_or_account_switch():
     assert "/dashboard/api/auth/logout?returnTo=%2Fplatform" in forbidden
     assert "/welcome" in forbidden
     assert "核准（待 ONE 開通）" not in forbidden
+
+
+def test_reviewer_sees_only_verified_applicant_identity(tmp_path):
+    from agent_core.platform_realm_review import _applicant, _project
+    digest = "a" * 64
+    request_id = "realm-onboarding-" + digest[:32]
+    (tmp_path / (digest + ".json")).write_text(
+        __import__("json").dumps({"request_id": request_id, "actor": digest,
+                                  "provider": "google",
+                                  "applicant_display_name": "Sample Applicant",
+                                  "subject": "sensitive-provider-subject"}),
+        encoding="utf-8",
+    )
+    applicant = _applicant(request_id, "oauth-account:" + digest[:16], root=tmp_path)
+    assert applicant["name"] == "Sample Applicant"
+    assert applicant["provider"] == "google"
+    assert "subject" not in applicant
+    assert _applicant(request_id, "oauth-account:not-valid", root=tmp_path)["provider"] == "unknown"
+
+
+def test_platform_review_ui_has_broader_governance_navigation_and_details():
+    html = render_platform_review_html()
+    assert "平台治理中心" in html
+    assert "Realm 清冊（尚未開放）" in html
+    assert "節點與資源（尚未開放）" in html
+    assert "近期審核紀錄" in html
+    for key in ("申請人", "登入來源", "申請時間", "審核狀態", "ONE 開通"):
+        assert key in html
+    assert "innerHTML" not in html
