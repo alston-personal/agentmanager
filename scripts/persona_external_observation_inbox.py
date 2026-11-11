@@ -14,6 +14,7 @@ import re
 
 SCHEMA = "agentos.mio-external-public-observation/v1"
 URL = re.compile(r"^/@([A-Za-z0-9._]{1,40})/post/[A-Za-z0-9_-]{1,40}$")
+SHARE_URL = re.compile(r"^/share/[A-Za-z0-9_-]{1,80}/?$")
 
 
 def validate(obj):
@@ -95,33 +96,52 @@ def observe_intel_urls(intel_file, source_dir, limit=2, resolver=None):
             continue
         parsed = urlsplit(url)
         match = URL.fullmatch(parsed.path)
+        share = SHARE_URL.fullmatch(parsed.path)
         if (parsed.scheme != "https" or parsed.netloc not in
                 ("www.threads.com", "threads.com", "www.threads.net", "threads.net")
-                or parsed.query or parsed.fragment or not match):
+                or parsed.query or parsed.fragment or (not match and not share)):
             result["rejected"] += 1
             continue
-        username = match.group(1)
-        if username.casefold() == "mio.milkcat":
+        if match and match.group(1).casefold() == "mio.milkcat":
             result["rejected"] += 1
             continue
-        canonical = "https://www.threads.com" + parsed.path
-        digest = hashlib.sha256(canonical.encode()).hexdigest()[:24]
-        target = output / (digest + ".json")
-        if target.exists():
-            result["already_seen"] += 1
-            continue
+        request_url = "https://www.threads.com" + (
+            parsed.path.rstrip("/") + "/" if share else parsed.path.rstrip("/"))
+        if match:
+            digest = hashlib.sha256(request_url.encode()).hexdigest()[:24]
+            if (output / (digest + ".json")).exists():
+                result["already_seen"] += 1
+                continue
         visited += 1
         try:
-            response = resolver(canonical)
+            response = resolver(request_url)
             if (not isinstance(response, dict) or
                     response.get("schema") != "agentos.social.threads.public-post/v1" or
                     response.get("login_bypass_used") is not False or
                     response.get("anti_bot_bypass_used") is not False):
                 raise ValueError("reader provenance invalid")
             source = response.get("source")
-            if (not isinstance(source, dict) or source.get("url") != canonical or
-                    str(source.get("username") or "").casefold() != username.casefold()):
+            if not isinstance(source, dict):
+                raise ValueError("reader source missing")
+            canonical = source.get("url")
+            if not isinstance(canonical, str) or len(canonical) > 240:
+                raise ValueError("reader canonical URL invalid")
+            target_parts = urlsplit(canonical)
+            resolved = URL.fullmatch(target_parts.path)
+            if (target_parts.scheme != "https" or target_parts.netloc != "www.threads.com"
+                    or target_parts.query or target_parts.fragment or not resolved):
+                raise ValueError("reader canonical URL invalid")
+            username = resolved.group(1)
+            if (username.casefold() == "mio.milkcat"
+                    or str(source.get("username") or "").casefold() != username.casefold()
+                    or (match and (request_url != canonical or
+                                  match.group(1).casefold() != username.casefold()))):
                 raise ValueError("reader identity mismatch")
+            digest = hashlib.sha256(canonical.encode()).hexdigest()[:24]
+            target = output / (digest + ".json")
+            if target.exists():
+                result["already_seen"] += 1
+                continue
             record = {"schema": SCHEMA, "source": "vendor-public-threads-reader",
                       "source_url": canonical, "author": username,
                       "text": source.get("text"),
