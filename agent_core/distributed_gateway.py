@@ -429,11 +429,13 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             self._json(code, result)
             return
         if path in ("/my-one", "/my-one/"):
-            code, _ = account_virtual_one(
+            code, result = account_virtual_one(
                 host=self.headers.get("Host", ""), cookie=self.headers.get("Cookie")
             )
             if code != 200:
-                self._json(code, {"ok": False, "error": "realm_membership_required"})
+                # Distinguish anonymous 401, non-member 403 and invalid
+                # virtual-host 400. No Realm data is leaked on denial.
+                self._json(code, {"ok": False, "error": result.get("error", "realm_membership_required")})
                 return
             self._html(200, render_my_one_html())
             return
