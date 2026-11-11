@@ -16,7 +16,10 @@ jobs:
       - name: Unit tests
         run: python3 -m unittest discover -s tests -p 'test_branch_convergence_paths.py' -v && python3 -m unittest discover -s tests -p 'test_branch_resume_guard.py' -v
       - name: Verify Executor job freshness before dispatch
-        run: python3 -m pytest tests/test_branch_resume_controller.py -q
+        run: |
+          python3 -m venv /tmp/agentos-resume-guard-venv
+          /tmp/agentos-resume-guard-venv/bin/python -m pip install --disable-pip-version-check pytest
+          /tmp/agentos-resume-guard-venv/bin/python -m pytest tests/test_branch_resume_controller.py -q
       - name: Reject stale mainline on resumed code PR
         if: github.event_name == 'pull_request'
         shell: bash
