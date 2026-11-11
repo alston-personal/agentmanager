@@ -88,7 +88,14 @@ $files = @(
   'agentos_node/session_bridge.py',
   'agentos_node/agent_surfaces.py',
   'agentos_node/employee_wake_inbox.py',
-  'agentos_node/runtime_provenance.py'
+  'agentos_node/runtime_provenance.py',
+  'agentos_node/executor_reconcile.py',
+  'agentos_node/executor_provider_registry.py',
+  'agentos_node/executor_onboarding.py',
+  'agentos_node/client_runtime_converge.py',
+  'agentos_node/social/__init__.py',
+  'agentos_node/social/threads_gui_client.py',
+  'agentos_node/social/web_dm.py'
 )
 foreach ($rel in $files) {
   $dest = Join-Path $InstallRoot ($rel -replace '/', '\')
