@@ -1078,6 +1078,147 @@ def _issue71_repair_node_registry(params: dict[str, Any]) -> dict[str, Any]:
         restarted_after_failure = bool(restart.get('ok'))
         raise
 
+def _github_run_created_after(created_at: str, lower_bound: datetime) -> bool:
+    """Correlate workflow runs with this dispatch attempt, not an older same-SHA run."""
+    try:
+        when = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        return when.tzinfo is not None and when >= lower_bound.replace(microsecond=0)
+    except (ValueError, TypeError):
+        return False
+
+
+def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch one explicitly allowlisted GitHub Actions workflow.
+
+    GitHub credentials remain owned by the ubuntu relay identity. Callers may
+    select only a registered workflow/ref pair and JSON object inputs; arbitrary
+    repositories, workflow paths, refs, CLI flags, and shell text are rejected.
+    """
+    allowed = {
+        ("alston-personal/agentmanager", "oursong-persona-activation.yml", "core/integration"),
+        ("alston-personal/agentmanager", "agentos-dispatch.yml", "core/integration"),
+        ("alston-personal/agentmanager", "oracle-colab-minimax-h3-smoke.yml", "main"),
+    }
+    repository = str(params.get("repository") or "")
+    workflow = str(params.get("workflow") or "")
+    ref = str(params.get("ref") or "")
+    inputs = params.get("inputs") or {}
+    expected_head_sha = str(params.get("expected_head_sha") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_head_sha):
+        raise ValueError("expected_head_sha must be an exact lowercase 40-hex commit SHA")
+    if (repository, workflow, ref) not in allowed:
+        raise ValueError("GitHub Actions dispatch target is not allowlisted")
+    if not isinstance(inputs, dict):
+        raise ValueError("GitHub Actions dispatch inputs must be an object")
+    if workflow == "oursong-persona-activation.yml":
+        if inputs:
+            raise ValueError("this workflow does not accept dispatch inputs")
+    elif workflow == "oracle-colab-minimax-h3-smoke.yml":
+        if inputs:
+            raise ValueError("H3 smoke workflow does not accept caller inputs")
+    elif workflow == "agentos-dispatch.yml":
+        if inputs != {
+            "capability": "node.realm",
+            "operation": "inspect",
+            "payload_json": '{"node_id":"oracle-exec"}',
+            "wait_seconds": "120",
+        }:
+            raise ValueError("Golden Path dispatch inputs are not allowlisted")
+    else:
+        raise ValueError("workflow not allowlisted")
+
+    auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
+    if auth["returncode"] != 0:
+        return {
+            "ok": False,
+            "repository": repository,
+            "workflow": workflow,
+            "ref": ref,
+            "auth": auth,
+            "error": "ubuntu GitHub identity is not authenticated",
+        }
+
+    dispatched_not_before = datetime.now(timezone.utc)
+    dispatch = _run([
+        "/usr/bin/gh", "workflow", "run", workflow,
+        "--repo", repository,
+        "--ref", ref,
+        *([entry for key, value in sorted(inputs.items()) for entry in ("-f", f"{key}={value}")]),
+    ], cwd=Path.home(), timeout=30)
+    if dispatch["returncode"] != 0:
+        return {
+            "ok": False,
+            "repository": repository,
+            "workflow": workflow,
+            "ref": ref,
+            "dispatched": False,
+            "dispatch": dispatch,
+        }
+
+    deadline = time.monotonic() + 30.0
+    observed = None
+    probes: list[dict[str, Any]] = []
+    while time.monotonic() < deadline:
+        probe = _run([
+            "/usr/bin/gh", "run", "list",
+            "--repo", repository,
+            "--workflow", workflow,
+            "--branch", ref,
+            "--commit", expected_head_sha,
+            "--event", "workflow_dispatch",
+            "--limit", "5",
+            "--json", "databaseId,headSha,status,conclusion,url,createdAt",
+        ], cwd=Path.home(), timeout=20)
+        probes.append(probe)
+        if probe["returncode"] == 0:
+            try:
+                rows = json.loads(probe.get("stdout") or "[]")
+            except json.JSONDecodeError:
+                rows = []
+            candidates = [
+                row for row in rows
+                if str(row.get("headSha") or "") == expected_head_sha
+                and isinstance(row.get("createdAt"), str)
+                and _github_run_created_after(row["createdAt"], dispatched_not_before)
+            ]
+            # A timestamp + commit does not uniquely identify simultaneous
+            # workflow_dispatch runs. Never attach an ambiguous run receipt.
+            if len(candidates) > 1:
+                return {
+                    "ok": False,
+                    "repository": repository,
+                    "workflow": workflow,
+                    "ref": ref,
+                    "expected_head_sha": expected_head_sha,
+                    "dispatched": True,
+                    "run_id": None,
+                    "error": "ambiguous workflow run correlation",
+                }
+            observed = candidates[0] if len(candidates) == 1 else None
+            if observed is not None:
+                break
+        time.sleep(1.0)
+
+    return {
+        "ok": observed is not None,
+        "repository": repository,
+        "workflow": workflow,
+        "ref": ref,
+        "expected_head_sha": expected_head_sha,
+        "dispatched": True,
+        # A discovered workflow run is only dispatch acknowledgement, not
+        # the nested Runner Window's terminal success receipt.
+        "workflow_terminal_verified": False,
+        "dispatch_ack_only": True,
+        "run_id": observed.get("databaseId") if observed else None,
+        "run_status": observed.get("status") if observed else None,
+        "run_conclusion": observed.get("conclusion") if observed else None,
+        "run_url": observed.get("url") if observed else None,
+        "dispatch": dispatch,
+        "observe_attempts": len(probes),
+        "error": None if observed is not None else "dispatched workflow run was not observed before deadline",
+    }
+
 # deployment_rejection_precedence_v1
 ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "site.sync_build": _site_sync_build,
