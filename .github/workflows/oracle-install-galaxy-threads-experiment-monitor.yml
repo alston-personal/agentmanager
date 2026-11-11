@@ -294,3 +294,70 @@ jobs:
           for key in ('social_experiment_queue_checked','social_experiment_queue_advanced','social_experiment_queue_failed'):
               print('galaxy_latest_' + key + '=' + counters.get(key,'unknown'))
           PY
+
+      - name: Probe existing Social Runtime reads for due observations only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$DEPLOY_PORT" "$DEPLOY_USER@$ORACLE_HOST" 'python3 -' <<'PY'
+          import importlib.util, json, sys, urllib.error
+          from pathlib import Path
+          from datetime import datetime, timezone
+          release=Path('/home/ubuntu/.local/share/agentos/galaxy-experiment-monitor/current').resolve()
+          sys.path.insert(0, str(release))
+          source=release/'scripts/monitor_social_post_experiment_user.py'
+          if not source.is_file():
+              print('galaxy_provider_probe=IMMUTABLE_MODULE_MISSING')
+              raise SystemExit(0)
+          spec=importlib.util.spec_from_file_location('galaxy_readonly_monitor',source)
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          queue=Path('/home/ubuntu/agent-data/runtime/social/post-experiments/queue')
+          checks=0
+          for file in sorted(queue.glob('*.json')) if queue.is_dir() else []:
+              if file.is_symlink(): continue
+              try:
+                  item=json.loads(file.read_text(encoding='utf-8'))
+                  published=datetime.fromisoformat(str(item['published_at']).replace('Z','+00:00'))
+                  elapsed=int((datetime.now(timezone.utc)-published.astimezone(timezone.utc)).total_seconds()//60)
+                  if item.get('next_elapsed_minutes') is None or elapsed<int(item['next_elapsed_minutes']):
+                      continue
+                  checks+=1
+                  env=module.env_map()
+                  product=json.loads(env.get('AGENTOS_SOCIAL_PRODUCTS_JSON','{}') or '{}').get('galaxy') or {}
+                  key=str(product.get('api_key') or '')
+                  if not key:
+                      print('galaxy_provider_probe=PRODUCT_KEY_UNAVAILABLE')
+                      continue
+                  try:
+                      bid,_=module.binding_for(str(item['account_username']))
+                  except SystemExit as exc:
+                      code=str(exc)
+                      allowed=('social_experiment=BINDING_UNAVAILABLE','social_experiment=ACCOUNT_BINDING_AMBIGUOUS')
+                      print('galaxy_provider_probe='+ (code.split('=',1)[-1] if code in allowed else 'BINDING_FAILURE'))
+                      continue
+                  headers={'X-AgentOS-Product-Key':key}
+                  status,posts=module.post(module.BASE+'/status',module.req('post.read',bid),headers)
+                  if status!=200 or posts.get('ok') is not True:
+                      print('galaxy_provider_probe=POST_READ_FAILED')
+                      print('galaxy_provider_post_http_ok='+str(status==200).lower())
+                      continue
+                  items=((posts.get('result') or {}).get('items') or [])
+                  found=any(str(post.get('id') or '')==str(item['post_id']) for post in items if isinstance(post,dict))
+                  print('galaxy_provider_post_found='+str(found).lower())
+                  print('galaxy_provider_post_read_count='+str(len(items)))
+                  if not found:
+                      print('galaxy_provider_probe=POST_NOT_FOUND')
+                      continue
+                  status,replies=module.post(module.BASE+'/status',module.req('replies.read',bid,str(item['post_id'])),headers)
+                  if status!=200 or replies.get('ok') is not True:
+                      print('galaxy_provider_probe=REPLIES_READ_FAILED')
+                      continue
+                  print('galaxy_provider_probe=READ_PATH_PASS')
+              except (OSError,ValueError,TypeError,KeyError,AttributeError,urllib.error.URLError,TimeoutError):
+                  print('galaxy_provider_probe=READ_PATH_EXCEPTION')
+          print('galaxy_provider_due_checked='+str(checks))
+          # No snapshot/learning/queue writes, no secrets, post text, IDs or raw errors in logs.
+          PY
