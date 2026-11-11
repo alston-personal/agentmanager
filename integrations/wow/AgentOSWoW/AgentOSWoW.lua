@@ -5,6 +5,7 @@ local ADDON_NAME = ...
 local panel
 local statusLine
 local answerLine
+local accountLine
 local questionBox
 local askButton
 local function setState(message)
@@ -18,8 +19,9 @@ local probeId = 0
 local probeToken = tostring(time()) .. tostring(math.random(100000, 999999))
 local PROBE_CELL_SIZE = 4
 local PROBE_MAX_CELLS = 200
-local function encodeProbe(id)
-    local payload = '{"action":"wow.control.status","session":"' .. probeToken .. '"}'
+local function encodeProbe(id, action)
+    -- Only known status/account intents. No credentials or realm selector in Lua.
+    local payload = '{"action":"' .. action .. '","session":"' .. probeToken .. '"}'
     local length = #payload
     local bytes = {
         0xC7, 0x1A, math.floor(id / 256) % 256, id % 256,
@@ -64,9 +66,15 @@ local function ensureProbeStrip()
     return probeStrip
 end
 
-local function sendStatusProbe()
+local function emitIntent(action)
+    if action ~= "wow.control.status"
+       and action ~= "wow.account.login.start"
+       and action ~= "wow.account.logout" then
+        setState("Unsupported AgentOS action")
+        return
+    end
     probeId = (probeId % 65535) + 1
-    local cells = encodeProbe(probeId)
+    local cells = encodeProbe(probeId, action)
     if #cells > PROBE_MAX_CELLS then
         setState("Status probe too large; no packet sent")
         return
@@ -81,13 +89,27 @@ local function sendStatusProbe()
         )
     end
     strip:Show()
-    setState("Probe emitted (ID " .. probeId .. "); awaiting verified Bridge")
+    setState("Intent " .. action .. " (ID " .. probeId .. "); awaiting verified Bridge")
     if C_Timer and C_Timer.After then
         local sentId = probeId
         C_Timer.After(20, function()
             if probeId == sentId and probeStrip then probeStrip:Hide() end
         end)
     end
+end
+
+local function sendStatusProbe()
+    emitIntent("wow.control.status")
+end
+
+local function requestAddonLogin()
+    -- Game cannot open trusted OAuth itself; Bridge must handle browser pairing.
+    emitIntent("wow.account.login.start")
+end
+
+local function requestAddonLogout()
+    -- This is only a request, never a claim that server-side logout succeeded.
+    emitIntent("wow.account.logout")
 end
 
 -- Minimal one-shot LoadOnDemand reply slot, installed before game launch.
@@ -131,7 +153,7 @@ end
 local function createPanel()
     if panel then return panel end
     panel = CreateFrame("Frame", "AgentOSWoWPanel", UIParent, "BackdropTemplate")
-    panel:SetSize(445, 325)
+    panel:SetSize(445, 390)
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     panel:SetMovable(true)
     panel:EnableMouse(true)
@@ -155,8 +177,13 @@ local function createPanel()
     statusLine:SetWidth(400)
     statusLine:SetJustifyH("LEFT")
     statusLine:SetText("Bridge: not connected | ONE: unknown")
+    accountLine = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    accountLine:SetPoint("TOPLEFT", statusLine, "BOTTOMLEFT", 0, -14)
+    accountLine:SetWidth(400)
+    accountLine:SetJustifyH("LEFT")
+    accountLine:SetText("Addon account: not signed in | Realm: none")
     local label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("TOPLEFT", statusLine, "BOTTOMLEFT", 0, -28)
+    label:SetPoint("TOPLEFT", accountLine, "BOTTOMLEFT", 0, -18)
     label:SetText("Ask AgentOS (read-only; not available until bridge approval)")
     questionBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
     questionBox:SetSize(383, 32)
@@ -185,6 +212,18 @@ local function createPanel()
     readSlot:SetPoint("TOPLEFT", answerLine, "BOTTOMLEFT", 0, -18)
     readSlot:SetText("Read reply slot (once)")
     readSlot:SetScript("OnClick", loadStatusReplySlot)
+    local login = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    login:SetSize(175, 27)
+    login:SetPoint("TOPLEFT", readSlot, "BOTTOMLEFT", 0, -16)
+    login:SetText("Sign in via Bridge")
+    login:SetScript("OnClick", requestAddonLogin)
+    local logout = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    logout:SetSize(175, 27)
+    logout:SetPoint("LEFT", login, "RIGHT", 12, 0)
+    logout:SetText("Sign out via Bridge")
+    logout:SetScript("OnClick", requestAddonLogout)
+    -- A click only emits a request; no authenticated user or Realm is
+    -- displayed until a separately verified host Bridge supplies that state.
     panel:Hide()
     return panel
 end
