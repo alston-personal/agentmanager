@@ -97,3 +97,45 @@ jobs:
           echo "agentos_control_plane_login_release=PASS"
           echo "studio_dashboard_mutation=CONTROLLED_BLUE_GREEN"
           REMOTE
+
+  report-release-receipt:
+    # This is a separate, least-privilege job: deployment secrets stay in deploy.
+    # Report failures too; never require the owner to locate an Actions Run ID.
+    if: ${{ always() }}
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Publish source-pinned deployment result to original #2198
+        uses: actions/github-script@v7
+        env:
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = 2198;
+            const marker = `<!-- agentos-control-plane-release:${context.runId} -->`;
+            const result = process.env.DEPLOY_RESULT || 'unknown';
+            const url = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              marker,
+              '### AgentOS #2198 immutable Control Plane deployment receipt',
+              `- Run: ${url}`,
+              `- Source SHA: \`${context.sha}\``,
+              `- Deploy job: **${result}**`,
+              result === 'success'
+                ? '- Acceptance: deploy job completed; inspect the run logs for exact accepted-release SHA. Authenticated admin/tenant sessions remain separate acceptance gates.'
+                : '- Acceptance: **not established**. Inspect the linked deploy job failure and retain the existing rollback contract.',
+              '- Work item: #2198 (existing; no new issue or deployment lane).',
+            ].join('\\n');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100
+            });
+            const previous = comments.find(item => item.body?.includes(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
