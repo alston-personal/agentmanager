@@ -13,7 +13,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 180
+    timeout-minutes: 45
     env:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
@@ -113,7 +113,7 @@ jobs:
           python3 "$RELEASE/scripts/runner.py" batch \
             --manifest "$WORK/jobs.json" \
             --gpu A100 \
-            --timeout 7200 \
+            --timeout 1500 \
             --output-dir "$OUT" \
             --progress "$WORK/progress.json" > "$WORK/runner.log" 2>&1
           RC=$?
@@ -151,6 +151,21 @@ jobs:
                   for pat in secret_patterns:
                       line=re.sub(pat,lambda m:m.group(1)+'=<redacted>',line)
                   runner_tail.append(line[:1200])
+          # Categorize observed failure without inventing a root cause.
+          # Preserve runner's native exception and progress for diagnosis.
+          failure_text='\\n'.join(runner_tail + ([str(prog.get('error',''))] if isinstance(prog,dict) else []))
+          if int(rc)==0 and outputs:
+              failure_class=None
+          elif 'Connection was lost' in failure_text:
+              failure_class='COLAB_KERNEL_CONNECTION_LOST'
+          elif 'exceeded ' in failure_text and ' seconds' in failure_text:
+              failure_class='COLAB_EXECUTION_TIMEOUT'
+          elif int(usage_before_rc)!=0:
+              failure_class='COLAB_USAGE_PREFLIGHT_FAILED'
+          elif int(rc)!=0 and not outputs:
+              failure_class='H3_INFERENCE_OR_OUTPUT_FAILED'
+          else:
+              failure_class='H3_OUTPUT_MISSING'
           payload={
               "schema":"agentos.media-generation-receipt/v1",
               "provider":"google-colab",
@@ -160,7 +175,7 @@ jobs:
               "smoke":{"duration_seconds":4,"requested_gpu":"A100","high_mem_requested":True},
               "usage":{"before":parse_usage(before),"before_returncode":int(usage_before_rc),"after":parse_usage(after)},
               "runner":{"returncode":int(rc),"progress":prog,"sanitized_tail":runner_tail},
-              "result":{"status":"PASS" if int(rc)==0 and outputs else "FAIL","artifact_root":artifact_root,"outputs":outputs}
+              "result":{"status":"PASS" if int(rc)==0 and outputs else "FAIL","failure_class":failure_class,"artifact_root":artifact_root,"outputs":outputs}
           }
           with open(dst+'.tmp','w',encoding='utf-8') as f:
               json.dump(payload,f,ensure_ascii=False,indent=2); f.write('\n')
