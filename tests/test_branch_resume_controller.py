@@ -88,3 +88,17 @@ def test_probe_errors_fail_closed_without_leaking_provider_details(tmp_path):
         dispatch(controller)
     assert "internal api token" not in str(err.value)
     assert not worker.calls
+
+
+def test_read_only_executor_unchanged_without_code_probe(tmp_path):
+    from agent_core.executor_job_contract import canonical_experience_regression_request
+    worker = FakeDispatcher()
+    controller = ControllerService(_fabric(tmp_path), executor_job_dispatcher=worker)
+    result = controller.dispatch({
+        "schema": "agentos.controller-dispatch/v0.1",
+        "node_id": "oracle-core-node",
+        "action": "agentos.executor.job",
+        "payload": canonical_experience_regression_request(),
+    })
+    assert result["job_id"] == "action-12345678"
+    assert len(worker.calls) == 1
