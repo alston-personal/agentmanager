@@ -24,7 +24,7 @@ The Threads transport follows the LeopardCat teacher flow: authorization code ->
 
 Core provides two distinct read paths:
 
-- `social.threads.public_post.read`: anonymous bounded HTTPS reader with strict Threads host/redirect validation.
+- `social.threads.public_post.read`: anonymous bounded HTTPS reader with strict Threads host/redirect validation. Its Core ingress accepts canonical post URLs and bounded `/share/<id>` redirects, resolving only to a canonical Threads post before parsing. The source contract remains provider-neutral and read-only. Browser/Playwright fallback remains an adapter concern rather than Vendor-owned product logic in Core.
 - credentialed identity/post/replies contract: registered but must be routed through a runtime adapter before being considered accepted.
 
 Threads publish uses official `media_type=TEXT`, `auto_publish_text=true`, bounded primary text (`<=500`) and optional JSON `text_attachment` with bounded `plaintext` (`<=10000`) and optional http/https link attachment. Core publishing remains unauthorized by this document and by Issue #154.
@@ -62,3 +62,7 @@ After the focused #154 PR is integrated to `core/integration`, #18/#125/#262 sho
 7. Integration target: `core/integration` only.
 8. Legacy provenance accounted before retirement: this document.
 9. Teacher extension: product-scoped OAuth return, binding/disconnect, text attachment, no product content persistence, secret-free receipt, dual-consumer contract proof, shared provider config boundary.
+
+## 2026-11-11 share link ingress convergence
+
+Core `agentos_node/social/public_threads.py` resolves allowlisted Threads `/share/<id>` links before reading the canonical public post. Existing Core Social Provider `social.threads.public_post.read` is the common consumer-facing contract for Vendor, LeopardCat Tarot, Mio and Hermes; this source-level improvement does not by itself prove these independent runtime consumers have switched from Vendor-specific transport. Vendor PR #32 independently fixed the legacy Vendor Reader endpoint and remains a compatibility adapter, not the shared capability authority. Deployment acceptance still requires actual Oracle/runtime source version, read-only canonical source evidence and Hermes receipt; source merge is not live content proof.
