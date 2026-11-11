@@ -136,3 +136,19 @@ def test_platform_review_ui_has_broader_governance_navigation_and_details():
     for key in ("申請人", "登入來源", "申請時間", "審核狀態", "ONE 開通"):
         assert key in html
     assert "innerHTML" not in html
+
+
+def test_welcome_always_links_back_to_protected_platform():
+    from agent_core.companion_web import render_welcome_html
+    html = render_welcome_html()
+    assert 'href="/platform"' in html
+    assert 'href="/welcome" aria-current="page"' in html
+    assert "平台治理（需管理權限）" in html
+    assert "登入首頁" in html
+
+
+def test_approved_platform_item_shows_true_next_step_without_fake_one():
+    html = render_platform_review_html()
+    assert "等待獨立 ONE 建立與帳號 Owner 綁定" in html
+    assert "已核准申請會移至下方近期審核紀錄" in html
+    assert "ONE 開通" in html

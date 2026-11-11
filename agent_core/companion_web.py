@@ -662,6 +662,11 @@ button{cursor:pointer;margin:6px 6px 6px 0}button:disabled{opacity:.5;cursor:not
 input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
 </style></head><body><main>
 <h1>AgentOS</h1>
+<nav aria-label="AgentOS 主要導覽" style="display:flex;flex-wrap:wrap;gap:14px;padding:10px 0 20px">
+<a href="/welcome" aria-current="page">我的 AgentOS</a>
+<a href="/platform">平台治理（需管理權限）</a>
+<a href="/">登入首頁</a>
+</nav>
 <p id="login-status" aria-live="polite">正在確認登入狀態…</p>
 <section id="realm-onboarding" hidden>
 <h2>我的 Realm</h2>
@@ -687,14 +692,6 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
     const session = await response.json();
     if (session.loggedIn === true && session.provider && session.subject) {
       status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。管理者 Console 不會自動開放。';
-      if (session.role === 'admin') {
-        const admin = document.createElement('p');
-        const link = document.createElement('a');
-        link.href = '/platform';
-        link.textContent = '平台治理：審核 Realm 申請';
-        admin.append(link);
-        document.querySelector('main').append(admin);
-      }
       const onboarding = document.getElementById('realm-onboarding');
       const current = document.getElementById('realm-status');
       const actions = document.getElementById('realm-actions');
@@ -706,6 +703,8 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
         return answer.json();
       };
       const showStatus = data => {
+        // Governance approval and an active ONE are deliberately different
+        // states. Navigation remains available regardless of either state.
         if (data.state === 'pending_review') {
           current.textContent = '申請已建立（' + data.request_id +
             '），類型：' + (data.kind === 'create' ? '建立新 Realm' : '加入既有 Realm') +
@@ -835,6 +834,7 @@ function card(item,canDecide){
  field(dl,'審核狀態',item.stage||item.status);
  field(dl,'目標 Realm',item.kind==='create'?'新 Realm（尚未配置 ID）':item.realm_id);
  field(dl,'ONE 開通',item.provisioned===true?'已驗證':'尚未開通');
+ field(dl,'下一階段',item.status==='APPROVED'?'等待獨立 ONE 建立與帳號 Owner 綁定':'等待平台審核');
  field(dl,'申請編號',item.request_id);
  if(item.resolved_at)field(dl,'審核時間',item.resolved_at);
  if(item.resolved_by)field(dl,'審核人識別',item.resolved_by);
@@ -865,7 +865,7 @@ async function load(){
   const data=await res.json();
   document.getElementById('pending-count').textContent=data.pending.length;
   document.getElementById('history-count').textContent=data.history.length;
-  status.textContent=data.pending.length+' 筆待審申請。審核完成後仍須 ONE 的正式開通回執。';
+  status.textContent=data.pending.length+' 筆待審申請。審核完成後仍須 ONE 的正式開通回執；已核准申請會移至下方近期審核紀錄。';
   pending.replaceChildren();history.replaceChildren();
   for(const item of data.pending)pending.append(card(item,true));
   for(const item of data.history)history.append(card(item,false));
