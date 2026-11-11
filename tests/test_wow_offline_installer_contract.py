@@ -66,7 +66,11 @@ class WowOfflineInstallerContractTests(unittest.TestCase):
         self.assertIn('scripts\\AgentOS-Join.cmd',root_join)
         self.assertIn('bootstrap_clean_windows_node.ps1',source_join)
         self.assertIn('Join-AgentOS-Node.cmd',launcher)
-        self.assertIn('if exist "%LOCALAPPDATA%\\AgentOS\\state\\client.json" goto finish',launcher)
+        self.assertIn('if exist "%LOCALAPPDATA%\\AgentOS\\state\\client.json" goto install_addon',launcher)
+        self.assertLess(launcher.index('call "%~dp0..\\Join-AgentOS-Node.cmd"'),launcher.index('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0wow_agentos_install.ps1"'))
+        self.assertIn('goto existing_addons',launcher)
+        self.assertIn('goto partial_addons',launcher)
+        self.assertIn('Type OFFLINE to continue offline',launcher)
         for name in ('Join-AgentOS-Node.cmd','scripts/AgentOS-Join.cmd'):
             self.assertIn(name,builder)
             self.assertIn(name,install)
