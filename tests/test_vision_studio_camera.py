@@ -70,4 +70,6 @@ def test_producer_reads_same_pinned_ir_and_generator_source():
     assert '$SOURCE_COMMIT:examples/vision-studio/rain-exit-v001.yaml' in source
     assert '$SOURCE_COMMIT:scripts/generate_google_flow_user.sh' in source
     assert 'PROMPT[$i]+=" $camera_direction"' in source
+    assert '"compiled_instructions_sha256": camera_ir_sha256' in source
+    assert '"source_commit": source_commit' in source
     assert "CAMERA_IR_SHOT_COUNT_MISMATCH" in source
