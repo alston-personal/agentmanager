@@ -2,6 +2,13 @@ name: Vision Studio - Rain Exit
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'agentos_node/vision_studio_camera.py'
+      - 'examples/vision-studio/rain-exit-v001.yaml'
+      - 'scripts/produce_vision_studio_user.sh'
+      - 'tests/test_vision_studio_camera.py'
+      - '.github/workflows/vision-studio-rain-exit.yml'
   push:
     branches: [core/integration]
     paths:
@@ -12,7 +19,23 @@ permissions:
   id-token: write
 
 jobs:
+  camera-ir-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify camera IR and immutable producer wiring
+        run: |
+          python3 -m pip install 'PyYAML>=6.0' pytest
+          bash -n scripts/produce_vision_studio_user.sh
+          python3 -m pytest -q tests/test_vision_studio_camera.py
+
   produce:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 80
     env:
