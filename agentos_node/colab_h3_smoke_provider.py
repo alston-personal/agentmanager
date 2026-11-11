@@ -124,9 +124,11 @@ def run_h3_smoke(request: Mapping[str, Any]) -> dict[str, Any]:
     rid = receipt.get("run_id")
     if not receipt.get("ok") or not isinstance(rid, int) or rid <= 0:
         return _result("COLAB_SMOKE_DISPATCH_UNVERIFIED", observed_head=expected)
+    # GitHub accepted the workflow request, but Colab rendering and the media
+    # receipt are still unresolved. Treat ACK as pending, NEVER terminal success.
     return _result("COLAB_SMOKE_DISPATCH_ACK_ONLY",
                    work_id="gh-actions-run-" + str(rid),
-                   successful=True, verdict="ACK_ONLY", observed_head=expected)
+                   successful=False, verdict="PENDING_RECEIPT", observed_head=expected)
 
 
 def register_colab_h3_smoke_provider() -> bool:
