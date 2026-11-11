@@ -120,6 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_join = sub.add_parser('join', help='join Realm, install lifecycle supervisor, bootstrap inherited cognition, run regression, become ready')
     p_join.add_argument('--one', required=True, help='ONE base URL')
+    p_join.add_argument('--realm-id', default=None, help='explicit tenant Realm ID when joining an independently provisioned Realm')
     p_join.add_argument('--node-id', default=socket.gethostname().lower())
     p_join.add_argument('--expires-minutes', type=int, default=10)
     p_join.add_argument('--timeout-seconds', type=int, default=600)
@@ -171,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
             node_id=args.node_id,
             policy=policy,
             config_path=args.config,
+            realm_id=args.realm_id,
             expires_minutes=args.expires_minutes,
             timeout_seconds=args.timeout_seconds,
             on_request=show_request,
