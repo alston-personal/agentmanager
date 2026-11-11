@@ -1569,3 +1569,20 @@ IFTV #3 receipt/QA requirements remain unchanged.
   to Oracle/ONE, and does not itself merge or delete branches. A successful
   PR check is not production release evidence. The existing #1682 owns
   tracking and the existing governance review/merge controls still apply.
+
+
+- ONE's existing `ControllerService._dispatch_executor_job` now invokes a
+  **host-injected** freshness probe for registered `bounded-code-fix`
+  jobs, before calling the Node dispatcher. If no probe is registered,
+  or the result is stale, incomplete, truthy-but-unsigned/incorrect, or
+  raises an exception, code-writing submission fails closed. Read-only
+  executor types keep their established route. The model/request cannot
+  supply a bypass or choose a work SHA. Controller-level regression tests
+  demonstrate failure before dispatch and fresh-source acceptance.
+- A **real Oracle/ONE host probe that resolves the executor worktree HEAD
+  against the current remote main is still required**. Current source
+  adds the enforcement hook, not a production-configured provider or
+  live worker receipt. Do not deploy into a production service before
+  its trusted host resolver and recovery UX are installed; otherwise
+  code-writing job submission will block safely. This remains a
+  governed proposed change under #1682 and PR #2269.
