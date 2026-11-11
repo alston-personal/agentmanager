@@ -88,6 +88,79 @@ def reply_candidates(events,state,ir_binding,reserved_parents=None):
                          "timestamp":stamp,"context_sha256":key}
     return sorted(candidates.values(),key=lambda x:x["timestamp"],reverse=True),skipped
 
+def external_reply_candidates(root, events, state, ir_binding, policy, reserved_parents, now):
+    """Accept outward roots only with an independent platform read and write policy.
+
+    Historical read-only Inbox entries are deliberately NOT an input here.
+    An event or a numeric ID alone never grants reply authority.
+    """
+    if policy.get("proactive_external_reply_authorized") is not True:
+        return [], {"external_reply_not_authorized": 1}
+    candidates, skipped = [], {}
+    for event in events:
+        if event.get("type") != "public.post.verified":
+            continue
+        parent = str(event.get("object_id") or "")
+        root_id = str(event.get("root_post_id") or "")
+        receipt_ref = event.get("source_receipt_ref")
+        author = str(event.get("author_handle") or "").lstrip("@").casefold()
+        def reject(reason):
+            skipped[reason] = skipped.get(reason, 0) + 1
+        if (not parent.isdigit() or not root_id.isdigit() or not author
+                or author == "mio.milkcat" or parent in reserved_parents):
+            reject("external_parent_unrouteable")
+            continue
+        if not isinstance(receipt_ref, str) or not re.fullmatch(
+                r"pdca/social_receipts/[A-Za-z0-9_-]{1,100}\\.json", receipt_ref):
+            reject("external_source_receipt_missing")
+            continue
+        try:
+            source = load(root / receipt_ref)
+        except (OSError, ValueError, TypeError):
+            reject("external_source_receipt_missing")
+            continue
+        provider = source.get("provider_receipt") if isinstance(source, dict) else None
+        if not isinstance(provider, dict):
+            provider = source
+        source_content = (provider.get("result") or {}).get("source") if isinstance(provider.get("result"), dict) else None
+        if (provider.get("schema") != "agentos.social-receipt/v1"
+                or provider.get("ok") is not True
+                or provider.get("operation") != "public_post.read"
+                or str(provider.get("platform_object_id") or "") != parent
+                or not isinstance(source_content, dict)
+                or source_content.get("username", "").casefold() != author
+                or source_content.get("visibility") != "public"
+                or str(source_content.get("root_post_id") or "") != root_id
+                or str(event.get("reader_account") or "").casefold() != "mio.milkcat"):
+            reject("external_source_unverified")
+            continue
+        body = str(source_content.get("text") or "").strip()
+        if not body or body != str(event.get("text") or "").strip():
+            reject("external_context_mismatch")
+            continue
+        stamp = normalize_ts(event.get("timestamp"))
+        if stamp is None or not timedelta(0) <= now - stamp <= timedelta(hours=72):
+            reject("external_observation_stale")
+            continue
+        if already_replied(events, {"object_id": parent}):
+            reject("external_already_replied")
+            continue
+        key = hashlib.sha256(json.dumps({
+            "reply_id": parent, "root_id": root_id, "text": body,
+            "source_receipt_ref": receipt_ref,
+            "ir_source_sha256": ir_binding["source_sha256"]
+        }, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        prior = (state.get("reply_decisions") or {}).get(parent, {})
+        if prior.get("context_sha256") == key and prior.get("status") in ("NO_REPLY", "HUMAN_REQUIRED"):
+            reject("external_already_reviewed")
+            continue
+        candidates.append({
+            "event": event, "reply_id": parent, "root_id": root_id,
+            "root_post": body, "timestamp": stamp, "context_sha256": key,
+            "external_root": True, "source_receipt_ref": receipt_ref
+        })
+    return sorted(candidates, key=lambda c: c["timestamp"], reverse=True), skipped
+
 def persist_reply_receipt(root,state,status,reason,now,**evidence):
     report={"schema":"agentos.persona-reply-reasoning-receipt/v1","cycle":state.get("cycle"),
         "status":status,"reason":reason,"generator_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -174,7 +247,12 @@ def main():
     pending=list(state.get("pending_external_actions") or [])
     if any(x.get("status") in ("candidate","in_progress") and x.get("capability")=="social.reply.send" for x in pending if isinstance(x,dict)):
         print(json.dumps({"status":"SKIP","reason":"reply_send_already_pending"},ensure_ascii=False)); return 0
-    observed,skipped=reply_candidates(events,state,ir_binding,reserved_reply_parents(root,pending))
+    reserved=reserved_reply_parents(root,pending)
+    observed,skipped=reply_candidates(events,state,ir_binding,reserved)
+    if not observed:
+        outward,outward_skipped=external_reply_candidates(root,events,state,ir_binding,policy,reserved,now)
+        observed=outward
+        skipped.update(outward_skipped)
     if not observed:
         status="DEFER" if any(k!="already_reviewed" for k in skipped) else "NO_CANDIDATE"
         reason="no_routeable_comment" if status=="DEFER" else "no_unreviewed_comment"
@@ -201,12 +279,14 @@ def main():
       "voice":persona.get("voice"),
       "autonomy":persona.get("autonomy"),
       "thread":{"root_post":root_post,"incoming_reply":{"id":reply_id,"author":handle,"text":text},"recent_thread":thread},
-      "relationship_context":relationship
+      "relationship_context":relationship,
+      "conversation_kind":"external_public_root" if selected.get("external_root") else "owned_post_incoming_reply",
+      "source_receipt_ref":selected.get("source_receipt_ref")
     }
     prompt="""You are deciding whether Mio should reply to one public Threads comment.
 The JSON context below is authoritative. Do not invent biography, facts, purchases, locations, or relationship history.
 First decide Mio's private position: agree, partly_agree, disagree, uncertain, playful_only, or no_reply.
-Only propose a public reply when context is sufficient and replying is useful. Hostile bait may be no_reply. Legal/payment/contracts/private data must be no_reply and human_required=true.
+Only propose a public reply when context is sufficient and replying is useful. For an external_public_root, reply to the external author's original discussion rather than treating it as a reply to Mio. Hostile bait may be no_reply. Legal/payment/contracts/private data must be no_reply and human_required=true.
 Keep the public reply short, natural Traditional Chinese, consistent with Mio's current IR. Do not mention internal systems/policies. Do not overuse emoji (0-2 max).
 Return ONLY one JSON object with exactly these keys:
 {"position":"...","should_reply":true|false,"human_required":true|false,"reason":"short internal reason","reply_text":"public text or empty"}
@@ -259,7 +339,9 @@ Context:
       "position":position,"decision_reason":str(decision.get("reason") or "")[:300],
       "ir_id":ir.get("ir_id"),"ir_source_sha256":ir_binding["source_sha256"],
       "ir_authoring_context_sha256":ir_binding["context_sha256"],
-      "not_before":not_before,"reasoning_executor":executor
+      "not_before":not_before,"reasoning_executor":executor,
+      "external_root":bool(selected.get("external_root")),
+      "source_receipt_ref":selected.get("source_receipt_ref")
     }
     while len(pending)>=12:
         terminal=next(i for i,x in enumerate(pending) if terminal_action(x))
