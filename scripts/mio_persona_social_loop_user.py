@@ -195,6 +195,13 @@ def pdca_reply_review_authority(persona_state):
         }
     return None
 
+def legacy_proactive_parent_block_reason(item):
+    """A legacy discovery queue entry cannot attest a Threads reply target."""
+    if isinstance(item, dict) and item.get("outbound_discovery"):
+        return "external_parent_not_attested_legacy"
+    return None
+
+
 def pdca_tag_action(action, authority, reply_id):
     if not authority:
         return action
@@ -616,11 +623,11 @@ def main():
             # have published on Threads while the transport response was lost.
             continue
         if item.get('status')!='scheduled':continue
-        if item.get('outbound_discovery'):
-            # Existing queued intents may predate the new URL-only gate.
-            # No legacy proactive reply may use an unverified source ID.
-            item['status']='skipped'
-            item['result']='external_parent_not_attested_legacy'
+        parent_block = legacy_proactive_parent_block_reason(item)
+        if parent_block:
+            # Includes legacy scheduled actions persisted before this change.
+            item['status'] = 'skipped'
+            item['result'] = parent_block
             print('mio_social_publish=BLOCKED_LEGACY_UNVERIFIED_PARENT')
             continue
         try:due=datetime.fromisoformat(str(item['scheduled_at']).replace('Z','+00:00'))
