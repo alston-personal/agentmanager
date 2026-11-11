@@ -26,6 +26,34 @@ DECISION = {"should_post": True, "human_required": False,
             "reason": "verified context", "post_text": "今天想試試哪個小改變？"}
 
 
+class MorningTrendStagingTests(unittest.TestCase):
+    def test_runtime_stages_only_fresh_local_subscription_into_temporary_checkout(self):
+        from datetime import timedelta
+        script=(REPO/"scripts/run_persona_social_actions_user.sh").read_text(encoding="utf-8")
+        segment=script.split('python3 - "$ROOT" "${AGENTOS_MIO_MORNING_READING_SOURCE',1)[1]
+        inline=segment.split("<<'PY'\n",1)[1].split("\nPY\n",1)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/"persona"
+            root.mkdir()
+            source=Path(tmp)/"oracle-morning-reading.json"
+            def execute():
+                return subprocess.run([sys.executable,"-c",inline,str(root),str(source)],
+                                      capture_output=True,text=True,check=True).stdout.strip()
+            fresh=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            source.write_text(json.dumps({"subscription_id":"mio_lifestyle",
+                                          "generated_at":fresh,"synthesized":{"highlights":[]}}))
+            self.assertIn("FRESH_LOCAL_STAGED",execute())
+            self.assertEqual(json.loads((root/"morning_reading.json").read_text())["subscription_id"],"mio_lifestyle")
+            self.assertIn("CHECKOUT_NEWER_OR_EQUAL",execute())
+            source.write_text(json.dumps({"subscription_id":"mio_lifestyle",
+                                          "generated_at":(datetime.now(timezone.utc)-timedelta(days=8)).isoformat(),
+                                          "synthesized":{"highlights":[]}}))
+            self.assertIn("SOURCE_STALE",execute())
+            self.assertNotIn("2026-", (root/"morning_reading.json").read_text())
+            source.write_text(json.dumps({"subscription_id":"other","generated_at":fresh}))
+            self.assertIn("SOURCE_MISSING_OR_INVALID",execute())
+
+
 class MorningTrendConsumptionTests(unittest.TestCase):
     def test_fresh_mio_subscription_is_advisory_not_threads_post(self):
         from datetime import timedelta
