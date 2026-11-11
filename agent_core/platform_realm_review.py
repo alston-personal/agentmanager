@@ -54,6 +54,8 @@ def _project(item: dict[str, Any]) -> dict[str, Any] | None:
     if payload.get("request_id") != request_id:
         return None
     applicant = _applicant(request_id, str(item.get("actor") or ""))
+    from .realm_provisioning import provisioned_request
+    bootstrapped = provisioned_request(request_id) if item.get("status") == "APPROVED" else None
     return {
         "request_id": request_id,
         "kind": payload.get("kind"),
@@ -64,9 +66,12 @@ def _project(item: dict[str, Any]) -> dict[str, Any] | None:
         "resolved_by": item.get("resolved_by"),
         "applicant": applicant,
         "applicant_ref": request_id.removeprefix(_PREFIX)[:12],
-        "stage": ("approved_pending_one" if item.get("status") == "APPROVED" else
+        "stage": ("realm_initialized" if bootstrapped is not None else
+                  "approved_pending_one" if item.get("status") == "APPROVED" else
                   "rejected" if item.get("status") == "REJECTED" else "pending_review"),
-        "provisioned": False,
+        "provisioned": bootstrapped is not None,
+        "provisioned_realm_id": bootstrapped["realm_id"] if bootstrapped else None,
+        "one_runtime_attested": False,
         # Never project internal account identity or arbitrary payloads.
     }
 
@@ -126,9 +131,27 @@ def platform_review(*, method: str, host: str, cookie: str | None,
     result = resolve_approval(request_id, decision, approver="platform-oauth:" + reviewer)
     if not result.get("success"):
         return 409, {"ok": False, "error": "review_conflict"}
+    if result["status"] == "APPROVED" and pending.get("payload", {}).get("kind") == "create":
+        from .realm_provisioning import provision_approved_create, ProvisioningError
+        try:
+            initialized = provision_approved_create(request_id)
+        except (OSError, ValueError, ProvisioningError):
+            # The approval is durable even if independent bootstrap is not
+            # complete. Reconciler retries without reapproving or widening access.
+            return 202, {
+                "ok": True, "request_id": request_id, "status": "APPROVED",
+                "realm_provisioning": "pending", "membership_granted": False,
+            }
+        return 200, {
+            "ok": True, "request_id": request_id, "status": "APPROVED",
+            "realm_provisioning": "isolated_fabric_initialized",
+            "realm_id": initialized["realm_id"],
+            "one_runtime_attested": False,
+            "membership_granted": True,
+        }
     return 200, {
         "ok": True, "request_id": request_id,
         "status": result["status"],
-        "realm_provisioning": "pending" if result["status"] == "APPROVED" else "not_allowed",
+        "realm_provisioning": "not_applicable",
         "membership_granted": False,
     }

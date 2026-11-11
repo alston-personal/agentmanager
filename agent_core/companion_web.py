@@ -714,6 +714,17 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
           current.textContent = '申請 ' + data.request_id +
             ' 已經治理核准，但仍等待 ONE 正式開通與帳號授權。此時還不能使用 Realm。';
           actions.hidden = true;
+        } else if (data.state === 'realm_initialized') {
+          current.textContent = '已建立獨立 Realm：' + data.realm_id +
+            '，且此帳號已綁定為 Owner。ONE 執行服務尚待進一步啟動驗收。';
+          actions.hidden = true;
+          if (!document.getElementById('my-one-link')) {
+            const link = document.createElement('a');
+            link.id = 'my-one-link';
+            link.href = '/my-one';
+            link.textContent = '開啟我的 Virtual ONE（Realm 基本資訊）';
+            current.after(link);
+          }
         } else if (data.state === 'rejected') {
           current.textContent = '申請 ' + data.request_id + ' 已被拒絕，未建立 Realm。';
           actions.hidden = true;
@@ -833,8 +844,9 @@ function card(item,canDecide){
  field(dl,'申請時間',item.parked_at||'未記錄');
  field(dl,'審核狀態',item.stage||item.status);
  field(dl,'目標 Realm',item.kind==='create'?'新 Realm（尚未配置 ID）':item.realm_id);
- field(dl,'ONE 開通',item.provisioned===true?'已驗證':'尚未開通');
- field(dl,'下一階段',item.status==='APPROVED'?'等待獨立 ONE 建立與帳號 Owner 綁定':'等待平台審核');
+ field(dl,'Realm 初始化',item.provisioned===true?'獨立資料與 Owner 綁定已驗證':'尚未初始化');
+ field(dl,'ONE 執行服務',item.one_runtime_attested===true?'已驗證':'尚未驗收');
+ field(dl,'下一階段',item.provisioned===true?'等待 ONE 執行服務及節點能力驗收':item.status==='APPROVED'?'等待獨立 ONE 建立與帳號 Owner 綁定':'等待平台審核');
  field(dl,'申請編號',item.request_id);
  if(item.resolved_at)field(dl,'審核時間',item.resolved_at);
  if(item.resolved_by)field(dl,'審核人識別',item.resolved_by);
@@ -926,3 +938,44 @@ p{color:#aab6cb;line-height:1.7}a{display:inline-block;color:#b6caff;margin:6px 
 def render_platform_auth_gate_html(*, authenticated: bool) -> str:
     """Public, non-sensitive denial UI. Protected review data stays server-gated."""
     return PLATFORM_SWITCH_ACCOUNT_HTML if authenticated else PLATFORM_LOGIN_REQUIRED_HTML
+
+MY_ONE_HTML = """<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>AgentOS — 我的 Virtual ONE</title>
+<style>:root{color-scheme:dark;font-family:system-ui,sans-serif}
+body{background:#080c14;color:#e5e7eb;min-height:100vh;margin:0}
+main{max-width:760px;margin:7vh auto;padding:28px;background:#101827;border:1px solid #293244;border-radius:14px}
+a{color:#b5c7fa}p{color:#aab6cb;line-height:1.6}
+dl{display:grid;grid-template-columns:180px 1fr;gap:12px}dd{margin:0}
+</style></head><body><main>
+<h1>我的 Virtual ONE</h1>
+<nav><a href="/welcome">我的 AgentOS</a> · <a href="/platform">平台治理（需管理權限）</a></nav>
+<p>此介面僅顯示已完成帳號綁定的獨立 Realm 基本資訊。ONE 執行服務、任務派送及節點管理仍須正式部署與權限驗收。</p>
+<p id="status" role="status">正在確認 Realm Owner 權限…</p>
+<dl id="details" hidden>
+<dt>Realm ID</dt><dd id="realm-id"></dd>
+<dt>帳號角色</dt><dd id="owner-role"></dd>
+<dt>已加入節點</dt><dd id="node-count"></dd>
+<dt>ONE 執行服務</dt><dd id="one-runtime"></dd>
+</dl>
+<script>
+(async()=>{
+const status=document.getElementById('status');
+try{
+const res=await fetch('/v1/account/virtual-one',{credentials:'same-origin',cache:'no-store'});
+if(!res.ok)throw Error(res.status===403?'此帳號尚未綁定可使用的 Realm':'無法讀取 Realm 資訊');
+const data=await res.json();
+document.getElementById('realm-id').textContent=data.realm_id;
+document.getElementById('owner-role').textContent=data.role;
+document.getElementById('node-count').textContent=String(data.node_count);
+document.getElementById('one-runtime').textContent=data.one_runtime_attested?'已驗證':'尚未驗收';
+document.getElementById('details').hidden=false;
+status.textContent='已完成獨立 Realm 資料初始化及帳號擁有者綁定。';
+}catch(e){status.textContent=e.message;}
+})();
+</script></main></body></html>
+"""
+
+
+def render_my_one_html() -> str:
+    return MY_ONE_HTML

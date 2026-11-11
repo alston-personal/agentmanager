@@ -15,8 +15,8 @@ from urllib.request import Request, urlopen
 
 
 def probe(url, token, *, kind):
-    headers = {'Authorization': 'Bearer ' + token} if kind not in ('shell', 'welcome', 'companion', 'auth_session', 'account_anon', 'platform_anon', 'platform_page_anon') else {}
-    if kind in ('auth_session', 'account_anon', 'platform_anon', 'platform_page_anon'):
+    headers = {'Authorization': 'Bearer ' + token} if kind not in ('shell', 'welcome', 'companion', 'auth_session', 'account_anon', 'virtual_one_anon', 'my_one_anon', 'platform_anon', 'platform_page_anon') else {}
+    if kind in ('auth_session', 'account_anon', 'virtual_one_anon', 'my_one_anon', 'platform_anon', 'platform_page_anon'):
         # Local probe must mimic the public virtual host; the OAuth bridge
         # intentionally refuses arbitrary Host headers on 127.0.0.1.
         headers['Host'] = 'agentos.milkcat.org'
@@ -54,7 +54,7 @@ def probe(url, token, *, kind):
                 valid = status == 200 and 'Node Map' in body and bool(token) and token not in body
                 details = {'legacy_operator_ui': 'Node Map' in body,
                            'credential_absent': bool(token) and token not in body}
-            elif kind == 'account_anon':
+            elif kind in ('account_anon', 'virtual_one_anon', 'my_one_anon'):
                 payload = json.loads(body)
                 valid = status == 401 and payload.get('error') == 'signin_required'
                 details = {'anonymous_denied': valid}
@@ -146,6 +146,8 @@ def inspect(expected_sha, public_url):
                          [('shell', '/'), ('welcome', '/welcome'), ('companion', '/companion'),
                           ('auth_session', '/dashboard/api/auth/session'),
                           ('account_anon', '/v1/account/realm-request'),
+                          ('virtual_one_anon', '/v1/account/virtual-one'),
+                          ('my_one_anon', '/my-one'),
                           ('platform_anon', '/v1/platform/realm-requests'),
                           ('platform_page_anon', '/platform'),
                           ('nodes', '/v1/nodes'), ('approval', '/v1/nodes/approve')]}
