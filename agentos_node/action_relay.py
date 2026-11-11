@@ -314,6 +314,7 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         ("alston-personal/agentmanager", "oursong-persona-activation.yml", "core/integration"),
         ("alston-personal/agentmanager", "agentos-dispatch.yml", "core/integration"),
+        ("alston-personal/agentmanager", "oracle-colab-minimax-h3-smoke.yml", "main"),
     }
     repository = str(params.get("repository") or "")
     workflow = str(params.get("workflow") or "")
@@ -329,6 +330,9 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
     if workflow == "oursong-persona-activation.yml":
         if inputs:
             raise ValueError("this workflow does not accept dispatch inputs")
+    elif workflow == "oracle-colab-minimax-h3-smoke.yml":
+        if inputs:
+            raise ValueError("H3 smoke workflow does not accept caller inputs")
     elif workflow == "agentos-dispatch.yml":
         if inputs != {
             "capability": "node.realm",
