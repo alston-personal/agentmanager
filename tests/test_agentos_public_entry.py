@@ -10,9 +10,16 @@ from agent_core.distributed_gateway import DistributedGatewayServer, Distributed
 
 def test_public_entry_has_login_not_operator_token():
     html = render_public_entry_html()
+    welcome = render_welcome_html()
+    assert 'id="agentos-account-identity"' in welcome
+    assert 'session.username' in welcome
+    assert 'session.role' in welcome
+    assert 'href="/dashboard/api/auth/logout?returnTo=%2F"' in welcome
+    assert 'id="agentos-admin-entry"' in welcome
+    assert 'innerHTML' not in welcome
     assert 'site=agentos' in html
     assert html.count('returnTo=%2Fwelcome') == 4
-    assert render_welcome_html().count('dashboard/api/auth/session') == 1
+    assert render_welcome_html().count('dashboard/api/auth/session') == 2
     assert '/dashboard/api/auth/signin/google' in html
     assert '/dashboard/api/auth/signin/github' in html
     assert '/dashboard/api/auth/signin/facebook' in html
