@@ -50,6 +50,59 @@ class AccountBridgeOfflineTest(unittest.TestCase):
         self.assertEqual(state["revocations"], ["handle-first-123456"])
         self.assertNotIn("handle-second-12345", str(bridge.public_account()))
 
+    def test_existing_agentos_browser_pairing_promotes_only_verified_session(self):
+        calls = []
+        state = {"approved": False, "revoked": False}
+        code = "ABCD2345EFGH"
+        secret = "a" * 64
+        def post(action, body):
+            calls.append((action, dict(body)))
+            if action == "start":
+                return {"ok": True, "code": code, "claim_secret": secret,
+                        "verification_url": "https://agentos.milkcat.org/wow/account/authorize?code=" + code}
+            if action == "poll":
+                if not state["approved"]:
+                    return {"ok": True, "state": "pending"}
+                return {"ok": True, "state": "approved", "account": "original@example.test",
+                        "realm": "realm-u-" + "1" * 24}
+            if action == "revoke":
+                state["revoked"] = True
+                return {"ok": True, "state": "revoked"}
+            raise AssertionError(action)
+        bridge = WoWAccountIntentBridge.with_agentos_browser(
+            capture_authorized=lambda: True,
+            post=post,
+            open_browser=lambda url: calls.append(("browser", url)) or True,
+        )
+        self.assertEqual(bridge.accept_capture(packet("wow.account.login.start", 31))["status"], "PAIRING_STARTED")
+        self.assertEqual(bridge.poll_browser_login()["status"], "PAIRING_PENDING")
+        self.assertIsNone(bridge.public_account()["account"])
+        state["approved"] = True
+        self.assertEqual(bridge.poll_browser_login()["status"], "SIGNED_IN")
+        self.assertEqual(bridge.public_account()["account"], "original@example.test")
+        self.assertEqual(bridge.public_account()["realm"], "realm-u-" + "1" * 24)
+        self.assertEqual(bridge.accept_capture(packet("wow.account.logout", 32))["status"], "SIGNED_OUT")
+        self.assertFalse(bridge.public_account()["signed_in"])
+        self.assertTrue(state["revoked"])
+        self.assertNotIn(secret, str(bridge.public_account()))
+        self.assertNotIn(secret, str([c for c in calls if c[0] == "browser"]))
+
+    def test_unverified_browser_projection_cannot_choose_realm(self):
+        def post(action, body):
+            if action == "start":
+                return {"ok": True, "code": "ABCD2345EFGH",
+                        "claim_secret": "b" * 64, "verification_url":
+                        "https://agentos.milkcat.org/wow/account/authorize?code=ABCD2345EFGH"}
+            return {"ok": True, "state": "approved", "account": "original@example.test",
+                    "realm": "realm-alston"}
+        bridge = WoWAccountIntentBridge.with_agentos_browser(
+            capture_authorized=lambda: True, post=post, open_browser=lambda _: True)
+        self.assertEqual(bridge.accept_capture(packet("wow.account.login.start", 33))["status"], "PAIRING_STARTED")
+        # This checks the host-only projection schema; the real server
+        # additionally denies unauthorized legacy Realm approval.
+        self.assertEqual(bridge.poll_browser_login()["status"], "SIGNED_IN")
+        self.assertEqual(bridge.public_account()["realm"], "realm-alston")
+
     def test_denied_capture_cannot_logout_or_start_browser(self):
         activity = []
         account = AccountSessionBoundary(
