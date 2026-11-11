@@ -687,6 +687,14 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
     const session = await response.json();
     if (session.loggedIn === true && session.provider && session.subject) {
       status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。管理者 Console 不會自動開放。';
+      if (session.role === 'admin') {
+        const admin = document.createElement('p');
+        const link = document.createElement('a');
+        link.href = '/platform';
+        link.textContent = '平台治理：審核 Realm 申請';
+        admin.append(link);
+        document.querySelector('main').append(admin);
+      }
       const onboarding = document.getElementById('realm-onboarding');
       const current = document.getElementById('realm-status');
       const actions = document.getElementById('realm-actions');
@@ -700,7 +708,15 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
       const showStatus = data => {
         if (data.state === 'pending_review') {
           current.textContent = '申請已建立（' + data.request_id +
-            '），目前等待治理審核與 ONE 正式開通。這還不是可以使用的 Realm。';
+            '），類型：' + (data.kind === 'create' ? '建立新 Realm' : '加入既有 Realm') +
+            '。目前等待治理審核，尚未開通。';
+          actions.hidden = true;
+        } else if (data.state === 'approved_pending_provisioning') {
+          current.textContent = '申請 ' + data.request_id +
+            ' 已經治理核准，但仍等待 ONE 正式開通與帳號授權。此時還不能使用 Realm。';
+          actions.hidden = true;
+        } else if (data.state === 'rejected') {
+          current.textContent = '申請 ' + data.request_id + ' 已被拒絕，未建立 Realm。';
           actions.hidden = true;
         } else {
           current.textContent = '尚未有 Realm 開通申請。';
