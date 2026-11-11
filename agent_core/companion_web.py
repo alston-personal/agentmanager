@@ -768,45 +768,119 @@ def render_welcome_html() -> str:
     return WELCOME_HTML
 
 PLATFORM_REVIEW_HTML = """<!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AgentOS — Realm 平台審核</title>
-<meta name="robots" content="noindex,nofollow"></head>
-<body style="background:#101827;color:white;font-family:system-ui;margin:3rem auto;max-width:760px">
-<h1>AgentOS 平台治理</h1>
-<p>僅授權平台管理者可見。核准申請不等於 ONE 已開通。</p>
-<div id="status" role="status">讀取中…</div><section id="items"></section>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentOS — 平台治理</title><meta name="robots" content="noindex,nofollow">
+<style>
+:root{color-scheme:dark;font:15px system-ui,-apple-system,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:#080c14;color:#e5e7eb}
+header{border-bottom:1px solid #293244;background:#101827;padding:18px clamp(18px,4vw,48px)}
+main{max-width:1180px;margin:auto;padding:28px 20px}
+h1{font-size:24px;margin:0 0 6px}h2{font-size:19px}h3{font-size:16px;margin:0 0 10px}
+p,dt{color:#abb8ca;line-height:1.6}nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+nav a{border:1px solid #3f5066;border-radius:8px;padding:9px 12px;color:#e5e7eb;text-decoration:none}
+nav a.active{background:#263d68}nav a[aria-disabled=true]{opacity:.55;cursor:default}
+a{color:#acc6ff}.stats{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0 22px}
+.stat{background:#111c2d;border:1px solid #293244;border-radius:12px;padding:14px 20px;min-width:150px}
+.stat strong{display:block;font-size:26px}.stat span{font-size:12px;color:#abb8ca}
+article{border:1px solid #344256;background:#101827;border-radius:12px;padding:20px;margin:14px 0}
+dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:10px 18px}
+dt{font-size:12px}dd{margin:2px 0 0;overflow-wrap:anywhere}
+button{font:inherit;color:white;background:#244477;border:1px solid #45669a;border-radius:8px;padding:10px 14px;margin:5px 8px 5px 0;cursor:pointer}
+button.danger{background:#3e2931;border-color:#8b4655}button:disabled{opacity:.45;cursor:not-allowed}
+code{overflow-wrap:anywhere;color:#c8d6f4}small,.muted{color:#90a3ba}
+</style></head><body>
+<header><h1>AgentOS 平台治理中心</h1>
+<p>平台管理員工作區 · 與各 Realm 的 Virtual ONE 分離</p>
+<nav aria-label="平台功能">
+<a class="active" href="/platform" aria-current="page">Realm 開通審核</a>
+<a aria-disabled="true" title="尚未提供平台層級介面">Realm 清冊（尚未開放）</a>
+<a aria-disabled="true" title="尚未提供平台層級介面">節點與資源（尚未開放）</a>
+<a aria-disabled="true" title="尚未提供平台層級介面">治理與回執（尚未開放）</a>
+<a href="/welcome">我的 AgentOS</a>
+</nav></header>
+<main>
+<p>這裡管理平台層級的開通申請。Realm 的日常操作應由各自授權的 Virtual ONE 處理；核准申請不等於 ONE 已建立。</p>
+<div class="stats">
+<div class="stat"><strong id="pending-count">—</strong><span>待審申請</span></div>
+<div class="stat"><strong id="history-count">—</strong><span>近期審核紀錄</span></div>
+<div class="stat"><strong>獨立</strong><span>Realm 權限邊界</span></div>
+</div>
+<h2>待審核的 Realm 申請</h2>
+<p id="review-status" role="status" aria-live="polite">正在讀取審核資料…</p>
+<section id="pending"></section>
+<h2>近期審核紀錄</h2>
+<section id="history"></section>
+</main>
 <script>
-(async function load(){
-const status=document.getElementById('status'),items=document.getElementById('items');
-try{
-const res=await fetch('/v1/platform/realm-requests',{credentials:'same-origin',cache:'no-store'});
-if(!res.ok){status.textContent='無權限或服務暫時無法使用';return;}
-const data=await res.json();status.textContent='待審申請：'+data.pending.length;
-items.replaceChildren();
-for(const item of data.pending){
-const article=document.createElement('article');
-const title=document.createElement('h2');
-title.textContent=item.kind==='create'?'建立新 Realm':'加入既有 Realm';
-article.append(title);
-const info=document.createElement('p');info.textContent=item.request_id+(item.realm_id?' · '+item.realm_id:'');article.append(info);
-for(const decision of ['approve','reject']){
-const b=document.createElement('button');b.textContent=decision==='approve'?'核准（待 ONE 開通）':'拒絕';
-b.onclick=async()=>{b.disabled=true;const result=await fetch('/v1/platform/realm-requests',{
-method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({request_id:item.request_id,decision})});
-if(result.ok)location.reload();else{b.disabled=false;status.textContent='操作失敗';}};
-article.append(b);
+const endpoint='/v1/platform/realm-requests';
+const status=document.getElementById('review-status');
+const pending=document.getElementById('pending'),history=document.getElementById('history');
+function field(dl,key,val){
+ const wrap=document.createElement('div');
+ const dt=document.createElement('dt'),dd=document.createElement('dd');
+ dt.textContent=key;dd.textContent=val===null||val===undefined||val===''?'—':String(val);
+ wrap.append(dt,dd);dl.append(wrap);
 }
-items.append(article);
+function card(item,canDecide){
+ const el=document.createElement('article');
+ const title=document.createElement('h3');
+ title.textContent=item.kind==='create'?'建立新的獨立 Realm':'申請加入既有 Realm';
+ el.append(title);
+ const dl=document.createElement('dl'),person=item.applicant||{};
+ field(dl,'申請人',person.name||'未提供（舊申請）');
+ field(dl,'登入來源',person.provider||'unknown');
+ field(dl,'申請人識別碼',item.applicant_ref||'—');
+ field(dl,'申請類型',item.kind==='create'?'建立':'加入');
+ field(dl,'申請時間',item.parked_at||'未記錄');
+ field(dl,'審核狀態',item.stage||item.status);
+ field(dl,'目標 Realm',item.kind==='create'?'新 Realm（尚未配置 ID）':item.realm_id);
+ field(dl,'ONE 開通',item.provisioned===true?'已驗證':'尚未開通');
+ field(dl,'申請編號',item.request_id);
+ if(item.resolved_at)field(dl,'審核時間',item.resolved_at);
+ if(item.resolved_by)field(dl,'審核人識別',item.resolved_by);
+ el.append(dl);
+ if(canDecide){
+   for(const decision of ['approve','reject']){
+     const btn=document.createElement('button');
+     btn.textContent=decision==='approve'?'核准申請（不代表開通）':'拒絕申請';
+     if(decision==='reject')btn.className='danger';
+     btn.onclick=async()=>{
+       if(!confirm('確定'+(decision==='approve'?'核准':'拒絕')+'這筆申請？此操作將留下治理紀錄。'))return;
+       el.querySelectorAll('button').forEach(b=>b.disabled=true);
+       try{
+         const res=await fetch(endpoint,{method:'POST',credentials:'same-origin',
+           headers:{'Content-Type':'application/json'},
+           body:JSON.stringify({request_id:item.request_id,decision})});
+         if(!res.ok)throw Error('審核失敗（'+res.status+'），請重新查詢');
+         await load();
+       }catch(e){status.textContent=e.message;el.querySelectorAll('button').forEach(b=>b.disabled=false);}
+     };el.append(btn);
+   }
+ }return el;
 }
-}catch{status.textContent='無法載入審核資料';}
-})();
+async function load(){
+ try{
+  const res=await fetch(endpoint,{credentials:'same-origin',cache:'no-store'});
+  if(!res.ok)throw Error('無法讀取審核資料（'+res.status+'）');
+  const data=await res.json();
+  document.getElementById('pending-count').textContent=data.pending.length;
+  document.getElementById('history-count').textContent=data.history.length;
+  status.textContent=data.pending.length+' 筆待審申請。審核完成後仍須 ONE 的正式開通回執。';
+  pending.replaceChildren();history.replaceChildren();
+  for(const item of data.pending)pending.append(card(item,true));
+  for(const item of data.history)history.append(card(item,false));
+  if(!data.pending.length){const p=document.createElement('p');p.textContent='目前沒有待審申請。';pending.append(p);}
+  if(!data.history.length){const p=document.createElement('p');p.textContent='尚無審核紀錄。';history.append(p);}
+ }catch(e){status.textContent=e.message||'無法載入';}
+}
+load();
 </script></body></html>
 """
 
 
 def render_platform_review_html() -> str:
     return PLATFORM_REVIEW_HTML
+
 
 PLATFORM_LOGIN_REQUIRED_HTML = """<!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
