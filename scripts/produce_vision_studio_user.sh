@@ -26,8 +26,19 @@ if [[ -z "$SOURCE_COMMIT" || ! "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   exit 5
 fi
 FLOW_TMP="$(mktemp /tmp/agentos-vision-flow-XXXXXX.sh)"
-cleanup() { rm -f "$FLOW_TMP"; }
+CAMERA_TMP="$(mktemp -d /tmp/agentos-vision-camera-XXXXXX)"
+cleanup() { rm -f "$FLOW_TMP"; rm -rf "$CAMERA_TMP"; }
 trap cleanup EXIT
+if ! git -C "$REPO" show "$SOURCE_COMMIT:agentos_node/vision_studio_camera.py" > "$CAMERA_TMP/vision_studio_camera.py" ||
+   ! git -C "$REPO" show "$SOURCE_COMMIT:examples/vision-studio/rain-exit-v001.yaml" > "$CAMERA_TMP/project.yaml"; then
+  echo "vision_studio_produce=CAMERA_IR_MATERIALIZE_FAILED"
+  exit 5
+fi
+if ! python3 "$CAMERA_TMP/vision_studio_camera.py" "$CAMERA_TMP/project.yaml" > "$CAMERA_TMP/directions.tsv"; then
+  echo "vision_studio_produce=CAMERA_IR_VALIDATION_FAILED"
+  exit 5
+fi
+CAMERA_IR_SHA256="$(sha256sum "$CAMERA_TMP/directions.tsv" | awk '{print $1}')"
 if ! git -C "$REPO" show "$SOURCE_COMMIT:scripts/generate_google_flow_user.sh" > "$FLOW_TMP"; then
   echo "vision_studio_produce=FLOW_GENERATOR_MATERIALIZE_FAILED"
   exit 5
@@ -51,6 +62,21 @@ PROMPT[0]='Vertical 9:16 cinematic 35mm film. Same young East Asian woman, Mio, 
 PROMPT[1]='Vertical 9:16 cinematic 35mm film. Same young East Asian woman, Mio, identical face, hairstyle, outfit and transparent umbrella from the previous shot, now walking from a Taipei metro exit into a rainy night street. Medium shot, camera slowly dollies backward, wet asphalt reflecting passing cars and signs, realistic body motion, restrained neon, no text, no subtitles.'
 PROMPT[2]='Vertical 9:16 cinematic 35mm film. Same young East Asian woman, Mio, identical face, hairstyle and outfit, rainy Taipei night. Close-up as she pauses for half a second and gently turns her head toward the street. A restrained neon reflection moves across her face, subtle emotion: lonely but quietly hopeful. Natural facial motion, no text, no subtitles.'
 PROMPT[3]='Vertical 9:16 cinematic 35mm film. Same young East Asian woman, Mio, identical outfit and transparent umbrella, seen from behind walking away into a rainy Taipei night street. Rear wide shot, locked camera, she gradually recedes into wet neon reflections and distant traffic, realistic walking, calm ending, no text, no subtitles.'
+
+# Compile authoritative camera directions from the same immutable release.
+mapfile -t CAMERA_INSTRUCTIONS < "$CAMERA_TMP/directions.tsv"
+if [[ "${#CAMERA_INSTRUCTIONS[@]}" -ne "${#SHOT[@]}" ]]; then
+  echo "vision_studio_produce=CAMERA_IR_SHOT_COUNT_MISMATCH"
+  exit 5
+fi
+for i in 0 1 2 3; do
+  IFS=$'\t' read -r camera_shot camera_direction <<< "${CAMERA_INSTRUCTIONS[$i]}"
+  if [[ "$camera_shot" != "${SHOT[$i]}" || -z "$camera_direction" ]]; then
+    echo "vision_studio_produce=CAMERA_IR_SHOT_ORDER_MISMATCH"
+    exit 5
+  fi
+  PROMPT[$i]+=" $camera_direction"
+done
 
 declare -a CLIP=()
 for i in 0 1 2 3; do
@@ -130,14 +156,19 @@ fi
 
 sha="$(sha256sum "$FINAL" | awk '{print $1}')"
 bytes="$(stat -c '%s' "$FINAL")"
-python3 - "$RECEIPT" "$FINAL" "$sha" "$bytes" "${CLIP[@]}" <<'PY'
+python3 - "$RECEIPT" "$FINAL" "$sha" "$bytes" "$SOURCE_COMMIT" "$CAMERA_IR_SHA256" "${CLIP[@]}" <<'PY'
 import json,sys
-receipt_path, final_path, sha, size, *clips = sys.argv[1:]
+receipt_path, final_path, sha, size, source_commit, camera_ir_sha256, *clips = sys.argv[1:]
 payload = {
   "schema": "agentos.vision-studio-production-receipt/v1",
   "project_id": "rain-exit-v001",
   "ok": True,
   "generator": "media.google-flow",
+  "camera_motion": {
+    "schema": "agentos.camera-motion-ir/v1",
+    "source_commit": source_commit,
+    "compiled_instructions_sha256": camera_ir_sha256
+  },
   "shots": [
     {"shot_id": f"s{i+1:02d}", "source": p, "accepted": True}
     for i,p in enumerate(clips)

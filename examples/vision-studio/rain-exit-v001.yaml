@@ -38,6 +38,14 @@ shots:
     framing: wide
     action: "Mio walks up the metro exit stairs holding a transparent umbrella."
     camera: "mostly locked, subtle push"
+    camera_motion:
+      version: 1
+      type: dolly
+      direction: forward
+      speed: subtle
+      start_framing: wide
+      end_framing: wide
+      subject_lock: true
     continuity: ["mio_identity", "wardrobe", "umbrella", "rain"]
 
   - id: s02
@@ -45,6 +53,14 @@ shots:
     framing: medium
     action: "Mio enters the street while reflections from cars and signs move across wet pavement."
     camera: "slow dolly backward"
+    camera_motion:
+      version: 1
+      type: dolly
+      direction: backward
+      speed: slow
+      start_framing: medium
+      end_framing: medium
+      subject_lock: true
     continuity: ["mio_identity", "wardrobe", "umbrella", "rain"]
 
   - id: s03
@@ -52,6 +68,14 @@ shots:
     framing: close_up
     action: "Mio pauses briefly and turns her head toward the street; neon light crosses her face."
     camera: "subtle handheld-stable close shot"
+    camera_motion:
+      version: 1
+      type: handheld_stable
+      direction: none
+      speed: subtle
+      start_framing: close_up
+      end_framing: close_up
+      subject_lock: true
     continuity: ["mio_identity", "wardrobe", "rain"]
 
   - id: s04
@@ -59,6 +83,14 @@ shots:
     framing: rear_wide
     action: "Mio walks away into the rainy Taipei night."
     camera: "locked; subject recedes"
+    camera_motion:
+      version: 1
+      type: locked
+      direction: none
+      speed: still
+      start_framing: rear_wide
+      end_framing: rear_wide
+      subject_lock: false
     continuity: ["mio_identity", "wardrobe", "umbrella", "rain"]
 
 routing:
