@@ -65,7 +65,8 @@ fi
 if [ -f "$EXTERNAL_INBOX" ]; then
   if ! python3 "$EXTERNAL_INBOX" \
       --oracle-dir "/home/ubuntu/agent-data/personas/sunlake-milkcat/external_observations" \
-      --persona-dir "$ROOT"; then
+      --persona-dir "$ROOT" \
+      --intel-file "/home/ubuntu/agent-data/personas/sunlake-milkcat/intel_candidates.json"; then
     echo 'mio_pdca_external_inbox_runtime=DEGRADED reason=IMPORTER_FAILED' >&2
   fi
 else
