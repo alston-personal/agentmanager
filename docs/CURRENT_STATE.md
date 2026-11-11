@@ -1641,18 +1641,20 @@ IFTV #3 receipt/QA requirements remain unchanged.
   guessed or silently configured.
 
 
-- **Important pre-existing Action Relay mainline gap (discovered by queued-worker
-  acceptance tests):** `agentos_node/action_relay.py` on current `main` has
-  seven `ACTIONS` registry references to undefined handlers: one GitHub
-  workflow dispatch handler and six Realm Fabric deployment handlers. The
-  corresponding handlers are present on `core/integration`, demonstrating
-  a concrete incomplete capability convergence. Restoring all those older
-  privileged deployment functions wholesale would exceed the #2269
-  version-guard scope and risks re-enabling retired production execution.
-  It requires owner-specific source equivalence/security review and actual
-  Oracle consumer evidence under #1682 before changing the canonical relay.
-  For now, the queued-worker fence is tested against its exact production
-  `_execute` function AST in isolation; **this is not a passing full
-  Action Relay import or live execution acceptance**. The missing handler
-  registry remains an explicit blocker to claiming the mainline worker is
-  runnable.
+- **Action Relay import compatibility restored in proposed PR #2269 (not live):**
+  the canonical `action_relay.py` originally registered seven undefined
+  handlers. The allowlisted `github.actions.workflow.dispatch` handler and
+  read-only Realm Fabric commit observer were recovered from the existing
+  `core/integration` contract, while the six legacy Realm Fabric deployment
+  actions now explicitly fail closed with
+  `LEGACY_ACTION_REQUIRES_CONVERGENCE` rather than silently regaining
+  privileged deployment authority. Missing Unix `pwd` import was also
+  restored. The complete Action Relay module and normal deterministic relay
+  unit suite now import and run; the queued-code guard tests use the actual
+  imported Relay worker, not isolated AST compilation. This is a **bounded
+  compatibility repair**, not evidence that legacy Realm Fabric deployment
+  capabilities have been restored or fully retired. Before any Oracle
+  promotion, each of those six legacy action consumers requires owner,
+  functionality-equivalence and production Receipt review under #1682.
+  Existing immutable-release/OIDC authority remains unchanged. No live
+  Oracle systemd or runtime acceptance is claimed.
