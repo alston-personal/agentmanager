@@ -62,9 +62,8 @@ class LocalCodeResumeProbe:
         # An uncommitted local edit is not covered by SHA ancestry evidence.
         if _git(root, "status", "--porcelain", "--untracked-files=normal"):
             raise FreshnessError("WORKTREE_DIRTY")
-        # Explicit remote main only. No checkout, reset, merge or force-push.
-        _git(root, "fetch", "--no-tags", "origin",
-             "+refs/heads/main:refs/remotes/origin/main")
+        # Read remote main into FETCH_HEAD. No checkout, reset, merge or push.
+        _git(root, "fetch", "--no-tags", "origin", "main")
         work_sha = _git(root, "rev-parse", "--verify", "HEAD^{commit}")
         return inspect(root=str(root), main_ref="FETCH_HEAD",
                        work_ref=work_sha, kind="code")
