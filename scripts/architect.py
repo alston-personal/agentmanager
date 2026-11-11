@@ -25,6 +25,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agent_core.task_quality import TaskQualityError, validate_task_text
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] (🧙 Architect) %(message)s",
@@ -161,7 +164,7 @@ def expand_wish_with_claude(project: str, wish_text: str) -> Optional[str]:
   "spec": "一段技術規格說明（100-200 字）",
   "acceptance_criteria": ["驗收條件 1", "驗收條件 2"],
   "tasks": [
-    "具體可執行的任務 1（動詞開頭，20-50 字）",
+    "具體可執行的任務 1 | workspace=/home/ubuntu/<project> | prerequisite=前置條件 | acceptance=驗收命令或證據",
     "具體可執行的任務 2",
     ...
   ]
@@ -170,6 +173,7 @@ def expand_wish_with_claude(project: str, wish_text: str) -> Optional[str]:
 規則：
 - tasks 最多 {MAX_TASKS_PER_WISH} 個，每個任務必須是獨立可執行的
 - 任務描述要清楚到 Lobster AI 可以直接執行，不需要問問題
+- 每個 task 必須包含 workspace= 與 acceptance=；缺少任一欄位會被拒絕寫入
 - 如果需求太大，tasks 只列第一個可交付的 milestone
 - 使用繁體中文
 """
@@ -239,7 +243,17 @@ def append_tasks_to_board(project: str, wish_text: str, plan: dict):
     tasks_block += f"<!-- 許願：{wish_text} -->\n"
     if plan.get("spec"):
         tasks_block += f"<!-- 規格：{plan['spec'][:100]}... -->\n"
+    validated_tasks = []
+    invalid_tasks = []
     for task in plan.get("tasks", []):
+        try:
+            validated_tasks.append(validate_task_text(task))
+        except TaskQualityError as exc:
+            logger.error("拒絕 Architect 不合格任務 %r: %s", task, exc)
+            invalid_tasks.append(task)
+    if invalid_tasks or (plan.get("tasks") and not validated_tasks):
+        return False
+    for task in validated_tasks:
         tasks_block += f"- [ ] {task}\n"
 
     # 找到對應專案的區塊並插入
@@ -272,7 +286,7 @@ def append_tasks_to_board(project: str, wish_text: str, plan: dict):
             content += new_section
 
     TASK_BOARD.write_text(content, encoding="utf-8")
-    logger.info(f"✅ 已將 {len(plan.get('tasks', []))} 個任務寫入 TASK_BOARD.md [{project}]")
+    logger.info(f"✅ 已將 {len(validated_tasks)} 個任務寫入 TASK_BOARD.md [{project}]")
     return True
 
 

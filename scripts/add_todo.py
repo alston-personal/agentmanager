@@ -2,6 +2,10 @@
 import os
 import sys
 import re
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agent_core.task_quality import TaskQualityError, validate_task_text
 
 # ⚙️ Configuration
 PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
@@ -19,6 +23,11 @@ load_env()
 DATA_ROOT = os.getenv("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
 
 def add_todo(slug, task_text):
+    try:
+        task_text = validate_task_text(task_text)
+    except TaskQualityError as exc:
+        print(f"❌ Error: task rejected: {exc}")
+        return False
     # 1. Locate the project status file across all sectors
     sectors = ["projects", "specs", "ideas", "validation"]
     status_path = None

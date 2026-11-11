@@ -16,6 +16,9 @@ import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agent_core.task_quality import TaskQualityError, validate_task_text
+
 # 設置日誌
 logging.basicConfig(
     level=logging.INFO,
@@ -173,7 +176,7 @@ def run_security_analysis(facts: dict) -> tuple[str, list[str]]:
 1. 撰寫一份專業的 **每日安全性審計報告 (Daily Security Audit Report)**。
 2. 針對所有掃描出的威脅，給出清晰的漏洞危害說明。
 3. **最重要**：將這些修復建議轉化為「Lobster 自律執行引擎」可以直接在終端機運行的「具體、明確、可執行的待辦事項（TODO List）」。
-   - 每一項 TODO 必須以 `- [ ] [Security] 任務敘述` 的標準格式寫在報告末尾。
+   - 每一項 TODO 必須以 `- [ ] [Security] 任務敘述 | workspace=<絕對路徑> | prerequisite=<前置條件> | acceptance=<驗收命令或證據>` 的格式寫在報告末尾。
    - 任務敘述必須非常具體，例如：「[Security] 將 ~/zeus-writer/.env 檔案權限修正為 600 (-rw-------)」或「[Security] 清除 ~/agentmanager/ 殘留的 *.bak 備份檔案」。
    - 這些任務應能由 AI 代理通過運行 chmod、rm 等 shell 指令在 1 次迭代內完成。
 
@@ -189,6 +192,10 @@ def run_security_analysis(facts: dict) -> tuple[str, list[str]]:
                 if m:
                     todos.append(m.group(1).strip())
             
+            # Model output is untrusted: invalid tasks make this provider fail
+            # so the deterministic local scanner can produce bounded tasks.
+            if todos:
+                todos = [validate_task_text(task) for task in todos]
             success = True
             logger.info("✅ Gemini 安全大腦分析成功！")
             break
@@ -218,7 +225,11 @@ def run_security_analysis(facts: dict) -> tuple[str, list[str]]:
             md.append("以下敏感檔案的權限過於寬鬆，可能遭同主機其他使用者或服務越權存取：")
             for item in facts["file_permissions"]:
                 md.append(f"*   **檔案**：`{item['path']}` (當前權限：`{item['permission']}`，建議：`600`)")
-                todos.append(f"[Security] 將 {item['path']} 檔案權限修正為 600 (-rw-------)")
+                todos.append(
+                    f"[Security] 將 {item['path']} 檔案權限修正為 600 (-rw-------)"
+                    f" | workspace=/home/ubuntu/agentmanager | prerequisite=確認檔案仍存在且非 symlink"
+                    f" | acceptance=stat -c %a {item['path']} 回傳 600"
+                )
         else:
             md.append("✅ 未檢測到敏感設定檔權限過於寬鬆的問題。")
         md.append("")
@@ -231,7 +242,11 @@ def run_security_analysis(facts: dict) -> tuple[str, list[str]]:
                 md.append(f"*   **連接埠**：`{item['port']}` (進程：`{item['process']}`，綁定：`{item['address']}`)  ")
                 md.append(f"    *風險程度*：**{item['severity']}**")
                 # 開放連接埠建議進行安全檢索
-                todos.append(f"[Security] 檢查連接埠 {item['port']} ({item['process']}) 綁定安全性與雲端防火牆規則")
+                todos.append(
+                    f"[Security] 檢查連接埠 {item['port']} ({item['process']}) 綁定安全性與雲端防火牆規則"
+                    " | workspace=/home/ubuntu/agentmanager | prerequisite=使用 central Port Manager 查詢配置"
+                    f" | acceptance=提交含 port={item['port']} 綁定與防火牆證據的 security-audit receipt"
+                )
         else:
             md.append("✅ 未檢測到高風險暴露端口。")
         md.append("")
@@ -242,7 +257,11 @@ def run_security_analysis(facts: dict) -> tuple[str, list[str]]:
             md.append("發現以下歷史備份檔案，可能殘留舊版明文金鑰：")
             for item in facts["exposed_secrets"]:
                 md.append(f"*   **檔案**：`{item['path']}` (風險：可能洩漏過期金鑰紀錄)")
-                todos.append(f"[Security] 安全移除殘留備份檔案 {item['path']}")
+                todos.append(
+                    f"[Security] 安全處置殘留備份檔案 {item['path']}"
+                    " | workspace=/home/ubuntu/agentmanager | prerequisite=先確認非唯一備份且不含仍有效憑證"
+                    f" | acceptance=test ! -e {item['path']} 且產生可稽核處置紀錄"
+                )
         else:
             md.append("✅ 未發現敏感備份檔案洩漏。")
             
@@ -281,14 +300,23 @@ def update_security_status_md(report: str, todos: list[str]):
     )
     
     # 2. 更新 Todo List
+    validated_todos = []
+    invalid_todos = []
+    for task in todos:
+        try:
+            validated_todos.append(validate_task_text(task))
+        except TaskQualityError as exc:
+            logger.error("拒絕寫入不合格安全任務 %r: %s", task, exc)
+            invalid_todos.append(task)
+    if invalid_todos:
+        raise TaskQualityError("generated security task batch failed the executable-task contract")
+
     todo_section_lines = ["## 📅 Todo List"]
-    if todos:
-        for t in todos:
+    if validated_todos:
+        for t in validated_todos:
             todo_section_lines.append(f"- [ ] {t}")
     else:
-        todo_section_lines.append("- [ ] Define objectives")
-        todo_section_lines.append("- [ ] Break work into milestones")
-        todo_section_lines.append("- [ ] Execute and report progress")
+        todo_section_lines.append("<!-- No findings. Tasks require workspace= and acceptance=. -->")
         
     # 進行 Todo List 段落置換
     pattern = re.compile(r"## 📅 Todo List.*?(?=## 🧠 Working Summary)", re.DOTALL)
