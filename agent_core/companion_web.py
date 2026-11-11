@@ -807,3 +807,48 @@ items.append(article);
 
 def render_platform_review_html() -> str:
     return PLATFORM_REVIEW_HTML
+
+PLATFORM_LOGIN_REQUIRED_HTML = """<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>AgentOS — 平台管理員登入</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif}
+body{background:#080c14;color:#e5e7eb;display:grid;place-items:center;min-height:100vh;margin:0}
+main{padding:32px;border:1px solid #293244;border-radius:16px;background:#101827;width:min(90vw,540px)}
+p{color:#aab6cb;line-height:1.7}a{display:inline-block;color:#b6caff;margin:6px 12px 6px 0}
+</style></head><body><main>
+<h1>AgentOS 平台治理</h1>
+<p>需要使用已獲授權的平台管理者帳號登入。</p>
+<nav aria-label="管理者登入選項">
+<a href="/dashboard/api/auth/signin/google?site=agentos&amp;returnTo=%2Fplatform">以 Google 登入</a>
+<a href="/dashboard/api/auth/signin/github?site=agentos&amp;returnTo=%2Fplatform">以 GitHub 登入</a>
+<a href="/dashboard/api/auth/signin/facebook?site=agentos&amp;returnTo=%2Fplatform">以 Facebook 登入</a>
+<a href="/dashboard/api/auth/signin/line?site=agentos&amp;returnTo=%2Fplatform">以 LINE 登入</a>
+</nav>
+<p><a href="/welcome">返回我的 Realm 申請</a></p>
+</main></body></html>
+"""
+
+PLATFORM_SWITCH_ACCOUNT_HTML = """<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>AgentOS — 切換平台管理帳號</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif}
+body{background:#080c14;color:#e5e7eb;display:grid;place-items:center;min-height:100vh;margin:0}
+main{padding:32px;border:1px solid #293244;border-radius:16px;background:#101827;width:min(90vw,540px)}
+p{color:#aab6cb;line-height:1.7}a{display:inline-block;color:#b6caff;margin:6px 12px 6px 0}
+</style></head><body><main>
+<h1>目前帳號沒有平台管理權限</h1>
+<p>你已登入 AgentOS，但此帳號不是獲授權的平台管理者。
+你仍可查看自己的 Realm 申請，或切換為有權限的帳號。</p>
+<p><a href="/dashboard/api/auth/logout?returnTo=%2Fplatform">登出並切換管理帳號</a></p>
+<p><a href="/welcome">返回我的 Realm 申請</a></p>
+</main></body></html>
+"""
+
+
+def render_platform_auth_gate_html(*, authenticated: bool) -> str:
+    """Public, non-sensitive denial UI. Protected review data stays server-gated."""
+    return PLATFORM_SWITCH_ACCOUNT_HTML if authenticated else PLATFORM_LOGIN_REQUIRED_HTML
