@@ -40,6 +40,7 @@ class ExternalReplyGateTest(unittest.TestCase):
         file.parent.mkdir(parents=True)
         self.source = {
             "schema": "agentos.social-receipt/v1", "ok": True,
+            "completed_at": self.now.isoformat().replace("+00:00", "Z"),
             "operation": "public_post.read", "platform_object_id": "123456789",
             "account_binding_id": "mio-bound-opaque",
             "result": {"source": {
@@ -91,6 +92,13 @@ class ExternalReplyGateTest(unittest.TestCase):
             with self.subTest(edits=edits):
                 source = {**self.source, **edits}
                 self.assertEqual(self.candidates(source=source)[0], [])
+
+    def test_root_id_and_fresh_receipt_are_independently_required(self):
+        self.assertEqual(self.candidates(event={**self.event, "root_post_id": "222"})[0], [])
+        self.assertEqual(self.candidates(source={**self.source, "completed_at":
+            (self.now - timedelta(days=6)).isoformat()})[0], [])
+        self.assertEqual(self.candidates(event={**self.event, "timestamp":
+            (self.now - timedelta(minutes=10)).isoformat()})[0], [])
 
     def test_wrong_reader_or_canonical_url(self):
         for edits in ({"reader_account": "oursong_alstonhuang"},
