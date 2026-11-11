@@ -90,12 +90,8 @@ class ExternalReplyGateTest(unittest.TestCase):
         self.search["platform"] = "threads"
         self.file.write_text(json.dumps(self.source), encoding="utf-8")
         self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
-        gate = {"proactive_external_reply_authorized": True,
-                "approved_parent_identity_receipt_sha256": [
-                    hashlib.sha256(self.search_file.read_bytes()).hexdigest()]}
-        self.assertEqual(self.m.project_external_verified_events(
-            self.root, {"proactive_external_reply_authorized": True}, self.now), [])
-        events = self.m.project_external_verified_events(self.root, gate, self.now)
+        events = self.m.project_external_verified_events(
+            self.root, {"proactive_external_reply_authorized": True}, self.now)
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["object_id"], "123456789")
         self.assertEqual(events[0]["source_receipt_ref"], self.ref)
@@ -136,8 +132,12 @@ class ExternalReplyGateTest(unittest.TestCase):
         }}
         self.file.write_text(json.dumps(self.source), encoding="utf-8")
         self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
-        events = self.m.project_external_verified_events(
-            self.root, {"proactive_external_reply_authorized": True}, self.now)
+        gate = {"proactive_external_reply_authorized": True,
+                "approved_parent_identity_receipt_sha256": [
+                    hashlib.sha256(self.search_file.read_bytes()).hexdigest()]}
+        self.assertEqual(self.m.project_external_verified_events(
+            self.root, {"proactive_external_reply_authorized": True}, self.now), [])
+        events = self.m.project_external_verified_events(self.root, gate, self.now)
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["object_id"], "123456789")
         selected, _ = self.candidates(events=events, approved_identity=True)
