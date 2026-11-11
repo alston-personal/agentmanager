@@ -120,3 +120,49 @@ def test_corrupted_origin_fails_at_one_dispatch_not_with_fake_permission(checkou
     )
     with pytest.raises(ValueError, match="CODE_MAINLINE_EVIDENCE_UNAVAILABLE"):
         dispatch(controller)
+
+
+def test_operator_config_binds_server_owned_probe_and_rejects_world_readable(checkouts, tmp_path, monkeypatch):
+    import json
+    import os
+    from agentos_node.branch_resume_host_probe import load_trusted_code_resume_probe
+    from agent_core.realm_server import RealmHTTPServer
+    remote, _, worker = checkouts
+    cfg = tmp_path / "code-resume-host.json"
+    cfg.write_text(json.dumps({
+        "schema": "agentos.branch-resume-host/v1",
+        "origin_url": str(remote),
+        "worktrees": {SPEC.job_type: str(worker)},
+    }), encoding="utf-8")
+    cfg.chmod(0o600)
+    assert load_trusted_code_resume_probe(None) is None
+    assert load_trusted_code_resume_probe(str(cfg))(SPEC)["status"] == "MAINLINE_CURRENT"
+    monkeypatch.setenv("AGENTOS_CODE_RESUME_HOST_CONFIG", str(cfg))
+    server = RealmHTTPServer(("127.0.0.1", 0), _fabric(tmp_path))
+    try:
+        assert server.code_resume_probe(SPEC)["status"] == "MAINLINE_CURRENT"
+    finally:
+        server.server_close()
+    cfg.chmod(0o644)
+    with pytest.raises(FreshnessError, match="UNTRUSTED_HOST_CONFIG_PERMISSIONS"):
+        load_trusted_code_resume_probe(str(cfg))
+    cfg.chmod(0o600)
+    symlink = tmp_path / "config-link.json"
+    symlink.symlink_to(cfg)
+    with pytest.raises(FreshnessError, match="UNTRUSTED_HOST_CONFIG_PATH"):
+        load_trusted_code_resume_probe(str(symlink))
+
+
+def test_host_config_rejects_untrusted_schema(checkouts, tmp_path):
+    import json
+    from agentos_node.branch_resume_host_probe import load_trusted_code_resume_probe
+    cfg = tmp_path / "bad.json"
+    cfg.write_text(json.dumps({
+        "schema": "agentos.branch-resume-host/v1",
+        "origin_url": "unused",
+        "worktrees": {},
+        "token": "not allowed",
+    }))
+    cfg.chmod(0o600)
+    with pytest.raises(FreshnessError, match="INVALID_HOST_CONFIG"):
+        load_trusted_code_resume_probe(str(cfg))
