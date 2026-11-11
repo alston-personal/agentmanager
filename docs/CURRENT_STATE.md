@@ -1,3 +1,9 @@
+## 2026-11-11 — #2198 Windows tenant bootstrap source recovery (#2263)
+
+Protected-main Windows bootstrap had a truncated `RealmId` guard and duplicated script body after #2260, while the thin-client installer omitted imported desktop/executor/social modules. Existing [PR #2263](https://github.com/alston-personal/agentmanager/pull/2263) reuses the valid `core/integration` Python resolver and installer module manifest, retains explicit `realm-u-<24hex>` targeting and owner-approved device claim, and preserves legacy ONE defaults. Windows syntax and isolated installed package checks are necessary source/CI gates, not proof of a live Node.
+
+**Safety boundary:** the existing `-SwitchRealm` path is not transactional: it backs up and removes current `client.json` before a new Realm claim is authenticated. Do **not** direct users to run it for rebind until a staged new credential has been validated, a rollback path proved and Node identity isolation accepted. Neither successful source CI nor install proves authenticated `register@milkcat.org` administrator Session or external tenant ONE runtime.
+
 ## 2026-11-11 — #2198 minimal tenant Node heartbeat after device claim
 
 Existing [PR #2260](https://github.com/alston-personal/agentmanager/pull/2260) merged at `bb26ccc76130d5f19e60aa3a3583f27a5e3c9a16` with Windows, Linux, Control Inbox and Control Plane guards passing. It repairs the Windows installer and aligns the first independent Realm Node request/approval/claim path with `/v1/realms/<realm-id>/join/*` without modifying legacy node enrollment. This is source/CI, not a real first device receipt.
