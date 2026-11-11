@@ -62,127 +62,14 @@ PROMPT[1]='Vertical 9:16 cinematic 35mm film. Same young East Asian woman, Mio, 
 PROMPT[2]='Vertical 9:16 cinematic 35mm film. Same young East Asian woman, Mio, identical face, hairstyle and outfit, rainy Taipei night. Close-up as she pauses for half a second and gently turns her head toward the street. A restrained neon reflection moves across her face, subtle emotion: lonely but quietly hopeful. Natural facial motion, no text, no subtitles.'
 PROMPT[3]='Vertical 9:16 cinematic 35mm film. Same young East Asian woman, Mio, identical outfit and transparent umbrella, seen from behind walking away into a rainy Taipei night street. Rear wide shot, locked camera, she gradually recedes into wet neon reflections and distant traffic, realistic walking, calm ending, no text, no subtitles.'
 
-# The existing shot prompts remain the content baseline; camera direction is
-# compiled from the SAME immutable release as the Flow generator.
+# Compile authoritative camera directions from the same immutable release.
 mapfile -t CAMERA_INSTRUCTIONS < "$CAMERA_TMP/directions.tsv"
 if [[ "${#CAMERA_INSTRUCTIONS[@]}" -ne "${#SHOT[@]}" ]]; then
   echo "vision_studio_produce=CAMERA_IR_SHOT_COUNT_MISMATCH"
   exit 5
 fi
 for i in 0 1 2 3; do
-  IFS=
-  shot="${SHOT[$i]}"
-  log="$RUN_ROOT/$shot.flow.log"
-  echo "vision_studio_shot_start=$shot"
-  if ! AGENTOS_GOOGLE_MEDIA_PROMPT="${PROMPT[$i]}" bash "$FLOW" >"$log" 2>&1; then
-    flow_status="$(awk -F= '/^google_flow_generate=/{print $2}' "$log" | tail -n1)"
-    flow_class="$(awk -F= '/^google_flow_runtime_error_class=/{print $2}' "$log" | tail -n1)"
-    flow_exc="$(awk -F= '/^google_flow_runtime_exception_type=/{print $2}' "$log" | tail -n1)"
-    flow_stage="$(awk -F= '/^google_flow_stage=/{print $2}' "$log" | tail -n1)"
-    flow_host="$(awk -F= '/^google_flow_host=/{print $2}' "$log" | tail -n1)"
-    flow_controls="$(awk -F= '/^google_flow_ui_controls=/{print substr($0,index($0,"=")+1)}' "$log" | tail -n1)"
-    echo "vision_studio_flow_status=${flow_status:-PROCESS_FAILED}"
-    if [[ -n "$flow_class" ]]; then echo "vision_studio_flow_error_class=$flow_class"; fi
-    if [[ -n "$flow_exc" ]]; then echo "vision_studio_flow_exception_type=$flow_exc"; fi
-    if [[ -n "$flow_stage" ]]; then echo "vision_studio_flow_stage=$flow_stage"; fi
-    if [[ -n "$flow_host" ]]; then echo "vision_studio_flow_host=$flow_host"; fi
-    if [[ -n "$flow_controls" ]]; then echo "vision_studio_flow_ui_controls=$flow_controls"; fi
-    echo "vision_studio_produce=SHOT_GENERATION_FAILED"
-    echo "vision_studio_failed_shot=$shot"
-    exit 10
-  fi
-  out="$(awk -F= '/^google_flow_output=/{print substr($0,index($0,"=")+1)}' "$log" | tail -n1)"
-  status="$(awk -F= '/^google_flow_generate=/{print $2}' "$log" | tail -n1)"
-  if [[ "$status" != "PASS" || -z "$out" || ! -s "$out" ]]; then
-    flow_class="$(awk -F= '/^google_flow_runtime_error_class=/{print $2}' "$log" | tail -n1)"
-    flow_exc="$(awk -F= '/^google_flow_runtime_exception_type=/{print $2}' "$log" | tail -n1)"
-    flow_line="$(awk -F= '/^google_flow_runtime_syntax_line=/{print $2}' "$log" | tail -n1)"
-    flow_source="$(awk -F= '/^google_flow_runtime_syntax_source=/{print $2}' "$log" | tail -n1)"
-    flow_pyver="$(awk -F= '/^google_flow_python_version=/{print $2}' "$log" | tail -n1)"
-    flow_offset="$(awk -F= '/^google_flow_runtime_syntax_offset=/{print $2}' "$log" | tail -n1)"
-    flow_stage="$(awk -F= '/^google_flow_stage=/{print $2}' "$log" | tail -n1)"
-    flow_host="$(awk -F= '/^google_flow_host=/{print $2}' "$log" | tail -n1)"
-    flow_controls="$(awk -F= '/^google_flow_ui_controls=/{print substr($0,index($0,"=")+1)}' "$log" | tail -n1)"
-    echo "vision_studio_flow_status=${status:-MISSING}"
-    if [[ -n "$flow_class" ]]; then echo "vision_studio_flow_error_class=$flow_class"; fi
-    if [[ -n "$flow_exc" ]]; then echo "vision_studio_flow_exception_type=$flow_exc"; fi
-    if [[ -n "$flow_line" ]]; then echo "vision_studio_flow_syntax_line=$flow_line"; fi
-    if [[ -n "$flow_source" ]]; then echo "vision_studio_flow_syntax_source=$flow_source"; fi
-    if [[ -n "$flow_pyver" ]]; then echo "vision_studio_flow_python_version=$flow_pyver"; fi
-    if [[ -n "$flow_offset" ]]; then echo "vision_studio_flow_syntax_offset=$flow_offset"; fi
-    if [[ -n "$flow_stage" ]]; then echo "vision_studio_flow_stage=$flow_stage"; fi
-    if [[ -n "$flow_host" ]]; then echo "vision_studio_flow_host=$flow_host"; fi
-    if [[ -n "$flow_controls" ]]; then echo "vision_studio_flow_ui_controls=$flow_controls"; fi
-    echo "vision_studio_produce=SHOT_ARTIFACT_MISSING"
-    echo "vision_studio_failed_shot=$shot"
-    exit 11
-  fi
-  CLIP+=("$out")
-  echo "vision_studio_shot_pass=$shot"
-  echo "vision_studio_shot_source=$out"
-done
-
-FINAL="$RUN_ROOT/rain_exit_final_v001.mp4"
-RECEIPT="$RUN_ROOT/rain_exit_final_v001.receipt.json"
-
-"$FFMPEG" -y \
-  -i "${CLIP[0]}" -i "${CLIP[1]}" -i "${CLIP[2]}" -i "${CLIP[3]}" \
-  -f lavfi -t 10 -i "anoisesrc=color=pink:amplitude=0.025:sample_rate=48000" \
-  -filter_complex "\
-[0:v]trim=duration=2,setpts=PTS-STARTPTS,scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=24[v0];\
-[1:v]trim=duration=3,setpts=PTS-STARTPTS,scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=24[v1];\
-[2:v]trim=duration=2,setpts=PTS-STARTPTS,scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=24[v2];\
-[3:v]trim=duration=3,setpts=PTS-STARTPTS,scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=24[v3];\
-[v0][v1][v2][v3]concat=n=4:v=1:a=0[v];\
-[4:a]volume=0.20,afade=t=in:st=0:d=0.3,afade=t=out:st=9.4:d=0.6[a]" \
-  -map "[v]" -map "[a]" \
-  -c:v libx264 -preset medium -crf 19 -pix_fmt yuv420p \
-  -c:a aac -b:a 128k -shortest -movflags +faststart "$FINAL" >"$RUN_ROOT/ffmpeg.log" 2>&1
-
-if [[ ! -s "$FINAL" ]]; then
-  cat "$RUN_ROOT/ffmpeg.log"
-  echo "vision_studio_produce=ASSEMBLY_FAILED"
-  exit 12
-fi
-
-sha="$(sha256sum "$FINAL" | awk '{print $1}')"
-bytes="$(stat -c '%s' "$FINAL")"
-python3 - "$RECEIPT" "$FINAL" "$sha" "$bytes" "${CLIP[@]}" <<'PY'
-import json,sys
-receipt_path, final_path, sha, size, *clips = sys.argv[1:]
-payload = {
-  "schema": "agentos.vision-studio-production-receipt/v1",
-  "project_id": "rain-exit-v001",
-  "ok": True,
-  "generator": "media.google-flow",
-  "shots": [
-    {"shot_id": f"s{i+1:02d}", "source": p, "accepted": True}
-    for i,p in enumerate(clips)
-  ],
-  "final": {
-    "path": final_path,
-    "sha256": sha,
-    "bytes": int(size),
-    "duration_seconds": 10,
-    "aspect_ratio": "9:16",
-    "fps": 24
-  },
-  "audio": {"type": "synthetic_rain_ambience_mvp"},
-  "cost": {"status": "provider_credit_cost_not_yet_measured"},
-  "qc": {"status": "REQUIRES_VISUAL_REVIEW"}
-}
-with open(receipt_path,"w",encoding="utf-8") as f:
-    json.dump(payload,f,ensure_ascii=False,indent=2,sort_keys=True)
-    f.write("\n")
-PY
-
-echo "vision_studio_produce=PASS"
-echo "vision_studio_project_id=$PROJECT_ID"
-echo "vision_studio_output=$FINAL"
-echo "vision_studio_receipt=$RECEIPT"
-echo "vision_studio_sha256=$sha"
-echo "vision_studio_bytes=$bytes"
-\t' read -r camera_shot camera_direction <<< "${CAMERA_INSTRUCTIONS[$i]}"
+  IFS="$(printf '\\t')" read -r camera_shot camera_direction <<< "${CAMERA_INSTRUCTIONS[$i]}"
   if [[ "$camera_shot" != "${SHOT[$i]}" || -z "$camera_direction" ]]; then
     echo "vision_studio_produce=CAMERA_IR_SHOT_ORDER_MISMATCH"
     exit 5
