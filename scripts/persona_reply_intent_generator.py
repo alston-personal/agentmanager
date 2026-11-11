@@ -111,7 +111,7 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
             reject("external_parent_unrouteable")
             continue
         if not isinstance(receipt_ref, str) or not re.fullmatch(
-                r"pdca/social_receipts/[A-Za-z0-9_-]{1,100}\\.json", receipt_ref):
+                r"pdca/social_receipts/[A-Za-z0-9_-]{1,100}\.json", receipt_ref):
             reject("external_source_receipt_missing")
             continue
         try:
@@ -128,7 +128,10 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
                 or provider.get("operation") != "public_post.read"
                 or str(provider.get("platform_object_id") or "") != parent
                 or not isinstance(source_content, dict)
-                or source_content.get("username", "").casefold() != author
+                or str(source_content.get("username") or "").casefold() != author
+                or not provider.get("account_binding_id")
+                or str(provider.get("account_binding_id")) != str(event.get("account_binding_id") or "")
+                or str(source_content.get("url") or "") != str(event.get("source_url") or "")
                 or source_content.get("visibility") != "public"
                 or str(source_content.get("root_post_id") or "") != root_id
                 or str(event.get("reader_account") or "").casefold() != "mio.milkcat"):
