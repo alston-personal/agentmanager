@@ -86,6 +86,35 @@ class TestInbox(unittest.TestCase):
             self.assertFalse(record["reply_allowed"])
             self.assertNotIn("platform_object_id", record)
 
+    def test_share_url_resolves_to_canonical_public_reader_evidence(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            intel = root / "intel.json"
+            source = root / "observations"
+            intel.write_text(json.dumps({"candidates": [{
+                "status": "pending_review", "id": "share:GdMiITUe6",
+                "url": "https://www.threads.com/share/GdMiITUe6/"
+            }]}), encoding="utf-8")
+            calls = []
+            canonical = "https://www.threads.com/@oursong_alstonhuang/post/DeN9IhomVhn"
+            def resolver(url):
+                calls.append(url)
+                return {
+                    "schema": "agentos.social.threads.public-post/v1",
+                    "login_bypass_used": False, "anti_bot_bypass_used": False,
+                    "source": {"url": canonical, "username": "oursong_alstonhuang",
+                               "text": "外部分享貼文"}
+                }
+            first = observe_intel_urls(intel, source, resolver=resolver)
+            second = observe_intel_urls(intel, source, resolver=resolver)
+            self.assertEqual(first["observed"], 1)
+            self.assertEqual(second["already_seen"], 1)
+            self.assertEqual(calls, ["https://www.threads.com/share/GdMiITUe6/"] * 2)
+            imported = ingest(source, root / "persona")
+            self.assertEqual(imported["imported"], 1)
+            saved = next((root / "persona/pdca/external_observation_inbox").glob("*.json"))
+            self.assertEqual(json.loads(saved.read_text())["source_url"], canonical)
+
     def test_intel_url_observer_fails_closed_on_fake_reader_or_wrong_domain(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
