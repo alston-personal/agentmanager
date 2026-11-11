@@ -30,10 +30,13 @@ class ControllerService:
     RUNTIME_CONVERGE_NODE = 'oracle-core-node'
 
     def __init__(self, fabric: RealmFabricStore, executor_job_dispatcher: Any | None = None,
-                 runtime_converge_dispatcher: Any | None = None):
+                 runtime_converge_dispatcher: Any | None = None,
+                 code_resume_probe: Any | None = None):
         self.fabric = fabric
         self._executor_job_dispatcher = executor_job_dispatcher
         self._runtime_converge_dispatcher = runtime_converge_dispatcher
+        # Host-registered, never accepted from model-supplied task payload.
+        self._code_resume_probe = code_resume_probe
 
     def _executor_dispatcher(self):
         if self._executor_job_dispatcher is None:
@@ -135,7 +138,24 @@ class ControllerService:
             raise ValueError(f'unexpected executor-job controller fields: {sorted(passthrough)}')
         if not isinstance(payload, dict):
             raise ValueError('executor-job payload must be an object')
-        validate_executor_job(payload)
+        spec = validate_executor_job(payload)
+        # A code-writing job must not resume from an old work branch merely
+        # because it was previously claimed. Resolve its SHA and current main
+        # via an independently trusted host probe at every dispatch attempt.
+        # No branch, SHA, or bypass flag may come from model task fields.
+        if spec.authority == "bounded-code-fix":
+            if self._code_resume_probe is None:
+                raise ValueError("CODE_MAINLINE_PROBE_UNAVAILABLE")
+            try:
+                verdict = self._code_resume_probe(spec)
+            except Exception as exc:
+                raise ValueError("CODE_MAINLINE_EVIDENCE_UNAVAILABLE") from exc
+            if (not isinstance(verdict, dict)
+                or verdict.get("schema") != "agentos.branch-resume-gate/v1"
+                or verdict.get("status") != "MAINLINE_CURRENT"
+                or verdict.get("allowed") is not True
+                or verdict.get("production_authorized") is not False):
+                raise ValueError("CODE_MAINLINE_RECONCILE_REQUIRED")
         if node_id != self.EXECUTOR_JOB_NODE:
             raise ValueError(f'executor job is not routable to target node: {node_id}')
         submission = dict(self._executor_dispatcher().submit(node_id=node_id, request=payload))
