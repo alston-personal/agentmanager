@@ -97,7 +97,8 @@ $files = @(
   'agentos_node/social/web_dm.py',
   'agentos_node/session_bridge.py',
   'agentos_node/agent_surfaces.py',
-  'scripts/windows/user_runtime_watchdog.ps1'
+  'scripts/windows/user_runtime_watchdog.ps1',
+  'scripts/windows/commit_staged_realm.ps1'
 )
 foreach ($rel in $files) {
   $dest = Join-Path $InstallRoot ($rel -replace '/', '\')
