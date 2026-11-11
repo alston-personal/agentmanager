@@ -1549,3 +1549,9 @@ This source-level guard does not trigger a new GPU run, resolve previously
 failed jobs, verify Oracle's loaded runtime, or deliver the final six-second
 spoken IFTV leopard-cat outro. Existing ONE/Supervisor approval and original
 IFTV #3 receipt/QA requirements remain unchanged.
+
+## 2026-11-11 — #1682 protected-main Version Convergence source-event contract
+
+Existing PR #2269 owns the separate pre-resume stale-work safety gate; do not duplicate its `branch_resume_guard.py` or `ControllerService` integration. Draft PR #2271 adds a **source event only** after trusted protected-main push: `.github/workflows/version-convergence-signal-contract.yml` uses the existing GitHub Actions transport to record exact main/previous SHA, changed paths, affected source domains and deterministic event ID in a 30-day JSON artifact. `scripts/version_convergence_signal.py` validates event/ack schema and makes statuses `NOTIFIED`, `SOURCE_CONVERGED`, `RUNTIME_DEPLOYED`, `TASK_RESUMED`, and `BLOCKED` distinct. The unit tests reject forged event IDs, dirty-worktree-reset claims and notifications masquerading as actual deployed runtime. It does NOT connect ONE fanout or authenticate ack issuers. No Executor received an event by virtue of a CI artifact, no scheduler/daemon added, and no runtime deployment is claimed.
+
+The existing ONE Supervisor/Runner Window is the intended trusted delivery path. Subsequent owner-governed integration must verify protected-main lineage, authenticate online/offline executor identity, correlate per-executor acknowledgement with independent source and deployed runtime SHAs, and reuse #2269's stale-write gate. Current execution state: **CONTRACT_ONLY / NO_LIVE_FANOUT**. Full design/acceptance boundary: `docs/VERSION_CONVERGENCE_SIGNAL.md`. Issue: #1682.
