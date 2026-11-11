@@ -18,7 +18,7 @@ from .context_compiler import compile_execution_context
 from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 from .approval_broker import list_approvals, resolve_approval, park_approval
-from .companion_web import render_companion_html, render_public_entry_html, render_welcome_html
+from .companion_web import render_companion_html, render_public_entry_html, render_welcome_html, render_platform_review_html
 from .shared_auth_bridge import is_shared_auth_path, proxy_shared_auth_request
 from .account_realm_onboarding import account_request
 from .platform_realm_review import platform_review
@@ -428,6 +428,19 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
                 self._json(code, result)
             except (OSError, ValueError):
                 self._json(503, {"ok": False, "error": "registration_unavailable"})
+            return
+        if path in ("/platform", "/platform/"):
+            try:
+                code, _ = platform_review(
+                    method="GET", host=self.headers.get("Host", ""),
+                    cookie=self.headers.get("Cookie"), origin=None
+                )
+                if code != 200:
+                    self._json(code, {"ok": False, "error": "platform_review_forbidden"})
+                    return
+                self._html(200, render_platform_review_html())
+            except (OSError, ValueError):
+                self._json(503, {"ok": False, "error": "review_unavailable"})
             return
         if path == "/v1/platform/realm-requests":
             try:
