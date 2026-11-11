@@ -1,5 +1,6 @@
 name: AgentOS Control Plane Immutable Login Release (#2198)
 
+# Auto-release protected-main AgentOS Console changes via this same immutable lane; no release-marker-only PR needed for future UI changes.
 # Source-locked rollout for verified platform admin landing (#2234); no automatic owner elevation.
 # Source-locked rollout for /my-one account logout/switch UI (#2230); preserve existing governed deployment and rollback.
 # Source-locked rollout for Realm Owner Node Map, code approval, and tenant-device join.
@@ -20,6 +21,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/oracle-agentos-login-control-plane-release.yml'
+      - 'agent_core/companion_web.py'
   workflow_dispatch:
 
 permissions:
