@@ -414,3 +414,65 @@ jobs:
               except (OSError,ValueError,TypeError,KeyError,AttributeError,SystemExit):
                   print('galaxy_insights_probe=LOCAL_PRECHECK_FAILED')
           PY
+
+      - name: Validate learning transform and parent permissions without writes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$DEPLOY_PORT" "$DEPLOY_USER@$ORACLE_HOST" 'python3 -' <<'PY'
+          import importlib.util, json, os, sys, urllib.error
+          from pathlib import Path
+          from datetime import datetime, timezone
+          base=Path('/home/ubuntu/agent-data/runtime/social/post-experiments')
+          release=Path('/home/ubuntu/.local/share/agentos/galaxy-experiment-monitor/current').resolve()
+          sys.path.insert(0,str(release))
+          spec=importlib.util.spec_from_file_location('galaxy_transform_probe',release/'scripts/monitor_social_post_experiment_user.py')
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          print('galaxy_parent_root_writable='+str(os.access(base,os.W_OK|os.X_OK)).lower())
+          print('galaxy_parent_root_owner_matches='+str(base.stat().st_uid==os.geteuid()).lower())
+          for file in sorted((base/'queue').glob('*.json')):
+              if file.is_symlink(): continue
+              try:
+                  item=json.loads(file.read_text(encoding='utf-8'))
+                  pub=datetime.fromisoformat(str(item['published_at']).replace('Z','+00:00'))
+                  elapsed=int((datetime.now(timezone.utc)-pub.astimezone(timezone.utc)).total_seconds()//60)
+                  if item.get('next_elapsed_minutes') is None or elapsed<int(item['next_elapsed_minutes']): continue
+                  account=str(item['account_username']).lstrip('@').lower()
+                  parent=base/account
+                  print('galaxy_parent_account_exists='+str(parent.is_dir()).lower())
+                  print('galaxy_parent_account_writable='+str(os.access(parent if parent.exists() else base,os.W_OK|os.X_OK)).lower())
+                  env=module.env_map()
+                  product=json.loads(env.get('AGENTOS_SOCIAL_PRODUCTS_JSON','{}') or '{}').get('galaxy') or {}
+                  key=str(product.get('api_key') or '')
+                  bid,_=module.binding_for(account)
+                  headers={'X-AgentOS-Product-Key':key}
+                  status,posts=module.post(module.BASE+'/status',module.req('post.read',bid),headers)
+                  post=next((x for x in ((posts.get('result') or {}).get('items') or [])
+                             if isinstance(x,dict) and str(x.get('id') or '')==str(item['post_id'])),None)
+                  status,replies=module.post(module.BASE+'/status',module.req('replies.read',bid,str(item['post_id'])),headers)
+                  items=list((replies.get('result') or {}).get('items') or [])
+                  try:
+                      snapshot=module.build_snapshot(
+                          experiment_id=str(item['experiment_id']),account_username=account,
+                          post=post,replies=items,previous_reply_ids=set())
+                      print('galaxy_transform_snapshot=PASS')
+                  except (ValueError,TypeError,AttributeError,KeyError):
+                      print('galaxy_transform_snapshot=FAIL')
+                      continue
+                  try:
+                      record=module.learning_record(
+                          snapshot,elapsed_minutes=elapsed,observed_metrics={},
+                          hypothesis=str(item.get('hypothesis') or ''),
+                          changed_variables=list(item.get('changed_variables') or []),
+                          insights_status='unavailable')
+                      json.dumps(record,ensure_ascii=False)
+                      print('galaxy_transform_learning=PASS')
+                  except (ValueError,TypeError,AttributeError,KeyError):
+                      print('galaxy_transform_learning=FAIL')
+              except (OSError,ValueError,TypeError,AttributeError,KeyError,urllib.error.URLError,TimeoutError,SystemExit):
+                  print('galaxy_transform_precheck=FAIL')
+          # No creation of experiment directories or writes to snapshots, JSONL, queue or API.
+          PY
