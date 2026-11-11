@@ -1,3 +1,9 @@
+## 2026-11-11 — #2198 independent tenant Node device-flow routing gap
+
+Existing `/my-one` instructs tenants to request a device code at `https://agentos.milkcat.org/v1/realms/<realm-id>/join/request`; the older `agentos_node/thin_client_transport.py` always sent to `<one_url>/v1/join/request` with a blank `manifest.realm_id`, so it could not satisfy the independently provisioned Realm Fabric device API. Targeted fix extends the **existing** CLI `join --realm-id realm-u-<24 hex>`, transport request/status/claim, and Windows `bootstrap_clean_windows_node.ps1 -RealmId` to route to the explicit tenant path while preserving the legacy ONE URL join path and preventing silent switching of already enrolled nodes. Tenant enrollment accepts only the AgentOS public origin and an exact Realm ID; owner code approval still requires verified, same-origin Owner Session and the device still holds its own claim secret.
+
+**Acceptance boundary:** source tests of request/status/claim and Owner isolation are not evidence of an actual external device, fresh heartbeat, tenant runtime or task Receipt. Tenant-specific heartbeat/task delivery is a separate explicit runtime integration gate and must not be marked complete from device claim alone. An authorized disposable/new Node and real Owner session remain necessary for golden path. No cross-tenant credential reuse or automatic forced Realm transfer.
+
 ## 2026-11-11 — #2198 serving Dashboard admin identity configuration attestation
 
 Production Control Plane already accepted `main@db35199b2bcb73fa388ee5451d2d7f6953bfa9c9` via [Run 42992742781](https://github.com/alston-personal/agentmanager/actions/runs/42992742781); its independent GitHub `report-release-receipt` posted a success receipt to original #2198 automatically. Public anonymous `/welcome` and role-aware account-header markup passed, but the signed-in `register@milkcat.org` effective `role=admin` has **not** been observed.
