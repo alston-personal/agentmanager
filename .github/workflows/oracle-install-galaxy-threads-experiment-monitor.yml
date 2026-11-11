@@ -361,3 +361,56 @@ jobs:
           print('galaxy_provider_due_checked='+str(checks))
           # No snapshot/learning/queue writes, no secrets, post text, IDs or raw errors in logs.
           PY
+
+      - name: Isolate insights and local persistence failure read-only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$DEPLOY_PORT" "$DEPLOY_USER@$ORACLE_HOST" 'python3 -' <<'PY'
+          import importlib.util, json, os, sys, urllib.error
+          from pathlib import Path
+          from datetime import datetime, timezone
+          release=Path('/home/ubuntu/.local/share/agentos/galaxy-experiment-monitor/current').resolve()
+          sys.path.insert(0,str(release))
+          source=release/'scripts/monitor_social_post_experiment_user.py'
+          spec=importlib.util.spec_from_file_location('galaxy_readonly_insights',source)
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          root=Path('/home/ubuntu/agent-data/runtime/social/post-experiments')
+          for file in sorted((root/'queue').glob('*.json')):
+              if file.is_symlink(): continue
+              try:
+                  row=json.loads(file.read_text(encoding='utf-8'))
+                  pub=datetime.fromisoformat(str(row['published_at']).replace('Z','+00:00'))
+                  age=int((datetime.now(timezone.utc)-pub.astimezone(timezone.utc)).total_seconds()//60)
+                  if row.get('next_elapsed_minutes') is None or age<int(row['next_elapsed_minutes']): continue
+                  account=str(row['account_username']).lstrip('@').lower()
+                  experiment=str(row['experiment_id'])
+                  # All validation/persistence paths checked without creating any directories.
+                  target=root/account/experiment
+                  print('galaxy_persist_experiment_dir_exists='+str(target.is_dir()).lower())
+                  for name in ('latest.json','snapshots.jsonl','learning.jsonl','next.json'):
+                      file_path=target/name
+                      exists=file_path.is_file()
+                      can_write=(os.access(file_path,os.W_OK) if exists else os.access(target,os.W_OK|os.X_OK))
+                      print('galaxy_persist_'+name.split('.')[0]+'_writable='+str(bool(can_write)).lower())
+                  env=module.env_map()
+                  key=str((json.loads(env.get('AGENTOS_SOCIAL_PRODUCTS_JSON','{}') or '{}').get('galaxy') or {}).get('api_key') or '')
+                  if not key:
+                      print('galaxy_insights_probe=KEY_MISSING')
+                      continue
+                  bid,_=module.binding_for(account)
+                  headers={'X-AgentOS-Product-Key':key}
+                  # Read-only Social Runtime operation. Never print the response body or metrics.
+                  try:
+                      status,insights=module.post(module.BASE+'/status',module.req('post.insights.read',bid,str(row['post_id'])),headers)
+                      print('galaxy_insights_probe=HTTP_RESPONSE')
+                      print('galaxy_insights_http_success='+str(status==200 and insights.get('ok') is True).lower())
+                      print('galaxy_insights_metrics_shape_valid='+str(isinstance((insights.get('result') or {}).get('metrics',{}),dict)).lower())
+                  except (OSError,ValueError,TypeError,urllib.error.URLError,TimeoutError):
+                      print('galaxy_insights_probe=READ_EXCEPTION')
+              except (OSError,ValueError,TypeError,KeyError,AttributeError,SystemExit):
+                  print('galaxy_insights_probe=LOCAL_PRECHECK_FAILED')
+          PY
