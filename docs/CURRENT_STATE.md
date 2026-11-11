@@ -1516,3 +1516,24 @@ This fixes only the **existing briefing → Mio advisory cognition** source gap.
 The existing Oracle 5-minute social runner clones `my-agent-data` into a **temporary worktree**, while Trend Digest writes the morning briefing under `/home/ubuntu/agent-data/personas/sunlake-milkcat/morning_reading.json`. A consumer that reads only the worktree could miss fresh local reports indefinitely. The same Draft PR now stages only a correctly scoped, <=36-hour fresh local `mio_lifestyle` JSON into that temporary checkout, if newer than its existing file, immediately before post cognition. It never edits the durable source or commits the staged briefing to GitHub. A subprocess regression test executes the exact heredoc with fresh, stale, wrong-subscription fixtures and tests non-overwrite semantics. The stage print is bounded sanitized status and does not expose news text. No new scheduler and no self-authorizing write actions.
 
 The same pre-existing `persona-pdca-heartbeat.yml` deploy workflow has a bounded **read-only Oracle Trend Digest inventory step**. It reports whether `/home/ubuntu/trend-digest` exists, whether the local `mio_lifestyle` output is fresh/stale/invalid and approximate counts of matching user/system systemd timers or user crontab entries (including -1 for inaccessible commands). It discloses neither source contents nor credentials and does not create/enable/restart any service. The step executes only when the normal protected-main deployment workflow runs following approved merge; its mere presence on the PR is not an Oracle inventory receipt.
+
+
+### #1682 Mainline freshness guard (2026-11-11; proposed, not deployed)
+
+- A source-only preflight in `scripts/branch_resume_guard.py` compares an
+  explicitly pinned Executor work commit against the current verified
+  `refs/remotes/origin/main` ancestry. Code work from a stale merge-base
+  receives `RECONCILE_REQUIRED`, not silent continuation or force-rebase.
+  The same preflight is being added to the **existing** Branch Convergence
+  Path Audit on PRs targeting protected `main`; new code PRs must contain
+  the current `main` HEAD and rerun checks if it advances.
+- Read-only inventory may continue without granting mutation authority.
+  `legacy_production` is reported as
+  `GOVERNED_LEGACY_EXCEPTION_REQUIRED`; no client-provided switch may
+  authorize the old production `core/integration` lane. Its real Oracle,
+  OIDC, rollback and Receipt dependencies must be individually accepted
+  before retirement.
+- **Not yet integrated into Runtime Executor claim/resume**, not deployed
+  to Oracle/ONE, and does not itself merge or delete branches. A successful
+  PR check is not production release evidence. The existing #1682 owns
+  tracking and the existing governance review/merge controls still apply.
