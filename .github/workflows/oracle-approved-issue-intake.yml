@@ -137,8 +137,9 @@ jobs:
           # the scoped WoW projection, with its OWN exact source/authority fence.
           # This creates only a read-only Paw Assignment. It does not claim,
           # enable S4 delivery, authorize engineering writes or deploy Atlas.
-          test -f "$release/scripts/approved_atlas_paw_handoff.py"
-          PYTHONPATH="$release" /usr/bin/python3 "$release/scripts/approved_atlas_paw_handoff.py" \
+          if [ -f "$release/scripts/approved_atlas_paw_handoff.py" ]; then
+            echo "atlas_2243_projection_runtime=INSTALLED"
+            PYTHONPATH="$release" /usr/bin/python3 "$release/scripts/approved_atlas_paw_handoff.py" \
             --completion-state "$data/governance/work-items.json" \
             --runtime-root "$data/employee-runtime" > "$data/governance/issue-intake/last-atlas-paw-handoff.json"
           /usr/bin/python3 - "$data/governance/issue-intake/last-atlas-paw-handoff.json" "$data/governance/work-items.json" "$data/employee-runtime" <<'PY'
@@ -168,6 +169,13 @@ jobs:
           print("atlas_2243_employee_assignment_state="+str(assignment.get("state") if assignment.get("state") in ("pending","active","blocked","handoff","completed","cancelled") else "missing"))
           print("atlas_2243_employee_lease_state="+str(lease.get("status") if lease.get("status") in ("active","completed","blocked","handoff","cancelled","expired") else "missing"))
           PY
+          else
+            # Source/installed Runtime skew is not a reason to break the
+            # already-proven approved Issue Intake of other projects.
+            # Missing Atlas code remains an explicit unmet acceptance gate.
+            echo "atlas_2243_projection_runtime=NOT_INSTALLED"
+            echo "atlas_2243_paw_assignment_registered=false"
+          fi
           # Independent read-only receipt projection for ONE/Supervisor claim:
           # registering an Assignment never equals a claim, delivery or result.
           /usr/bin/python3 - "$data/employee-runtime" <<'PY'
