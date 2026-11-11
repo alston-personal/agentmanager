@@ -46,7 +46,10 @@ def test_gateway_public_home_is_separate_from_privileged_companion(tmp_path: Pat
             welcome = response.read().decode("utf-8")
             assert response.status == 200
             assert "登入狀態" in welcome
-            assert "管理者 Console 不會自動開放" in welcome
+            assert "平台管理員工作區" in welcome
+            assert "session.role === 'admin'" in welcome
+            assert 'id="platform-admin-link"' in welcome
+            assert "此帳號尚未取得平台管理權限" in welcome
         with urlopen(base + "/companion", timeout=3) as response:
             assert b"AgentOS Console" in response.read()
         try:
