@@ -3,7 +3,7 @@ from threading import Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from agent_core.companion_web import render_public_entry_html
+from agent_core.companion_web import render_public_entry_html, render_welcome_html
 from agent_core.distributed_control_plane import DistributedControlPlane
 from agent_core.distributed_gateway import DistributedGatewayServer, DistributedGatewayService
 
@@ -11,6 +11,8 @@ from agent_core.distributed_gateway import DistributedGatewayServer, Distributed
 def test_public_entry_has_login_not_operator_token():
     html = render_public_entry_html()
     assert 'site=agentos' in html
+    assert html.count('returnTo=%2Fwelcome') == 4
+    assert render_welcome_html().count('dashboard/api/auth/session') == 1
     assert '/dashboard/api/auth/signin/google' in html
     assert '/dashboard/api/auth/signin/github' in html
     assert '/dashboard/api/auth/signin/facebook' in html
@@ -40,6 +42,11 @@ def test_gateway_public_home_is_separate_from_privileged_companion(tmp_path: Pat
                     html = response.read().decode("utf-8")
                     assert "以 Google 登入" in html
                     assert "AgentOS operator token (stored only on this device)" not in html
+        with urlopen(base + "/welcome", timeout=3) as response:
+            welcome = response.read().decode("utf-8")
+            assert response.status == 200
+            assert "登入狀態" in welcome
+            assert "管理者 Console 不會自動開放" in welcome
         with urlopen(base + "/companion", timeout=3) as response:
             assert b"AgentOS Console" in response.read()
         try:
