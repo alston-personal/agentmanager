@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from agent_core.task_quality import TaskQualityError, parse_task_contract, validate_task_text
 
@@ -78,6 +79,20 @@ class TaskQualityGuardTests(unittest.TestCase):
         )
         self.assertFalse(direct_success)
         self.assertIn("task_quality", direct_reason)
+
+    def test_lobster_quota_exhaustion_opens_circuit_without_retrying(self):
+        lobster = load_script("lobster")
+        task = "Resolve governed provider | workspace=/repo | acceptance=governance receipt names one provider"
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            lobster,
+            "run_claude_task_wrapper",
+            return_value=(False, "EXIT_3: Your AI credits balance is too low; RESOURCE_EXHAUSTED"),
+        ) as executor:
+            ok, reason = lobster.run_with_inspector(Path(tmp), task)
+        self.assertFalse(ok)
+        self.assertTrue(reason.startswith("QUOTA_EXHAUSTED:"))
+        self.assertEqual(executor.call_count, 1)
+        self.assertGreater(lobster.QUOTA_COOLDOWN_UNTIL, lobster.time.monotonic() + 1790)
 
     def test_add_todo_rejects_before_mutating_status(self):
         module = load_script("add_todo")
