@@ -970,6 +970,7 @@ small{color:#9eafc5}
 <h2>加入 Node</h2>
 <p>在新 Node 安裝程式選擇此 Realm，產生一次性 Code 後，在此輸入核准。核准後 Node 仍須完成 claim 才算加入。</p>
 <p><small>Realm ID：<code id="join-target"></code></small></p>
+<p><small>此 Realm 的 Node 申請 API：<code id="join-endpoint"></code></small></p>
 <label for="node-code">Node 上顯示的 8 碼 Code</label>
 <input id="node-code" placeholder="ABCD-EFGH" maxlength="9" autocomplete="off">
 <button type="button" id="approve-node">核准加入 Node</button>
@@ -1032,6 +1033,7 @@ document.getElementById('one-runtime').textContent=data.one_runtime_attested?'�
 document.getElementById('details').hidden=false;
 status.textContent='已完成獨立 Realm 資料初始化及帳號擁有者綁定。';
 document.getElementById('join-target').textContent=data.realm_id;
+document.getElementById('join-endpoint').textContent=location.origin+'/v1/realms/'+data.realm_id+'/join/request';
 document.getElementById('node-management').hidden=false;
 try{await refreshNodeMap();}catch(e){document.getElementById('map-status').textContent=e.message;}
 }catch(e){status.textContent=e.message;}
