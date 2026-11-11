@@ -204,6 +204,38 @@ def owner_realm(
         return None
 
 
+
+def provisioned_request(
+    request_id: str,
+    *,
+    request_root: Path = REQUEST_ROOT,
+    tenants_root: Path = TENANTS_ROOT,
+) -> dict[str, Any] | None:
+    """Read-only proof of isolated fabric and immutable owner binding."""
+    try:
+        record = _request(request_id, request_root)
+        digest = record["actor"]
+        realm_id = "realm-u-" + digest[:24]
+        tenant = tenants_root / realm_id
+        owner = json.loads((tenant / "owner.json").read_text(encoding="utf-8"))
+        receipt = json.loads((tenant / "bootstrap-receipt.json").read_text(encoding="utf-8"))
+        state = RealmFabricStore(
+            tenant / "fabric.json", node_registry=NodeRegistry(path=tenant / "nodes.json")
+        ).load()
+        if (owner.get("owner_digest") != digest or owner.get("role") != "owner" or
+                owner.get("request_id") != request_id or
+                owner.get("realm_id") != realm_id or
+                receipt.get("schema") != "agentos.realm-bootstrap-receipt/v1" or
+                receipt.get("request_id") != request_id or
+                receipt.get("realm_id") != realm_id or
+                receipt.get("owner_binding_verified") is not True or
+                state.get("realm_id") != realm_id):
+            return None
+        return {"realm_id": realm_id, "bootstrap_verified": True,
+                "one_runtime_attested": False}
+    except (OSError, ValueError, KeyError, TypeError, ProvisioningError):
+        return None
+
 def account_virtual_one(*, host: str, cookie: str | None,
                         tenants_root: Path = TENANTS_ROOT) -> tuple[int, dict[str, Any]]:
     if host.lower().split(":")[0] != "agentos.milkcat.org":
