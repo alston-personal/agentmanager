@@ -49,13 +49,30 @@ jobs:
           set -euo pipefail
           REPO="$1"; SOURCE_SHA="$2"; RUN_ID="$3"
           LIVE=/home/ubuntu/studio-web/dist
-          # Fail closed until the authorized Nginx migration has actually
-          # switched the public Studio virtual host to the canonical root.
-          # Keeping a second writable production root recreates #331 drift.
-          nginx -T 2>&1 | grep -Eq '^[[:space:]]*root[[:space:]]+/home/ubuntu/studio-web/dist[[:space:]]*;' || {
-            echo 'studio_canonical_root_not_active' >&2
+          # Guard the actual Studio virtual-host response, not a root directive
+          # that could belong to a different Nginx server block. The authorized
+          # cutover must stage this public, non-secret canary only in canonical
+          # studio-web/dist, then validate its local Nginx response.
+          ROOT_MARKER="$LIVE/.well-known/studio-root-authority.txt"
+          EXPECTED_ROOT_MARKER="studio-web-production-root/v1"
+          test -f "$ROOT_MARKER" || {
+            echo 'studio_canonical_root_marker_missing' >&2
             exit 1
           }
+          test "$(cat "$ROOT_MARKER")" = "$EXPECTED_ROOT_MARKER" || {
+            echo 'studio_canonical_root_marker_invalid' >&2
+            exit 1
+          }
+          SERVED_ROOT_MARKER="$(curl -kfsS --retry 2 --resolve studio.milkcat.org:443:127.0.0.1 \
+            https://studio.milkcat.org/.well-known/studio-root-authority.txt)" || {
+            echo 'studio_canonical_vhost_marker_unavailable' >&2
+            exit 1
+          }
+          test "$SERVED_ROOT_MARKER" = "$EXPECTED_ROOT_MARKER" || {
+            echo 'studio_canonical_vhost_not_active' >&2
+            exit 1
+          }
+          echo 'studio_canonical_vhost_root_marker=PASS'
           TMP=$(mktemp -d /tmp/milkcat-home-cutover-XXXXXX)
           SRC="$TMP/studio-web"
           BACKUP=/home/ubuntu/agent-data/releases/studio-web/milkcat-world-home/${SOURCE_SHA:0:12}-$RUN_ID
