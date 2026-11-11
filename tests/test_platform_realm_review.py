@@ -77,7 +77,7 @@ def test_platform_ui_has_review_operations_but_no_provisioning_claim():
     html = render_platform_review_html()
     assert "平台治理" in html
     assert "/v1/platform/realm-requests" in html
-    assert "核准（待 ONE 開通）" in html
+    assert "核准申請（不代表開通）" in html
     assert "operator token" not in html.lower()
 
 
@@ -90,3 +90,65 @@ def test_review_denial_reasons_are_distinct():
                return_value={"provider": "google", "subject": "not-authorized", "role": "user"}):
         status, body = platform_review(method="GET", host=HOST, cookie="test", origin=None)
         assert status == 403 and body["error"] == "platform_admin_required"
+
+
+def test_platform_access_denial_pages_offer_login_or_account_switch():
+    from agent_core.companion_web import render_platform_auth_gate_html
+    login = render_platform_auth_gate_html(authenticated=False)
+    assert "需要使用已獲授權的平台管理者帳號登入" in login
+    for provider in ("google", "github", "facebook", "line"):
+        assert "/dashboard/api/auth/signin/" + provider in login
+    assert login.count("returnTo=%2Fplatform") == 4
+    assert "/welcome" in login
+    assert "核准（待 ONE 開通）" not in login
+
+    forbidden = render_platform_auth_gate_html(authenticated=True)
+    assert "目前帳號沒有平台管理權限" in forbidden
+    assert "/dashboard/api/auth/logout?returnTo=%2Fplatform" in forbidden
+    assert "/welcome" in forbidden
+    assert "核准（待 ONE 開通）" not in forbidden
+
+
+def test_reviewer_sees_only_verified_applicant_identity(tmp_path):
+    from agent_core.platform_realm_review import _applicant, _project
+    digest = "a" * 64
+    request_id = "realm-onboarding-" + digest[:32]
+    (tmp_path / (digest + ".json")).write_text(
+        __import__("json").dumps({"request_id": request_id, "actor": digest,
+                                  "provider": "google",
+                                  "applicant_display_name": "Sample Applicant",
+                                  "subject": "sensitive-provider-subject"}),
+        encoding="utf-8",
+    )
+    applicant = _applicant(request_id, "oauth-account:" + digest[:16], root=tmp_path)
+    assert applicant["name"] == "Sample Applicant"
+    assert applicant["provider"] == "google"
+    assert "subject" not in applicant
+    assert _applicant(request_id, "oauth-account:not-valid", root=tmp_path)["provider"] == "unknown"
+
+
+def test_platform_review_ui_has_broader_governance_navigation_and_details():
+    html = render_platform_review_html()
+    assert "平台治理中心" in html
+    assert "Realm 清冊（尚未開放）" in html
+    assert "節點與資源（尚未開放）" in html
+    assert "近期審核紀錄" in html
+    for key in ("申請人", "登入來源", "申請時間", "審核狀態", "ONE 開通"):
+        assert key in html
+    assert "innerHTML" not in html
+
+
+def test_welcome_always_links_back_to_protected_platform():
+    from agent_core.companion_web import render_welcome_html
+    html = render_welcome_html()
+    assert 'href="/platform"' in html
+    assert 'href="/welcome" aria-current="page"' in html
+    assert "平台治理（需管理權限）" in html
+    assert "登入首頁" in html
+
+
+def test_approved_platform_item_shows_true_next_step_without_fake_one():
+    html = render_platform_review_html()
+    assert "等待獨立 ONE 建立與帳號 Owner 綁定" in html
+    assert "已核准申請會移至下方近期審核紀錄" in html
+    assert "ONE 開通" in html
