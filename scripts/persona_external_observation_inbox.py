@@ -6,6 +6,8 @@ must pass a strict schema/provenance/URL/author/content check.
 import argparse
 import hashlib
 import json
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 import re
@@ -42,6 +44,104 @@ def validate(obj):
     return {"schema": SCHEMA, "source": obj["source"], "source_url": raw, "author": author,
             "text": body.strip(), "observed_at": observed, "decision": "UNDECIDED",
             "reply_allowed": False, "ir_adoption_allowed": False, "write_performed": False}
+
+
+
+def _vendor_resolve_public(url):
+    """Read existing localhost Vendor public Reader; never invoke social writes."""
+    request = urllib.request.Request(
+        "http://127.0.0.1:18766/v1/threads/resolve",
+        data=json.dumps({"url": url}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=18) as response:
+        return json.loads(response.read(65536).decode("utf-8"))
+
+
+def observe_intel_urls(intel_file, source_dir, limit=2, resolver=None):
+    """Reuse human-fed/trend URLs as read-only observations for the existing PDCA Inbox.
+
+    Never treat a shortcode-derived intelligence candidate id as a provider
+    parent id. Persist only independently read, public, bounded content.
+    """
+    result = {"schema": "agentos.mio-intel-url-observer/v1", "status": "PASS",
+              "observed": 0, "already_seen": 0, "rejected": 0,
+              "write_performed": False, "reply_allowed": False}
+    try:
+        loaded = json.loads(Path(intel_file).read_text(encoding="utf-8"))
+        candidates = loaded.get("candidates") if isinstance(loaded, dict) else None
+        if not isinstance(candidates, list) or len(candidates) > 500:
+            raise ValueError("invalid intelligence queue")
+    except FileNotFoundError:
+        result.update(status="UNAVAILABLE", reason="INTEL_QUEUE_MISSING")
+        return result
+    except (OSError, ValueError, TypeError):
+        result.update(status="BLOCKED", reason="INTEL_QUEUE_INVALID")
+        return result
+    if not isinstance(limit, int) or not 1 <= limit <= 5:
+        raise ValueError("bounded observation limit required")
+    resolver = resolver or _vendor_resolve_public
+    output = Path(source_dir)
+    visited = 0
+    for item in candidates:
+        if visited >= limit:
+            break
+        if not isinstance(item, dict) or item.get("status") != "pending_review":
+            continue
+        url = item.get("url")
+        if not isinstance(url, str) or len(url) > 240:
+            result["rejected"] += 1
+            continue
+        parsed = urlsplit(url)
+        match = URL.fullmatch(parsed.path)
+        if (parsed.scheme != "https" or parsed.netloc not in
+                ("www.threads.com", "threads.com", "www.threads.net", "threads.net")
+                or parsed.query or parsed.fragment or not match):
+            result["rejected"] += 1
+            continue
+        username = match.group(1)
+        if username.casefold() == "mio.milkcat":
+            result["rejected"] += 1
+            continue
+        canonical = "https://www.threads.com" + parsed.path
+        digest = hashlib.sha256(canonical.encode()).hexdigest()[:24]
+        target = output / (digest + ".json")
+        if target.exists():
+            result["already_seen"] += 1
+            continue
+        visited += 1
+        try:
+            response = resolver(canonical)
+            if (not isinstance(response, dict) or
+                    response.get("schema") != "agentos.social.threads.public-post/v1" or
+                    response.get("login_bypass_used") is not False or
+                    response.get("anti_bot_bypass_used") is not False):
+                raise ValueError("reader provenance invalid")
+            source = response.get("source")
+            if (not isinstance(source, dict) or source.get("url") != canonical or
+                    str(source.get("username") or "").casefold() != username.casefold()):
+                raise ValueError("reader identity mismatch")
+            record = {"schema": SCHEMA, "source": "vendor-public-threads-reader",
+                      "source_url": canonical, "author": username,
+                      "text": source.get("text"),
+                      "observed_at": datetime.now(timezone.utc).replace(
+                          microsecond=0).isoformat().replace("+00:00", "Z"),
+                      "decision": "UNDECIDED", "reply_allowed": False,
+                      "ir_adoption_allowed": False, "write_performed": False}
+            valid = validate(record)
+            if valid is None:
+                raise ValueError("source observation invalid")
+            output.mkdir(parents=True, exist_ok=True)
+            with target.open("x", encoding="utf-8") as handle:
+                json.dump(valid, handle, ensure_ascii=False, sort_keys=True)
+                handle.write("\\n")
+            result["observed"] += 1
+        except FileExistsError:
+            result["already_seen"] += 1
+        except (OSError, ValueError, TypeError, KeyError):
+            result["rejected"] += 1
+    return result
 
 
 def ingest(source_dir, persona_dir, limit=20):
@@ -84,7 +184,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--oracle-dir", required=True)
     parser.add_argument("--persona-dir", required=True)
+    parser.add_argument("--intel-file")
     args = parser.parse_args()
+    if args.intel_file:
+        print("mio_intel_url_observation_receipt=" + json.dumps(
+            observe_intel_urls(args.intel_file, args.oracle_dir), sort_keys=True))
     print("mio_pdca_external_inbox_receipt=" + json.dumps(ingest(args.oracle_dir, args.persona_dir), sort_keys=True))
 
 
