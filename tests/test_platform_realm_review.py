@@ -133,7 +133,7 @@ def test_platform_review_ui_has_broader_governance_navigation_and_details():
     assert "Realm 清冊（尚未開放）" in html
     assert "節點與資源（尚未開放）" in html
     assert "近期審核紀錄" in html
-    for key in ("申請人", "登入來源", "申請時間", "審核狀態", "ONE 開通"):
+    for key in ("申請人", "登入來源", "申請時間", "審核狀態", "Realm 初始化", "ONE 執行服務"):
         assert key in html
     assert "innerHTML" not in html
 
