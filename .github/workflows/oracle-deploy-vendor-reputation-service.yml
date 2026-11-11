@@ -20,7 +20,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       SERVICE_REPO: alston-personal/vendor-reputation-service
-      SERVICE_SHA: 42e88fd45bd25ae34bad6ff665b02d582759796a
+      SERVICE_SHA: e7a5d5a6864612f322393b40dd4add04874192b2
       SOURCE_URL: https://www.threads.com/share/_yh22msHD/
     steps:
       - uses: actions/checkout@v4
