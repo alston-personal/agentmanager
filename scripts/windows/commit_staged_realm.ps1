@@ -139,8 +139,13 @@ try {
     if ($hasWatchdog) { Stop-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue }
     Stop-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
     if ($committed -and (Test-Path -LiteralPath $backup)) {
-      $failedTarget = Join-Path $state ('client.failed-cutover-' + [guid]::NewGuid().ToString('N') + '.json')
-      [IO.File]::Replace($backup, $originalFile, $failedTarget)
+      try {
+        $failedTarget = Join-Path $state ('client.failed-cutover-' + [guid]::NewGuid().ToString('N') + '.json')
+        [IO.File]::Replace($backup, $originalFile, $failedTarget)
+      } catch {
+        # Never skip recovery restart if an atomic reverse-swap itself fails.
+        Write-Host 'agentos_rollback_swap=FAILED'
+      }
     }
     Start-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
     if ($hasWatchdog) { Start-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue }
