@@ -168,6 +168,25 @@ def test_host_config_rejects_untrusted_schema(checkouts, tmp_path):
         load_trusted_code_resume_probe(str(cfg))
 
 
+
+def test_mainline_action_relay_imports_and_legacy_authority_is_refused():
+    """Canonical Action Relay may load; removed deploy powers must not revive."""
+    from agentos_node import action_relay
+    from agentos_node import executor_job_action_relay
+    assert action_relay.ACTIONS["agentos.executor.job"] is executor_job_action_relay._execute
+    for key in (
+        "agentos.realm-fabric.claim_deployment",
+        "agentos.realm-fabric.deployment_status",
+        "agentos.realm-fabric.release_deployment",
+        "agentos.realm-fabric.renew_deployment",
+        "agentos.realm-fabric.advance_deployment",
+        "agentos.realm-fabric.install_release",
+    ):
+        with pytest.raises(ValueError, match="LEGACY_ACTION_REQUIRES_CONVERGENCE"):
+            action_relay.ACTIONS[key]({})
+    assert action_relay.ACTIONS["github.actions.workflow.dispatch"] is action_relay._github_actions_dispatch
+
+
 def _load_real_worker_function_in_isolation():
     """Test the actual worker function body while baseline Action Relay import is broken.
 
