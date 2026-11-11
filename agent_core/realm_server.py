@@ -40,6 +40,9 @@ _GITHUB_SCHEDULER_REPOSITORY = 'alston-personal/agentmanager'
 _GITHUB_SCHEDULER_REF = 'refs/heads/core/integration'
 _GITHUB_HEALTH_CARRIER_REF = 'refs/heads/main'
 _GITHUB_HEALTH_CARRIER_WORKFLOW_REF = 'alston-personal/agentmanager/.github/workflows/executor-health-reconcile-schedule.yml@refs/heads/main'
+# Production entitlement stays bound to this one approved Vision Studio workflow.
+_GITHUB_VISION_STUDIO_REF = 'refs/heads/main'
+_GITHUB_VISION_STUDIO_WORKFLOW_REF = 'alston-personal/agentmanager/.github/workflows/vision-studio-rain-exit.yml@refs/heads/main'
 _GITHUB_JWKS_CACHE: dict[str, Any] = {'expires_at': 0.0, 'keys': {}}
 _GITHUB_JWKS_LOCK = threading.Lock()
 _SHA256_DIGEST_INFO_PREFIX = bytes.fromhex('3031300d060960864801650304020105000420')
@@ -115,7 +118,12 @@ def _validate_github_scheduler_claims(payload: dict[str, Any]) -> None:
         ref == _GITHUB_HEALTH_CARRIER_REF
         and workflow_ref == _GITHUB_HEALTH_CARRIER_WORKFLOW_REF
     )
-    if not (canonical_ref or health_carrier):
+    vision_studio_carrier = (
+        ref == _GITHUB_VISION_STUDIO_REF
+        and workflow_ref == _GITHUB_VISION_STUDIO_WORKFLOW_REF
+        and str(payload.get('event_name') or '') == 'push'
+    )
+    if not (canonical_ref or health_carrier or vision_studio_carrier):
         raise PermissionError('github oidc ref invalid')
     event_name = str(payload.get('event_name') or '')
     allowed_events = {'push', 'workflow_dispatch', 'schedule'}
