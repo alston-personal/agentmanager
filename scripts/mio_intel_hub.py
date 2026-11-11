@@ -273,6 +273,8 @@ class MioIntelHandler(BaseHTTPRequestHandler):
 
             candidate: dict[str, Any] = {
                 "id": url_info["media_id"],
+                "id_provenance": "shortcode_derived_unverified",
+                "reply_allowed": False,
                 "shortcode": url_info["shortcode"],
                 "username": url_info["username"],
                 "url": url_info["canonical_url"],
