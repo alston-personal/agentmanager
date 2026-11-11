@@ -99,7 +99,8 @@ def test_absent_recent_run_dispatches_one_fixed_workflow(monkeypatch):
     out = h3.run_h3_smoke(canonical_executor_job_request(h3.JOB_TYPE))
     assert out["classification"] == "COLAB_SMOKE_DISPATCH_ACK_ONLY"
     assert out["work_id"] == "gh-actions-run-99003"
-    assert out["verdict"] == "ACK_ONLY"
+    assert out["verdict"] == "PENDING_RECEIPT"
+    assert out["successful"] is False
     assert seen == [{
         "repository": "alston-personal/agentmanager",
         "workflow": "oracle-colab-minimax-h3-smoke.yml",
