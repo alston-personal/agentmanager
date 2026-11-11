@@ -65,6 +65,41 @@ function Resolve-Python {
   throw 'Python installation completed, but no working Python 3 executable was found at the expected user install paths.'
 }
 
+# Preflight active binding before downloading/installing anything. A cross-Realm
+# request cannot overwrite an active Thin Client as a side effect of onboarding.
+$activeRoot = $InstallRoot
+$originalConfig = Join-Path (Join-Path $InstallRoot 'state') 'client.json'
+$originalPolicy = Join-Path (Join-Path $InstallRoot 'state') 'policy.json'
+$stagingRebind = $false
+if (Test-Path -LiteralPath $originalConfig) {
+  try {
+    $currentBinding = Get-Content -Raw -LiteralPath $originalConfig | ConvertFrom-Json
+    $boundOne = ([string]$currentBinding.one_url).TrimEnd('/')
+    $boundRealm = [string]$currentBinding.realm_id
+    $boundNode = [string]$currentBinding.node_id
+    if ([string]::IsNullOrWhiteSpace($boundRealm) -or [string]::IsNullOrWhiteSpace($boundNode)) { throw 'invalid existing binding' }
+  } catch {
+    throw 'Active Node config cannot be read; refusing to replace its enrollment.'
+  }
+  $targetDifferent = ($boundOne -ne $OneUrl) -or (
+    -not [string]::IsNullOrWhiteSpace($RealmId) -and $boundRealm -ne $RealmId)
+  if ($targetDifferent) {
+    if (-not $SwitchRealm) {
+      throw 'Existing Node targets a different Realm. Add -SwitchRealm to stage a new binding without altering the active one.'
+    }
+    if ($NodeId -ne $boundNode) {
+      throw 'Staged rebind must preserve the existing Node identity; use the original NodeId.'
+    }
+    $stagingRebind = $true
+    $activeRoot = Join-Path $env:LOCALAPPDATA ('AgentOS-realm-stage-' + [guid]::NewGuid().ToString('N'))
+    # Staging requires the current protected-main client with --stage-only.
+    $SourceRef = 'main'
+    Write-Host 'agentos_realm_switch=STAGING'
+    Write-Host "agentos_existing_realm=$boundRealm"
+    Write-Host "agentos_target_realm=$RealmId"
+  }
+}
+
 $python = Resolve-Python
 Write-Host "agentos_bootstrap_python=$python"
 
@@ -81,15 +116,43 @@ Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri $
 Write-Host "agentos_bootstrap_source_commit=$sha"
 Write-Host "agentos_bootstrap_installer=$tempInstaller"
 
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tempInstaller -InstallRoot $InstallRoot -WorkspaceRoot $WorkspaceRoot -SourceRef $sha -PythonExe $python
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tempInstaller -InstallRoot $activeRoot -WorkspaceRoot $WorkspaceRoot -SourceRef $sha -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw "Thin Client installer failed with exit code $LASTEXITCODE" }
 
-$launcher = Join-Path $InstallRoot 'agentos-client.cmd'
+$launcher = Join-Path $activeRoot 'agentos-client.cmd'
 if (-not (Test-Path -LiteralPath $launcher)) { throw "Thin Client launcher missing after install: $launcher" }
-$state = Join-Path $InstallRoot 'state'
+$state = Join-Path $activeRoot 'state'
 $config = Join-Path $state 'client.json'
 $policy = Join-Path $state 'policy.json'
 if (-not (Test-Path -LiteralPath $policy)) { throw "Thin Client policy missing after install: $policy" }
+
+if ($stagingRebind) {
+  if (Test-Path -LiteralPath $originalPolicy) {
+    # Preserve original policy exactly for a staged client; the source policy is untouched.
+    Copy-Item -LiteralPath $originalPolicy -Destination $policy -Force
+  }
+  $stageArgs = @("join", "--one", $OneUrl, "--node-id", $NodeId,
+                 "--timeout-seconds", "900", "--stage-only")
+  if (-not [string]::IsNullOrWhiteSpace($RealmId)) { $stageArgs += @("--realm-id", $RealmId) }
+  & $launcher @stageArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Target Realm claim/heartbeat failed; the original Node config remains active.'
+  }
+  $stagedConfig = Join-Path $state 'client.json'
+  if (-not (Test-Path -LiteralPath $stagedConfig)) { throw 'Target Node claim did not write staged config.' }
+  $staged = Get-Content -Raw -LiteralPath $stagedConfig | ConvertFrom-Json
+  if (([string]$staged.one_url).TrimEnd('/') -ne $OneUrl -or
+      [string]$staged.node_id -ne $boundNode -or
+      (-not [string]::IsNullOrWhiteSpace($RealmId) -and [string]$staged.realm_id -ne $RealmId)) {
+    throw 'Staged binding identity mismatch; original Node config remains active.'
+  }
+  Write-Host 'agentos_realm_switch=STAGED_VERIFIED'
+  Write-Host "agentos_stage_root=$activeRoot"
+  Write-Host 'agentos_active_binding=PRESERVED'
+  Write-Host 'agentos_realm_switch_cutover=NOT_AUTHORIZED_UNTIL_SUPERVISOR_ROLLBACK_VERIFIED'
+  exit 0
+}
+
 
 $needsEnrollment = -not (Test-Path -LiteralPath $config)
 if (-not $needsEnrollment) {
@@ -104,12 +167,7 @@ if (-not $needsEnrollment) {
     Write-Host "agentos_existing_realm=$existingRealm"
     Write-Host "agentos_existing_one_url=$existingOne"
     Write-Host "agentos_requested_one_url=$OneUrl"
-    if (-not $SwitchRealm) { throw "This node is already enrolled with another Realm endpoint. Re-run with -SwitchRealm to explicitly switch Realm." }
-    $backup = "$config.realm-switch.$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()).bak"
-    Copy-Item -LiteralPath $config -Destination $backup -Force
-    Remove-Item -LiteralPath $config -Force
-    Write-Host "agentos_realm_switch_backup=$backup"
-    $needsEnrollment = $true
+    throw 'Unexpected Realm mismatch after preflight; refusing to change active Node configuration.'
   } else {
     Write-Host "agentos_bootstrap_enrollment=EXISTING"
     Write-Host "agentos_existing_realm=$existingRealm"
