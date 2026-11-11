@@ -202,11 +202,22 @@ def advance_active_ir_checkpoint(
     assistant_summary: str,
     explicit_next_action: str = "",
     explicit_decision: str = "",
+    completed_tasks: list[str] | None = None,
+    expected_project_id: str = "",
+    expected_index_id: str = "",
+    expected_ir_id: str = "",
     data_root: str | Path | None = None,
     governance_path: str | Path | None = None,
     max_retries: int = 3,
 ) -> dict[str, Any]:
     """Advance canonical IR and active-continuation selector with CAS retry."""
+    completed = [] if completed_tasks is None else completed_tasks
+    if (not isinstance(completed, list) or len(completed) > 20
+            or any(not isinstance(t, str) or not t.strip() or len(t) > 1000 for t in completed)
+            or len(set(completed)) != len(completed)):
+        raise ValueError("completed_tasks must contain at most 20 distinct exact task strings")
+    if completed and not all((expected_project_id, expected_index_id, expected_ir_id)):
+        raise ValueError("task completion requires the observed project/index/IR generation")
     root = (
         Path(data_root)
         if data_root is not None
@@ -224,6 +235,8 @@ def advance_active_ir_checkpoint(
                 selector = read_active_continuation(root)
                 project_id = str(selector.get("project_id") or INITIAL_PROJECT_ID).strip()
             except Exception:
+                if completed:
+                    raise
                 project_id = INITIAL_PROJECT_ID
 
             current = resolve_continuation(
@@ -254,7 +267,13 @@ def advance_active_ir_checkpoint(
                 or head.get("active_goal")
                 or "Maintain AgentOS ONE cross-surface canonical IR continuity"
             ).strip()
-            pending_tasks = list(ir.get("pending_tasks") or ["Continue active ONE project work"])
+            pending_tasks = list(ir.get("pending_tasks") or [])
+            if completed:
+                if (project_id, expected_index, expected_ir) != (expected_project_id, expected_index_id, expected_ir_id):
+                    raise ValueError("stale task completion generation; resolve current IR before retrying")
+                if any(task not in pending_tasks for task in completed):
+                    raise ValueError("completed task is not in the observed pending list")
+                pending_tasks = [task for task in pending_tasks if task not in completed]
 
             utc_ts = _now_utc_compact()
             seed = (
@@ -267,11 +286,14 @@ def advance_active_ir_checkpoint(
 
             if explicit_next_action.strip():
                 next_action = _clean_text(explicit_next_action, max_chars=280)
+            elif completed:
+                next_action = _clean_text(pending_tasks[0], max_chars=280) if pending_tasks else "No pending tasks; verify goal acceptance or await new user intent."
             else:
                 next_action = (
                     f"Latest turn ({surface_label}/{model_label}): "
                     f"user asked '{cleaned_user[:100]}' -> "
-                    f"completed '{cleaned_assistant[:140]}'. Continue pending tasks."
+                    f"recorded '{cleaned_assistant[:140]}'. "
+                    + ("Continue pending tasks." if pending_tasks else "No pending tasks recorded.")
                 )
 
             if explicit_decision.strip():
@@ -330,6 +352,7 @@ def advance_active_ir_checkpoint(
                 "previous": {"index_id": expected_index, "ir_id": expected_ir},
                 "current": {"index_id": new_index_id, "ir_id": new_ir_id},
                 "next_action": next_action,
+                "completed_tasks": completed,
                 "handoff": handoff_receipt,
                 "activation": activation,
                 "credential_exposed": False,
@@ -337,6 +360,9 @@ def advance_active_ir_checkpoint(
             _write_stop_sync_audit(result, data_root=root)
             return result
         except Exception as exc:
+            if completed:
+                # Never rebase a completion declaration onto a newer user's generation.
+                raise
             last_error = exc
             continue
 

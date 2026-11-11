@@ -805,6 +805,20 @@ AgentOS does not assume access to model activations or model-specific internal s
 
 A successful process start, health endpoint, or workflow status is not enough to claim end-to-end correctness. Architecture-sensitive acceptance should preserve capability/action receipts and, when relevant, real transport-path evidence under `.agentos/evidence/`.
 
+## Serial continuation and explicit task completion (source candidate)
+
+The Claude, Codex and Antigravity bootstrap installers instruct serial completion
+of authorized work without requiring another user turn per pending item. Tool-call
+count alone does not mandate delegation. Claude's transcript-size warning fires
+on crossing 300KB, rather than on every subsequent turn; bytes are not token usage.
+
+`one_checkpoint` on Claude/Codex accepts exact `completed_tasks` only with the
+observed project/index/IR generation. Unknown tasks and stale generations fail
+without rebasing completion onto newer work. Stop summaries alone preserve pending
+tasks, and an empty list remains empty; it does not declare the goal accepted.
+Tests cover the hook warning and fenced checkpoint behavior. Installed surfaces
+require deployment separately; this source change does not verify Windows behavior.
+
 ## Memory and Cognitive IR boundary
 
 Historical three-layer memory remains a useful conceptual model: L1 immediate/working state, L2 project/continuation state, and L3 stable cross-project knowledge and learned patterns. Current AgentOS separates canonical project state, continuation/work state, governance state, runtime state, receipts/evidence, and validated knowledge.

@@ -36,10 +36,10 @@ If `one_resolve_active` is unavailable, missing, stale, or fails, report `ONE_AC
 
 Never request, print, copy, or expose Realm/node credentials. The MCP process exposes only the trusted local read-only ONE projection.
 
-**Context Budget & Subagent Delegation ("One-Task-One-Subwindow" + Three Multi-Agent Budget Iron Laws)**:
-1. **`One-Pending-Task-Per-Turn` (一輪只推進一項待辦)**: When continuing from Canonical IR (`繼續`, `continue`, `已更新IR`), execute **ONLY `pending_tasks[0]`** (the single first pending item) in a single turn unless the user explicitly asks to run multiple items at once. Never fan out across all `pending_tasks` in one turn.
-2. **`One-Shot Subagent Only — No Followup Ping-Pong` (子代理即用即棄，禁止追加養肥)**: When delegating a >4-step task to a subagent (`Task` tool), give a complete self-contained prompt and let it return once and terminate. **NEVER** send new tasks or repeated `send_message` / `followup_task` rounds to an existing subagent. Spawn at most 1 subagent at a time unless the user explicitly requests parallel subagents.
-3. **`Coordinator-Only When Delegating` (主代理不重複下場)**: While a subagent is executing a task, the parent agent MUST NOT run duplicate shell commands, file searches, or test suites in the main thread.
+**Serial Continuation & Context Budget**:
+1. Continue already-authorized pending work serially until complete or genuinely blocked. Finishing one item or reporting progress does not end the task or require another `continue`. Newer user intent and approval boundaries remain authoritative.
+2. Delegate only when an independent bounded task benefits from it and applicable user instructions permit it; tool-call count alone never requires delegation. Avoid repeated context transfer, unnecessary followups, and duplicate parent/child searches or tests.
+3. Read only relevant context and checkpoint milestones. A Stop summary records progress; it does not prove task completion. Where `one_checkpoint` supports completion, supply exact `completed_tasks` with the observed `expected_project_id`, `expected_index_id`, and `expected_ir_id`; resolve again after a stale-generation rejection.
 
 **Automatic & Explicit Canonical IR Write-Back**: Completed turns automatically sync to ONE via the `Stop` hook (`agentos_node.ir_stop_sync`), and major milestones can also be explicitly checkpointed via `{SERVER_NAME}.one_checkpoint(summary, next_action, decision)`.
 {BOOTSTRAP_END}
