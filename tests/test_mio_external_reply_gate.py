@@ -81,6 +81,42 @@ class ExternalReplyGateTest(unittest.TestCase):
             set() if reserved is None else reserved, self.now
         )
 
+    def test_existing_receipts_project_into_in_memory_outward_event(self):
+        self.source["platform"] = "threads"
+        self.search["platform"] = "threads"
+        self.file.write_text(json.dumps(self.source), encoding="utf-8")
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        events = self.m.project_external_verified_events(
+            self.root, {"proactive_external_reply_authorized": True}, self.now)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["object_id"], "123456789")
+        self.assertEqual(events[0]["source_receipt_ref"], self.ref)
+        self.assertEqual(events[0]["search_receipt_ref"], self.search_ref)
+        candidates, _ = self.m.external_reply_candidates(
+            self.root, events, {"reply_decisions": {}}, {"source_sha256": "irsha"},
+            {"proactive_external_reply_authorized": True}, set(), self.now)
+        self.assertEqual(len(candidates), 1)
+
+    def test_projector_rejects_unattested_or_unapproved_evidence(self):
+        self.source["platform"] = "threads"
+        self.search["platform"] = "threads"
+        self.file.write_text(json.dumps(self.source), encoding="utf-8")
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        project = lambda enabled: self.m.project_external_verified_events(
+            self.root, {"proactive_external_reply_authorized": enabled}, self.now)
+        self.assertEqual(project(False), [])
+        self.search["result"]["items"][0]["is_reply_attested"] = False
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        self.assertEqual(project(True), [])
+        self.search["result"]["items"][0]["is_reply_attested"] = True
+        self.search["result"]["items"][0]["username"] = "mio.milkcat"
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        self.assertEqual(project(True), [])
+        self.search["result"]["items"][0]["username"] = "other_author"
+        self.search["completed_at"] = (self.now - timedelta(days=5)).isoformat()
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        self.assertEqual(project(True), [])
+
     def test_verified_root_is_candidate_not_a_write(self):
         items, skipped = self.candidates()
         self.assertEqual(len(items), 1)
