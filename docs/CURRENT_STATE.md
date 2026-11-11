@@ -1603,3 +1603,20 @@ IFTV #3 receipt/QA requirements remain unchanged.
   external GitHub CI result is not acceptable identity evidence.
   Source tests do not establish that Oracle host resolver or deployed
   ONE currently uses it. This guard is still in unmerged PR #2269.
+
+
+- **ONE server composition is now wired in source:** `RealmHTTPServer`
+  reads only the host process environment key `AGENTOS_CODE_RESUME_HOST_CONFIG`
+  at startup, loads an operator-owned 0600 absolute JSON configuration with
+  schema `agentos.branch-resume-host/v1`, and injects its trusted local Git
+  callback into `LegacyControllerService` for code-writing job submission.
+  Requests and IR cannot override worktree mappings. The source tests check
+  startup binding, actual Git provider result, world-readable config rejection,
+  symlink and malformed config rejection. With no configured host mapping,
+  code-writing task submission remains blocked; ordinary read-only jobs remain
+  unaffected.
+- **No claim of live Oracle configuration or Receipt:** the actual Oracle
+  worker checkout locations, approved upstream origin, server environment
+  setting and live task execution still require verification from that host.
+  Never guess worktree paths or switch the physical Node Realm in lieu of
+  configuring the code-resume source.
