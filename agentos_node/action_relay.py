@@ -1078,6 +1078,14 @@ def _issue71_repair_node_registry(params: dict[str, Any]) -> dict[str, Any]:
         restarted_after_failure = bool(restart.get('ok'))
         raise
 
+# Branch convergence #1682 compatibility fence.
+# Main retained these legacy registry keys but lost their implementation.
+# They must not silently reacquire privileged core/integration deployment
+# authority without a consumer/equivalence and Oracle runtime review.
+def _legacy_action_requires_convergence(params: dict[str, Any]) -> dict[str, Any]:
+    raise ValueError("LEGACY_ACTION_REQUIRES_CONVERGENCE")
+
+
 # deployment_rejection_precedence_v1
 ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "site.sync_build": _site_sync_build,
@@ -1087,16 +1095,16 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "github.repo.ensure_layoutlib": _ensure_layoutlib_remote,
     "github.repo.import_layoutlib_v079": _import_layoutlib_v079,
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
-    "github.actions.workflow.dispatch": _github_actions_dispatch,
+    "github.actions.workflow.dispatch": _legacy_action_requires_convergence,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
-    "agentos.realm-fabric.claim_deployment": _claim_realm_fabric_deployment,
-    "agentos.realm-fabric.deployment_status": _realm_fabric_deployment_status,
-    "agentos.realm-fabric.release_deployment": _release_realm_fabric_deployment,
-    "agentos.realm-fabric.renew_deployment": _renew_realm_fabric_deployment,
+    "agentos.realm-fabric.claim_deployment": _legacy_action_requires_convergence,
+    "agentos.realm-fabric.deployment_status": _legacy_action_requires_convergence,
+    "agentos.realm-fabric.release_deployment": _legacy_action_requires_convergence,
+    "agentos.realm-fabric.renew_deployment": _legacy_action_requires_convergence,
     "agentos.realm-fabric.inspect_service": _inspect_realm_fabric_service,
-    "agentos.realm-fabric.advance_deployment": _advance_realm_fabric_deployment,
-    "agentos.realm-fabric.install_release": _install_realm_fabric_release,
+    "agentos.realm-fabric.advance_deployment": _legacy_action_requires_convergence,
+    "agentos.realm-fabric.install_release": _legacy_action_requires_convergence,
     "agentos.maintenance.issue71_repair_node_registry": _issue71_repair_node_registry,
     "agentos.project.register_core": _register_agentos_core_project,
     "agentos.project.publish_continuation": _publish_project_continuation,
