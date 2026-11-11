@@ -21,6 +21,8 @@ class AccountReplyTest(unittest.TestCase):
         self.assertIn('account = "original@example.test"', slot)
         self.assertIn('realm = "realm-u-' + "a"*24 + '"', slot)
         self.assertIn('signed_in = true', slot)
+        self.assertIn("\n", slot)
+        self.assertNotIn("\\n", slot)
         self.assertNotIn("token", slot)
         self.assertNotIn("handle", slot)
         self.assertNotIn("RunScript", slot)
