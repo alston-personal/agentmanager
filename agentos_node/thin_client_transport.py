@@ -113,7 +113,7 @@ class ClientConfig:
             pass
 
 
-_TENANT_REALM_ID = re.compile(r"realm-u-[0-9a-f]{24}\\Z")
+_TENANT_REALM_ID = re.compile(r"realm-u-[0-9a-f]{24}\Z")
 
 
 def device_join_base(one_url: str, realm_id: str | None = None) -> str:
