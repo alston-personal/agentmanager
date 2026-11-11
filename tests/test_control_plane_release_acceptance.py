@@ -20,7 +20,7 @@ def test_release_inspector_requires_signin_shell_and_oauth_session():
             if self.path == "/":
                 self.wfile.write("AgentOS 以 Google 登入".encode())
             elif self.path == "/welcome":
-                self.wfile.write(\'登入狀態；管理者 Console 不會自動開放 <button id="create-realm">申請</button> /v1/account/realm-request\'.encode())
+                self.wfile.write(("登入狀態；管理者 Console 不會自動開放 " + 'id="create-realm" /v1/account/realm-request').encode())
             elif self.path == "/v1/account/realm-request":
                 self.wfile.write(json.dumps({"ok": False, "error": "signin_required"}).encode())
             elif self.path == "/companion":
