@@ -52,7 +52,7 @@ def render_account_reply_slot(encoded_reply: bytes, *, expected_request_id: int)
         if value is not None:
             lines.append(f'  {key} = "{value}",')
     lines.append("}")
-    content = ("\\n".join(lines) + "\\n").encode("ascii")
+    content = ("\n".join(lines) + "\n").encode("ascii")
     if len(content) > MAX_SLOT_LUA_BYTES:
         raise ValueError("slot_too_large")
     return content
