@@ -156,6 +156,8 @@ def run_crawler(max_new_candidates: int = 4) -> dict[str, Any]:
             # Require at least some author or snippet text
             candidate = {
                 "id": mid,
+                "id_provenance": "shortcode_derived_unverified",
+                "reply_allowed": False,
                 "shortcode": code,
                 "username": item["username"],
                 "url": item["url"],
