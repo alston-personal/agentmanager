@@ -285,3 +285,26 @@ endpoint or browser return session has been bound; actual game-side reply
 publication for account identity/realm is also absent. The tests prove neither
 live OAuth nor physical Windows game-host acceptance. Do not install or
 authorize the preview as a production account-switching feature.
+
+## Game-visible account display contract — 2026-11-11
+
+Added `agentos_node/wow_account_reply.py` and
+`render_account_reply_slot` alongside existing status reply support. The
+existing `/agentos` panel recognizes `agentos.wow.account.reply/v1` only
+when its request ID matches the current one-shot reply slot. The strict
+payload contains `signed_in`, `status`, an allowlisted account display
+label, and an allowlisted Realm identifier. Tokens, Node secrets, arbitrary
+JSON, code strings, and unsolicited Realm claims are rejected. Sign-out
+removes account/Realm from the rendered projection. Reply data **is not
+authorization**, and the panel still explicitly says live ONE verification
+requires a trusted Bridge.
+
+This stage is **offline contract implementation**. It does not provide a
+resident Windows bridge service, actual external OAuth pairing redemption,
+server-side Realm membership queries, or a verified game-to-ONE-to-game
+reply. Existing Studio PWA auth handoff uses its own Studio cookie, and
+must not be reused unchanged as AgentOS cross-site auth. The real
+production AgentOS site-isolated OAuth implementation currently exists
+on `main`, while this WoW draft still targets `core/integration`; reconcile
+the auth API boundary under existing #2198 and #2134, not by copying
+credentials or treating the Windows Node as the user's login.
