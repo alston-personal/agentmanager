@@ -88,6 +88,9 @@ def test_cannot_dispatch_when_run_discovery_fails(monkeypatch):
 def test_absent_recent_run_dispatches_one_fixed_workflow(monkeypatch):
     seen = []
     def stale_run(args, **kwargs):
+        # Exercise the real Action Relay subprocess's required cwd contract.
+        # A permissive mock used to hide this runtime-only TypeError.
+        assert kwargs["cwd"] == h3.Path.home()
         if args[1:3] == ["run", "list"]:
             older = _recent_run(status="completed", conclusion="failure")
             older["createdAt"] = _stamp(-1500)
