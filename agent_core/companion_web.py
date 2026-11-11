@@ -668,6 +668,7 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
 <a href="/">登入首頁</a>
 </nav>
 <p id="login-status" aria-live="polite">正在確認登入狀態…</p>
+<section id="platform-admin-entry" hidden aria-label="平台管理員工作區"><h2>平台管理員工作區</h2><p>此帳號具備平台治理身分。管理 Realm 申請及平台資源請進入平台治理中心；個別 Realm 的日常操作仍受各自 Owner 權限控制。</p><p><a href="/platform" id="platform-admin-link">進入平台治理中心</a></p></section>
 <section id="realm-onboarding" hidden>
 <h2>我的 Realm</h2>
 <p id="realm-status" aria-live="polite">正在讀取開通狀態…</p>
@@ -691,7 +692,12 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
     if (!response.ok) throw new Error('session_unavailable');
     const session = await response.json();
     if (session.loggedIn === true && session.provider && session.subject) {
-      status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。管理者 Console 不會自動開放。';
+      if (session.role === 'admin') {
+        status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS（平台管理者）。';
+        document.getElementById('platform-admin-entry').hidden = false;
+        return;
+      }
+      status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。此帳號尚未取得平台管理權限。';
       const onboarding = document.getElementById('realm-onboarding');
       const current = document.getElementById('realm-status');
       const actions = document.getElementById('realm-actions');
