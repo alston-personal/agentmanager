@@ -277,7 +277,7 @@ class ThinClientTransport:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         query = urllib.parse.urlencode({'node_id': self.config.node_id})
-        return self._request(self.config.one_url + '/v1/bootstrap?' + query, token=self.config.node_token, retries=2)
+        return self._request(node_runtime_endpoint(self.config, 'bootstrap') + '?' + query, token=self.config.node_token, retries=2)
 
     def resolve(self, project: str, *, intent: str = 'continue') -> dict[str, Any]:
         """Resolve canonical project continuation state through ONE.
@@ -352,7 +352,7 @@ class ThinClientTransport:
         wait = max(0.0, min(float(wait), 25.0))
         query = urllib.parse.urlencode({'node_id': self.config.node_id, 'wait_seconds': f'{wait:.3f}'})
         result = self._request(
-            self.config.one_url + '/v1/tasks?' + query,
+            node_runtime_endpoint(self.config, 'tasks') + '?' + query,
             token=self.config.node_token,
             timeout=max(15.0, wait + 5.0),
         )
