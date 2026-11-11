@@ -38,6 +38,7 @@ if ! python3 "$CAMERA_TMP/vision_studio_camera.py" "$CAMERA_TMP/project.yaml" > 
   echo "vision_studio_produce=CAMERA_IR_VALIDATION_FAILED"
   exit 5
 fi
+CAMERA_IR_SHA256="$(sha256sum "$CAMERA_TMP/directions.tsv" | awk '{print $1}')"
 if ! git -C "$REPO" show "$SOURCE_COMMIT:scripts/generate_google_flow_user.sh" > "$FLOW_TMP"; then
   echo "vision_studio_produce=FLOW_GENERATOR_MATERIALIZE_FAILED"
   exit 5
@@ -155,14 +156,19 @@ fi
 
 sha="$(sha256sum "$FINAL" | awk '{print $1}')"
 bytes="$(stat -c '%s' "$FINAL")"
-python3 - "$RECEIPT" "$FINAL" "$sha" "$bytes" "${CLIP[@]}" <<'PY'
+python3 - "$RECEIPT" "$FINAL" "$sha" "$bytes" "$SOURCE_COMMIT" "$CAMERA_IR_SHA256" "${CLIP[@]}" <<'PY'
 import json,sys
-receipt_path, final_path, sha, size, *clips = sys.argv[1:]
+receipt_path, final_path, sha, size, source_commit, camera_ir_sha256, *clips = sys.argv[1:]
 payload = {
   "schema": "agentos.vision-studio-production-receipt/v1",
   "project_id": "rain-exit-v001",
   "ok": True,
   "generator": "media.google-flow",
+  "camera_motion": {
+    "schema": "agentos.camera-motion-ir/v1",
+    "source_commit": source_commit,
+    "compiled_instructions_sha256": camera_ir_sha256
+  },
   "shots": [
     {"shot_id": f"s{i+1:02d}", "source": p, "accepted": True}
     for i,p in enumerate(clips)
