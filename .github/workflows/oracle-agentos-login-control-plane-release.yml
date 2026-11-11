@@ -1,5 +1,6 @@
 name: AgentOS Control Plane Immutable Login Release (#2198)
 
+# Source-locked rollout for Realm Owner Node Map, code approval, and tenant-device join.
 # Source-locked retry after fixing anonymous /my-one 401 inspector contract.
 # Source-locked rollout for approved CREATE to per-account isolated Realm bootstrap.
 # Source-locked rollout for post-approval navigation and accurate pending ONE stage.
