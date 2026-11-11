@@ -36,6 +36,7 @@ class ExternalReplyGateTest(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.now = datetime(2026, 11, 11, 1, 0, tzinfo=timezone.utc)
         self.ref = "pdca/social_receipts/verified_123.json"
+        self.search_ref = "pdca/social_receipts/search_123.json"
         file = self.root / self.ref
         file.parent.mkdir(parents=True)
         self.source = {
@@ -51,18 +52,28 @@ class ExternalReplyGateTest(unittest.TestCase):
             }}
         }
         self.file = file
+        self.search = {
+            "schema": "agentos.social-receipt/v1", "ok": True,
+            "operation": "keyword.search", "completed_at": self.now.isoformat().replace("+00:00","Z"),
+            "account_binding_id": "mio-bound-opaque",
+            "result": {"items": [{"id": "123456789", "username": "other_author",
+                "permalink": "https://www.threads.com/@other_author/post/Example",
+                "text": "公開討論內容", "is_reply": False, "is_reply_attested": True}]}
+        }
+        self.search_file = self.root / self.search_ref
         self.event = {
             "type": "public.post.verified", "object_id": "123456789",
             "root_post_id": "123456789", "reader_account": "mio.milkcat",
             "author_handle": "other_author", "text": "公開討論內容",
             "source_url": "https://www.threads.com/@other_author/post/Example",
-            "source_receipt_ref": self.ref,
+            "source_receipt_ref": self.ref, "search_receipt_ref": self.search_ref,
             "account_binding_id": "mio-bound-opaque",
             "timestamp": self.now.isoformat().replace("+00:00", "Z")
         }
 
     def candidates(self, *, event=None, source=None, policy=True, events=None, reserved=None):
         self.file.write_text(json.dumps(self.source if source is None else source), encoding="utf-8")
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
         return self.m.external_reply_candidates(
             self.root, [self.event if event is None else event] if events is None else events,
             {"reply_decisions": {}}, {"source_sha256": "irsha"},
@@ -99,6 +110,16 @@ class ExternalReplyGateTest(unittest.TestCase):
             (self.now - timedelta(days=6)).isoformat()})[0], [])
         self.assertEqual(self.candidates(event={**self.event, "timestamp":
             (self.now - timedelta(minutes=10)).isoformat()})[0], [])
+
+    def test_search_correlates_platform_id_and_attested_nonreply(self):
+        self.search["result"]["items"][0]["id"] = "999"
+        self.assertEqual(self.candidates()[0], [])
+        self.search["result"]["items"][0]["id"] = "123456789"
+        self.search["result"]["items"][0]["is_reply_attested"] = False
+        self.assertEqual(self.candidates()[0], [])
+        self.search["result"]["items"][0]["is_reply_attested"] = True
+        self.search["result"]["items"][0]["is_reply"] = True
+        self.assertEqual(self.candidates()[0], [])
 
     def test_wrong_reader_or_canonical_url(self):
         for edits in ({"reader_account": "oursong_alstonhuang"},
