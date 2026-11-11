@@ -1658,3 +1658,29 @@ IFTV #3 receipt/QA requirements remain unchanged.
   functionality-equivalence and production Receipt review under #1682.
   Existing immutable-release/OIDC authority remains unchanged. No live
   Oracle systemd or runtime acceptance is claimed.
+
+
+### #1682 release-blocking legacy Relay consumers (2026-11-11)
+
+- Static source inspection confirms at least two active-in-source legacy Core
+  deployment clients: `scripts/install_realm_fabric_via_action_relay.py`
+  submits the claim/install/status/release/advance Actions, and
+  `.github/workflows/oracle-core-generation5-resume-release.yml` can submit
+  the release Action on manual dispatch. `docs/CORE_DEPLOYMENT_AUTHORITY.md`
+  documents the required fenced CAS/lease/release semantics. None of these
+  consumers can be presumed retired from source evidence alone.
+- `scripts/reconcile_action_relay_runtime.py` still declares its Action
+  Relay `SOURCE_REF` as `core/integration`, and
+  `agentos_node/runtime_converge_action_relay.py` has an explicit
+  `core/integration` source-ref requirement. The current service process
+  source/loaded release has NOT been read from Oracle in this turn.
+- The candidate #2269 safely imports and fail-closes six undefined legacy
+  mutation entries, but applying that denial to a production Relay that
+  still accepts those clients would **break old Core deployment workflows**.
+  Therefore #2269 was converted **back to DRAFT**; its green CI is not
+  deployment readiness. A pinned machine-readable consumer/release-gate
+  manifest now lives in
+  `docs/governance/branch-1682-legacy-relay-consumers.json`.
+  Preserve the original production authority until every client has a
+  verified replacement and a live Oracle acceptance/rollback Receipt;
+  do not retire `core/integration` or promote six-action denial by default.
