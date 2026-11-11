@@ -1396,3 +1396,7 @@ The existing server-scoped Owner membership prevents ordinary/anonymous/other-Re
 ### 2026-11-11 — Virtual ONE account navigation (#2198)
 
 The account-bound `/my-one` console exposes explicit `切換使用者` and `登出` actions using the existing AgentOS site-scoped OAuth logout endpoint (`/dashboard/api/auth/logout?returnTo=%2F`), following the established `/platform` pattern. This is a UI navigation change, not a new authentication model or additional Realm entitlement. Source/CI alone does not attest a production rollout or live cross-account session regression; those remain release acceptance gates. The newly created Realm's independent ONE Runtime and first external Node join/claim/heartbeat receipt remain unverified.
+
+### 2026-11-11 — /my-one account actions protected-main release carrier (#2232)
+
+PR #2230 merged source-level AgentOS-scoped logout/switch navigation into main, but that alone does not update the immutable Oracle Control Plane. This subsequent release-only change marks the existing `.github/workflows/oracle-agentos-login-control-plane-release.yml` for a **governed protected-main push trigger**. Its existing blue/green shared auth, exact-SHA immutable cutover and rollback checks remain unchanged. Production release SHA and actual signed-in logout/relogin and tenant isolation must be read back from Oracle/public UI before claiming acceptance. Keep the first real tenant Node join/claim/heartbeat and ONE runtime lifecycle under #2198.
