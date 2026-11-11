@@ -1,0 +1,137 @@
+# Transactional cutover for a pre-approved, verified staged Realm identity.
+# Run only with explicit operator authorization on the owning Windows device.
+# Does not migrate Realm data or authorize a Node in the destination Realm.
+param(
+  [Parameter(Mandatory=$true)][string]$StageRoot,
+  [string]$InstallRoot = "$env:LOCALAPPDATA\AgentOS",
+  [switch]$CommitApproved
+)
+$ErrorActionPreference = 'Stop'
+if (-not $CommitApproved) { throw 'Explicit -CommitApproved is required for active Node cutover' }
+
+$root = [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')
+$stage = [IO.Path]::GetFullPath($StageRoot).TrimEnd('\')
+$local = [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\')
+$stageParent = [IO.Path]::GetDirectoryName($stage)
+if ($stageParent -ine $local -or
+    -not [IO.Path]::GetFileName($stage).StartsWith('AgentOS-realm-stage-', [StringComparison]::OrdinalIgnoreCase) -or
+    $stage -ieq $root) { throw 'StageRoot must be an independent AgentOS-realm-stage directory in LOCALAPPDATA' }
+
+$state = Join-Path $root 'state'
+$originalFile = Join-Path $state 'client.json'
+$stageFile = Join-Path (Join-Path $stage 'state') 'client.stage.json'
+$stageLease = Join-Path (Join-Path $stage 'state') 'heartbeat-lease.json'
+$launcher = Join-Path $root 'agentos-client.cmd'
+$stageLauncher = Join-Path $stage 'agentos-client.cmd'
+foreach($file in @($originalFile,$stageFile,$stageLease,$launcher,$stageLauncher)) {
+  if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Required binding or launcher missing: $file" }
+}
+$original = Get-Content -Raw -LiteralPath $originalFile | ConvertFrom-Json
+$target = Get-Content -Raw -LiteralPath $stageFile | ConvertFrom-Json
+$lease = Get-Content -Raw -LiteralPath $stageLease | ConvertFrom-Json
+if ([string]$original.node_id -ne [string]$target.node_id -or
+    [string]$original.realm_id -eq [string]$target.realm_id -or
+    [string]::IsNullOrWhiteSpace([string]$target.node_token) -or
+    [string]$target.realm_id -notmatch '^realm-u-[0-9a-f]{24}$' -or
+    [string]$target.one_url -ne 'https://agentos.milkcat.org') {
+  throw 'Staged identity does not match the authorized Node/tenant rebind contract'
+}
+if ($lease.schema -ne 'agentos.node-heartbeat-lease/v0.1' -or
+    $lease.realm_id -ne $target.realm_id -or $lease.node_id -ne $target.node_id -or
+    $lease.one_url -ne $target.one_url -or
+    ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [double]$lease.recorded_at_unix) -gt 600 -or
+    ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [double]$lease.recorded_at_unix) -lt -30) {
+  throw 'Staged target heartbeat evidence is missing, mismatched or stale'
+}
+# Reauthenticate target bearer before stopping the original Node.
+& $stageLauncher --config $stageFile health | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Staged target Realm is not reachable using the claimed credential' }
+
+# This transaction is only safe with the canonical hidden task pair. Unknown
+# task layouts must not be stopped or replaced by guessing.
+$primaryName = 'AgentOS Thin Client'
+$watchdogName = 'AgentOS Thin Client Watchdog'
+$primary = Get-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
+$watchdog = Get-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue
+if ($null -eq $primary -or $null -eq $watchdog) {
+  throw 'Canonical Windows supervisor/watchdog pair not found; manual governance needed'
+}
+if ($primary.Actions.Count -ne 1 -or $watchdog.Actions.Count -ne 1 -or
+    $primary.Actions[0].Execute -notmatch '(?i)powershell' -or
+    $watchdog.Actions[0].Execute -notmatch '(?i)powershell' -or
+    $primary.Actions[0].Arguments -notmatch 'agentos-thin-client-hidden' -or
+    $watchdog.Actions[0].Arguments -notmatch 'watchdog') {
+  throw 'Unknown or legacy Windows task action; refusing to replace an active Node'
+}
+
+$backup = Join-Path $state ('client.realm-rollback-' + [guid]::NewGuid().ToString('N') + '.json')
+$temp = Join-Path $state ('client.stage-swap-' + [guid]::NewGuid().ToString('N') + '.tmp')
+$committed = $false
+$stopped = $false
+try {
+  Stop-ScheduledTask -TaskName $watchdogName -ErrorAction Stop
+  Stop-ScheduledTask -TaskName $primaryName -ErrorAction Stop
+  Start-Sleep -Seconds 2
+  $stopped = $true
+  if ((Get-ScheduledTask -TaskName $primaryName).State -eq 'Running' -or
+      (Get-ScheduledTask -TaskName $watchdogName).State -eq 'Running') {
+    throw 'Supervisor failed to stop cleanly'
+  }
+  # In-place copy is forbidden. Keep the exact original bytes for rollback.
+  Copy-Item -LiteralPath $originalFile -Destination $backup -ErrorAction Stop
+  Copy-Item -LiteralPath $stageFile -Destination $temp -ErrorAction Stop
+  Move-Item -LiteralPath $temp -Destination $originalFile -Force -ErrorAction Stop
+  $committed = $true
+  Start-ScheduledTask -TaskName $primaryName -ErrorAction Stop
+  Start-ScheduledTask -TaskName $watchdogName -ErrorAction Stop
+  Start-Sleep -Seconds 3
+  if ((Get-ScheduledTask -TaskName $primaryName).State -ne 'Running') {
+    throw 'Target supervisor did not restart'
+  }
+  # Recheck the live active configuration through the original launcher,
+  # then cause a fresh authenticated heartbeat on the destination Realm.
+  & $launcher health | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'New active credential health failed' }
+  $pythonExe = $null
+  $launcherText = Get-Content -Raw -LiteralPath $launcher
+  if ($launcherText -match '(?m)^"([^"]+python(?:\.exe)?)" -m agentos_node\.client_cli') {
+    $pythonExe = $Matches[1]
+  }
+  if (-not $pythonExe -or -not (Test-Path -LiteralPath $pythonExe)) {
+    throw 'Unable to verify active Node heartbeat with its pinned interpreter'
+  }
+  $oldPythonPath = $env:PYTHONPATH
+  $oldHome = $env:AGENTOS_CLIENT_HOME
+  try {
+    $env:PYTHONPATH = $root
+    $env:AGENTOS_CLIENT_HOME = $state
+    $probe = 'from agentos_node.client_cli import _load_policy,build_client; from agentos_node.thin_client_transport import ClientConfig; from pathlib import Path; c=ClientConfig.load(Path("state")/"client.json"); t=build_client(c,_load_policy(Path("state")/"policy.json")); r=t.heartbeat(); raise SystemExit(0 if r.get("heartbeat_recorded") else 2)'
+    Push-Location $root
+    try { & $pythonExe -c $probe | Out-Null } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw 'New active Realm heartbeat was not acknowledged' }
+  } finally {
+    $env:PYTHONPATH = $oldPythonPath
+    $env:AGENTOS_CLIENT_HOME = $oldHome
+  }
+  Write-Host 'agentos_realm_switch=COMMITTED_VERIFIED'
+  Write-Host "agentos_node_id=$($target.node_id)"
+  Write-Host "agentos_realm_id=$($target.realm_id)"
+  Write-Host 'agentos_active_binding=TARGET'
+  # Backup intentionally retained for manual incident recovery.
+} catch {
+  $failure = $_.Exception.Message
+  if ($stopped) {
+    Stop-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue
+    Stop-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
+    if ($committed -and (Test-Path -LiteralPath $backup)) {
+      Copy-Item -LiteralPath $backup -Destination $originalFile -Force -ErrorAction Stop
+    }
+    Start-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
+    Start-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue
+  }
+  Write-Host 'agentos_realm_switch=ROLLED_BACK'
+  Write-Host 'agentos_active_binding=ORIGINAL'
+  throw "Rebind cutover rejected or rolled back: $failure"
+} finally {
+  Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+}
