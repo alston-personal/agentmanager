@@ -832,6 +832,17 @@ A successful process start, health endpoint, or workflow status is not enough to
 
 ## Memory and Cognitive IR boundary
 
+### Mandatory Core IR validation (source candidate)
+
+The canonical publisher calls the deterministic [IR validation contract](IR_VALIDATION.md)
+inside its generation lock before writing either output. Failures reject publication;
+receipts bind passing validation to rule version and parent/child hashes. The same
+validator is available through `scripts/validate_canonical_ir.py`. Existing pre-commit
+and CI documentation guards require validator/CLI/test/contract changes together.
+No new role or model invocation is introduced. Legacy Stop semantic rewrites will
+be rejected; deployment needs compatible evidence-only hooks. This is not deployed,
+not semantic relevance proof, and not protection for every IR family or raw file writes.
+
 ### Handoff semantic preservation (source candidate)
 
 `agent_core/canonical_ir_handoff.py` now preserves existing `context`, `artifacts`,
