@@ -954,7 +954,7 @@ article{border:1px solid #34465c;background:#142036;padding:12px;border-radius:8
 small{color:#9eafc5}
 </style></head><body><main>
 <h1>我的 Virtual ONE</h1>
-<nav><a href="/welcome">我的 AgentOS</a> · <a href="/platform">平台治理（需管理權限）</a></nav>
+<nav aria-label="AgentOS 帳號與導覽"><a href="/welcome">我的 AgentOS</a> · <a href="/platform">平台治理（需管理權限）</a> · <a href="/dashboard/api/auth/logout?returnTo=%2F">切換使用者</a> · <a href="/dashboard/api/auth/logout?returnTo=%2F">登出</a></nav>
 <p>此頁提供獨立 Realm 的 Node Map 與 Node 加入核准。ONE 執行服務及任務派送仍須正式驗收。</p>
 <p id="status" role="status">正在確認 Realm Owner 權限…</p>
 <dl id="details" hidden>
