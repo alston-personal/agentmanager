@@ -98,10 +98,12 @@ class ActionRelayTests(unittest.TestCase):
     @patch("agentos_node.action_relay._run")
     def test_github_actions_dispatch_is_allowlisted_and_uses_gh_without_shell(self, run):
         from agentos_node.action_relay import _github_actions_dispatch
+        from datetime import datetime, timezone
+        observed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         run.side_effect = [
             {"returncode": 0, "stdout": "", "stderr": ""},
             {"returncode": 0, "stdout": "", "stderr": ""},
-            {"returncode": 0, "stdout": '[{"databaseId":123,"headSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued","conclusion":"","url":"https://github.com/alston-personal/agentmanager/actions/runs/123","createdAt":"2026-10-06T00:00:00Z"}]', "stderr": ""},
+            {"returncode": 0, "stdout": json.dumps([{"databaseId": 123, "headSha": "a" * 40, "status": "queued", "conclusion": "", "url": "https://github.com/alston-personal/agentmanager/actions/runs/123", "createdAt": observed_at}]), "stderr": ""},
         ]
         result = _github_actions_dispatch({
             "repository": "alston-personal/agentmanager",
