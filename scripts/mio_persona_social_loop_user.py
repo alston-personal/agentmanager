@@ -195,6 +195,13 @@ def pdca_reply_review_authority(persona_state):
         }
     return None
 
+def legacy_proactive_parent_block_reason(item):
+    """A legacy discovery queue entry cannot attest a Threads reply target."""
+    if isinstance(item, dict) and item.get("outbound_discovery"):
+        return "external_parent_not_attested_legacy"
+    return None
+
+
 def pdca_tag_action(action, authority, reply_id):
     if not authority:
         return action
@@ -616,6 +623,13 @@ def main():
             # have published on Threads while the transport response was lost.
             continue
         if item.get('status')!='scheduled':continue
+        parent_block = legacy_proactive_parent_block_reason(item)
+        if parent_block:
+            # Includes legacy scheduled actions persisted before this change.
+            item['status'] = 'skipped'
+            item['result'] = parent_block
+            print('mio_social_publish=BLOCKED_LEGACY_UNVERIFIED_PARENT')
+            continue
         try:due=datetime.fromisoformat(str(item['scheduled_at']).replace('Z','+00:00'))
         except Exception:due=now
         if due>now:continue
@@ -828,48 +842,14 @@ def main():
             and str(c.get('username') or '').lstrip('@').lower() != account_username.lower()
         ]
         if pending_intel:
-            last_discovery_at=iso(now)
-            spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_intel_read',meta={'count':len(pending_intel[:8])},temporal=temporal_config)
-            print('mio_social_outbound=INTEL_FEED_READ_PASS:candidates='+str(len(pending_intel[:8])))
-            candidates=[]
-            for row in pending_intel[:8]:
-                cid=str(row.get('id') or '')
-                username=str(row.get('username') or row.get('author') or '').lstrip('@')
-                text=str(row.get('text') or row.get('user_note') or '').strip()
-                candidates.append({'id':cid,'username':username,'text':text[:1200],'timestamp':row.get('created_at'),'permalink':row.get('url')})
-                seen_outbound.add(cid)
-            try:
-                d=decide_outbound(candidates,account_username)
-                cid=str(d.get('candidate_id') or '')
-                chosen=next((x for x in candidates if x['id']==cid),None)
-                if chosen and d.get('should_reply') and str(d.get('text') or '').strip():
-                    delay=max(8,min(720,int(d.get('delay_minutes') or 30)))
-                    action={
-                      'schema':'agentos.persona-social-decision/v1','persona_id':PERSONA_ID,
-                      'decided_at':iso(now),'reply_id':cid,'root_post_id':cid,
-                      'author_handle':chosen.get('username'),'should_reply':True,
-                      'reason_category':str(d.get('reason_category') or 'other'),
-                      'text':str(d['text']).strip(),'scheduled_at':iso(now+timedelta(minutes=delay)),
-                      'status':'scheduled','attempts':0,'outbound_discovery':True,
-                      'source_permalink':chosen.get('permalink'),'estimated_energy_cost':proactive_cost
-                    }
-                    items.append(action)
-                    outbound_history.append({'candidate_id':cid,'local_date':today_local,'status':'scheduled','scheduled_at':action['scheduled_at']})
-                    for row in (intel_data.get('candidates') or []):
-                        if str(row.get('id'))==cid:
-                            row.update(status='scheduled',reviewed_at=iso(now),decision={'should_reply':True,'reason_category':str(d.get('reason_category') or 'other'),'reply_text':str(d['text']).strip(),'scheduled_at':action['scheduled_at']})
-                        elif str(row.get('id')) in {x['id'] for x in candidates}:
-                            row.update(status='passed_silence',reviewed_at=iso(now),decision={'should_reply':False,'reason_category':'unselected'})
-                    save_json(INTEL_FILE,intel_data)
-                    print('mio_social_outbound=SCHEDULED:'+cid+':'+str(delay)+'m')
-                else:
-                    for row in (intel_data.get('candidates') or []):
-                        if str(row.get('id')) in {x['id'] for x in candidates}:
-                            row.update(status='passed_silence',reviewed_at=iso(now),decision={'should_reply':False,'reason_category':str(d.get('reason_category') or 'silence')})
-                    save_json(INTEL_FILE,intel_data)
-                    print('mio_social_outbound=NO_REPLY')
-            except Exception as exc:
-                print('mio_social_outbound=DEFERRED:'+type(exc).__name__)
+            # URL/shortcode-derived candidate IDs are discovery keys, not
+            # attested provider parent IDs. Do not schedule a social write from
+            # this legacy lane, even if legacy auto-reply is owner-enabled.
+            # The governed Core Reader + independently approved parent receipt
+            # must be correlated by the current #1825 reply-reasoning gate.
+            last_discovery_at = iso(now)
+            print('mio_social_outbound=INTEL_FEED_URL_ONLY_PARENT_UNVERIFIED:candidates='
+                  +str(len(pending_intel[:8])))
         else:
             # 2. Fallback to keyword search query when no feed items are pending
             context=persona_context()

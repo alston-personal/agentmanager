@@ -1,4 +1,5 @@
 """#1825 outward public-root reply gate: offline, no platform writes."""
+import hashlib
 import importlib.util
 import json
 import sys
@@ -71,14 +72,17 @@ class ExternalReplyGateTest(unittest.TestCase):
             "timestamp": self.now.isoformat().replace("+00:00", "Z")
         }
 
-    def candidates(self, *, event=None, source=None, policy=True, events=None, reserved=None):
+    def candidates(self, *, event=None, source=None, policy=True, events=None, reserved=None, approved_identity=False):
         self.file.write_text(json.dumps(self.source if source is None else source), encoding="utf-8")
         self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        gate = {"proactive_external_reply_authorized": policy}
+        if approved_identity:
+            gate["approved_parent_identity_receipt_sha256"] = [
+                hashlib.sha256(self.search_file.read_bytes()).hexdigest()]
         return self.m.external_reply_candidates(
             self.root, [self.event if event is None else event] if events is None else events,
             {"reply_decisions": {}}, {"source_sha256": "irsha"},
-            {"proactive_external_reply_authorized": policy},
-            set() if reserved is None else reserved, self.now
+            gate, set() if reserved is None else reserved, self.now
         )
 
     def test_existing_receipts_project_into_in_memory_outward_event(self):
@@ -116,6 +120,63 @@ class ExternalReplyGateTest(unittest.TestCase):
         self.search["completed_at"] = (self.now - timedelta(days=5)).isoformat()
         self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
         self.assertEqual(project(True), [])
+
+    def test_provider_attested_identity_is_an_alternate_read_receipt(self):
+        self.source["platform"] = "threads"
+        self.search["platform"] = "threads"
+        self.search["operation"] = "parent_identity.read"
+        self.search["capability"] = "social.threads.parent_identity.read"
+        self.search["result"] = {"identity": {
+            **self.search["result"]["items"][0], "root_post_id": "123456789",
+            "provider_verified": True, "numeric_id_source": "provider"
+        }}
+        self.file.write_text(json.dumps(self.source), encoding="utf-8")
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        gate = {"proactive_external_reply_authorized": True,
+                "approved_parent_identity_receipt_sha256": [
+                    hashlib.sha256(self.search_file.read_bytes()).hexdigest()]}
+        self.assertEqual(self.m.project_external_verified_events(
+            self.root, {"proactive_external_reply_authorized": True}, self.now), [])
+        events = self.m.project_external_verified_events(self.root, gate, self.now)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["object_id"], "123456789")
+        selected, _ = self.candidates(events=events, approved_identity=True)
+        self.assertEqual(len(selected), 1)
+
+    def test_identity_receipt_rejects_shortcode_and_unattested_root(self):
+        self.search["operation"] = "parent_identity.read"
+        self.search["capability"] = "social.threads.parent_identity.read"
+        row = self.search["result"]["items"][0]
+        row.update(root_post_id="123456789", provider_verified=True, numeric_id_source="provider")
+        self.search["result"] = {"identity": row}
+        self.assertEqual(self.candidates()[0], [])
+        self.assertEqual(len(self.candidates(approved_identity=True)[0]), 1)
+        for key, value in (
+            ("id", "Example"), ("provider_verified", False),
+            ("numeric_id_source", "shortcode"), ("root_post_id", "999"),
+            ("is_reply_attested", False), ("is_reply", True)
+        ):
+            with self.subTest(key=key):
+                prior = row[key]
+                row[key] = value
+                self.assertEqual(self.candidates(approved_identity=True)[0], [])
+                row[key] = prior
+
+    def test_self_declared_provider_verification_without_digest_is_rejected(self):
+        self.search["operation"] = "parent_identity.read"
+        self.search["capability"] = "social.threads.parent_identity.read"
+        self.search["result"] = {"identity": {
+            **self.search["result"]["items"][0], "root_post_id": "123456789",
+            "provider_verified": True, "numeric_id_source": "provider"
+        }}
+        self.file.write_text(json.dumps(self.source), encoding="utf-8")
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        self.assertEqual(self.candidates()[0], [])
+        self.assertEqual(self.m.project_external_verified_events(
+            self.root, {"proactive_external_reply_authorized": True}, self.now), [])
+        gate = {"proactive_external_reply_authorized": True,
+                "approved_parent_identity_receipt_sha256": ["0"*64]}
+        self.assertEqual(self.m.project_external_verified_events(self.root, gate, self.now), [])
 
     def test_verified_root_is_candidate_not_a_write(self):
         items, skipped = self.candidates()

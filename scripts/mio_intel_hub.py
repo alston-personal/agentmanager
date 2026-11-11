@@ -34,9 +34,12 @@ BASE_DATA_DIR = Path("/home/ubuntu/agent-data/personas/sunlake-milkcat")
 CANDIDATES_FILE = BASE_DATA_DIR / "intel_candidates.json"
 
 THREADS_POST_REGEX = re.compile(
-    r"(?:https?://)?(?:www\.)?(?:threads\.(?:net|com))/(?:@(?P<user>[A-Za-z0-9._]+)/)?(?:post|t)/(?P<code>[A-Za-z0-9_-]+)",
+    r"^/@(?P<user>[A-Za-z0-9._]+)/post/(?P<code>[A-Za-z0-9_-]+)/?$",
     re.IGNORECASE,
 )
+THREADS_SHORT_REGEX = re.compile(r"^/(?:post|t)/(?P<code>[A-Za-z0-9_-]+)/?$", re.IGNORECASE)
+THREADS_SHARE_REGEX = re.compile(r"^/share/(?P<code>[A-Za-z0-9_-]+)/?$", re.IGNORECASE)
+THREADS_HOSTS = {"threads.com", "www.threads.com", "threads.net", "www.threads.net"}
 
 BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
@@ -139,22 +142,35 @@ def fetch_threads_preview(canonical_url: str, shortcode: str, fallback_user: str
 
 
 def parse_and_validate_url(raw_url: str) -> dict[str, str]:
+    """A URL candidate is never a verified provider parent-ID receipt."""
     cleaned = (raw_url or "").strip()
-    match = THREADS_POST_REGEX.search(cleaned)
-    if not match:
-        raise ValueError("請輸入有效的 Threads 貼文連結 (例如 https://www.threads.net/@username/post/...)")
+    try:
+        parsed = urllib.parse.urlsplit(cleaned)
+        if (parsed.scheme != "https" or (parsed.hostname or "").lower() not in THREADS_HOSTS
+                or parsed.username is not None or parsed.password is not None
+                or parsed.port not in (None, 443) or parsed.query or parsed.fragment):
+            raise ValueError("invalid Threads URL")
+    except ValueError as exc:
+        raise ValueError("請輸入有效的 Threads 貼文連結 (例如 https://www.threads.com/@username/post/...)") from exc
 
-    user = match.group("user") or ""
+    direct = THREADS_POST_REGEX.fullmatch(parsed.path)
+    legacy = THREADS_SHORT_REGEX.fullmatch(parsed.path)
+    share = THREADS_SHARE_REGEX.fullmatch(parsed.path)
+    match = direct or legacy or share
+    if match is None:
+        raise ValueError("請輸入有效的 Threads 貼文連結 (例如 https://www.threads.com/@username/post/...)")
     code = match.group("code")
+    user = match.group("user") if direct else ""
+    if share:
+        # The actual permalink and author are resolved by the existing Reader.
+        # Use a stable local candidate key, not a fabricated numeric media ID.
+        return {"username": "", "shortcode": code, "media_id": "share:" + code,
+                "canonical_url": "https://www.threads.com/share/" + code + "/",
+                "id_provenance": "share_url_unresolved"}
     media_id = shortcode_to_media_id(code)
-    canonical = f"https://www.threads.net/{'@' + user + '/' if user else ''}post/{code}"
-
-    return {
-        "username": user,
-        "shortcode": code,
-        "media_id": media_id,
-        "canonical_url": canonical,
-    }
+    canonical = "https://www.threads.com/" + ("@" + user + "/" if user else "") + "post/" + code
+    return {"username": user, "shortcode": code, "media_id": media_id,
+            "canonical_url": canonical, "id_provenance": "shortcode_derived_unverified"}
 
 
 class MioIntelHandler(BaseHTTPRequestHandler):
@@ -273,6 +289,8 @@ class MioIntelHandler(BaseHTTPRequestHandler):
 
             candidate: dict[str, Any] = {
                 "id": url_info["media_id"],
+                "id_provenance": url_info["id_provenance"],
+                "reply_allowed": False,
                 "shortcode": url_info["shortcode"],
                 "username": url_info["username"],
                 "url": url_info["canonical_url"],
