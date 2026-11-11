@@ -66,5 +66,5 @@ class LocalCodeResumeProbe:
         _git(root, "fetch", "--no-tags", "origin",
              "+refs/heads/main:refs/remotes/origin/main")
         work_sha = _git(root, "rev-parse", "--verify", "HEAD^{commit}")
-        return inspect(root=str(root), main_ref="refs/remotes/origin/main",
+        return inspect(root=str(root), main_ref="FETCH_HEAD",
                        work_ref=work_sha, kind="code")
