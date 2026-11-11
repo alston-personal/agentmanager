@@ -1,5 +1,6 @@
 name: AgentOS Control Plane Immutable Login Release (#2198)
 
+# Source-locked rollout for verified platform admin landing (#2234); no automatic owner elevation.
 # Source-locked rollout for /my-one account logout/switch UI (#2230); preserve existing governed deployment and rollback.
 # Source-locked rollout for Realm Owner Node Map, code approval, and tenant-device join.
 # Source-locked retry after fixing anonymous /my-one 401 inspector contract.
