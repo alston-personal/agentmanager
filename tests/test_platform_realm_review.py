@@ -90,3 +90,20 @@ def test_review_denial_reasons_are_distinct():
                return_value={"provider": "google", "subject": "not-authorized", "role": "user"}):
         status, body = platform_review(method="GET", host=HOST, cookie="test", origin=None)
         assert status == 403 and body["error"] == "platform_admin_required"
+
+
+def test_platform_access_denial_pages_offer_login_or_account_switch():
+    from agent_core.companion_web import render_platform_auth_gate_html
+    login = render_platform_auth_gate_html(authenticated=False)
+    assert "需要使用已獲授權的平台管理者帳號登入" in login
+    for provider in ("google", "github", "facebook", "line"):
+        assert "/dashboard/api/auth/signin/" + provider in login
+    assert login.count("returnTo=%2Fplatform") == 4
+    assert "/welcome" in login
+    assert "核准（待 ONE 開通）" not in login
+
+    forbidden = render_platform_auth_gate_html(authenticated=True)
+    assert "目前帳號沒有平台管理權限" in forbidden
+    assert "/dashboard/api/auth/logout?returnTo=%2Fplatform" in forbidden
+    assert "/welcome" in forbidden
+    assert "核准（待 ONE 開通）" not in forbidden
