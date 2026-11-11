@@ -36,3 +36,8 @@ export function safeLocalReturnTo(value: string | null | undefined): string {
       /[\r\n]/.test(value)) return '/';
   return value;
 }
+
+/** Host-specific session cookie. Never accept a Studio cookie on AgentOS. */
+export function authCookieName(site: AuthSite): string {
+  return site === 'agentos' ? 'agentos_auth_token' : 'auth_token';
+}
