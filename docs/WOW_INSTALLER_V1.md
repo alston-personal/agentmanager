@@ -238,3 +238,26 @@ Send control disabled; no UI logout/login has shipped yet. Do not claim that
 tests of the isolated boundary verify actual OAuth, cross-Realm readback,
 Node pairing, or real game switching. Preserve Windows Node credentials and
 the existing WoW installation.
+
+## WoW account intent transport (2026-11-11)
+
+The V1 native panel now offers `Sign in via Bridge` and `Sign out via Bridge` buttons.
+They emit bounded pixel requests `wow.account.login.start` and
+`wow.account.logout`, **not** an account/session/Realm claim. A distinct
+host-only `NodeBoundAccountGateway` parses these requests and only delegates
+to a trusted injected account handler after explicit fresh host authorization.
+No Lua message may specify a Realm ID, account, URL, token, password or path.
+Node binding and existing `client.json` are never modified by these actions.
+The account-session component is still the separately verified host boundary.
+
+A successfully emitted pixel request is **not** a login, logout, ONE readback
+or user-scoped authorization receipt. The live Bridge and existing OAuth
+device/browser pairing, revocation acknowledgement, account/Realm projection,
+and eventual in-game response transport remain **not yet installed/accepted**.
+The UI deliberately continues to state account not signed in, Bridge not
+connected, and Send disabled until authenticated replies exist.
+
+Source / regression: Transport Routing Guard CI run 43002028836 (all three
+jobs successful) covers the account intent allowlist, denied bridge, replay,
+untrusted Realm field, unsafe response data, Addon static safety and bundled
+Windows offline installer. CI is not a replacement for a real WoW host test.
