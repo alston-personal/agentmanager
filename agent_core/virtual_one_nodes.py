@@ -157,3 +157,73 @@ def device_join(*, host: str, realm_id: str, action: str,
         return 403, {"ok": False, "error": "invalid_join_credentials"}
     except (ValueError, KeyError, OSError):
         return 409, {"ok": False, "error": "join_not_available"}
+
+
+def tenant_node_runtime(*, host: str, realm_id: str, action: str, method: str,
+                        node_id: str, token: str, body: dict[str, Any] | None = None,
+                        root: Path = TENANTS_ROOT) -> tuple[int, dict[str, Any]]:
+    """Scoped Node heartbeat and Fabric transport; not an attested tenant ONE executor.
+
+    The Node's own unshared bearer token is mandatory; an OAuth cookie or
+    user-selected Realm alone is never authority.  Each Realm has its own
+    fabric.json / NodeRegistry / receipt archive.
+    """
+    if host.lower().split(":")[0] != HOST:
+        return 400, {"ok": False, "error": "invalid_site"}
+    if not _REALM.fullmatch(realm_id):
+        return 400, {"ok": False, "error": "invalid_realm_id"}
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", node_id):
+        return 400, {"ok": False, "error": "invalid_node_id"}
+    if not token or len(token) > 256:
+        return 401, {"ok": False, "error": "node_auth_required"}
+    if (method, action) not in {
+        ("GET", "health"), ("GET", "bootstrap"), ("GET", "tasks"),
+        ("POST", "heartbeat"), ("POST", "benchmark"), ("POST", "receipts"),
+    }:
+        return 404, {"ok": False, "error": "not_found"}
+    body = body or {}
+    try:
+        store = _store(realm_id, root=root)
+        store.authenticate(node_id, token)
+        if action == "health":
+            return 200, {"ok": True, "status": "online", "realm_id": realm_id,
+                         "one_runtime_attested": False}
+        if action == "bootstrap":
+            return 200, {
+                "ok": True, "schema": "agentos.node-bootstrap/v0.1",
+                "realm_id": realm_id, "node_id": node_id,
+                "inherited_realm_capabilities": [], "canonical_capabilities": [],
+                "one_runtime_attested": False,
+            }
+        if action == "heartbeat":
+            if body.get("realm_id") != realm_id or body.get("node_id") != node_id:
+                return 403, {"ok": False, "error": "realm_or_node_mismatch"}
+            manifest = body.get("manifest")
+            if not isinstance(manifest, dict) or manifest.get("realm_id") != realm_id or manifest.get("node_id") != node_id:
+                return 403, {"ok": False, "error": "manifest_identity_mismatch"}
+            observed = store.record_heartbeat(body, token)
+            return 200, {"ok": True, "realm_id": realm_id,
+                         "node_id": node_id, "heartbeat_recorded": True,
+                         "one_runtime_attested": False}
+        if action == "tasks":
+            return 200, {"ok": True, "realm_id": realm_id,
+                         "tasks": store.pull_tasks(node_id, token, limit=10),
+                         "one_runtime_attested": False}
+        if action == "benchmark":
+            # No independent tenant ONE runtime/learning ledger has been attested.
+            # In particular, do not allow the client's local regression to
+            # impersonate successful platform-level tenant readiness.
+            return 200, {"ok": False, "error": "tenant_one_runtime_not_attested",
+                         "one_runtime_attested": False}
+        if body.get("schema") != "agentos.node-receipt/v0.1" or body.get("node_id") != node_id:
+            return 400, {"ok": False, "error": "invalid_node_receipt"}
+        task_id = str(body.get("task_id") or "")
+        pending = store.load().get("tasks", {}).get(node_id, [])
+        if not task_id or not any(isinstance(task, dict) and task.get("task_id") == task_id for task in pending):
+            return 409, {"ok": False, "error": "receipt_task_not_pending"}
+        store.record_receipt(body, token)
+        return 200, {"ok": True, "realm_id": realm_id, "task_id": task_id}
+    except PermissionError:
+        return 403, {"ok": False, "error": "invalid_node_token"}
+    except (KeyError, OSError, ValueError):
+        return 409, {"ok": False, "error": "tenant_node_unavailable"}

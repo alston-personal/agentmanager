@@ -7,7 +7,7 @@ import json
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, parse_qs
 
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeResult
@@ -23,7 +23,7 @@ from .shared_auth_bridge import is_shared_auth_path, proxy_shared_auth_request
 from .account_realm_onboarding import account_request
 from .platform_realm_review import platform_review
 from .realm_provisioning import account_virtual_one
-from .virtual_one_nodes import owner_node_map, owner_approve_code, device_join
+from .virtual_one_nodes import owner_node_map, owner_approve_code, device_join, tenant_node_runtime
 
 MAX_REQUEST_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -423,6 +423,17 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         if path in ("/welcome", "/welcome/"):
             self._html(200, render_welcome_html())
             return
+        if len(parts) == 4 and parts[:2] == ["v1", "realms"] and parts[3] in {"health", "bootstrap", "tasks"}:
+            query = parse_qs(urlparse(self.path).query)
+            node_id = str((query.get("node_id") or [""])[0])
+            bearer = str(self.headers.get("Authorization") or "")
+            token = bearer[7:] if bearer.startswith("Bearer ") else ""
+            code, result = tenant_node_runtime(
+                host=self.headers.get("Host", ""), realm_id=parts[2],
+                action=parts[3], method="GET", node_id=node_id, token=token,
+            )
+            self._json(code, result)
+            return
         if path == "/v1/account/virtual-one/nodes":
             code, payload = owner_node_map(
                 host=self.headers.get("Host", ""), cookie=self.headers.get("Cookie")
@@ -521,6 +532,16 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         path, parts = self._route()
         try:
             body = self._read_body()
+            if len(parts) == 4 and parts[:2] == ["v1", "realms"] and parts[3] in {"heartbeat", "benchmark", "receipts"}:
+                bearer = str(self.headers.get("Authorization") or "")
+                token = bearer[7:] if bearer.startswith("Bearer ") else ""
+                code, result = tenant_node_runtime(
+                    host=self.headers.get("Host", ""), realm_id=parts[2],
+                    action=parts[3], method="POST", node_id=str(body.get("node_id") or ""),
+                    token=token, body=body,
+                )
+                self._json(code, result)
+                return
             if path == "/v1/account/virtual-one/join/approve":
                 code, result = owner_approve_code(
                     host=self.headers.get("Host", ""), cookie=self.headers.get("Cookie"),

@@ -129,6 +129,13 @@ def device_join_base(one_url: str, realm_id: str | None = None) -> str:
     return normalized + '/v1/realms/' + realm_id + '/join'
 
 
+def node_runtime_endpoint(config: ClientConfig, action: str) -> str:
+    """Tenant node runtime is isolated from legacy /v1 on the default ONE."""
+    if _TENANT_REALM_ID.fullmatch(config.realm_id):
+        return device_join_base(config.one_url, config.realm_id).rsplit('/join', 1)[0] + '/' + action
+    return config.one_url.rstrip('/') + '/v1/' + action
+
+
 class ThinClientTransport:
     def __init__(self, client: ThinClient, config: ClientConfig | None = None):
         self.client = client
@@ -225,14 +232,17 @@ class ThinClientTransport:
     def health(self) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/health', retries=2)
+        url = node_runtime_endpoint(self.config, 'health')
+        if _TENANT_REALM_ID.fullmatch(self.config.realm_id):
+            url += '?' + urllib.parse.urlencode({'node_id': self.config.node_id})
+        return self._request(url, token=self.config.node_token if _TENANT_REALM_ID.fullmatch(self.config.realm_id) else None, retries=2)
 
     def heartbeat(self) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         heartbeat = self.client.heartbeat()
         result = self._request(
-            self.config.one_url + '/v1/heartbeat',
+            node_runtime_endpoint(self.config, 'heartbeat'),
             method='POST',
             body=heartbeat,
             token=self.config.node_token,
@@ -267,7 +277,7 @@ class ThinClientTransport:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         query = urllib.parse.urlencode({'node_id': self.config.node_id})
-        return self._request(self.config.one_url + '/v1/bootstrap?' + query, token=self.config.node_token, retries=2)
+        return self._request(node_runtime_endpoint(self.config, 'bootstrap') + '?' + query, token=self.config.node_token, retries=2)
 
     def resolve(self, project: str, *, intent: str = 'continue') -> dict[str, Any]:
         """Resolve canonical project continuation state through ONE.
@@ -288,7 +298,7 @@ class ThinClientTransport:
             'project': project,
         }
         return self._request(
-            self.config.one_url + '/v1/resolve',
+            node_runtime_endpoint(self.config, 'resolve'),
             method='POST',
             body=body,
             token=self.config.node_token,
@@ -297,7 +307,7 @@ class ThinClientTransport:
     def submit_benchmark(self, report: dict[str, Any]) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/benchmark', method='POST', body=report, token=self.config.node_token)
+        return self._request(node_runtime_endpoint(self.config, 'benchmark'), method='POST', body=report, token=self.config.node_token)
 
     def _complete_regression(self, before_manifest: dict[str, Any], *, report_kind: str, completion_schema: str, lifecycle: dict[str, Any] | None = None) -> dict[str, Any]:
         if not self.config:
@@ -342,7 +352,7 @@ class ThinClientTransport:
         wait = max(0.0, min(float(wait), 25.0))
         query = urllib.parse.urlencode({'node_id': self.config.node_id, 'wait_seconds': f'{wait:.3f}'})
         result = self._request(
-            self.config.one_url + '/v1/tasks?' + query,
+            node_runtime_endpoint(self.config, 'tasks') + '?' + query,
             token=self.config.node_token,
             timeout=max(15.0, wait + 5.0),
         )
@@ -351,7 +361,7 @@ class ThinClientTransport:
     def submit_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/receipts', method='POST', body=receipt, token=self.config.node_token)
+        return self._request(node_runtime_endpoint(self.config, 'receipts'), method='POST', body=receipt, token=self.config.node_token)
 
     def _persist_and_submit_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
         spool_path = _spool_receipt(receipt)
