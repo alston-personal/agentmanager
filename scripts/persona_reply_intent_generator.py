@@ -88,6 +88,219 @@ def reply_candidates(events,state,ir_binding,reserved_parents=None):
                          "timestamp":stamp,"context_sha256":key}
     return sorted(candidates.values(),key=lambda x:x["timestamp"],reverse=True),skipped
 
+def project_external_verified_events(root, policy, now, limit=80):
+    """Reuse persisted Core Reader + official search receipts; no network or writes.
+
+    Only an independently attested non-reply from the bound official provider
+    can supply the numeric parent. The HTML read supplies bounded context.
+    The derived event is in-memory; both original receipts remain authoritative.
+    """
+    if policy.get("proactive_external_reply_authorized") is not True:
+        return []
+    folder = root / "pdca/social_receipts"
+    if not folder.is_dir():
+        return []
+    candidates = sorted(folder.glob("*.json"), reverse=True)[:limit]
+    html, searches = [], []
+    for path in candidates:
+        try:
+            if path.is_symlink() or path.stat().st_size > 100_000:
+                continue
+            raw = load(path)
+            receipt = raw.get("provider_receipt") if isinstance(raw, dict) else None
+            if not isinstance(receipt, dict):
+                receipt = raw
+            if not isinstance(receipt, dict) or receipt.get("ok") is not True:
+                continue
+            stamp = normalize_ts(receipt.get("completed_at"))
+            if stamp is None or not timedelta(0) <= now - stamp <= timedelta(hours=72):
+                continue
+            ref = "pdca/social_receipts/" + path.name
+            if receipt.get("schema") != "agentos.social-receipt/v1":
+                continue
+            if not receipt.get("account_binding_id") or receipt.get("platform") != "threads":
+                continue
+            result = receipt.get("result")
+            if not isinstance(result, dict):
+                continue
+            if receipt.get("operation") == "public_post.read":
+                source = result.get("source")
+                if isinstance(source, dict) and source.get("url") and source.get("text"):
+                    html.append((ref, receipt, source))
+            elif receipt.get("operation") == "keyword.search":
+                rows = result.get("items")
+                if isinstance(rows, list) and len(rows) <= 10:
+                    searches.append((ref, receipt, rows))
+        except (OSError, ValueError, TypeError):
+            continue
+    output = []
+    seen = set()
+    for source_ref, public, source in html[:20]:
+        url = str(source.get("url") or "")
+        username = str(source.get("username") or "").casefold()
+        text = str(source.get("text") or "").strip()
+        if (not username or username == "mio.milkcat"
+                or not url.startswith("https://www.threads.com/") or not text):
+            continue
+        for search_ref, search, rows in searches[:20]:
+            if search.get("account_binding_id") != public.get("account_binding_id"):
+                continue
+            if abs((normalize_ts(search["completed_at"]) -
+                    normalize_ts(public["completed_at"])).total_seconds()) > 300:
+                continue
+            matches = [item for item in rows if isinstance(item, dict)
+                       and str(item.get("id") or "").isdigit()
+                       and item.get("is_reply_attested") is True
+                       and item.get("is_reply") is False
+                       and str(item.get("username") or "").casefold() == username
+                       and str(item.get("permalink") or "") == url
+                       and str(item.get("text") or "").strip() == text]
+            if len(matches) != 1:
+                continue
+            parent = str(matches[0]["id"])
+            if parent in seen:
+                continue
+            seen.add(parent)
+            output.append({
+                "type": "public.post.verified", "object_id": parent,
+                "root_post_id": parent, "reader_account": "mio.milkcat",
+                "author_handle": username, "text": text,
+                "source_url": url, "source_receipt_ref": source_ref,
+                "search_receipt_ref": search_ref,
+                "account_binding_id": search["account_binding_id"],
+                "timestamp": search["completed_at"]
+            })
+            break
+        if len(output) >= 5:
+            break
+    return output
+
+
+def external_reply_candidates(root, events, state, ir_binding, policy, reserved_parents, now):
+    """Accept outward roots only with an independent platform read and write policy.
+
+    Historical read-only Inbox entries are deliberately NOT an input here.
+    An event or a numeric ID alone never grants reply authority.
+    """
+    if not any(event.get("type") == "public.post.verified" for event in events):
+        return [], {}
+    if policy.get("proactive_external_reply_authorized") is not True:
+        return [], {"external_reply_not_authorized": 1}
+    candidates, skipped = [], {}
+    for event in events:
+        if event.get("type") != "public.post.verified":
+            continue
+        parent = str(event.get("object_id") or "")
+        root_id = str(event.get("root_post_id") or "")
+        receipt_ref = event.get("source_receipt_ref")
+        author = str(event.get("author_handle") or "").lstrip("@").casefold()
+        def reject(reason):
+            skipped[reason] = skipped.get(reason, 0) + 1
+        if (not parent.isdigit() or not root_id.isdigit() or parent != root_id
+                or not author or author == "mio.milkcat" or parent in reserved_parents):
+            reject("external_parent_unrouteable")
+            continue
+        if not isinstance(receipt_ref, str) or not re.fullmatch(
+                r"pdca/social_receipts/[A-Za-z0-9_-]{1,100}\.json", receipt_ref):
+            reject("external_source_receipt_missing")
+            continue
+        try:
+            source = load(root / receipt_ref)
+        except (OSError, ValueError, TypeError):
+            reject("external_source_receipt_missing")
+            continue
+        provider = source.get("provider_receipt") if isinstance(source, dict) else None
+        if not isinstance(provider, dict):
+            provider = source if isinstance(source, dict) else {}
+        source_content = (provider.get("result") or {}).get("source") if isinstance(provider.get("result"), dict) else None
+        # The canonical HTML Reader proves content, not Meta's numeric object ID.
+        # Independently corroborate ID/permalink through an account-bound
+        # official keyword.search receipt; never derive an ID from a shortcode.
+        search_ref = event.get("search_receipt_ref")
+        if not isinstance(search_ref, str) or not re.fullmatch(
+                r"pdca/social_receipts/[A-Za-z0-9_-]{1,100}\.json", search_ref):
+            reject("external_search_receipt_missing")
+            continue
+        try:
+            search = load(root / search_ref)
+        except (OSError, ValueError, TypeError):
+            reject("external_search_receipt_missing")
+            continue
+        search_provider = search.get("provider_receipt") if isinstance(search, dict) else None
+        if not isinstance(search_provider, dict):
+            search_provider = search if isinstance(search, dict) else {}
+        search_items = (search_provider.get("result") or {}).get("items") if isinstance(
+            search_provider.get("result"), dict) else None
+        if (not isinstance(search_items, list) or len(search_items) > 10
+                or search_provider.get("schema") != "agentos.social-receipt/v1"
+                or search_provider.get("ok") is not True
+                or search_provider.get("operation") != "keyword.search"
+                or search_provider.get("account_binding_id") != event.get("account_binding_id")
+                or provider.get("schema") != "agentos.social-receipt/v1"
+                or provider.get("ok") is not True
+                or provider.get("operation") != "public_post.read"
+                or (provider.get("platform_object_id") is not None
+                    and str(provider["platform_object_id"]) != parent)
+                or not isinstance(source_content, dict)
+                or str(source_content.get("username") or "").casefold() != author
+                or not provider.get("account_binding_id")
+                or provider.get("account_binding_id") != event.get("account_binding_id")
+                or str(source_content.get("url") or "") != str(event.get("source_url") or "")
+                or str(event.get("reader_account") or "").casefold() != "mio.milkcat"):
+            reject("external_source_unverified")
+            continue
+        matches = [row for row in search_items if isinstance(row, dict)
+                   and str(row.get("id") or "") == parent
+                   and str(row.get("permalink") or "") == event.get("source_url")
+                   and str(row.get("username") or "").casefold() == author
+                   and str(row.get("text") or "").strip() == str(source_content.get("text") or "").strip()]
+        if len(matches) != 1:
+            reject("external_numeric_id_unverified")
+            continue
+        # Root verification is separate: omitted reply/root fields must never
+        # be treated as an explicit non-reply declaration.
+        match = matches[0]
+        if match.get("is_reply_attested") is not True or match.get("is_reply") is not False:
+            reject("external_root_unverified")
+            continue
+        read_at = normalize_ts(provider.get("completed_at"))
+        search_at = normalize_ts(search_provider.get("completed_at"))
+        observed_at = normalize_ts(event.get("timestamp"))
+        if (read_at is None or search_at is None or observed_at is None
+                or not timedelta(0) <= now - read_at <= timedelta(hours=72)
+                or not timedelta(0) <= now - search_at <= timedelta(hours=72)
+                or abs((observed_at - read_at).total_seconds()) > 300
+                or abs((observed_at - search_at).total_seconds()) > 300):
+            reject("external_read_receipt_stale")
+            continue
+        body = str(source_content.get("text") or "").strip()
+        if not body or body != str(event.get("text") or "").strip():
+            reject("external_context_mismatch")
+            continue
+        stamp = normalize_ts(event.get("timestamp"))
+        if stamp is None or not timedelta(0) <= now - stamp <= timedelta(hours=72):
+            reject("external_observation_stale")
+            continue
+        if already_replied(events, {"object_id": parent}):
+            reject("external_already_replied")
+            continue
+        key = hashlib.sha256(json.dumps({
+            "reply_id": parent, "root_id": root_id, "text": body,
+            "source_receipt_ref": receipt_ref, "search_receipt_ref": search_ref,
+            "ir_source_sha256": ir_binding["source_sha256"]
+        }, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        prior = (state.get("reply_decisions") or {}).get(parent, {})
+        if prior.get("context_sha256") == key and prior.get("status") in ("NO_REPLY", "HUMAN_REQUIRED"):
+            reject("external_already_reviewed")
+            continue
+        candidates.append({
+            "event": event, "reply_id": parent, "root_id": root_id,
+            "root_post": body, "timestamp": stamp, "context_sha256": key,
+            "external_root": True, "source_receipt_ref": receipt_ref,
+            "search_receipt_ref": search_ref
+        })
+    return sorted(candidates, key=lambda c: c["timestamp"], reverse=True), skipped
+
 def persist_reply_receipt(root,state,status,reason,now,**evidence):
     report={"schema":"agentos.persona-reply-reasoning-receipt/v1","cycle":state.get("cycle"),
         "status":status,"reason":reason,"generator_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -171,10 +384,18 @@ def main():
     stances=load(root/"social_stances.json")
     persona=load(root/"persona_state.json")
     events=read_events(root/"events/events.jsonl")
+    # Derive bounded event candidates only from two separately persisted,
+    # mutually agreeing read receipts. Do not mutate the event journal.
+    events.extend(project_external_verified_events(root,policy,now))
     pending=list(state.get("pending_external_actions") or [])
     if any(x.get("status") in ("candidate","in_progress") and x.get("capability")=="social.reply.send" for x in pending if isinstance(x,dict)):
         print(json.dumps({"status":"SKIP","reason":"reply_send_already_pending"},ensure_ascii=False)); return 0
-    observed,skipped=reply_candidates(events,state,ir_binding,reserved_reply_parents(root,pending))
+    reserved=reserved_reply_parents(root,pending)
+    observed,skipped=reply_candidates(events,state,ir_binding,reserved)
+    if not observed:
+        outward,outward_skipped=external_reply_candidates(root,events,state,ir_binding,policy,reserved,now)
+        observed=outward
+        skipped.update(outward_skipped)
     if not observed:
         status="DEFER" if any(k!="already_reviewed" for k in skipped) else "NO_CANDIDATE"
         reason="no_routeable_comment" if status=="DEFER" else "no_unreviewed_comment"
@@ -200,13 +421,20 @@ def main():
       "social_stances":stances,
       "voice":persona.get("voice"),
       "autonomy":persona.get("autonomy"),
-      "thread":{"root_post":root_post,"incoming_reply":{"id":reply_id,"author":handle,"text":text},"recent_thread":thread},
-      "relationship_context":relationship
+      "thread":({"root_post":{"id":root_id,"author":handle,"text":root_post},
+                 "external_post":{"id":reply_id,"author":handle,"text":text},
+                 "recent_thread":thread} if selected.get("external_root") else
+                {"root_post":root_post,"incoming_reply":{"id":reply_id,"author":handle,"text":text},
+                 "recent_thread":thread}),
+      "relationship_context":relationship,
+      "conversation_kind":"external_public_root" if selected.get("external_root") else "owned_post_incoming_reply",
+      "source_receipt_ref":selected.get("source_receipt_ref"),
+      "search_receipt_ref":selected.get("search_receipt_ref")
     }
-    prompt="""You are deciding whether Mio should reply to one public Threads comment.
+    prompt="""You are deciding whether Mio should participate in a public Threads conversation.
 The JSON context below is authoritative. Do not invent biography, facts, purchases, locations, or relationship history.
 First decide Mio's private position: agree, partly_agree, disagree, uncertain, playful_only, or no_reply.
-Only propose a public reply when context is sufficient and replying is useful. Hostile bait may be no_reply. Legal/payment/contracts/private data must be no_reply and human_required=true.
+Only propose a public reply when context is sufficient and replying is useful. For an external_public_root, reply to the external author's original discussion rather than treating it as a reply to Mio. Hostile bait may be no_reply. Legal/payment/contracts/private data must be no_reply and human_required=true.
 Keep the public reply short, natural Traditional Chinese, consistent with Mio's current IR. Do not mention internal systems/policies. Do not overuse emoji (0-2 max).
 Return ONLY one JSON object with exactly these keys:
 {"position":"...","should_reply":true|false,"human_required":true|false,"reason":"short internal reason","reply_text":"public text or empty"}
@@ -259,7 +487,10 @@ Context:
       "position":position,"decision_reason":str(decision.get("reason") or "")[:300],
       "ir_id":ir.get("ir_id"),"ir_source_sha256":ir_binding["source_sha256"],
       "ir_authoring_context_sha256":ir_binding["context_sha256"],
-      "not_before":not_before,"reasoning_executor":executor
+      "not_before":not_before,"reasoning_executor":executor,
+      "external_root":bool(selected.get("external_root")),
+      "source_receipt_ref":selected.get("source_receipt_ref"),
+      "search_receipt_ref":selected.get("search_receipt_ref")
     }
     while len(pending)>=12:
         terminal=next(i for i,x in enumerate(pending) if terminal_action(x))
