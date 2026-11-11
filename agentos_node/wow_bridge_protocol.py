@@ -65,6 +65,65 @@ def decode(cells: list[int]) -> tuple[int, bytes]:
                     return int.from_bytes(raw[2:4], "big"), bytes(raw[6:6 + length])
     raise ProtocolError("incomplete_frame")
 
+ACCOUNT_INTENTS = frozenset({"wow.account.login.start", "wow.account.logout"})
+
+def decode_account_intent(cells: list[int]) -> tuple[int, str, str]:
+    """Decode user intent, never authorization; only trusted local host may act.
+
+    Neither user identity, realm ID, URL, browser credentials nor tokens can be
+    supplied by an Addon request. The selected Realm must be server-verified.
+    """
+    request_id, raw = decode(cells)
+    try:
+        message = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeError) as exc:
+        raise ProtocolError("invalid_json") from exc
+    if not isinstance(message, dict) or set(message) != {"action", "session"}:
+        raise ProtocolError("invalid_request_shape")
+    action, session = message["action"], message["session"]
+    if action not in ACCOUNT_INTENTS:
+        raise ProtocolError("account_action_not_allowed")
+    if not isinstance(session, str) or not 8 <= len(session) <= 64 or not session.isascii() or not session.isalnum():
+        raise ProtocolError("invalid_session")
+    return request_id, session, action
+
+
+class NodeBoundAccountGateway:
+    """Account intents are inert without a trusted host Bridge.
+
+    Operator supplies a fresh local authorization probe and an injected
+    verified browser/device-flow handler. No authority comes from the pixel
+    strip; no token or link is returned to the game.
+    """
+    def __init__(self, authorization_probe, account_handler):
+        if not callable(authorization_probe) or not callable(account_handler):
+            raise TypeError("trusted_host_callbacks_required")
+        self._authorize = authorization_probe
+        self._handle = account_handler
+        self._seen = set()
+
+    def accept(self, cells: list[int]) -> dict:
+        request_id, session, action = decode_account_intent(cells)
+        key = (session, request_id)
+        if key in self._seen:
+            return {"status": "UNAVAILABLE", "reason": "DUPLICATE_REQUEST"}
+        if len(self._seen) >= 128:
+            return {"status": "UNAVAILABLE", "reason": "REPLAY_CAPACITY_EXHAUSTED"}
+        self._seen.add(key)
+        try:
+            if self._authorize() is not True:
+                return {"status": "UNAVAILABLE", "reason": "BRIDGE_NOT_AUTHORIZED"}
+            result = self._handle(action)
+        except Exception:
+            return {"status": "UNAVAILABLE", "reason": "ACCOUNT_PROVIDER_UNAVAILABLE"}
+        # Only a safe status code escapes the Bridge; no credential or URL.
+        if not isinstance(result, dict) or set(result) != {"status"}:
+            return {"status": "UNAVAILABLE", "reason": "UNSAFE_ACCOUNT_RESPONSE"}
+        if result["status"] not in {"PAIRING_STARTED", "SIGNED_OUT", "SIGN_IN_REQUIRED", "REVOCATION_UNCONFIRMED"}:
+            return {"status": "UNAVAILABLE", "reason": "UNSAFE_ACCOUNT_RESPONSE"}
+        return {"status": result["status"], "request_id": request_id}
+
+
 def decode_request(cells: list[int]) -> tuple[int, str]:
     request_id, raw = decode(cells)
     try:
