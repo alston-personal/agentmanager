@@ -17,6 +17,9 @@ from agent_core.executor_job_contract import (
     validate_executor_job,
     validate_executor_job_id,
 )
+import os
+from agent_core.code_resume_authority import require_fresh_code_resume
+from agentos_node.branch_resume_host_probe import load_trusted_code_resume_probe
 from agentos_node.action_relay import ACTIONS, ActionRelayClient, main as action_relay_main
 from agentos_node.executor_job_adapter import run_registered_executor_job
 from agentos_node.issue117_experience_provider import register_issue117_provider_if_available
@@ -73,7 +76,17 @@ def _execute(params: dict[str, Any]) -> dict[str, Any]:
     if set(params) != {"request"} or not isinstance(params.get("request"), dict):
         raise ValueError("executor-job relay accepts only a canonical request object")
     request = dict(params["request"])
-    validate_executor_job(request)
+    spec = validate_executor_job(request)
+    # Second fence: a queued capsule can become stale AFTER controller dispatch.
+    # The worker must re-fetch the real origin and re-check its own checkout.
+    if spec.authority == "bounded-code-fix":
+        try:
+            host_probe = load_trusted_code_resume_probe(
+                os.environ.get("AGENTOS_CODE_RESUME_HOST_CONFIG")
+            )
+        except Exception as exc:
+            raise ValueError("CODE_MAINLINE_EVIDENCE_UNAVAILABLE") from exc
+        require_fresh_code_resume(spec, host_probe)
     return {**_request_projection(request), **run_registered_executor_job(request=request)}
 
 
