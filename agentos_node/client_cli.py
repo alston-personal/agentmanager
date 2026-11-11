@@ -156,6 +156,12 @@ def main(argv: list[str] | None = None) -> int:
     policy = _load_policy(args.policy)
 
     if args.command == 'join':
+        if args.stage_only:
+            # Never let stage-only reuse or replace the active client.json.
+            # An explicit, fresh stage file is required even on a new host.
+            if not args.config.name.endswith('.stage.json') or args.config.exists():
+                print('error: stage-only requires a new separate *.stage.json config path', file=sys.stderr)
+                return 2
         before_manifest = ThinClient(NodeIdentity('pending', args.node_id), policy).capability_manifest()
 
         def show_request(payload: dict[str, object]) -> None:
