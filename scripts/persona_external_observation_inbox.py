@@ -135,7 +135,7 @@ def observe_intel_urls(intel_file, source_dir, limit=2, resolver=None):
             output.mkdir(parents=True, exist_ok=True)
             with target.open("x", encoding="utf-8") as handle:
                 json.dump(valid, handle, ensure_ascii=False, sort_keys=True)
-                handle.write("\\n")
+                handle.write("\n")
             result["observed"] += 1
         except FileExistsError:
             result["already_seen"] += 1
