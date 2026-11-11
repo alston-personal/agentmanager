@@ -186,7 +186,7 @@ with sync_playwright() as p:
     if find_prompt(page) is None:
         entered=click_text(
             page,
-            [r"create with google flow",r"try in google flow",r"open.*flow",r"start.*flow"],
+            [r"^try it now!?$",r"^立即試用$",r"^開始使用$",r"create with google flow",r"try in google flow",r"open.*flow",r"start.*flow"],
             timeout_ms=3000,
         )
         if entered:

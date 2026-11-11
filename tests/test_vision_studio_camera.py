@@ -73,3 +73,14 @@ def test_producer_reads_same_pinned_ir_and_generator_source():
     assert '"compiled_instructions_sha256": camera_ir_sha256' in source
     assert '"source_commit": source_commit' in source
     assert "CAMERA_IR_SHOT_COUNT_MISMATCH" in source
+
+
+def test_google_flow_landing_uses_observed_cta_before_prompt_lookup():
+    # Actual Oracle ONE receipt from Rain Exit #1160 / job 130341822583:
+    # FLOW_LOADED, UI_UNRECOGNIZED, visible "Try it now!" button.
+    source = (ROOT / "scripts/generate_google_flow_user.sh").read_text(encoding="utf-8")
+    assert 'r"^try it now!?$"' in source
+    assert source.index('r"^try it now!?$"') < source.index("box=find_prompt(page)")
+    # Never choose an existing project at random as a fallback.
+    assert 'r"開啟專案"' not in source
+    assert 'google_flow_generate=UI_UNRECOGNIZED' in source

@@ -7,6 +7,7 @@ on:
       - 'agentos_node/vision_studio_camera.py'
       - 'examples/vision-studio/rain-exit-v001.yaml'
       - 'scripts/produce_vision_studio_user.sh'
+      - 'scripts/generate_google_flow_user.sh'
       - 'tests/test_vision_studio_camera.py'
       - '.github/workflows/vision-studio-rain-exit.yml'
   push:
