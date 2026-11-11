@@ -26,6 +26,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agent_core.task_quality import TaskQualityError, is_executable_task, validate_task_text
+
 # 引入 Inspector 驗證模組
 sys.path.insert(0, str(Path(__file__).parent))
 try:
@@ -190,6 +193,10 @@ def external_wait_directive(output: str) -> tuple[str, str] | None:
 def run_with_completion_guard(proj_dir: Path, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
     """Never allow an exception after durable claim to strand work in_progress."""
     try:
+        validate_task_text(task_text)
+    except TaskQualityError as exc:
+        return False, f"BLOCKED: task_quality:{exc}"
+    try:
         return run_with_inspector(proj_dir, task_text, dry_run)
     except Exception as exc:
         logger.exception("claimed task execution crashed")
@@ -240,6 +247,10 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
     - TIMEOUT → 立刻 SKIP（不重試，避免 3×5min=15min 卡在同一任務）
     - 3 次 FAIL → BLOCKED（發 Telegram + 跳下一個任務）
     """
+    try:
+        validate_task_text(task_text)
+    except TaskQualityError as exc:
+        return False, f"BLOCKED: task_quality:{exc}"
     if dry_run:
         return False, "SKIP: dry_run_not_verified"
 
@@ -757,10 +768,11 @@ def parse_todos(status_md: Path) -> list[dict]:
 
 def pick_next_task(todos: list[dict]) -> Optional[dict]:
     """選下一個未完成任務 (in_progress 優先，再取第一個 todo）。跳過 blocked 任務。"""
-    in_progress = [t for t in todos if t["status"] == "in_progress"]
+    eligible = [t for t in todos if is_executable_task(t.get("text", ""))]
+    in_progress = [t for t in eligible if t["status"] == "in_progress"]
     if in_progress:
         return in_progress[0]
-    pending = [t for t in todos if t["status"] == "todo"]  # blocked 不在內
+    pending = [t for t in eligible if t["status"] == "todo"]  # blocked 不在內
     if pending:
         return pending[0]
     return None
@@ -855,6 +867,11 @@ def run_claude_task(proj_name: str, task: dict, dry_run: bool = False) -> tuple[
     用指定引擎執行一個任務。
     返回 (成功與否, 輸出摘要)
     """
+    try:
+        task_text = validate_task_text(task.get("text", ""))
+    except TaskQualityError as exc:
+        return False, f"BLOCKED: task_quality:{exc}"
+
     proj_dir = HOME / proj_name
     if not proj_dir.exists():
         logger.warning(f"專案目錄不存在: {proj_dir}")
@@ -866,7 +883,7 @@ def run_claude_task(proj_name: str, task: dict, dry_run: bool = False) -> tuple[
 ## 你現在的任務
 請執行以下任務（這是從 STATUS.md Todo List 中自動選取的）：
 
-**{task['text']}**
+**{task_text}**
 
 請：
 1. 分析這個任務需要做什麼
@@ -878,7 +895,7 @@ def run_claude_task(proj_name: str, task: dict, dry_run: bool = False) -> tuple[
 """
     
     if dry_run:
-        logger.info(f"[DRY RUN] 會在 {proj_dir} 執行: {task['text'][:80]}")
+        logger.info(f"[DRY RUN] 會在 {proj_dir} 執行: {task_text[:80]}")
         return True, "DRY_RUN"
     
     if ACTIVE_ENGINE == "agy":

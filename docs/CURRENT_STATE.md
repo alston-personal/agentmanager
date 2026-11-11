@@ -20,6 +20,10 @@ PR #2195 reuses Themis `/status-diff` manifest and `scripts/themis_status_diff.p
 
 # AgentOS Current Architecture & Reality
 
+## Fail-closed executable task quality contract (2026-11-11)
+
+AgentOS separates historical prose TODOs from executor-eligible work. Every new executable task written through project registration, `add_todo`, Architect, White Hat, Command Center registration, or the central board projection must use `description | workspace=<path-or-repo> | acceptance=<command-or-evidence>`; `prerequisite=` is supported when sequencing matters. Generic placeholders such as `Define objectives`, `Break work into milestones`, and `Execute and report progress` are forbidden. The shared validator is `agent_core/task_quality.py`. Lobster applies the same validation at selection and immediately before execution, so manually inserted or historical underspecified tasks fail closed rather than reaching Paw. This guard does not mechanically rewrite historical STATUS files; owners must refine them deliberately.
+
 ## Vendor release Receipt governance (2026-11-10; candidate)
 
 The first file-transport Oracle run 42786582114 successfully checked out Vendor source 42e88fd, applied Migration 008 (schema readback PASS), brought up and read back the API, and returned source registry v2 with `active_sources=2`, `canonical_state=resolved`, `registered_input_alias=1`, `unique_source_objects=2`. The overall workflow remained FAILED because the old source assertion expected the removed `new_source_registered` key and the final evidence commit tried to push directly to protected `main` (GH013; protected-branch rule correctly rejected it). The bounded correction validates the actual canonical v2 contract and retains sanitized JSON receipts as GitHub Actions artifacts, with no protected-main bypass or secret printing. Require terminal workflow SUCCESS and artifact inspection before marking this release fully accepted. The shared AgentOS execution / readback mechanism is already implemented and is not being rebuilt.
