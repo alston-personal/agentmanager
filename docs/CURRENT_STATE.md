@@ -1404,3 +1404,7 @@ PR #2230 merged source-level AgentOS-scoped logout/switch navigation into main, 
 ### 2026-11-11 — Platform admin versus tenant Owner landing (#2198)
 
 The AgentOS `/welcome` page now distinguishes server-verified OAuth `role=admin` from ordinary authenticated tenant applicants: a verified admin gets an explicit `/platform` governance entry without being asked to apply for a personal Realm, while regular accounts continue the existing CREATE/JOIN onboarding. This UI is NOT a new identity grant, does NOT bind any platform administrator to tenants, and does NOT elevate accounts based on displayed email. Actual `register@milkcat.org` privilege must be confirmed from the protected, provider-qualified admin allowlist and signed-in Session on live Oracle; do not publish private allowlist entries or OAuth subject. The platform governance inventory/resources interface remains incomplete and needs its own acceptance, and the first real tenant Node/runtime remains unverified.
+
+### 2026-11-11 — Platform admin welcome governed release (#2234)
+
+Source merged for verified platform administrators to see `/platform` instead of normal tenant CREATE/JOIN on `/welcome`, without granting Realm Owner access. This release marker reuses the protected-main-triggered immutable Control Plane workflow, with existing Dashboard Blue/Green, exact-SHA and rollback behavior. Real Oracle release, signed-in `register@milkcat.org` Session role, and proper administrative vs tenant isolation remain external acceptance requirements; no email-only elevation is permitted.
