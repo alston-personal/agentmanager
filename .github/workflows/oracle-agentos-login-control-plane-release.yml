@@ -34,6 +34,8 @@ concurrency:
 
 jobs:
   deploy:
+    outputs:
+      admin_configured: ${{ steps.admin_attestation.outputs.admin_configured }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -98,6 +100,34 @@ jobs:
           echo "studio_dashboard_mutation=CONTROLLED_BLUE_GREEN"
           REMOTE
 
+      - name: Read effective serving Dashboard admin configuration (no user session)
+        id: admin_attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Read-only check of the *serving* Dashboard process after blue/green switch.
+          # This never prints owner allowlist entries or credentials and never grants a role.
+          RESULT="$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "${GITHUB_SHA}" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          SITE=/etc/nginx/sites-enabled/studio.milkcat.org
+          ACTIVE_PORT="$(sed -n 's/.*set \$agentos_dashboard_upstream http:\/\/127\.0\.0\.1:\([0-9][0-9]*\);.*/\1/p' "$SITE" | head -n1)"
+          case "$ACTIVE_PORT" in 3040|3041) ;; *) echo 'agentos_admin_identity_configured=UNKNOWN'; exit 0 ;; esac
+          DIAG="/tmp/agentos-dashboard-owner-readonly-$SOURCE_SHA.py"
+          git -C "$REPO" show "$SOURCE_SHA:scripts/inspect_dashboard_admin_identity_user.py" > "$DIAG"
+          chmod 700 "$DIAG"
+          trap 'rm -f "$DIAG"' EXIT
+          python3 "$DIAG" --active-port "$ACTIVE_PORT" --identity 'google:username:register@milkcat.org'
+          REMOTE
+          )"
+          printf '%s\n' "$RESULT"
+          ADMIN_MATCH="$(printf '%s\n' "$RESULT" | sed -n 's/^agentos_admin_identity_configured=\(PASS\|MISSING\|UNKNOWN\)$/\1/p' | tail -n1)"
+          case "$ADMIN_MATCH" in PASS|MISSING|UNKNOWN) ;; *) ADMIN_MATCH=UNKNOWN ;; esac
+          printf 'admin_configured=%s\n' "$ADMIN_MATCH" >> "$GITHUB_OUTPUT"
+
   report-release-receipt:
     # This is a separate, least-privilege job: deployment secrets stay in deploy.
     # Report failures too; never require the owner to locate an Actions Run ID.
@@ -112,6 +142,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           DEPLOY_RESULT: ${{ needs.deploy.result }}
+          ADMIN_CONFIGURED: ${{ needs.deploy.outputs.admin_configured }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -128,6 +159,7 @@ jobs:
               result === 'success'
                 ? '- Acceptance: deploy job completed; inspect the run logs for exact accepted-release SHA. Authenticated admin/tenant sessions remain separate acceptance gates.'
                 : '- Acceptance: **not established**. Inspect the linked deploy job failure and retain the existing rollback contract.',
+              `- Active Dashboard owner admin configuration: ${['PASS', 'MISSING', 'UNKNOWN'].includes(process.env.ADMIN_CONFIGURED) ? process.env.ADMIN_CONFIGURED : 'UNKNOWN'} (configuration only; live OAuth session role not attested)`,
               '- Work item: #2198 (existing; no new issue or deployment lane).',
             ].join('\n');
             const comments = await github.paginate(github.rest.issues.listComments, {
