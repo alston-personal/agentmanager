@@ -228,15 +228,6 @@ with sync_playwright() as p:
 
     print("google_flow_stage=PROMPT_INPUT_BEGIN")
     try:
-        tag=(box.evaluate("(el) => el.tagName.toLowerCase()") or "").lower()
-    except Exception:
-        tag=""
-    try:
-        editable=str(box.get_attribute("contenteditable") or "").lower()=="true"
-    except Exception:
-        editable=False
-
-    try:
         # Playwright fill supports textarea, input, and contenteditable without
         # an extra click that can be intercepted by Flow transition overlays.
         box.fill(prompt,timeout=8000)
