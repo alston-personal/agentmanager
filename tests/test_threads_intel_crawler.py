@@ -54,6 +54,9 @@ def test_run_crawler_with_mock_discovery(tmp_path, monkeypatch):
     assert res["new_candidates_added"] == 1
     assert res["total_candidates"] == 1
     assert res["added"][0]["id"] == "1234567890123456"
+    candidate = json.loads(test_file.read_text(encoding="utf-8"))["candidates"][0]
+    assert candidate["id_provenance"] == "shortcode_derived_unverified"
+    assert candidate["reply_allowed"] is False
 
     # Verify deduplication on second run
     res2 = run_crawler(max_new_candidates=2)
