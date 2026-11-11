@@ -138,5 +138,37 @@
       "loaded source SHA and exact Realm Fabric symlink/immutable version",
       "redacted recent action names, caller identities, and correlated receipt IDs for all six operations"
     ]
+  },
+  "legacy_contract_obligations": {
+    "verification": "source contract from core/integration Action Relay and main deployment clients; not live runtime",
+    "claim_deployment": [
+      "expected_generation CAS",
+      "active lease fences generation, even same owner except identical idempotent claim",
+      "desired commit 40-hex; lease 60..3600 seconds"
+    ],
+    "deployment_status": [
+      "read-only observed release commit",
+      "converged only when desired equals observed"
+    ],
+    "release_deployment": [
+      "exact generation, desired commit, and lease owner match",
+      "reject until observed release converged",
+      "write released lease status"
+    ],
+    "renew_deployment": [
+      "fence exact generation/owner/desired commit",
+      "renew TTL without changing desired commit or generation"
+    ],
+    "advance_deployment": [
+      "reject active lease including same-owner",
+      "fence expected generation and previous desired commit",
+      "new desired generation only after release or expiry"
+    ],
+    "install_release": [
+      "exact immutable source commit must match claimed desired",
+      "active lease and generation fence",
+      "versioned release root, fixed service identity, observed commit readback, rollback requirements"
+    ],
+    "disposition": "RECONCILE all six until actual Oracle consumer and replacement proof; do not promote fail-closed stubs over active release pipeline"
   }
 }
