@@ -36,9 +36,9 @@ def _git(root: str, *args: str) -> str:
 def inspect(*, root: str, main_ref: str, work_ref: str, kind: str) -> dict:
     if kind not in {"code", "read_only", "legacy_production"}:
         raise FreshnessError("INVALID_TASK_KIND")
-    # Refs are fixed by a trusted caller. Do not accept Git CLI options or
+    # Refs are fixed by a trusted caller. FETCH_HEAD is only safe after\n    # an immediate pinned host fetch; do not trust a stale local FETCH_HEAD.\n    # Do not accept Git CLI options or
     # arbitrary shell from the task/model payload.
-    if main_ref != "refs/remotes/origin/main":
+    if main_ref not in {"refs/remotes/origin/main", "FETCH_HEAD"}:
         raise FreshnessError("UNTRUSTED_MAIN_REF")
     if not _SHA.fullmatch(work_ref):
         raise FreshnessError("UNPINNED_WORK_SHA")
