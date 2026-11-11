@@ -215,6 +215,17 @@ with sync_playwright() as p:
     click_text(page,[r"^video$",r"影片"],timeout_ms=1800)
     page.wait_for_timeout(1200)
 
+    # Mode switching can remount the editor. Resolve the active prompt again
+    # instead of interacting with a pre-switch Playwright element handle.
+    box=find_prompt(page)
+    if box is None:
+        save_debug(page,"prompt-after-mode-switch-missing")
+        controls=ui_control_summary(page)
+        if controls:
+            print("google_flow_ui_controls="+json.dumps(controls,ensure_ascii=False,separators=(",",":")))
+        print("google_flow_generate=PROMPT_AFTER_MODE_SWITCH_MISSING")
+        raise SystemExit(0)
+
     print("google_flow_stage=PROMPT_INPUT_BEGIN")
     try:
         tag=(box.evaluate("(el) => el.tagName.toLowerCase()") or "").lower()
@@ -225,13 +236,17 @@ with sync_playwright() as p:
     except Exception:
         editable=False
 
-    if tag in ("textarea","input") and not editable:
-        box.click(timeout=2500)
+    try:
+        # Playwright fill supports textarea, input, and contenteditable without
+        # an extra click that can be intercepted by Flow transition overlays.
         box.fill(prompt,timeout=8000)
-    else:
-        box.click(timeout=2500)
-        page.keyboard.press("Control+A")
-        page.keyboard.type(prompt,delay=0)
+    except Exception:
+        save_debug(page,"prompt-input-timeout")
+        controls=ui_control_summary(page)
+        if controls:
+            print("google_flow_ui_controls="+json.dumps(controls,ensure_ascii=False,separators=(",",":")))
+        print("google_flow_stage=PROMPT_INPUT_FAILED")
+        raise
 
     save_debug(page,"before-generate")
     print("google_flow_stage=PROMPT_FILLED")
