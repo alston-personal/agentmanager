@@ -832,6 +832,17 @@ A successful process start, health endpoint, or workflow status is not enough to
 
 ## Memory and Cognitive IR boundary
 
+### Handoff semantic preservation (source candidate)
+
+`agent_core/canonical_ir_handoff.py` now preserves existing `context`, `artifacts`,
+`pruned_paths`, `tensions`, `frontier`, and continuation metadata across a guarded
+generation advance. Omitted pending tasks are retained; an explicit empty list
+still clears them. Unsupported parent fields or structured entries in the string-list
+profile fail before publication instead of silently losing or stringifying data.
+Inherited sensitive credential fields are rejected. This does not add authority,
+translate MSCS profiles, prevent unrelated Stop-hook writeback, or prove cognitive
+continuity. Tests include real temporary-store publish/resolve and stale-write rejection.
+
 See [IR origin, authoring contract and drift inventory](COGNITIVE_IR_ORIGIN_AND_CONTRACT.md)
 for dated source provenance, the distinction between transport/continuation/reasoning/governance
 representations, and observed field-preservation gaps. Its unified semantic contract and

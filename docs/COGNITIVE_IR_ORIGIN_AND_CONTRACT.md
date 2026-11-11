@@ -76,9 +76,10 @@ Frontier：<active_task / active_question / reasoning_direction>
 
 1. **同名 schema，不同資料形狀。** [CanonicalIR](../runtime_core/canonical_ir.py) 的 `agentos.ir/v1` 使用結構化 decisions／pending_tasks、context／artifacts 與 project_id；[ONE handoff writer](../agent_core/canonical_ir_handoff.py) 使用字串清單，project_id 在外層，另加 index_id／evidence。不能僅憑相同 schema 字串宣稱可無損互換。
 2. **認知欄位與 ONE 路徑未統一。** MSCS 有 pruned_paths、tensions、frontier；ONE writer 沒有專用欄位或對應映射。資訊可能被人寫進文字，但沒有完整性保證。
-3. **重建子代可能丟掉擴充欄位。** `advance_canonical_ir` 以固定欄位重新建立 canonical_ir；即使父代含有 context／artifacts／frontier，也沒有自動保留路徑。這是程式可見的遺失風險，不代表已證實某筆生產資料遭刪除。
+3. **重建子代可能丟掉擴充欄位。** 盤點基準的 `advance_canonical_ir` 以固定欄位重新建立 canonical_ir；即使父代含有 context／artifacts／frontier，也沒有自動保留路徑。後續本分支的 source candidate 已保留這些欄位及 pruned_paths／tensions／continuation metadata，對不支援的父代欄位拒絕寫入，並拒絕把結構化決策轉成字串。暫存資料層 round-trip 測試已涵蓋保存與 stale write 拒絕；尚未部署，也未完成 MSCS profile 轉換或證明歷史資料無遺失。
 4. **解析器不代表嚴格語義驗證。** `CanonicalIR.from_dict` 過濾未知欄位，且 dataclass 型別標註不會驗證每個巢狀值。成功解析不能證明理由、未解問題或任務狀態保留。
 5. **有界化與語義保存需一起驗收。** [#2189](https://github.com/alston-personal/agentmanager/pull/2189) 的 rolling history／Stop sync 與 [#2215](https://github.com/alston-personal/agentmanager/pull/2215) 的明確任務完成修正，屬另行審查的變更；後者不會補齊前述認知欄位，也不證明所有舊決策都能安全裁切。
+6. **寫回歸屬也需要驗證。** 2026-11-11 的 ONE active projection 中，工程整合目標仍在，但 next_action 描述的是算術測試回覆。此觀察顯示有效世代不等於內容與任務相符；仍需查明 session／work-item 綁定與 Stop 寫回來源。本分支的欄位保存修正不會解決這項問題，也沒有改寫生產 active IR。
 
 ## 6. 防偏移與遷移驗收（proposed，尚未實裝）
 

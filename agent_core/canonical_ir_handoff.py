@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,15 @@ from agent_core.resolve_facade import resolve_continuation
 
 HANDOFF_SCHEMA = "agentos.canonical-ir-handoff/v1"
 IR_SCHEMA = "agentos.ir/v1"
+# Explicitly supported opaque context, retained without interpreting it as authority.
+_CONTEXT_FIELDS = {
+    "context": dict, "artifacts": list, "pruned_paths": list,
+    "tensions": list, "frontier": dict,
+}
+_BASE_FIELDS = {
+    "schema_version", "index_id", "ir_id", "parent_ir_id", "goal",
+    "constraints", "decisions", "pending_tasks", "evidence", "continuation", "capability",
+}
 _SENSITIVE_KEYS = {
     "token",
     "node_token",
@@ -41,7 +51,9 @@ def _clean_strings(values: Any, *, field: str) -> list[str]:
         raise ValueError(f"{field} must be a list")
     out: list[str] = []
     for raw in values:
-        item = str(raw or "").strip()
+        if not isinstance(raw, str):
+            raise ValueError(f"{field} requires strings; structured entries need an explicit profile adapter")
+        item = raw.strip()
         if not item:
             continue
         if item not in out:
@@ -115,7 +127,6 @@ def advance_canonical_ir(
     if expected_index == new_index or expected_ir == new_ir:
         raise ValueError("handoff must create a new canonical generation")
 
-    pending_tasks = _clean_strings(params.get("pending_tasks"), field="pending_tasks")
     decisions_append = _clean_strings(params.get("decisions_append"), field="decisions_append")
     evidence_append = _validate_evidence(params.get("evidence"))
     execution_status = str(params.get("execution_status") or "in_progress").strip()
@@ -144,6 +155,24 @@ def advance_canonical_ir(
             f"found index={current_index!r} ir={current_ir!r}"
         )
 
+    unsupported = set(canonical_ir) - _BASE_FIELDS - set(_CONTEXT_FIELDS)
+    if unsupported:
+        raise ValueError(f"unsupported current IR fields require an explicit profile adapter: {sorted(unsupported)}")
+    if _contains_sensitive(canonical_ir):
+        raise ValueError("current canonical IR contains a sensitive credential field")
+    preserved = {}
+    for name, expected_type in _CONTEXT_FIELDS.items():
+        if name in canonical_ir:
+            if not isinstance(canonical_ir[name], expected_type):
+                raise ValueError(f"current.{name} must be a {expected_type.__name__}")
+            preserved[name] = deepcopy(canonical_ir[name])
+    current_continuation = canonical_ir.get("continuation", {})
+    if not isinstance(current_continuation, dict):
+        raise ValueError("current.continuation must be an object")
+    pending_tasks = _clean_strings(
+        params["pending_tasks"] if "pending_tasks" in params else canonical_ir.get("pending_tasks"),
+        field="pending_tasks",
+    )
     constraints = _clean_strings(canonical_ir.get("constraints") or [], field="current.constraints")
     decisions = _clean_strings(canonical_ir.get("decisions") or [], field="current.decisions")
     for decision in decisions_append:
@@ -173,6 +202,7 @@ def advance_canonical_ir(
             "index_id": new_index,
             "recommended_action": next_action,
             "canonical_ir": {
+                **preserved,
                 "schema_version": IR_SCHEMA,
                 "index_id": new_index,
                 "ir_id": new_ir,
@@ -183,6 +213,7 @@ def advance_canonical_ir(
                 "pending_tasks": pending_tasks,
                 "evidence": evidence,
                 "continuation": {
+                    **deepcopy(current_continuation),
                     "recommended_action": next_action,
                     "next_action": next_action,
                 },
