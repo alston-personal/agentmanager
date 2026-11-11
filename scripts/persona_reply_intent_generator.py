@@ -239,6 +239,8 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
                 or provider.get("schema") != "agentos.social-receipt/v1"
                 or provider.get("ok") is not True
                 or provider.get("operation") != "public_post.read"
+                or (provider.get("platform_object_id") is not None
+                    and str(provider["platform_object_id"]) != parent)
                 or not isinstance(source_content, dict)
                 or str(source_content.get("username") or "").casefold() != author
                 or not provider.get("account_binding_id")
