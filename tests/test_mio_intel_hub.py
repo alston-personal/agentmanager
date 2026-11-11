@@ -47,6 +47,23 @@ def test_parse_and_validate_url():
         parse_and_validate_url("https://facebook.com/post/123")
 
 
+def test_share_url_is_read_only_discovery_and_spoofed_host_is_rejected():
+    candidate = parse_and_validate_url("https://www.threads.com/share/GdMiITUe6/")
+    assert candidate["media_id"] == "share:GdMiITUe6"
+    assert candidate["id_provenance"] == "share_url_unresolved"
+    assert candidate["canonical_url"] == "https://www.threads.com/share/GdMiITUe6/"
+    import pytest
+    for invalid in (
+        "https://evil.example/https://www.threads.com/@x/post/AbCd",
+        "https://www.threads.com.evil.example/@x/post/AbCd",
+        "https://www.threads.com/@x/post/AbCd?redirect=evil",
+        "https://www.threads.com/share/GdMiITUe6/../../../other",
+        "http://www.threads.com/@x/post/AbCd",
+    ):
+        with pytest.raises(ValueError):
+            parse_and_validate_url(invalid)
+
+
 def test_http_api_endpoints(tmp_path, monkeypatch):
     test_file = tmp_path / "intel_candidates.json"
     monkeypatch.setattr(hub_mod, "CANDIDATES_FILE", test_file)
