@@ -96,3 +96,53 @@ def test_virtual_one_html_supports_code_approval_and_map():
     assert "登出" in html
     # Both actions must use the site-scoped sign-out endpoint, not client-side Realm switching.
     assert html.count('href="/dashboard/api/auth/logout?returnTo=%2F"') >= 2
+
+
+def test_tenant_windows_client_request_targets_exact_realm(monkeypatch):
+    """Existing ThinClient Join must use the same Realm API as /my-one."""
+    import pytest
+    from agentos_node.thin_client_transport import ThinClientTransport, device_join_base
+    from agentos_node.thin_client import ThinClientPolicy
+    realm = 'realm-u-' + 'a' * 24
+    seen = []
+
+    def request(url, **kwargs):
+        seen.append((url, kwargs))
+        return {'ok': True, 'request_id': 'join_' + 'b' * 20,
+                'claim_secret': 'secret', 'user_code': 'ABCD-EFGH'}
+    monkeypatch.setattr(ThinClientTransport, '_request', staticmethod(request))
+    result = ThinClientTransport.request_enrollment(
+        one_url='https://agentos.milkcat.org', realm_id=realm,
+        node_id='new-client', policy=ThinClientPolicy())
+    assert result['ok']
+    assert seen[0][0] == 'https://agentos.milkcat.org/v1/realms/' + realm + '/join/request'
+    assert seen[0][1]['body']['manifest']['realm_id'] == realm
+    assert device_join_base('https://studio.milkcat.org/dashboard/api/agentos') == (
+        'https://studio.milkcat.org/dashboard/api/agentos/v1/join')
+    with pytest.raises(ValueError, match='invalid_tenant_realm_id'):
+        device_join_base('https://agentos.milkcat.org', 'realm-alston')
+    with pytest.raises(ValueError, match='tenant_join_requires_agentos_origin'):
+        device_join_base('https://studio.milkcat.org', realm)
+
+
+def test_tenant_device_approval_and_claim_use_scoped_routes(monkeypatch, tmp_path):
+    from agentos_node.thin_client_transport import ThinClientTransport
+    realm = 'realm-u-' + 'c' * 24
+    seen = []
+
+    def request(url, **kwargs):
+        seen.append(url)
+        if url.endswith('/status'):
+            return {'status': 'approved'}
+        return {'status': 'enrolled', 'realm_id': realm,
+                'node_id': 'one-client', 'node_token': 'test-only'}
+    monkeypatch.setattr(ThinClientTransport, '_request', staticmethod(request))
+    config = ThinClientTransport.wait_for_approval(
+        one_url='https://agentos.milkcat.org', realm_id=realm,
+        request_id='join_' + 'a' * 20, claim_secret='test-secret',
+        config_path=tmp_path / 'client.json', timeout_seconds=10)
+    assert config.realm_id == realm
+    assert seen == [
+        'https://agentos.milkcat.org/v1/realms/' + realm + '/join/status',
+        'https://agentos.milkcat.org/v1/realms/' + realm + '/join/claim',
+    ]
