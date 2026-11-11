@@ -31,6 +31,20 @@ jobs:
           $text = Get-Content -Raw ./scripts/bootstrap_clean_windows_node.ps1
           [scriptblock]::Create($text) | Out-Null
           Write-Host 'clean_windows_bootstrap_syntax=PASS'
+      - name: Resolve Python without winget or alias output contamination
+        shell: powershell
+        run: |
+          $source = Get-Content -Raw ./scripts/bootstrap_clean_windows_node.ps1
+          $start = $source.IndexOf('function Test-WorkingPython')
+          $end = $source.IndexOf('$python = Resolve-Python', $start)
+          if ($start -lt 0 -or $end -le $start) { throw 'bootstrap resolver not found' }
+          Invoke-Expression $source.Substring($start, $end - $start)
+          $resolved = @(Resolve-Python)
+          if ($resolved.Count -ne 1) { throw "expected one Python path, got $($resolved.Count) objects" }
+          if (-not (Test-Path -LiteralPath $resolved[0] -PathType Leaf)) { throw 'resolver returned non-file output' }
+          if (-not (Test-WorkingPython $resolved[0])) { throw 'resolver returned invalid interpreter' }
+          if ($source -notmatch 'winget.Source install[^\r\n]*\| Out-Null') { throw 'winget output is not isolated' }
+          Write-Host 'clean_windows_python_resolver=PASS'
       - name: Dry-run one-click Node join launcher
         shell: cmd
         run: |
