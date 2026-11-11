@@ -146,6 +146,10 @@ Write-Host "agentos_source_commit=$sha"
   if ($OneUrl -eq "https://studio.milkcat.org/dashboard/api/agentos") {
     $OneUrl = "https://agentos.milkcat.org"
   }
+  if ($SourceRef -eq "core/integration") {
+    # New tenant device-flow is on protected main; preserve old default for legacy Realm.
+    $SourceRef = "main"
+  }
   if ($OneUrl -ne "https://agentos.milkcat.org") { throw "Tenant onboarding requires the AgentOS public origin" }
 }
 
