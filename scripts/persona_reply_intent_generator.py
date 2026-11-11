@@ -88,6 +88,94 @@ def reply_candidates(events,state,ir_binding,reserved_parents=None):
                          "timestamp":stamp,"context_sha256":key}
     return sorted(candidates.values(),key=lambda x:x["timestamp"],reverse=True),skipped
 
+def project_external_verified_events(root, policy, now, limit=80):
+    """Reuse persisted Core Reader + official search receipts; no network or writes.
+
+    Only an independently attested non-reply from the bound official provider
+    can supply the numeric parent. The HTML read supplies bounded context.
+    The derived event is in-memory; both original receipts remain authoritative.
+    """
+    if policy.get("proactive_external_reply_authorized") is not True:
+        return []
+    folder = root / "pdca/social_receipts"
+    if not folder.is_dir():
+        return []
+    candidates = sorted(folder.glob("*.json"), reverse=True)[:limit]
+    html, searches = [], []
+    for path in candidates:
+        try:
+            if path.is_symlink() or path.stat().st_size > 100_000:
+                continue
+            raw = load(path)
+            receipt = raw.get("provider_receipt") if isinstance(raw, dict) else None
+            if not isinstance(receipt, dict):
+                receipt = raw
+            if not isinstance(receipt, dict) or receipt.get("ok") is not True:
+                continue
+            stamp = normalize_ts(receipt.get("completed_at"))
+            if stamp is None or not timedelta(0) <= now - stamp <= timedelta(hours=72):
+                continue
+            ref = "pdca/social_receipts/" + path.name
+            if receipt.get("schema") != "agentos.social-receipt/v1":
+                continue
+            if not receipt.get("account_binding_id") or receipt.get("platform") != "threads":
+                continue
+            result = receipt.get("result")
+            if not isinstance(result, dict):
+                continue
+            if receipt.get("operation") == "public_post.read":
+                source = result.get("source")
+                if isinstance(source, dict) and source.get("url") and source.get("text"):
+                    html.append((ref, receipt, source))
+            elif receipt.get("operation") == "keyword.search":
+                rows = result.get("items")
+                if isinstance(rows, list) and len(rows) <= 10:
+                    searches.append((ref, receipt, rows))
+        except (OSError, ValueError, TypeError):
+            continue
+    output = []
+    seen = set()
+    for source_ref, public, source in html[:20]:
+        url = str(source.get("url") or "")
+        username = str(source.get("username") or "").casefold()
+        text = str(source.get("text") or "").strip()
+        if (not username or username == "mio.milkcat"
+                or not url.startswith("https://www.threads.com/") or not text):
+            continue
+        for search_ref, search, rows in searches[:20]:
+            if search.get("account_binding_id") != public.get("account_binding_id"):
+                continue
+            if abs((normalize_ts(search["completed_at"]) -
+                    normalize_ts(public["completed_at"])).total_seconds()) > 300:
+                continue
+            matches = [item for item in rows if isinstance(item, dict)
+                       and str(item.get("id") or "").isdigit()
+                       and item.get("is_reply_attested") is True
+                       and item.get("is_reply") is False
+                       and str(item.get("username") or "").casefold() == username
+                       and str(item.get("permalink") or "") == url
+                       and str(item.get("text") or "").strip() == text]
+            if len(matches) != 1:
+                continue
+            parent = str(matches[0]["id"])
+            if parent in seen:
+                continue
+            seen.add(parent)
+            output.append({
+                "type": "public.post.verified", "object_id": parent,
+                "root_post_id": parent, "reader_account": "mio.milkcat",
+                "author_handle": username, "text": text,
+                "source_url": url, "source_receipt_ref": source_ref,
+                "search_receipt_ref": search_ref,
+                "account_binding_id": search["account_binding_id"],
+                "timestamp": search["completed_at"]
+            })
+            break
+        if len(output) >= 5:
+            break
+    return output
+
+
 def external_reply_candidates(root, events, state, ir_binding, policy, reserved_parents, now):
     """Accept outward roots only with an independent platform read and write policy.
 
@@ -294,6 +382,9 @@ def main():
     stances=load(root/"social_stances.json")
     persona=load(root/"persona_state.json")
     events=read_events(root/"events/events.jsonl")
+    # Derive bounded event candidates only from two separately persisted,
+    # mutually agreeing read receipts. Do not mutate the event journal.
+    events.extend(project_external_verified_events(root,policy,now))
     pending=list(state.get("pending_external_actions") or [])
     if any(x.get("status") in ("candidate","in_progress") and x.get("capability")=="social.reply.send" for x in pending if isinstance(x,dict)):
         print(json.dumps({"status":"SKIP","reason":"reply_send_already_pending"},ensure_ascii=False)); return 0
