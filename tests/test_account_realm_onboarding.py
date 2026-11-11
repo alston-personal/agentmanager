@@ -84,3 +84,26 @@ def test_welcome_has_real_action_controls_with_no_root_elevation():
     assert "/v1/account/realm-request" in html
     assert "管理者 Console 不會自動開放" in html
     assert "realm-alston" not in html
+
+
+def test_applicant_sees_real_review_state_not_false_realm_activation(tmp_path):
+    actor = {"provider": "google", "subject": "test-applicant-001", "role": "user"}
+    with patch("agent_core.account_realm_onboarding._current_identity", return_value=actor), patch(
+        "agent_core.account_realm_onboarding.park_approval"
+    ), patch("agent_core.account_realm_onboarding.load_box", return_value={"history": []}) as box:
+        code, created = account_request(
+            method="POST", host=HOST, cookie="x", origin=ORIGIN,
+            body={"kind": "create"}, root=tmp_path,
+        )
+        assert code == 202 and created["kind"] == "create"
+        request_id = created["request_id"]
+        box.return_value = {"history": [{"id": request_id,
+                             "action_type": "realm.onboarding.request", "status": "APPROVED"}]}
+        code, state = account_request(method="GET", host=HOST, cookie="x", origin=None, root=tmp_path)
+        assert code == 200 and state["state"] == "approved_pending_provisioning"
+        assert state["kind"] == "create" and state["provisioned"] is False
+        box.return_value = {"history": [{"id": request_id,
+                             "action_type": "realm.onboarding.request", "status": "REJECTED"}]}
+        code, state = account_request(method="GET", host=HOST, cookie="x", origin=None, root=tmp_path)
+        assert code == 200 and state["state"] == "rejected"
+        assert state["provisioned"] is False
