@@ -146,3 +146,71 @@ def test_tenant_device_approval_and_claim_use_scoped_routes(monkeypatch, tmp_pat
         'https://agentos.milkcat.org/v1/realms/' + realm + '/join/status',
         'https://agentos.milkcat.org/v1/realms/' + realm + '/join/claim',
     ]
+
+
+def test_tenant_node_scoped_heartbeat_and_owner_map_without_fake_one_runtime(tmp_path):
+    from agent_core.virtual_one_nodes import tenant_node_runtime
+    tenants, realm_id = boot(tmp_path)
+    identity = {"provider": "google", "subject": "applicant-001", "role": "user"}
+    manifest = {
+        "schema": "agentos.node-manifest/v0.1", "realm_id": realm_id,
+        "node_id": "fresh-device", "role": "client",
+        "capabilities": ["capture"], "platform": "Windows",
+    }
+    status, request = device_join(
+        host=HOST, realm_id=realm_id, action="request",
+        body={"manifest": manifest}, root=tenants)
+    assert status == 200
+    with patch("agent_core.virtual_one_nodes._current_identity", return_value=identity):
+        approved, _ = owner_approve_code(
+            host=HOST, cookie="owner-cookie", origin=ORIGIN,
+            code=request["user_code"], root=tenants)
+        assert approved == 200
+    status, claim = device_join(
+        host=HOST, realm_id=realm_id, action="claim",
+        body={"request_id": request["request_id"], "claim_secret": request["claim_secret"]},
+        root=tenants)
+    assert status == 200
+    token = claim["node_token"]
+    heartbeat = {
+        "schema": "agentos.node-heartbeat/v0.1",
+        "realm_id": realm_id, "node_id": "fresh-device", "status": "online",
+        "observed_at": None, "uptime_seconds": 1, "surface_count": 0,
+        "manifest": manifest,
+    }
+    def runtime(action, method="GET", node="fresh-device", secret=token, body=None, host=HOST, realm=realm_id):
+        return tenant_node_runtime(host=host, realm_id=realm, action=action,
+            method=method, node_id=node, token=secret, body=body, root=tenants)
+
+    assert runtime("health", secret="incorrect")[0] == 403
+    assert runtime("health", secret="")[0] == 401
+    assert runtime("health", realm="realm-u-" + "f" * 24)[0] != 200
+    assert runtime("health")[1]["one_runtime_attested"] is False
+    assert runtime("heartbeat", method="POST", body={**heartbeat, "realm_id":"realm-other"})[0] == 403
+    assert runtime("heartbeat", method="POST", body=heartbeat)[1]["heartbeat_recorded"] is True
+    with patch("agent_core.virtual_one_nodes._current_identity", return_value=identity):
+        code, projection = owner_node_map(host=HOST, cookie="owner", root=tenants)
+    assert code == 200
+    assert projection["online_node_count"] == 1
+    assert projection["one_runtime_attested"] is False
+    assert runtime("bootstrap")[1]["schema"] == "agentos.node-bootstrap/v0.1"
+    assert runtime("tasks")[1]["tasks"] == []
+    assert runtime("benchmark", method="POST", body={
+        "realm_id": realm_id, "node_id": "fresh-device"})[1]["ok"] is False
+    assert runtime("receipts", method="POST", body={
+        "schema": "agentos.node-receipt/v0.1", "node_id": "fresh-device",
+        "task_id": "unissued"})[0] == 409
+
+
+def test_tenant_transport_node_endpoints_bind_host_and_realm():
+    from agentos_node.thin_client_transport import ClientConfig, node_runtime_endpoint
+    cfg = ClientConfig(
+        one_url=ORIGIN, realm_id="realm-u-" + "b" * 24,
+        node_id="device", node_token="test-only")
+    assert node_runtime_endpoint(cfg, "heartbeat") == (
+        ORIGIN + "/v1/realms/" + cfg.realm_id + "/heartbeat")
+    assert node_runtime_endpoint(cfg, "tasks").endswith("/v1/realms/" + cfg.realm_id + "/tasks")
+    legacy = ClientConfig(one_url="https://studio.milkcat.org/dashboard/api/agentos",
+                          realm_id="realm-alston", node_id="device", node_token="legacy")
+    assert node_runtime_endpoint(legacy, "heartbeat") == (
+        "https://studio.milkcat.org/dashboard/api/agentos/v1/heartbeat")
