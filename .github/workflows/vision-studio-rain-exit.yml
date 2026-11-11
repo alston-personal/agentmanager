@@ -10,7 +10,7 @@ on:
       - 'tests/test_vision_studio_camera.py'
       - '.github/workflows/vision-studio-rain-exit.yml'
   push:
-    branches: [core/integration]
+    branches: [main, core/integration]
     paths:
       - '.agentos/commands/vision-studio-rain-exit.json'
 
