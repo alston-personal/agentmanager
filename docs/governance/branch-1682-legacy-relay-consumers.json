@@ -1,0 +1,101 @@
+{
+  "schema": "agentos.branch-convergence.legacy-relay-consumers/v1",
+  "issue": 1682,
+  "candidate_pr": 2269,
+  "verification": "static-source-only; Oracle live service/receipt not checked",
+  "canonical_branch": "main",
+  "legacy_branch": "core/integration",
+  "decision": "BLOCK_MAINLINE_PROMOTION_UNTIL_RUNTIME_CONSUMERS_VERIFIED",
+  "evidence": [
+    {
+      "path": "scripts/install_realm_fabric_via_action_relay.py",
+      "role": "direct-client",
+      "references": [
+        "claim_deployment",
+        "install_release",
+        "deployment_status",
+        "release_deployment",
+        "advance_deployment"
+      ],
+      "status": "UNMIGRATED_CLIENT"
+    },
+    {
+      "path": ".github/workflows/oracle-core-generation5-resume-release.yml",
+      "role": "manual-workflow-client",
+      "references": [
+        "release_deployment"
+      ],
+      "status": "UNMIGRATED_CLIENT"
+    },
+    {
+      "path": "docs/CORE_DEPLOYMENT_AUTHORITY.md",
+      "role": "documented-contract",
+      "references": [
+        "claim_deployment",
+        "install_release"
+      ],
+      "status": "MUST_PRESERVE_AUTHORITY_INVARIANTS"
+    },
+    {
+      "path": "scripts/reconcile_action_relay_runtime.py",
+      "role": "running-source-selector",
+      "references": [
+        "core/integration"
+      ],
+      "status": "LEGACY_BRANCH_STILL_PINNED_IN_SOURCE"
+    },
+    {
+      "path": "agentos_node/runtime_converge_action_relay.py",
+      "role": "release-source-contract",
+      "references": [
+        "core/integration"
+      ],
+      "status": "LEGACY_BRANCH_STILL_PINNED_IN_SOURCE"
+    }
+  ],
+  "legacy_actions": [
+    {
+      "action": "agentos.realm-fabric.claim_deployment",
+      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
+      "production_equivalence": "UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.deployment_status",
+      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
+      "production_equivalence": "UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.release_deployment",
+      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
+      "production_equivalence": "UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.renew_deployment",
+      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
+      "production_equivalence": "UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.advance_deployment",
+      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
+      "production_equivalence": "UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.install_release",
+      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
+      "production_equivalence": "UNVERIFIED",
+      "allowed_for_promotion": false
+    }
+  ],
+  "release_conditions": [
+    "Owner verifies actual Oracle deployed Action Relay / immutable service source SHA and all live consumers",
+    "Equivalent approved authority/API for lease CAS, install, renew, release and receipt with rollback is demonstrated",
+    "No active workflow/service relying on the six legacy actions would fail after deployment",
+    "GitHub CI and Oracle real task execution receipt confirm new controller+worker version gate",
+    "Human PR-specific approval authorizes promotion and rollout"
+  ]
+}
