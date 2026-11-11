@@ -141,3 +141,83 @@ jobs:
           echo "galaxy_monitor_live_release=$RELEASE"
           echo "galaxy_monitor_live_runtime=PASS"
           REMOTE
+
+      - name: Read back real Galaxy learning JSONL without social writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" 'python3 -' <<'PY'
+          import hashlib, json, math, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root = Path('/home/ubuntu/agent-data/runtime/social/post-experiments')
+          release = Path('/home/ubuntu/.local/share/agentos/galaxy-experiment-monitor/current').resolve()
+          try:
+              generation = (release / 'GENERATION').read_text(encoding='utf-8')
+              valid_generation = bool(re.search(r'^source_commit=[0-9a-f]{40}$', generation, re.M))
+          except OSError:
+              valid_generation = False
+          active = subprocess.run(['systemctl', '--user', 'is-active', 'agentos-galaxy-experiment-monitor.timer'],
+                                  capture_output=True, text=True, timeout=10, check=False)
+          timer_ok = active.returncode == 0 and active.stdout.strip() == 'active'
+          print('galaxy_learning_timer_active=' + str(timer_ok).lower())
+          print('galaxy_learning_generation_valid=' + str(valid_generation).lower())
+          cutoff = datetime(2026, 11, 10, 1, 25, tzinfo=timezone.utc)
+          rows = []
+          for file in sorted(root.glob('*/*/learning.jsonl')):
+              if file.is_symlink():
+                  continue
+              for raw in file.read_text(encoding='utf-8').splitlines():
+                  try:
+                      row = json.loads(raw)
+                      stamp = datetime.fromisoformat(str(row.get('captured_at') or '').replace('Z', '+00:00'))
+                      if stamp.tzinfo and stamp.astimezone(timezone.utc) >= cutoff and row.get('platform') == 'threads':
+                          rows.append((stamp, file, row))
+                  except (ValueError, TypeError, AttributeError):
+                      continue
+          print('galaxy_learning_post_release_count=' + str(len(rows)))
+          print('galaxy_learning_queue_count=' + str(len(list((root / 'queue').glob('*.json')))))
+          print('galaxy_learning_completed_count=' + str(len(list((root / 'completed').glob('*.json')))))
+          verdict = 'NO_ELIGIBLE_REAL_ROW'
+          for stamp, file, row in sorted(rows, key=lambda x: x[0], reverse=True):
+              snapshot = None
+              snapshots = file.with_name('snapshots.jsonl')
+              if snapshots.is_file() and not snapshots.is_symlink():
+                  for raw in snapshots.read_text(encoding='utf-8').splitlines():
+                      try:
+                          item = json.loads(raw)
+                          if (item.get('captured_at') == row.get('captured_at') and
+                              item.get('experiment_id') == row.get('experiment_id') and
+                              item.get('account_username') == row.get('account_username') and
+                              str((item.get('post') or {}).get('id') or '') == str(row.get('post_id') or '')):
+                              snapshot = item
+                      except (ValueError, AttributeError):
+                          pass
+              if snapshot is None:
+                  verdict = 'MISSING_MATCHING_SNAPSHOT'
+                  continue
+              caption = (snapshot.get('post') or {}).get('text')
+              digest = hashlib.sha256(caption.encode('utf-8')).hexdigest() if isinstance(caption, str) and caption.strip() else None
+              elapsed = row.get('elapsed_minutes')
+              maturity = ('early' if elapsed < 1440 else 'developing' if elapsed < 10080 else 'mature') if type(elapsed) is int and elapsed >= 0 else None
+              metrics = row.get('metrics')
+              numeric = isinstance(metrics, dict) and bool(metrics) and all(type(v) in (int, float) and math.isfinite(v) for v in metrics.values())
+              expected_ready = bool(digest and row.get('insights_status') == 'pass' and numeric)
+              checks = {
+                  'schema': row.get('schema') == 'agentos.social-post-learning-observation/v1',
+                  'caption_sha256': digest is not None and digest == row.get('caption_sha256'),
+                  'maturity': maturity is not None and maturity == row.get('maturity'),
+                  'source_evidence_ready': row.get('source_evidence_ready') is expected_ready,
+                  'analysis_eligible': row.get('analysis_eligible') is False,
+                  'causal_claim_allowed': row.get('causal_claim_allowed') is False,
+                  'insights_status': isinstance(row.get('insights_status'), str),
+              }
+              for key, passed in checks.items():
+                  print('galaxy_learning_' + key + '=' + ('PASS' if passed else 'FAIL'))
+              print('galaxy_learning_observed_at=' + stamp.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
+              verdict = 'PASS' if all(checks.values()) and timer_ok and valid_generation else 'INCOMPLETE'
+              break
+          print('galaxy_learning_acceptance=' + verdict)
+          # A missing row is not a deployment failure or proof of learning.
+          PY
