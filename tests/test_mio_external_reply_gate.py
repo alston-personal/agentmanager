@@ -117,6 +117,42 @@ class ExternalReplyGateTest(unittest.TestCase):
         self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
         self.assertEqual(project(True), [])
 
+    def test_provider_attested_identity_is_an_alternate_read_receipt(self):
+        self.source["platform"] = "threads"
+        self.search["platform"] = "threads"
+        self.search["operation"] = "parent_identity.read"
+        self.search["capability"] = "social.threads.parent_identity.read"
+        self.search["result"] = {"identity": {
+            **self.search["result"]["items"][0], "root_post_id": "123456789",
+            "provider_verified": True, "numeric_id_source": "provider"
+        }}
+        self.file.write_text(json.dumps(self.source), encoding="utf-8")
+        self.search_file.write_text(json.dumps(self.search), encoding="utf-8")
+        events = self.m.project_external_verified_events(
+            self.root, {"proactive_external_reply_authorized": True}, self.now)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["object_id"], "123456789")
+        selected, _ = self.candidates(events=events)
+        self.assertEqual(len(selected), 1)
+
+    def test_identity_receipt_rejects_shortcode_and_unattested_root(self):
+        self.search["operation"] = "parent_identity.read"
+        self.search["capability"] = "social.threads.parent_identity.read"
+        row = self.search["result"]["items"][0]
+        row.update(root_post_id="123456789", provider_verified=True, numeric_id_source="provider")
+        self.search["result"] = {"identity": row}
+        self.assertEqual(len(self.candidates()[0]), 1)
+        for key, value in (
+            ("id", "Example"), ("provider_verified", False),
+            ("numeric_id_source", "shortcode"), ("root_post_id", "999"),
+            ("is_reply_attested", False), ("is_reply", True)
+        ):
+            with self.subTest(key=key):
+                prior = row[key]
+                row[key] = value
+                self.assertEqual(self.candidates()[0], [])
+                row[key] = prior
+
     def test_verified_root_is_candidate_not_a_write(self):
         items, skipped = self.candidates()
         self.assertEqual(len(items), 1)
