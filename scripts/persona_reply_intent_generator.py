@@ -94,6 +94,8 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
     Historical read-only Inbox entries are deliberately NOT an input here.
     An event or a numeric ID alone never grants reply authority.
     """
+    if not any(event.get("type") == "public.post.verified" for event in events):
+        return [], {}
     if policy.get("proactive_external_reply_authorized") is not True:
         return [], {"external_reply_not_authorized": 1}
     candidates, skipped = [], {}
