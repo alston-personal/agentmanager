@@ -121,7 +121,7 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
             continue
         provider = source.get("provider_receipt") if isinstance(source, dict) else None
         if not isinstance(provider, dict):
-            provider = source
+            provider = source if isinstance(source, dict) else {}
         source_content = (provider.get("result") or {}).get("source") if isinstance(provider.get("result"), dict) else None
         if (provider.get("schema") != "agentos.social-receipt/v1"
                 or provider.get("ok") is not True
