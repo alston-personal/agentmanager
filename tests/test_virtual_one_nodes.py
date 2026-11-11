@@ -88,3 +88,7 @@ def test_virtual_one_html_supports_code_approval_and_map():
     assert "/v1/account/virtual-one/nodes" in html
     assert "/v1/account/virtual-one/join/approve" in html
     assert "innerHTML" not in html
+    assert 'aria-label="AgentOS 帳號與導覽"' in html
+    assert 'href="/dashboard/api/auth/logout?returnTo=%2F"' in html
+    assert "切換使用者" in html
+    assert "登出" in html
