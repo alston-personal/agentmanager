@@ -97,6 +97,9 @@ class HostBrowserPairingProvider:
             raise PairingUnavailable("browser_open_failed") from exc
         return {"ticket": code}
 
+    def pairing_ticket(self) -> str | None:
+        return self._code
+
     def check_ready(self) -> bool:
         if not self._code or not self._secret:
             return False
