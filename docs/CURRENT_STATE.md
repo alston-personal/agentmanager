@@ -832,6 +832,16 @@ A successful process start, health endpoint, or workflow status is not enough to
 
 ## Memory and Cognitive IR boundary
 
+### Evidence-only Stop compatibility (source candidate)
+
+The reused `agentos_node/ir_stop_sync.py` now records automatic Stop text only as
+unverified turn evidence while preserving task semantics and execution status.
+Explicit semantic checkpoint changes require the observed project/index/IR tuple;
+missing selectors no longer trigger a guessed Core fallback. The guarded publisher
+still validates every write. See [Stop writeback compatibility](IR_STOP_WRITEBACK.md)
+for deployment dependencies, real temporary-store tests, and remaining session-binding
+limits. This does not repair the production active IR or claim platform deployment.
+
 ### Mandatory Core IR validation (source candidate)
 
 The canonical publisher calls the deterministic [IR validation contract](IR_VALIDATION.md)
