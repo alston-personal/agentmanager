@@ -214,3 +214,56 @@ def test_tenant_transport_node_endpoints_bind_host_and_realm():
                           realm_id="realm-alston", node_id="device", node_token="legacy")
     assert node_runtime_endpoint(legacy, "heartbeat") == (
         "https://studio.milkcat.org/dashboard/api/agentos/v1/heartbeat")
+
+
+def test_join_stage_only_keeps_active_config_and_never_starts_supervisor(monkeypatch, tmp_path):
+    import json
+    from agentos_node import client_cli
+    from agentos_node.thin_client import ThinClientPolicy
+    from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport
+
+    active = tmp_path / "client.json"
+    previous = {"realm_id": "realm-alston", "node_id": "same-node", "node_token": "old",
+                "one_url": "https://studio.milkcat.org/dashboard/api/agentos"}
+    active.write_text(json.dumps(previous), encoding="utf-8")
+    stage = tmp_path / "client.stage.json"
+    tenant = "realm-u-" + "a" * 24
+    monkeypatch.setattr(client_cli, "_load_policy", lambda path: ThinClientPolicy())
+    monkeypatch.setattr(client_cli, "install_node_supervisor",
+                        lambda: (_ for _ in ()).throw(AssertionError("supervisor must not start")))
+    def fake_enroll_device(**kwargs):
+        cfg = ClientConfig(one_url=kwargs["one_url"], realm_id=tenant,
+                           node_id="same-node", node_token="staged-secret")
+        cfg.save(kwargs["config_path"])
+        return cfg
+    class FakeTransport:
+        def health(self): return {"ok": True}
+        def heartbeat(self): return {"ok": True, "heartbeat_recorded": True}
+    monkeypatch.setattr(ThinClientTransport, "enroll_device", fake_enroll_device)
+    monkeypatch.setattr(client_cli, "build_client", lambda cfg, policy: FakeTransport())
+
+    assert client_cli.main(["--config", str(stage), "join", "--one", ORIGIN,
+                            "--realm-id", tenant, "--node-id", "same-node",
+                            "--stage-only"]) == 0
+    assert json.loads(active.read_text(encoding="utf-8")) == previous
+    assert json.loads(stage.read_text(encoding="utf-8"))["realm_id"] == tenant
+    assert client_cli.main(["--config", str(active), "join", "--one", ORIGIN,
+                            "--realm-id", tenant, "--node-id", "same-node",
+                            "--stage-only"]) == 2
+    assert client_cli.main(["--config", str(stage), "join", "--one", ORIGIN,
+                            "--realm-id", tenant, "--node-id", "same-node",
+                            "--stage-only"]) == 2
+    assert json.loads(active.read_text(encoding="utf-8")) == previous
+
+
+def test_windows_switch_is_prepare_only_and_cannot_delete_active_config():
+    from pathlib import Path
+    script = (Path(__file__).resolve().parents[1] /
+              "scripts/bootstrap_clean_windows_node.ps1").read_text(encoding="utf-8")
+    assert "agentos_realm_switch=STAGED_VERIFIED" in script
+    assert "agentos_active_binding=PRESERVED" in script
+    assert "agentos_realm_switch_cutover=NOT_AUTHORIZED_UNTIL_SUPERVISOR_ROLLBACK_VERIFIED" in script
+    assert "client.stage.json" in script
+    assert '"--stage-only"' in script
+    assert "Remove-Item -LiteralPath $config" not in script
+    assert "Copy-Item -LiteralPath $originalPolicy -Destination $policy" in script
