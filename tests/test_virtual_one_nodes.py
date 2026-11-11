@@ -267,3 +267,29 @@ def test_windows_switch_is_prepare_only_and_cannot_delete_active_config():
     assert '"--stage-only"' in script
     assert "Remove-Item -LiteralPath $config" not in script
     assert "Copy-Item -LiteralPath $originalPolicy -Destination $policy" in script
+
+
+def test_windows_realm_cutover_requires_authorization_atomic_swap_and_fresh_heartbeat():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "scripts/windows/commit_staged_realm.ps1").read_text(encoding="utf-8")
+    installer = (root / "scripts/install_thin_client_windows.ps1").read_text(encoding="utf-8")
+    assert "scripts/windows/commit_staged_realm.ps1" in installer
+    assert "if (-not $CommitApproved)" in script
+    assert "client.stage.json" in script
+    assert "client.json" in script
+    assert "agentos.node-heartbeat-lease/v0.1" in script
+    assert "node_token" in script
+    assert "health | Out-Null" in script
+    assert "[IO.File]::Replace($temp, $originalFile, $backup)" in script
+    assert "[IO.File]::Replace($backup, $originalFile, $failedTarget)" in script
+    assert "agentos_realm_switch=COMMITTED_VERIFIED" in script
+    assert "agentos_realm_switch=ROLLED_BACK_VERIFIED" in script
+    assert "agentos_realm_switch=ROLLBACK_UNVERIFIED" in script
+    assert "agentos_active_binding=REQUIRES_OPERATOR_REVIEW" in script
+    assert "Get-CimInstance Win32_Process" in script
+    assert "Start-ScheduledTask" in script
+    assert "Stop-ScheduledTask" in script
+    assert "if ($hasWatchdog)" in script
+    assert "one_runtime_attested=true" not in script
+    assert "Remove-Item -LiteralPath $originalFile" not in script
