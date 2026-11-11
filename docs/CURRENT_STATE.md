@@ -1586,3 +1586,20 @@ IFTV #3 receipt/QA requirements remain unchanged.
   its trusted host resolver and recovery UX are installed; otherwise
   code-writing job submission will block safely. This remains a
   governed proposed change under #1682 and PR #2269.
+
+
+- A proposed **Oracle-side trusted Git host resolver** now exists at
+  `agentos_node/branch_resume_host_probe.py`. Its operator-only map binds
+  registered code-job types to their *actual* Executor worktree, checks the
+  configured origin URL and clean worktree, reads current remote main into
+  ephemeral `FETCH_HEAD`, and invokes the existing Git ancestry gate.
+  It does not change an Executor branch or write protected main. Tests
+  exercise real local/bare Git remote advancement, stale refusal, origin
+  mismatch, dirty worktree and ONE dispatch prevention.
+- **Unconfigured in production:** This resolver must be attached to the
+  live `ControllerService(code_resume_probe=...)` by the trusted Oracle
+  service composition after verifying each job's actual worker checkout.
+  A guessed local directory, model-provided worktree or token, or an
+  external GitHub CI result is not acceptable identity evidence.
+  Source tests do not establish that Oracle host resolver or deployed
+  ONE currently uses it. This guard is still in unmerged PR #2269.
