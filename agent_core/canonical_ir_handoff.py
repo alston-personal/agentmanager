@@ -169,6 +169,10 @@ def advance_canonical_ir(
     current_continuation = canonical_ir.get("continuation", {})
     if not isinstance(current_continuation, dict):
         raise ValueError("current.continuation must be an object")
+    if execution_metadata.get("updated_by") == "ir_stop_sync" and next_action != (
+        current_continuation.get("next_action") or current_continuation.get("recommended_action")
+    ):
+        raise ValueError("automatic Stop must preserve the existing next action")
     pending_tasks = _clean_strings(
         params["pending_tasks"] if "pending_tasks" in params else canonical_ir.get("pending_tasks"),
         field="pending_tasks",
@@ -212,7 +216,7 @@ def advance_canonical_ir(
                 "decisions": decisions,
                 "pending_tasks": pending_tasks,
                 "evidence": evidence,
-                "continuation": {
+                "continuation": deepcopy(current_continuation) if execution_metadata.get("updated_by") == "ir_stop_sync" else {
                     **deepcopy(current_continuation),
                     "recommended_action": next_action,
                     "next_action": next_action,
