@@ -75,7 +75,7 @@ def test_realm_selector_never_grants_access_to_other_owner(tmp_path):
     with patch("agent_core.virtual_one_nodes._current_identity",
                return_value={"provider":"google","subject":"applicant-001"}):
         assert owner_approve_code(host=HOST,cookie="x",origin=ORIGIN,
-                                  code="XXXX-XXXX",root=tenants)[0]==400 or True
+                                  code="XXXX-XXXX",root=tenants)[0]==400
         assert owner_approve_code(host=HOST,cookie="x",origin=ORIGIN,
                                   code="ABCD-EFGH",root=tenants)[0]==409
 
