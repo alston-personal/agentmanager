@@ -83,6 +83,8 @@ def test_realm_selector_never_grants_access_to_other_owner(tmp_path):
 def test_virtual_one_html_supports_code_approval_and_map():
     from agent_core.companion_web import render_my_one_html
     html=render_my_one_html()
+    assert 'id="agentos-account-identity"' in html
+    assert 'session.username' in html
     assert "Node Map" in html
     assert "核准加入 Node" in html
     assert "/v1/account/virtual-one/nodes" in html
