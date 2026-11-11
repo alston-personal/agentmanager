@@ -235,7 +235,7 @@ class ThinClientTransport:
         url = node_runtime_endpoint(self.config, 'health')
         if _TENANT_REALM_ID.fullmatch(self.config.realm_id):
             url += '?' + urllib.parse.urlencode({'node_id': self.config.node_id})
-        return self._request(url, token=self.config.node_token, retries=2)
+        return self._request(url, token=self.config.node_token if _TENANT_REALM_ID.fullmatch(self.config.realm_id) else None, retries=2)
 
     def heartbeat(self) -> dict[str, Any]:
         if not self.config:
