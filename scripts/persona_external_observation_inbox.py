@@ -56,7 +56,10 @@ def _vendor_resolve_public(url):
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=18) as response:
+    # Existing Vendor Reader may spend up to 12s on share redirect and 45s on
+    # public browser navigation, plus startup/rendering. This bound remains
+    # below the existing five-minute tick and makes no social writes.
+    with urllib.request.urlopen(request, timeout=75) as response:
         return json.loads(response.read(65536).decode("utf-8"))
 
 
