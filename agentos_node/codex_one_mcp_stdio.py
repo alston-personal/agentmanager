@@ -136,8 +136,10 @@ def create_server(gateway: OracleLocalGateway | None = None):
         return _project_codex_client(one.resolve(project))
 
     @server.tool()
-    def one_checkpoint(summary: str, next_action: str = "", decision: str = "") -> dict[str, Any]:
-        """Advance the ONE Canonical IR and active selector with a bounded work checkpoint."""
+    def one_checkpoint(summary: str, next_action: str = "", decision: str = "",
+                       completed_tasks: list[str] | None = None, expected_project_id: str = "",
+                       expected_index_id: str = "", expected_ir_id: str = "") -> dict[str, Any]:
+        """Checkpoint work; remove exact completed_tasks only with the observed project/index/IR generation. Stop summaries alone never complete tasks."""
         receipt = advance_active_ir_checkpoint(
             surface=SURFACE,
             model_name=EXECUTOR_CLASS,
@@ -145,6 +147,10 @@ def create_server(gateway: OracleLocalGateway | None = None):
             assistant_summary=summary,
             explicit_next_action=next_action,
             explicit_decision=decision,
+            completed_tasks=completed_tasks,
+            expected_project_id=expected_project_id,
+            expected_index_id=expected_index_id,
+            expected_ir_id=expected_ir_id,
             data_root=one.data_root,
         )
         return _project_codex_client(receipt)

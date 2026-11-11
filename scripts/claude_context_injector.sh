@@ -6,8 +6,8 @@
 #   1. Inject pulse state + project STATUS.md ONCE per session
 #      (or once after /compact shrinks the transcript).
 #   2. Stay silent (0 extra tokens) on normal subsequent turns.
-#   3. Emit a 2-line Context Budget + Subagent delegation notice
-#      when the session transcript exceeds 300KB (~75k tokens).
+#   3. Emit a 2-line notice when transcript size crosses 300KB.
+#      Transcript bytes are not measured model tokens or billing usage.
 # ============================================================
 
 HOOK_INPUT=""
@@ -56,9 +56,9 @@ if [ -n "$SESSION_ID" ]; then
         # Re-hydrate only if transcript shrank by >50% after /compact
         if [ "$PREV_SIZE" -le 30000 ] || [ "$TRANSCRIPT_SIZE" -ge $((PREV_SIZE / 2)) ]; then
             printf '%s\n' "$TRANSCRIPT_SIZE" > "$STAMP_FILE" 2>/dev/null || true
-            if [ "$TRANSCRIPT_SIZE" -ge 307200 ]; then
-                printf '%s\n' "⚠️ [AgentOS Context Budget Guard] Session transcript is $((TRANSCRIPT_SIZE / 1024))KB (~$((TRANSCRIPT_SIZE / 4)) tokens)."
-                printf '%s\n' "Delegate multi-step investigations or edits (>3 tool calls) to the \`Task\` subagent tool to prevent context bloat, and remind the user to run \`/compact\`."
+            if [ "$TRANSCRIPT_SIZE" -ge 307200 ] && [ "$PREV_SIZE" -lt 307200 ]; then
+                printf '%s\n' "⚠️ [AgentOS Context Budget Guard] Session transcript crossed 300KB; file size is not measured token usage."
+                printf '%s\n' "Keep reads and outputs bounded; checkpoint progress before compacting if needed. Continue authorized work serially."
             fi
             exit 0
         fi
@@ -125,7 +125,7 @@ printf '%s\n' "
 
 **Current Project**: \`$PROJECT_NAME\`
 **Project Dir**: \`$PROJECT_DIR\`
-**Context Policy**: Hydrated once per session. For multi-step investigations or refactors (>4 tool calls), delegate to the \`Task\` subagent tool and return only a concise summary.
+**Context Policy**: Hydrated once per session. Continue authorized work serially, keeping reads and outputs bounded. Tool-call count alone does not require delegation or ending the turn.
 
 ### 🌐 Swarm Pulse State
 \`\`\`json

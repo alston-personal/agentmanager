@@ -423,6 +423,46 @@ class AntigravityOneHookTests(unittest.TestCase):
                 data_root=root,
             )
 
+    def test_checkpoint_completion_is_explicit_fenced_and_stays_empty(self):
+        from unittest.mock import patch
+        from agentos_node.ir_stop_sync import advance_active_ir_checkpoint
+        from agentos_node.codex_one_mcp_stdio import _active_projection
+        from agentos_node.one_mcp import OracleLocalGateway
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_temp_data_root(root)
+            project = {"id": "agentos-core", "identity_source": "governance-directory",
+                       "governance_entity_id": "project://agentos-core",
+                       "integrity": {"mutation_allowed": True}}
+            kwargs = dict(surface="test", model_name="test", user_intent="continue",
+                          assistant_summary="done", data_root=root)
+            fence = dict(expected_project_id="agentos-core", expected_index_id="idx-seed-1",
+                         expected_ir_id="ir-seed-1")
+            task = "Verify Stop hook and Codex projection"
+            selector_path = root / "runtime" / "active-continuation.json"
+            original = selector_path.read_bytes()
+            with patch("agent_core.project_continuation_index.resolve_project_identity", return_value=project), \
+                 patch("agent_core.resolve_facade.resolve_project_identity", return_value=project):
+                for bad in ({"completed_tasks": [task]},
+                            {**fence, "completed_tasks": ["unknown"]},
+                            {**fence, "expected_ir_id": "stale", "completed_tasks": [task]},
+                            {**fence, "expected_project_id": "other", "completed_tasks": [task]}):
+                    with self.assertRaises(ValueError):
+                        advance_active_ir_checkpoint(**kwargs, **bad)
+                    self.assertEqual(selector_path.read_bytes(), original)
+                result = advance_active_ir_checkpoint(**kwargs, **fence, completed_tasks=[task])
+                self.assertEqual(result["completed_tasks"], [task])
+                def pending():
+                    return _active_projection(OracleLocalGateway(data_root=root))["resolution"]["continuation"]["canonical_ir"]["pending_tasks"]
+                self.assertEqual(pending(), [])
+                after_completion = selector_path.read_bytes()
+                with self.assertRaises(ValueError):
+                    advance_active_ir_checkpoint(**kwargs, **fence, completed_tasks=[task])
+                self.assertEqual(selector_path.read_bytes(), after_completion)
+                advance_active_ir_checkpoint(**kwargs)
+                self.assertEqual(pending(), [])
+
     def test_stop_hook_advances_canonical_ir_and_codex_projection_resolves_it(self):
         from unittest.mock import patch
         from agentos_node.codex_one_mcp_stdio import _active_projection
@@ -491,6 +531,7 @@ class AntigravityOneHookTests(unittest.TestCase):
                 self.assertEqual(projection["selector"]["ir_id"], selector["ir_id"])
                 ir = projection["resolution"]["continuation"]["canonical_ir"]
                 self.assertEqual(ir["parent_ir_id"], "ir-seed-1")
+                self.assertEqual(ir["pending_tasks"], ["Verify Stop hook and Codex projection"])
                 self.assertIn("實作 Stop hook 自動同步 IR", ir["continuation"]["next_action"])
                 self.assertIn("已完成 Stop hook", ir["continuation"]["next_action"])
 
