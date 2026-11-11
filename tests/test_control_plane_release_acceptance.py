@@ -19,6 +19,8 @@ def test_release_inspector_requires_signin_shell_and_oauth_session():
             self.end_headers()
             if self.path == "/":
                 self.wfile.write("AgentOS 以 Google 登入".encode())
+            elif self.path == "/welcome":
+                self.wfile.write("登入狀態；管理者 Console 不會自動開放".encode())
             elif self.path == "/companion":
                 self.wfile.write(b"AgentOS Console: Node Map")
             else:
@@ -33,6 +35,7 @@ def test_release_inspector_requires_signin_shell_and_oauth_session():
     base = f"http://127.0.0.1:{server.server_port}"
     try:
         assert probe(base + "/", "test-secret", kind="shell")["ok"]
+        assert probe(base + "/welcome", "test-secret", kind="welcome")["ok"]
         assert probe(base + "/companion", "test-secret", kind="companion")["ok"]
         assert probe(base + "/dashboard/api/auth/session", "test-secret", kind="auth_session")["ok"]
     finally:
