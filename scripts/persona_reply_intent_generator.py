@@ -170,7 +170,7 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
         # Root verification is separate: omitted reply/root fields must never
         # be treated as an explicit non-reply declaration.
         match = matches[0]
-        if match.get("root_post") != {"id": root_id}:
+        if match.get("is_reply_attested") is not True or match.get("is_reply") is not False:
             reject("external_root_unverified")
             continue
         read_at = normalize_ts(provider.get("completed_at"))
