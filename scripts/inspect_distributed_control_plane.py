@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 
 
 def probe(url, token, *, kind):
-    headers = {'Authorization': 'Bearer ' + token} if kind not in ('shell', 'companion', 'auth_session') else {}
+    headers = {'Authorization': 'Bearer ' + token} if kind not in ('shell', 'welcome', 'companion', 'auth_session') else {}
     if kind == 'auth_session':
         # Local probe must mimic the public virtual host; the OAuth bridge
         # intentionally refuses arbitrary Host headers on 127.0.0.1.
@@ -41,6 +41,10 @@ def probe(url, token, *, kind):
                            'credential_absent': bool(token) and token not in body,
                            'noindex': 'noindex' in response.headers.get('X-Robots-Tag', '')}
                 valid = valid and details['noindex']
+            elif kind == 'welcome':
+                valid = status == 200 and '登入狀態' in body and '管理者 Console 不會自動開放' in body
+                details = {'session_status_ui': '登入狀態' in body,
+                           'no_operator_grant': '管理者 Console 不會自動開放' in body}
             elif kind == 'companion':
                 valid = status == 200 and 'Node Map' in body and bool(token) and token not in body
                 details = {'legacy_operator_ui': 'Node Map' in body,
@@ -116,7 +120,7 @@ def inspect(expected_sha, public_url):
     probes = {}
     for label, base in [('local', local_url), ('public', public_url.rstrip('/'))]:
         probes[label] = {kind: probe(base + path, token, kind=kind) for kind, path in
-                         [('shell', '/'), ('companion', '/companion'),
+                         [('shell', '/'), ('welcome', '/welcome'), ('companion', '/companion'),
                           ('auth_session', '/dashboard/api/auth/session'),
                           ('nodes', '/v1/nodes'), ('approval', '/v1/nodes/approve')]}
         for provider in ('google', 'github', 'facebook', 'line'):

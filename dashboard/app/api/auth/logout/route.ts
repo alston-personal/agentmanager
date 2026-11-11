@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveAuthSite, safeLocalReturnTo } from '@/lib/auth/site';
+import { authCookieName, resolveAuthSite, safeLocalReturnTo } from '@/lib/auth/site';
 
 export async function GET(request: NextRequest) {
   const resolved = resolveAuthSite(request);
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     domain: '.milkcat.org', path: '/', sameSite: 'lax', maxAge: 0,
   });
   response.cookies.set({
-    name: 'auth_token', value: '', httpOnly: true, secure: true,
+    name: authCookieName(resolved.site), value: '', httpOnly: true, secure: true,
     path: '/', sameSite: 'lax', maxAge: 0,
   });
   return response;

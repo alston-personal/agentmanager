@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
+import { authCookieName, resolveAuthSite } from '@/lib/auth/site';
 import { roleForIdentity } from '@/lib/auth/roles';
 import fs from 'fs';
 import path from 'path';
@@ -20,7 +21,12 @@ function getLikedSlugs(username: string): string[] {
 }
 
 export async function GET(request: NextRequest) {
-  const authTokens = request.cookies.getAll('auth_token').map((cookie) => cookie.value).filter(Boolean);
+  const site = resolveAuthSite(request);
+  if (!site) return NextResponse.json({ loggedIn: false, error: 'invalid_site' }, { status: 400 });
+  // AgentOS may only read AgentOS-scoped sessions. Studio retains its
+  // existing auth_token cookie for backward-compatible Studio sign-ins.
+  const authTokens = request.cookies.getAll(authCookieName(site.site))
+    .map((cookie) => cookie.value).filter(Boolean);
 
   const providers = {
     github: !!process.env.GITHUB_CLIENT_ID,
