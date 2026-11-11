@@ -97,5 +97,46 @@
     "No active workflow/service relying on the six legacy actions would fail after deployment",
     "GitHub CI and Oracle real task execution receipt confirm new controller+worker version gate",
     "Human PR-specific approval authorizes promotion and rollout"
-  ]
+  ],
+  "static_contract_findings": {
+    "evidence_scope": "GitHub main source only; NOT Oracle loaded runtime",
+    "installer_contract": {
+      "path": "scripts/install_realm_fabric_via_action_relay.py",
+      "direct_actions": [
+        "claim_deployment",
+        "install_release",
+        "deployment_status",
+        "release_deployment",
+        "advance_deployment"
+      ],
+      "lease_seconds": 900,
+      "checks": [
+        "claimed deployment generation/owner/commit",
+        "receipt completion",
+        "converged status"
+      ],
+      "renew_deployment": "not referenced by this installer; global consumer usage UNKNOWN"
+    },
+    "generation5_release_workflow": {
+      "path": ".github/workflows/oracle-core-generation5-resume-release.yml",
+      "direct_action": "release_deployment",
+      "contract": "checks generation 5 converged lease and receipt before declaring PASS",
+      "operational_usage": "UNKNOWN"
+    },
+    "runtime_source_guard": {
+      "path": "agentos_node/runtime_converge_action_relay.py",
+      "note": "line 702 explicitly rejects source_ref other than core/integration; this is source-contract dependence, not evidence of loaded Oracle ref"
+    },
+    "reconciliation_source_selector": {
+      "path": "scripts/reconcile_action_relay_runtime.py",
+      "note": "SOURCE_REF is core/integration, separate from dynamically observed runtime service generation"
+    },
+    "decision": "KEEP DRAFT: preserve live release authority until host readback, consumer receipts, and replacement parity are proven",
+    "next_read_only_attestation": [
+      "systemd MainPID/ExecStart/WorkingDirectory/DropInPaths without environment secrets",
+      "/proc/PID/exe and cwd plus resolved Python module path",
+      "loaded source SHA and exact Realm Fabric symlink/immutable version",
+      "redacted recent action names, caller identities, and correlated receipt IDs for all six operations"
+    ]
+  }
 }
