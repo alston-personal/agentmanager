@@ -129,7 +129,7 @@ jobs:
                 ? '- Acceptance: deploy job completed; inspect the run logs for exact accepted-release SHA. Authenticated admin/tenant sessions remain separate acceptance gates.'
                 : '- Acceptance: **not established**. Inspect the linked deploy job failure and retain the existing rollback contract.',
               '- Work item: #2198 (existing; no new issue or deployment lane).',
-            ].join('\\n');
+            ].join('\n');
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number, per_page: 100
             });
