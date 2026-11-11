@@ -49,7 +49,7 @@ class MorningTrendStagingTests(unittest.TestCase):
                                           "generated_at":(datetime.now(timezone.utc)-timedelta(days=8)).isoformat(),
                                           "synthesized":{"highlights":[]}}))
             self.assertIn("SOURCE_STALE",execute())
-            self.assertNotIn("2026-", (root/"morning_reading.json").read_text())
+            self.assertEqual(json.loads((root/"morning_reading.json").read_text())["generated_at"],fresh)
             source.write_text(json.dumps({"subscription_id":"other","generated_at":fresh}))
             self.assertIn("SOURCE_MISSING_OR_INVALID",execute())
 
