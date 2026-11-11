@@ -686,7 +686,7 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
     if (!response.ok) throw new Error('session_unavailable');
     const session = await response.json();
     if (session.loggedIn === true && session.provider && session.subject) {
-      status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。';
+      status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。管理者 Console 不會自動開放。';
       const onboarding = document.getElementById('realm-onboarding');
       const current = document.getElementById('realm-status');
       const actions = document.getElementById('realm-actions');
