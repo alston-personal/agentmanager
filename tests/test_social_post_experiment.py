@@ -1,7 +1,7 @@
 import unittest
 import hashlib
 from pathlib import Path
-from scripts.run_social_post_experiment_queue_user import REPO as MONITOR_RELEASE_ROOT
+from scripts.run_social_post_experiment_queue_user import REPO as MONITOR_RELEASE_ROOT, classify_child_failure
 from agentos_node.social.post_experiment import CheckpointPolicy, build_snapshot, learning_record, next_observation
 
 class SocialPostExperimentTests(unittest.TestCase):
@@ -74,6 +74,14 @@ class SocialPostExperimentTests(unittest.TestCase):
             captured_at="2026-11-10T00:00:00Z")
         with self.assertRaises(ValueError):
             learning_record(snap,elapsed_minutes=-1)
+
+    def test_monitor_child_failure_classification_is_allowlisted_and_secret_free(self):
+        self.assertEqual(classify_child_failure('social_experiment=POST_READ_FAILED\\n'), 'POST_READ_FAILED')
+        self.assertEqual(classify_child_failure('social_experiment=PRODUCT_KEY_UNAVAILABLE\\n'), 'PRODUCT_KEY_UNAVAILABLE')
+        self.assertEqual(classify_child_failure('social_experiment=POST_NOT_FOUND\\n'), 'POST_NOT_FOUND')
+        self.assertEqual(classify_child_failure('Traceback token=private\\nsocial_experiment=unknown_secret\\n'), 'UNCLASSIFIED_CHILD_FAILURE')
+        self.assertEqual(classify_child_failure('social_experiment=POST_READ_FAILED token=private\\n'), 'UNCLASSIFIED_CHILD_FAILURE')
+        self.assertEqual(classify_child_failure(''), 'UNCLASSIFIED_CHILD_FAILURE')
 
     def test_queue_uses_same_immutable_release_for_monitor_child(self):
         # Under Oracle, both files are loaded from the same pinned release.
