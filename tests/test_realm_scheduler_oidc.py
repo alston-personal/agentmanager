@@ -83,3 +83,27 @@ def test_scheduler_oidc_canonical_workflow_rejects_issue_comment_event():
     claims["event_name"] = "issue_comment"
     with pytest.raises(PermissionError):
         _validate_github_scheduler_claims(claims)
+
+
+def test_scheduler_oidc_accepts_only_approved_main_vision_studio_push():
+    claims = _claims()
+    claims["ref"] = "refs/heads/main"
+    claims["workflow_ref"] = "alston-personal/agentmanager/.github/workflows/vision-studio-rain-exit.yml@refs/heads/main"
+    claims["event_name"] = "push"
+    _validate_github_scheduler_claims(claims)
+
+
+@pytest.mark.parametrize(
+    ("ref", "workflow_ref", "event_name"),
+    [
+        ("refs/heads/main", "alston-personal/agentmanager/.github/workflows/vision-studio-rain-exit.yml@refs/heads/main", "pull_request"),
+        ("refs/heads/main", "alston-personal/agentmanager/.github/workflows/vision-studio-rain-exit.yml@refs/heads/main", "workflow_dispatch"),
+        ("refs/heads/main", "alston-personal/agentmanager/.github/workflows/another-video.yml@refs/heads/main", "push"),
+        ("refs/heads/other", "alston-personal/agentmanager/.github/workflows/vision-studio-rain-exit.yml@refs/heads/main", "push"),
+    ],
+)
+def test_scheduler_oidc_vision_studio_carrier_rejects_other_authority(ref, workflow_ref, event_name):
+    claims = _claims()
+    claims.update({"ref": ref, "workflow_ref": workflow_ref, "event_name": event_name})
+    with pytest.raises(PermissionError):
+        _validate_github_scheduler_claims(claims)
