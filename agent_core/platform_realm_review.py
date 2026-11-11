@@ -7,14 +7,41 @@ see or decide requests. Ordinary OAuth login has no access.
 """
 from __future__ import annotations
 import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
-from .account_realm_onboarding import _current_identity
+from .account_realm_onboarding import _current_identity, _BASE as REQUEST_ROOT
 from .approval_broker import load_box, resolve_approval
 
 _HOST = "agentos.milkcat.org"
 _ORIGIN = "https://agentos.milkcat.org"
 _PREFIX = "realm-onboarding-"
+
+
+def _applicant(request_id: str, actor: str, root: Path = REQUEST_ROOT) -> dict[str, str]:
+    """Read a verified applicant record without exposing the OAuth subject."""
+    prefix = request_id.removeprefix(_PREFIX)
+    if (len(prefix) != 32 or
+            any(c not in "0123456789abcdef" for c in prefix) or
+            actor != "oauth-account:" + prefix[:16]):
+        return {"name": "未提供（舊申請）", "provider": "unknown", "identity_verified": "false"}
+    try:
+        for file in root.glob(prefix + "*.json"):
+            if not file.is_file():
+                continue
+            record = json.loads(file.read_text(encoding="utf-8"))
+            if record.get("request_id") != request_id or not str(record.get("actor") or "").startswith(prefix):
+                continue
+            provider = str(record.get("provider") or "unknown").lower()
+            if provider not in ("google", "github", "facebook", "line"):
+                provider = "unknown"
+            name = str(record.get("applicant_display_name") or "").strip()[:128]
+            return {"name": name or "未提供（舊申請）", "provider": provider,
+                    "identity_verified": "true" if name else "false"}
+    except (ValueError, OSError, TypeError):
+        pass
+    return {"name": "未提供（舊申請）", "provider": "unknown", "identity_verified": "false"}
 
 
 def _project(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -26,6 +53,7 @@ def _project(item: dict[str, Any]) -> dict[str, Any] | None:
         return None
     if payload.get("request_id") != request_id:
         return None
+    applicant = _applicant(request_id, str(item.get("actor") or ""))
     return {
         "request_id": request_id,
         "kind": payload.get("kind"),
@@ -34,6 +62,11 @@ def _project(item: dict[str, Any]) -> dict[str, Any] | None:
         "parked_at": item.get("parked_at"),
         "resolved_at": item.get("resolved_at"),
         "resolved_by": item.get("resolved_by"),
+        "applicant": applicant,
+        "applicant_ref": request_id.removeprefix(_PREFIX)[:12],
+        "stage": ("approved_pending_one" if item.get("status") == "APPROVED" else
+                  "rejected" if item.get("status") == "REJECTED" else "pending_review"),
+        "provisioned": False,
         # Never project internal account identity or arbitrary payloads.
     }
 

@@ -42,7 +42,9 @@ def _current_identity(*, host: str, cookie: str | None) -> dict[str, str] | None
     subject = str(session.get("subject") or "")
     if provider not in {"google", "github", "facebook", "line"} or not subject or len(subject) > 256:
         return None
-    return {"provider": provider, "subject": subject, "role": str(session.get("role") or "user")}
+    display_name = str(session.get("username") or "").strip()[:128]
+    return {"provider": provider, "subject": subject, "role": str(session.get("role") or "user"),
+            "display_name": display_name}
 
 
 def account_request(
@@ -75,6 +77,24 @@ def account_request(
             record = json.loads(file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return 503, {"ok": False, "error": "registration_unavailable"}
+        # For existing requests created before applicant details were supported,
+        # refresh the name only from the same verified OAuth identity. This
+        # does not change the requested action, identity hash or grant rights.
+        name = identity.get("display_name", "").strip()
+        if name and not record.get("applicant_display_name"):
+            record["applicant_display_name"] = name
+            tmp = file.with_suffix(".tmp")
+            try:
+                with open(tmp, "x", encoding="utf-8") as fp:
+                    json.dump(record, fp, ensure_ascii=False)
+                    fp.write("\n")
+                    fp.flush()
+                    os.fsync(fp.fileno())
+                os.replace(tmp, file)
+            except FileExistsError:
+                pass
+            except OSError:
+                tmp.unlink(missing_ok=True)
         # Distinguish governance decision from actual ONE provisioning.
         # Even an approved request grants no account-to-Realm membership.
         state = "pending_review"
@@ -110,6 +130,7 @@ def account_request(
         "request_id": request_id,
         "actor": digest,
         "provider": identity["provider"],
+        "applicant_display_name": identity.get("display_name", ""),
         "kind": kind,
         "realm_id": realm_id if kind == "join" else None,
         "state": "pending_review",

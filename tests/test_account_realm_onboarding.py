@@ -107,3 +107,32 @@ def test_applicant_sees_real_review_state_not_false_realm_activation(tmp_path):
         code, state = account_request(method="GET", host=HOST, cookie="x", origin=None, root=tmp_path)
         assert code == 200 and state["state"] == "rejected"
         assert state["provisioned"] is False
+
+
+def test_existing_applicant_enriches_legacy_request_from_verified_session(tmp_path):
+    import json
+    import hashlib
+    actor = {"provider": "google", "subject": "legacy-identity", "role": "user",
+             "display_name": "Verified Google Applicant"}
+    digest = hashlib.sha256(("google" + "\x00" + actor["subject"]).encode()).hexdigest()
+    req_id = "realm-onboarding-" + digest[:32]
+    file = tmp_path / (digest + ".json")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    file.write_text(json.dumps({
+        "schema": "agentos.account-realm-onboarding/v1",
+        "request_id": req_id, "actor": digest, "provider": "google",
+        "kind": "create", "realm_id": None, "state": "pending_review",
+        "created_at": "2026-11-11T00:00:00Z", "provisioned": False,
+    }), encoding="utf-8")
+    with patch("agent_core.account_realm_onboarding._current_identity", return_value=actor), patch(
+        "agent_core.account_realm_onboarding.load_box", return_value={"history": []}
+    ):
+        code, response = account_request(
+            method="GET", host=HOST, cookie="test", origin=None, root=tmp_path,
+        )
+    saved = json.loads(file.read_text(encoding="utf-8"))
+    assert code == 200 and response["kind"] == "create"
+    assert saved["applicant_display_name"] == "Verified Google Applicant"
+    assert saved["request_id"] == req_id
+    assert saved["actor"] == digest
+    assert saved["provisioned"] is False
