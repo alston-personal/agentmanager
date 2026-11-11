@@ -2,6 +2,10 @@ name: Oracle Colab MiniMax H3 Smoke
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/oracle-colab-minimax-h3-smoke.yml'
+      - 'tests/test_oracle_colab_smoke_workflow.py'
 
 permissions:
   contents: read
@@ -11,7 +15,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate H3 smoke static safety contract without GPU
+        run: python3 -m unittest discover -s tests -p test_oracle_colab_smoke_workflow.py -v
   smoke:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 45
     env:
@@ -109,15 +122,21 @@ jobs:
           USAGE_BEFORE_RC=$?
           set -e
 
-          set +e
-          python3 "$RELEASE/scripts/runner.py" batch \
+          # Never begin a paid GPU session when the authenticated Colab
+          # usage preflight failed. Preserve an explicit failure receipt.
+          if [ "$USAGE_BEFORE_RC" -ne 0 ]; then
+            RC=23
+          else
+            set +e
+            python3 "$RELEASE/scripts/runner.py" batch \
             --manifest "$WORK/jobs.json" \
             --gpu A100 \
             --timeout 1500 \
             --output-dir "$OUT" \
             --progress "$WORK/progress.json" > "$WORK/runner.log" 2>&1
-          RC=$?
-          set -e
+            RC=$?
+            set -e
+          fi
 
           USAGE_AFTER="$WORK/usage-after.txt"
           colab --auth=adc usage > "$USAGE_AFTER" 2>&1 || true
