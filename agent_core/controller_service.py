@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from agent_core.executor_job_contract import validate_executor_job
+from agent_core.code_resume_authority import require_fresh_code_resume
 from agent_core.realm_fabric import RealmFabricStore
 from agent_core.runtime_converge_contract import SCHEMA as RUNTIME_CONVERGE_SCHEMA, validate_runtime_converge_request
 
@@ -143,28 +144,7 @@ class ControllerService:
         # because it was previously claimed. Resolve its SHA and current main
         # via an independently trusted host probe at every dispatch attempt.
         # No branch, SHA, or bypass flag may come from model task fields.
-        if spec.authority == "bounded-code-fix":
-            if self._code_resume_probe is None:
-                raise ValueError("CODE_MAINLINE_PROBE_UNAVAILABLE")
-            try:
-                verdict = self._code_resume_probe(spec)
-            except Exception as exc:
-                raise ValueError("CODE_MAINLINE_EVIDENCE_UNAVAILABLE") from exc
-            if (not isinstance(verdict, dict)
-                or verdict.get("schema") != "agentos.branch-resume-gate/v1"
-                or verdict.get("status") != "MAINLINE_CURRENT"
-                or verdict.get("allowed") is not True
-                or verdict.get("production_authorized") is not False
-                or not isinstance(verdict.get("main_sha"), str)
-                or not isinstance(verdict.get("work_sha"), str)
-                or not isinstance(verdict.get("merge_base_sha"), str)
-                or any(
-                    len(verdict[key]) != 40
-                    or any(ch not in "0123456789abcdef" for ch in verdict[key])
-                    for key in ("main_sha", "work_sha", "merge_base_sha")
-                )
-                or verdict["main_sha"] != verdict["merge_base_sha"]):
-                raise ValueError("CODE_MAINLINE_RECONCILE_REQUIRED")
+        require_fresh_code_resume(spec, self._code_resume_probe)
         if node_id != self.EXECUTOR_JOB_NODE:
             raise ValueError(f'executor job is not routable to target node: {node_id}')
         submission = dict(self._executor_dispatcher().submit(node_id=node_id, request=payload))
