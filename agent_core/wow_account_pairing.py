@@ -128,30 +128,31 @@ def approve_pairing(*, host: str, origin: str | None, cookie: str | None, code: 
     if not _valid_host(host) or origin != ORIGIN:
         return 403, {"ok": False, "error": "invalid_origin"}
     now = int(time.time()) if now is None else now
-    row = _read(root, code, now)
-    if row is None or row.get("state") != "pending":
-        return 410, {"ok": False, "error": "pairing_not_pending"}
-    identity_reader = identity_reader or _current_identity
-    membership_reader = membership_reader or account_virtual_one
-    identity = identity_reader(host=host, cookie=cookie)
-    if not identity:
-        return 401, {"ok": False, "error": "signin_required"}
-    status, membership = membership_reader(host=host, cookie=cookie)
-    if status != 200 or membership.get("ok") is not True:
-        return 403, {"ok": False, "error": "realm_membership_required"}
-    realm = membership.get("realm_id")
-    if not isinstance(realm, str) or not (realm.startswith("realm-u-") and len(realm) == 32):
-        return 403, {"ok": False, "error": "unsupported_realm"}
-    row["state"] = "approved"
-    row["expires"] = now + SESSION_TTL
-    row["account"] = str(identity.get("display_name") or "")[:128]
-    row["realm"] = realm
-    # Do not store OAuth cookies, passwords, provider subjects or access tokens.
-    try:
-        _write(_path(root, code), row)
-    except OSError:
-        return 503, {"ok": False, "error": "pairing_unavailable"}
-    return 200, {"ok": True, "state": "approved"}
+    with _exclusive(root):
+        row = _read(root, code, now)
+        if row is None or row.get("state") != "pending":
+            return 410, {"ok": False, "error": "pairing_not_pending"}
+        identity_reader = identity_reader or _current_identity
+        membership_reader = membership_reader or account_virtual_one
+        identity = identity_reader(host=host, cookie=cookie)
+        if not identity:
+            return 401, {"ok": False, "error": "signin_required"}
+        status, membership = membership_reader(host=host, cookie=cookie)
+        if status != 200 or membership.get("ok") is not True:
+            return 403, {"ok": False, "error": "realm_membership_required"}
+        realm = membership.get("realm_id")
+        if not isinstance(realm, str) or not (realm.startswith("realm-u-") and len(realm) == 32):
+            return 403, {"ok": False, "error": "unsupported_realm"}
+        row["state"] = "approved"
+        row["expires"] = now + SESSION_TTL
+        row["account"] = str(identity.get("display_name") or "")[:128]
+        row["realm"] = realm
+        # Do not store OAuth cookies, passwords, provider subjects or access tokens.
+        try:
+            _write(_path(root, code), row)
+        except OSError:
+            return 503, {"ok": False, "error": "pairing_unavailable"}
+        return 200, {"ok": True, "state": "approved"}
 
 
 def poll_pairing(*, host: str, code: str, claim_secret: str, root: Path = ROOT,
@@ -175,15 +176,16 @@ def revoke_pairing(*, host: str, code: str, claim_secret: str, root: Path = ROOT
     if not _valid_host(host):
         return 400, {"ok": False, "error": "invalid_site"}
     now = int(time.time()) if now is None else now
-    row = _read(root, code, now)
-    if row is None or not _verify_secret(row, claim_secret):
-        return 404, {"ok": False, "error": "pairing_not_found"}
-    # A revoked session must not be replayable.
-    try:
-        _path(root, code).unlink(missing_ok=True)
-    except OSError:
-        return 503, {"ok": False, "error": "revocation_unavailable"}
-    return 200, {"ok": True, "state": "revoked"}
+    with _exclusive(root):
+        row = _read(root, code, now)
+        if row is None or not _verify_secret(row, claim_secret):
+            return 404, {"ok": False, "error": "pairing_not_found"}
+        # A revoked session must not be replayable.
+        try:
+            _path(root, code).unlink(missing_ok=True)
+        except OSError:
+            return 503, {"ok": False, "error": "revocation_unavailable"}
+        return 200, {"ok": True, "state": "revoked"}
 
 
 def authorization_html(*, host: str, code: str, cookie: str | None,
