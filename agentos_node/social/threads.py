@@ -192,6 +192,7 @@ class ThreadsCapability:
             "is_quote_post": bool(item.get("is_quote_post", False)),
             "has_replies": bool(item.get("has_replies", False)),
             "is_reply": bool(item.get("is_reply", False)),
+            "is_reply_attested": isinstance(item.get("is_reply"), bool),
             "is_reply_owned_by_me": bool(item.get("is_reply_owned_by_me", False)),
             "root_post": ref("root_post"),
             "replied_to": ref("replied_to"),
@@ -225,7 +226,7 @@ class ThreadsCapability:
                     "q": str(request.query or "").strip(),
                     "search_type": str(request.search_type or "RECENT").upper(),
                     "search_mode": str(request.search_mode or "KEYWORD").upper(),
-                    "fields": "id,text,timestamp,username,permalink",
+                    "fields": "id,text,timestamp,username,permalink,is_reply",
                     "limit": 10,
                 }
                 # Meta /debug_token identified that the current user token
