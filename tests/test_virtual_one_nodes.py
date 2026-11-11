@@ -96,3 +96,200 @@ def test_virtual_one_html_supports_code_approval_and_map():
     assert "登出" in html
     # Both actions must use the site-scoped sign-out endpoint, not client-side Realm switching.
     assert html.count('href="/dashboard/api/auth/logout?returnTo=%2F"') >= 2
+
+
+def test_tenant_windows_client_request_targets_exact_realm(monkeypatch):
+    """Existing ThinClient Join must use the same Realm API as /my-one."""
+    import pytest
+    from agentos_node.thin_client_transport import ThinClientTransport, device_join_base
+    from agentos_node.thin_client import ThinClientPolicy
+    realm = 'realm-u-' + 'a' * 24
+    seen = []
+
+    def request(url, **kwargs):
+        seen.append((url, kwargs))
+        return {'ok': True, 'request_id': 'join_' + 'b' * 20,
+                'claim_secret': 'secret', 'user_code': 'ABCD-EFGH'}
+    monkeypatch.setattr(ThinClientTransport, '_request', staticmethod(request))
+    result = ThinClientTransport.request_enrollment(
+        one_url='https://agentos.milkcat.org', realm_id=realm,
+        node_id='new-client', policy=ThinClientPolicy())
+    assert result['ok']
+    assert seen[0][0] == 'https://agentos.milkcat.org/v1/realms/' + realm + '/join/request'
+    assert seen[0][1]['body']['manifest']['realm_id'] == realm
+    assert device_join_base('https://studio.milkcat.org/dashboard/api/agentos') == (
+        'https://studio.milkcat.org/dashboard/api/agentos/v1/join')
+    with pytest.raises(ValueError, match='invalid_tenant_realm_id'):
+        device_join_base('https://agentos.milkcat.org', 'realm-alston')
+    with pytest.raises(ValueError, match='tenant_join_requires_agentos_origin'):
+        device_join_base('https://studio.milkcat.org', realm)
+
+
+def test_tenant_device_approval_and_claim_use_scoped_routes(monkeypatch, tmp_path):
+    from agentos_node.thin_client_transport import ThinClientTransport
+    realm = 'realm-u-' + 'c' * 24
+    seen = []
+
+    def request(url, **kwargs):
+        seen.append(url)
+        if url.endswith('/status'):
+            return {'status': 'approved'}
+        return {'status': 'enrolled', 'realm_id': realm,
+                'node_id': 'one-client', 'node_token': 'test-only'}
+    monkeypatch.setattr(ThinClientTransport, '_request', staticmethod(request))
+    config = ThinClientTransport.wait_for_approval(
+        one_url='https://agentos.milkcat.org', realm_id=realm,
+        request_id='join_' + 'a' * 20, claim_secret='test-secret',
+        config_path=tmp_path / 'client.json', timeout_seconds=10)
+    assert config.realm_id == realm
+    assert seen == [
+        'https://agentos.milkcat.org/v1/realms/' + realm + '/join/status',
+        'https://agentos.milkcat.org/v1/realms/' + realm + '/join/claim',
+    ]
+
+
+def test_tenant_node_scoped_heartbeat_and_owner_map_without_fake_one_runtime(tmp_path):
+    from agent_core.virtual_one_nodes import tenant_node_runtime
+    tenants, realm_id = boot(tmp_path)
+    identity = {"provider": "google", "subject": "applicant-001", "role": "user"}
+    manifest = {
+        "schema": "agentos.node-manifest/v0.1", "realm_id": realm_id,
+        "node_id": "fresh-device", "role": "client",
+        "capabilities": ["capture"], "platform": "Windows",
+    }
+    status, request = device_join(
+        host=HOST, realm_id=realm_id, action="request",
+        body={"manifest": manifest}, root=tenants)
+    assert status == 200
+    with patch("agent_core.virtual_one_nodes._current_identity", return_value=identity):
+        approved, _ = owner_approve_code(
+            host=HOST, cookie="owner-cookie", origin=ORIGIN,
+            code=request["user_code"], root=tenants)
+        assert approved == 200
+    status, claim = device_join(
+        host=HOST, realm_id=realm_id, action="claim",
+        body={"request_id": request["request_id"], "claim_secret": request["claim_secret"]},
+        root=tenants)
+    assert status == 200
+    token = claim["node_token"]
+    heartbeat = {
+        "schema": "agentos.node-heartbeat/v0.1",
+        "realm_id": realm_id, "node_id": "fresh-device", "status": "online",
+        "observed_at": None, "uptime_seconds": 1, "surface_count": 0,
+        "manifest": manifest,
+    }
+    def runtime(action, method="GET", node="fresh-device", secret=token, body=None, host=HOST, realm=realm_id):
+        return tenant_node_runtime(host=host, realm_id=realm, action=action,
+            method=method, node_id=node, token=secret, body=body, root=tenants)
+
+    assert runtime("health", secret="incorrect")[0] == 403
+    assert runtime("health", secret="")[0] == 401
+    assert runtime("health", realm="realm-u-" + "f" * 24)[0] != 200
+    assert runtime("health")[1]["one_runtime_attested"] is False
+    assert runtime("heartbeat", method="POST", body={**heartbeat, "realm_id":"realm-other"})[0] == 403
+    assert runtime("heartbeat", method="POST", body=heartbeat)[1]["heartbeat_recorded"] is True
+    with patch("agent_core.virtual_one_nodes._current_identity", return_value=identity):
+        code, projection = owner_node_map(host=HOST, cookie="owner", root=tenants)
+    assert code == 200
+    assert projection["online_node_count"] == 1
+    assert projection["one_runtime_attested"] is False
+    assert runtime("bootstrap")[1]["schema"] == "agentos.node-bootstrap/v0.1"
+    assert runtime("tasks")[1]["tasks"] == []
+    assert runtime("benchmark", method="POST", body={
+        "realm_id": realm_id, "node_id": "fresh-device"})[1]["ok"] is False
+    assert runtime("receipts", method="POST", body={
+        "schema": "agentos.node-receipt/v0.1", "node_id": "fresh-device",
+        "task_id": "unissued"})[0] == 409
+
+
+def test_tenant_transport_node_endpoints_bind_host_and_realm():
+    from agentos_node.thin_client_transport import ClientConfig, node_runtime_endpoint
+    cfg = ClientConfig(
+        one_url=ORIGIN, realm_id="realm-u-" + "b" * 24,
+        node_id="device", node_token="test-only")
+    assert node_runtime_endpoint(cfg, "heartbeat") == (
+        ORIGIN + "/v1/realms/" + cfg.realm_id + "/heartbeat")
+    assert node_runtime_endpoint(cfg, "tasks").endswith("/v1/realms/" + cfg.realm_id + "/tasks")
+    legacy = ClientConfig(one_url="https://studio.milkcat.org/dashboard/api/agentos",
+                          realm_id="realm-alston", node_id="device", node_token="legacy")
+    assert node_runtime_endpoint(legacy, "heartbeat") == (
+        "https://studio.milkcat.org/dashboard/api/agentos/v1/heartbeat")
+
+
+def test_join_stage_only_keeps_active_config_and_never_starts_supervisor(monkeypatch, tmp_path):
+    import json
+    from agentos_node import client_cli
+    from agentos_node.thin_client import ThinClientPolicy
+    from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport
+
+    active = tmp_path / "client.json"
+    previous = {"realm_id": "realm-alston", "node_id": "same-node", "node_token": "old",
+                "one_url": "https://studio.milkcat.org/dashboard/api/agentos"}
+    active.write_text(json.dumps(previous), encoding="utf-8")
+    stage = tmp_path / "client.stage.json"
+    tenant = "realm-u-" + "a" * 24
+    monkeypatch.setattr(client_cli, "_load_policy", lambda path: ThinClientPolicy())
+    monkeypatch.setattr(client_cli, "install_node_supervisor",
+                        lambda: (_ for _ in ()).throw(AssertionError("supervisor must not start")))
+    def fake_enroll_device(**kwargs):
+        cfg = ClientConfig(one_url=kwargs["one_url"], realm_id=tenant,
+                           node_id="same-node", node_token="staged-secret")
+        cfg.save(kwargs["config_path"])
+        return cfg
+    class FakeTransport:
+        def health(self): return {"ok": True}
+        def heartbeat(self): return {"ok": True, "heartbeat_recorded": True}
+    monkeypatch.setattr(ThinClientTransport, "enroll_device", fake_enroll_device)
+    monkeypatch.setattr(client_cli, "build_client", lambda cfg, policy: FakeTransport())
+
+    assert client_cli.main(["--config", str(stage), "join", "--one", ORIGIN,
+                            "--realm-id", tenant, "--node-id", "same-node",
+                            "--stage-only"]) == 0
+    assert json.loads(active.read_text(encoding="utf-8")) == previous
+    assert json.loads(stage.read_text(encoding="utf-8"))["realm_id"] == tenant
+    assert client_cli.main(["--config", str(active), "join", "--one", ORIGIN,
+                            "--realm-id", tenant, "--node-id", "same-node",
+                            "--stage-only"]) == 2
+    assert client_cli.main(["--config", str(stage), "join", "--one", ORIGIN,
+                            "--realm-id", tenant, "--node-id", "same-node",
+                            "--stage-only"]) == 2
+    assert json.loads(active.read_text(encoding="utf-8")) == previous
+
+
+def test_windows_switch_is_prepare_only_and_cannot_delete_active_config():
+    from pathlib import Path
+    script = (Path(__file__).resolve().parents[1] /
+              "scripts/bootstrap_clean_windows_node.ps1").read_text(encoding="utf-8")
+    assert "agentos_realm_switch=STAGED_VERIFIED" in script
+    assert "agentos_active_binding=PRESERVED" in script
+    assert "agentos_realm_switch_cutover=NOT_AUTHORIZED_UNTIL_SUPERVISOR_ROLLBACK_VERIFIED" in script
+    assert "client.stage.json" in script
+    assert '"--stage-only"' in script
+    assert "Remove-Item -LiteralPath $config" not in script
+    assert "Copy-Item -LiteralPath $originalPolicy -Destination $policy" in script
+
+
+def test_windows_realm_cutover_requires_authorization_atomic_swap_and_fresh_heartbeat():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "scripts/windows/commit_staged_realm.ps1").read_text(encoding="utf-8")
+    installer = (root / "scripts/install_thin_client_windows.ps1").read_text(encoding="utf-8")
+    assert "scripts/windows/commit_staged_realm.ps1" in installer
+    assert "if (-not $CommitApproved)" in script
+    assert "client.stage.json" in script
+    assert "client.json" in script
+    assert "agentos.node-heartbeat-lease/v0.1" in script
+    assert "node_token" in script
+    assert "health | Out-Null" in script
+    assert "[IO.File]::Replace($temp, $originalFile, $backup)" in script
+    assert "[IO.File]::Replace($backup, $originalFile, $failedTarget)" in script
+    assert "agentos_realm_switch=COMMITTED_VERIFIED" in script
+    assert "agentos_realm_switch=ROLLED_BACK_VERIFIED" in script
+    assert "agentos_realm_switch=ROLLBACK_UNVERIFIED" in script
+    assert "agentos_active_binding=REQUIRES_OPERATOR_REVIEW" in script
+    assert "Get-CimInstance Win32_Process" in script
+    assert "Start-ScheduledTask" in script
+    assert "Stop-ScheduledTask" in script
+    assert "if ($hasWatchdog)" in script
+    assert "one_runtime_attested=true" not in script
+    assert "Remove-Item -LiteralPath $originalFile" not in script

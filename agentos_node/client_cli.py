@@ -120,9 +120,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_join = sub.add_parser('join', help='join Realm, install lifecycle supervisor, bootstrap inherited cognition, run regression, become ready')
     p_join.add_argument('--one', required=True, help='ONE base URL')
+    p_join.add_argument('--realm-id', default=None, help='explicit tenant Realm ID when joining an independently provisioned Realm')
     p_join.add_argument('--node-id', default=socket.gethostname().lower())
     p_join.add_argument('--expires-minutes', type=int, default=10)
     p_join.add_argument('--timeout-seconds', type=int, default=600)
+    p_join.add_argument('--stage-only', action='store_true', help='claim and validate a replacement Realm binding without activating the lifecycle supervisor')
 
     p_enroll = sub.add_parser('enroll', help='legacy one-time invitation enrollment')
     p_enroll.add_argument('--one', required=True, help='ONE base URL')
@@ -154,6 +156,12 @@ def main(argv: list[str] | None = None) -> int:
     policy = _load_policy(args.policy)
 
     if args.command == 'join':
+        if args.stage_only:
+            # Never let stage-only reuse or replace the active client.json.
+            # An explicit, fresh stage file is required even on a new host.
+            if not args.config.name.endswith('.stage.json') or args.config.exists():
+                print('error: stage-only requires a new separate *.stage.json config path', file=sys.stderr)
+                return 2
         before_manifest = ThinClient(NodeIdentity('pending', args.node_id), policy).capability_manifest()
 
         def show_request(payload: dict[str, object]) -> None:
@@ -171,13 +179,28 @@ def main(argv: list[str] | None = None) -> int:
             node_id=args.node_id,
             policy=policy,
             config_path=args.config,
+            realm_id=args.realm_id,
             expires_minutes=args.expires_minutes,
             timeout_seconds=args.timeout_seconds,
             on_request=show_request,
             on_status=show_status,
         )
-        lifecycle = install_node_supervisor()
         transport = build_client(config, policy)
+        if args.stage_only:
+            # Stage-only is an enrollment proof, not a system-level Realm switch
+            # or independent ONE readiness receipt.
+            health = transport.health()
+            heartbeat = transport.heartbeat()
+            if not health.get('ok') or not heartbeat.get('ok'):
+                print(render_json({'ok': False, 'error': 'staged_node_validation_failed',
+                                   'realm_id': config.realm_id, 'node_id': config.node_id}))
+                return 2
+            print(render_json({'ok': True, 'stage_only': True,
+                               'realm_id': config.realm_id, 'node_id': config.node_id,
+                               'one_url': config.one_url, 'config': str(args.config),
+                               'heartbeat_recorded': bool(heartbeat.get('heartbeat_recorded'))}))
+            return 0
+        lifecycle = install_node_supervisor()
         completion = transport.complete_join(before_manifest, lifecycle=lifecycle)
         print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion}))
         return 0 if completion.get('node_ready') else 2
