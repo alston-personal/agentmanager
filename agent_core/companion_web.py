@@ -844,8 +844,9 @@ function card(item,canDecide){
  field(dl,'申請時間',item.parked_at||'未記錄');
  field(dl,'審核狀態',item.stage||item.status);
  field(dl,'目標 Realm',item.kind==='create'?'新 Realm（尚未配置 ID）':item.realm_id);
- field(dl,'ONE 開通',item.provisioned===true?'已驗證':'尚未開通');
- field(dl,'下一階段',item.status==='APPROVED'?'等待獨立 ONE 建立與帳號 Owner 綁定':'等待平台審核');
+ field(dl,'Realm 初始化',item.provisioned===true?'獨立資料與 Owner 綁定已驗證':'尚未初始化');
+ field(dl,'ONE 執行服務',item.one_runtime_attested===true?'已驗證':'尚未驗收');
+ field(dl,'下一階段',item.provisioned===true?'等待 ONE 執行服務及節點能力驗收':item.status==='APPROVED'?'等待獨立 ONE 建立與帳號 Owner 綁定':'等待平台審核');
  field(dl,'申請編號',item.request_id);
  if(item.resolved_at)field(dl,'審核時間',item.resolved_at);
  if(item.resolved_by)field(dl,'審核人識別',item.resolved_by);
