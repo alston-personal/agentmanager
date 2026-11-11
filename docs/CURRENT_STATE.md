@@ -1,3 +1,9 @@
+## 2026-11-11 — Vision Studio main-push OIDC carrier (source candidate, #1160)
+
+ONE scheduler GitHub OIDC accepts the canonical `core/integration` identity and a deliberately exact `main` health carrier. The user-approved `Vision Studio - Rain Exit` workflow was enabled from `main` by PR #2226, but its OIDC `ref=refs/heads/main` plus `workflow_ref=.../vision-studio-rain-exit.yml@refs/heads/main` does not satisfy either preexisting authorization class; real Run 42945784895 failed at the authenticated Runner Window catalog before dispatch. A re-run of existing read-only Catalog Probe 38199423213 from `core/integration` succeeded and returned 53 live intents including `media.vision-studio/produce`, corroborating the identity distinction. This change grants **only** the exact main Rain Exit workflow with `push` event, preserving cryptographic GitHub OIDC validation, source-SHA matching, all other protected controls and fail-closed behavior. It does not grant every main workflow or arbitrary media jobs and does not modify the public Gateway POST allowlist. Test `tests/test_realm_scheduler_oidc.py` is executed in the existing Control Inbox Guard.
+
+**Evidence boundary:** Source+CI alone does not prove effective Oracle runtime or authorized OIDC round-trip. Release through the existing Core/Realm deployment owner and verify live GET+POST, returned ONE Receipt and 10-second video with actual MP4 and camera-motion provenance, not only an Actions run start. Do not re-trigger production until effective runtime is confirmed. #1682 owns branch convergence; do not expand parallel control surfaces.
+
 # AgentOS Current Architecture & Reality
 
 ## Runtime repair discovery contract
