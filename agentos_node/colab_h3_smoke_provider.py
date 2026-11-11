@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
@@ -64,7 +65,7 @@ def run_h3_smoke(request: Mapping[str, Any]) -> dict[str, Any]:
         "--event", "workflow_dispatch",
         "--limit", "20",
         "--json", "databaseId,headSha,status,conclusion,url,createdAt",
-    ], timeout=30)
+    ], cwd=Path.home(), timeout=30)
     if listed["returncode"] != 0:
         return _result("COLAB_SMOKE_RUN_DISCOVERY_UNAVAILABLE", routable=False)
     try:
