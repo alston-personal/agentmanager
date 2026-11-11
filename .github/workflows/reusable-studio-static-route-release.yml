@@ -224,7 +224,14 @@ jobs:
           NODE_ASSET_TARGET="$(decode_ssh_arg "$NODE_ASSET_TARGET_B64")"
           NODE_ASSET_SHA256="$(decode_ssh_arg "$NODE_ASSET_SHA256_B64")"
           NODE_ASSETS_MANIFEST="$(decode_ssh_arg "$NODE_ASSETS_MANIFEST_B64")"
-          LIVE=/home/ubuntu/zeus-writer/website/dist
+          LIVE=/home/ubuntu/studio-web/dist
+          # Fail closed until the authorized Nginx migration has actually
+          # switched the public Studio virtual host to the canonical root.
+          # Keeping a second writable production root recreates #331 drift.
+          nginx -T 2>&1 | grep -Eq '^[[:space:]]*root[[:space:]]+/home/ubuntu/studio-web/dist[[:space:]]*;' || {
+            echo 'studio_canonical_root_not_active' >&2
+            exit 1
+          }
           TMP=$(mktemp -d /tmp/studio-static-route-release-XXXXXX)
           SRC="$TMP/studio-web"
           ROUTE_DIR="$SRC/dist/$ROUTE"
@@ -480,7 +487,14 @@ jobs:
             bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" <<'REMOTE'
           set -euo pipefail
           REPO="$1"; SOURCE_SHA="$2"; ROUTE="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"
-          LIVE=/home/ubuntu/zeus-writer/website/dist
+          LIVE=/home/ubuntu/studio-web/dist
+          # Fail closed until the authorized Nginx migration has actually
+          # switched the public Studio virtual host to the canonical root.
+          # Keeping a second writable production root recreates #331 drift.
+          nginx -T 2>&1 | grep -Eq '^[[:space:]]*root[[:space:]]+/home/ubuntu/studio-web/dist[[:space:]]*;' || {
+            echo 'studio_canonical_root_not_active' >&2
+            exit 1
+          }
           BACKUP=/home/ubuntu/agent-data/releases/studio-web/$BACKUP_KEY/${SOURCE_SHA:0:12}-${RUN_ID}
 
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
