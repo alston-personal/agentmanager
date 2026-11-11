@@ -92,3 +92,5 @@ def test_virtual_one_html_supports_code_approval_and_map():
     assert 'href="/dashboard/api/auth/logout?returnTo=%2F"' in html
     assert "切換使用者" in html
     assert "登出" in html
+    # Both actions must use the site-scoped sign-out endpoint, not client-side Realm switching.
+    assert html.count('href="/dashboard/api/auth/logout?returnTo=%2F"') >= 2
