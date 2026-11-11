@@ -64,7 +64,7 @@ def probe(url, token, *, kind):
                 valid = (status == 401 and '平台管理者帳號登入' in body
                          and 'returnTo=%2Fplatform' in body
                          and '待審申請：' not in body
-                         and '核准（待 ONE 開通）' not in body)
+                         and '核准申請（不代表開通）' not in body)
                 details = {'unauthorized_platform_denied': status == 401,
                            'actionable_login_ui': 'returnTo=%2Fplatform' in body,
                            'protected_review_absent': '核准（待 ONE 開通）' not in body}
