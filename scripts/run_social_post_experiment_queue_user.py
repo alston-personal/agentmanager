@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import json, os, re, subprocess, sys
+import json, os, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,9 +21,9 @@ _MONITOR_ERROR_MARKERS=frozenset({
 
 def classify_child_failure(stderr: str) -> str:
     for raw in str(stderr or '').splitlines():
-        match=re.fullmatch(r'\\s*social_experiment=([A-Z_]+)\\s*',raw)
-        if match and match.group(1) in _MONITOR_ERROR_MARKERS:
-            return match.group(1)
+        marker, separator, code = raw.strip().partition('=')
+        if separator and marker == 'social_experiment' and code in _MONITOR_ERROR_MARKERS:
+            return code
     return 'UNCLASSIFIED_CHILD_FAILURE'
 
 def parse_iso(value):
