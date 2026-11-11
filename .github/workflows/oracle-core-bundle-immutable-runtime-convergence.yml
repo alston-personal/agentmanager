@@ -18,6 +18,7 @@ on:
       - 'scripts/work_completion.py'
       - 'scripts/issue_work_intake.py'
       - 'scripts/approved_wow_paw_handoff.py'
+      - 'scripts/approved_atlas_paw_handoff.py'
       - 'scripts/completion_watchdog_tick.py'
       - 'schedule.yaml'
       - 'tests/test_completion_watchdog_tick.py'
