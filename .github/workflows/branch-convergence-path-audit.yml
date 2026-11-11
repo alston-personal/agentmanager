@@ -15,6 +15,8 @@ jobs:
           fetch-depth: 0
       - name: Unit tests
         run: python3 -m unittest discover -s tests -p 'test_branch_convergence_paths.py' -v && python3 -m unittest discover -s tests -p 'test_branch_resume_guard.py' -v
+      - name: Verify Executor job freshness before dispatch
+        run: python3 -m pytest tests/test_branch_resume_controller.py -q
       - name: Reject stale mainline on resumed code PR
         if: github.event_name == 'pull_request'
         shell: bash
