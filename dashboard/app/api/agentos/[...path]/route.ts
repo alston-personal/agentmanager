@@ -72,7 +72,7 @@ async function isApprovedGalaxyMonitorMigration(request: NextRequest): Promise<b
   }
 }
 
-const GALAXY_MONITOR_STATUS_PATH = /^\\/v1\\/dispatch\\/requests\\/agentos\\.social_threads_experiment_monitor\\.migrate_runtime-[A-Za-z0-9._:-]{1,160}$/;
+const GALAXY_MONITOR_STATUS_PATH = /^\/v1\/dispatch\/requests\/agentos\.vision_studio\.produce-[A-Za-z0-9._:-]{1,160}$/;
 
 const RAIN_EXIT_STATUS_PATH = /^\/v1\/dispatch\/requests\/agentos\.vision_studio\.produce-[A-Za-z0-9._:-]{1,160}$/;
 
