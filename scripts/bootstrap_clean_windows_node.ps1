@@ -131,14 +131,14 @@ if ($stagingRebind) {
     # Preserve original policy exactly for a staged client; the source policy is untouched.
     Copy-Item -LiteralPath $originalPolicy -Destination $policy -Force
   }
-  $stageArgs = @("join", "--one", $OneUrl, "--node-id", $NodeId,
+  $stagedConfig = Join-Path $state 'client.stage.json'
+  $stageArgs = @("--config", $stagedConfig, "join", "--one", $OneUrl, "--node-id", $NodeId,
                  "--timeout-seconds", "900", "--stage-only")
   if (-not [string]::IsNullOrWhiteSpace($RealmId)) { $stageArgs += @("--realm-id", $RealmId) }
   & $launcher @stageArgs
   if ($LASTEXITCODE -ne 0) {
     throw 'Target Realm claim/heartbeat failed; the original Node config remains active.'
   }
-  $stagedConfig = Join-Path $state 'client.json'
   if (-not (Test-Path -LiteralPath $stagedConfig)) { throw 'Target Node claim did not write staged config.' }
   $staged = Get-Content -Raw -LiteralPath $stagedConfig | ConvertFrom-Json
   if (([string]$staged.one_url).TrimEnd('/') -ne $OneUrl -or
