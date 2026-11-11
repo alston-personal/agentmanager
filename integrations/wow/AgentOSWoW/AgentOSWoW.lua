@@ -131,6 +131,28 @@ local function loadStatusReplySlot()
     if not ok then setState("Reply slot unavailable; compatible client required"); return end
     local data = AgentOSWoWReplySlot
     AgentOSWoWReplySlot = nil
+    if type(data) == "table" and data.schema == "agentos.wow.account.reply/v1" then
+        if type(data.request_id) ~= "number" or data.request_id ~= probeId
+            or type(data.signed_in) ~= "boolean"
+            or (data.status ~= "PAIRING_STARTED" and data.status ~= "SIGNED_IN"
+                and data.status ~= "SIGNED_OUT" and data.status ~= "REVOCATION_UNCONFIRMED"
+                and data.status ~= "REALM_SELECTED")
+            or (data.signed_in and (not safeLabel(data.account, 128, "^[%w@%._%+%-]+$")
+                or (data.realm ~= nil and not safeLabel(data.realm, 70, "^[%w%-]+$"))))
+            or (not data.signed_in and (data.account ~= nil or data.realm ~= nil)) then
+            setState("Account reply missing or invalid")
+            return
+        end
+        if accountLine then
+            if data.signed_in then
+                accountLine:SetText("Addon account: " .. data.account .. " | Realm: " .. (data.realm or "none"))
+            else
+                accountLine:SetText("Addon account: not signed in | Realm: none")
+            end
+        end
+        setState("Account display reply read; ONE verification still requires Bridge")
+        return
+    end
     if type(data) ~= "table"
         or data.schema ~= "agentos.wow.status.reply/v1"
         or type(data.request_id) ~= "number"
