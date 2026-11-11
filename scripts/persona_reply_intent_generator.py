@@ -88,10 +88,32 @@ def reply_candidates(events,state,ir_binding,reserved_parents=None):
                          "timestamp":stamp,"context_sha256":key}
     return sorted(candidates.values(),key=lambda x:x["timestamp"],reverse=True),skipped
 
-def project_external_verified_events(root, policy, now, limit=80):
-    """Reuse persisted Core Reader + official search receipts; no network or writes.
+def _verified_parent_rows(receipt):
+    """An exact, independently attested parent ID; never decode URL shortcodes."""
+    result = receipt.get("result")
+    if not isinstance(result, dict):
+        return None
+    if receipt.get("operation") == "keyword.search":
+        items = result.get("items")
+        return items if isinstance(items, list) and len(items) <= 10 else None
+    if (receipt.get("operation") == "parent_identity.read"
+            and receipt.get("capability") == "social.threads.parent_identity.read"):
+        identity = result.get("identity")
+        if (isinstance(identity, dict)
+                and identity.get("provider_verified") is True
+                and identity.get("numeric_id_source") == "provider"
+                and identity.get("is_reply_attested") is True
+                and identity.get("is_reply") is False
+                and str(identity.get("root_post_id") or "") == str(identity.get("id") or "")
+                and str(identity.get("id") or "").isdigit()):
+            return [identity]
+    return None
 
-    Only an independently attested non-reply from the bound official provider
+
+def project_external_verified_events(root, policy, now, limit=80):
+    """Reuse persisted Core Reader + independently attested identity; no network/writes.
+
+    Only an independently attested non-reply from a trusted provider
     can supply the numeric parent. The HTML read supplies bounded context.
     The derived event is in-memory; both original receipts remain authoritative.
     """
@@ -127,9 +149,9 @@ def project_external_verified_events(root, policy, now, limit=80):
                 source = result.get("source")
                 if isinstance(source, dict) and source.get("url") and source.get("text"):
                     html.append((ref, receipt, source))
-            elif receipt.get("operation") == "keyword.search":
-                rows = result.get("items")
-                if isinstance(rows, list) and len(rows) <= 10:
+            elif receipt.get("operation") in ("keyword.search", "parent_identity.read"):
+                rows = _verified_parent_rows(receipt)
+                if rows is not None:
                     searches.append((ref, receipt, rows))
         except (OSError, ValueError, TypeError):
             continue
@@ -154,7 +176,11 @@ def project_external_verified_events(root, policy, now, limit=80):
                        and item.get("is_reply") is False
                        and str(item.get("username") or "").casefold() == username
                        and str(item.get("permalink") or "") == url
-                       and str(item.get("text") or "").strip() == text]
+                       and str(item.get("text") or "").strip() == text
+                       and (search.get("operation") == "keyword.search" or
+                            (item.get("provider_verified") is True and
+                             item.get("numeric_id_source") == "provider" and
+                             str(item.get("root_post_id") or "") == str(item.get("id") or "")))]
             if len(matches) != 1:
                 continue
             parent = str(matches[0]["id"])
@@ -229,12 +255,11 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
         search_provider = search.get("provider_receipt") if isinstance(search, dict) else None
         if not isinstance(search_provider, dict):
             search_provider = search if isinstance(search, dict) else {}
-        search_items = (search_provider.get("result") or {}).get("items") if isinstance(
-            search_provider.get("result"), dict) else None
+        search_items = _verified_parent_rows(search_provider)
         if (not isinstance(search_items, list) or len(search_items) > 10
                 or search_provider.get("schema") != "agentos.social-receipt/v1"
                 or search_provider.get("ok") is not True
-                or search_provider.get("operation") != "keyword.search"
+                or search_provider.get("operation") not in ("keyword.search", "parent_identity.read")
                 or search_provider.get("account_binding_id") != event.get("account_binding_id")
                 or provider.get("schema") != "agentos.social-receipt/v1"
                 or provider.get("ok") is not True
@@ -261,6 +286,12 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
         # be treated as an explicit non-reply declaration.
         match = matches[0]
         if match.get("is_reply_attested") is not True or match.get("is_reply") is not False:
+            reject("external_root_unverified")
+            continue
+        if (search_provider.get("operation") == "parent_identity.read" and
+                (match.get("provider_verified") is not True or
+                 match.get("numeric_id_source") != "provider" or
+                 str(match.get("root_post_id") or "") != parent)):
             reject("external_root_unverified")
             continue
         read_at = normalize_ts(provider.get("completed_at"))
