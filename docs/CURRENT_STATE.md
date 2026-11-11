@@ -1694,6 +1694,8 @@ and suppresses another GPU dispatch whenever a workflow-dispatch run less than
 24 hours old already exists. A workflow dispatch or successful Actions run is
 only an intermediate acknowledgement: the job remains pending until the
 separate media-generation receipt proves the requested output.
+The provider therefore reports `ACK_ONLY` for a correlated workflow run and
+never promotes that transport acknowledgement to terminal media success.
 
 This is source-level convergence only. It does not attest that Oracle has loaded
 the provider, that ONE delivered the job, that a GPU run occurred, or that the
