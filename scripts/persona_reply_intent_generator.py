@@ -108,8 +108,8 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
         author = str(event.get("author_handle") or "").lstrip("@").casefold()
         def reject(reason):
             skipped[reason] = skipped.get(reason, 0) + 1
-        if (not parent.isdigit() or not root_id.isdigit() or not author
-                or author == "mio.milkcat" or parent in reserved_parents):
+        if (not parent.isdigit() or not root_id.isdigit() or parent != root_id
+                or not author or author == "mio.milkcat" or parent in reserved_parents):
             reject("external_parent_unrouteable")
             continue
         if not isinstance(receipt_ref, str) or not re.fullmatch(
@@ -138,6 +138,14 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
                 or str(source_content.get("root_post_id") or "") != root_id
                 or str(event.get("reader_account") or "").casefold() != "mio.milkcat"):
             reject("external_source_unverified")
+            continue
+        # A newly emitted event must not refresh stale reader evidence.
+        read_at = normalize_ts(provider.get("completed_at"))
+        observed_at = normalize_ts(event.get("timestamp"))
+        if (read_at is None or observed_at is None
+                or not timedelta(0) <= now - read_at <= timedelta(hours=72)
+                or abs((observed_at - read_at).total_seconds()) > 300):
+            reject("external_read_receipt_stale")
             continue
         body = str(source_content.get("text") or "").strip()
         if not body or body != str(event.get("text") or "").strip():
@@ -283,12 +291,16 @@ def main():
       "social_stances":stances,
       "voice":persona.get("voice"),
       "autonomy":persona.get("autonomy"),
-      "thread":{"root_post":root_post,"incoming_reply":{"id":reply_id,"author":handle,"text":text},"recent_thread":thread},
+      "thread":({"root_post":{"id":root_id,"author":handle,"text":root_post},
+                 "external_post":{"id":reply_id,"author":handle,"text":text},
+                 "recent_thread":thread} if selected.get("external_root") else
+                {"root_post":root_post,"incoming_reply":{"id":reply_id,"author":handle,"text":text},
+                 "recent_thread":thread}),
       "relationship_context":relationship,
       "conversation_kind":"external_public_root" if selected.get("external_root") else "owned_post_incoming_reply",
       "source_receipt_ref":selected.get("source_receipt_ref")
     }
-    prompt="""You are deciding whether Mio should reply to one public Threads comment.
+    prompt="""You are deciding whether Mio should participate in a public Threads conversation.
 The JSON context below is authoritative. Do not invent biography, facts, purchases, locations, or relationship history.
 First decide Mio's private position: agree, partly_agree, disagree, uncertain, playful_only, or no_reply.
 Only propose a public reply when context is sufficient and replying is useful. For an external_public_root, reply to the external author's original discussion rather than treating it as a reply to Mio. Hostile bait may be no_reply. Legal/payment/contracts/private data must be no_reply and human_required=true.
