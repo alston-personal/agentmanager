@@ -616,10 +616,10 @@ small{display:block;margin-top:22px;color:#90a0ba}
 <main>
 <h1>AgentOS</h1>
 <p>使用自己的帳號登入 AgentOS。首次使用時，須完成獨立 Realm 的建立或加入授權。</p>
-<a class="primary" href="/dashboard/api/auth/signin/google?site=agentos&amp;returnTo=%2F">以 Google 登入</a>
-<a class="secondary" href="/dashboard/api/auth/signin/github?site=agentos&amp;returnTo=%2F">以 GitHub 登入</a>
-<a class="secondary" href="/dashboard/api/auth/signin/facebook?site=agentos&amp;returnTo=%2F">以 Facebook 登入</a>
-<a class="secondary" href="/dashboard/api/auth/signin/line?site=agentos&amp;returnTo=%2F">以 LINE 登入</a>
+<a class="primary" href="/dashboard/api/auth/signin/google?site=agentos&amp;returnTo=%2Fwelcome">以 Google 登入</a>
+<a class="secondary" href="/dashboard/api/auth/signin/github?site=agentos&amp;returnTo=%2Fwelcome">以 GitHub 登入</a>
+<a class="secondary" href="/dashboard/api/auth/signin/facebook?site=agentos&amp;returnTo=%2Fwelcome">以 Facebook 登入</a>
+<a class="secondary" href="/dashboard/api/auth/signin/line?site=agentos&amp;returnTo=%2Fwelcome">以 LINE 登入</a>
 <small>一般使用者不需要 Operator Token。登入後的 Realm 權限必須由 ONE 驗證，未取得授權時不得進入管理 Console。</small>
 <p id="session-state" aria-live="polite"></p>
 <script>
@@ -644,3 +644,48 @@ small{display:block;margin-top:22px;color:#90a0ba}
 def render_public_entry_html() -> str:
     """Unauthenticated landing: no operator UI, token prompt, or Realm data."""
     return PUBLIC_ENTRY_HTML
+
+# A separate, non-privileged post-OAuth destination. The old root is always
+# the sign-in screen; redirecting OAuth callbacks there looked like an endless
+# login loop even when the provider had accepted the user.
+WELCOME_HTML = """<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>AgentOS — 登入狀態</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif}
+body{background:#080c14;color:#e5e7eb;display:grid;place-items:center;min-height:100vh;margin:0}
+main{padding:36px;border:1px solid #293244;border-radius:16px;background:#101827;width:min(88vw,500px)}
+p{line-height:1.7;color:#aab6cb}a{color:#9baaff}
+</style></head><body><main>
+<h1>AgentOS</h1>
+<p id="login-status" aria-live="polite">正在確認登入狀態…</p>
+<p id="next-action" hidden><a href="/">返回登入頁</a></p>
+<script>
+(async () => {
+  const status = document.getElementById('login-status');
+  const retry = document.getElementById('next-action');
+  try {
+    const response = await fetch('/dashboard/api/auth/session', {
+      credentials:'same-origin', cache:'no-store'
+    });
+    if (!response.ok) throw new Error('session_unavailable');
+    const session = await response.json();
+    if (session.loggedIn === true && session.provider && session.subject) {
+      status.textContent = '已使用 ' + session.provider +
+        ' 登入 AgentOS。Realm 建立或加入授權尚未完成；管理者 Console 不會自動開放。';
+      return;
+    }
+    status.textContent = 'Google 授權已返回 AgentOS，但網站未取得有效的登入 Session。請重新登入；若仍發生，需檢查瀏覽器 Cookie 與伺服器認證回呼。';
+  } catch {
+    status.textContent = '無法確認 AgentOS 登入 Session。請檢查認證服務狀態後重試。';
+  }
+  retry.hidden = false;
+})();
+</script></main></body></html>
+"""
+
+
+def render_welcome_html() -> str:
+    """Unprivileged post-login status; never treat a browser cookie as ONE authority."""
+    return WELCOME_HTML
