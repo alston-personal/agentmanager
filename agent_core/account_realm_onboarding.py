@@ -15,7 +15,7 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
-from .approval_broker import park_approval
+from .approval_broker import park_approval, load_box
 from .shared_auth_bridge import proxy_shared_auth_request
 
 _BASE = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")) / "onboarding" / "realm-requests"
@@ -75,8 +75,20 @@ def account_request(
             record = json.loads(file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return 503, {"ok": False, "error": "registration_unavailable"}
-        return 200, {"ok": True, "state": "pending_review", "kind": record["kind"],
-                     "request_id": record["request_id"], "realm_id": record.get("realm_id")}
+        # Distinguish governance decision from actual ONE provisioning.
+        # Even an approved request grants no account-to-Realm membership.
+        state = "pending_review"
+        box = load_box()
+        for item in box.get("history", []):
+            if item.get("id") == record["request_id"] and item.get("action_type") == "realm.onboarding.request":
+                if item.get("status") == "APPROVED":
+                    state = "approved_pending_provisioning"
+                elif item.get("status") == "REJECTED":
+                    state = "rejected"
+                break
+        return 200, {"ok": True, "state": state, "kind": record["kind"],
+                     "request_id": record["request_id"], "realm_id": record.get("realm_id"),
+                     "provisioned": False}
 
     if method == "GET":
         return 200, {"ok": True, "state": "not_requested", "role": identity["role"]}
