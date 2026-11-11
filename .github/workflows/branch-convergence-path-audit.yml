@@ -19,7 +19,7 @@ jobs:
         run: |
           python3 -m venv /tmp/agentos-resume-guard-venv
           /tmp/agentos-resume-guard-venv/bin/python -m pip install --disable-pip-version-check pytest
-          /tmp/agentos-resume-guard-venv/bin/python -m pytest tests/test_branch_resume_controller.py -q
+          /tmp/agentos-resume-guard-venv/bin/python -m pytest tests/test_branch_resume_controller.py tests/test_branch_resume_host_probe.py -q
       - name: Reject stale mainline on resumed code PR
         if: github.event_name == 'pull_request'
         shell: bash
