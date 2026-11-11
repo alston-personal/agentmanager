@@ -1416,3 +1416,7 @@ The AgentOS `/welcome` page now distinguishes server-verified OAuth `role=admin`
 ### 2026-11-11 — Platform admin welcome governed release (#2234)
 
 Source merged for verified platform administrators to see `/platform` instead of normal tenant CREATE/JOIN on `/welcome`, without granting Realm Owner access. This release marker reuses the protected-main-triggered immutable Control Plane workflow, with existing Dashboard Blue/Green, exact-SHA and rollback behavior. Real Oracle release, signed-in `register@milkcat.org` Session role, and proper administrative vs tenant isolation remain external acceptance requirements; no email-only elevation is permitted.
+
+### 2026-11-11 — AgentOS account identity header (#2198)
+
+The `/welcome`, `/my-one` and `/platform` views now render one shared account header that reads the existing same-origin AgentOS OAuth Session. It displays the verified `username`, provider and session role using `textContent` only, and offers same-site account switch and logout. Platform management navigation appears only for the verified `admin` role; the server remains authoritative for `/platform` and tenant APIs. This does not grant administrator authority to `register@milkcat.org` automatically. The previously observed live `/welcome` still showed obsolete text absent from main, proving a deployment/accepted-release parity gap requiring an actual Oracle immutable-release SHA and public readback. Do not claim the UI fixed in production based only on merge or CI; also verify exact register session role and private allowlist safely.
