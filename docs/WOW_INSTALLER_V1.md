@@ -212,3 +212,29 @@ This change does not silently enroll a node, bypass Realm approval, or
 auto-install any Bridge. Node creation is user-authorized through the
 original AgentOS Join implementation. Existing game Addon installations
 do **not** need to be overwritten or reinstalled.
+
+## User session != Node identity — 2026-11-11
+
+Current high-priority request is **sign out of the WoW Addon account then
+sign back in as the original account**, selecting that user's authorized
+Realm. This is NOT Windows `SwitchRealm`, realm migration, or Node rejoin.
+The existing Node remains a transport/capability carrier; its enrollment
+does not grant the game user's membership in an arbitrary Realm.
+
+The transport-neutral `agentos_node/client_account_session.py` is a reusable
+account-session boundary, NOT a functioning OAuth provider or installed Bridge.
+Its trusted host callbacks must come from the existing signed-in AgentOS
+site, device pairing and ONE Realm authority. It supports begin/complete
+pairing, server-side Realm membership selection and scoped logout with
+revocation uncertainty; the public game projection contains only
+`signed_in`, safe account display and authorized Realm ID. No OAuth
+tokens, Node credentials, ticket, browser cookies, or session handles enter
+Lua, SavedVariables, the pixel strip, or untrusted reply-slot data.
+
+The next product integration gate is a *real browser-to-Bridge account pairing*
+with the existing OAuth service, server-issued session revocation and a
+game-visible account/realm projection. The Addon is still offline with its
+Send control disabled; no UI logout/login has shipped yet. Do not claim that
+tests of the isolated boundary verify actual OAuth, cross-Realm readback,
+Node pairing, or real game switching. Preserve Windows Node credentials and
+the existing WoW installation.
