@@ -81,6 +81,8 @@ $files = @(
   'agentos_node/onboarding.py',
   'agentos_node/node_adapter.py',
   'agentos_node/interactive_desktop.py',
+  'agentos_node/desktop_demo.py',
+  'agentos_node/semantic_preview.py',
   'agentos_node/thin_client_transport.py',
   'agentos_node/client_cli.py',
   'agentos_node/session_bridge.py',
