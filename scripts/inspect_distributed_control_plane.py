@@ -42,14 +42,21 @@ def probe(url, token, *, kind):
                            'noindex': 'noindex' in response.headers.get('X-Robots-Tag', '')}
                 valid = valid and details['noindex']
             elif kind == 'welcome':
-                valid = (status == 200 and '登入狀態' in body and
-                         '管理者 Console 不會自動開放' in body and
-                         'id="create-realm"' in body and
-                         '/v1/account/realm-request' in body)
-                details = {'session_status_ui': '登入狀態' in body,
-                           'onboarding_request_ui': 'id="create-realm"' in body,
-                           'onboarding_route': '/v1/account/realm-request' in body,
-                           'no_operator_grant': '管理者 Console 不會自動開放' in body}
+                # Check the current public UI contract, not stale page copy.
+                # Source/live mismatch must fail, while anonymous admin APIs
+                # continue to be checked separately by platform_anon probes.
+                details = {
+                    'session_status_ui': '登入狀態' in body,
+                    'account_header': 'id="agentos-account-identity"' in body,
+                    'account_from_session': 'session.username' in body and 'session.role' in body,
+                    'admin_navigation': 'id="platform-admin-link"' in body,
+                    'onboarding_request_ui': 'id="create-realm"' in body,
+                    'onboarding_route': '/v1/account/realm-request' in body,
+                    'account_switch': '/dashboard/api/auth/logout?returnTo=%2F' in body,
+                    'obsolete_copy_absent': '管理者 Console 不會自動開放' not in body,
+                    'credential_absent': bool(token) and token not in body,
+                }
+                valid = status == 200 and all(details.values())
             elif kind == 'companion':
                 valid = status == 200 and 'Node Map' in body and bool(token) and token not in body
                 details = {'legacy_operator_ui': 'Node Map' in body,
