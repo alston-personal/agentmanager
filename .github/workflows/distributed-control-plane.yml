@@ -25,6 +25,7 @@ jobs:
           tests/test_control_plane_convergence.py
           tests/test_agentos_public_entry.py tests/test_agentos_shared_auth_bridge.py
           tests/test_account_realm_onboarding.py
+          tests/test_wow_browser_pairing.py
           tests/test_platform_realm_review.py
           tests/test_approved_realm_bootstrap.py
           tests/test_virtual_one_nodes.py

@@ -24,6 +24,7 @@ from .account_realm_onboarding import account_request
 from .platform_realm_review import platform_review
 from .realm_provisioning import account_virtual_one
 from .virtual_one_nodes import owner_node_map, owner_approve_code, device_join, tenant_node_runtime
+from .wow_account_pairing import start_pairing, approve_pairing, poll_pairing, revoke_pairing, authorization_html
 
 MAX_REQUEST_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -280,6 +281,8 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Robots-Tag", "noindex, nofollow")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -289,6 +292,8 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         data = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -423,6 +428,15 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         if path in ("/welcome", "/welcome/"):
             self._html(200, render_welcome_html())
             return
+        if path == "/wow/account/authorize":
+            query = parse_qs(urlparse(self.path).query)
+            code = str((query.get("code") or [""])[0])
+            status, markup = authorization_html(
+                host=self.headers.get("Host", ""), code=code,
+                cookie=self.headers.get("Cookie"),
+            )
+            self._html(status, markup)
+            return
         if len(parts) == 4 and parts[:2] == ["v1", "realms"] and parts[3] in {"health", "bootstrap", "tasks"}:
             query = parse_qs(urlparse(self.path).query)
             node_id = str((query.get("node_id") or [""])[0])
@@ -541,6 +555,28 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
                     token=token, body=body,
                 )
                 self._json(code, result)
+                return
+            if path == "/v1/wow/account/start":
+                status, result = start_pairing(host=self.headers.get("Host", ""))
+                self._json(status, result)
+                return
+            if path == "/v1/wow/account/approve":
+                status, result = approve_pairing(
+                    host=self.headers.get("Host", ""),
+                    origin=self.headers.get("Origin"),
+                    cookie=self.headers.get("Cookie"),
+                    code=str(body.get("code") or ""),
+                )
+                self._json(status, result)
+                return
+            if path in {"/v1/wow/account/poll", "/v1/wow/account/revoke"}:
+                kwargs = {
+                    "host": self.headers.get("Host", ""),
+                    "code": str(body.get("code") or ""),
+                    "claim_secret": str(body.get("claim_secret") or ""),
+                }
+                status, result = (poll_pairing if path.endswith("/poll") else revoke_pairing)(**kwargs)
+                self._json(status, result)
                 return
             if path == "/v1/account/virtual-one/join/approve":
                 code, result = owner_approve_code(
