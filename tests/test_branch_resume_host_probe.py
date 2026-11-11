@@ -168,32 +168,62 @@ def test_host_config_rejects_untrusted_schema(checkouts, tmp_path):
         load_trusted_code_resume_probe(str(cfg))
 
 
-def test_queued_executor_rechecks_main_just_before_mutating(checkouts, monkeypatch):
-    from agentos_node import executor_job_action_relay as worker
+def _load_real_worker_function_in_isolation():
+    """Test the actual worker function body while baseline Action Relay import is broken.
+
+    Main's ACTIONS registry has unresolved legacy Realm Fabric entries; do not
+    fake a successful full module import or port broad deployment code here.
+    """
+    import ast
+    import os
+    from agent_core.code_resume_authority import require_fresh_code_resume
+    from agent_core.executor_job_contract import validate_executor_job
+    from agentos_node.branch_resume_host_probe import load_trusted_code_resume_probe
+
+    path = Path(__file__).resolve().parents[1] / "agentos_node" / "executor_job_action_relay.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    fn = next(node for node in tree.body
+              if isinstance(node, ast.FunctionDef) and node.name == "_execute")
+    code = compile(ast.Module(body=[fn], type_ignores=[]), str(path), "exec")
+    scope = {
+        "os": os,
+        "validate_executor_job": validate_executor_job,
+        "require_fresh_code_resume": require_fresh_code_resume,
+        "load_trusted_code_resume_probe": load_trusted_code_resume_probe,
+        "_request_projection": lambda request: dict(request),
+        "run_registered_executor_job": lambda *, request: {"ok": True},
+    }
+    exec(code, scope)
+    return scope, scope["_execute"]
+
+
+def test_queued_executor_rechecks_main_just_before_mutating(checkouts):
     from tests.test_branch_resume_controller import request
     remote, writer, checkout = checkouts
+    scope, execute = _load_real_worker_function_in_isolation()
     executed = []
-    monkeypatch.setattr(worker, "load_trusted_code_resume_probe",
-                        lambda path: provider(remote, checkout))
-    monkeypatch.setattr(worker, "run_registered_executor_job",
-                        lambda *, request: executed.append(request["job_type"]) or {"ok": True})
+    scope["load_trusted_code_resume_probe"] = lambda path: provider(remote, checkout)
+    scope["run_registered_executor_job"] = (
+        lambda *, request: executed.append(request["job_type"]) or {"ok": True}
+    )
     packet = {"request": request()}
-    assert worker._execute(packet)["ok"] is True
+    assert execute(packet)["ok"] is True
     assert executed == [SPEC.job_type]
     put_commit(writer, "another-main-update.txt", "new feature from a second agent")
     git("push", "-q", "origin", "main", cwd=writer)
     with pytest.raises(ValueError, match="CODE_MAINLINE_RECONCILE_REQUIRED"):
-        worker._execute(packet)
+        execute(packet)
     assert executed == [SPEC.job_type]
 
 
 def test_worker_code_job_does_not_execute_without_host_configuration(monkeypatch):
-    from agentos_node import executor_job_action_relay as worker
     from tests.test_branch_resume_controller import request
+    scope, execute = _load_real_worker_function_in_isolation()
     monkeypatch.delenv("AGENTOS_CODE_RESUME_HOST_CONFIG", raising=False)
     calls = []
-    monkeypatch.setattr(worker, "run_registered_executor_job",
-                        lambda *, request: calls.append(request) or {"ok": True})
+    scope["run_registered_executor_job"] = (
+        lambda *, request: calls.append(request) or {"ok": True}
+    )
     with pytest.raises(ValueError, match="CODE_MAINLINE_PROBE_UNAVAILABLE"):
-        worker._execute({"request": request()})
+        execute({"request": request()})
     assert calls == []
