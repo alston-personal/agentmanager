@@ -80,6 +80,11 @@ def platform_review(*, method: str, host: str, cookie: str | None,
         if existing is not None:
             return 409, {"ok": False, "error": "already_decided", "status": existing.get("status")}
         return 404, {"ok": False, "error": "request_not_found"}
+    reviewer_digest = hashlib.sha256(
+        (identity["provider"] + "\\x00" + identity["subject"]).encode()
+    ).hexdigest()
+    if pending.get("actor") == "oauth-account:" + reviewer_digest[:16]:
+        return 403, {"ok": False, "error": "self_review_forbidden"}
     # Stable hashed identity avoids leaking a user's provider subject in
     # governance history or the public response.
     reviewer = hashlib.sha256(
