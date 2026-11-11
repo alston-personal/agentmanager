@@ -116,3 +116,11 @@ def test_virtual_one_api_denies_other_accounts_and_anonymous(tmp_path):
         assert data["one_runtime_attested"] is False
         assert account_virtual_one(host="studio.milkcat.org", cookie="valid",
                                    tenants_root=tenants)[0] == 400
+
+
+def test_anonymous_my_one_page_follows_api_denial_reason_source_contract():
+    import inspect
+    from agent_core.distributed_gateway import DistributedGatewayHandler
+    source = inspect.getsource(DistributedGatewayHandler.do_GET)
+    assert 'result.get("error", "realm_membership_required")' in source
+    assert "account_virtual_one" in source
