@@ -121,6 +121,20 @@ class ExternalReplyGateTest(unittest.TestCase):
         self.search["result"]["items"][0]["is_reply"] = True
         self.assertEqual(self.candidates()[0], [])
 
+    def test_search_binding_permalink_text_and_receipt_freshness(self):
+        original = json.loads(json.dumps(self.search))
+        for field, value in (("account_binding_id", "other-account"),):
+            self.search[field] = value
+            self.assertEqual(self.candidates()[0], [])
+            self.search = json.loads(json.dumps(original))
+        for field, value in (("permalink", "https://www.threads.com/@different/post/X"),
+                             ("text", "unrelated content")):
+            self.search["result"]["items"][0][field] = value
+            self.assertEqual(self.candidates()[0], [])
+            self.search = json.loads(json.dumps(original))
+        self.search["completed_at"] = (self.now - timedelta(days=5)).isoformat()
+        self.assertEqual(self.candidates()[0], [])
+
     def test_wrong_reader_or_canonical_url(self):
         for edits in ({"reader_account": "oursong_alstonhuang"},
                       {"source_url": "https://www.threads.com/@another/post/X"},
