@@ -20,7 +20,8 @@ def test_release_inspector_requires_signin_shell_and_oauth_session():
             if self.path == "/":
                 self.wfile.write("AgentOS 以 Google 登入".encode())
             elif self.path == "/welcome":
-                self.wfile.write(("登入狀態；管理者 Console 不會自動開放 " + 'id="create-realm" /v1/account/realm-request').encode())
+                from agent_core.companion_web import render_welcome_html
+                self.wfile.write(render_welcome_html().encode())
             elif self.path in ("/v1/account/realm-request", "/v1/account/virtual-one", "/my-one"):
                 self.wfile.write(json.dumps({"ok": False, "error": "signin_required"}).encode())
             elif self.path == "/v1/platform/realm-requests":
@@ -121,3 +122,15 @@ def test_oauth_origin_probe_rejects_studio_and_accepts_agentos():
         server.shutdown()
         server.server_close()
         worker.join(timeout=3)
+
+
+def test_welcome_inspector_rejects_stale_production_copy(monkeypatch):
+    from tests.test_control_plane_inspection import Response
+    old = ('登入狀態；管理者 Console 不會自動開放 ' +
+           'id="create-realm" /v1/account/realm-request').encode()
+    monkeypatch.setattr('scripts.inspect_distributed_control_plane.urlopen',
+                        lambda *a, **k: Response(200, old))
+    result = probe('http://test/welcome', 'test-secret', kind='welcome')
+    assert result['ok'] is False
+    assert result['obsolete_copy_absent'] is False
+    assert result['account_header'] is False
