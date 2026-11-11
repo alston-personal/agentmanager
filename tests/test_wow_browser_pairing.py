@@ -65,6 +65,32 @@ class WowBrowserPairingTests(unittest.TestCase):
         state = poll_pairing(host=self.host, code=rec["code"], claim_secret=rec["claim_secret"], root=self.root, now=self.now)[1]
         self.assertEqual(state["state"], "pending")
 
+    def test_account_switch_requires_fresh_browser_approval_and_new_host_secret(self):
+        first = self.start()
+        self.assertEqual(self.approve(first["code"], identity="test@example.test")[0], 200)
+        self.assertEqual(revoke_pairing(host=self.host, code=first["code"],
+            claim_secret=first["claim_secret"], root=self.root, now=self.now)[0], 200)
+        second = self.start()
+        self.assertNotEqual(first["claim_secret"], second["claim_secret"])
+        self.assertNotEqual(first["code"], second["code"])
+        self.assertEqual(self.approve(second["code"], identity="original@example.test")[0], 200)
+        status, result = poll_pairing(host=self.host, code=second["code"],
+            claim_secret=second["claim_secret"], root=self.root, now=self.now)
+        self.assertEqual((status, result["account"]), (200, "original@example.test"))
+        self.assertEqual(poll_pairing(host=self.host, code=first["code"],
+            claim_secret=first["claim_secret"], root=self.root, now=self.now)[0], 404)
+        # Old user/claim cannot read or revoke the newly authorized session.
+        self.assertEqual(poll_pairing(host=self.host, code=second["code"],
+            claim_secret=first["claim_secret"], root=self.root, now=self.now)[0], 404)
+
+    def test_revoked_pending_session_cannot_be_resurrected_by_browser(self):
+        rec = self.start()
+        self.assertEqual(revoke_pairing(host=self.host, code=rec["code"],
+            claim_secret=rec["claim_secret"], root=self.root, now=self.now)[0], 200)
+        self.assertEqual(self.approve(rec["code"])[0], 410)
+        self.assertEqual(poll_pairing(host=self.host, code=rec["code"],
+            claim_secret=rec["claim_secret"], root=self.root, now=self.now)[0], 404)
+
     def test_wrong_origin_and_host_rejected(self):
         rec = self.start()
         self.assertEqual(self.approve(rec["code"], origin="https://evil.example")[0], 403)
