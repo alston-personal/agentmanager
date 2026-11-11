@@ -1,0 +1,50 @@
+name: Version Convergence Signal Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/version_convergence_signal.py'
+      - 'tests/test_version_convergence_signal.py'
+      - '.github/workflows/version-convergence-signal-contract.yml'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-event-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Test version event and acknowledgement truth boundaries
+        run: python3 -m unittest tests.test_version_convergence_signal -v
+      - name: Produce protected main source event (not an Executor delivery)
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.sha }}
+          PUSHED_AT: ${{ github.event.head_commit.timestamp }}
+        run: |
+          set -euo pipefail
+          git diff --name-only HEAD^ HEAD > "$RUNNER_TEMP/version-changed-paths.txt"
+          test -s "$RUNNER_TEMP/version-changed-paths.txt"
+          python3 scripts/version_convergence_signal.py \
+            --main-sha "$HEAD_SHA" \
+            --previous-sha "$(git rev-parse HEAD^)" \
+            --paths-file "$RUNNER_TEMP/version-changed-paths.txt" \
+            --published-at "$PUSHED_AT" \
+            --output "$RUNNER_TEMP/version-convergence-event.json"
+          python3 -m json.tool "$RUNNER_TEMP/version-convergence-event.json" >/dev/null
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: version-convergence-source-${{ github.sha }}
+          path: ${{ runner.temp }}/version-convergence-event.json
+          retention-days: 30
+          if-no-files-found: error
