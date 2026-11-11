@@ -88,6 +88,19 @@ def reply_candidates(events,state,ir_binding,reserved_parents=None):
                          "timestamp":stamp,"context_sha256":key}
     return sorted(candidates.values(),key=lambda x:x["timestamp"],reverse=True),skipped
 
+def _trusted_identity_receipt(path, policy):
+    """Require an independently approved exact digest; self-claims are not trust."""
+    allowed = policy.get("approved_parent_identity_receipt_sha256")
+    if not isinstance(allowed, list) or len(allowed) > 20:
+        return False
+    if any(not isinstance(x, str) or re.fullmatch(r"[0-9a-f]{64}", x) is None for x in allowed):
+        return False
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest() in allowed
+    except OSError:
+        return False
+
+
 def _verified_parent_rows(receipt):
     """An exact, independently attested parent ID; never decode URL shortcodes."""
     result = receipt.get("result")
@@ -150,6 +163,9 @@ def project_external_verified_events(root, policy, now, limit=80):
                 if isinstance(source, dict) and source.get("url") and source.get("text"):
                     html.append((ref, receipt, source))
             elif receipt.get("operation") in ("keyword.search", "parent_identity.read"):
+                if (receipt.get("operation") == "parent_identity.read"
+                        and not _trusted_identity_receipt(path, policy)):
+                    continue
                 rows = _verified_parent_rows(receipt)
                 if rows is not None:
                     searches.append((ref, receipt, rows))
@@ -255,6 +271,10 @@ def external_reply_candidates(root, events, state, ir_binding, policy, reserved_
         search_provider = search.get("provider_receipt") if isinstance(search, dict) else None
         if not isinstance(search_provider, dict):
             search_provider = search if isinstance(search, dict) else {}
+        if (search_provider.get("operation") == "parent_identity.read"
+                and not _trusted_identity_receipt(root / search_ref, policy)):
+            reject("external_parent_attestor_not_approved")
+            continue
         search_items = _verified_parent_rows(search_provider)
         if (not isinstance(search_items, list) or len(search_items) > 10
                 or search_provider.get("schema") != "agentos.social-receipt/v1"
