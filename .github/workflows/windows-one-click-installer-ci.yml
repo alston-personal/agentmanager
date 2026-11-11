@@ -6,8 +6,10 @@ on:
       - 'install-agentos.ps1'
       - 'install-agentos.cmd'
       - 'scripts/install_thin_client_windows.ps1'
+      - 'scripts/bootstrap_clean_windows_node.ps1'
       - 'scripts/windows/thin_client_watchdog.ps1'
       - 'agentos_node/thin_client_transport.py'
+      - 'agentos_node/client_cli.py'
       - 'tests/test_thin_client.py'
       - '.github/workflows/windows-one-click-installer-ci.yml'
   push:
@@ -33,7 +35,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1')
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/bootstrap_clean_windows_node.ps1')
           foreach($file in $files) {
             $tokens = $null
             $errors = $null
