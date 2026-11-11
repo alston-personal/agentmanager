@@ -186,3 +186,29 @@ is necessary for live bridge routing but **not sufficient** to enable chat:
 a local authorized Bridge and game-visible correlated ONE receipts remain
 separate acceptance gates. The preview still is not an official signed
 release and Node credentials are never packaged into ZIP.
+
+## Single-flow Node installation contract — 2026-11-11
+
+The end-user requirement is **one installation entry**, not a separate
+post-install `Join-AgentOS-Node.cmd` instruction. The existing root
+`Install-AgentOS-WoW.cmd` now delegates to setup which:
+
+1. Detects a supported game directory, and checks for a complete existing
+   `AgentOSWoW` + `AgentOSWoW_R001` installation. Reuses both without
+   overwriting. A partial pre-existing installation fails closed.
+2. Checks for existing Node enrollment at the default install path. When
+   missing, starts the **existing, explicitly confirmed** `AgentOS-Join.cmd`
+   within this same user-visible installer flow (via the existing wrapper),
+   including the existing ONE Realm approval/code sequence. The user is
+   warned to reuse a Node installed elsewhere rather than creating a
+   duplicate.
+3. When enrollment remains incomplete, explicitly offers **OFFLINE-only**
+   continuation; Enter cancels the flow. Nothing asserts a live ONE connection.
+4. Only installs the offline Addon if both folders are absent; previously
+   installed folders remain unchanged. An authorized Bridge and verified
+   game↔ONE receipts remain mandatory before chat can be enabled.
+
+This change does not silently enroll a node, bypass Realm approval, or
+auto-install any Bridge. Node creation is user-authorized through the
+original AgentOS Join implementation. Existing game Addon installations
+do **not** need to be overwritten or reinstalled.
