@@ -1,5 +1,6 @@
 name: AgentOS Control Plane Immutable Login Release (#2198)
 
+# Source-locked rollout for platform-authorized Realm request review interface.
 # Source-locked rollout for authenticated AgentOS Realm onboarding intake and review.
 # Source-locked combined rollout for AgentOS post-OAuth session landing and scoped cookie.
 # Follow-up release after correcting canonical virtual Host on local OAuth probe.
