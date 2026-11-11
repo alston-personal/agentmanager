@@ -115,6 +115,26 @@ class TestInbox(unittest.TestCase):
             saved = next((root / "persona/pdca/external_observation_inbox").glob("*.json"))
             self.assertEqual(json.loads(saved.read_text())["source_url"], canonical)
 
+    def test_vendor_reader_timeout_covers_public_browser_resolution(self):
+        from unittest.mock import patch
+        from io import BytesIO
+        from scripts.persona_external_observation_inbox import _vendor_resolve_public
+        class Reply:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self, limit):
+                return b'{"schema":"agentos.social.threads.public-post/v1","source":{}}'
+        with patch("scripts.persona_external_observation_inbox.urllib.request.urlopen",
+                   return_value=Reply()) as open_url:
+            receipt = _vendor_resolve_public("https://www.threads.com/share/GdMiITUe6/")
+            self.assertEqual(receipt["schema"], "agentos.social.threads.public-post/v1")
+            self.assertGreaterEqual(open_url.call_args.kwargs["timeout"], 60)
+            req = open_url.call_args.args[0]
+            self.assertEqual(req.full_url, "http://127.0.0.1:18766/v1/threads/resolve")
+            self.assertEqual(req.get_method(), "POST")
+
     def test_intel_url_observer_fails_closed_on_fake_reader_or_wrong_domain(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
