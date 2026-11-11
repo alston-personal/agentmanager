@@ -69,7 +69,7 @@ if [[ "${#CAMERA_INSTRUCTIONS[@]}" -ne "${#SHOT[@]}" ]]; then
   exit 5
 fi
 for i in 0 1 2 3; do
-  IFS="$(printf '\\t')" read -r camera_shot camera_direction <<< "${CAMERA_INSTRUCTIONS[$i]}"
+  IFS=$'\t' read -r camera_shot camera_direction <<< "${CAMERA_INSTRUCTIONS[$i]}"
   if [[ "$camera_shot" != "${SHOT[$i]}" || -z "$camera_direction" ]]; then
     echo "vision_studio_produce=CAMERA_IR_SHOT_ORDER_MISMATCH"
     exit 5
