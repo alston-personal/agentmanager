@@ -154,7 +154,16 @@ class ControllerService:
                 or verdict.get("schema") != "agentos.branch-resume-gate/v1"
                 or verdict.get("status") != "MAINLINE_CURRENT"
                 or verdict.get("allowed") is not True
-                or verdict.get("production_authorized") is not False):
+                or verdict.get("production_authorized") is not False
+                or not isinstance(verdict.get("main_sha"), str)
+                or not isinstance(verdict.get("work_sha"), str)
+                or not isinstance(verdict.get("merge_base_sha"), str)
+                or any(
+                    len(verdict[key]) != 40
+                    or any(ch not in "0123456789abcdef" for ch in verdict[key])
+                    for key in ("main_sha", "work_sha", "merge_base_sha")
+                )
+                or verdict["main_sha"] != verdict["merge_base_sha"]):
                 raise ValueError("CODE_MAINLINE_RECONCILE_REQUIRED")
         if node_id != self.EXECUTOR_JOB_NODE:
             raise ValueError(f'executor job is not routable to target node: {node_id}')
