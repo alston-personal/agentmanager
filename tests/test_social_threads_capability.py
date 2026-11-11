@@ -129,7 +129,14 @@ def test_core_share_resolver_is_used_by_shared_social_provider(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "build_opener", lambda *args: Opener())
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    source = resolve_public_post("https://www.threads.com/share/BAaVMSEntH")
+    provider = SocialProvider()
+    receipt = provider.invoke({
+        "product_id": "hermes", "platform": "threads",
+        "operation": "public_post.read",
+        "object_id": "https://www.threads.com/share/BAaVMSEntH",
+    })
+    assert receipt["ok"] is True
+    source = receipt["result"]["source"]
     assert source["url"] == "https://www.threads.com/@cat/post/ABC"
     assert source["text"] == "read from share"
     assert calls == [
