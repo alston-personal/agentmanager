@@ -431,12 +431,14 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             return
         if path in ("/platform", "/platform/"):
             try:
-                code, _ = platform_review(
+                code, result = platform_review(
                     method="GET", host=self.headers.get("Host", ""),
                     cookie=self.headers.get("Cookie"), origin=None
                 )
                 if code != 200:
-                    self._json(code, {"ok": False, "error": "platform_review_forbidden"})
+                    # Keep explicit, non-sensitive auth reason and original
+                    # status instead of masking 401 and 403 under one error.
+                    self._json(code, {"ok": False, "error": result.get("error", "review_unavailable")})
                     return
                 self._html(200, render_platform_review_html())
             except (OSError, ValueError):

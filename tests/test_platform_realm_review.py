@@ -79,3 +79,14 @@ def test_platform_ui_has_review_operations_but_no_provisioning_claim():
     assert "/v1/platform/realm-requests" in html
     assert "核准（待 ONE 開通）" in html
     assert "operator token" not in html.lower()
+
+
+def test_review_denial_reasons_are_distinct():
+    from agent_core.platform_realm_review import platform_review
+    with patch("agent_core.platform_realm_review._current_identity", return_value=None):
+        status, body = platform_review(method="GET", host=HOST, cookie=None, origin=None)
+        assert status == 401 and body["error"] == "signin_required"
+    with patch("agent_core.platform_realm_review._current_identity",
+               return_value={"provider": "google", "subject": "not-authorized", "role": "user"}):
+        status, body = platform_review(method="GET", host=HOST, cookie="test", origin=None)
+        assert status == 403 and body["error"] == "platform_admin_required"
