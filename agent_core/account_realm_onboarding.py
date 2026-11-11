@@ -87,7 +87,7 @@ def account_request(
             try:
                 with open(tmp, "x", encoding="utf-8") as fp:
                     json.dump(record, fp, ensure_ascii=False)
-                    fp.write("\\n")
+                    fp.write("\n")
                     fp.flush()
                     os.fsync(fp.fileno())
                 os.replace(tmp, file)
