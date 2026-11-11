@@ -1620,3 +1620,22 @@ IFTV #3 receipt/QA requirements remain unchanged.
   setting and live task execution still require verification from that host.
   Never guess worktree paths or switch the physical Node Realm in lieu of
   configuring the code-resume source.
+
+
+- **Queued-code time-of-check/time-of-use closure (proposed, not deployed):**
+  `agent_core/code_resume_authority.py` now supplies one shared fail-closed
+  pinned-Git proof validator. The existing ONE controller applies it before
+  dispatch; the existing Action Relay `agentos.executor.job` worker applies
+  the same validator immediately before invoking a `bounded-code-fix`
+  provider. This catches `main` advancing while a previously accepted
+  capsule waits in the queue. The worker uses the independently configured
+  `AGENTOS_CODE_RESUME_HOST_CONFIG` origin/worktree mapping, not values
+  from the capsule or ChatGPT conversation. Missing host mapping refuses
+  code execution; existing non-code jobs do not need this config.
+- Source tests exercise real Git remote advancement between two calls to the
+  same queued job, with the second invocation rejected before the provider
+  executes. This is not proof of actual Oracle-loaded systemd settings,
+  immutable release SHA, or live queued-job Receipt; both the ONE server and
+  its worker must receive vetted, real worktree mapping and be deployed
+  through the existing immutable-release process. No host path has been
+  guessed or silently configured.
