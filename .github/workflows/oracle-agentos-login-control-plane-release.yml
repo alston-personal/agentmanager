@@ -22,6 +22,7 @@ on:
     paths:
       - '.github/workflows/oracle-agentos-login-control-plane-release.yml'
       - 'agent_core/companion_web.py'
+      - 'scripts/inspect_distributed_control_plane.py'
   workflow_dispatch:
 
 permissions:
