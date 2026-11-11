@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_post_intent_generator.py'
+      - 'scripts/run_persona_social_actions_user.sh'
       - 'scripts/agentos_event_facility.py'
       - 'scripts/persona_pdca_tick.py'
       - 'tests/test_persona_stochastic_life_events.py'
@@ -18,6 +19,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_post_intent_generator.py'
+      - 'scripts/run_persona_social_actions_user.sh'
       - 'scripts/agentos_event_facility.py'
       - 'scripts/persona_pdca_tick.py'
       - 'tests/test_persona_stochastic_life_events.py'
