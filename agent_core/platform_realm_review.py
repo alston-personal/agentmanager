@@ -54,6 +54,8 @@ def _project(item: dict[str, Any]) -> dict[str, Any] | None:
     if payload.get("request_id") != request_id:
         return None
     applicant = _applicant(request_id, str(item.get("actor") or ""))
+    from .realm_provisioning import provisioned_request
+    bootstrapped = provisioned_request(request_id) if item.get("status") == "APPROVED" else None
     return {
         "request_id": request_id,
         "kind": payload.get("kind"),
@@ -66,7 +68,9 @@ def _project(item: dict[str, Any]) -> dict[str, Any] | None:
         "applicant_ref": request_id.removeprefix(_PREFIX)[:12],
         "stage": ("approved_pending_one" if item.get("status") == "APPROVED" else
                   "rejected" if item.get("status") == "REJECTED" else "pending_review"),
-        "provisioned": False,
+        "provisioned": bootstrapped is not None,
+        "provisioned_realm_id": bootstrapped["realm_id"] if bootstrapped else None,
+        "one_runtime_attested": False,
         # Never project internal account identity or arbitrary payloads.
     }
 
