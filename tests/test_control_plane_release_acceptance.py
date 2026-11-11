@@ -125,7 +125,12 @@ def test_oauth_origin_probe_rejects_studio_and_accepts_agentos():
 
 
 def test_welcome_inspector_rejects_stale_production_copy(monkeypatch):
-    from tests.test_control_plane_inspection import Response
+    import io
+    class Response(io.BytesIO):
+        def __init__(self, status, body):
+            super().__init__(body)
+            self.status = status
+            self.headers = {}
     old = ('登入狀態；管理者 Console 不會自動開放 ' +
            'id="create-realm" /v1/account/realm-request').encode()
     monkeypatch.setattr('scripts.inspect_distributed_control_plane.urlopen',
