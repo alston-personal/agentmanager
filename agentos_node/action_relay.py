@@ -1219,6 +1219,23 @@ def _github_actions_dispatch(params: dict[str, Any]) -> dict[str, Any]:
         "error": None if observed is not None else "dispatched workflow run was not observed before deadline",
     }
 
+def _observed_realm_commit() -> str | None:
+    unit = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service')
+    if not unit.is_file():
+        return None
+    for raw in unit.read_text(encoding='utf-8').splitlines():
+        if not raw.startswith('ExecStart='):
+            continue
+        value = raw.split('=', 1)[1]
+        parts = value.split('/realm-fabric/releases/', 1)
+        if len(parts) != 2:
+            return None
+        commit = parts[1].split('/', 1)[0].strip().lower()
+        if len(commit) == 40 and all(c in '0123456789abcdef' for c in commit):
+            return commit
+    return None
+
+
 # Branch convergence #1682 compatibility fence.
 # Main retained these legacy registry keys but lost their implementation.
 # They must not silently reacquire privileged core/integration deployment
