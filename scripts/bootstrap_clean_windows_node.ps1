@@ -19,33 +19,40 @@ if (-not [uri]::TryCreate($OneUrl, [System.UriKind]::Absolute, [ref]$parsedOne) 
   throw "OneUrl must be an absolute HTTPS URL: $OneUrl"
 }
 
+function Test-WorkingPython([string]$Candidate) {
+  if ([string]::IsNullOrWhiteSpace($Candidate) -or -not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $false }
+  try {
+    # Never allow Store/winget banners or application-alias text to become a path.
+    $probe = @(& $Candidate -c "import sys; assert sys.version_info.major >= 3" 2>$null)
+    return ($LASTEXITCODE -eq 0)
+  } catch { return $false }
+}
+
 function Resolve-Python {
-  $cmd = Get-Command python -ErrorAction SilentlyContinue
-  if ($cmd) {
-    try {
-      $major = & $cmd.Source -c "import sys; print(sys.version_info.major)"
-      if ([int]$major -ge 3) { return $cmd.Source }
-    } catch {}
-  }
-  $winget = Get-Command winget -ErrorAction SilentlyContinue
-  if (-not $winget) { throw "Python 3 is required and winget is unavailable. Install Python 3, then rerun this bootstrap." }
-  Write-Host "agentos_bootstrap_python=INSTALLING"
-  & $winget.Source install --id Python.Python.3.12 -e --scope user --accept-package-agreements --accept-source-agreements --silent
-  if ($LASTEXITCODE -ne 0) { throw "Python installation failed with exit code $LASTEXITCODE" }
-  $candidates = @(
+  # The Windows Store app-execution alias is not a working Python interpreter.
+  $candidates = New-Object System.Collections.Generic.List[string]
+  foreach ($candidate in @(
     "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe"
-  )
-  foreach ($candidate in $candidates) {
-    if (Test-Path -LiteralPath $candidate) {
-      try {
-        $probe = @(& $candidate -c "import sys; print(sys.executable)" 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $probe.Count -gt 0) { return $candidate }
-      } catch {}
-    }
+  )) { $candidates.Add($candidate) }
+  foreach ($cmdName in @('python','python3')) {
+    $cmd = Get-Command $cmdName -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { $candidates.Add([string]$cmd.Source) }
   }
-  throw "Python was installed but a real python.exe could not be resolved in this session."
+  foreach ($candidate in ($candidates | Select-Object -Unique)) {
+    if (Test-WorkingPython $candidate) { return $candidate }
+  }
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if (-not $winget) { throw 'Python 3 is required and winget is unavailable. Install Python 3, then rerun this bootstrap.' }
+  Write-Host 'agentos_bootstrap_python=INSTALLING'
+  # Explicitly discard installer output: only a validated path may be returned.
+  & $winget.Source install --id Python.Python.3.12 -e --scope user --accept-package-agreements --accept-source-agreements --silent | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Python installation failed with exit code $LASTEXITCODE" }
+  foreach ($candidate in ($candidates | Select-Object -Unique)) {
+    if (Test-WorkingPython $candidate) { return $candidate }
+  }
+  throw 'Python installation completed, but no working Python 3 executable was found at the expected user install paths.'
 }
 
 $python = Resolve-Python
