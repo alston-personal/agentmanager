@@ -147,7 +147,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$DEPLOY_USER"
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$DEPLOY_PORT" "$DEPLOY_USER@$ORACLE_HOST" 'python3 -' <<'PY'
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" 'python3 -' <<'PY'
           import hashlib, json, math, re, subprocess
           from datetime import datetime, timezone
           from pathlib import Path
@@ -215,7 +215,7 @@ jobs:
               }
               for key, passed in checks.items():
                   print('galaxy_learning_' + key + '=' + ('PASS' if passed else 'FAIL'))
-              print('galaxy_learning_observed_at=' + stamp.strftime('%Y-%m-%dT%H:%M:%SZ'))
+              print('galaxy_learning_observed_at=' + stamp.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
               verdict = 'PASS' if all(checks.values()) and timer_ok and valid_generation else 'INCOMPLETE'
               break
           print('galaxy_learning_acceptance=' + verdict)
