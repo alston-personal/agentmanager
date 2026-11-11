@@ -48,7 +48,14 @@ jobs:
             bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
           set -euo pipefail
           REPO="$1"; SOURCE_SHA="$2"; RUN_ID="$3"
-          LIVE=/home/ubuntu/zeus-writer/website/dist
+          LIVE=/home/ubuntu/studio-web/dist
+          # Fail closed until the authorized Nginx migration has actually
+          # switched the public Studio virtual host to the canonical root.
+          # Keeping a second writable production root recreates #331 drift.
+          nginx -T 2>&1 | grep -Eq '^[[:space:]]*root[[:space:]]+/home/ubuntu/studio-web/dist[[:space:]]*;' || {
+            echo 'studio_canonical_root_not_active' >&2
+            exit 1
+          }
           TMP=$(mktemp -d /tmp/milkcat-home-cutover-XXXXXX)
           SRC="$TMP/studio-web"
           BACKUP=/home/ubuntu/agent-data/releases/studio-web/milkcat-world-home/${SOURCE_SHA:0:12}-$RUN_ID
