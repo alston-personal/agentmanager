@@ -15,8 +15,8 @@ from urllib.request import Request, urlopen
 
 
 def probe(url, token, *, kind):
-    headers = {'Authorization': 'Bearer ' + token} if kind not in ('shell', 'welcome', 'companion', 'auth_session') else {}
-    if kind == 'auth_session':
+    headers = {'Authorization': 'Bearer ' + token} if kind not in ('shell', 'welcome', 'companion', 'auth_session', 'account_anon') else {}
+    if kind in ('auth_session', 'account_anon'):
         # Local probe must mimic the public virtual host; the OAuth bridge
         # intentionally refuses arbitrary Host headers on 127.0.0.1.
         headers['Host'] = 'agentos.milkcat.org'
@@ -42,13 +42,22 @@ def probe(url, token, *, kind):
                            'noindex': 'noindex' in response.headers.get('X-Robots-Tag', '')}
                 valid = valid and details['noindex']
             elif kind == 'welcome':
-                valid = status == 200 and '登入狀態' in body and '管理者 Console 不會自動開放' in body
+                valid = (status == 200 and '登入狀態' in body and
+                         '管理者 Console 不會自動開放' in body and
+                         'id="create-realm"' in body and
+                         '/v1/account/realm-request' in body)
                 details = {'session_status_ui': '登入狀態' in body,
+                           'onboarding_request_ui': 'id="create-realm"' in body,
+                           'onboarding_route': '/v1/account/realm-request' in body,
                            'no_operator_grant': '管理者 Console 不會自動開放' in body}
             elif kind == 'companion':
                 valid = status == 200 and 'Node Map' in body and bool(token) and token not in body
                 details = {'legacy_operator_ui': 'Node Map' in body,
                            'credential_absent': bool(token) and token not in body}
+            elif kind == 'account_anon':
+                payload = json.loads(body)
+                valid = status == 401 and payload.get('error') == 'signin_required'
+                details = {'anonymous_denied': valid}
             elif kind == 'auth_session':
                 payload = json.loads(body)
                 valid = (status == 200 and isinstance(payload.get('loggedIn'), bool)
@@ -122,6 +131,7 @@ def inspect(expected_sha, public_url):
         probes[label] = {kind: probe(base + path, token, kind=kind) for kind, path in
                          [('shell', '/'), ('welcome', '/welcome'), ('companion', '/companion'),
                           ('auth_session', '/dashboard/api/auth/session'),
+                          ('account_anon', '/v1/account/realm-request'),
                           ('nodes', '/v1/nodes'), ('approval', '/v1/nodes/approve')]}
         for provider in ('google', 'github', 'facebook', 'line'):
             probes[label]['oauth_' + provider] = probe_oauth_origin(base, provider, local=label == 'local')

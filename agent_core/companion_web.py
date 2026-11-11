@@ -657,9 +657,23 @@ WELCOME_HTML = """<!doctype html>
 body{background:#080c14;color:#e5e7eb;display:grid;place-items:center;min-height:100vh;margin:0}
 main{padding:36px;border:1px solid #293244;border-radius:16px;background:#101827;width:min(88vw,500px)}
 p{line-height:1.7;color:#aab6cb}a{color:#9baaff}
+button,input{font:inherit;border:1px solid #42516a;border-radius:8px;padding:10px;background:#172238;color:#f3f4f6}
+button{cursor:pointer;margin:6px 6px 6px 0}button:disabled{opacity:.5;cursor:not-allowed}
+input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
 </style></head><body><main>
 <h1>AgentOS</h1>
 <p id="login-status" aria-live="polite">正在確認登入狀態…</p>
+<section id="realm-onboarding" hidden>
+<h2>我的 Realm</h2>
+<p id="realm-status" aria-live="polite">正在讀取開通狀態…</p>
+<div id="realm-actions" class="actions" hidden>
+<p>第一次使用可提出建立個人 Realm 的申請；已有 Realm 則可以申請加入。申請送交治理審核，不會立即取得其他 Realm 權限。</p>
+<button id="create-realm" type="button">申請建立個人 Realm</button>
+<label for="join-realm">既有 Realm ID</label>
+<input id="join-realm" placeholder="例如 realm-example" maxlength="63" autocomplete="off">
+<button id="join-realm-submit" type="button">申請加入既有 Realm</button>
+</div>
+</section>
 <p id="next-action" hidden><a href="/">返回登入頁</a></p>
 <script>
 (async () => {
@@ -672,8 +686,55 @@ p{line-height:1.7;color:#aab6cb}a{color:#9baaff}
     if (!response.ok) throw new Error('session_unavailable');
     const session = await response.json();
     if (session.loggedIn === true && session.provider && session.subject) {
-      status.textContent = '已使用 ' + session.provider +
-        ' 登入 AgentOS。Realm 建立或加入授權尚未完成；管理者 Console 不會自動開放。';
+      status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。管理者 Console 不會自動開放。';
+      const onboarding = document.getElementById('realm-onboarding');
+      const current = document.getElementById('realm-status');
+      const actions = document.getElementById('realm-actions');
+      onboarding.hidden = false;
+      const endpoint = '/v1/account/realm-request';
+      const readStatus = async () => {
+        const answer = await fetch(endpoint, {credentials:'same-origin', cache:'no-store'});
+        if (!answer.ok) throw new Error('realm_read_unavailable');
+        return answer.json();
+      };
+      const showStatus = data => {
+        if (data.state === 'pending_review') {
+          current.textContent = '申請已建立（' + data.request_id +
+            '），目前等待治理審核與 ONE 正式開通。這還不是可以使用的 Realm。';
+          actions.hidden = true;
+        } else {
+          current.textContent = '尚未有 Realm 開通申請。';
+          actions.hidden = false;
+        }
+      };
+      try {
+        showStatus(await readStatus());
+      } catch {
+        current.textContent = 'Realm 開通服務暫時無法連線。登入已成功，但尚未取得 Realm 權限。';
+      }
+      async function submit(kind) {
+        const realm_id = document.getElementById('join-realm').value.trim().toLowerCase();
+        if (kind === 'join' && !/^[a-z][a-z0-9-]{2,62}$/.test(realm_id)) {
+          current.textContent = '請輸入有效的 Realm ID（小寫字母、數字、連字號，3 至 63 字）。';
+          return;
+        }
+        actions.querySelectorAll('button').forEach(b => { b.disabled = true; });
+        try {
+          const response = await fetch(endpoint, {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(kind === 'join' ? {kind,realm_id} : {kind})
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'registration_unavailable');
+          showStatus(data);
+        } catch {
+          current.textContent = '無法提交 Realm 申請。請檢查服務狀態後重試。';
+          actions.querySelectorAll('button').forEach(b => { b.disabled = false; });
+        }
+      }
+      document.getElementById('create-realm').onclick = () => submit('create');
+      document.getElementById('join-realm-submit').onclick = () => submit('join');
       return;
     }
     status.textContent = 'Google 授權已返回 AgentOS，但網站未取得有效的登入 Session。請重新登入；若仍發生，需檢查瀏覽器 Cookie 與伺服器認證回呼。';

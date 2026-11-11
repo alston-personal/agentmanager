@@ -20,6 +20,7 @@ from .project_state import read_project_state
 from .approval_broker import list_approvals, resolve_approval, park_approval
 from .companion_web import render_companion_html, render_public_entry_html, render_welcome_html
 from .shared_auth_bridge import is_shared_auth_path, proxy_shared_auth_request
+from .account_realm_onboarding import account_request
 
 MAX_REQUEST_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -419,6 +420,14 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         if path in ("/welcome", "/welcome/"):
             self._html(200, render_welcome_html())
             return
+        if path == "/v1/account/realm-request":
+            try:
+                code, result = account_request(method="GET", host=self.headers.get("Host", ""),
+                                               cookie=self.headers.get("Cookie"), origin=None)
+                self._json(code, result)
+            except (OSError, ValueError):
+                self._json(503, {"ok": False, "error": "registration_unavailable"})
+            return
         if path in ("/companion", "/companion/"):
             self._html(200, render_companion_html())
             return
@@ -458,6 +467,14 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         path, parts = self._route()
         try:
             body = self._read_body()
+            if path == "/v1/account/realm-request":
+                code, result = account_request(
+                    method="POST", host=self.headers.get("Host", ""),
+                    cookie=self.headers.get("Cookie"),
+                    origin=self.headers.get("Origin"), body=body,
+                )
+                self._json(code, result)
+                return
             if parts[:2] in (["v1", "nodes"], ["v1", "approvals"]) and not self._require_root():
                 return
             if path in ("/v1/nodes/approve",) or (len(parts) == 3 and parts[:2] == ["v1", "nodes"] and parts[2] == "approve"):
