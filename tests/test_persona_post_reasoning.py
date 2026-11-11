@@ -26,6 +26,53 @@ DECISION = {"should_post": True, "human_required": False,
             "reason": "verified context", "post_text": "今天想試試哪個小改變？"}
 
 
+class MorningTrendConsumptionTests(unittest.TestCase):
+    def test_fresh_mio_subscription_is_advisory_not_threads_post(self):
+        from datetime import timedelta
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"morning_reading.json"
+            now=datetime(2026,11,11,2,0,tzinfo=timezone.utc)
+            path.write_text(json.dumps({
+                "subscription_id":"mio_lifestyle",
+                "generated_at":"2026-11-11 08:00:00",
+                "synthesized":{
+                    "title":"晨讀：咖啡與風格",
+                    "highlights":[{"headline":"咖啡展覽",
+                                   "source_url":"https://news.google.com/rss/articles/example"}]
+                }
+            }),encoding="utf-8")
+            result=generator.read_morning_trend_context(path,now)
+            self.assertEqual(result["status"],"FRESH")
+            self.assertEqual(len(result["headlines"]),1)
+            self.assertFalse(result["reply_allowed"])
+            self.assertFalse(result["ir_adoption_allowed"])
+            self.assertEqual(result["threads_post_ids"],[])
+            self.assertEqual(len(result["source_sha256"]),64)
+            stale=generator.read_morning_trend_context(path,now+timedelta(days=2))
+            self.assertEqual(stale["status"],"STALE")
+            self.assertEqual(stale["headlines"],[])
+
+    def test_morning_subscription_missing_invalid_and_future_are_not_fresh(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/"morning_reading.json"
+            now=datetime(2026,11,11,2,0,tzinfo=timezone.utc)
+            self.assertEqual(generator.read_morning_trend_context(p,now)["status"],"MISSING")
+            for contents in [
+                {"subscription_id":"someone_else","generated_at":"2026-11-11 08:00:00"},
+                {"subscription_id":"mio_lifestyle","generated_at":"garbage"},
+                {"subscription_id":"mio_lifestyle","generated_at":"2026-11-11 08:00:00",
+                 "synthesized":{"highlights":"untrusted string"}},
+            ]:
+                p.write_text(json.dumps(contents),encoding="utf-8")
+                self.assertEqual(generator.read_morning_trend_context(p,now)["status"],"INVALID")
+            p.write_text(json.dumps({
+                "subscription_id":"mio_lifestyle",
+                "generated_at":"2026-11-12 08:00:00",
+                "synthesized":{"highlights":[]}
+            }),encoding="utf-8")
+            self.assertEqual(generator.read_morning_trend_context(p,now)["status"],"STALE")
+
+
 class PostReasoningTests(unittest.TestCase):
     def test_all_reasoning_providers_exhausted_preserves_consider_and_classifies_capacity(self):
         results=[
