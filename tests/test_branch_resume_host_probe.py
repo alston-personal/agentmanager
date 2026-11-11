@@ -166,3 +166,34 @@ def test_host_config_rejects_untrusted_schema(checkouts, tmp_path):
     cfg.chmod(0o600)
     with pytest.raises(FreshnessError, match="INVALID_HOST_CONFIG"):
         load_trusted_code_resume_probe(str(cfg))
+
+
+def test_queued_executor_rechecks_main_just_before_mutating(checkouts, monkeypatch):
+    from agentos_node import executor_job_action_relay as worker
+    from tests.test_branch_resume_controller import request
+    remote, writer, checkout = checkouts
+    executed = []
+    monkeypatch.setattr(worker, "load_trusted_code_resume_probe",
+                        lambda path: provider(remote, checkout))
+    monkeypatch.setattr(worker, "run_registered_executor_job",
+                        lambda *, request: executed.append(request["job_type"]) or {"ok": True})
+    packet = {"request": request()}
+    assert worker._execute(packet)["ok"] is True
+    assert executed == [SPEC.job_type]
+    put_commit(writer, "another-main-update.txt", "new feature from a second agent")
+    git("push", "-q", "origin", "main", cwd=writer)
+    with pytest.raises(ValueError, match="CODE_MAINLINE_RECONCILE_REQUIRED"):
+        worker._execute(packet)
+    assert executed == [SPEC.job_type]
+
+
+def test_worker_code_job_does_not_execute_without_host_configuration(monkeypatch):
+    from agentos_node import executor_job_action_relay as worker
+    from tests.test_branch_resume_controller import request
+    monkeypatch.delenv("AGENTOS_CODE_RESUME_HOST_CONFIG", raising=False)
+    calls = []
+    monkeypatch.setattr(worker, "run_registered_executor_job",
+                        lambda *, request: calls.append(request) or {"ok": True})
+    with pytest.raises(ValueError, match="CODE_MAINLINE_PROBE_UNAVAILABLE"):
+        worker._execute({"request": request()})
+    assert calls == []
