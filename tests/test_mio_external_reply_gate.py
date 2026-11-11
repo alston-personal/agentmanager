@@ -81,7 +81,7 @@ class ExternalReplyGateTest(unittest.TestCase):
         self.assertIn("external_reply_not_authorized", skipped)
 
     def test_inbox_only_is_not_outward_candidate(self):
-        items, _ = self.candidates(events=[{"type": "external.observation", **self.event,
+        items, _ = self.candidates(events=[{**self.event, "type": "external.observation",
                                                 "source_receipt_ref": None}])
         self.assertEqual(items, [])
 
