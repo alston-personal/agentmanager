@@ -1,5 +1,6 @@
 name: AgentOS Control Plane Immutable Login Release (#2198)
 
+# Source-locked rollout for actionable platform login/account-switch UI without role changes.
 # Source-locked rollout to expose precise 401/403 governance denial without weakening permissions.
 # Source-locked rollout for platform-authorized Realm request review interface.
 # Source-locked rollout for authenticated AgentOS Realm onboarding intake and review.
