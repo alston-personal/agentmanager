@@ -35,6 +35,9 @@ def verdict(status, allowed=False):
         "status": status,
         "allowed": allowed,
         "production_authorized": False,
+        "main_sha": "a" * 40,
+        "merge_base_sha": "a" * 40,
+        "work_sha": "b" * 40,
     }
 
 
@@ -50,7 +53,9 @@ def test_stale_or_untrusted_verdict_cannot_enqueue_code_job(tmp_path):
     for result in (None, {}, verdict("RECONCILE_REQUIRED"),
                    verdict("READ_ONLY_INSPECT", True),
                    {**verdict("MAINLINE_CURRENT", True), "production_authorized": True},
-                   {**verdict("MAINLINE_CURRENT", True), "allowed": "true"}):
+                   {**verdict("MAINLINE_CURRENT", True), "allowed": "true"},
+                   {**verdict("MAINLINE_CURRENT", True), "merge_base_sha": "c" * 40},
+                   {**verdict("MAINLINE_CURRENT", True), "work_sha": "not-pinned"}):
         worker = FakeDispatcher()
         controller = ControllerService(
             _fabric(tmp_path),
