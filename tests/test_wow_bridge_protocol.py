@@ -82,6 +82,25 @@ class WowBridgeProtocolTest(unittest.TestCase):
         self.assertEqual(NodeBoundStatusGateway(fail, lambda _: {}).accept(frame())["reason"], "NODE_AUTH_UNAVAILABLE")
         self.assertEqual(NodeBoundStatusGateway(lambda: True, fail).accept(frame())["reason"], "NODE_READER_UNAVAILABLE")
 
+    def test_account_intents_are_distinct_from_status_and_cannot_supply_realm(self):
+        from agentos_node.wow_bridge_protocol import decode_account_intent, NodeBoundAccountGateway
+        def intent(action, request_id=5):
+            return frame(action=action, request_id=request_id)
+        self.assertEqual(decode_account_intent(intent("wow.account.login.start")), (5, "abc12345", "wow.account.login.start"))
+        with self.assertRaisesRegex(ProtocolError, "action_not_allowed"):
+            decode_request(intent("wow.account.logout"))
+        with self.assertRaisesRegex(ProtocolError, "account_action_not_allowed"):
+            decode_account_intent(intent("shell.exec"))
+        with self.assertRaisesRegex(ProtocolError, "invalid_request_shape"):
+            decode_account_intent(encode(6, json.dumps({"action":"wow.account.login.start","session":"abc12345","realm":"realm-alston"}).encode()))
+        called = []
+        gate = NodeBoundAccountGateway(lambda: True, lambda action: called.append(action) or {"status":"PAIRING_STARTED"})
+        self.assertEqual(gate.accept(intent("wow.account.login.start"))["status"], "PAIRING_STARTED")
+        self.assertEqual(called, ["wow.account.login.start"])
+        self.assertEqual(gate.accept(intent("wow.account.login.start"))["reason"], "DUPLICATE_REQUEST")
+        self.assertEqual(NodeBoundAccountGateway(lambda: False, lambda _: {}).accept(intent("wow.account.logout"))["reason"], "BRIDGE_NOT_AUTHORIZED")
+        self.assertEqual(NodeBoundAccountGateway(lambda: True, lambda _: {"status":"SIGNED_OUT","token":"secret"}).accept(intent("wow.account.logout"))["reason"], "UNSAFE_ACCOUNT_RESPONSE")
+
     def test_no_auth_no_fake_status(self):
         gateway=OfflineStatusGateway()
         self.assertEqual(gateway.accept(frame())["reason"],"ONE_NOT_BOUND")
