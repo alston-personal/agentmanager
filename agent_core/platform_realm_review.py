@@ -66,7 +66,8 @@ def _project(item: dict[str, Any]) -> dict[str, Any] | None:
         "resolved_by": item.get("resolved_by"),
         "applicant": applicant,
         "applicant_ref": request_id.removeprefix(_PREFIX)[:12],
-        "stage": ("approved_pending_one" if item.get("status") == "APPROVED" else
+        "stage": ("realm_initialized" if bootstrapped is not None else
+                  "approved_pending_one" if item.get("status") == "APPROVED" else
                   "rejected" if item.get("status") == "REJECTED" else "pending_review"),
         "provisioned": bootstrapped is not None,
         "provisioned_realm_id": bootstrapped["realm_id"] if bootstrapped else None,
