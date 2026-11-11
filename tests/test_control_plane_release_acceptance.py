@@ -139,3 +139,25 @@ def test_welcome_inspector_rejects_stale_production_copy(monkeypatch):
     assert result['ok'] is False
     assert result['obsolete_copy_absent'] is False
     assert result['account_header'] is False
+
+
+def test_auto_release_receipt_reports_to_original_issue_without_deployment_secrets():
+    """The existing Distributed Control Plane CI executes this test."""
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[1]
+    source = (repo_root / ".github/workflows/oracle-agentos-login-control-plane-release.yml").read_text(encoding="utf-8")
+    assert "report-release-receipt:" in source
+    assert "needs: [deploy]" in source
+    assert "if: ${{ always() }}" in source
+    assert "DEPLOY_RESULT: ${{ needs.deploy.result }}" in source
+    assert "const issue_number = 2198;" in source
+    assert "context.runId" in source and "context.sha" in source
+    assert "github.rest.issues.createComment" in source
+    assert "github.rest.issues.updateComment" in source
+    assert "agentos-control-plane-release:" in source
+    reporter = source.split("\n  report-release-receipt:", 1)[1]
+    assert "issues: write" in reporter
+    assert "ssh-private-key:" not in reporter
+    assert "DEPLOY_USER" not in reporter
+    assert "authenticated admin/tenant sessions remain separate acceptance gates" in reporter.lower()
+    assert "not established" in reporter.lower()
