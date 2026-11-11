@@ -53,37 +53,43 @@ $primaryName = 'AgentOS Thin Client'
 $watchdogName = 'AgentOS Thin Client Watchdog'
 $primary = Get-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
 $watchdog = Get-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue
-if ($null -eq $primary -or $null -eq $watchdog) {
-  throw 'Canonical Windows supervisor/watchdog pair not found; manual governance needed'
+if ($null -eq $primary) {
+  throw 'Canonical hidden Windows supervisor not found; manual governance needed'
 }
-if ($primary.Actions.Count -ne 1 -or $watchdog.Actions.Count -ne 1 -or
+# Current one-click installer has a single hidden task. Older supervised
+# installs have a second watchdog; when present it too must be a known action.
+if (@($primary.Actions).Count -ne 1 -or
     $primary.Actions[0].Execute -notmatch '(?i)powershell' -or
-    $watchdog.Actions[0].Execute -notmatch '(?i)powershell' -or
+    $primary.Actions[0].Arguments -notmatch '(?i)-WindowStyle\s+Hidden' -or
     $primary.Actions[0].Arguments -notmatch 'agentos-thin-client-hidden' -or
-    $watchdog.Actions[0].Arguments -notmatch 'watchdog') {
-  throw 'Unknown or legacy Windows task action; refusing to replace an active Node'
+    ($null -ne $watchdog -and (
+      @($watchdog.Actions).Count -ne 1 -or
+      $watchdog.Actions[0].Execute -notmatch '(?i)powershell' -or
+      $watchdog.Actions[0].Arguments -notmatch 'watchdog'))) {
+  throw 'Unknown Windows supervisor action; refusing to replace an active Node'
 }
+$hasWatchdog = ($null -ne $watchdog)
 
 $backup = Join-Path $state ('client.realm-rollback-' + [guid]::NewGuid().ToString('N') + '.json')
 $temp = Join-Path $state ('client.stage-swap-' + [guid]::NewGuid().ToString('N') + '.tmp')
 $committed = $false
 $stopped = $false
 try {
-  Stop-ScheduledTask -TaskName $watchdogName -ErrorAction Stop
+  $stopped = $true
+  if ($hasWatchdog) { Stop-ScheduledTask -TaskName $watchdogName -ErrorAction Stop }
   Stop-ScheduledTask -TaskName $primaryName -ErrorAction Stop
   Start-Sleep -Seconds 2
-  $stopped = $true
   if ((Get-ScheduledTask -TaskName $primaryName).State -eq 'Running' -or
-      (Get-ScheduledTask -TaskName $watchdogName).State -eq 'Running') {
+      ($hasWatchdog -and (Get-ScheduledTask -TaskName $watchdogName).State -eq 'Running')) {
     throw 'Supervisor failed to stop cleanly'
   }
   # In-place copy is forbidden. Keep the exact original bytes for rollback.
-  Copy-Item -LiteralPath $originalFile -Destination $backup -ErrorAction Stop
   Copy-Item -LiteralPath $stageFile -Destination $temp -ErrorAction Stop
-  Move-Item -LiteralPath $temp -Destination $originalFile -Force -ErrorAction Stop
+  # File.Replace atomically installs the new file AND captures old bytes.
+  [IO.File]::Replace($temp, $originalFile, $backup)
   $committed = $true
   Start-ScheduledTask -TaskName $primaryName -ErrorAction Stop
-  Start-ScheduledTask -TaskName $watchdogName -ErrorAction Stop
+  if ($hasWatchdog) { Start-ScheduledTask -TaskName $watchdogName -ErrorAction Stop }
   Start-Sleep -Seconds 3
   if ((Get-ScheduledTask -TaskName $primaryName).State -ne 'Running') {
     throw 'Target supervisor did not restart'
@@ -94,7 +100,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'New active credential health failed' }
   $pythonExe = $null
   $launcherText = Get-Content -Raw -LiteralPath $launcher
-  if ($launcherText -match '(?m)^"([^"]+python(?:\.exe)?)" -m agentos_node\.client_cli') {
+  if ($launcherText -match '(?m)^"([^"]+\.exe)" -m agentos_node\.client_cli') {
     $pythonExe = $Matches[1]
   }
   if (-not $pythonExe -or -not (Test-Path -LiteralPath $pythonExe)) {
@@ -121,13 +127,14 @@ try {
 } catch {
   $failure = $_.Exception.Message
   if ($stopped) {
-    Stop-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue
+    if ($hasWatchdog) { Stop-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue }
     Stop-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
     if ($committed -and (Test-Path -LiteralPath $backup)) {
-      Copy-Item -LiteralPath $backup -Destination $originalFile -Force -ErrorAction Stop
+      $failedTarget = Join-Path $state ('client.failed-cutover-' + [guid]::NewGuid().ToString('N') + '.json')
+      [IO.File]::Replace($backup, $originalFile, $failedTarget)
     }
     Start-ScheduledTask -TaskName $primaryName -ErrorAction SilentlyContinue
-    Start-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue
+    if ($hasWatchdog) { Start-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue }
   }
   Write-Host 'agentos_realm_switch=ROLLED_BACK'
   Write-Host 'agentos_active_binding=ORIGINAL'
