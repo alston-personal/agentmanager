@@ -1,5 +1,7 @@
 name: AgentOS Control Plane Immutable Login Release (#2198)
 
+# Source-locked retry after fixing anonymous /my-one 401 inspector contract.
+# Source-locked rollout for approved CREATE to per-account isolated Realm bootstrap.
 # Source-locked rollout for post-approval navigation and accurate pending ONE stage.
 # Source-locked rollout for verified applicant metadata and richer platform governance review.
 # Source-locked rollout for actionable platform login/account-switch UI without role changes.
@@ -80,6 +82,11 @@ jobs:
           EXPECTED="/home/ubuntu/agent-data/releases/control-plane/$SOURCE_SHA"
           test "$ACCEPTED" = "$EXPECTED"
           systemctl --user is-active --quiet agentos-control-plane.service
+          # Reconcile historic, independently approved CREATE requests using
+          # the exact accepted source; no reapproval or use of realm-alston.
+          # Prints counts only, never account identifiers or OAuth credentials.
+          (cd "$ACCEPTED" &&
+            AGENT_DATA_ROOT=/home/ubuntu/agent-data python3 -m agent_core.realm_provisioning)
           echo "accepted_release=$ACCEPTED"
           echo "agentos_control_plane_login_release=PASS"
           echo "studio_dashboard_mutation=CONTROLLED_BLUE_GREEN"

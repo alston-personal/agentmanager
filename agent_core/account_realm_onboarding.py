@@ -106,6 +106,16 @@ def account_request(
                 elif item.get("status") == "REJECTED":
                     state = "rejected"
                 break
+        if state == "approved_pending_provisioning" and record.get("kind") == "create":
+            from .realm_provisioning import owner_realm
+            owned = owner_realm(identity)
+            if owned is not None and owned["request_id"] == record["request_id"]:
+                return 200, {
+                    "ok": True, "state": "realm_initialized",
+                    "kind": "create", "request_id": record["request_id"],
+                    "realm_id": owned["realm_id"], "provisioned": True,
+                    "one_runtime_attested": False,
+                }
         return 200, {"ok": True, "state": state, "kind": record["kind"],
                      "request_id": record["request_id"], "realm_id": record.get("realm_id"),
                      "provisioned": False}

@@ -26,6 +26,7 @@ jobs:
           tests/test_agentos_public_entry.py tests/test_agentos_shared_auth_bridge.py
           tests/test_account_realm_onboarding.py
           tests/test_platform_realm_review.py
+          tests/test_approved_realm_bootstrap.py
           tests/test_control_plane_release_acceptance.py
           tests/test_distributed_control_plane.py tests/test_distributed_gateway.py
           tests/test_distributed_runtime.py tests/test_project_state.py

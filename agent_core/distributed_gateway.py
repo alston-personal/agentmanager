@@ -18,10 +18,11 @@ from .context_compiler import compile_execution_context
 from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 from .approval_broker import list_approvals, resolve_approval, park_approval
-from .companion_web import render_companion_html, render_public_entry_html, render_welcome_html, render_platform_review_html, render_platform_auth_gate_html
+from .companion_web import render_companion_html, render_public_entry_html, render_welcome_html, render_platform_review_html, render_platform_auth_gate_html, render_my_one_html
 from .shared_auth_bridge import is_shared_auth_path, proxy_shared_auth_request
 from .account_realm_onboarding import account_request
 from .platform_realm_review import platform_review
+from .realm_provisioning import account_virtual_one
 
 MAX_REQUEST_BYTES = 1024 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -420,6 +421,23 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             return
         if path in ("/welcome", "/welcome/"):
             self._html(200, render_welcome_html())
+            return
+        if path == "/v1/account/virtual-one":
+            code, result = account_virtual_one(
+                host=self.headers.get("Host", ""), cookie=self.headers.get("Cookie")
+            )
+            self._json(code, result)
+            return
+        if path in ("/my-one", "/my-one/"):
+            code, result = account_virtual_one(
+                host=self.headers.get("Host", ""), cookie=self.headers.get("Cookie")
+            )
+            if code != 200:
+                # Distinguish anonymous 401, non-member 403 and invalid
+                # virtual-host 400. No Realm data is leaked on denial.
+                self._json(code, {"ok": False, "error": result.get("error", "realm_membership_required")})
+                return
+            self._html(200, render_my_one_html())
             return
         if path == "/v1/account/realm-request":
             try:
