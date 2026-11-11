@@ -94,6 +94,8 @@ def test_http_api_endpoints(tmp_path, monkeypatch):
             assert data["ok"] is True
             assert data["already_submitted"] is False
             assert data["candidate"]["id"] == "3988733254480208474"
+            assert data["candidate"]["id_provenance"] == "shortcode_derived_unverified"
+            assert data["candidate"]["reply_allowed"] is False
             assert data["candidate"]["user_note"] == "測試投遞給澪"
 
         # 4. POST duplicate feed
