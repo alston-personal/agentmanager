@@ -133,6 +133,49 @@ jobs:
           wake=item.get("wake_condition") or {}
           print("wow_2134_wake_kind="+str(wake.get("kind") if wake.get("kind") in ("time","external") else "none"))
           PY
+          # Atlas #2243: same existing Core WorkItemStore/Employee Runtime path as
+          # the scoped WoW projection, with its OWN exact source/authority fence.
+          # This creates only a read-only Paw Assignment. It does not claim,
+          # enable S4 delivery, authorize engineering writes or deploy Atlas.
+          if [ -f "$release/scripts/approved_atlas_paw_handoff.py" ]; then
+            echo "atlas_2243_projection_runtime=INSTALLED"
+            PYTHONPATH="$release" /usr/bin/python3 "$release/scripts/approved_atlas_paw_handoff.py" \
+            --completion-state "$data/governance/work-items.json" \
+            --runtime-root "$data/employee-runtime" > "$data/governance/issue-intake/last-atlas-paw-handoff.json"
+          /usr/bin/python3 - "$data/governance/issue-intake/last-atlas-paw-handoff.json" "$data/governance/work-items.json" "$data/employee-runtime" <<'PY'
+          import json,sys
+          from pathlib import Path
+          result=json.load(open(sys.argv[1],encoding="utf-8"))
+          items=json.load(open(sys.argv[2],encoding="utf-8")).get("items",{})
+          item=items.get("gh-issue-2243-engineering") or {}
+          if result.get("schema") != "agentos.approved-atlas-paw-handoff-receipt/v1":
+              raise SystemExit("atlas_paw_receipt_invalid")
+          status=str(item.get("status") or "missing")
+          print("atlas_2243_work_item_status="+status)
+          print("atlas_2243_work_item_owner="+str(item.get("owner") or "unassigned"))
+          print("atlas_2243_execution_authorized="+str(item.get("execution_authorized") is True).lower())
+          print("atlas_2243_paw_assignment_registered="+str(result.get("assignment_registered") is True).lower())
+          print("atlas_2243_paw_assignment_id="+str(result.get("assignment_id") or "missing"))
+          root=Path(sys.argv[3])
+          aid="paw-atlas-2243-inspect-v1"
+          def load(path):
+              try:
+                  obj=json.loads(path.read_text(encoding="utf-8"))
+                  return obj if isinstance(obj,dict) else {}
+              except (OSError,ValueError):
+                  return {}
+          assignment=load(root/"assignments"/(aid+".json"))
+          lease=load(root/"lifecycle"/"leases"/(aid+".json"))
+          print("atlas_2243_employee_assignment_state="+str(assignment.get("state") if assignment.get("state") in ("pending","active","blocked","handoff","completed","cancelled") else "missing"))
+          print("atlas_2243_employee_lease_state="+str(lease.get("status") if lease.get("status") in ("active","completed","blocked","handoff","cancelled","expired") else "missing"))
+          PY
+          else
+            # Source/installed Runtime skew is not a reason to break the
+            # already-proven approved Issue Intake of other projects.
+            # Missing Atlas code remains an explicit unmet acceptance gate.
+            echo "atlas_2243_projection_runtime=NOT_INSTALLED"
+            echo "atlas_2243_paw_assignment_registered=false"
+          fi
           # Independent read-only receipt projection for ONE/Supervisor claim:
           # registering an Assignment never equals a claim, delivery or result.
           /usr/bin/python3 - "$data/employee-runtime" <<'PY'
