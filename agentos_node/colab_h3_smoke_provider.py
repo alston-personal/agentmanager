@@ -107,7 +107,7 @@ def run_h3_smoke(request: Mapping[str, Any]) -> dict[str, Any]:
         "/usr/bin/gh", "api",
         "repos/" + REPOSITORY + "/commits/" + REF,
         "--jq", ".sha",
-    ], timeout=30)
+    ], cwd=Path.home(), timeout=30)
     expected = (head.get("stdout") or "").strip()
     if head["returncode"] != 0 or not re.fullmatch(r"[0-9a-f]{40}", expected):
         return _result("COLAB_SMOKE_HEAD_UNAVAILABLE", routable=False)
