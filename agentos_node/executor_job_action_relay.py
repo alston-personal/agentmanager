@@ -32,6 +32,7 @@ from agentos_node.market_master_completion_provider import register_market_maste
 from agentos_node.completion_next_inspect_provider import register_completion_next_inspect_provider
 from agentos_node.completion_470_status_provider import register_completion_470_status_provider
 from agentos_node.mio_dm_health_provider import register_mio_dm_health_provider
+from agentos_node.colab_h3_smoke_provider import register_colab_h3_smoke_provider
 
 
 ACTION = "agentos.executor.job"
@@ -51,6 +52,7 @@ MARKET_MASTER_COMPLETION_PROVIDER_REGISTERED = register_market_master_completion
 COMPLETION_NEXT_INSPECT_PROVIDER_REGISTERED = register_completion_next_inspect_provider()
 COMPLETION_470_STATUS_PROVIDER_REGISTERED = register_completion_470_status_provider()
 MIO_DM_HEALTH_PROVIDER_REGISTERED = register_mio_dm_health_provider()
+COLAB_H3_SMOKE_PROVIDER_REGISTERED = register_colab_h3_smoke_provider()
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
