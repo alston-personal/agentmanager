@@ -18,7 +18,7 @@ from .context_compiler import compile_execution_context
 from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 from .approval_broker import list_approvals, resolve_approval, park_approval
-from .companion_web import render_companion_html, render_public_entry_html, render_welcome_html, render_platform_review_html
+from .companion_web import render_companion_html, render_public_entry_html, render_welcome_html, render_platform_review_html, render_platform_auth_gate_html
 from .shared_auth_bridge import is_shared_auth_path, proxy_shared_auth_request
 from .account_realm_onboarding import account_request
 from .platform_realm_review import platform_review
@@ -435,9 +435,12 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
                     method="GET", host=self.headers.get("Host", ""),
                     cookie=self.headers.get("Cookie"), origin=None
                 )
+                if code in (401, 403):
+                    # Render an actionable denial screen without revealing
+                    # any protected queue contents. The API remains JSON/deny.
+                    self._html(code, render_platform_auth_gate_html(authenticated=code == 403))
+                    return
                 if code != 200:
-                    # Keep explicit, non-sensitive auth reason and original
-                    # status instead of masking 401 and 403 under one error.
                     self._json(code, {"ok": False, "error": result.get("error", "review_unavailable")})
                     return
                 self._html(200, render_platform_review_html())

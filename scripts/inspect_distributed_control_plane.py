@@ -58,9 +58,19 @@ def probe(url, token, *, kind):
                 payload = json.loads(body)
                 valid = status == 401 and payload.get('error') == 'signin_required'
                 details = {'anonymous_denied': valid}
-            elif kind in ('platform_anon', 'platform_page_anon'):
+            elif kind == 'platform_page_anon':
+                # A protected HTML page may explain the missing credential,
+                # but it must never expose a review queue to the visitor.
+                valid = (status == 401 and '平台管理者帳號登入' in body
+                         and 'returnTo=%2Fplatform' in body
+                         and '待審申請：' not in body
+                         and '核准（待 ONE 開通）' not in body)
+                details = {'unauthorized_platform_denied': status == 401,
+                           'actionable_login_ui': 'returnTo=%2Fplatform' in body,
+                           'protected_review_absent': '核准（待 ONE 開通）' not in body}
+            elif kind == 'platform_anon':
                 payload = json.loads(body)
-                valid = status == 401 and payload.get('error') in ('signin_required', 'platform_review_forbidden')
+                valid = status == 401 and payload.get('error') == 'signin_required'
                 details = {'unauthorized_platform_denied': valid}
             elif kind == 'auth_session':
                 payload = json.loads(body)
