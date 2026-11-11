@@ -750,3 +750,44 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
 def render_welcome_html() -> str:
     """Unprivileged post-login status; never treat a browser cookie as ONE authority."""
     return WELCOME_HTML
+
+PLATFORM_REVIEW_HTML = """<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentOS — Realm 平台審核</title>
+<meta name="robots" content="noindex,nofollow"></head>
+<body style="background:#101827;color:white;font-family:system-ui;margin:3rem auto;max-width:760px">
+<h1>AgentOS 平台治理</h1>
+<p>僅授權平台管理者可見。核准申請不等於 ONE 已開通。</p>
+<div id="status" role="status">讀取中…</div><section id="items"></section>
+<script>
+(async function load(){
+const status=document.getElementById('status'),items=document.getElementById('items');
+try{
+const res=await fetch('/v1/platform/realm-requests',{credentials:'same-origin',cache:'no-store'});
+if(!res.ok){status.textContent='無權限或服務暫時無法使用';return;}
+const data=await res.json();status.textContent='待審申請：'+data.pending.length;
+items.replaceChildren();
+for(const item of data.pending){
+const article=document.createElement('article');
+const title=document.createElement('h2');
+title.textContent=item.kind==='create'?'建立新 Realm':'加入既有 Realm';
+article.append(title);
+const info=document.createElement('p');info.textContent=item.request_id+(item.realm_id?' · '+item.realm_id:'');article.append(info);
+for(const decision of ['approve','reject']){
+const b=document.createElement('button');b.textContent=decision==='approve'?'核准（待 ONE 開通）':'拒絕';
+b.onclick=async()=>{b.disabled=true;const result=await fetch('/v1/platform/realm-requests',{
+method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({request_id:item.request_id,decision})});
+if(result.ok)location.reload();else{b.disabled=false;status.textContent='操作失敗';}};
+article.append(b);
+}
+items.append(article);
+}
+}catch{status.textContent='無法載入審核資料';}
+})();
+</script></body></html>
+"""
+
+
+def render_platform_review_html() -> str:
+    return PLATFORM_REVIEW_HTML
