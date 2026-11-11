@@ -248,7 +248,7 @@ def _layoutlab_static_deploy(params: dict[str, Any]) -> dict[str, Any]:
     return {
         "ok": ok,
         "site": "studio.milkcat.org",
-        "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
+        "artifact": "/home/ubuntu/studio-web/dist/layout-lab/index.html",
         "mode": "browser-only-layoutlib-v0.1-compatible",
         "step": step,
     }
