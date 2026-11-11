@@ -538,6 +538,10 @@ print('agentos_source_commit='+source_commit)
         action = str(request.get('action') or '').strip()
         if action == 'realm.runtime.rollout':
             return self.rollout_runtime(request)
+        # Generic shell/process authority must never be exposed to Control API callers.
+        # Typed runtime convergence builds its own fixed, validated task separately.
+        if action in {'shell.exec', 'process.exec'}:
+            raise PermissionError(f'controller action not permitted: {action}')
 
         node = self.node(node_id)
         if node.get('status') != 'online':
