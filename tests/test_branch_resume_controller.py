@@ -33,6 +33,8 @@ def verdict(status, allowed=False):
     return {
         "schema": "agentos.branch-resume-gate/v1",
         "status": status,
+        "kind": "code",
+        "main_ancestor_of_work": status == "MAINLINE_CURRENT",
         "allowed": allowed,
         "production_authorized": False,
         "main_sha": "a" * 40,
