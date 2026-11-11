@@ -224,3 +224,73 @@ jobs:
           print('galaxy_learning_acceptance=' + verdict)
           # A missing row is not a deployment failure or proof of learning.
           PY
+
+      - name: Diagnose existing pending learning queue read-only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$DEPLOY_PORT" "$DEPLOY_USER@$ORACLE_HOST" 'python3 -' <<'PY'
+          import json, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root = Path('/home/ubuntu/agent-data/runtime/social/post-experiments')
+          now = datetime.now(timezone.utc)
+          counts = dict(due=0, not_due=0, complete_marker=0, invalid=0, failed=0, never_attempted=0)
+          errors = dict(monitor_nonzero_exit=0, other=0)
+          attempt_ages = []
+          queue = root / 'queue'
+          for file in sorted(queue.glob('*.json')) if queue.is_dir() else []:
+              if file.is_symlink():
+                  counts['invalid'] += 1
+                  continue
+              try:
+                  row = json.loads(file.read_text(encoding='utf-8'))
+                  published = datetime.fromisoformat(str(row['published_at']).replace('Z', '+00:00'))
+                  if published.tzinfo is None:
+                      raise ValueError('naive timestamp')
+                  elapsed = max(0, int((now - published.astimezone(timezone.utc)).total_seconds() // 60))
+                  due = row.get('next_elapsed_minutes')
+                  if due is None: counts['complete_marker'] += 1
+                  elif elapsed >= int(due): counts['due'] += 1
+                  else: counts['not_due'] += 1
+                  if row.get('last_error'):
+                      counts['failed'] += 1
+                      category = 'monitor_nonzero_exit' if row['last_error'] == 'monitor_nonzero_exit' else 'other'
+                      errors[category] += 1
+                  if row.get('last_attempt_at'):
+                      stamp = datetime.fromisoformat(str(row['last_attempt_at']).replace('Z', '+00:00'))
+                      if stamp.tzinfo:
+                          attempt_ages.append(max(0, int((now - stamp.astimezone(timezone.utc)).total_seconds() // 60)))
+                  else:
+                      counts['never_attempted'] += 1
+              except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                  counts['invalid'] += 1
+          for key, value in counts.items():
+              print('galaxy_queue_' + key + '=' + str(value))
+          for key, value in errors.items():
+              print('galaxy_queue_error_' + key + '=' + str(value))
+          print('galaxy_queue_last_attempt_age_minutes=' + (str(min(attempt_ages)) if attempt_ages else 'unknown'))
+          status = subprocess.run(
+              ['systemctl','--user','show','agentos-galaxy-experiment-monitor.service','-p','Result','-p','ExecMainStatus'],
+              capture_output=True, text=True, check=False, timeout=10)
+          properties = dict(line.split('=',1) for line in status.stdout.splitlines() if '=' in line)
+          result = properties.get('Result','')
+          print('galaxy_monitor_service_result=' + (result if result in ('success','exit-code','timeout','signal') else 'unknown'))
+          code = properties.get('ExecMainStatus','')
+          print('galaxy_monitor_service_exit=' + (code if re.fullmatch(r'[0-9]{1,3}',code) else 'unknown'))
+          # Only fixed numeric counters leave Oracle, never journal text or account data.
+          logfile = Path('/home/ubuntu/agent-data/logs/galaxy-experiment-monitor.log')
+          counters = {}
+          if logfile.is_file() and not logfile.is_symlink():
+              try:
+                  with logfile.open(encoding='utf-8',errors='replace') as stream:
+                      for line in stream:
+                          match = re.fullmatch(r'\s*(social_experiment_queue_(?:checked|advanced|failed))=([0-9]{1,9})\s*',line)
+                          if match:
+                              counters[match.group(1)] = match.group(2)
+              except OSError: pass
+          for key in ('social_experiment_queue_checked','social_experiment_queue_advanced','social_experiment_queue_failed'):
+              print('galaxy_latest_' + key + '=' + counters.get(key,'unknown'))
+          PY
