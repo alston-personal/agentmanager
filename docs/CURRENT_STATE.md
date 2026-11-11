@@ -1492,3 +1492,38 @@ This gives the prior human-fed URL / external trend path a meaningful bounded re
 ### 2026-11-11 — #1825 share-URL input parity and strict Threads URL boundaries (Draft #2240)
 
 The existing Mio human-fed Intelligence Hub previously parsed Threads URLs by regex substring search, meaning a non-Threads host containing an embedded Threads-looking path could be accepted as a candidate, and user-supplied `https://www.threads.com/share/...` links could not be ingested. This draft restricts human-fed inputs to HTTPS `threads.com`/`threads.net` hostnames with an exact supported post, short-post or share path. A share link is stored as an unresolved local candidate key `share:<shortcode>`, **not** a verified platform media ID. The existing Oracle Vendor Reader resolves the share URL to a canonical third-party post; the read-only observer validates returned host, author, URL and content and deduplicates using the canonical post URL hash before transferring evidence to the existing PDCA Inbox. A mismatched, private, malformed or self-authored result fails closed. Tests explicitly check share→canonical→Inbox, spoofed-host rejection and nonreply candidate status. These are source/CI-level changes only; no true provider parent ID or live Oracle readback is yet claimed.
+
+
+### WoW Addon account browser pairing — source candidate, NOT released (2026-11-11)
+
+The existing WoW #2134 / draft #2135 requests a separate **game-user account**
+session: log out of a test account and log back in as the original AgentOS
+account, without invoking Windows Node `SwitchRealm`, changing the Node
+`client.json`, reinstalling the Addon, or migrating Realm data.
+
+A new **draft backend slice** (PR #2264) reuses the existing AgentOS
+site-isolated OAuth session and `account_virtual_one` authorization instead
+of duplicating OAuth or exposing browser/Node tokens to WoW. The existing
+Distributed Control Plane Gateway has fixed AgentOS-origin routes:
+`POST /v1/wow/account/start`, browser
+`GET /wow/account/authorize?code=...`, browser
+`POST /v1/wow/account/approve`, and host-only
+`POST /v1/wow/account/poll` / `revoke`. User authorization requires an
+actual AgentOS OAuth cookie, explicit browser approval, matching Origin,
+and a server-verified owned tenant Realm. Host pairing secret is random,
+stored only as its SHA-256 hash on the server and NEVER delivered to Lua,
+SavedVariables or an addon-visible packet. The browser approval page includes
+a link for switching website accounts. Pairing is short lived, revocable,
+capacity bounded, server-side locked, no-cache and no-referrer.
+
+**Honest stage gates:** This code is still a source/CI candidate and has
+not been merged or formally deployed. Only individually owned `realm-u-...`
+Realms are currently supported by this permission check; historical
+`realm-alston` and ordinary invited-member Realms are deliberately
+fail-closed pending an existing authoritative membership check. A server
+pairing is NOT Node authorization, WoW status/ONE command permission or
+a game-visible account session. The Windows Bridge still requires real
+HTTPS start/poll/revoke integration, ongoing game RGB capture, and
+an authenticated WoW readback channel. No end-to-end in-game account
+switching or real account acceptance Receipt exists yet. Existing Node
+identity remains independent of Addon account identity.
