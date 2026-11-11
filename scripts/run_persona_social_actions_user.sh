@@ -34,6 +34,55 @@ git -C "$DATA_REPO" config --unset-all credential.helper || true
 git -C "$DATA_REPO" config credential.https://github.com.helper '!/usr/bin/gh auth git-credential'
 
 ROOT="$DATA_REPO/$PERSONA_PATH"
+
+# The Trend Digest writes to Oracle's local data tree, while the Persona loop
+# operates on a fresh my-agent-data checkout. Stage only a fresher bounded,
+# correctly scoped local briefing into this temporary checkout; never mutate
+# the durable source or treat article URLs as Threads candidate IDs.
+python3 - "$ROOT" "${AGENTOS_MIO_MORNING_READING_SOURCE:-/home/ubuntu/agent-data/personas/sunlake-milkcat/morning_reading.json}" <<'PY'
+import json,os,sys,tempfile
+from datetime import datetime,timezone
+from pathlib import Path
+from zoneinfo import ZoneInfo
+root,source=map(Path,sys.argv[1:])
+target=root/"morning_reading.json"
+def read(path):
+    if path.is_symlink() or not path.is_file() or path.stat().st_size>128000:
+        return None
+    try:
+        data=json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data,dict) or data.get("subscription_id")!="mio_lifestyle":
+            return None
+        stamp=datetime.fromisoformat(str(data["generated_at"]).replace("Z","+00:00"))
+        if stamp.tzinfo is None:
+            stamp=stamp.replace(tzinfo=ZoneInfo("Asia/Taipei"))
+        return (data,stamp.astimezone(timezone.utc))
+    except (OSError,ValueError,TypeError,KeyError,OverflowError):
+        return None
+candidate=read(source)
+existing=read(target)
+status="SOURCE_MISSING_OR_INVALID"
+if candidate:
+    now=datetime.now(timezone.utc)
+    age=(now-candidate[1]).total_seconds()/3600
+    if not 0<=age<=36:
+        status="SOURCE_STALE"
+    elif existing and existing[1]>=candidate[1]:
+        status="CHECKOUT_NEWER_OR_EQUAL"
+    else:
+        fd,tmp=tempfile.mkstemp(dir=str(root),prefix=".morning-trend-",suffix=".json")
+        try:
+            with os.fdopen(fd,"w",encoding="utf-8") as out:
+                json.dump(candidate[0],out,ensure_ascii=False)
+                out.write("\n")
+            os.replace(tmp,target)
+            status="FRESH_LOCAL_STAGED"
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+print("mio_morning_trend_stage="+status)
+PY
+
 test -f "$ROOT/pdca/state.json"
 test -f "$ROOT/events/events.jsonl"
 
