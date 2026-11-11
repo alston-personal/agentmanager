@@ -84,3 +84,16 @@ def test_google_flow_landing_uses_observed_cta_before_prompt_lookup():
     # Never choose an existing project at random as a fallback.
     assert 'r"開啟專案"' not in source
     assert 'google_flow_generate=UI_UNRECOGNIZED' in source
+
+
+def test_google_flow_reacquires_prompt_after_mode_switch_before_filling():
+    # Oracle Rain Exit #1160 request 1794385283-b3f5bced reached
+    # PROMPT_INPUT_BEGIN but Playwright timed out after mode toggling.
+    source = (ROOT / "scripts/generate_google_flow_user.sh").read_text(encoding="utf-8")
+    mode_index = source.index('click_text(page,[r"^video$",r"影片"]')
+    refresh_index = source.index("box=find_prompt(page)", mode_index)
+    fill_index = source.index("box.fill(prompt,timeout=8000)", refresh_index)
+    assert mode_index < refresh_index < fill_index
+    assert 'google_flow_generate=PROMPT_AFTER_MODE_SWITCH_MISSING' in source
+    assert 'google_flow_stage=PROMPT_INPUT_FAILED' in source
+    assert 'save_debug(page,"prompt-input-timeout")' in source
