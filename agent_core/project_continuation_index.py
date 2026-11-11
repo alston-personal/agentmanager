@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import tempfile
+from agent_core.ir_validation import validate_ir_change
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -190,6 +191,7 @@ def publish_project_continuation(
             fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
             if not expected_index and (execution_path.exists() or continuation_path.exists()):
                 raise ValueError("existing continuation requires guarded advancement")
+            parent_ir = None
             if expected_index:
                 current_index, current_ir = _current_generation(execution_path, continuation_path)
                 if current_index != expected_index or current_ir != expected_ir:
@@ -204,6 +206,14 @@ def publish_project_continuation(
                 # than on a child-shape mismatch derived from stale expectations.
                 if str(canonical_ir.get("parent_ir_id") or "").strip() != expected_ir:
                     raise ValueError("canonical_ir.parent_ir_id must match expected_ir_id")
+
+                parent_envelope = json.loads(continuation_path.read_text(encoding="utf-8"))
+                parent_ir = parent_envelope.get("canonical_ir", parent_envelope)
+
+            validation = validate_ir_change(
+                canonical_ir, parent=parent_ir,
+                writer=(execution_head.get("execution_head") or {}).get("updated_by", "explicit"),
+            )
 
             execution_tmp = _write_temp(project_dir, execution_path.name, execution_head)
             continuation_tmp = _write_temp(continuity_dir, continuation_path.name, continuation)
@@ -237,6 +247,7 @@ def publish_project_continuation(
         "ir_id": new_ir_id,
         "parent_ir_id": canonical_ir.get("parent_ir_id"),
         "guarded_advance": bool(expected_index),
+        "validation": validation,
         "execution_head": {
             "path": str(execution_path),
             "sha256": _sha256(execution_head),
