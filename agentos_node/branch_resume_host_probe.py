@@ -8,6 +8,9 @@ release nor changes branches, worktrees, or Node identities.
 from __future__ import annotations
 
 from collections.abc import Mapping
+import json
+import os
+import stat
 from pathlib import Path
 import subprocess
 
@@ -67,3 +70,29 @@ class LocalCodeResumeProbe:
         work_sha = _git(root, "rev-parse", "--verify", "HEAD^{commit}")
         return inspect(root=str(root), main_ref="FETCH_HEAD",
                        work_ref=work_sha, kind="code")
+
+
+def load_trusted_code_resume_probe(config_path: str | None):
+    """Read optional operator-provisioned Oracle config at server startup.
+
+    Absent config intentionally keeps fail-closed code-job dispatch. Never
+    accept this file path from an HTTP request, IR or Executor payload.
+    """
+    if not config_path:
+        return None
+    path = Path(config_path)
+    if not path.is_absolute() or path.is_symlink():
+        raise FreshnessError("UNTRUSTED_HOST_CONFIG_PATH")
+    try:
+        st = path.stat()
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid() or st.st_mode & 0o077:
+            raise FreshnessError("UNTRUSTED_HOST_CONFIG_PERMISSIONS")
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise FreshnessError("HOST_CONFIG_UNAVAILABLE") from exc
+    if not isinstance(config, dict) or set(config) != {"schema", "origin_url", "worktrees"}:
+        raise FreshnessError("INVALID_HOST_CONFIG")
+    if config["schema"] != "agentos.branch-resume-host/v1":
+        raise FreshnessError("INVALID_HOST_CONFIG_SCHEMA")
+    return LocalCodeResumeProbe(worktrees=config["worktrees"],
+                                origin_url=config["origin_url"])
