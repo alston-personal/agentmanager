@@ -261,3 +261,27 @@ Source / regression: Transport Routing Guard CI run 43002028836 (all three
 jobs successful) covers the account intent allowlist, denied bridge, replay,
 untrusted Realm field, unsafe response data, Addon static safety and bundled
 Windows offline installer. CI is not a replacement for a real WoW host test.
+
+## Captured account intent -> trusted host session (2026-11-11 continuation)
+
+The Windows screen-capture entrypoint `agentos_node/wow_capture_probe.py`
+now decodes both account intents and status probes with the same bounded RGB
+frame codec. Its output remains `DECODED_UNAUTHORIZED`, so a screenshot
+cannot authorize login/logout or claim a Realm.
+
+The host-only `agentos_node/wow_account_intent_bridge.py` connects these
+decoded account intents to the existing reusable
+`AccountSessionBoundary` through `NodeBoundAccountGateway`. Only a
+caller-injected, independently verified host authorization probe can initiate
+pairing or scoped session revocation. An integration regression validates
+account A logout -> account B login -> their *different authorized Realms*
+without changing the Node Realm. The suite also checks replay and denied
+game-packet authorization. Transport Routing Guard CI run 43006162543
+succeeded across its three jobs.
+
+**Operational blocker:** These are injectable contracts with test callbacks,
+not a continuously running capture/Bridge. No public OAuth pairing/redeem
+endpoint or browser return session has been bound; actual game-side reply
+publication for account identity/realm is also absent. The tests prove neither
+live OAuth nor physical Windows game-host acceptance. Do not install or
+authorize the preview as a production account-switching feature.
