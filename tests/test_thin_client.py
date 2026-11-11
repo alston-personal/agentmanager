@@ -64,7 +64,7 @@ class TestThinClient(unittest.TestCase):
             })
             self.assertTrue(search['ok'])
             self.assertEqual(search['count'], 1)
-            self.assertEqual(search['matches'], [str(path)])
+            self.assertEqual([str(Path(p).resolve()) for p in search['matches']], [str(path.resolve())])
 
     def test_shell_requires_allowlist(self):
         with tempfile.TemporaryDirectory() as tmp:
