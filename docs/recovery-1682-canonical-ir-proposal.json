@@ -5,14 +5,15 @@
   "pr_number": 2271,
   "status": "SOURCE_CI_ONLY_NOT_MERGED_NOT_RUNTIME_ACCEPTED",
   "goal": "以 main 為唯一正式主線，將既有 ONE Maintenance 與 Normal/Recovery 雙通道更新、受授權 A/B 回退及跨重啟對帳收斂為同一條可驗收閉環",
-  "next_action": "由受授權 ONE Runtime 先判定 #1682 的 Canonical IR 是否已正式發布；已發布則僅執行 --resume-selector-only，未發布才 CAS 發布，並讀回實際 selector / IR 證據；接著整合 Recovery 正式授權與 Windows 故障救援 Receipt",
+  "next_action": "既有 ONE Maintenance Owner 綁定正式回滾授權與跨重啟互斥閘門，驗證 B 槽損壞不能由排程自行回退，於隔離 Windows Node 證明受授權回滾與 ONE Receipt；Canonical IR 需在實際 ONE 發布並核對最新指標",
   "pending_tasks": [
     "PR #2271 保持 Draft；審查核心及 Windows 路徑後，核對 main 最新版並決定合併時機",
     "Reuse Before Build：在既有 Maintenance Owner/Runtime 中實作真正的簽章、信任根、時效、防重放、Node/Realm/operation_id 校驗",
     "將持久化雙通道互斥閘門與 Recovery A/B 切換及回滾綁定；重啟後跨 ONE/Windows 狀態對帳失敗一律禁止新更新",
     "正式 Normal OTA 安裝入口同樣遵守跨重啟更新閘門及獨立 Recovery 可用性門檻",
     "在隔離 Windows Node 驗證 Normal 故障、Recovery 與 ONE 連線、簽章修復下載、恢復 Normal、ONE Receipt",
-    "由既有 ONE Runtime 讀取目前 Canonical IR 世代，執行 CAS 發布、讀回及 Active Continuation 指標 CAS 對帳；若發布後中斷只使用 --resume-selector-only 補同步，不得重複發布"
+    "由既有 ONE Runtime 讀取目前 Canonical IR 世代，執行 CAS 發布、讀回及 Active Continuation 指標 CAS 對帳；若發布後中斷只使用 --resume-selector-only 補同步，不得重複發布",
+    "實機驗證 Recovery 待驗證槽損壞時不會自行回滾，既有 ONE Maintenance 能受授權回滾並恢復健康探測（含 interlock 與 Receipt）"
   ],
   "decisions_append": [
     "Normal 與 Recovery 不可同時更新；Recovery 更新前須確認 Normal 能獨立提供救援，且保護原 Recovery LKG",
@@ -20,7 +21,8 @@
     "GitHub CI、PR 與本機對帳報告不是正式 ONE Runtime 部署或救援成功 Receipt",
     "跨 ONE/Windows 分散式狀態異常時採 fail-closed，不得從本機 JSON 自行解鎖或聲稱授權",
     "Canonical IR CAS 發布與 Active Continuation 指標為兩筆持久化操作；中斷後必須先核對已發布的 IR、來源及父代，再以 --resume-selector-only 安全對帳，不可再建立新 IR 掩蓋中斷",
-    "若 Canonical IR 已由 #1682 發布成功，--from-current --apply 必須拒絕重複產生新世代，改走 --resume-selector-only；對 Active Continuation 的 CAS 要在既有鎖內再次核對目前正式 IR"
+    "若 Canonical IR 已由 #1682 發布成功，--from-current --apply 必須拒絕重複產生新世代，改走 --resume-selector-only；對 Active Continuation 的 CAS 要在既有鎖內再次核對目前正式 IR",
+    "Recovery 排程不可在 B 槽毀損時自行修改 slots.json 或清除 pending；回滾只能由既有具授權 ONE Runtime、持久化互斥閘門與實際 Receipt 的流程執行"
   ],
   "evidence": [
     {
