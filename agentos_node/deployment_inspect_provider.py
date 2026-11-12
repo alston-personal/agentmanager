@@ -35,7 +35,7 @@ def _http(host: str, path: str) -> tuple[int, str] | None:
         p = _run([
             "/usr/bin/curl", "--silent", "--show-error", "--max-time", "8",
             "--max-filesize", "524288", "--resolve", f"{host}:443:127.0.0.1",
-            "--write-out", "\\n%{http_code}", f"https://{host}{path}",
+            "--write-out", "\n%{http_code}", f"https://{host}{path}",
         ], timeout=10)
         if p.returncode:
             return None
@@ -56,9 +56,9 @@ def _status(kind: str) -> dict[str, Any]:
                 source = SITEFILE.read_text(encoding="utf-8")
                 # This is only an on-disk site-file observation, NOT proof of
                 # the effective loaded Nginx configuration.
-                if re.search(r"(?m)^\\s*root\\s+/home/ubuntu/zeus-writer/website/dist\\s*;", source):
+                if re.search(r"(?m)^\s*root\s+/home/ubuntu/zeus-writer/website/dist\s*;", source):
                     root_class = "legacy"
-                elif re.search(r"(?m)^\\s*root\\s+/home/ubuntu/studio-web/dist\\s*;", source):
+                elif re.search(r"(?m)^\s*root\s+/home/ubuntu/studio-web/dist\s*;", source):
                     root_class = "studio"
                 else:
                     root_class = "other"
