@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 orphan Recovery Python and ZIP collision guards (PR #2271 SOURCE ONLY)
+
+Further audit found the first-install path could use `recovery/python-runtime/python.exe` **without a managed Recovery Scheduled Task**, silently adopting orphaned interpreter bytes instead of requiring publisher/operation reconciliation. The canonical `install-agentos.ps1` now refuses this state with `RECOVERY_PYTHON_ORPHAN_RUNTIME_REQUIRES_AUTHORIZED_RECONCILIATION`; it does not delete or replace the orphan. The offline provisioner now rejects ZIP members with case-insensitive duplicate names before extraction (Windows filesystem conflict). Contract and Windows execution tests added. Official Recovery owner still needs an independently authorized repair/reattachment workflow.
+
+**Source only:** no authorized Windows Recovery migration, runtime install or dedicated Python survivability drill performed; no Oracle ONE CAS IR publication or Recovery receipt. Draft PR #2271 remains unmerged and undeployed.
+
+---
+
 ## 2026-11-12 — #1682 offline private Recovery Python bootstrap (PR #2271 SOURCE ONLY)
 
 The existing Windows one-click installer can now accept an **explicit offline** `-RecoveryPythonArchive` and `-RecoveryPythonSha256` at **first Recovery enrollment**. `scripts/windows/install_recovery_python.ps1` verifies the entire ZIP against the caller-approved hash, rejects unsafe ZIP paths and symlinks, stages the runtime separately under `recovery/python-runtime`, validates self-contained Python imports/prefix, and refuses replacing any existing private runtime. The Recovery Scheduled Task uses this interpreter if provisioned; existing Recovery scheduled tasks are never silently rebound by a Normal reinstall. Windows CI includes real PowerShell negative tests for mismatched hash, traversal and overwrite. The default without a supplied approved archive remains shared Python and **does not** satisfy independent Recovery interpreter acceptance.
