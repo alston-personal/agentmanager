@@ -80,5 +80,36 @@ class BranchResumeGuardTests(unittest.TestCase):
             self.gate(self.fresh)
 
 
+    def test_protected_main_realm_actions_remain_registered(self):
+        # Cross-PR safeguard: stale work must not replace the canonical
+        # Realm installer/status with LEGACY_ACTION_REQUIRES_CONVERGENCE.
+        from agentos_node.action_relay import ACTIONS
+        from agentos_node import action_relay as relay
+
+        bindings = {
+            "agentos.realm-fabric.claim_deployment": relay._claim_realm_fabric_deployment,
+            "agentos.realm-fabric.deployment_status": relay._realm_fabric_deployment_status,
+            "agentos.realm-fabric.install_release": relay._install_realm_fabric_release,
+            "agentos.realm-fabric.release_deployment": relay._release_realm_fabric_deployment,
+        }
+        for action, handler in bindings.items():
+            with self.subTest(action=action):
+                self.assertIs(ACTIONS[action], handler)
+        self.assertIn(
+            "realm-fabric-effective-unit-fence/v1",
+            Path(relay.__file__).read_text(encoding="utf-8"),
+        )
+
+    def test_main_runtime_repair_and_new_executor_providers_survive_resume_guard(self):
+        from agent_core import realm_server
+        from agentos_node import executor_job_action_relay as jobs
+
+        self.assertTrue(hasattr(realm_server, "_GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF"))
+        self.assertTrue(hasattr(jobs, "DEPLOYMENT_INSPECT_PROVIDERS_REGISTERED"))
+        self.assertTrue(hasattr(jobs, "COLAB_H3_SMOKE_PROVIDER_REGISTERED"))
+        self.assertIn("CODE_MAINLINE_EVIDENCE_UNAVAILABLE",
+                      Path(jobs.__file__).read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
