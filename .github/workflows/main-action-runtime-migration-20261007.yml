@@ -6,13 +6,51 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/main-action-runtime-migration-20261007.yml'
+      # ONE provider/dispatch source, not a generic Core website deploy trigger.
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/deployment_inspect_provider.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/action_relay.py'
+
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-action-runtime-migration-20261007.yml'
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/deployment_inspect_provider.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/action_relay.py'
+      - 'tests/test_deployment_inspect_one.py'
+      - 'tests/test_main_runtime_deploy_routing.py'
 
 permissions:
   contents: read
   id-token: write
 
+# Reuse the existing Oracle Action Runtime rollout lock; do not update two
+# incompatible generations of the same action relay simultaneously.
+concurrency:
+  group: oracle-action-runtime-rollout
+  cancel-in-progress: false
+
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate fixed ONE deployment inspection contracts
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agent_core/executor_job_contract.py agentos_node/executor_job_adapter.py agentos_node/executor_job_action_relay.py agentos_node/deployment_inspect_provider.py
+          python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_main_runtime_deploy_routing -v
   migrate:
+    needs: [validate]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
