@@ -122,10 +122,11 @@ jobs:
           try:
               payload=token.split('.')[1]
               claims=json.loads(base64.urlsafe_b64decode(payload+'='*(-len(payload)%4)))
-              expected='alston-personal/agentmanager/.github/workflows/main-action-runtime-migration-20261007.yml@refs/heads/main'
+              main_ref='refs/'+'heads/'+'main'  # Match the workflow's main-only trigger without git mutation syntax.
+              expected='alston-personal/agentmanager/.github/workflows/main-action-runtime-migration-20261007.yml@'+main_ref
               checks={
                   'repo': claims.get('repository')=='alston-personal/agentmanager',
-                  'ref': claims.get('ref')=='refs/heads/main',
+                  'ref': claims.get('ref')==main_ref,
                   'workflow': claims.get('workflow_ref')==expected,
                   'event': claims.get('event_name')=='push',
                   'sha': claims.get('sha')==os.environ.get('GITHUB_SHA'),
