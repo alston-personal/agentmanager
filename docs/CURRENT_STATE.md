@@ -931,6 +931,12 @@ A fresh machine may require one Realm enrollment approval. That approval is the 
 
 Acceptance is end-to-end rather than file-copy success. The installer only reports `AGENTOS_ONE_CLICK_INSTALL=PASS` after the background Thin Client remains running and `agentos-client verify` succeeds against ONE. The installer may auto-install Python through winget when Python is absent, but Windows Store App Execution Alias stubs are not accepted as a valid interpreter.
 
+The Windows bootstrap CI also evaluates the embedded Python resolver in
+isolation on `windows-latest`. It requires exactly one existing, executable
+Python path and verifies that winget output is discarded rather than becoming
+part of the resolver result. This is source/CI coverage only; it does not prove
+a real clean-node installation, enrollment, or Windows runtime deployment.
+
 ## Studio Web production serving authority
 
 As of the 2026-10-02 live Oracle nginx audit, the TLS server for `studio.milkcat.org:443` still serves its default static root from `/home/ubuntu/zeus-writer/website/dist` with `try_files $uri $uri/ /index.html`. This is current observed serving topology, not source-of-truth ownership.
