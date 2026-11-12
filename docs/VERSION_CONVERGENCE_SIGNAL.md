@@ -282,3 +282,12 @@ The scheduled runner never edits \`slots.json\`, the pending operation, protecte
 The canonical Windows installer previously registered `AgentOS Recovery ONE Probe` with `-Force` on every Normal reinstall and rebuilt its action with the newly selected Normal `$PythonPath`. That silently weakened channel independence. It now distinguishes first-time Recovery task registration from an existing task. On reinstall it verifies the one known Recovery launcher command, its root/config/status and a present executable, then preserves the existing scheduled task (including its Python path and triggers). An unknown task fails closed; Normal cannot take it over by replacement.
 
 **Limitations:** preserving the Python executable path does not install a dedicated Recovery interpreter or protect against interpreter deletion during Normal update. Existing Recovery tasks retain their historical arguments, which may predate LKG diagnostics; upgrades to those tasks require an explicitly governed Recovery update, not a Normal reinstall. Real Windows task readback, separate interpreter outage and ONE receipt still pending.
+
+
+## Existing Recovery interpreter is now the one verified (2026-11-12)
+
+The previous normal reinstall logic kept the old Recovery Scheduled Task \`Execute\` path but ran \`--bootstrap-from\` and the live read-only ONE probe with the **new Normal \`$PythonPath\`** *before* inspecting the existing Recovery action. This could incorrectly report the preserved Recovery service healthy even when its actual interpreter was unusable, or fail an installation using the wrong interpreter.
+
+\`Install-RecoveryProbe\` now resolves and validates any existing Recovery task action first, sets \`$recoveryPythonPath\` to its existing executable and invokes both A/B bootstrap and the authenticated ONE probe using that executable. First install uses the selected Python for both probe and new task registration. Unknown tasks are not adopted or replaced; existing tasks and triggers are retained. Tests verify the exact code ordering and the lack of residual \`& $PythonPath -I $runner\` calls.
+
+**Not independently installed:** this is a correctness/readback fix, not a bundled Recovery-only Python or separate credential trust root. If the old interpreter disappears, the installer fails closed; the existing ONE-authorized Recovery repair owner must restore it. Real Windows Task Scheduler action/trigger/Python binary readback, injected Normal interpreter failure, and live ONE receipt are necessary before this is accepted as independent recovery.
