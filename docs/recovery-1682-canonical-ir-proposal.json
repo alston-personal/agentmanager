@@ -16,7 +16,8 @@
     "實機驗證 Recovery 待驗證槽損壞時不會自行回滾，既有 ONE Maintenance 能受授權回滾並恢復健康探測（含 interlock 與 Receipt）",
     "驗證 Windows 正式排程在 B 槽損壞時仍可使用 LKG 唯讀診斷聯絡 ONE，並確認最新回應與壞槽狀態分開紀錄；再透過正式 ONE Maintenance 執行授權回滾並取得 Receipt",
     "正式 Windows Node 回讀 Recovery Scheduled Task 的執行路徑、參數、觸發器與實際 Python 版本；驗證一般 Normal 升級前後完全一致，並測試 Normal Python 不可用時 Recovery 是否真能單獨存活。",
-    "在隔離 Windows Node 進行 Normal Python 更換/失效演練，確認既有 Recovery 排程與安裝器驗證使用同一保留的 Python；讀回 Action、Arguments、Triggers 與 ONE 探測結果，取得獨立受授權 Receipt。"
+    "在隔離 Windows Node 進行 Normal Python 更換/失效演練，確認既有 Recovery 排程與安裝器驗證使用同一保留的 Python；讀回 Action、Arguments、Triggers 與 ONE 探測結果，取得獨立受授權 Receipt。",
+    "在隔離 Windows Node 實測 LKG 診斷的健康回應、空回應、過期結果與無網路；回讀 Windows Status、ONE 端收據，確保來源程式可判別診斷與正式回滾。"
   ],
   "decisions_append": [
     "Normal 與 Recovery 不可同時更新；Recovery 更新前須確認 Normal 能獨立提供救援，且保護原 Recovery LKG",
@@ -28,7 +29,8 @@
     "Recovery 排程不可在 B 槽毀損時自行修改 slots.json 或清除 pending；回滾只能由既有具授權 ONE Runtime、持久化互斥閘門與實際 Receipt 的流程執行",
     "待驗證 B 槽損壞時，獨立 Recovery 排程可使用通過 SHA-256 的受保護 LKG 只讀聯絡 ONE，但必須保留原始 active/pending/LKG 與持久化閘門，不得聲稱完成回滾、更新授權或 ONE Receipt",
     "正常 Thin Client 重裝必須保留已存在 Recovery Scheduled Task 的 Python 執行器、啟動參數與觸發設定；未知或遭修改的任務需 fail-closed，不可由一般安裝 -Force 覆蓋。",
-    "Recovery 重裝驗證必須使用現有 Windows Scheduled Task 已註冊且驗證過的 Python 執行檔，不得先以新版 Normal Python 測試 Recovery，再宣稱既有 Recovery 健康。"
+    "Recovery 重裝驗證必須使用現有 Windows Scheduled Task 已註冊且驗證過的 Python 執行檔，不得先以新版 Normal Python 測試 Recovery，再宣稱既有 Recovery 健康。",
+    "LKG 救援診斷不得只憑 Python 子程序退出碼=0 宣稱 ONE 通訊成功；必須清除舊結果、讀回本次新生成的正確 Recovery Probe 結果，且不可帶有更新授權或 Receipt。"
   ],
   "evidence": [
     {
