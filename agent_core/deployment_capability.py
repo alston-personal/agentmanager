@@ -76,7 +76,7 @@ def load_target(registry: Mapping[str, Any], target_id: str) -> Target:
     for name in ("release_carriers", "verification_carriers"):
         carriers = spec[name]
         if (not isinstance(carriers, list) or not carriers
-                or not all(isinstance(x, str) and re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,99}", x) for x in carriers)
+                or not all(isinstance(x, str) and re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,99}", x) for x in carriers)
                 or len(set(carriers)) != len(carriers)):
             _reject("invalid_carrier_registry")
     for name in ("project_id", "repository", "source_ref", "resource_id"):
