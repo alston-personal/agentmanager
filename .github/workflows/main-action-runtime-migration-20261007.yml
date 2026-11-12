@@ -12,6 +12,8 @@ on:
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/action_relay.py'
+      - 'scripts/inspect_realm_oidc_process_readonly.py'
+      - 'tests/test_realm_oidc_process_readonly.py'
 
   pull_request:
     branches: [main]
@@ -22,6 +24,8 @@ on:
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/action_relay.py'
+      - 'scripts/inspect_realm_oidc_process_readonly.py'
+      - 'tests/test_realm_oidc_process_readonly.py'
       - 'tests/test_deployment_inspect_one.py'
       - 'tests/test_main_runtime_deploy_routing.py'
 
@@ -47,11 +51,47 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile agent_core/executor_job_contract.py agentos_node/executor_job_adapter.py agentos_node/executor_job_action_relay.py agentos_node/deployment_inspect_provider.py
-          python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_main_runtime_deploy_routing -v
+          python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_main_runtime_deploy_routing tests.test_realm_oidc_process_readonly -v
           # Realm scheduler OIDC permission must admit ONLY the exact signed
           # protected-main repair workflow; never broaden to all main workflows.
           python3 -m pip install --disable-pip-version-check -q pytest
           python3 -m pytest -q tests/test_realm_scheduler_oidc.py
+  audit-realm-runtime:
+    needs: [validate]
+    if: github.event_name == 'push'
+    # Observe current Oracle node without changing Gateway, ONE or Action Relay.
+    # This deliberately runs independently of the existing governed repair lane.
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read current Realm process and installed source provenance without secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/inspect_realm_oidc_process_readonly.py "${GITHUB_SHA}" > "${RUNNER_TEMP}/realm-oidc-attestation.json"
+          python3 -m json.tool "${RUNNER_TEMP}/realm-oidc-attestation.json" > /dev/null
+          python3 - "${RUNNER_TEMP}/realm-oidc-attestation.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print("realm_oidc_classification="+d["classification"])
+          print("realm_process_cwd_matches_canonical="+str(d["process_cwd_matches_canonical"]).lower())
+          print("realm_source_oidc_allowlist_present="+str(d["source_allows_exact_main_repair"]).lower())
+          print("realm_installed_file_matches_exact_source="+str(d["installed_matches_expected_commit"]).lower())
+          print("realm_loaded_module_proved="+str(d["authoritative_loaded_module_proved"]).lower())
+          PY
+      - name: Save bounded, non-secret process identity receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: realm-oidc-process-attestation
+          path: ${{ runner.temp }}/realm-oidc-attestation.json
+          if-no-files-found: error
+          retention-days: 7
+
   migrate:
     needs: [validate]
     if: github.event_name == 'push'
