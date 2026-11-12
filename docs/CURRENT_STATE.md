@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 bind post-crash Recovery reconciliation to node and candidate evidence (PR #2271 SOURCE ONLY)
+
+Additional audit found the read-only reconciler could classify an existing staged operation with matching operation id without checking that `staged-candidate.json.node_id` matched the actual Windows participant. It also did not reject locally self-asserted `activation_authorized` / `one_receipt_attested` flags or a changed staged candidate digest. The source now refuses those mismatches, retaining `GOVERNED_RECONCILIATION_REQUIRED` and no write authority. Three regression tests cover mismatched node, untrusted local authority flags and candidate digest change.
+
+This improves source-side classification only. The supplied ONE gate and participant identity must themselves be independently authenticated by the authorized host; this code cannot verify a real signed ONE receipt or finalize recovery.
+
+---
+
 ## 2026-11-12 — #1682 prevent premature ONE unlock on Recovery acceptance AND rollback (PR #2271 SOURCE ONLY)
 
 Audited the A/B update boundary and fixed a second premature unlock: `recovery_upgrade_promotion.accept_pending()` called `durable_update_gate(..., "VERIFY")` **before** Windows persisted `last_known_good=B` and cleared `pending`. If Windows writes then failed, ONE could be IDLE while Windows still carried a pending candidate. The existing acceptance method now first checks candidate, Normal health and independently validated ONE receipt; then writes the Windows accepted state, reads it back and verifies the candidate's protected hash **before** asking ONE to commit VERIFY.
