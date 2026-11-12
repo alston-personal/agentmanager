@@ -11,6 +11,9 @@ on:
       - 'scripts/windows/transactional_ota_finalize.ps1'
       - 'scripts/windows/recovery_one_probe.py'
       - 'tests/test_recovery_one_probe.py'
+      - 'tests/test_recovery_one_install_contract.py'
+      - 'install-agentos.ps1'
+      - 'scripts/install_thin_client_windows.ps1'
       - 'tests/test_runtime_ota_download_integrity.py'
       - 'agentos_node/bootstrap_scheduler.py'
       - 'tests/test_bootstrap_scheduler_queue_ttl.py'
@@ -41,6 +44,8 @@ jobs:
         run: python3 -m unittest tests.test_runtime_ota_download_integrity -v
       - name: Test independent read-only ONE recovery probe
         run: python3 -m unittest tests.test_recovery_one_probe -v
+      - name: Test canonical Windows recovery installation contract
+        run: python3 -m unittest tests.test_recovery_one_install_contract -v
       - name: Produce protected main source event (not an Executor delivery)
         if: github.event_name == 'push'
         shell: bash
