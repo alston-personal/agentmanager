@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'install-agentos.ps1'
+      - 'scripts/windows/install_recovery_python.ps1'
+      - 'tests/windows/test_recovery_python_provision.ps1'
       - 'install-agentos.cmd'
       - 'scripts/install_thin_client_windows.ps1'
       - 'scripts/bootstrap_clean_windows_node.ps1'
@@ -36,7 +38,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/bootstrap_clean_windows_node.ps1','scripts/windows/commit_staged_realm.ps1')
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/bootstrap_clean_windows_node.ps1','scripts/windows/commit_staged_realm.ps1','scripts/windows/install_recovery_python.ps1','tests/windows/test_recovery_python_provision.ps1')
           foreach($file in $files) {
             $tokens = $null
             $errors = $null
@@ -51,6 +53,11 @@ jobs:
             }
             Write-Host "powershell_parse=PASS file=$file"
           }
+
+      - name: Test Recovery-only offline Python provisioner rejects unsafe archives
+        shell: powershell
+        run: |
+          & .\tests\windows\test_recovery_python_provision.ps1
 
       - name: Enforce one-click contract
         shell: powershell

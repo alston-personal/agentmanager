@@ -22,6 +22,18 @@ def accept_candidate(node_id: str, source_commit: str, *, timeout_seconds: int =
         receipt=fabric.get_receipt(task_id)
         if receipt:
             ok=receipt.get('ok') is True
+            # The task can complete just before a failed candidate rolls back.
+            # Re-read the authoritative registry after receiving the probe;
+            # a successful probe alone must never accept the wrong version.
+            current=registry.load().get('nodes',{}).get(node_id) or {}
+            current_runtime=current.get('runtime') or {}
+            still_target=(current.get('status')=='online' and
+                          current_runtime.get('source_commit')==source_commit)
+            if not still_target:
+                return {'ok':False,'stage':'post_switch_recheck',
+                        'reason':'candidate_no_longer_active','node_id':node_id,
+                        'source_commit':source_commit,'task_id':task_id,
+                        'receipt_ok':ok}
             return {'ok':ok,'stage':'post_switch_probe','node_id':node_id,'source_commit':source_commit,'task_id':task_id,'receipt_ok':ok}
         time.sleep(2)
     return {'ok':False,'stage':'post_switch_probe','reason':'receipt_timeout','node_id':node_id,'source_commit':source_commit,'task_id':task_id}

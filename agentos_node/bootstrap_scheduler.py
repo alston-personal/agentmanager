@@ -32,6 +32,12 @@ PUBLISH = 40
 LOW = 60
 MAINTENANCE = 70
 
+# Shared host communication mutation mutex. The existing maintenance scheduler
+# acquires this process lock for OTA, transport repair and core convergence.
+# It is deliberately NOT attached to read-only inspections or status probes.
+# The crash-persistent state gate remains a separate requirement for activation.
+COMMUNICATION_UPDATE_LOCK = "node-communication-update"
+
 POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_RUNNER_WINDOW_PROBE: ActionPolicy("control", 8, "high", ("agentos.dispatch.probe",), ()),
     bc.ACTION_COMMAND_INVOKE: ActionPolicy("control", 20, "high", ("agentos.command.invoke",), ("themis-inventory",)),
@@ -42,7 +48,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_EXECUTOR_JOB_SUBMIT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
     bc.ACTION_EXECUTOR_JOB_INSPECT: ActionPolicy("build", 20, "high", ("agentos.executor.job",), ()),
     bc.ACTION_GITHUB_ACTIONS_DISPATCH: ActionPolicy("control", 18, "high", ("github.actions.dispatch",), ("github-actions-dispatch",)),
-    bc.ACTION_NODE_TRANSACTIONAL_OTA: ActionPolicy("maintenance", 16, "high", ("node.runtime.ota",), ("node-runtime-ota",)),
+    bc.ACTION_NODE_TRANSACTIONAL_OTA: ActionPolicy("maintenance", 16, "high", ("node.runtime.ota",), ("node-runtime-ota", COMMUNICATION_UPDATE_LOCK)),
     bc.ACTION_NODE_OTA_INSPECT: ActionPolicy("control", 9, "high", ("node.runtime.ota.inspect",), ()),
     bc.ACTION_REALM_NODE_INSPECT: ActionPolicy("control", 9, "high", ("node.realm.inspect",), ()),
     bc.ACTION_REALM_DESKTOP_PROBE: ActionPolicy("control", 10, "high", ("node.desktop.probe",), ()),
@@ -52,8 +58,8 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_GOOGLE_FLOW_RAIN_EXIT_RESUME: ActionPolicy("gui", 17, "high", ("media.google-flow.rain-exit-s01.resume-approved", "browser.cdp", "browser.persistent_profile"), ("session:google:flow", "google-media-flow", "vision-studio-rain-exit")),
     bc.ACTION_GOOGLE_VIDS_GENERATE: ActionPolicy("gui", 16, "high", ("media.google-vids.generate", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile", "google-media-vids")),
     bc.ACTION_VISION_STUDIO_PRODUCE: ActionPolicy("gui", 17, "high", ("media.vision-studio.produce", "media.google-flow.generate", "browser.cdp", "browser.persistent_profile"), ("session:google:flow", "vision-studio-rain-exit")),
-    bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("maintenance", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
-    bc.ACTION_RUNTIME_CONVERGE: ActionPolicy("maintenance", 4, "high", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("maintenance", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime", COMMUNICATION_UPDATE_LOCK)),
+    bc.ACTION_RUNTIME_CONVERGE: ActionPolicy("maintenance", 4, "high", ("node.runtime.converge",), ("oracle-core-runtime", COMMUNICATION_UPDATE_LOCK)),
     bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("session:threads:mio",)) ,
     bc.ACTION_READ_OURSONG_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read", "persona.social.dm.read"), ("session:threads:oursong",)) ,
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("session:threads:mio",)) ,

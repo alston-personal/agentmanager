@@ -1,0 +1,120 @@
+{
+  "schema": "agentos.ir-change-proposal/v1",
+  "project_id": "agentos-core",
+  "work_item": "#1682",
+  "pr_number": 2271,
+  "status": "SOURCE_CI_ONLY_NOT_MERGED_NOT_RUNTIME_ACCEPTED",
+  "goal": "以 main 為唯一正式主線，將既有 ONE Maintenance 與 Normal/Recovery 雙通道更新、受授權 A/B 回退及跨重啟對帳收斂為同一條可驗收閉環",
+  "next_action": "STOP SOURCE-ONLY CHURN：先由既有 AgentOS 治理流程明確核准 #1682 engineering intake（目前零核准標籤）；使用 main 既有 AgentOS Dispatch / Runner Window 先取得 ONE Runtime read-only 版本、Canonical IR generation、Maintenance owner / Windows 節點與 interlock 讀回 Receipt，再由受授權 Owner 在隔離 Windows Node 做壞 B→LKG A→ONE rollback、接受 B→ONE VERIFY 的實機閉環。無真實 Receipt 不得宣稱完成、不得合併 #2271。",
+  "pending_tasks": [
+    "PR #2271 保持 Draft；審查核心及 Windows 路徑後，核對 main 最新版並決定合併時機",
+    "Reuse Before Build：在既有 Maintenance Owner/Runtime 中實作真正的簽章、信任根、時效、防重放、Node/Realm/operation_id 校驗",
+    "將持久化雙通道互斥閘門與 Recovery A/B 切換及回滾綁定；重啟後跨 ONE/Windows 狀態對帳失敗一律禁止新更新",
+    "正式 Normal OTA 安裝入口同樣遵守跨重啟更新閘門及獨立 Recovery 可用性門檻",
+    "在隔離 Windows Node 驗證 Normal 故障、Recovery 與 ONE 連線、簽章修復下載、恢復 Normal、ONE Receipt",
+    "由既有 ONE Runtime 讀取目前 Canonical IR 世代，執行 CAS 發布、讀回及 Active Continuation 指標 CAS 對帳；若發布後中斷只使用 --resume-selector-only 補同步，不得重複發布",
+    "實機驗證 Recovery 待驗證槽損壞時不會自行回滾，既有 ONE Maintenance 能受授權回滾並恢復健康探測（含 interlock 與 Receipt）",
+    "驗證 Windows 正式排程在 B 槽損壞時仍可使用 LKG 唯讀診斷聯絡 ONE，並確認最新回應與壞槽狀態分開紀錄；再透過正式 ONE Maintenance 執行授權回滾並取得 Receipt",
+    "正式 Windows Node 回讀 Recovery Scheduled Task 的執行路徑、參數、觸發器與實際 Python 版本；驗證一般 Normal 升級前後完全一致，並測試 Normal Python 不可用時 Recovery 是否真能單獨存活。",
+    "在隔離 Windows Node 進行 Normal Python 更換/失效演練，確認既有 Recovery 排程與安裝器驗證使用同一保留的 Python；讀回 Action、Arguments、Triggers 與 ONE 探測結果，取得獨立受授權 Receipt。",
+    "在隔離 Windows Node 實測 LKG 診斷的健康回應、空回應、過期結果與無網路；回讀 Windows Status、ONE 端收據，確保來源程式可判別診斷與正式回滾。",
+    "由受授權 ONE/Windows 測試節點提供可信來源與已核對發行者的 CPython embeddable ZIP 及 SHA-256，驗證 Recovery 私有 interpreter 安裝、Runtime prefix 自包含、正常通道 Python 故障後獨立聯絡 ONE，並取得實際 Receipt；既有共用 Python 節點不得藉 Normal 重裝自動遷移。",
+    "於隔離 Windows Node 驗證孤兒 Recovery Python 目錄／失去排程後的 fail-closed 行為，確認受授權維修對帳能恢復 Task 綁定，並取得 ONE Receipt；實際獨立 Python 仍待安裝驗證。",
+    "按原有治理核對 #1682 Issue Intake：必須由授權者提供 agentos:approved、agentos:engineering 和 Project/Action/Acceptance；Issue 留言與 PR/CI 均不自動構成工程執行權限。",
+    "沿用 main 既有 AgentOS Dispatch / Runner Window 並讀回 Oracle ONE 真正的 Canonical IR 世代、CAS receipt、Active Continuation 指標；GitHub 來源連線無 workflow_dispatch 寫入操作，不能以 CI 或 Issue 留言替代。",
+    "由 ONE Maintenance 在隔離 Windows Node 故障注入 B 槽損壞與有效 LKG，查證對帳指向授權回滾、實際完成 LKG 恢復與持久化閘門 readback Receipt，對錯誤 operation_id／損壞 LKG 維持 fail-closed。",
+    "既有 ONE Maintenance Owner 要實際提供獨立 authorize_rollback callback，以及對 Windows LKG 寫入／readback 後的 ONE ROLLBACK_OK receipt 核驗；在實機故障注入檢查寫入失敗不得提前解鎖。",
+    "於隔離 Windows 實機演練 Recovery 驗收寫入失敗／ONE VERIFY 超時，並回讀持久化狀態；既有 ONE Maintenance Owner 必須對回滾與驗收兩類中斷都提供真實授權 Receipt／重新對帳。",
+    "隔離 Windows/ONE 驗證錯誤 Node ID、遭修改 candidate digest、偽造授權欄位會被拒絕，並讀回真正簽章、Realm、operation_id 與 ONE gate generation 的權威證據。"
+  ],
+  "decisions_append": [
+    "Normal 與 Recovery 不可同時更新；Recovery 更新前須確認 Normal 能獨立提供救援，且保護原 Recovery LKG",
+    "一般 Thin Client 安裝不得改寫已存在的 Recovery 啟動器與 A/B 槽位；Recovery 升級使用獨立受授權程序",
+    "GitHub CI、PR 與本機對帳報告不是正式 ONE Runtime 部署或救援成功 Receipt",
+    "跨 ONE/Windows 分散式狀態異常時採 fail-closed，不得從本機 JSON 自行解鎖或聲稱授權",
+    "Canonical IR CAS 發布與 Active Continuation 指標為兩筆持久化操作；中斷後必須先核對已發布的 IR、來源及父代，再以 --resume-selector-only 安全對帳，不可再建立新 IR 掩蓋中斷",
+    "若 Canonical IR 已由 #1682 發布成功，--from-current --apply 必須拒絕重複產生新世代，改走 --resume-selector-only；對 Active Continuation 的 CAS 要在既有鎖內再次核對目前正式 IR",
+    "Recovery 排程不可在 B 槽毀損時自行修改 slots.json 或清除 pending；回滾只能由既有具授權 ONE Runtime、持久化互斥閘門與實際 Receipt 的流程執行",
+    "待驗證 B 槽損壞時，獨立 Recovery 排程可使用通過 SHA-256 的受保護 LKG 只讀聯絡 ONE，但必須保留原始 active/pending/LKG 與持久化閘門，不得聲稱完成回滾、更新授權或 ONE Receipt",
+    "正常 Thin Client 重裝必須保留已存在 Recovery Scheduled Task 的 Python 執行器、啟動參數與觸發設定；未知或遭修改的任務需 fail-closed，不可由一般安裝 -Force 覆蓋。",
+    "Recovery 重裝驗證必須使用現有 Windows Scheduled Task 已註冊且驗證過的 Python 執行檔，不得先以新版 Normal Python 測試 Recovery，再宣稱既有 Recovery 健康。",
+    "LKG 救援診斷不得只憑 Python 子程序退出碼=0 宣稱 ONE 通訊成功；必須清除舊結果、讀回本次新生成的正確 Recovery Probe 結果，且不可帶有更新授權或 Receipt。",
+    "Recovery 專用 Python 首裝可由事先核准的 Windows embeddable CPython 離線 ZIP 與可信 SHA-256 驗證安裝至 recovery/python-runtime；禁止 Normal 重裝自動下載、覆蓋或重綁；僅 SHA-256 防修改，不代替發行者簽章與授權。",
+    "若 Recovery 私有 Python 檔案存在但受管理的 Scheduled Task 缺失，正常安裝不得直接採用孤兒執行器；須由授權 Recovery Owner 對帳，避免猜測發行者來源及覆蓋既有狀態。",
+    "Windows Recovery CPython 離線 ZIP 必須拒絕大小寫不敏感檔名衝突（例如 python.exe/PYTHON.exe），不可在驗證後藉解壓覆寫成員。",
+    "不得為了觸發 ONE 工作而自行加上 agentos:approved 或變更 production main；GitHub CI 成功、PR mergeable 和 Issue 回報不代表 Runtime/IR 發布或部署授權。",
+    "ONE 持久化閘門進入 ROLLBACK_REQUIRED 且 B 槽 Pending 內容損壞、LKG 完整時，Recovery 對帳應回報 AWAITING_AUTHORIZED_ROLLBACK；不要求損壞的候選 B 通過完整性校驗，也絕不將分類視為真正授權。",
+    "Recovery revert_pending 必須在真正授權的 authorize_rollback 下先寫入 Windows LKG、回讀完整性後，才能向 ONE durable gate 請求 ROLLBACK_OK；否則磁碟寫入失敗會讓 ONE 提早解鎖。",
+    "Windows 本機已完成 LKG 還原而 ONE gate 仍為 ROLLBACK_REQUIRED 時，對帳列為 GOVERNED_POST_ROLLBACK_RECONCILIATION，維持更新凍結，必須有真實授權/Receipt 才可結案。",
+    "新版 Recovery B 驗收也須先在 Windows 將 pending 清除、LKG 設為 B 並讀回，最後才呼叫 ONE gate VERIFY 解鎖；寫入失敗不得讓 ONE 提早 IDLE。",
+    "ONE gate 尚為 ACTIVATED 而 Windows 已接受 B 時，必須以 GOVERNED_POST_ACCEPTANCE_RECONCILIATION 凍結後續更新；不可僅依本機狀態宣稱 ONE Receipt 或自行重試 VERIFY。",
+    "跨重啟 Recovery 對帳必須綁定 staged-candidate.node_id 與實際 participant_id、candidate digest 與槽位紀錄，且候選紀錄的 activation_authorized/one_receipt_attested 必須維持 false；否則只能要求治理對帳，不能進入驗收/回滾候選狀態。"
+  ],
+  "evidence": [
+    {
+      "kind": "github_pr",
+      "verdict": "SOURCE_IMPLEMENTED_NOT_DEPLOYED",
+      "summary": "PR #2271 將通訊更新互斥、Recovery 唯讀探測、A/B 槽位、預備、受控啟用介面、跨狀態對帳與測試收斂至同一 PR",
+      "url": "https://github.com/alston-personal/agentmanager/pull/2271"
+    },
+    {
+      "kind": "github_ci",
+      "verdict": "PASS_SOURCE_ONLY",
+      "summary": "已驗證的 PR 來源版本 CI 完成；此證據不代表正式 Runtime、簽章權限或實機 Recovery Receipt",
+      "url": "https://github.com/alston-personal/agentmanager/actions/runs/43145258741"
+    }
+  ],
+  "capability": "agentos.one.resolve",
+  "execution_status": "in_progress",
+  "execution_metadata": {
+    "source": "recovery_1682_handoff_proposal",
+    "runtime_accepted": false,
+    "recovery_live_receipt": false,
+    "ir_published": false,
+    "recovery_dedicated_interpreter_live_verified": false,
+    "recovery_runtime_provisioner_source_only": true,
+    "source_change_freeze_until_runtime_readback": true,
+    "dispatch_authorized": false,
+    "canonical_ir_live_readback_verified": false,
+    "windows_recovery_live_verified": false,
+    "pr_source_changes_are_merge_authority": false
+  },
+  "acceptance_sequence": [
+    {
+      "step": 1,
+      "action": "既有治理核准 #1682 engineering intake，維持 main protected approval rules",
+      "evidence": "GitHub Issue approval labels and owner authorization; no assumption from 繼續",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "step": 2,
+      "action": "使用既有 Runner Window 唯讀讀回 Oracle ONE maintenance owner、現行 runtime SHA、Canonical IR index/ir generation、Recovery Participant interlock",
+      "evidence": "Actual ONE request/receipt id, generation, source SHA, node id and observed state",
+      "status": "NO_LIVE_RECEIPT"
+    },
+    {
+      "step": 3,
+      "action": "既有授權 Maintenance Owner 在隔離 Windows Node 實機演練 Normal failure and recovery LKG",
+      "evidence": "Windows Task action/executable readback, ONE handshake, signed operation and health receipt",
+      "status": "NO_LIVE_RECEIPT"
+    },
+    {
+      "step": 4,
+      "action": "受授權 B 故障→A 還原→ONE ROLLBACK_OK；以及 B 驗收→ONE VERIFY",
+      "evidence": "Both Windows slots.json readback and ONE durable gate state/operation/generation receipt",
+      "status": "NO_LIVE_RECEIPT"
+    },
+    {
+      "step": 5,
+      "action": "Oracle Canonical IR CAS 發布、讀回及 Active Continuation selector 收斂",
+      "evidence": "Authoritative CAS publisher receipt and exact index/ir/selector IDs; use resume-selector-only after partial publish",
+      "status": "NO_LIVE_RECEIPT"
+    },
+    {
+      "step": 6,
+      "action": "完成 36-file PR 範圍審核、主線核准與 rollout decision",
+      "evidence": "Protected-main review, CI, accepted runtime receipts and rollback plan",
+      "status": "PENDING_REVIEW"
+    }
+  ]
+}

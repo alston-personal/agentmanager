@@ -1,3 +1,117 @@
+## 2026-11-12 — #1682 bind post-crash Recovery reconciliation to node and candidate evidence (PR #2271 SOURCE ONLY)
+
+Additional audit found the read-only reconciler could classify an existing staged operation with matching operation id without checking that `staged-candidate.json.node_id` matched the actual Windows participant. It also did not reject locally self-asserted `activation_authorized` / `one_receipt_attested` flags or a changed staged candidate digest. The source now refuses those mismatches, retaining `GOVERNED_RECONCILIATION_REQUIRED` and no write authority. Three regression tests cover mismatched node, untrusted local authority flags and candidate digest change.
+
+This improves source-side classification only. The supplied ONE gate and participant identity must themselves be independently authenticated by the authorized host; this code cannot verify a real signed ONE receipt or finalize recovery.
+
+---
+
+## 2026-11-12 — #1682 prevent premature ONE unlock on Recovery acceptance AND rollback (PR #2271 SOURCE ONLY)
+
+Audited the A/B update boundary and fixed a second premature unlock: `recovery_upgrade_promotion.accept_pending()` called `durable_update_gate(..., "VERIFY")` **before** Windows persisted `last_known_good=B` and cleared `pending`. If Windows writes then failed, ONE could be IDLE while Windows still carried a pending candidate. The existing acceptance method now first checks candidate, Normal health and independently validated ONE receipt; then writes the Windows accepted state, reads it back and verifies the candidate's protected hash **before** asking ONE to commit VERIFY.
+
+The rollback path likewise now separates `authorize_rollback` from the post-local-write `ROLLBACK_OK` gate completion. Any local write failure leaves ONE interlock held; if the ONE closeout fails after local commit, the stage reservation stays intact. The read-only reconciler now identifies `GOVERNED_POST_ACCEPTANCE_RECONCILIATION` and `GOVERNED_POST_ROLLBACK_RECONCILIATION`, neither permitting new updates nor authenticating a Receipt. Source tests cover disk write failures, ordering, denied host callbacks and cross-store post-commit failures.
+
+**Source-only status:** These source callbacks still require actual ONE Maintenance signer/trust enforcement and the Windows/ONE live receipt. No official Oracle Canonical IR publish/readback and no production Recovery repair have been performed. #2271 remains unmerged Draft.
+
+---
+
+## 2026-11-12 — #1682 correction to ONE rollback gate completion order (PR #2271 SOURCE ONLY)
+
+Critical source review found `recovery_upgrade_promotion.revert_pending()` invoked `durable_update_gate(context, "ROLLBACK_OK")` **before** persisting the Windows LKG restoration to `slots.json`. A Windows write failure could therefore release ONE's cross-channel update lock before recovery had happened. The existing primitive now requires a separate privileged `authorize_rollback(context)` callback, then commits and reads back the local LKG restoration **before** requesting ONE `ROLLBACK_OK`. If the local write fails the gate is not called; if the later ONE completion fails, the durable stage reservation and ONE gate remain for governed reconciliation. The read-only reconciler now classifies this last state as `GOVERNED_POST_ROLLBACK_RECONCILIATION` rather than a healthy/released operation. Unit tests cover denied authority, write failure, callback ordering, ONE denial and cross-store crash recovery.
+
+This is a source API change requiring the existing ONE Maintenance integrator to implement the separately authorized callback; **no production ONE verifier or Windows rollback Receipt exists**. The PR is Draft, not merged/deployed, and this source change has not completed an actual Oracle Canonical IR CAS.
+
+---
+
+## 2026-11-12 — #1682 Recovery damaged-pending B rollback reconciliation corrected (PR #2271 SOURCE ONLY)
+
+A concrete live-recovery blocker was found: `scripts/windows/recovery_update_reconcile.py` required `active_integrity_verified` even in ONE's `ROLLBACK_REQUIRED` phase. A damaged pending B image therefore could **never** be classified `AWAITING_AUTHORIZED_ROLLBACK`, despite a verified protected A LKG and matching gate operation. The reconciler now admits the expected pending B / verified LKG case *even when B is corrupt*, and leaves `rollback_authorized=false`, `new_update_permitted=false`, and `one_receipt_attested=false`. Operation mismatch, absent stage/reservation and damaged LKG still fail closed. Added corresponding source regression tests.
+
+**Scope:** The classification is read-only guidance to the existing ONE Maintenance owner. This patch does not connect the privileged callback, move A/B slots, execute a rollback, or publish Oracle's Canonical IR. PR #2271 remains Draft and not deployed.
+
+---
+
+## 2026-11-12 — #1682 orphan Recovery Python and ZIP collision guards (PR #2271 SOURCE ONLY)
+
+Further audit found the first-install path could use `recovery/python-runtime/python.exe` **without a managed Recovery Scheduled Task**, silently adopting orphaned interpreter bytes instead of requiring publisher/operation reconciliation. The canonical `install-agentos.ps1` now refuses this state with `RECOVERY_PYTHON_ORPHAN_RUNTIME_REQUIRES_AUTHORIZED_RECONCILIATION`; it does not delete or replace the orphan. The offline provisioner now rejects ZIP members with case-insensitive duplicate names before extraction (Windows filesystem conflict). Contract and Windows execution tests added. Official Recovery owner still needs an independently authorized repair/reattachment workflow.
+
+**Source only:** no authorized Windows Recovery migration, runtime install or dedicated Python survivability drill performed; no Oracle ONE CAS IR publication or Recovery receipt. Draft PR #2271 remains unmerged and undeployed.
+
+---
+
+## 2026-11-12 — #1682 offline private Recovery Python bootstrap (PR #2271 SOURCE ONLY)
+
+The existing Windows one-click installer can now accept an **explicit offline** `-RecoveryPythonArchive` and `-RecoveryPythonSha256` at **first Recovery enrollment**. `scripts/windows/install_recovery_python.ps1` verifies the entire ZIP against the caller-approved hash, rejects unsafe ZIP paths and symlinks, stages the runtime separately under `recovery/python-runtime`, validates self-contained Python imports/prefix, and refuses replacing any existing private runtime. The Recovery Scheduled Task uses this interpreter if provisioned; existing Recovery scheduled tasks are never silently rebound by a Normal reinstall. Windows CI includes real PowerShell negative tests for mismatched hash, traversal and overwrite. The default without a supplied approved archive remains shared Python and **does not** satisfy independent Recovery interpreter acceptance.
+
+**Safety/Reality:** A caller-supplied SHA-256 checks only bytes against the **caller-selected** hash, not independent authenticity of the publisher. No trusted official package or hash has been approved here; no private Recovery Python has been installed on real Nodes and no actual Windows Normal-Python-loss/ONE recovery Receipt exists. Same-user filesystem access and shared Node credentials remain relevant risks. The official Canonical IR in Oracle has not been CAS-published; this is a source-side IR proposal update, not a verified live IR transition. PR #2271 remains Draft, unmerged, not deployed.
+
+---
+
+## 2026-11-12 — #1682 fresh LKG status evidence guard (PR #2271 source only)
+
+The read-only LKG fallback must not infer a successful Recovery-to-ONE roundtrip from subprocess exit code alone. The runner now clears the previous LKG status file before the test and verifies a **freshly written, schema-valid status** with `one_transport_roundtrip=true` and `recovery_update_authorized=false` / `adapter_download_verified=false`. Exit-zero without fresh result is classified failed; the active B status remains failed and A/B metadata remains unchanged. Regression tests cover stale success and valid fresh status. This is still a source-level check; it does not provide cryptographic receipt verification or a live Windows Recovery demonstration.
+
+---
+
+## 2026-11-12 — #1682 Recovery interpreter readback and probe binding fix (PR #2271; source only)
+
+Further review found normal reinstall preserved the existing Recovery task's Python executable **but** ran Recovery bootstrap and live ONE probes with the new Normal Python before reading the task action. The installer now validates the existing Recovery Scheduled Task first and uses that **actual preserved interpreter** for bootstrap/readiness; only an initial installation uses the freshly discovered Python. No existing task is rewritten. Contract tests guard ordering, interpreter selection and no Normal-Python probe.
+
+This prevents a misleading check with the wrong interpreter. It does NOT provision or demonstrate a fully independent Python runtime, recover from a missing interpreter, or produce a Windows ONE Receipt; actual Canonical IR remains uncommitted in Oracle. PR #2271 Draft/unmerged/uninstalled.
+
+---
+
+## 2026-11-12 — #1682 Recovery scheduled task retention across Normal reinstall (#2271 source only)
+
+Source review found canonical `install-agentos.ps1` used `Register-ScheduledTask ... -Force` during **every** Normal reinstall, re-binding Recovery to the Normal install's then-current `$PythonPath` even though Recovery source/slot bytes were preserved. Reinstall now detects an existing `AgentOS Recovery ONE Probe` task, validates its recognized launcher path, root/config/status arguments and existing executable, and **preserves its original action and schedule** instead of recreating it. An unknown/missing interpreter/task action fails closed rather than silently replacing a protected task. First enrollment still creates its read-only probe task and includes LKG diagnosis on corrupt pending B.
+
+This is a binding-preservation fix, not independent interpreter provisioning, protected OS ACLs or proof that recovery survives a broken Normal Python installation. Normal reinstall still performs a probe using the installer-selected Python to establish a live roundtrip, and it has not been tested on a real Windows Node. Evidence needed: read back the actual Scheduled Task action/triggers/Python executable before and after a Normal update; run a separate broken-Normal-Python Recovery probe drill and obtain a real ONE receipt. The Canonical IR proposal now tracks that validation; official Oracle IR has not been published in this session.
+
+---
+
+## 2026-11-12 — #1682 LKG Recovery ONE diagnostic without bypassing rollback authority (PR #2271 SOURCE ONLY)
+
+The previous scheduled Recovery probe failed closed when a pending B slot image was corrupt, correctly preserving ONE authority but losing **all Recovery-to-ONE probe liveness** even if protected A remained healthy. The existing `recovery_slot_runner.py` now provides an explicit `--diagnose-lkg-when-pending-corrupt` mode, wired into the canonical `install-agentos.ps1` scheduled Recovery task. On corrupt pending B with SHA-256 verified protected LKG, it can run the read-only A probe against ONE and record `lkg-diagnostic.json` / `lkg-rescue-diagnostic.json`, while **keeping the primary active status unsuccessful and leaving `slots.json`, pending operation and LKG completely unchanged**. A passing LKG probe never means a rollback, active Recovery recovery, authorized update or ONE Receipt. Corrupt LKG/other invalid states still fail closed. Tests verify successful and failed isolated diagnostics, no A/B state mutation and no false rollback/receipt.
+
+The existing ONE Maintenance Owner must still implement trusted staged package authorization, durable interlock transitions, protected A/B rollback and real Windows/ONE readback receipts. Canonical IR proposal/decisions updated accordingly, but **the actual Oracle Canonical IR has not been CAS-published from this GitHub-only change**. PR #2271 remains Draft, unmerged and not deployed.
+
+---
+
+## 2026-11-12 — #1682 scheduled Recovery runner unauthorized rollback fixed (#2271 SOURCE ONLY)
+
+Identified an actual authority bypass: the independent `recovery_slot_runner.py` previously rewrote `active=A` and cleared `pending` on a corrupted pending B image during a routine scheduled health check, without a ONE durable interlock transition or authorized rollback Receipt. The code now **does not mutate A/B slot state during probe runs**; it fails closed with `recovery_pending_corrupt_rollback_authority_required`, preserving pending and the protected LKG for the existing governed `recovery_upgrade_promotion.revert_pending` operation. The slot check also refuses symlinked slot directories, and tests verify no state mutation or unauthorized process execution.
+
+**Safety boundary:** This prevents silent state divergence but can temporarily leave the independent Recovery probe offline until the authorized host reconciles and rolls back. Real ONE authorization, maintenance binding and a Windows live rollback/Recovery Receipt are STILL outstanding, as is a real Canonical IR CAS publish/readback. The structured IR change proposal and #1682 work ledger include this deficit; this source PR remains Draft and not deployed.
+
+---
+
+## 2026-11-12 — #1682 IR CAS interrupted-selector recovery (PR #2271; source-only)
+
+Added `--resume-selector-only` to the same `scripts/publish_recovery_1682_ir.py` to recover a crash **after** a Canonical IR generation is published but **before** the Active Continuation selector is updated, without publishing another IR generation. It verifies that the authoritative `agentos-core` IR and execution head match, the IR is the #1682 handoff and has a real parent, and the selector remains on that precise parent before performing guarded selector CAS and readback. Already-current selectors are idempotent; missing/other-project/stale/concurrently updated selectors fail closed. Re-running `--from-current --apply` after a successful publication is unsafe because it creates unnecessary IR generations. Source tests and the updated IR proposal reflect this next action.
+
+**Reality:** CI pass is not a live ONE CAS Receipt. Official Canonical IR and selector have **not** been published or reconciled on Oracle by this session, PR #2271 is still Draft and not deployed, and no independent Recovery rescue Receipt exists.
+
+---
+
+## 2026-11-12 — #1682 Canonical IR automatic generation read + guarded selector CAS (PR #2271)
+
+Source-only continuation: `scripts/publish_recovery_1682_ir.py --from-current` now reads the actual `agentos-core` Canonical IR generation from the authorized ONE data root instead of requiring manual copy of parent IDs. It refuses mismatched execution-head / IR versions and delegates the actual write to the existing `advance_canonical_ir` CAS publisher; only new child IDs are generated. `--sync-active-selector` requires `--apply` and only updates a pre-existing `agentos-core` selector that still points to the exact parent generation. `activate_continuation(expected_previous=...)` compares under the existing selector file lock to avoid overriding a different Executor's active project. Both Canonical IR and active selector require authoritative readback after publishing. `ir_published=true` describes only a successful CAS generation; `runtime_accepted=false` and `recovery_live_receipt=false` remain until separate evidence.
+
+**No actual Oracle ONE publish has occurred in this GitHub-only session**. PR #2271 remains Draft, unmerged, uninstalled and without a real Recovery Receipt. Do not mark the official Canonical IR or active selector as synchronized until ONE produces the real CAS publish and exact readback.
+
+---
+
+## 2026-11-12 — #1682 / PR #2271 Recovery IR continuation checkpoint (SOURCE ONLY)
+
+**Truth boundary:** [PR #2271](https://github.com/alston-personal/agentmanager/pull/2271) remains **Draft and unmerged**. Source-level Normal/Recovery maintenance protections, independent Windows read-only ONE bootstrap probe, A/B slot integrity, staging/host-only promotion primitives, crash-persistent interlock, audit and cross-store restart reconciliation have source tests and GitHub CI. NONE of this is evidence that a trusted ONE authority callback, protected OS anti-tamper, formal B-slot updater, live Node deployment or end-to-end Recovery Receipt exists. Do not record those as DONE.
+
+**Canonical IR consistency:** Source-controlled proposed goal/decisions/evidence/pending steps live at \`docs/recovery-1682-canonical-ir-proposal.json\`. \`scripts/publish_recovery_1682_ir.py\` calls the **existing** \`agent_core.canonical_ir_handoff.advance_canonical_ir\` under explicit expected/new generation \`index_id/ir_id\` CAS; default is dry-run. The current Oracle ONE generation has NOT been observed from this session, so \`ir_published=false\` and no canonical IR CAS publication or active selector update is claimed. Pending acceptance: ONE current-generation read -> authorized CAS publish -> exact receipt/readback -> active continuation selector matches new generation. See \`docs/VERSION_CONVERGENCE_SIGNAL.md\`.
+
+**Next action:** Existing ONE Runtime/Maintenance Owner must bind real signed authority, fresh Normal rescue, exact signed candidate manifest and ONE Receipt to the existing durable gate, using #2271 rather than a parallel PR or second update system. Then run an authorized disposable Windows Node drill: normal failure -> Recovery authenticates to ONE -> trusted repair -> normal service restored -> independent Receipt. Do not disturb current live clients before this evidence exists.
+
+---
+
 ## 2026-11-11 — #2198 transactional Windows Realm cutover contract (explicit approval)
 
 After protected-main #2266 stage-only proof, a separate `scripts/windows/commit_staged_realm.ps1` is packaged into the existing Thin Client Windows installer. It requires the local operator's explicit `-CommitApproved` flag and an approved, separate `AgentOS-realm-stage-...` folder. The script validates unchanged Node identity, destination tenant ID, matching fresh staged lease (<=600s), target bearer-authenticated health and original health before touching active state. Only the *known* hidden Windows Supervisor shape is supported (current single-task installer or prior task+watchdog); unknown task actions fail closed. It stops the tasks, refuses to proceed if a Python Thin Client daemon still runs, uses Windows atomic File.Replace to swap staged credential while preserving old bytes in a local rollback file, restarts the prior Supervisor, checks the active Realm and sends a **fresh** authenticated heartbeat. A failing post-switch check triggers a reverse atomic File.Replace, Supervisor restart, and explicit distinction between `ROLLED_BACK_VERIFIED` and `ROLLBACK_UNVERIFIED`. No token or cookie is printed; staged credentials remain device-local. The script does not change the old Realm's stored node binding, migrate data, or grant authority in a new Realm.
@@ -1555,3 +1669,9 @@ This source-level guard does not trigger a new GPU run, resolve previously
 failed jobs, verify Oracle's loaded runtime, or deliver the final six-second
 spoken IFTV leopard-cat outro. Existing ONE/Supervisor approval and original
 IFTV #3 receipt/QA requirements remain unchanged.
+
+## 2026-11-11 — #1682 protected-main Version Convergence source-event contract
+
+Existing PR #2269 owns the separate pre-resume stale-work safety gate; do not duplicate its `branch_resume_guard.py` or `ControllerService` integration. Draft PR #2271 adds a **source event only** after trusted protected-main push: `.github/workflows/version-convergence-signal-contract.yml` uses the existing GitHub Actions transport to record exact main/previous SHA, changed paths, affected source domains and deterministic event ID in a 30-day JSON artifact. `scripts/version_convergence_signal.py` validates event/ack schema and makes statuses `NOTIFIED`, `SOURCE_CONVERGED`, `RUNTIME_DEPLOYED`, `TASK_RESUMED`, and `BLOCKED` distinct. The unit tests reject forged event IDs, dirty-worktree-reset claims and notifications masquerading as actual deployed runtime. It does NOT connect ONE fanout or authenticate ack issuers. No Executor received an event by virtue of a CI artifact, no scheduler/daemon added, and no runtime deployment is claimed.
+
+The existing ONE Supervisor/Runner Window is the intended trusted delivery path. Subsequent owner-governed integration must verify protected-main lineage, authenticate online/offline executor identity, correlate per-executor acknowledgement with independent source and deployed runtime SHAs, and reuse #2269's stale-write gate. Current execution state: **CONTRACT_ONLY / NO_LIVE_FANOUT**. Full design/acceptance boundary: `docs/VERSION_CONVERGENCE_SIGNAL.md`. Issue: #1682.

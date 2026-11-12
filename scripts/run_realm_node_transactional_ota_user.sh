@@ -14,6 +14,18 @@ cd "$REPO"
 export PYTHONPATH="$REPO"
 export NODE_ID CANDIDATE TOOL_COMMIT
 
+# Pin remote scripts to bytes in the locally verified immutable tool commit.
+# Missing Git objects fail closed.
+for script in transactional_ota.ps1 transactional_ota_finalize.ps1; do
+  git cat-file -e "${TOOL_COMMIT}:scripts/windows/${script}" || {
+    echo "ota_tool_source_unavailable=${script}" >&2; exit 21;
+  }
+done
+STAGE_SCRIPT_SHA256="$(git show "${TOOL_COMMIT}:scripts/windows/transactional_ota.ps1" | sha256sum | cut -d' ' -f1)"
+FINALIZE_SCRIPT_SHA256="$(git show "${TOOL_COMMIT}:scripts/windows/transactional_ota_finalize.ps1" | sha256sum | cut -d' ' -f1)"
+export STAGE_SCRIPT_SHA256 FINALIZE_SCRIPT_SHA256
+
+
 python3 - <<'PY'
 import os,time
 from agent_core.realm_fabric import RealmFabricStore
@@ -24,6 +36,7 @@ tool=os.environ["TOOL_COMMIT"]
 url=f"https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota.ps1"
 ps=("$p=Join-Path $env:TEMP ('agentos-transactional-ota-'+[guid]::NewGuid().ToString('N')+'.ps1'); "
     "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; "
+    "if((Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash.ToLowerInvariant() -ne '" + os.environ["STAGE_SCRIPT_SHA256"] + "'){throw 'ota stage hash mismatch'}; "
     "& $p -SourceCommit '"+candidate+"' -ToolCommit '"+tool+"' } "
     "finally { Remove-Item -Force $p -ErrorAction SilentlyContinue }")
 task_id=f"ota-stage-{node}-{int(time.time())}"
@@ -81,10 +94,11 @@ if [ "$ACCEPT_RC" -eq 0 ]; then
   python3 - <<'PY'
 import os,time
 from agent_core.realm_fabric import RealmFabricStore
-node=os.environ["NODE_ID"]; tool=os.environ["TOOL_COMMIT"]
+node=os.environ["NODE_ID"]; tool=os.environ["TOOL_COMMIT"]; candidate=os.environ["CANDIDATE"]
 url=f"https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota_finalize.ps1"
 ps=("$p=Join-Path $env:TEMP ('agentos-ota-finalize-'+[guid]::NewGuid().ToString('N')+'.ps1'); "
-    "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; & $p -Action accept } "
+    "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; "
+    "if((Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash.ToLowerInvariant() -ne '" + os.environ["FINALIZE_SCRIPT_SHA256"] + "'){throw 'ota finalize hash mismatch'}; & $p -Action accept -ExpectedCommit '"+candidate+"' } "
     "finally { Remove-Item -Force $p -ErrorAction SilentlyContinue }")
 tid=f"ota-finalize-{node}-{int(time.time())}"
 store=RealmFabricStore()
@@ -109,7 +123,8 @@ from agent_core.realm_fabric import RealmFabricStore
 node=os.environ["NODE_ID"]; tool=os.environ["TOOL_COMMIT"]
 url=f"https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota_finalize.ps1"
 ps=("$p=Join-Path $env:TEMP ('agentos-ota-finalize-'+[guid]::NewGuid().ToString('N')+'.ps1'); "
-    "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; & $p -Action rollback } "
+    "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; "
+    "if((Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash.ToLowerInvariant() -ne '" + os.environ["FINALIZE_SCRIPT_SHA256"] + "'){throw 'ota finalize hash mismatch'}; & $p -Action rollback } "
     "finally { Remove-Item -Force $p -ErrorAction SilentlyContinue }")
 tid=f"ota-rollback-{node}-{int(time.time())}"
 store=RealmFabricStore()

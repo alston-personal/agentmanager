@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentos_node import bootstrap_control as bc
-from agentos_node.bootstrap_scheduler import _claim, _recover_inflight, policy_for
+from agentos_node.bootstrap_scheduler import _claim, _recover_inflight, policy_for, COMMUNICATION_UPDATE_LOCK, _held_locks, LockTimeout
 
 
 def old_timestamp(seconds: int) -> str:
@@ -34,6 +34,27 @@ class InteractiveQueueTtlTests(unittest.TestCase):
         self.assertEqual(policy_for(bc.ACTION_DEPLOY_REALM_GATEWAY).role, "maintenance")
         self.assertEqual(policy_for(bc.ACTION_NODE_TRANSACTIONAL_OTA).role, "maintenance")
         self.assertEqual(policy_for(bc.ACTION_INSTALL_GUI_WORKER).role, "maintenance")
+
+    def test_communication_mutations_share_lock_without_blocking_inspection(self) -> None:
+        for action in (bc.ACTION_NODE_TRANSACTIONAL_OTA,
+                       bc.ACTION_REPAIR_TRANSPORT, bc.ACTION_RUNTIME_CONVERGE):
+            with self.subTest(action=action):
+                self.assertEqual(policy_for(action).role, "maintenance")
+                self.assertIn(COMMUNICATION_UPDATE_LOCK, policy_for(action).locks)
+        for action in (bc.ACTION_NODE_OTA_INSPECT, bc.ACTION_REALM_NODE_INSPECT,
+                       bc.ACTION_RELAY_STATUS, bc.ACTION_SCHEDULER_STATUS):
+            with self.subTest(action=action):
+                self.assertNotIn(COMMUNICATION_UPDATE_LOCK, policy_for(action).locks)
+
+    def test_communication_lock_excludes_other_maintenance_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            with patch.dict(os.environ, {"AGENTOS_BOOTSTRAP_ROOT": tempdir}):
+                with _held_locks((COMMUNICATION_UPDATE_LOCK,), timeout_seconds=0.2):
+                    with self.assertRaises(LockTimeout):
+                        with _held_locks((COMMUNICATION_UPDATE_LOCK,), timeout_seconds=0.1):
+                            pass
+                with _held_locks((COMMUNICATION_UPDATE_LOCK,), timeout_seconds=0.2):
+                    pass
 
     def test_expired_login_handoff_becomes_failure_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

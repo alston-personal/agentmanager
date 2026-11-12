@@ -5,6 +5,8 @@ param(
   [string]$WorkspaceRoot = "$HOME\AgentOS",
   [string]$SourceRef = 'main',
   [int]$ApprovalTimeoutSeconds = 1800,
+  [string]$RecoveryPythonArchive = '',
+  [string]$RecoveryPythonSha256 = '',
   [switch]$NoPythonInstall
 )
 
@@ -197,6 +199,121 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   Write-Host 'Supervisor: Single hidden long-running task (no periodic console spawn)' -ForegroundColor Green
 }
 
+
+function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
+  # The normal installer can only BOOTSTRAP recovery; it cannot modify an
+  # existing A/B launcher, active slot, protected LKG, or candidate slot.
+  $source = Join-Path $RuntimeRoot 'scripts\windows\recovery_one_probe.py'
+  $runnerSource = Join-Path $RuntimeRoot 'scripts\windows\recovery_slot_runner.py'
+  if(-not (Test-Path -LiteralPath $source) -or -not (Test-Path -LiteralPath $runnerSource)){
+    throw 'Pinned independent Recovery probe/launcher missing from canonical install'
+  }
+  $recoveryRoot = Join-Path $InstallRoot 'recovery'
+  $runner = Join-Path $recoveryRoot 'recovery_slot_runner.py'
+  $legacyProbe = Join-Path $recoveryRoot 'recovery_one_probe.py'
+  $statusFile = Join-Path $recoveryRoot 'status.json'
+  $configFile = Join-Path $InstallRoot 'state\client.json'
+  New-Item -ItemType Directory -Force -Path $recoveryRoot | Out-Null
+  if(-not (Test-Path -LiteralPath $runner)){
+    Copy-Item -LiteralPath $runnerSource -Destination $runner -ErrorAction Stop
+  } else {
+    Write-Host 'Existing Recovery launcher retained; normal install cannot upgrade it.'
+  }
+  if(-not (Test-Path -LiteralPath $configFile)){
+    throw 'Recovery probe requires completed Node enrollment'
+  }
+  $recoveryTaskName = 'AgentOS Recovery ONE Probe'
+  $existingRecoveryTask = Get-ScheduledTask -TaskName $recoveryTaskName -ErrorAction SilentlyContinue
+  $recoveryPythonPath = $PythonPath
+  if($existingRecoveryTask -and ($RecoveryPythonArchive -or $RecoveryPythonSha256)) {
+    throw 'Existing Recovery Python can only be upgraded by the authorized Recovery updater.'
+  }
+  if(-not $existingRecoveryTask) {
+    # First enrollment can opt in to a dedicated, explicitly SHA-pinned
+    # Windows embeddable CPython archive. Never download or guess a hash.
+    if([bool]$RecoveryPythonArchive -ne [bool]$RecoveryPythonSha256) {
+      throw 'Both RecoveryPythonArchive and RecoveryPythonSha256 are required.'
+    }
+    $protectedRuntime = Join-Path $recoveryRoot 'python-runtime'
+    $protectedInterpreter = Join-Path $protectedRuntime 'python.exe'
+    # A private Python directory without its registered Recovery Task is an
+    # orphaned security principal, not proof of a trusted installation.
+    # Never auto-adopt its executable, even when the caller provides a hash
+    # for an unrelated archive. Recovery owner must reconcile it first.
+    if(Test-Path -LiteralPath $protectedRuntime) {
+      throw 'RECOVERY_PYTHON_ORPHAN_RUNTIME_REQUIRES_AUTHORIZED_RECONCILIATION'
+    }
+    if($RecoveryPythonArchive) {
+      $provisioner = Join-Path $RuntimeRoot 'scripts\\windows\\install_recovery_python.ps1'
+      if(-not (Test-Path -LiteralPath $provisioner -PathType Leaf)) {
+        throw 'Pinned Recovery Python provisioner missing.'
+      }
+      $provisionResult = @(& $provisioner -RecoveryRoot $recoveryRoot -Archive $RecoveryPythonArchive -ExpectedSha256 $RecoveryPythonSha256)
+      if($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw 'Recovery Python provisioning failed.'
+      }
+      if(-not (Test-Path -LiteralPath $protectedInterpreter -PathType Leaf)) {
+        throw 'Recovery Python provisioning did not produce protected executable.'
+      }
+      $recoveryPythonPath = (Resolve-Path -LiteralPath $protectedInterpreter).Path
+    } else {
+      Write-Host 'Recovery Python is shared with Normal until a signed, SHA-pinned offline Recovery runtime is provisioned.' -ForegroundColor Yellow
+    }
+  }
+  if($existingRecoveryTask) {
+    # Normal reinstall must NOT silently rebind Recovery to a new Normal
+    # Python interpreter, replace its trigger, or adopt an unknown task.
+    $existingActions = @($existingRecoveryTask.Actions)
+    if($existingActions.Count -ne 1 -or
+       [string]::IsNullOrWhiteSpace([string]$existingActions[0].Execute)) {
+      throw 'Existing Recovery task has unknown action; protected task retained.'
+    }
+    $existingExecute = [string]$existingActions[0].Execute
+    $existingArguments = [string]$existingActions[0].Arguments
+    $expectedRunner = '-I "' + $runner + '"'
+    $expectedRoot = '--root "' + $recoveryRoot + '"'
+    $expectedConfig = '--config "' + $configFile + '"'
+    $expectedStatus = '--status "' + $statusFile + '"'
+    if(-not $existingArguments.StartsWith($expectedRunner + ' ') -or
+       -not $existingArguments.Contains($expectedRoot) -or
+       -not $existingArguments.Contains($expectedConfig) -or
+       -not $existingArguments.Contains($expectedStatus) -or
+       -not (Test-Path -LiteralPath $existingExecute -PathType Leaf)) {
+      throw 'Existing Recovery task is not the recognized protected launcher; no automatic takeover.'
+    }
+    # Validate the preserved executor before any bootstrap or live probe.
+    # Never use Normal's newly selected Python to judge an old Recovery task.
+    $recoveryPythonPath = (Resolve-Path -LiteralPath $existingExecute).Path
+    Write-Host 'Existing Recovery scheduled task retained, including its independent Python executable and triggers.'
+  }
+  # Migrate legacy probe without overwriting managed A/B Recovery slots.
+  $bootstrapSource = if(Test-Path -LiteralPath $legacyProbe){ $legacyProbe }else{ $source }
+  & $recoveryPythonPath -I $runner --root $recoveryRoot --bootstrap-from $bootstrapSource
+  if($LASTEXITCODE -ne 0){ throw 'Recovery A/B bootstrap refused; retained old rescue state.' }
+  # Use the actual scheduled interpreter for live Recovery readiness.
+  & $recoveryPythonPath -I $runner --root $recoveryRoot --config $configFile --status $statusFile
+  if($LASTEXITCODE -ne 0){
+    throw 'Independent read-only Recovery ONE probe failed; no healthy recovery claimed.'
+  }
+  $verified = Get-Content -Raw -LiteralPath $statusFile | ConvertFrom-Json
+  if($verified.schema -ne 'agentos.recovery-probe/v1' -or
+     $verified.one_transport_roundtrip -ne $true -or
+     $verified.recovery_update_authorized -ne $false){
+    throw 'Recovery probe result is not valid'
+  }
+  if(-not $existingRecoveryTask) {
+    # A corrupt pending B slot must not terminate all rescue communications.
+    # The LKG check is read-only and leaves ONE rollback authority intact.
+    $probeArgs = '-I "' + $runner + '" --root "' + $recoveryRoot + '" --config "' + $configFile + '" --status "' + $statusFile + '" --diagnose-lkg-when-pending-corrupt'
+    $action = New-ScheduledTaskAction -Execute $recoveryPythonPath -Argument $probeArgs -WorkingDirectory $recoveryRoot
+    $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $periodic = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
+    Register-ScheduledTask -TaskName $recoveryTaskName -Action $action -Trigger @($logon,$periodic) -Settings $settings -Description 'Read-only independent ONE recovery A/B communication probe; no update authority' | Out-Null
+    Write-Host 'Read-only Recovery A/B ONE probe newly scheduled.'
+  }
+}
+
 try {
   if($env:OS -ne 'Windows_NT'){ throw 'This one-click installer is for Windows only.' }
   if([string]::IsNullOrWhiteSpace($NodeId)){ throw 'NodeId could not be determined.' }
@@ -306,6 +423,8 @@ try {
   Write-Step 'Verifying end-to-end readiness'
   & $launcher verify
   if($LASTEXITCODE -ne 0){ throw "AgentOS readiness verification failed with exit code $LASTEXITCODE" }
+
+  Install-RecoveryProbe $python.Path $runtimeRoot
 
   $acceptedDir=Join-Path $InstallRoot 'accepted-runtimes'
   New-Item -ItemType Directory -Force -Path $acceptedDir | Out-Null
