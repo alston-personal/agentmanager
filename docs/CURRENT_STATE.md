@@ -206,6 +206,21 @@ PR #2195 reuses Themis `/status-diff` manifest and `scripts/themis_status_diff.p
 
 # AgentOS Current Architecture & Reality
 
+## Galaxy monitor child-failure redaction during branch convergence (2026-11-12)
+
+The immutable Galaxy experiment queue now persists and reports only an exact
+allowlist of child-monitor failure classifications. Arbitrary stderr is reduced
+to `UNCLASSIFIED_CHILD_FAILURE`, so credentials, account data, post text, and
+free-form trace output are not copied into queue state or logs. A later
+successful observation clears both the generic error and its bounded class.
+Focused tests cover accepted markers and reject marker lines with appended
+untrusted content.
+
+This is a source-level extraction from the legacy `core/integration` lane. The
+historical Oracle readback probes remain tied to that lane's OIDC/deployment
+carrier and are not copied as if they were a main-authorized runtime. Merge and
+CI do not prove Oracle deployment, a real Galaxy observation, or learning.
+
 ## Fail-closed executable task quality contract (2026-11-11)
 
 AgentOS separates historical prose TODOs from executor-eligible work. Every new executable task written through project registration, `add_todo`, Architect, White Hat, Command Center registration, or the central board projection must use `description | workspace=<path-or-repo> | acceptance=<command-or-evidence>`; `prerequisite=` is supported when sequencing matters. Generic placeholders such as `Define objectives`, `Break work into milestones`, and `Execute and report progress` are forbidden. The shared validator is `agent_core/task_quality.py`. Lobster applies the same validation at selection and immediately before execution, so manually inserted or historical underspecified tasks fail closed rather than reaching Paw. Quota exhaustion opens a 1800-second circuit without consuming three task attempts or converting the task into a generic verification failure. This guard does not mechanically rewrite historical STATUS files; owners must refine them deliberately.

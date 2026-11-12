@@ -11,6 +11,21 @@ DONE=ROOT/'completed'
 # release. Child monitors must use that SAME release, never a mutable checkout.
 REPO=Path(__file__).resolve().parents[1]
 
+# Preserve only fixed error classifications. Never store or print arbitrary
+# child stderr, which may contain credentials, account data or post text.
+_MONITOR_ERROR_MARKERS=frozenset({
+    'BINDING_UNAVAILABLE', 'ACCOUNT_BINDING_AMBIGUOUS',
+    'PRODUCT_KEY_UNAVAILABLE', 'POST_READ_FAILED',
+    'POST_NOT_FOUND', 'REPLIES_READ_FAILED',
+})
+
+def classify_child_failure(stderr: str) -> str:
+    for raw in str(stderr or '').splitlines():
+        marker, separator, code = raw.strip().partition('=')
+        if separator and marker == 'social_experiment' and code in _MONITOR_ERROR_MARKERS:
+            return code
+    return 'UNCLASSIFIED_CHILD_FAILURE'
+
 def parse_iso(value):
     return datetime.fromisoformat(str(value).replace('Z','+00:00')).astimezone(timezone.utc)
 
@@ -27,6 +42,7 @@ def main():
     os.chmod(QUEUE,0o700); os.chmod(DONE,0o700)
     now=datetime.now(timezone.utc)
     checked=0; advanced=0; failed=0
+    error_classes={}
     for path in sorted(QUEUE.glob('*.json')):
         try:
             item=json.loads(path.read_text(encoding='utf-8'))
@@ -50,6 +66,9 @@ def main():
             checked+=1
             if r.returncode:
                 item['last_error']='monitor_nonzero_exit'
+                item['last_error_class']=classify_child_failure(r.stderr)
+                cls=item['last_error_class']
+                error_classes[cls]=error_classes.get(cls,0)+1
                 item['last_attempt_at']=now.replace(microsecond=0).isoformat().replace('+00:00','Z')
                 save(path,item); failed+=1
                 continue
@@ -59,6 +78,7 @@ def main():
             item['last_elapsed_minutes']=elapsed
             item['next_elapsed_minutes']=nxt.get('next_elapsed_minutes')
             item.pop('last_error',None)
+            item.pop('last_error_class',None)
             if nxt.get('complete') or item['next_elapsed_minutes'] is None:
                 target=DONE/path.name
                 save(target,item)
@@ -72,6 +92,8 @@ def main():
     print('social_experiment_queue_checked='+str(checked))
     print('social_experiment_queue_advanced='+str(advanced))
     print('social_experiment_queue_failed='+str(failed))
+    for cls,count in sorted(error_classes.items()):
+        print('social_experiment_queue_failure_class_'+cls+'='+str(count))
 
 if __name__=='__main__':
     main()
