@@ -217,3 +217,18 @@ It checks known-good Recovery integrity, refuses an existing active/pending upgr
 The diagnostic always sets \`new_update_permitted=false\`, \`activation_authorized=false\`, \`rollback_authorized=false\` and \`one_receipt_attested=false\` even for a superficially clean IDLE/slot state. A \`READY\` classification means **eligible for separate authoritative review**, not permission. The updater cannot rely on user JSON, a cached health flag or a locally fabricated receipt for privileged actions. The ONE host must fetch its own database state, independently authenticate and freshly recheck real Normal/Recovery handshake evidence, and reconcile the same operation id and generation against the actual Windows node before releasing its update lock.
 
 Added restart-fault tests include ONE state changed before the A/B slot, A/B slot changed before ONE verification, stage reservation surviving after IDLE, corrupt LKG, tampered pending candidate, and stale operation id. This is a diagnostic layer, NOT a distributed transaction manager, trustworthy attestation source or live deployment. Real ONE runtime binding, anti-tamper controls and Windows device Receipt remain incomplete.
+
+
+## Canonical IR change handling for #1682 Recovery (2026-11-12)
+
+Recovery progress MUST be reflected through the existing ONE-authoritative \`agentos.ir/v1\` generation, not from a divergent Markdown status, GitHub Issue, executor chat, or a new shadow store. The versioned, source-controlled change proposal is \`docs/recovery-1682-canonical-ir-proposal.json\`; it explicitly records PR #2271 as **Draft, source-and-CI only, not merged, not deployed, and without a real Recovery receipt**. It preserves goal, constraints as decisions, pending integration work, next action and verification evidence.
+
+\`scripts/publish_recovery_1682_ir.py\` prepares existing \`agent_core.canonical_ir_handoff.advance_canonical_ir\` parameters, taking *actual observed* \`expected_index_id\` and \`expected_ir_id\` and separately selected \`new_index_id\` and \`new_ir_id\`. Its default mode is \`PREPARED_NOT_PUBLISHED\`. A governed ONE host operator may use \`--apply\` only after reading current canonical generation from ONE; the existing CAS publisher rejects a stale/missing generation, and the resulting \`publish_receipt\`, new \`execution-head\` and Canonical IR must be read back from the authoritative state store. Never generate a current generation id from chat text or GitHub to bypass CAS.
+
+No Oracle ONE Canonical IR read/write connection or observed current \`index_id/ir_id\` was available in this GitHub-only authoring session. **The IR has NOT been published to ONE**, so the proposal and GitHub Issue comment are durable *source-side handoff artifacts*, not proof that future executors have received a new canonical IR. After a successful publish, verify the active continuation selector is reconciled to the new generation; otherwise a fresh executor must fail closed with \`ONE_IR_HEAD_UNRESOLVED\`, as specified in \`docs/issue-152-ir-bootstrap-note.md\`.
+
+Source/IR governance acceptance is therefore split:
+- Source: same PR, updated proposal, CI and governance reviews.
+- Canonical IR: observed current generation, CAS publish receipt, exact readback, active selector match.
+- Runtime: protected main merge/deployment and independent Windows/ONE Recovery operation and receipt.
+No single source-only success may set all three to COMPLETE.
