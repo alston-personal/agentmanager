@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import uuid
 from pathlib import Path
 
 PROPOSAL = Path(__file__).resolve().parents[1] / "docs/recovery-1682-canonical-ir-proposal.json"
@@ -62,12 +63,40 @@ def prepare(proposal, *, expected_index_id, expected_ir_id,
 def main():
     parser = argparse.ArgumentParser()
     for name in ("expected-index-id", "expected-ir-id", "new-index-id", "new-ir-id"):
-        parser.add_argument("--" + name, required=True)
+        parser.add_argument("--" + name)
+    parser.add_argument("--from-current", action="store_true",
+                        help="Read current generation from authoritative ONE state")
+    parser.add_argument("--sync-active-selector", action="store_true",
+                        help="CAS update only an existing agentos-core selector pointing at the parent")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--data-root")
     parser.add_argument("--governance-path")
     args = parser.parse_args()
     proposal = json.loads(PROPOSAL.read_text(encoding="utf-8"))
+    if args.sync_active_selector and not args.apply:
+        parser.error("--sync-active-selector requires --apply")
+    if args.from_current:
+        if any((args.expected_index_id, args.expected_ir_id,
+                args.new_index_id, args.new_ir_id)):
+            parser.error("--from-current cannot be mixed with manual generations")
+        from agent_core.resolve_facade import resolve_continuation
+        current = resolve_continuation(
+            "agentos-core", data_root=args.data_root,
+            governance_path=args.governance_path,
+        )
+        head = current.get("execution_head") or {}
+        ir = (current.get("continuation") or {}).get("canonical_ir") or {}
+        if (head.get("schema") != "agentos.execution-head/v1"
+                or ir.get("schema_version") != "agentos.ir/v1"
+                or not head.get("index_id")
+                or ir.get("index_id") != head.get("index_id")
+                or not ir.get("ir_id")):
+            raise ValueError("current_one_ir_generation_unresolved")
+        args.expected_index_id = head["index_id"]
+        args.expected_ir_id = ir["ir_id"]
+        generation = uuid.uuid4().hex
+        args.new_index_id = "idx-core-1682-" + generation
+        args.new_ir_id = "ir-core-1682-" + generation
     request = prepare(
         proposal,
         expected_index_id=args.expected_index_id,
@@ -116,6 +145,31 @@ def main():
         and selector.get("index_id") == request["new_index_id"]
         and selector.get("ir_id") == request["new_ir_id"]
     )
+    if args.sync_active_selector:
+        if selector is None or selector.get("project_id") != "agentos-core":
+            raise RuntimeError("active_selector_not_core_no_implicit_takeover")
+        if not selector_matches:
+            if (selector.get("index_id") != request["expected_index_id"]
+                    or selector.get("ir_id") != request["expected_ir_id"]):
+                raise RuntimeError("active_selector_not_parent_generation")
+            from agent_core.active_continuation import activate_continuation
+            activate_continuation(
+                "agentos-core",
+                index_id=request["new_index_id"],
+                ir_id=request["new_ir_id"],
+                reason="recovery-1682-canonical-ir-handoff",
+                data_root=args.data_root,
+                expected_previous=("agentos-core", request["expected_index_id"],
+                                   request["expected_ir_id"]),
+            )
+            selector = read_active_continuation(args.data_root)
+            selector_matches = (
+                selector.get("project_id") == "agentos-core"
+                and selector.get("index_id") == request["new_index_id"]
+                and selector.get("ir_id") == request["new_ir_id"]
+            )
+            if not selector_matches:
+                raise RuntimeError("active_selector_post_activation_readback_mismatch")
     result["canonical_ir_readback_verified"] = True
     result["active_selector_matches_new_ir"] = selector_matches
     result["active_selector_requires_reconciliation"] = bool(
