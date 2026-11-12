@@ -258,3 +258,12 @@ Two source-level defects found while reviewing the existing \`--from-current --a
 2. **Canonical generation changed during pointer CAS:** The earlier selector API validated the canonical target *before* acquiring its file lock. Guarded \`activate_continuation(expected_previous=...)\` now re-resolves and verifies the canonical target *inside* the existing lock before writing the selector, and returns \`canonical_ir_changed_during_selector_cas\` if another publisher has superseded it.
 
 Regression tests cover the already-published case and a canonical generation flip between the pre-lock and in-lock reads. This still does not supply a live Oracle IR publish receipt or independent Recovery acceptance; it is a safety hardening of existing code, not a new owner or second state store.
+
+
+## Critical Recovery runner rollback-authority correction (2026-11-12)
+
+A source review identified a bypass in \`scripts/windows/recovery_slot_runner.py\`: when a pending active B image's SHA-256 check failed, the **ordinary scheduled probe runner** previously rewrote \`slots.json\` to the old A slot and cleared \`pending\`, without obtaining a ONE host authorization, durable per-participant gate transition, cross-store readback or rollback receipt. This could conceal a failed in-progress operation from ONE and split the update state.
+
+The scheduled runner is now strictly **read-only with respect to A/B state** after bootstrap. If a pending image is damaged but protected LKG is intact, it fails with \`recovery_pending_corrupt_rollback_authority_required\`, leaving \`active\`, \`pending\`, \`last_known_good\` and the ONE reservation untouched. If the active settled image or LKG cannot be verified, it still fails closed. This may temporarily stop Recovery probe service until the authorized operator reconciles the ONE update record; silent rollback is not a safe substitute for maintaining independent Recovery liveness. The existing host-controlled \`recovery_upgrade_promotion.revert_pending\` is the intended governed rollback path, but its trusted verifier implementation and live ONE runtime binding remain **incomplete**.
+
+The slot verifier now refuses symlinked slot directories as well as symlinked candidate files. Regression tests assert no process launch, no A/B metadata write, retained pending/LKG, and rejection of redirected slot directories. These changes must not be reported as a completed autonomous recovery loop; they close an authority bypass and reveal the remaining live recovery availability requirement.
