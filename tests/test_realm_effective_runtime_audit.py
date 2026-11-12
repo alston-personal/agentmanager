@@ -99,6 +99,56 @@ class RealmEffectiveRuntimeAuditTests(unittest.TestCase):
         self.assertEqual(result["classification"], "REALM_SERVICE_UNAVAILABLE")
         self.assertFalse(result["in_memory_module_proven"])
 
+    @patch.object(audit, "_APPROVED_SOURCE_ROOTS", (Path("/tmp/allowed-root"),))
+    @patch.object(audit, "source_state")
+    @patch.object(Path, "resolve")
+    def test_effective_workdir_source_approved_without_revealing_path_or_content(self, resolve, source):
+        resolve.return_value = Path("/tmp/allowed-root/release-1")
+        source.return_value = {
+            "readable": True,
+            "repair_carrier_oidc_present": False,
+            "realm_server_sha256": "f" * 64,
+        }
+        result = audit.observed_workdir_source(Path("/tmp/private"))
+        self.assertTrue(result["approved_root"])
+        self.assertTrue(result["source_readable"])
+        self.assertFalse(result["oidc_repair_carrier_present"])
+        self.assertEqual(result["source_sha256"], "f" * 64)
+        self.assertNotIn("/tmp/private", json.dumps(result))
+
+    @patch.object(audit, "_APPROVED_SOURCE_ROOTS", (Path("/tmp/allowed-root"),))
+    @patch.object(audit, "source_state")
+    @patch.object(Path, "resolve")
+    def test_effective_workdir_outside_approved_root_is_rejected(self, resolve, source):
+        resolve.return_value = Path("/etc/private/runtime")
+        result = audit.observed_workdir_source(Path("/tmp/injected"))
+        self.assertFalse(result["approved_root"])
+        self.assertFalse(result["source_readable"])
+        source.assert_not_called()
+
+    @patch.object(audit, "bounded_realm_process_candidates")
+    @patch.object(audit, "source_provenance", return_value=None)
+    @patch.object(audit, "current_release_commit", return_value=None)
+    @patch.object(audit, "source_state")
+    @patch.object(audit, "get_service_state")
+    def test_effective_workdir_old_oidc_beats_checkout_symbol(self, service, source, *_):
+        service.return_value = {
+            "available": True, "active": True, "pid_present": True,
+            "working_directory_class": "other", "process_cwd_class": "other",
+            "configured_workdir_source": {"approved_root": True, "source_readable": True,
+                "oidc_repair_carrier_present": False, "source_sha256": "a" * 64},
+            "process_cwd_source": {"approved_root": True, "source_readable": True,
+                "oidc_repair_carrier_present": False, "source_sha256": "a" * 64},
+        }
+        source.side_effect = [
+            {"readable": True, "repair_carrier_oidc_present": True, "realm_server_sha256": "b" * 64},
+            {"readable": False, "repair_carrier_oidc_present": False},
+        ]
+        result = audit.inspect()
+        self.assertEqual(result["classification"], "REALM_EFFECTIVE_SOURCE_OIDC_ABSENT")
+        self.assertFalse(result["effective_workdir_oidc_carrier_visible_on_disk"])
+        self.assertFalse(result["in_memory_module_proven"])
+
     def test_source_projection_is_only_digest_and_allowlist_bit(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
