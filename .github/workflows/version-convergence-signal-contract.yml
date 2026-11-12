@@ -11,6 +11,7 @@ on:
       - 'scripts/windows/transactional_ota_finalize.ps1'
       - 'scripts/windows/recovery_one_probe.py'
       - 'tests/test_recovery_one_probe.py'
+      - 'tests/test_recovery_fault_injection.py'
       - 'tests/test_recovery_one_install_contract.py'
       - 'install-agentos.ps1'
       - 'scripts/install_thin_client_windows.ps1'
@@ -46,6 +47,8 @@ jobs:
         run: python3 -m unittest tests.test_recovery_one_probe -v
       - name: Test canonical Windows recovery installation contract
         run: python3 -m unittest tests.test_recovery_one_install_contract -v
+      - name: Fault-inject normal runtime failure and ONE outage in isolated Recovery process
+        run: python3 -m unittest tests.test_recovery_fault_injection -v
       - name: Produce protected main source event (not an Executor delivery)
         if: github.event_name == 'push'
         shell: bash
