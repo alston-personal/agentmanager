@@ -181,6 +181,15 @@ def main():
                 or ir.get("index_id") != head.get("index_id")
                 or not ir.get("ir_id")):
             raise ValueError("current_one_ir_generation_unresolved")
+        # Never republish when this work item's source has already reached
+        # the canonical generation. A post-publish crash must resume the
+        # selector only, not silently create yet another IR generation.
+        metadata = head.get("execution_head") or {}
+        if (isinstance(metadata, dict)
+                and metadata.get("source") == "recovery_1682_handoff_proposal"
+                and metadata.get("ir_published") is True
+                and ir.get("goal") == proposal.get("goal")):
+            raise ValueError("recovery_ir_already_published_use_resume_selector_only")
         args.expected_index_id = head["index_id"]
         args.expected_ir_id = ir["ir_id"]
         generation = uuid.uuid4().hex
