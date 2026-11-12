@@ -117,6 +117,7 @@ def activate_continuation(
     ir_id: str,
     reason: str,
     data_root: str | Path | None = None,
+    expected_previous: tuple[str, str, str] | None = None,
 ) -> dict[str, Any]:
     project_id = str(project_id or "").strip()
     index_id = str(index_id or "").strip()
@@ -159,6 +160,16 @@ def activate_continuation(
             fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
             if path.is_file():
                 previous = _validate_pointer(json.loads(path.read_text(encoding="utf-8")))
+            if expected_previous is not None:
+                if (not isinstance(expected_previous, tuple)
+                        or len(expected_previous) != 3):
+                    raise ValueError("invalid_expected_previous_selector")
+                observed = (
+                    (previous["project_id"], previous["index_id"], previous["ir_id"])
+                    if previous is not None else None
+                )
+                if observed != expected_previous:
+                    raise ValueError("active_continuation_selector_cas_conflict")
             fd, raw = tempfile.mkstemp(prefix=".active-continuation.", suffix=".tmp", dir=str(runtime))
             tmp = Path(raw)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
