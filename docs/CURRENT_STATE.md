@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 offline private Recovery Python bootstrap (PR #2271 SOURCE ONLY)
+
+The existing Windows one-click installer can now accept an **explicit offline** `-RecoveryPythonArchive` and `-RecoveryPythonSha256` at **first Recovery enrollment**. `scripts/windows/install_recovery_python.ps1` verifies the entire ZIP against the caller-approved hash, rejects unsafe ZIP paths and symlinks, stages the runtime separately under `recovery/python-runtime`, validates self-contained Python imports/prefix, and refuses replacing any existing private runtime. The Recovery Scheduled Task uses this interpreter if provisioned; existing Recovery scheduled tasks are never silently rebound by a Normal reinstall. Windows CI includes real PowerShell negative tests for mismatched hash, traversal and overwrite. The default without a supplied approved archive remains shared Python and **does not** satisfy independent Recovery interpreter acceptance.
+
+**Safety/Reality:** A caller-supplied SHA-256 checks only bytes against the **caller-selected** hash, not independent authenticity of the publisher. No trusted official package or hash has been approved here; no private Recovery Python has been installed on real Nodes and no actual Windows Normal-Python-loss/ONE recovery Receipt exists. Same-user filesystem access and shared Node credentials remain relevant risks. The official Canonical IR in Oracle has not been CAS-published; this is a source-side IR proposal update, not a verified live IR transition. PR #2271 remains Draft, unmerged, not deployed.
+
+---
+
 ## 2026-11-12 — #1682 fresh LKG status evidence guard (PR #2271 source only)
 
 The read-only LKG fallback must not infer a successful Recovery-to-ONE roundtrip from subprocess exit code alone. The runner now clears the previous LKG status file before the test and verifies a **freshly written, schema-valid status** with `one_transport_roundtrip=true` and `recovery_update_authorized=false` / `adapter_download_verified=false`. Exit-zero without fresh result is classified failed; the active B status remains failed and A/B metadata remains unchanged. Regression tests cover stale success and valid fresh status. This is still a source-level check; it does not provide cryptographic receipt verification or a live Windows Recovery demonstration.
