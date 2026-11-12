@@ -67,3 +67,25 @@ When feature scope, authority or expected recipient types exceed prior design as
 Verify a genuine authoritative remote commit and ONE journal receipt, content-free invalidation hints to the fanout roster, independent per-Executor pull/read/validated/applied ACKs, duplicated and dropped hints, offline replay by polling, new-unit bootstrap/pull after original broadcast, cursor gap snapshot recovery, stale concurrent IR write rejection and protected realm isolation. Web GPT, Oracle Gemini and another Executor must read the same IR generation and produce correlated receipts. Completion must not be claimed from GitHub Issue comments or green CI alone.
 
 Status: this PR currently creates only a protected-main source event artifact and validates claimed ACK structure. No ONE journal, push/pull transport, Git-remote Canonical IR authority migration, durable ACK delivery or live Executor receipts are yet demonstrated.
+
+## Mandatory announcement subscription at Join (2026-11-12 contract amendment)
+
+ONE announcement updates are an OS-level **mandatory subscription service**, not optional per-Agent messaging. Every governed participant type (Node, Executor, Worker, durable Role/service, and future types) receives a built-in subscription at identity enrollment/Join. Subscription is bound to the authoritative participant and Realm identity, not a user-controlled notification checkbox or executor-local preference.
+
+- Join/claim and subscription establishment must be one **transactional admission invariant**: no successful ACTIVE/JOINED claim without a durable subscription record and initial applicable mandatory-announcement baseline/cursor. A pending/approved but unclaimed join must not be treated as a live subscriber or gain content access.
+- Subscription covers global mandatory announcements plus authorized Realm, project and capability scopes as independently determined by ONE. A subscriber cannot unsubscribe from mandatory system notices or spoof wider scope; discretionary informational topics may be filtered only if authorized. Public/global hints carry no private announcement body.
+- The subscription is durable across token refresh, reconnect, process restart, provider-quota exhaustion and Executor switching. Revoke or retire when participant identity is explicitly revoked/decommissioned, while preserving audit receipts. Rejoining with the same identity deduplicates and reconciles its cursor instead of creating duplicate subscriptions.
+- New participant bootstrap performs an authenticated announcement pull before any mutable work. Initial sync MUST include current applicable mandatory baseline even if published before the unit joined; historical informational notices may obey retention. The initial cursor is not advanced merely because a subscription record was created.
+- Existing enrolled participants require an idempotent **migration/backfill** through the current registry; no need to rejoin. Backfill cannot automatically mark old notices read or applied. Unreconciled participants remain pending; mutating tasks fail closed when a mandatory notice is unapplied.
+- The push transport sends a content-free invalidation hint to subscribed online identities. All subscribers use pull on hint, heartbeat and task claim/resume, with independently attested ACK. A temporary push outage does not remove subscriptions, and polling is not optional.
+- Join responses should expose only harmless capability information (announcement feed/version and sync-required status), never private notice content or other Realm details. All reads and acknowledgements require independently authenticated participant identity and scoped authorization.
+
+### Verified integration targets
+
+Current `main:agent_core/realm_fabric.py` calls `_register_node` from both invite-based `enroll` and approved `claim_join`; `request_join`/`approve_join` alone do not complete enrollment. **Integrate the subscription at successful registration/claim, not exclusively in either UI flow.** Current `main:agent_core/controller_service.py` dispatches tasks to a selected Node, not a multi-recipient subscriber fanout. Other Executor/Worker/Role enrollment paths must be inventoried and connected to the same ONE subscription primitive rather than each implementing an independent notification registry.
+
+### Required tests
+
+Both enrollment flows atomically create one mandatory subscription; denied/expired/pending joins create no active subscription; failed subscription persistence fails admission safely without orphaning an active Node; rejoin/retry is idempotent; revocation disables push/pull while retaining audit; preexisting participants are backfilled; new Executor reads pre-Join mandatory notices; offline push-miss is recovered by pull; cross-Realm scoped notices are never leaked; mutable work cannot start until its applicable mandatory baseline is reconciled.
+
+**Implementation status:** contract only. Join integration, subscriber registry, durable ONE journal, live push, polling endpoint, migration/backfill and ACK receipts are not yet deployed or verified.
