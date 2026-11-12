@@ -18,7 +18,8 @@
     "正式 Windows Node 回讀 Recovery Scheduled Task 的執行路徑、參數、觸發器與實際 Python 版本；驗證一般 Normal 升級前後完全一致，並測試 Normal Python 不可用時 Recovery 是否真能單獨存活。",
     "在隔離 Windows Node 進行 Normal Python 更換/失效演練，確認既有 Recovery 排程與安裝器驗證使用同一保留的 Python；讀回 Action、Arguments、Triggers 與 ONE 探測結果，取得獨立受授權 Receipt。",
     "在隔離 Windows Node 實測 LKG 診斷的健康回應、空回應、過期結果與無網路；回讀 Windows Status、ONE 端收據，確保來源程式可判別診斷與正式回滾。",
-    "由受授權 ONE/Windows 測試節點提供可信來源與已核對發行者的 CPython embeddable ZIP 及 SHA-256，驗證 Recovery 私有 interpreter 安裝、Runtime prefix 自包含、正常通道 Python 故障後獨立聯絡 ONE，並取得實際 Receipt；既有共用 Python 節點不得藉 Normal 重裝自動遷移。"
+    "由受授權 ONE/Windows 測試節點提供可信來源與已核對發行者的 CPython embeddable ZIP 及 SHA-256，驗證 Recovery 私有 interpreter 安裝、Runtime prefix 自包含、正常通道 Python 故障後獨立聯絡 ONE，並取得實際 Receipt；既有共用 Python 節點不得藉 Normal 重裝自動遷移。",
+    "於隔離 Windows Node 驗證孤兒 Recovery Python 目錄／失去排程後的 fail-closed 行為，確認受授權維修對帳能恢復 Task 綁定，並取得 ONE Receipt；實際獨立 Python 仍待安裝驗證。"
   ],
   "decisions_append": [
     "Normal 與 Recovery 不可同時更新；Recovery 更新前須確認 Normal 能獨立提供救援，且保護原 Recovery LKG",
@@ -32,7 +33,9 @@
     "正常 Thin Client 重裝必須保留已存在 Recovery Scheduled Task 的 Python 執行器、啟動參數與觸發設定；未知或遭修改的任務需 fail-closed，不可由一般安裝 -Force 覆蓋。",
     "Recovery 重裝驗證必須使用現有 Windows Scheduled Task 已註冊且驗證過的 Python 執行檔，不得先以新版 Normal Python 測試 Recovery，再宣稱既有 Recovery 健康。",
     "LKG 救援診斷不得只憑 Python 子程序退出碼=0 宣稱 ONE 通訊成功；必須清除舊結果、讀回本次新生成的正確 Recovery Probe 結果，且不可帶有更新授權或 Receipt。",
-    "Recovery 專用 Python 首裝可由事先核准的 Windows embeddable CPython 離線 ZIP 與可信 SHA-256 驗證安裝至 recovery/python-runtime；禁止 Normal 重裝自動下載、覆蓋或重綁；僅 SHA-256 防修改，不代替發行者簽章與授權。"
+    "Recovery 專用 Python 首裝可由事先核准的 Windows embeddable CPython 離線 ZIP 與可信 SHA-256 驗證安裝至 recovery/python-runtime；禁止 Normal 重裝自動下載、覆蓋或重綁；僅 SHA-256 防修改，不代替發行者簽章與授權。",
+    "若 Recovery 私有 Python 檔案存在但受管理的 Scheduled Task 缺失，正常安裝不得直接採用孤兒執行器；須由授權 Recovery Owner 對帳，避免猜測發行者來源及覆蓋既有狀態。",
+    "Windows Recovery CPython 離線 ZIP 必須拒絕大小寫不敏感檔名衝突（例如 python.exe/PYTHON.exe），不可在驗證後藉解壓覆寫成員。"
   ],
   "evidence": [
     {
