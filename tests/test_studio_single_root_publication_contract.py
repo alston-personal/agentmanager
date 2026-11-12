@@ -13,6 +13,8 @@ TARGETS = (
     "scripts/deploy_layoutlab_static.py",
     "scripts/deploy_layoutlab_v07_release.py",
     "agentos_node/action_relay.py",
+    "agentos_node/layoutlib_production_promote_provider.py",
+    ".github/workflows/validate-resource-registry.yml",
 )
 PUBLISHERS = TARGETS[:2]
 
@@ -35,6 +37,15 @@ class StudioSingleRootPublicationContractTests(unittest.TestCase):
                 self.assertIn("studio_canonical_vhost_not_active", source)
                 self.assertIn("studio_canonical_vhost_root_marker=PASS", source)
                 self.assertNotIn("nginx -T 2>&1 | grep -Eq", source)
+
+    def test_layoutlib_and_registry_fail_closed_before_real_studio_root_cutover(self):
+        layoutlib = (ROOT / "agentos_node/layoutlib_production_promote_provider.py").read_text(encoding="utf-8")
+        registry = (ROOT / ".github/workflows/validate-resource-registry.yml").read_text(encoding="utf-8")
+        self.assertIn("STUDIO_ROOT_MARKER", layoutlib)
+        self.assertIn("LAYOUTLIB_PRODUCTION_STUDIO_ROOT_NOT_ACTIVE", layoutlib)
+        self.assertIn("studio-web-production-root/v1", registry)
+        self.assertIn('"repository":"alston-personal/studio-web"', registry)
+        self.assertIn("test -r \\"$MARKER\\"", registry)
 
     def test_no_implicit_legacy_root_writes_in_documented_migration(self):
         current = (ROOT / "docs/CURRENT_STATE.md").read_text(encoding="utf-8")
