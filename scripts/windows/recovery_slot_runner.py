@@ -86,6 +86,7 @@ def valid_slot(root, state, slot):
     expected = state["digests"].get(slot)
     path = _strict_slot_path(root, slot)
     return bool(expected and path.is_file() and not path.is_symlink()
+                and not path.parent.is_symlink()
                 and path.resolve().is_relative_to(Path(root).resolve())
                 and digest(path) == expected)
 
@@ -125,20 +126,21 @@ def bootstrap(root, source):
 
 
 def run(root, config, status, *, interpreter=None):
-    """Fail closed on invalid primary; fallback ONLY for pending candidate.
+    """Only run the integrity-verified active lane; never mutate update state.
 
-    Network outages alone must not silently switch a verified stable slot.
+    A/B fallback is a governed mutation, not a health probe side effect.
+    Pending candidate corruption MUST NOT erase the pending operation or
+    release the ONE durable interlock. The host reconciler must independently
+    authorize rollback before active / pending can change.
     """
     root = Path(root)
     state = load_state(root)
     chosen = state["active"]
     if not valid_slot(root, state, chosen):
-        if state["pending"] != chosen or not valid_slot(root, state, state["last_known_good"]):
-            raise RuntimeError("recovery_active_corrupt_or_unrecoverable")
-        chosen = state["last_known_good"]
-        atomic_json(root / "slots.json", {
-            **state, "active": chosen, "pending": None
-        })
+        if state["pending"] == chosen and valid_slot(
+                root, state, state["last_known_good"]):
+            raise RuntimeError("recovery_pending_corrupt_rollback_authority_required")
+        raise RuntimeError("recovery_active_corrupt_or_unrecoverable")
     return subprocess.run(
         [interpreter or sys.executable, "-I",
          str(_strict_slot_path(root, chosen)), "--config", str(config),
