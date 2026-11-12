@@ -234,10 +234,16 @@ function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
     if([bool]$RecoveryPythonArchive -ne [bool]$RecoveryPythonSha256) {
       throw 'Both RecoveryPythonArchive and RecoveryPythonSha256 are required.'
     }
-    $protectedInterpreter = Join-Path $recoveryRoot 'python-runtime\\python.exe'
-    if(Test-Path -LiteralPath $protectedInterpreter -PathType Leaf) {
-      $recoveryPythonPath = (Resolve-Path -LiteralPath $protectedInterpreter).Path
-    } elseif($RecoveryPythonArchive) {
+    $protectedRuntime = Join-Path $recoveryRoot 'python-runtime'
+    $protectedInterpreter = Join-Path $protectedRuntime 'python.exe'
+    # A private Python directory without its registered Recovery Task is an
+    # orphaned security principal, not proof of a trusted installation.
+    # Never auto-adopt its executable, even when the caller provides a hash
+    # for an unrelated archive. Recovery owner must reconcile it first.
+    if(Test-Path -LiteralPath $protectedRuntime) {
+      throw 'RECOVERY_PYTHON_ORPHAN_RUNTIME_REQUIRES_AUTHORIZED_RECONCILIATION'
+    }
+    if($RecoveryPythonArchive) {
       $provisioner = Join-Path $RuntimeRoot 'scripts\\windows\\install_recovery_python.ps1'
       if(-not (Test-Path -LiteralPath $provisioner -PathType Leaf)) {
         throw 'Pinned Recovery Python provisioner missing.'
