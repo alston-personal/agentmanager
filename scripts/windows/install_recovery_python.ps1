@@ -35,6 +35,7 @@ $staging=Join-Path $root ('python-runtime.stage-' + [guid]::NewGuid().ToString('
 $created=$false
 try {
   Add-Type -AssemblyName System.IO.Compression
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
   $zip=[IO.Compression.ZipFile]::OpenRead($source)
   try {
     if($zip.Entries.Count -gt 4096) {
@@ -69,7 +70,7 @@ try {
     throw 'RECOVERY_RUNTIME_NO_PYTHON_EXECUTABLE'
   }
   $probeOutput=@(& $python -I -c 'import sys,ssl,urllib.request,json,hashlib; print(sys.version_info.major,sys.prefix)' 2>&1)
-  if($LASTEXITCODE -ne 0) {
+  if($LASTEXITCODE -ne 0 -or $probeOutput.Count -eq 0) {
     throw 'RECOVERY_RUNTIME_STANDALONE_PYTHON_INVALID'
   }
   if(Test-Path -LiteralPath $target) {
