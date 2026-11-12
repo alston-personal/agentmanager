@@ -114,6 +114,18 @@ class DeploymentCapabilityContractTests(unittest.TestCase):
         with self.assertRaises(DeploymentContractError):
             evaluate_deployment_gate(request(), REGISTRY, proof(authority_granted=1))
 
+    def test_verify_detects_stale_release_sha_despite_all_green_flags(self):
+        result = evaluate_deployment_gate(request("verify"), REGISTRY,
+            proof(current_source_commit="b" * 40))
+        self.assertEqual(result["result"], "BLOCKED")
+        self.assertIn("observed_release_sha_mismatch", result["reasons"])
+
+    def test_registry_cannot_claim_new_execution_authority(self):
+        forged = json.loads(json.dumps(REGISTRY))
+        forged["authority"] = "arbitrary-runtime-shell"
+        with self.assertRaises(DeploymentContractError):
+            validate_deployment_intent(request(), forged)
+
     def test_unlisted_target_cannot_be_provisioned_by_request(self):
         with self.assertRaises(DeploymentContractError):
             validate_deployment_intent(request(target_id="zeus-writer.production"), REGISTRY)
