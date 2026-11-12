@@ -196,9 +196,7 @@ class ProjectReporter:
 <!-- LOG_END -->
 
 ## 📅 Todo List
-- [ ] Define objectives
-- [ ] Implementation
-- [ ] Review
+<!-- Tasks must use: description | workspace=<path-or-repo> | acceptance=<command-or-evidence> -->
 
 ## 🛑 Blockers & Issues
 - None yet.
