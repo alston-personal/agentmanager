@@ -57,6 +57,10 @@ def _reject(reason: str) -> None:
 def load_target(registry: Mapping[str, Any], target_id: str) -> Target:
     if registry.get("schema") != SCHEMA:
         _reject("unsupported_deployment_registry")
+    if (registry.get("authority") != "source-discovery-only-no-new-dispatch"
+            or registry.get("governed_execution_contract") != "agentos.execution-request/v1"
+            or registry.get("one_executor_contract") != "agentos.executor-job/v1"):
+        _reject("registry_cannot_grant_execution_authority")
     entries = registry.get("targets")
     if not isinstance(entries, dict) or target_id not in entries:
         _reject("target_not_registered")
@@ -165,6 +169,9 @@ def evaluate_deployment_gate(request: Mapping[str, Any],
         if target.migration_state != "live_verified":
             reasons.append("live_authority_not_accepted")
     if op == "verify":
+        # An older release can be healthy, but cannot verify this immutable intent.
+        if observed["current_source_commit"] != request["source_commit"]:
+            reasons.append("observed_release_sha_mismatch")
         for field in ("serving_root_verified", "critical_routes_verified",
                       "protected_apis_verified", "release_receipt_verified"):
             require(field)
