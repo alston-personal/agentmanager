@@ -138,3 +138,32 @@ Existing reusable evidence: merged #742/#734 Windows watchdog can restart a cras
 Test acceptance must include invalid signature, incompatible update, missing authorization, bad adapter smoke test, failed normal handshake, interrupted install/power loss, watchdog restart loop, failed rollback, lost ONE connectivity, recovery-only restored update, rescue trust-anchor rotation and scoped Realm isolation. Device must recover via independent ONE rescue transport, or fail safe with an explicit operator-needed receipt.
 
 Status: pure code-level preflight gate and tests are source candidates; no runtime installer, independent rescue agent, real device OTA or recovery Receipt is demonstrated.
+
+## Two-channel update interlock and recovery-first ordering (2026-11-12)
+
+The normal communication/update channel and independent safe-mode recovery channel MUST NEVER perform an activation or destructive update concurrently. Both share a durable ONE-governed update lock and generation fence; update operations on either channel block the other until post-update attestation or rollback completes. Tests must cover races across Node restart and two concurrent maintenance requests.
+
+### Normal-channel update
+
+1. Before staging a normal runtime/adapter release, independently prove that safe-mode channel is healthy: signed/authenticated ONE handshake, compatible rescue protocol and trust anchors, verified download of a harmless signed manifest, valid rollback material and independent service/credential isolation.
+2. Stage and preflight the normal update in an inactive slot. Never overwrite the healthy rescue image or its independent trust material.
+3. Activate only the normal candidate; verify authenticated ONE roundtrip and required service/task probes across a bounded observation window.
+4. If the candidate fails, keep the recovery channel untouched; use it to revert to a trusted safe version or quarantine the normal channel when rollback would revive a revoked/vulnerable release. Persist receipts for FAILURE, RECOVERY_USED, ROLLED_BACK or HUMAN_REQUIRED.
+
+### Safe-mode channel update (priority over subsequent normal releases)
+
+1. When the rescue channel needs a security or compatibility update, suspend the normal-channel update queue and claim exclusive rescue-update lease. **Do not begin if the normal channel cannot independently communicate with ONE and fetch verified recovery instructions and packages**, or if its own preflight fails. Declare BLOCKED_RESCUE_UPDATE rather than disabling both paths.
+2. Preserve the previously tested rescue image in a protected A/B slot. Stage the new rescue candidate, check signatures, integrity, platform and policy, run isolated handshake/smoke tests and confirm the existing normal channel remains healthy.
+3. Atomically switch only the rescue channel, then verify it independently reaches ONE over its own process/protocol/credentials, can fetch a trusted recovery manifest and is capable of issuing a bounded rescue request. Do not mistake a local running process for end-to-end health.
+4. On failed verification, use the still-functional normal path to roll back the rescue slot and revalidate the original recovery path. If the normal channel fails unexpectedly during this window, an independently bootable protected last-known-good rescue slot must remain available. If neither can be demonstrated healthy, fail closed and require local/operator recovery.
+5. Only after RECOVERY_UPDATED_VERIFIED (including independent live ONE receipt and durable slot health) release the mutual exclusion lease and resume queued normal updates. An update of the rescue lane must not be bundled with a normal-channel update in one activation/transaction.
+
+### Safety qualification
+
+A healthy normal channel is a prerequisite for rescue-channel upgrade, but it is not by itself an adequate sole fallback. Keep protected A/B recovery slots, anti-rollback/security-revocation policies, independently verified trust anchors and durable rollback metadata. Literal permanent immutability of the rescue implementation is unsafe; keep its minimal wire protocol stable while permitting rare, independently approved security upgrades. An update must not remove both independent communication paths in any intermediate state.
+
+### Required fault-injection acceptance
+
+Simultaneous update requests; interrupted normal update; rescue update with unhealthy normal channel; rescue update with malformed artifact; rescue candidate starts but cannot authenticate ONE; rescue update loses power before/after activation; normal channel drops unexpectedly during rescue update; rescue rollback with revoked old image; recovery lease expiry and reboot; receipt loss and idempotent reconcile. Every state must result in verified active channel(s), a persisted pending recovery action or explicit HUMAN_REQUIRED; never silently report success.
+
+Implementation status: this is a stronger integration contract for existing #2271 and AgentOS maintenance/release owners, not a deployed dual-channel updater or successful live recovery receipt.
