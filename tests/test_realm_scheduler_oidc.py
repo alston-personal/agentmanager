@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.realm_server import _validate_github_scheduler_claims, _validate_main_runtime_repair_intent
+from agent_core.realm_server import _validate_github_scheduler_claims, _validate_main_runtime_repair_intent, RealmRequestHandler
 
 
 def _claims():
@@ -150,4 +150,37 @@ def test_main_repair_oidc_can_only_submit_exact_empty_payload():
     for request in candidates:
         with pytest.raises(PermissionError):
             _validate_main_runtime_repair_intent(claims, request)
+
+
+
+def test_main_runtime_oidc_cannot_call_generic_scheduler_controller_endpoints(monkeypatch):
+    from types import SimpleNamespace
+    claims = _claims()
+    claims.update(ref="refs/heads/main", event_name="push",
+        workflow_ref=("alston-personal/agentmanager/.github/workflows/"
+                      "main-action-runtime-migration-20261007.yml@refs/heads/main"))
+    monkeypatch.setattr("agent_core.realm_server._verify_github_scheduler_oidc", lambda _: claims)
+    handler = object.__new__(RealmRequestHandler)
+    handler.server = SimpleNamespace(controller_token="some-other-secret")
+    handler._bearer = lambda: "signed-oidc-token"
+    for method, path in (
+        ("POST", "/v1/controller/scheduler/submit"),
+        ("GET", "/v1/controller/scheduler"),
+        ("GET", "/v1/controller/scheduler/requests/another-user-job"),
+        ("GET", "/v1/dispatch/requests/agentos.transport.repair-1111111111-aaaaaaaa-extra"),
+        ("GET", "/v1/dispatch/requests/agentos.vision_studio.produce-test123"),
+        ("POST", "/v1/monitor"),
+    ):
+        handler.command = method
+        handler.path = path
+        with pytest.raises(PermissionError):
+            handler._authorize_scheduler()
+    for method, path in (
+        ("GET", "/v1/dispatch"),
+        ("POST", "/v1/dispatch"),
+        ("GET", "/v1/dispatch/requests/agentos.transport.repair-1762967000-1234abcd"),
+    ):
+        handler.command = method
+        handler.path = path
+        assert handler._authorize_scheduler() is claims
 
