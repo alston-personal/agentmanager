@@ -312,7 +312,22 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
         expected = str(getattr(self.server, 'controller_token', '') or '')  # type: ignore[attr-defined]
         if expected and secrets.compare_digest(supplied, expected):
             return None
-        return _verify_github_scheduler_oidc(supplied)
+        claims = _verify_github_scheduler_oidc(supplied)
+        if _is_main_runtime_repair_claims(claims):
+            # Never let this new signer inherit the generic Scheduler API:
+            # the historical integration workflow has broad scheduling powers,
+            # while the main runtime repair is one fixed, SHA-pinned action.
+            route = urlparse(self.path).path
+            method = self.command
+            allowed = (
+                (method == 'GET' and route == '/v1/dispatch')
+                or (method == 'POST' and route == '/v1/dispatch')
+                or (method == 'GET' and re.fullmatch(
+                    r'/v1/dispatch/requests/agentos[.]transport[.]repair-[0-9]{9,12}-[0-9a-f]{8}', route))
+            )
+            if not allowed:
+                raise PermissionError('main runtime repair carrier endpoint scope invalid')
+        return claims
 
     def _runner_window_submit(self, body: dict[str, Any]) -> dict[str, Any]:
         if body.get('schema') != 'agentos.runner-window-dispatch/v1':
