@@ -65,6 +65,59 @@ class RecoverySlotTests(unittest.TestCase):
         self.assertEqual(preserved["pending"], "B")
         self.assertEqual(preserved["last_known_good"], "A")
 
+    def test_pending_corrupt_B_can_still_probe_LKG_without_mutating_slots(self):
+        runner.bootstrap(self.root, self.initial)
+        b_path = self.root / "slot-B" / "recovery_one_probe.py"
+        b_path.parent.mkdir()
+        b_path.write_text("candidate", encoding="utf-8")
+        state = self.state()
+        runner.atomic_json(self.root / "slots.json", {
+            **state, "active": "B", "last_known_good": "A",
+            "pending": "B", "digests": {**state["digests"], "B": runner.digest(b_path)},
+        })
+        b_path.write_text("candidate-corrupt", encoding="utf-8")
+        original = (self.root / "slots.json").read_bytes()
+        with patch.object(runner.subprocess, "run") as execute:
+            execute.return_value.returncode = 0
+            with self.assertRaisesRegex(RuntimeError, "rollback_authority_required"):
+                runner.run(self.root, "cfg.json", self.root / "status.json",
+                           diagnose_lkg=True)
+            self.assertEqual(execute.call_count, 1)
+            self.assertIn("slot-A", execute.call_args.args[0][2])
+            self.assertIn("lkg-diagnostic.json", execute.call_args.args[0][-1])
+        report = json.loads((self.root / "lkg-rescue-diagnostic.json").read_text())
+        self.assertEqual(report["schema"], "agentos.recovery-lkg-diagnostic/v1")
+        self.assertEqual(report["result"], "ONE_PROBE_SUCCEEDED")
+        self.assertFalse(report["rollback_authorized"])
+        self.assertFalse(report["rollback_performed"])
+        self.assertFalse(report["one_receipt_attested"])
+        active = json.loads((self.root / "status.json").read_text())
+        self.assertFalse(active["one_transport_roundtrip"])
+        self.assertEqual(active["error_class"], "PendingRecoveryCandidateCorrupt")
+        self.assertEqual((self.root / "slots.json").read_bytes(), original)
+
+    def test_lkg_diagnostic_failure_never_claims_recovery_or_receipt(self):
+        runner.bootstrap(self.root, self.initial)
+        b_path = self.root / "slot-B" / "recovery_one_probe.py"
+        b_path.parent.mkdir()
+        b_path.write_text("candidate", encoding="utf-8")
+        original = self.state()
+        runner.atomic_json(self.root / "slots.json", {
+            **original, "active": "B", "last_known_good": "A", "pending": "B",
+            "digests": {**original["digests"], "B": runner.digest(b_path)},
+        })
+        b_path.write_text("corrupt", encoding="utf-8")
+        original_bytes = (self.root / "slots.json").read_bytes()
+        with patch.object(runner.subprocess, "run") as execute:
+            execute.return_value.returncode = 1
+            with self.assertRaisesRegex(RuntimeError, "rollback_authority_required"):
+                runner.run(self.root, "cfg.json", self.root / "status.json",
+                           diagnose_lkg=True)
+        report = json.loads((self.root / "lkg-rescue-diagnostic.json").read_text())
+        self.assertEqual(report["result"], "ONE_PROBE_FAILED")
+        self.assertFalse(report["rollback_performed"])
+        self.assertEqual((self.root / "slots.json").read_bytes(), original_bytes)
+
     def test_symlinked_slot_directory_does_not_count_as_healthy(self):
         runner.bootstrap(self.root, self.initial)
         stable = self.root / "slot-A"
