@@ -5,7 +5,7 @@
   "pr_number": 2271,
   "status": "SOURCE_CI_ONLY_NOT_MERGED_NOT_RUNTIME_ACCEPTED",
   "goal": "以 main 為唯一正式主線，將既有 ONE Maintenance 與 Normal/Recovery 雙通道更新、受授權 A/B 回退及跨重啟對帳收斂為同一條可驗收閉環",
-  "next_action": "既有 ONE Runtime 讀取最新 Canonical IR，核對 #1682 是否已發布；尚未發布才使用 --from-current --apply --sync-active-selector，若已發布但指標未同步則使用 --resume-selector-only；同時繼續受信任 Recovery 授權與 Windows 實機 Receipt 驗收",
+  "next_action": "由受授權 ONE Runtime 先判定 #1682 的 Canonical IR 是否已正式發布；已發布則僅執行 --resume-selector-only，未發布才 CAS 發布，並讀回實際 selector / IR 證據；接著整合 Recovery 正式授權與 Windows 故障救援 Receipt",
   "pending_tasks": [
     "PR #2271 保持 Draft；審查核心及 Windows 路徑後，核對 main 最新版並決定合併時機",
     "Reuse Before Build：在既有 Maintenance Owner/Runtime 中實作真正的簽章、信任根、時效、防重放、Node/Realm/operation_id 校驗",
@@ -19,7 +19,8 @@
     "一般 Thin Client 安裝不得改寫已存在的 Recovery 啟動器與 A/B 槽位；Recovery 升級使用獨立受授權程序",
     "GitHub CI、PR 與本機對帳報告不是正式 ONE Runtime 部署或救援成功 Receipt",
     "跨 ONE/Windows 分散式狀態異常時採 fail-closed，不得從本機 JSON 自行解鎖或聲稱授權",
-    "Canonical IR CAS 發布與 Active Continuation 指標為兩筆持久化操作；中斷後必須先核對已發布的 IR、來源及父代，再以 --resume-selector-only 安全對帳，不可再建立新 IR 掩蓋中斷"
+    "Canonical IR CAS 發布與 Active Continuation 指標為兩筆持久化操作；中斷後必須先核對已發布的 IR、來源及父代，再以 --resume-selector-only 安全對帳，不可再建立新 IR 掩蓋中斷",
+    "若 Canonical IR 已由 #1682 發布成功，--from-current --apply 必須拒絕重複產生新世代，改走 --resume-selector-only；對 Active Continuation 的 CAS 要在既有鎖內再次核對目前正式 IR"
   ],
   "evidence": [
     {
