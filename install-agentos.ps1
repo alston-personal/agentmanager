@@ -197,6 +197,49 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
   Write-Host 'Supervisor: Single hidden long-running task (no periodic console spawn)' -ForegroundColor Green
 }
 
+
+function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
+  # This probe is installed outside the versioned normal runtime; a routine
+  # reinstallation must never overwrite the independent rescue candidate.
+  $source = Join-Path $RuntimeRoot 'scripts\\windows\\recovery_one_probe.py'
+  if(-not (Test-Path -LiteralPath $source)){
+    throw "Recovery probe missing from canonical pinned install: $source"
+  }
+  $recoveryRoot = Join-Path $InstallRoot 'recovery'
+  $probeFile = Join-Path $recoveryRoot 'recovery_one_probe.py'
+  $statusFile = Join-Path $recoveryRoot 'status.json'
+  $configFile = Join-Path $InstallRoot 'state\\client.json'
+  New-Item -ItemType Directory -Force -Path $recoveryRoot | Out-Null
+  if(-not (Test-Path -LiteralPath $probeFile)){
+    Copy-Item -LiteralPath $source -Destination $probeFile -ErrorAction Stop
+  } else {
+    Write-Host 'Existing Recovery probe retained; normal install cannot upgrade it.'
+  }
+  if(-not (Test-Path -LiteralPath $configFile)){
+    throw 'Recovery probe requires completed Node enrollment'
+  }
+  # A successful unauthenticated health endpoint is insufficient: the probe
+  # must demonstrate an authenticated ONE bootstrap round-trip.
+  & $PythonPath $probeFile --config $configFile --status $statusFile
+  if($LASTEXITCODE -ne 0){
+    throw 'Independent read-only Recovery ONE probe failed; no healthy recovery claimed.'
+  }
+  $verified = Get-Content -Raw -LiteralPath $statusFile | ConvertFrom-Json
+  if($verified.schema -ne 'agentos.recovery-probe/v1' -or
+     $verified.one_transport_roundtrip -ne $true -or
+     $verified.recovery_update_authorized -ne $false){
+    throw 'Recovery probe result is not valid'
+  }
+  $recoveryTaskName = 'AgentOS Recovery ONE Probe'
+  $probeArgs = '"' + $probeFile + '" --config "' + $configFile + '" --status "' + $statusFile + '"'
+  $action = New-ScheduledTaskAction -Execute $PythonPath -Argument $probeArgs -WorkingDirectory $recoveryRoot
+  $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  $periodic = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
+  Register-ScheduledTask -TaskName $recoveryTaskName -Action $action -Trigger @($logon,$periodic) -Settings $settings -Description 'Read-only independent ONE recovery communication probe; no update authority' -Force | Out-Null
+  Write-Host 'Read-only Recovery ONE probe verified and separately scheduled.'
+}
+
 try {
   if($env:OS -ne 'Windows_NT'){ throw 'This one-click installer is for Windows only.' }
   if([string]::IsNullOrWhiteSpace($NodeId)){ throw 'NodeId could not be determined.' }
@@ -306,6 +349,8 @@ try {
   Write-Step 'Verifying end-to-end readiness'
   & $launcher verify
   if($LASTEXITCODE -ne 0){ throw "AgentOS readiness verification failed with exit code $LASTEXITCODE" }
+
+  Install-RecoveryProbe $python.Path $runtimeRoot
 
   $acceptedDir=Join-Path $InstallRoot 'accepted-runtimes'
   New-Item -ItemType Directory -Force -Path $acceptedDir | Out-Null
