@@ -73,6 +73,40 @@ class RecoveryPromotionTests(unittest.TestCase):
         self.assertIsNone(result["pending"])
         self.assertTrue((self.root / "stage-reservation.lock").exists())
 
+    def test_accept_disk_write_failure_does_not_clear_one_gate(self):
+        from unittest.mock import patch
+        self.activate()
+        stages = []
+        with patch.object(promote, "atomic_json",
+                          side_effect=OSError("simulated_accept_io_failure")):
+            with self.assertRaisesRegex(OSError, "simulated_accept_io_failure"):
+                self.accept(gate=lambda _c, stage: stages.append(stage) or True)
+        self.assertEqual(stages, [])
+        self.assertEqual(slot.load_state(self.root)["pending"], "B")
+        self.assertEqual(slot.load_state(self.root)["last_known_good"], "A")
+
+    def test_accept_gate_verified_after_local_lkg_readback(self):
+        self.activate()
+        observations = []
+        def gate(_context, stage):
+            state = slot.load_state(self.root)
+            observations.append((stage, state["active"],
+                                 state["pending"], state["last_known_good"]))
+            return True
+        accepted = self.accept(gate=gate)
+        self.assertEqual(accepted["last_known_good"], "B")
+        self.assertEqual(observations, [("VERIFY", "B", None, "B")])
+
+    def test_accept_gate_denied_keeps_recovery_reservation_for_reconciliation(self):
+        self.activate()
+        with self.assertRaises(PermissionError):
+            self.accept(gate=lambda _c, _stage: False)
+        state = slot.load_state(self.root)
+        self.assertEqual(state["active"], "B")
+        self.assertEqual(state["last_known_good"], "B")
+        self.assertIsNone(state["pending"])
+        self.assertTrue((self.root / "stage-reservation.lock").exists())
+
     def test_activation_refused_when_authority_or_normal_fails(self):
         for denied in ("auth", "normal", "gate"):
             with self.subTest(denied=denied):
