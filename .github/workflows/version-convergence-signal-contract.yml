@@ -6,6 +6,8 @@ on:
     paths:
       - 'scripts/version_convergence_signal.py'
       - 'agent_core/runtime_ota_acceptance.py'
+      - 'agent_core/active_continuation.py'
+      - 'tests/test_active_continuation.py'
       - 'tests/test_runtime_ota_candidate_recheck.py'
       - 'scripts/run_realm_node_transactional_ota_user.sh'
       - 'scripts/windows/transactional_ota_finalize.ps1'
@@ -70,6 +72,8 @@ jobs:
         run: python3 -m unittest tests.test_recovery_update_reconcile -v
       - name: Test canonical IR Recovery handoff proposal, dry-run and CAS boundaries
         run: python3 -m unittest tests.test_recovery_1682_ir -v
+      - name: Test active continuation guarded pointer CAS
+        run: python3 -m unittest tests.test_active_continuation -v
       - name: Produce protected main source event (not an Executor delivery)
         if: github.event_name == 'push'
         shell: bash
