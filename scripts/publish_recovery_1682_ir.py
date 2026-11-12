@@ -60,10 +60,88 @@ def prepare(proposal, *, expected_index_id, expected_ir_id,
     }
 
 
+def resume_selector_only(*, proposal, data_root=None, governance_path=None):
+    """Resume an already-published #1682 IR without writing another generation.
+
+    The ONE-resolved Canonical IR is the sole source of the child identity.
+    A stale selector may advance only from the exact parent IR of that child,
+    and only when the published execution head proves this handoff's origin.
+    """
+    from agent_core.resolve_facade import resolve_continuation
+    from agent_core.active_continuation import (
+        activate_continuation, read_active_continuation,
+    )
+    current = resolve_continuation(
+        "agentos-core", data_root=data_root, governance_path=governance_path,
+    )
+    head = current.get("execution_head") or {}
+    ir = (current.get("continuation") or {}).get("canonical_ir") or {}
+    metadata = head.get("execution_head") or {}
+    index_id = head.get("index_id")
+    ir_id = ir.get("ir_id")
+    parent_ir_id = ir.get("parent_ir_id")
+    if (head.get("schema") != "agentos.execution-head/v1"
+            or ir.get("schema_version") != "agentos.ir/v1"
+            or not isinstance(index_id, str) or not index_id
+            or ir.get("index_id") != index_id
+            or not isinstance(ir_id, str) or not ir_id
+            or not isinstance(parent_ir_id, str) or not parent_ir_id
+            or ir_id == parent_ir_id
+            or not isinstance(metadata, dict)
+            or metadata.get("source") != "recovery_1682_handoff_proposal"
+            or metadata.get("ir_published") is not True
+            or metadata.get("runtime_accepted") is not False
+            or metadata.get("recovery_live_receipt") is not False
+            or ir.get("goal") != proposal.get("goal")
+            or "#1682" not in str(proposal.get("work_item"))):
+        raise ValueError("recovery_1682_published_ir_not_proven")
+    try:
+        selector = read_active_continuation(data_root)
+    except FileNotFoundError as exc:
+        raise ValueError("missing_active_selector_no_takeover") from exc
+    if selector.get("project_id") != "agentos-core":
+        raise ValueError("active_selector_owned_by_another_project")
+    if selector.get("index_id") == index_id and selector.get("ir_id") == ir_id:
+        return {
+            "schema": "agentos.ir-selector-resume/v1",
+            "status": "ALREADY_CURRENT",
+            "index_id": index_id, "ir_id": ir_id,
+            "selector_readback_verified": True,
+            "new_ir_published": False,
+            "runtime_accepted": False,
+        }
+    if selector.get("ir_id") != parent_ir_id:
+        raise ValueError("active_selector_does_not_match_published_parent")
+    # No guessed previous index: compare with the actual observed selector
+    # while holding the existing selector file lock in activate_continuation.
+    activate_continuation(
+        "agentos-core", index_id=index_id, ir_id=ir_id,
+        reason="recovery-1682-resume-published-ir",
+        data_root=data_root,
+        expected_previous=(
+            "agentos-core", selector["index_id"], selector["ir_id"]
+        ),
+    )
+    verified = read_active_continuation(data_root)
+    if (verified.get("project_id"), verified.get("index_id"),
+            verified.get("ir_id")) != ("agentos-core", index_id, ir_id):
+        raise RuntimeError("resumed_active_selector_readback_mismatch")
+    return {
+        "schema": "agentos.ir-selector-resume/v1",
+        "status": "SELECTOR_RESUMED",
+        "index_id": index_id, "ir_id": ir_id,
+        "selector_readback_verified": True,
+        "new_ir_published": False,
+        "runtime_accepted": False,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     for name in ("expected-index-id", "expected-ir-id", "new-index-id", "new-ir-id"):
         parser.add_argument("--" + name)
+    parser.add_argument("--resume-selector-only", action="store_true",
+                        help="Reconcile an already published #1682 IR; do not publish")
     parser.add_argument("--from-current", action="store_true",
                         help="Read current generation from authoritative ONE state")
     parser.add_argument("--sync-active-selector", action="store_true",
@@ -73,6 +151,17 @@ def main():
     parser.add_argument("--governance-path")
     args = parser.parse_args()
     proposal = json.loads(PROPOSAL.read_text(encoding="utf-8"))
+    if args.resume_selector_only:
+        if (args.apply or args.sync_active_selector or args.from_current
+                or any((args.expected_index_id, args.expected_ir_id,
+                        args.new_index_id, args.new_ir_id))):
+            parser.error("--resume-selector-only does not accept publish options")
+        result = resume_selector_only(
+            proposal=proposal, data_root=args.data_root,
+            governance_path=args.governance_path,
+        )
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        return
     if args.sync_active_selector and not args.apply:
         parser.error("--sync-active-selector requires --apply")
     if args.from_current:
