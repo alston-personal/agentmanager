@@ -1,5 +1,5 @@
 import unittest
-from scripts.version_convergence_signal import validate_adapter_hint, plan_adapter_reconciliation, gate_adapter_install, PREFLIGHT_CHECKS
+from scripts.version_convergence_signal import validate_adapter_hint, plan_adapter_reconciliation, gate_adapter_install, PREFLIGHT_CHECKS, initial_channel_state, reconcile_channel_update
 from scripts.version_convergence_signal import make_event, validate_ack, affected_domains
 A="a"*40
 B="b"*40
@@ -176,5 +176,113 @@ class SafeUpdateRecoveryTests(unittest.TestCase):
             gate_adapter_install(plan={**p, "installation_authorized": True},
                                  attestation=a, recovery=r)
 
+
+
+class DualChannelInterlockTests(unittest.TestCase):
+    def step(self, state, stage, lane="normal", op="op-1", observed=None):
+        return reconcile_channel_update(
+            state=state, stage=stage, lane=lane, operation_id=op,
+            observed=observed, expected_generation=state["generation"])
+
+    def begin_proof(self, lane):
+        return ({"recovery_one_handshake": True, "recovery_signed_manifest": True,
+                 "recovery_rollback_ready": True} if lane == "normal" else
+                {"normal_one_handshake": True, "normal_recovery_download": True,
+                 "protected_recovery_slot_ready": True})
+
+    def test_normal_update_needs_independent_recovery(self):
+        start = initial_channel_state()
+        evidence = self.begin_proof("normal")
+        for key in evidence:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.step(start, "BEGIN", observed={**evidence, key: False})
+        started = self.step(start, "BEGIN", observed=evidence)
+        self.assertEqual(started["active_lane"], "normal")
+        with self.assertRaises(ValueError):
+            self.step(started, "BEGIN", lane="recovery",
+                      observed=self.begin_proof("recovery"))
+
+    def test_recovery_update_prioritized_but_requires_normal_fallback(self):
+        start = initial_channel_state()
+        evidence = self.begin_proof("recovery")
+        for key in evidence:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.step(start, "BEGIN", lane="recovery",
+                          observed={**evidence, key: False})
+        begun = self.step(start, "BEGIN", lane="recovery", observed=evidence)
+        with self.assertRaises(ValueError):
+            self.step(begun, "BEGIN", lane="normal", observed=self.begin_proof("normal"))
+        with self.assertRaises(ValueError):
+            self.step(begun, "VERIFY", lane="recovery", observed={})
+
+    def test_activation_requires_separate_authority_and_fallback(self):
+        state = self.step(initial_channel_state(), "BEGIN",
+                          observed=self.begin_proof("normal"))
+        with self.assertRaises(ValueError):
+            self.step(state, "ACTIVATE", observed={
+                "preflight_passed": True, "fallback_still_healthy": True})
+        state = self.step(state, "ACTIVATE", observed={
+            "preflight_passed": True, "fallback_still_healthy": True,
+            "activation_separately_authorized": True})
+        with self.assertRaises(ValueError):
+            self.step(state, "VERIFY", observed={
+                "updated_lane_one_handshake": True,
+                "updated_lane_signed_manifest": True,
+                "fallback_still_healthy": True})
+        state = self.step(state, "VERIFY", observed={
+            "updated_lane_one_handshake": True,
+            "updated_lane_signed_manifest": True,
+            "fallback_still_healthy": True,
+            "one_receipt_attested": True})
+        self.assertEqual(state["phase"], "IDLE")
+        self.assertEqual(state["last_verified_lane"], "normal")
+
+    def test_rescue_update_can_verify_then_allow_normal(self):
+        state = self.step(initial_channel_state(), "BEGIN", lane="recovery",
+                          observed=self.begin_proof("recovery"))
+        state = self.step(state, "ACTIVATE", lane="recovery", observed={
+            "preflight_passed": True, "fallback_still_healthy": True,
+            "activation_separately_authorized": True})
+        state = self.step(state, "VERIFY", lane="recovery", observed={
+            "updated_lane_one_handshake": True,
+            "updated_lane_signed_manifest": True,
+            "fallback_still_healthy": True,
+            "one_receipt_attested": True})
+        self.assertEqual(state["last_verified_lane"], "recovery")
+        started_normal = self.step(state, "BEGIN", observed=self.begin_proof("normal"))
+        self.assertEqual(started_normal["active_lane"], "normal")
+
+    def test_failure_blocks_second_update_until_verified_rollback(self):
+        state = self.step(initial_channel_state(), "BEGIN",
+                          observed=self.begin_proof("normal"))
+        state = self.step(state, "FAIL")
+        self.assertEqual(state["phase"], "ROLLBACK_REQUIRED")
+        with self.assertRaises(ValueError):
+            self.step(state, "BEGIN", lane="recovery",
+                      observed=self.begin_proof("recovery"))
+        with self.assertRaises(ValueError):
+            self.step(state, "ROLLBACK_OK", observed={
+                "fallback_still_healthy": True, "restored_lane_one_handshake": True})
+        state = self.step(state, "ROLLBACK_OK", observed={
+            "fallback_still_healthy": True, "restored_lane_one_handshake": True,
+            "one_rollback_receipt_attested": True})
+        self.assertEqual(state["phase"], "IDLE")
+
+    def test_stale_generation_and_unrecoverable_failure_fail_closed(self):
+        state = self.step(initial_channel_state(), "BEGIN",
+                          observed=self.begin_proof("normal"))
+        with self.assertRaises(ValueError):
+            reconcile_channel_update(
+                state=state, stage="ACTIVATE", lane="normal", operation_id="op-1",
+                expected_generation=0,
+                observed={"preflight_passed": True, "fallback_still_healthy": True,
+                          "activation_separately_authorized": True})
+        with self.assertRaises(ValueError):
+            self.step(state, "FAIL", op="different-operation")
+        state = self.step(state, "FAIL")
+        state = self.step(state, "ROLLBACK_FAILED")
+        self.assertEqual(state["phase"], "HUMAN_REQUIRED")
+        with self.assertRaises(ValueError):
+            self.step(state, "BEGIN", observed=self.begin_proof("normal"))
 
 if __name__=="__main__": unittest.main()
