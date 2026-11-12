@@ -12,7 +12,7 @@ class OTARemoteScriptIntegrityTests(unittest.TestCase):
     def test_shell_syntax_and_embedded_python_compile(self):
         script = SCRIPT.read_text(encoding="utf-8")
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
-        blocks = re.findall(r"^python3 - <<'PY'\n(.*?)^PY$", script, re.MULTILINE | re.DOTALL)
+        blocks = re.findall(r"^[ \\t]*python3 - <<'PY'\\n(.*?)^PY$", script, re.MULTILINE | re.DOTALL)
         self.assertEqual(len(blocks), 4)
         for index, code in enumerate(blocks):
             with self.subTest(block=index):
