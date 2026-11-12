@@ -45,7 +45,7 @@ class StudioSingleRootPublicationContractTests(unittest.TestCase):
         self.assertIn("LAYOUTLIB_PRODUCTION_STUDIO_ROOT_NOT_ACTIVE", layoutlib)
         self.assertIn("studio-web-production-root/v1", registry)
         self.assertIn('"repository":"alston-personal/studio-web"', registry)
-        self.assertIn("test -r \\"$MARKER\\"", registry)
+        self.assertIn('test -r "$MARKER"', registry)
 
     def test_no_implicit_legacy_root_writes_in_documented_migration(self):
         current = (ROOT / "docs/CURRENT_STATE.md").read_text(encoding="utf-8")
