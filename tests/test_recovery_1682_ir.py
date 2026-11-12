@@ -136,6 +136,18 @@ class RecoveryCanonicalIRTests(unittest.TestCase):
         self.assertTrue(req["new_ir_id"].startswith("ir-core-1682-"))
         self.assertNotEqual(req["new_ir_id"], "ir-real")
 
+    def test_from_current_refuses_second_ir_after_prior_publish(self):
+        argv = ["publish_recovery_1682_ir.py", "--from-current", "--apply"]
+        already = self._published_ir(parent="ir-previous", index="idx-1682",
+                                     ir_id="ir-1682")
+        with patch.object(sys, "argv", argv), \
+             patch("agent_core.resolve_facade.resolve_continuation",
+                   return_value=already), \
+             patch("agent_core.canonical_ir_handoff.advance_canonical_ir") as publish:
+            with self.assertRaisesRegex(ValueError, "already_published_use_resume"):
+                module.main()
+            publish.assert_not_called()
+
     def test_from_current_malformed_generation_fails_closed(self):
         argv = ["publish_recovery_1682_ir.py", "--from-current"]
         bad = {
