@@ -140,8 +140,11 @@ def run(root, config, status, *, interpreter=None, diagnose_lkg=False):
                 and valid_slot(root, state, state["last_known_good"])):
             if diagnose_lkg:
                 diagnostic_status = root / "lkg-diagnostic.json"
-                diagnostic_result = "NOT_RUN"
+                diagnostic_result = "ONE_PROBE_FAILED"
                 try:
+                    # A previous successful status must not be re-used when
+                    # this run crashes or returns zero without a fresh report.
+                    diagnostic_status.unlink(missing_ok=True)
                     proc = subprocess.run(
                         [interpreter or sys.executable, "-I",
                          str(_strict_slot_path(root, state["last_known_good"])),
@@ -149,11 +152,20 @@ def run(root, config, status, *, interpreter=None, diagnose_lkg=False):
                          "--status", str(diagnostic_status)],
                         check=False, timeout=30,
                     )
-                    diagnostic_result = (
-                        "ONE_PROBE_SUCCEEDED" if proc.returncode == 0
-                        else "ONE_PROBE_FAILED"
-                    )
-                except (OSError, subprocess.TimeoutExpired):
+                    if proc.returncode == 0:
+                        diagnostic = json.loads(
+                            diagnostic_status.read_text(encoding="utf-8")
+                        )
+                        if (isinstance(diagnostic, dict)
+                                and diagnostic.get("schema") == "agentos.recovery-probe/v1"
+                                and diagnostic.get("one_transport_roundtrip") is True
+                                and diagnostic.get("recovery_update_authorized") is False
+                                and diagnostic.get("adapter_download_verified") is False
+                                and isinstance(diagnostic.get("observed_at"), str)
+                                and diagnostic.get("observed_at")):
+                            diagnostic_result = "ONE_PROBE_SUCCEEDED"
+                except (OSError, subprocess.TimeoutExpired, ValueError,
+                        UnicodeError):
                     diagnostic_result = "ONE_PROBE_FAILED"
                 # Unlike the actual active-slot status, this document reports
                 # only LKG transport diagnostics, never an accepted rollback.
