@@ -5,6 +5,8 @@ param(
   [string]$WorkspaceRoot = "$HOME\AgentOS",
   [string]$SourceRef = 'main',
   [int]$ApprovalTimeoutSeconds = 1800,
+  [string]$RecoveryPythonArchive = '',
+  [string]$RecoveryPythonSha256 = '',
   [switch]$NoPythonInstall
 )
 
@@ -223,6 +225,35 @@ function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
   $recoveryTaskName = 'AgentOS Recovery ONE Probe'
   $existingRecoveryTask = Get-ScheduledTask -TaskName $recoveryTaskName -ErrorAction SilentlyContinue
   $recoveryPythonPath = $PythonPath
+  if($existingRecoveryTask -and ($RecoveryPythonArchive -or $RecoveryPythonSha256)) {
+    throw 'Existing Recovery Python can only be upgraded by the authorized Recovery updater.'
+  }
+  if(-not $existingRecoveryTask) {
+    # First enrollment can opt in to a dedicated, explicitly SHA-pinned
+    # Windows embeddable CPython archive. Never download or guess a hash.
+    if([bool]$RecoveryPythonArchive -ne [bool]$RecoveryPythonSha256) {
+      throw 'Both RecoveryPythonArchive and RecoveryPythonSha256 are required.'
+    }
+    $protectedInterpreter = Join-Path $recoveryRoot 'python-runtime\\python.exe'
+    if(Test-Path -LiteralPath $protectedInterpreter -PathType Leaf) {
+      $recoveryPythonPath = (Resolve-Path -LiteralPath $protectedInterpreter).Path
+    } elseif($RecoveryPythonArchive) {
+      $provisioner = Join-Path $RuntimeRoot 'scripts\\windows\\install_recovery_python.ps1'
+      if(-not (Test-Path -LiteralPath $provisioner -PathType Leaf)) {
+        throw 'Pinned Recovery Python provisioner missing.'
+      }
+      $provisionResult = @(& $provisioner -RecoveryRoot $recoveryRoot -Archive $RecoveryPythonArchive -ExpectedSha256 $RecoveryPythonSha256)
+      if($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw 'Recovery Python provisioning failed.'
+      }
+      if(-not (Test-Path -LiteralPath $protectedInterpreter -PathType Leaf)) {
+        throw 'Recovery Python provisioning did not produce protected executable.'
+      }
+      $recoveryPythonPath = (Resolve-Path -LiteralPath $protectedInterpreter).Path
+    } else {
+      Write-Host 'Recovery Python is shared with Normal until a signed, SHA-pinned offline Recovery runtime is provisioned.' -ForegroundColor Yellow
+    }
+  }
   if($existingRecoveryTask) {
     # Normal reinstall must NOT silently rebind Recovery to a new Normal
     # Python interpreter, replace its trigger, or adopt an unknown task.
