@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -50,6 +51,19 @@ server {
         result = run_nginx()
         self.assertFalse(result["available"])
         self.assertNotIn("secret", json.dumps(result))
+
+    @patch("scripts.audit_studio_nginx_redacted.subprocess.run")
+    @patch("scripts.audit_studio_nginx_redacted.Path.resolve")
+    @patch("scripts.audit_studio_nginx_redacted.Path.read_text")
+    def test_nonroot_fallback_is_labeled_provisional(self, read_text, resolve, run):
+        run.return_value = SimpleNamespace(returncode=1, stdout="", stderr="CERTIFICATE SECRET")
+        resolve.return_value = Path("/etc/nginx/sites-available/studio.milkcat.org")
+        read_text.return_value = "server {\\n server_name studio.milkcat.org;\\n root /home/ubuntu/zeus-writer/website/dist;\\n}\\n"
+        result = run_nginx()
+        self.assertTrue(result["site_found"])
+        self.assertFalse(result["effective"])
+        self.assertEqual(result["site_blocks"][0]["roots"], ["legacy-zeuswriter"])
+        self.assertNotIn("SECRET", json.dumps(result))
 
 if __name__ == "__main__":
     unittest.main()
