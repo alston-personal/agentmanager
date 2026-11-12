@@ -109,6 +109,75 @@ class RecoveryCanonicalIRTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "readback_mismatch"):
                 module.main()
 
+    def test_from_current_reads_real_generation_without_user_ids(self):
+        argv = ["publish_recovery_1682_ir.py", "--from-current"]
+        current = {
+            "execution_head": {
+                "schema": "agentos.execution-head/v1", "index_id": "idx-real"
+            },
+            "continuation": {"canonical_ir": {
+                "schema_version": "agentos.ir/v1",
+                "index_id": "idx-real", "ir_id": "ir-real",
+            }},
+        }
+        with patch.object(sys, "argv", argv), \
+             patch("agent_core.resolve_facade.resolve_continuation",
+                   return_value=current):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                module.main()
+        report = json.loads(buf.getvalue())
+        req = report["request"]
+        self.assertEqual(report["status"], "PREPARED_NOT_PUBLISHED")
+        self.assertEqual(req["expected_index_id"], "idx-real")
+        self.assertEqual(req["expected_ir_id"], "ir-real")
+        self.assertTrue(req["new_ir_id"].startswith("ir-core-1682-"))
+        self.assertNotEqual(req["new_ir_id"], "ir-real")
+
+    def test_from_current_malformed_generation_fails_closed(self):
+        argv = ["publish_recovery_1682_ir.py", "--from-current"]
+        bad = {
+            "execution_head": {
+                "schema": "agentos.execution-head/v1", "index_id": "idx-real"
+            },
+            "continuation": {"canonical_ir": {
+                "schema_version": "agentos.ir/v1",
+                "index_id": "idx-other", "ir_id": "ir-real",
+            }},
+        }
+        with patch.object(sys, "argv", argv), \
+             patch("agent_core.resolve_facade.resolve_continuation",
+                   return_value=bad):
+            with self.assertRaisesRegex(ValueError, "current_one_ir_generation_unresolved"):
+                module.main()
+
+    def test_sync_selector_refuses_other_project_after_ir_publish(self):
+        argv = [
+            "publish_recovery_1682_ir.py",
+            "--expected-index-id", "idx-existing",
+            "--expected-ir-id", "ir-existing",
+            "--new-index-id", "idx-new",
+            "--new-ir-id", "ir-new",
+            "--apply", "--sync-active-selector",
+        ]
+        verified = {
+            "execution_head": {"index_id": "idx-new"},
+            "continuation": {"canonical_ir": {
+                "index_id": "idx-new", "ir_id": "ir-new",
+                "parent_ir_id": "ir-existing",
+            }},
+        }
+        with patch.object(sys, "argv", argv), \
+             patch("agent_core.canonical_ir_handoff.advance_canonical_ir",
+                   return_value={"ok": True, "publish_receipt": {"ok": True}}), \
+             patch("agent_core.resolve_facade.resolve_continuation",
+                   return_value=verified), \
+             patch("agent_core.active_continuation.read_active_continuation",
+                   return_value={"project_id": "other-project",
+                                 "index_id": "idx-other", "ir_id": "ir-other"}):
+            with self.assertRaisesRegex(RuntimeError, "no_implicit_takeover"):
+                module.main()
+
     def test_cli_dry_run_never_publishes(self):
         cmd = [
             sys.executable, str(SCRIPT),
