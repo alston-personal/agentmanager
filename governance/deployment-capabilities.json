@@ -16,7 +16,7 @@
       ],
       "verification_carriers": [
         "oracle-diagnose-studio-webserver.yml",
-        "studio-web/scripts/check-studio-live-release.mjs"
+        "check-studio-live-release.mjs"
       ],
       "migration_state": "source_only"
     },
