@@ -361,4 +361,32 @@ class DurableChannelGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             DurableChannelUpdateStore(":memory:")
 
+
+    def test_audit_is_atomic_durable_and_does_not_save_untrusted_observations(self):
+        store = self.store()
+        store.inspect(participant_id="node-1")
+        self.assertEqual(store.history(participant_id="node-1"), [])
+        begin = store.transition(
+            participant_id="node-1", stage="BEGIN", lane="normal",
+            operation_id="install-101", expected_generation=0,
+            observed={"recovery_one_handshake": True,
+                      "recovery_signed_manifest": True,
+                      "recovery_rollback_ready": True,
+                      "untrusted_secret": "DO_NOT_STORE"})
+        with self.assertRaises(ValueError):
+            store.transition(
+                participant_id="node-1", stage="BEGIN", lane="recovery",
+                operation_id="install-102", expected_generation=0,
+                observed={"normal_one_handshake": True,
+                          "normal_recovery_download": True,
+                          "protected_recovery_slot_ready": True})
+        history = self.store().history(participant_id="node-1")
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["generation"], begin["generation"])
+        self.assertEqual(history[0]["stage"], "BEGIN")
+        self.assertEqual(history[0]["to_phase"], "STAGED")
+        self.assertNotIn("untrusted_secret", str(history))
+        self.assertEqual(self.store().history(participant_id="node-2"), [])
+
+
 if __name__=="__main__": unittest.main()
