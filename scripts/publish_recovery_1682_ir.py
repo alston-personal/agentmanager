@@ -90,6 +90,40 @@ def main():
     )
     if result.get("ok") is not True or not result.get("publish_receipt"):
         raise RuntimeError("canonical_ir_handoff_receipt_missing")
+    # Publish receipt alone is insufficient. Read the authoritative ONE
+    # execution-head/Canonical IR pair after CAS, and report selector status
+    # separately rather than silently re-pointing an unrelated active project.
+    from agent_core.resolve_facade import resolve_continuation
+    current = resolve_continuation(
+        "agentos-core", data_root=args.data_root,
+        governance_path=args.governance_path,
+    )
+    head = current.get("execution_head") or {}
+    continuation = current.get("continuation") or {}
+    ir = continuation.get("canonical_ir") or {}
+    if (head.get("index_id") != request["new_index_id"]
+            or ir.get("index_id") != request["new_index_id"]
+            or ir.get("ir_id") != request["new_ir_id"]
+            or ir.get("parent_ir_id") != request["expected_ir_id"]):
+        raise RuntimeError("canonical_ir_post_publish_readback_mismatch")
+    from agent_core.active_continuation import read_active_continuation
+    try:
+        selector = read_active_continuation(args.data_root)
+    except FileNotFoundError:
+        selector = None
+    selector_matches = bool(
+        selector and selector.get("project_id") == "agentos-core"
+        and selector.get("index_id") == request["new_index_id"]
+        and selector.get("ir_id") == request["new_ir_id"]
+    )
+    result["canonical_ir_readback_verified"] = True
+    result["active_selector_matches_new_ir"] = selector_matches
+    result["active_selector_requires_reconciliation"] = bool(
+        selector and selector.get("project_id") == "agentos-core"
+        and not selector_matches
+    )
+    result["runtime_accepted"] = False
+    result["recovery_live_receipt"] = False
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
 
