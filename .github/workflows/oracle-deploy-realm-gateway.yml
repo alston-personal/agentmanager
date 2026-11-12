@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'dashboard/app/api/agentos/**'
+      - 'agent_core/realm_server.py'
       - 'scripts/deploy_realm_gateway_user.sh'
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/submit_oracle_bootstrap_request_remote.sh'
@@ -16,6 +17,9 @@ on:
     branches:
       - main
     paths:
+      - 'dashboard/app/api/agentos/**'
+      - 'agent_core/realm_server.py'
+      - 'tests/test_realm_scheduler_oidc.py'
       - 'scripts/deploy_realm_gateway_user.sh'
       - '.github/workflows/oracle-deploy-realm-gateway.yml'
   workflow_dispatch:
@@ -118,6 +122,25 @@ jobs:
           echo 'clean_next_dispatch_get_catalog=PASS'
           echo 'clean_next_dispatch_post_denied=PASS'
           echo 'clean_next_rain_exit_scoped_dispatch=PASS'
+          # A fixed Runtime Repair request crosses ONLY the public route-shape
+          # fence; the upstream ONE still enforces signed workflow OIDC and SHA.
+          repair_body='{"schema":"agentos.runner-window-dispatch/v1","capability":"agentos.runtime","operation":"repair","source_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","payload":{}}'
+          repair_code=$(curl -sS -D /tmp/agentos-runtime-h -o /tmp/agentos-runtime-b -w '%{http_code}' --max-time 4 \
+            -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer dummy-test-token' \
+            -d "$repair_body" http://127.0.0.1:3000/dashboard/api/agentos/v1/dispatch || true)
+          grep -qi '^x-agentos-realm-gateway: v0.1' /tmp/agentos-runtime-h
+          test "$repair_code" = 502
+          invalid_repair='{"schema":"agentos.runner-window-dispatch/v1","capability":"agentos.runtime","operation":"restart","source_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","payload":{}}'
+          invalid_code=$(curl -sS -o /tmp/agentos-runtime-bad -w '%{http_code}' --max-time 4 \
+            -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer dummy-test-token' \
+            -d "$invalid_repair" http://127.0.0.1:3000/dashboard/api/agentos/v1/dispatch || true)
+          test "$invalid_code" = 404
+          repair_status_code=$(curl -sS -D /tmp/agentos-runtime-sh -o /tmp/agentos-runtime-sb -w '%{http_code}' --max-time 4 \
+            http://127.0.0.1:3000/dashboard/api/agentos/v1/dispatch/requests/agentos.transport.repair-1762967000-1234abcd || true)
+          grep -qi '^x-agentos-realm-gateway: v0.1' /tmp/agentos-runtime-sh
+          test "$repair_status_code" = 502
+          echo 'clean_next_main_runtime_repair_scoped_dispatch=PASS'
+
 
           echo 'clean_next_resolve_allowlist=PASS'
 
