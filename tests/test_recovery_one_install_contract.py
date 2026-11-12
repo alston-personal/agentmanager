@@ -74,6 +74,14 @@ class CanonicalRecoveryInstallationTests(unittest.TestCase):
         self.assertIn("Existing Recovery Python can only be upgraded by the authorized Recovery updater.", script)
         self.assertIn("Both RecoveryPythonArchive and RecoveryPythonSha256 are required.", script)
         self.assertIn("python-runtime", script)
+        self.assertIn("RECOVERY_PYTHON_ORPHAN_RUNTIME_REQUIRES_AUTHORIZED_RECONCILIATION", script)
+        # An orphaned python-runtime without a registered Recovery task is
+        # not a trusted executable simply because python.exe exists.
+        self.assertIn("if(Test-Path -LiteralPath $protectedRuntime)", script)
+        self.assertNotIn(
+            "if(Test-Path -LiteralPath $protectedInterpreter -PathType Leaf)",
+            script
+        )
         self.assertIn("$action = New-ScheduledTaskAction -Execute $recoveryPythonPath", script)
         payload = PINNED_PAYLOAD.read_text(encoding="utf-8")
         self.assertIn("'scripts/windows/install_recovery_python.ps1'", payload)
