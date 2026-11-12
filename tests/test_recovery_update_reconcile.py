@@ -152,6 +152,31 @@ class RecoveryCrossStoreReconciliationTests(unittest.TestCase):
         self.assertEqual(result["classification"], "HUMAN_REQUIRED_LKG_CORRUPT")
         self.assertFalse(result["rollback_authorized"])
 
+    def test_local_revert_committed_but_one_gate_still_locked(self):
+        self.staged(activated=True, corrupt=True)
+        state = slots.load_state(self.root)
+        slots.atomic_json(self.root / "slots.json",
+                          {**state, "active": "A", "pending": None})
+        result = self.check(phase="ROLLBACK_REQUIRED", lane="recovery",
+                            operation=self.operation)
+        self.assertEqual(result["classification"],
+                         "GOVERNED_POST_ROLLBACK_RECONCILIATION")
+        self.assertFalse(result["rollback_authorized"])
+        self.assertFalse(result["new_update_permitted"])
+        self.assertFalse(result["one_receipt_attested"])
+        self.assertTrue((self.root / "stage-reservation.lock").exists())
+
+    def test_local_revert_with_operation_mismatch_stays_blocked(self):
+        self.staged(activated=True)
+        state = slots.load_state(self.root)
+        slots.atomic_json(self.root / "slots.json",
+                          {**state, "active": "A", "pending": None})
+        result = self.check(phase="ROLLBACK_REQUIRED", lane="recovery",
+                            operation="unrelated")
+        self.assertEqual(result["classification"],
+                         "GOVERNED_RECONCILIATION_REQUIRED")
+        self.assertFalse(result["rollback_authorized"])
+
     def test_stale_operation_mismatch_blocks(self):
         self.staged()
         result = self.check(phase="STAGED", lane="recovery",
