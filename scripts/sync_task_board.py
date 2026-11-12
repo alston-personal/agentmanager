@@ -15,6 +15,9 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agent_core.task_quality import is_executable_task
+
 PROJECTS_DIR = Path("/home/ubuntu/agent-data/projects")
 BOARD_FILE = Path("/home/ubuntu/agent-data/TASK_BOARD.md")
 
@@ -33,7 +36,9 @@ def parse_todos(status_md: Path) -> list[tuple[str, str]]:
         if in_todo:
             m = re.match(r"^[-*]\s+\[([ x/])\]\s+(.+)", line)
             if m:
-                todos.append((m.group(1), m.group(2).strip()))
+                task_text = m.group(2).strip()
+                if m.group(1) == "x" or is_executable_task(task_text):
+                    todos.append((m.group(1), task_text))
     return todos
 
 
@@ -55,7 +60,7 @@ def build_board() -> str:
         "# 🦞 AgentOS Central Task Board",
         "",
         "> 這是唯一的任務管理入口。直接在此編輯任務，Lobster Engine 會自動挑選執行。",
-        "> **格式**：`- [ ] 任務描述` (待做) | `- [/] 任務描述` (進行中) | `- [x] 任務描述` (完成)",
+        "> **格式**：`- [ ] 任務描述 | workspace=<path-or-repo> | acceptance=<command-or-evidence>`；不合格任務不會投影或執行。",
         f"> 最後同步：{now}",
         "",
         "---",
@@ -110,14 +115,14 @@ def build_board() -> str:
     lines.append("")
     lines.append(f"## ✅ 已完成 / 可新增下一步（{len(done_projects)} 個）")
     lines.append("")
-    lines.append("*以下專案的已知任務都完成了。在任一區塊加上 `- [ ] 新任務` 即可讓 Lobster 自動接手。*")
+    lines.append("*新增任務必須包含具體 description、workspace= 與 acceptance=，通過品質守衛後 Lobster 才會接手。*")
     lines.append("")
     
     for proj, status, updated, done in done_projects:
         lines.append(f"### ✅ {proj}")
         lines.append(f"*{updated} — {status}*")
         lines.append("")
-        lines.append("<!-- 在此加入新任務，例如：- [ ] 新增 XX 功能 -->")
+        lines.append("<!-- 例：- [ ] 修復 XX 回歸 | workspace=/repo | acceptance=pytest -q tests/test_xx.py -->")
         lines.append("")
     
     # ── 無 Todo List 的專案 ──
