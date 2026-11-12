@@ -78,7 +78,16 @@ class RecoverySlotTests(unittest.TestCase):
         b_path.write_text("candidate-corrupt", encoding="utf-8")
         original = (self.root / "slots.json").read_bytes()
         with patch.object(runner.subprocess, "run") as execute:
-            execute.return_value.returncode = 0
+            def healthy_one_probe(*args, **kwargs):
+                (self.root / "lkg-diagnostic.json").write_text(json.dumps({
+                    "schema": "agentos.recovery-probe/v1",
+                    "one_transport_roundtrip": True,
+                    "recovery_update_authorized": False,
+                    "adapter_download_verified": False,
+                    "observed_at": "2026-11-12T00:00:00Z",
+                }), encoding="utf-8")
+                return type("ProbeExit", (), {"returncode": 0})()
+            execute.side_effect = healthy_one_probe
             with self.assertRaisesRegex(RuntimeError, "rollback_authority_required"):
                 runner.run(self.root, "cfg.json", self.root / "status.json",
                            diagnose_lkg=True)
@@ -94,6 +103,36 @@ class RecoverySlotTests(unittest.TestCase):
         active = json.loads((self.root / "status.json").read_text())
         self.assertFalse(active["one_transport_roundtrip"])
         self.assertEqual(active["error_class"], "PendingRecoveryCandidateCorrupt")
+        self.assertEqual((self.root / "slots.json").read_bytes(), original)
+
+    def test_zero_exit_without_fresh_verified_status_cannot_claim_one(self):
+        runner.bootstrap(self.root, self.initial)
+        b_path = self.root / "slot-B" / "recovery_one_probe.py"
+        b_path.parent.mkdir()
+        b_path.write_text("candidate", encoding="utf-8")
+        state = self.state()
+        runner.atomic_json(self.root / "slots.json", {
+            **state, "active": "B", "last_known_good": "A",
+            "pending": "B", "digests": {**state["digests"], "B": runner.digest(b_path)}
+        })
+        b_path.write_text("corrupted", encoding="utf-8")
+        stale = self.root / "lkg-diagnostic.json"
+        stale.write_text(json.dumps({
+            "schema": "agentos.recovery-probe/v1",
+            "one_transport_roundtrip": True,
+            "recovery_update_authorized": False,
+            "adapter_download_verified": False,
+            "observed_at": "2025-01-01T00:00:00Z",
+        }), encoding="utf-8")
+        original = (self.root / "slots.json").read_bytes()
+        with patch.object(runner.subprocess, "run") as execute:
+            execute.return_value.returncode = 0
+            with self.assertRaisesRegex(RuntimeError, "rollback_authority_required"):
+                runner.run(self.root, "cfg.json", self.root / "status.json",
+                           diagnose_lkg=True)
+        report = json.loads((self.root / "lkg-rescue-diagnostic.json").read_text())
+        self.assertEqual(report["result"], "ONE_PROBE_FAILED")
+        self.assertFalse(stale.exists())
         self.assertEqual((self.root / "slots.json").read_bytes(), original)
 
     def test_lkg_diagnostic_failure_never_claims_recovery_or_receipt(self):
