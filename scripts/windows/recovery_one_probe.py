@@ -81,10 +81,14 @@ def probe_one(config, *, opener=None, timeout=8):
         if len(raw) > 131072:
             raise ValueError("recovery_bootstrap_oversize")
         payload = json.loads(raw.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("recovery_bootstrap_not_object")
-    # A JSON dictionary alone is not a trusted recovery manifest or a signed
-    # package. This probe only attests authenticated transport round-trip.
+    if not isinstance(payload, dict) or payload.get("schema") != "agentos.node-bootstrap/v0.1":
+        raise ValueError("recovery_bootstrap_wrong_schema")
+    if payload.get("node_id") not in (None, config["node_id"]):
+        raise ValueError("recovery_bootstrap_node_mismatch")
+    if payload.get("realm_id") not in (None, config["realm_id"]):
+        raise ValueError("recovery_bootstrap_realm_mismatch")
+    # A schema-valid response alone does not prove authorization or a trusted
+    # package. This probe only establishes an authenticated-request round-trip.
     return {
         "schema": RESULT_SCHEMA,
         "node_id": config["node_id"],
