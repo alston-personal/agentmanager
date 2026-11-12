@@ -122,8 +122,14 @@ def accept_pending(*, root, operation_id, verify_candidate_one,
 
 
 def revert_pending(*, root, operation_id, verify_lkg_one,
-                   durable_update_gate):
-    """Restore LKG when pending candidate fails; never accept revoked LKG."""
+                   authorize_rollback, durable_update_gate):
+    """Restore LKG with separate authority and post-write gate completion.
+
+    Caller-supplied authority is a privileged ONE-host callback, not a local
+    JSON flag. The durable ONE ROLLBACK_REQUIRED lock MUST remain held until
+    the local restore is persisted and read back. If the later ONE completion
+    receipt fails, the lock remains held for crash reconciliation.
+    """
     root = Path(root)
     record = _staged(root, operation_id)
     state = load_state(root)
@@ -135,7 +141,15 @@ def revert_pending(*, root, operation_id, verify_lkg_one,
     context = {"operation_id": operation_id, "lkg": lkg,
                "node_id": record["node_id"], "realm_id": record["realm_id"]}
     _require(verify_lkg_one, context)
-    _require(durable_update_gate, context, "ROLLBACK_OK")
+    _require(authorize_rollback, context)
     restored = {**state, "active": lkg, "pending": None}
     atomic_json(root / "slots.json", restored)
-    return restored
+    committed = load_state(root)
+    if (committed["active"] != lkg or committed["last_known_good"] != lkg
+            or committed["pending"] is not None
+            or not valid_slot(root, committed, lkg)):
+        raise RuntimeError("recovery_rollback_local_readback_failed")
+    # A final host-issued ONE rollback receipt, verified against the durable
+    # gate generation, can only clear the interlock AFTER this local readback.
+    _require(durable_update_gate, context, "ROLLBACK_OK")
+    return committed
