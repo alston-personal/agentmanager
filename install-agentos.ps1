@@ -220,24 +220,9 @@ function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
   if(-not (Test-Path -LiteralPath $configFile)){
     throw 'Recovery probe requires completed Node enrollment'
   }
-  # Migrate a pre-existing single-file rescue probe without replacing its bytes.
-  $bootstrapSource = if(Test-Path -LiteralPath $legacyProbe){ $legacyProbe }else{ $source }
-  & $PythonPath -I $runner --root $recoveryRoot --bootstrap-from $bootstrapSource
-  if($LASTEXITCODE -ne 0){ throw 'Recovery A/B bootstrap refused; retained old rescue state.' }
-  # A successful unauthenticated health check is insufficient. The independent
-  # slot must itself perform authenticated ONE Bootstrap before scheduling.
-  & $PythonPath -I $runner --root $recoveryRoot --config $configFile --status $statusFile
-  if($LASTEXITCODE -ne 0){
-    throw 'Independent read-only Recovery ONE probe failed; no healthy recovery claimed.'
-  }
-  $verified = Get-Content -Raw -LiteralPath $statusFile | ConvertFrom-Json
-  if($verified.schema -ne 'agentos.recovery-probe/v1' -or
-     $verified.one_transport_roundtrip -ne $true -or
-     $verified.recovery_update_authorized -ne $false){
-    throw 'Recovery probe result is not valid'
-  }
   $recoveryTaskName = 'AgentOS Recovery ONE Probe'
   $existingRecoveryTask = Get-ScheduledTask -TaskName $recoveryTaskName -ErrorAction SilentlyContinue
+  $recoveryPythonPath = $PythonPath
   if($existingRecoveryTask) {
     # Normal reinstall must NOT silently rebind Recovery to a new Normal
     # Python interpreter, replace its trigger, or adopt an unknown task.
@@ -259,12 +244,31 @@ function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
        -not (Test-Path -LiteralPath $existingExecute -PathType Leaf)) {
       throw 'Existing Recovery task is not the recognized protected launcher; no automatic takeover.'
     }
+    # Validate the preserved executor before any bootstrap or live probe.
+    # Never use Normal's newly selected Python to judge an old Recovery task.
+    $recoveryPythonPath = (Resolve-Path -LiteralPath $existingExecute).Path
     Write-Host 'Existing Recovery scheduled task retained, including its independent Python executable and triggers.'
-  } else {
+  }
+  # Migrate legacy probe without overwriting managed A/B Recovery slots.
+  $bootstrapSource = if(Test-Path -LiteralPath $legacyProbe){ $legacyProbe }else{ $source }
+  & $recoveryPythonPath -I $runner --root $recoveryRoot --bootstrap-from $bootstrapSource
+  if($LASTEXITCODE -ne 0){ throw 'Recovery A/B bootstrap refused; retained old rescue state.' }
+  # Use the actual scheduled interpreter for live Recovery readiness.
+  & $recoveryPythonPath -I $runner --root $recoveryRoot --config $configFile --status $statusFile
+  if($LASTEXITCODE -ne 0){
+    throw 'Independent read-only Recovery ONE probe failed; no healthy recovery claimed.'
+  }
+  $verified = Get-Content -Raw -LiteralPath $statusFile | ConvertFrom-Json
+  if($verified.schema -ne 'agentos.recovery-probe/v1' -or
+     $verified.one_transport_roundtrip -ne $true -or
+     $verified.recovery_update_authorized -ne $false){
+    throw 'Recovery probe result is not valid'
+  }
+  if(-not $existingRecoveryTask) {
     # A corrupt pending B slot must not terminate all rescue communications.
     # The LKG check is read-only and leaves ONE rollback authority intact.
     $probeArgs = '-I "' + $runner + '" --root "' + $recoveryRoot + '" --config "' + $configFile + '" --status "' + $statusFile + '" --diagnose-lkg-when-pending-corrupt'
-    $action = New-ScheduledTaskAction -Execute $PythonPath -Argument $probeArgs -WorkingDirectory $recoveryRoot
+    $action = New-ScheduledTaskAction -Execute $recoveryPythonPath -Argument $probeArgs -WorkingDirectory $recoveryRoot
     $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $periodic = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
