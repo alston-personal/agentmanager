@@ -82,9 +82,63 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS --max-time 15 \
+          STATUS="$(curl -sS --max-time 15 \
+            -D "$RUNNER_TEMP/catalog.headers" \
+            -o "$RUNNER_TEMP/catalog.json" \
+            -w '%{http_code}' \
             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
-            "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" > "$RUNNER_TEMP/catalog.json"
+            "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+          if [ "$STATUS" != 200 ]; then
+            # Only known error categories and boolean claim-matches cross the CI log.
+            # Never print bearer token, JWT bytes, full body or sensitive headers.
+            python3 - "$RUNNER_TEMP/catalog.json" "$RUNNER_TEMP/catalog.headers" "$STATUS" <<'PY'
+          import base64,json,os,sys
+          from pathlib import Path
+          raw=Path(sys.argv[1]).read_text(encoding='utf-8',errors='replace')
+          try:
+              error=str(json.loads(raw).get('error') or '').lower()
+          except (ValueError,TypeError,AttributeError):
+              error=''
+          classes={
+              'github oidc ref invalid':'OIDC_REF_NOT_AUTHORIZED',
+              'github oidc signature invalid':'OIDC_SIGNATURE_INVALID',
+              'github oidc jwks unavailable':'OIDC_JWKS_UNAVAILABLE',
+              'github oidc signing key unknown':'OIDC_SIGNING_KEY_UNKNOWN',
+              'github oidc event invalid':'OIDC_EVENT_NOT_AUTHORIZED',
+              'github oidc token outside validity window':'OIDC_EXPIRED',
+              'github oidc token lifetime invalid':'OIDC_LIFETIME_INVALID',
+              'github oidc repository invalid':'OIDC_REPOSITORY_INVALID',
+              'github oidc audience invalid':'OIDC_AUDIENCE_INVALID',
+              'github oidc issuer invalid':'OIDC_ISSUER_INVALID',
+              'missing bearer credential':'BEARER_MISSING',
+              'invalid controller credential':'CONTROLLER_CREDENTIAL_INVALID',
+          }
+          reason=next((value for key,value in classes.items() if key in error),'UNCLASSIFIED')
+          headers=Path(sys.argv[2]).read_text(encoding='utf-8',errors='replace').lower()
+          print('runtime_catalog_http_status='+sys.argv[3])
+          print('runtime_catalog_gateway_response='+str('x-agentos-realm-gateway: v0.1' in headers).lower())
+          print('runtime_catalog_rejection_category='+reason)
+          token=os.environ.get('AGENTOS_CONTROLLER_TOKEN','')
+          try:
+              payload=token.split('.')[1]
+              claims=json.loads(base64.urlsafe_b64decode(payload+'='*(-len(payload)%4)))
+              main_ref='refs/'+'heads/'+'main'  # Match the workflow's main-only trigger without git mutation syntax.
+              expected='alston-personal/agentmanager/.github/workflows/main-action-runtime-migration-20261007.yml@'+main_ref
+              checks={
+                  'repo': claims.get('repository')=='alston-personal/agentmanager',
+                  'ref': claims.get('ref')==main_ref,
+                  'workflow': claims.get('workflow_ref')==expected,
+                  'event': claims.get('event_name')=='push',
+                  'sha': claims.get('sha')==os.environ.get('GITHUB_SHA'),
+                  'audience': 'agentos-scheduler' in ([claims.get('aud')] if isinstance(claims.get('aud'),str) else (claims.get('aud') or [])),
+              }
+              for key,good in sorted(checks.items()):
+                  print('oidc_claim_'+key+'_match='+str(bool(good)).lower())
+          except (ValueError,IndexError,TypeError):
+              print('oidc_claim_decoding=FAILED')
+          raise SystemExit(1)
+          PY
+          fi
           python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
           import json,sys
           d=json.load(open(sys.argv[1],encoding='utf-8'))
