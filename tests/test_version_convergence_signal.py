@@ -1,5 +1,5 @@
 import unittest
-from scripts.version_convergence_signal import validate_adapter_hint, plan_adapter_reconciliation
+from scripts.version_convergence_signal import validate_adapter_hint, plan_adapter_reconciliation, gate_adapter_install, PREFLIGHT_CHECKS
 from scripts.version_convergence_signal import make_event, validate_ack, affected_domains
 A="a"*40
 B="b"*40
@@ -126,5 +126,55 @@ class AdapterBootstrapTests(unittest.TestCase):
                     plan_adapter_reconciliation(
                         hint=hint, trusted_one_origin="https://one.example.test",
                         authoritative_manifest=item)
+
+
+class SafeUpdateRecoveryTests(unittest.TestCase):
+    def fixtures(self):
+        plan = {
+            "schema": "agentos.adapter-reconciliation-plan/v1",
+            "adapter_id": "ir.handler", "target_adapter_version": "1.4.0",
+            "notice_epoch": 14, "action": "REQUEST_GOVERNED_ADAPTER_UPDATE",
+            "installation_authorized": False,
+        }
+        attestation = {
+            "schema": "agentos.adapter-preflight-attestation/v1",
+            "adapter_id": "ir.handler", "adapter_version": "1.4.0",
+            "notice_epoch": 14, "trusted_source_attested": True,
+            "checks": {check: True for check in PREFLIGHT_CHECKS},
+        }
+        recovery = {
+            "independent_process": True, "protected_from_adapter_update": True,
+            "one_handshake_verified": True, "last_known_good_verified": True,
+            "rollback_ready": True,
+        }
+        return plan, attestation, recovery
+
+    def test_all_preflight_and_rescue_proofs_allow_only_staged_request(self):
+        p, a, r = self.fixtures()
+        result = gate_adapter_install(plan=p, attestation=a, recovery=r)
+        self.assertEqual(result["action"], "REQUEST_AUTHORIZED_STAGED_INSTALL")
+        self.assertFalse(result["installation_authorized"])
+        self.assertFalse(result["activation_authorized"])
+
+    def test_each_preflight_failure_blocks(self):
+        p, a, r = self.fixtures()
+        for check in PREFLIGHT_CHECKS:
+            bad = {**a, "checks": {**a["checks"], check: False}}
+            with self.subTest(check=check), self.assertRaises(ValueError):
+                gate_adapter_install(plan=p, attestation=bad, recovery=r)
+        with self.assertRaises(ValueError):
+            gate_adapter_install(plan=p, attestation={**a, "notice_epoch": 15}, recovery=r)
+        with self.assertRaises(ValueError):
+            gate_adapter_install(plan=p, attestation={**a, "trusted_source_attested": False}, recovery=r)
+
+    def test_each_recovery_failure_blocks_even_if_adapter_tests_pass(self):
+        p, a, r = self.fixtures()
+        for check in r:
+            with self.subTest(check=check), self.assertRaises(ValueError):
+                gate_adapter_install(plan=p, attestation=a, recovery={**r, check: False})
+        with self.assertRaises(ValueError):
+            gate_adapter_install(plan={**p, "installation_authorized": True},
+                                 attestation=a, recovery=r)
+
 
 if __name__=="__main__": unittest.main()
