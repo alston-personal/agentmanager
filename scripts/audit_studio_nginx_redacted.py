@@ -96,9 +96,31 @@ def run_nginx() -> dict:
     except (OSError, subprocess.TimeoutExpired):
         return {"available": False, "reason": "execution_unavailable"}
     if cmd.returncode != 0:
-        return {"available": False, "reason": "read_denied_or_invalid"}
+        # Non-root Oracle runner cannot always read TLS private-key files for
+        # nginx -T. Read only the known, world-readable vhost source as a
+        # PROVISIONAL observation. Never call it the effective Nginx config.
+        config = Path("/etc/nginx/sites-enabled/studio.milkcat.org")
+        approved_targets = {
+            Path("/etc/nginx/sites-available/studio.milkcat.org"),
+            Path("/etc/nginx/sites-enabled/studio.milkcat.org"),
+        }
+        try:
+            resolved = config.resolve(strict=True)
+            if resolved not in approved_targets:
+                return {"available": False, "effective": False, "reason": "unexpected_vhost_target"}
+            candidate = config.read_text(encoding="utf-8")
+        except (OSError, ValueError, UnicodeError):
+            return {"available": False, "effective": False, "reason": "read_denied_or_invalid"}
+        blocks = parse_nginx(candidate)
+        return {
+            "available": bool(blocks),
+            "effective": False,
+            "source": "site_file_only_not_effective_config",
+            "site_blocks": blocks,
+            "site_found": bool(blocks),
+        }
     blocks = parse_nginx(cmd.stdout)
-    return {"available": True, "site_blocks": blocks, "site_found": bool(blocks)}
+    return {"available": True, "effective": True, "source": "nginx_T", "site_blocks": blocks, "site_found": bool(blocks)}
 
 def scan_writers() -> dict:
     found = []
@@ -149,17 +171,31 @@ def probe(path: str, kind: str) -> dict:
         "redirect": bool(pieces[2]) if len(pieces) > 2 else False,
         "content_identity_checked": kind == "marker",
     }
-    if kind == "marker" and status == 200:
+    expected = {
+        "/.well-known/studio-root-authority.txt": b"studio-web-production-root/v1",
+        "/wow-addons/": b"WoW Nav Assist",
+        "/layout-lab/": b'data-release="0.7.9"',
+        "/world/": b"world-navigation.js",
+    }
+    if status == 200 and path in expected:
         try:
-            marker = subprocess.run([
-                "/usr/bin/curl", "--silent", "--max-time", "8", "--max-filesize", "256",
+            body = subprocess.run([
+                "/usr/bin/curl", "--silent", "--max-time", "8", "--max-filesize", "1048576",
                 "--resolve", f"{SITE}:443:127.0.0.1", f"https://{SITE}{path}"
             ], capture_output=True, timeout=10, check=False)
-            observation["canonical_marker_match"] = (
-                marker.returncode == 0 and marker.stdout.strip() == b"studio-web-production-root/v1"
+            observation["content_identity_checked"] = True
+            observation["content_marker_match"] = (
+                body.returncode == 0 and
+                (body.stdout.strip() == expected[path] if kind == "marker"
+                 else expected[path] in body.stdout)
             )
+            if kind == "marker":
+                observation["canonical_marker_match"] = observation["content_marker_match"]
         except (OSError, subprocess.TimeoutExpired):
-            observation["canonical_marker_match"] = False
+            observation["content_identity_checked"] = True
+            observation["content_marker_match"] = False
+            if kind == "marker":
+                observation["canonical_marker_match"] = False
     return observation
 
 def main() -> int:
