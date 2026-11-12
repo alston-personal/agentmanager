@@ -125,20 +125,57 @@ def bootstrap(root, source):
     return state
 
 
-def run(root, config, status, *, interpreter=None):
-    """Only run the integrity-verified active lane; never mutate update state.
+def run(root, config, status, *, interpreter=None, diagnose_lkg=False):
+    """Read-only ONE probe; no A/B state transitions or rollback authority.
 
-    A/B fallback is a governed mutation, not a health probe side effect.
-    Pending candidate corruption MUST NOT erase the pending operation or
-    release the ONE durable interlock. The host reconciler must independently
-    authorize rollback before active / pending can change.
+    When a pending active candidate is corrupt, an explicitly enabled rescue
+    diagnostic may contact ONE using the verified LKG, but it cannot make LKG
+    active, clear pending, or return a successful active-channel result.
     """
     root = Path(root)
     state = load_state(root)
     chosen = state["active"]
     if not valid_slot(root, state, chosen):
-        if state["pending"] == chosen and valid_slot(
-                root, state, state["last_known_good"]):
+        if (state["pending"] == chosen
+                and valid_slot(root, state, state["last_known_good"])):
+            if diagnose_lkg:
+                diagnostic_status = root / "lkg-diagnostic.json"
+                diagnostic_result = "NOT_RUN"
+                try:
+                    proc = subprocess.run(
+                        [interpreter or sys.executable, "-I",
+                         str(_strict_slot_path(root, state["last_known_good"])),
+                         "--config", str(config),
+                         "--status", str(diagnostic_status)],
+                        check=False, timeout=30,
+                    )
+                    diagnostic_result = (
+                        "ONE_PROBE_SUCCEEDED" if proc.returncode == 0
+                        else "ONE_PROBE_FAILED"
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    diagnostic_result = "ONE_PROBE_FAILED"
+                # Unlike the actual active-slot status, this document reports
+                # only LKG transport diagnostics, never an accepted rollback.
+                atomic_json(root / "lkg-rescue-diagnostic.json", {
+                    "schema": "agentos.recovery-lkg-diagnostic/v1",
+                    "active_slot": chosen,
+                    "diagnostic_slot": state["last_known_good"],
+                    "result": diagnostic_result,
+                    "active_slot_healthy": False,
+                    "rollback_authorized": False,
+                    "rollback_performed": False,
+                    "one_receipt_attested": False,
+                })
+            # Prevent stale status.json success being interpreted as proof the
+            # active Recovery lane is healthy.
+            atomic_json(status, {
+                "schema": "agentos.recovery-probe/v1",
+                "one_transport_roundtrip": False,
+                "adapter_download_verified": False,
+                "recovery_update_authorized": False,
+                "error_class": "PendingRecoveryCandidateCorrupt",
+            })
             raise RuntimeError("recovery_pending_corrupt_rollback_authority_required")
         raise RuntimeError("recovery_active_corrupt_or_unrecoverable")
     return subprocess.run(
@@ -155,15 +192,21 @@ def main():
     parser.add_argument("--config")
     parser.add_argument("--status")
     parser.add_argument("--bootstrap-from")
+    parser.add_argument("--diagnose-lkg-when-pending-corrupt", action="store_true")
     args = parser.parse_args()
     if args.bootstrap_from:
         if args.config or args.status:
             parser.error("bootstrap does not accept probe arguments")
+        if args.diagnose_lkg_when_pending_corrupt:
+            parser.error("bootstrap cannot perform LKG diagnostics")
         bootstrap(args.root, args.bootstrap_from)
         return
     if not args.config or not args.status:
         parser.error("run requires config and status")
-    raise SystemExit(run(args.root, args.config, args.status))
+    raise SystemExit(run(
+        args.root, args.config, args.status,
+        diagnose_lkg=args.diagnose_lkg_when_pending_corrupt,
+    ))
 
 
 if __name__ == "__main__":
