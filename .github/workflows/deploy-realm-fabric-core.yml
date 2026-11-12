@@ -80,7 +80,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_REF_TYPE" = "branch"
+          test "$GITHUB_REF_NAME" = "main"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           grep -q 'agentos.realm-fabric.install_release' agentos_node/action_relay.py
           grep -q 'agentos.project.register_core' agentos_node/action_relay.py
