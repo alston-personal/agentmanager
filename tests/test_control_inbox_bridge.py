@@ -278,6 +278,11 @@ def test_receipt_5xx_preserves_dispatched_task_and_recovers_without_second_post(
     assert len(one.dispatched) == 1
     assert github.results[-1]['status'] == 'completed'
     assert github.results[-1]['task_id'] == entry['task_id']
+    # A later scan must not dispatch or post the same result again.
+    result_count = len(github.results)
+    assert ControlInboxBridge(config, github=github, one=one).process_once() == 0
+    assert len(one.dispatched) == 1
+    assert len(github.results) == result_count
 
 
 def test_restart_after_claim_reports_unknown_and_never_redispatches(tmp_path: Path):
