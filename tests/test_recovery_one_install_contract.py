@@ -25,14 +25,17 @@ class CanonicalRecoveryInstallationTests(unittest.TestCase):
 
     def test_normal_reinstall_cannot_overwrite_recovery_image(self):
         script = ONE_CLICK.read_text(encoding="utf-8")
-        self.assertIn("if(-not (Test-Path -LiteralPath $probeFile))", script)
-        self.assertIn("Existing Recovery probe retained; normal install cannot upgrade it.", script)
+        self.assertIn("if(-not (Test-Path -LiteralPath $runner))", script)
+        self.assertIn("Existing Recovery launcher retained; normal install cannot upgrade it.", script)
+        self.assertIn("--bootstrap-from $bootstrapSource", script)
+        self.assertIn("slot_runner.py", script)
         self.assertIn("Join-Path $InstallRoot 'recovery'", script)
         self.assertNotIn("Remove-Item -Recurse -Force $recoveryRoot", script)
 
     def test_canonical_installer_publishes_probe_as_source_payload(self):
         script = PINNED_PAYLOAD.read_text(encoding="utf-8")
         self.assertIn("'scripts/windows/recovery_one_probe.py'", script)
+        self.assertIn("'scripts/windows/recovery_slot_runner.py'", script)
         self.assertTrue(RECOVERY.is_file())
 
     def test_recovery_has_no_install_execute_or_command_channel(self):
