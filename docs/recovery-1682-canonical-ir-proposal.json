@@ -1,0 +1,45 @@
+{
+  "schema": "agentos.ir-change-proposal/v1",
+  "project_id": "agentos-core",
+  "work_item": "#1682",
+  "pr_number": 2271,
+  "status": "SOURCE_CI_ONLY_NOT_MERGED_NOT_RUNTIME_ACCEPTED",
+  "goal": "以 main 為唯一正式主線，將既有 ONE Maintenance 與 Normal/Recovery 雙通道更新、受授權 A/B 回退及跨重啟對帳收斂為同一條可驗收閉環",
+  "next_action": "由既有 ONE Runtime 綁定受信任更新授權、即時 Normal/Recovery 證據及 DurableChannelUpdateStore；先在隔離 Windows Node 取得 Recovery A/B 切換、回滾及端到端 ONE Receipt，再審核 #2271 是否可合併",
+  "pending_tasks": [
+    "PR #2271 保持 Draft；審查核心及 Windows 路徑後，核對 main 最新版並決定合併時機",
+    "Reuse Before Build：在既有 Maintenance Owner/Runtime 中實作真正的簽章、信任根、時效、防重放、Node/Realm/operation_id 校驗",
+    "將持久化雙通道互斥閘門與 Recovery A/B 切換及回滾綁定；重啟後跨 ONE/Windows 狀態對帳失敗一律禁止新更新",
+    "正式 Normal OTA 安裝入口同樣遵守跨重啟更新閘門及獨立 Recovery 可用性門檻",
+    "在隔離 Windows Node 驗證 Normal 故障、Recovery 與 ONE 連線、簽章修復下載、恢復 Normal、ONE Receipt",
+    "實機證據通過後，以既有 Canonical IR handoff 的 index_id/ir_id CAS 發布新一代 IR，讀回並確認 Active Continuation selector 與最新世代一致"
+  ],
+  "decisions_append": [
+    "Normal 與 Recovery 不可同時更新；Recovery 更新前須確認 Normal 能獨立提供救援，且保護原 Recovery LKG",
+    "一般 Thin Client 安裝不得改寫已存在的 Recovery 啟動器與 A/B 槽位；Recovery 升級使用獨立受授權程序",
+    "GitHub CI、PR 與本機對帳報告不是正式 ONE Runtime 部署或救援成功 Receipt",
+    "跨 ONE/Windows 分散式狀態異常時採 fail-closed，不得從本機 JSON 自行解鎖或聲稱授權"
+  ],
+  "evidence": [
+    {
+      "kind": "github_pr",
+      "verdict": "SOURCE_IMPLEMENTED_NOT_DEPLOYED",
+      "summary": "PR #2271 將通訊更新互斥、Recovery 唯讀探測、A/B 槽位、預備、受控啟用介面、跨狀態對帳與測試收斂至同一 PR",
+      "url": "https://github.com/alston-personal/agentmanager/pull/2271"
+    },
+    {
+      "kind": "github_ci",
+      "verdict": "PASS_SOURCE_ONLY",
+      "summary": "已驗證的 PR 來源版本 CI 完成；此證據不代表正式 Runtime、簽章權限或實機 Recovery Receipt",
+      "url": "https://github.com/alston-personal/agentmanager/actions/runs/43145258741"
+    }
+  ],
+  "capability": "agentos.one.resolve",
+  "execution_status": "in_progress",
+  "execution_metadata": {
+    "source": "recovery_1682_handoff_proposal",
+    "runtime_accepted": false,
+    "recovery_live_receipt": false,
+    "ir_published": false
+  }
+}
