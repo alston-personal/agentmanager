@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/version_convergence_signal.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - 'tests/test_bootstrap_scheduler_queue_ttl.py'
       - 'tests/test_version_convergence_signal.py'
       - '.github/workflows/version-convergence-signal-contract.yml'
   push:
@@ -24,6 +26,8 @@ jobs:
           persist-credentials: false
       - name: Test version event and acknowledgement truth boundaries
         run: python3 -m unittest tests.test_version_convergence_signal -v
+      - name: Test maintenance communication update mutex
+        run: python3 -m unittest tests.test_bootstrap_scheduler_queue_ttl -v
       - name: Produce protected main source event (not an Executor delivery)
         if: github.event_name == 'push'
         shell: bash
