@@ -180,6 +180,121 @@ class RecoveryCanonicalIRTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "no_implicit_takeover"):
                 module.main()
 
+    def _published_ir(self, *, parent="ir-parent", index="idx-new", ir_id="ir-new"):
+        return {
+            "execution_head": {
+                "schema": "agentos.execution-head/v1",
+                "index_id": index,
+                "execution_head": {
+                    "source": "recovery_1682_handoff_proposal",
+                    "ir_published": True,
+                    "runtime_accepted": False,
+                    "recovery_live_receipt": False,
+                },
+            },
+            "continuation": {
+                "canonical_ir": {
+                    "schema_version": "agentos.ir/v1",
+                    "index_id": index,
+                    "ir_id": ir_id,
+                    "parent_ir_id": parent,
+                    "goal": self.proposal["goal"],
+                },
+            },
+        }
+
+    def test_resume_selector_without_second_ir_publish(self):
+        prior = {
+            "project_id": "agentos-core", "index_id": "idx-parent",
+            "ir_id": "ir-parent",
+        }
+        updated = {
+            "project_id": "agentos-core", "index_id": "idx-new",
+            "ir_id": "ir-new",
+        }
+        with patch("agent_core.resolve_facade.resolve_continuation",
+                   return_value=self._published_ir()), \
+             patch("agent_core.active_continuation.read_active_continuation",
+                   side_effect=[prior, updated]) as read_pointer, \
+             patch("agent_core.active_continuation.activate_continuation") as activate, \
+             patch("agent_core.canonical_ir_handoff.advance_canonical_ir") as publish:
+            result = module.resume_selector_only(proposal=self.proposal)
+        self.assertEqual(result["status"], "SELECTOR_RESUMED")
+        self.assertTrue(result["selector_readback_verified"])
+        self.assertFalse(result["new_ir_published"])
+        self.assertEqual(read_pointer.call_count, 2)
+        self.assertEqual(activate.call_args.kwargs["expected_previous"],
+                         ("agentos-core", "idx-parent", "ir-parent"))
+        publish.assert_not_called()
+
+    def test_resume_is_idempotent_if_selector_already_current(self):
+        current = {
+            "project_id": "agentos-core", "index_id": "idx-new",
+            "ir_id": "ir-new",
+        }
+        with patch("agent_core.resolve_facade.resolve_continuation",
+                   return_value=self._published_ir()), \
+             patch("agent_core.active_continuation.read_active_continuation",
+                   return_value=current), \
+             patch("agent_core.active_continuation.activate_continuation") as activate:
+            result = module.resume_selector_only(proposal=self.proposal)
+        self.assertEqual(result["status"], "ALREADY_CURRENT")
+        activate.assert_not_called()
+
+    def test_resume_rejects_other_project_stale_generation_and_fake_authority(self):
+        cases = [
+            (self._published_ir(), {
+                "project_id": "another-project", "index_id": "idx-other",
+                "ir_id": "ir-other",
+            }, "owned_by_another_project"),
+            (self._published_ir(), {
+                "project_id": "agentos-core", "index_id": "idx-old",
+                "ir_id": "ir-unrelated",
+            }, "does_not_match_published_parent"),
+            ({**self._published_ir(), "execution_head": {
+                "schema": "agentos.execution-head/v1", "index_id": "idx-new",
+                "execution_head": {
+                    "source": "fake",
+                    "ir_published": True,
+                    "runtime_accepted": False,
+                    "recovery_live_receipt": False,
+                },
+            }}, {
+                "project_id": "agentos-core", "index_id": "idx-parent",
+                "ir_id": "ir-parent",
+            }, "published_ir_not_proven"),
+        ]
+        for canonical, selected, expected in cases:
+            with self.subTest(expected=expected), \
+                 patch("agent_core.resolve_facade.resolve_continuation",
+                       return_value=canonical), \
+                 patch("agent_core.active_continuation.read_active_continuation",
+                       return_value=selected), \
+                 patch("agent_core.active_continuation.activate_continuation") as activate:
+                with self.assertRaisesRegex(ValueError, expected):
+                    module.resume_selector_only(proposal=self.proposal)
+                activate.assert_not_called()
+
+    def test_resume_rejects_missing_selector_and_concurrent_switch(self):
+        prior = {
+            "project_id": "agentos-core", "index_id": "idx-parent",
+            "ir_id": "ir-parent",
+        }
+        with patch("agent_core.resolve_facade.resolve_continuation",
+                   return_value=self._published_ir()), \
+             patch("agent_core.active_continuation.read_active_continuation",
+                   side_effect=FileNotFoundError):
+            with self.assertRaisesRegex(ValueError, "missing_active_selector"):
+                module.resume_selector_only(proposal=self.proposal)
+        with patch("agent_core.resolve_facade.resolve_continuation",
+                   return_value=self._published_ir()), \
+             patch("agent_core.active_continuation.read_active_continuation",
+                   return_value=prior), \
+             patch("agent_core.active_continuation.activate_continuation",
+                   side_effect=ValueError("active_continuation_selector_cas_conflict")):
+            with self.assertRaisesRegex(ValueError, "selector_cas_conflict"):
+                module.resume_selector_only(proposal=self.proposal)
+
     def test_cli_dry_run_never_publishes(self):
         cmd = [
             sys.executable, str(SCRIPT),
