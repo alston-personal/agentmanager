@@ -232,3 +232,12 @@ Source/IR governance acceptance is therefore split:
 - Canonical IR: observed current generation, CAS publish receipt, exact readback, active selector match.
 - Runtime: protected main merge/deployment and independent Windows/ONE Recovery operation and receipt.
 No single source-only success may set all three to COMPLETE.
+
+
+## ONE-observed IR generation and selector CAS (2026-11-12 continuation)
+
+The existing \`scripts/publish_recovery_1682_ir.py\` now offers \`--from-current\` on the authorized ONE host: it invokes the existing \`resolve_continuation("agentos-core")\`, requires matching \`agentos.execution-head/v1\` and \`agentos.ir/v1\` index generations and a real parent IR ID, then produces a new child index/IR generation identifier. It does **not** invent the *current* authoritative parent. \`--from-current\` cannot be mixed with manually supplied generations. Default behavior is read-only \`PREPARED_NOT_PUBLISHED\`; \`--apply\` uses the unchanged canonical CAS publisher and requires post-publish readback matching exact child and parent generation.
+
+An explicitly requested \`--sync-active-selector\` (requires \`--apply\`) only touches a selector already owned by \`agentos-core\` and pointing to the exact old parent. The existing \`agent_core.active_continuation.activate_continuation\` has an optional \`expected_previous\` CAS check **inside its existing file lock**; another Executor switching active projects/generations in between read and write now triggers \`active_continuation_selector_cas_conflict\` rather than getting overwritten. The normal selector API remains backward compatible when the new optional guard is omitted. After a guarded write, the script reads back the exact selector. A missing selector or another active project is never silently taken over.
+
+No Oracle ONE execution has been performed from this GitHub-only session; real Canonical IR still requires an authorized ONE host, \`--apply\`, an observed CAS publish Receipt and selector readback. The generated *child* identifiers and source-only CI are not proof of a published IR. Manual recovery remains necessary if a crash happens after canonical IR CAS succeeds but before selector reconciliation; do not rerun \`--from-current --apply\` blindly to force a second generation.
