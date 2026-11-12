@@ -114,6 +114,9 @@ def main():
     # No force/no workaround: the existing method checks the live canonical
     # generation, publishes with CAS and returns an authoritative receipt.
     from agent_core.canonical_ir_handoff import advance_canonical_ir
+    # A successful CAS creates a real canonical IR generation. Mark its own
+    # publication truth accordingly; this is NOT runtime or Recovery acceptance.
+    request["execution_metadata"]["ir_published"] = True
     result = advance_canonical_ir(
         request, data_root=args.data_root, governance_path=args.governance_path
     )
