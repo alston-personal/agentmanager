@@ -64,6 +64,27 @@ class CanonicalRecoveryInstallationTests(unittest.TestCase):
         self.assertIn("'scripts/windows/recovery_slot_runner.py'", script)
         self.assertTrue(RECOVERY.is_file())
 
+    def test_offline_recovery_python_requires_explicit_archive_and_trusted_hash(self):
+        script = ONE_CLICK.read_text(encoding="utf-8")
+        self.assertIn("[string]$RecoveryPythonArchive", script)
+        self.assertIn("[string]$RecoveryPythonSha256", script)
+        self.assertIn("if(-not $existingRecoveryTask)", script)
+        self.assertIn("install_recovery_python.ps1", script)
+        self.assertIn("-ExpectedSha256 $RecoveryPythonSha256", script)
+        self.assertIn("Existing Recovery Python can only be upgraded by the authorized Recovery updater.", script)
+        self.assertIn("Both RecoveryPythonArchive and RecoveryPythonSha256 are required.", script)
+        self.assertIn("python-runtime", script)
+        self.assertIn("$action = New-ScheduledTaskAction -Execute $recoveryPythonPath", script)
+        payload = PINNED_PAYLOAD.read_text(encoding="utf-8")
+        self.assertIn("'scripts/windows/install_recovery_python.ps1'", payload)
+        provision = (ROOT / "scripts/windows/install_recovery_python.ps1").read_text(encoding="utf-8")
+        self.assertIn("Get-FileHash", provision)
+        self.assertIn("RECOVERY_RUNTIME_ARCHIVE_HASH_MISMATCH", provision)
+        self.assertIn("RECOVERY_RUNTIME_ALREADY_EXISTS_NEEDS_AUTHORIZED_UPDATE", provision)
+        self.assertIn("RECOVERY_RUNTIME_ARCHIVE_UNSAFE_ENTRY", provision)
+        self.assertNotIn("Invoke-WebRequest", provision)
+        self.assertNotIn("Start-BitsTransfer", provision)
+
     def test_recovery_has_no_install_execute_or_command_channel(self):
         script = RECOVERY.read_text(encoding="utf-8")
         self.assertIn('method="GET"', script)
