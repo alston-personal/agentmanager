@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 Canonical IR automatic generation read + guarded selector CAS (PR #2271)
+
+Source-only continuation: `scripts/publish_recovery_1682_ir.py --from-current` now reads the actual `agentos-core` Canonical IR generation from the authorized ONE data root instead of requiring manual copy of parent IDs. It refuses mismatched execution-head / IR versions and delegates the actual write to the existing `advance_canonical_ir` CAS publisher; only new child IDs are generated. `--sync-active-selector` requires `--apply` and only updates a pre-existing `agentos-core` selector that still points to the exact parent generation. `activate_continuation(expected_previous=...)` compares under the existing selector file lock to avoid overriding a different Executor's active project. Both Canonical IR and active selector require authoritative readback after publishing. `ir_published=true` describes only a successful CAS generation; `runtime_accepted=false` and `recovery_live_receipt=false` remain until separate evidence.
+
+**No actual Oracle ONE publish has occurred in this GitHub-only session**. PR #2271 remains Draft, unmerged, uninstalled and without a real Recovery Receipt. Do not mark the official Canonical IR or active selector as synchronized until ONE produces the real CAS publish and exact readback.
+
+---
+
 ## 2026-11-12 — #1682 / PR #2271 Recovery IR continuation checkpoint (SOURCE ONLY)
 
 **Truth boundary:** [PR #2271](https://github.com/alston-personal/agentmanager/pull/2271) remains **Draft and unmerged**. Source-level Normal/Recovery maintenance protections, independent Windows read-only ONE bootstrap probe, A/B slot integrity, staging/host-only promotion primitives, crash-persistent interlock, audit and cross-store restart reconciliation have source tests and GitHub CI. NONE of this is evidence that a trusted ONE authority callback, protected OS anti-tamper, formal B-slot updater, live Node deployment or end-to-end Recovery Receipt exists. Do not record those as DONE.
