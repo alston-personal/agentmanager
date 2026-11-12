@@ -1696,6 +1696,9 @@ only an intermediate acknowledgement: the job remains pending until the
 separate media-generation receipt proves the requested output.
 The provider therefore reports `ACK_ONLY` for a correlated workflow run and
 never promotes that transport acknowledgement to terminal media success.
+The convergence change also restores the relay's bounded dispatch function body
+where the action registry already referenced it, keeping import and execution
+behavior aligned with the allowlist contract.
 
 This is source-level convergence only. It does not attest that Oracle has loaded
 the provider, that ONE delivered the job, that a GPU run occurred, or that the

@@ -1078,7 +1078,7 @@ def _issue71_repair_node_registry(params: dict[str, Any]) -> dict[str, Any]:
         restarted_after_failure = bool(restart.get('ok'))
         raise
 
-+def _github_run_created_after(created_at: str, lower_bound: datetime) -> bool:
+def _github_run_created_after(created_at: str, lower_bound: datetime) -> bool:
     """Correlate workflow runs with this dispatch attempt, not an older same-SHA run."""
     try:
         when = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
