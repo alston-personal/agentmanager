@@ -237,15 +237,40 @@ function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
     throw 'Recovery probe result is not valid'
   }
   $recoveryTaskName = 'AgentOS Recovery ONE Probe'
-  # A corrupt pending B slot must not terminate all rescue communications.
-  # The LKG check is read-only and always leaves ONE rollback authority intact.
-  $probeArgs = '-I "' + $runner + '" --root "' + $recoveryRoot + '" --config "' + $configFile + '" --status "' + $statusFile + '" --diagnose-lkg-when-pending-corrupt'
-  $action = New-ScheduledTaskAction -Execute $PythonPath -Argument $probeArgs -WorkingDirectory $recoveryRoot
-  $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-  $periodic = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
-  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
-  Register-ScheduledTask -TaskName $recoveryTaskName -Action $action -Trigger @($logon,$periodic) -Settings $settings -Description 'Read-only independent ONE recovery A/B communication probe; no update authority' -Force | Out-Null
-  Write-Host 'Read-only Recovery A/B ONE probe verified and separately scheduled.'
+  $existingRecoveryTask = Get-ScheduledTask -TaskName $recoveryTaskName -ErrorAction SilentlyContinue
+  if($existingRecoveryTask) {
+    # Normal reinstall must NOT silently rebind Recovery to a new Normal
+    # Python interpreter, replace its trigger, or adopt an unknown task.
+    $existingActions = @($existingRecoveryTask.Actions)
+    if($existingActions.Count -ne 1 -or
+       [string]::IsNullOrWhiteSpace([string]$existingActions[0].Execute)) {
+      throw 'Existing Recovery task has unknown action; protected task retained.'
+    }
+    $existingExecute = [string]$existingActions[0].Execute
+    $existingArguments = [string]$existingActions[0].Arguments
+    $expectedRunner = '-I "' + $runner + '"'
+    $expectedRoot = '--root "' + $recoveryRoot + '"'
+    $expectedConfig = '--config "' + $configFile + '"'
+    $expectedStatus = '--status "' + $statusFile + '"'
+    if(-not $existingArguments.StartsWith($expectedRunner + ' ') -or
+       -not $existingArguments.Contains($expectedRoot) -or
+       -not $existingArguments.Contains($expectedConfig) -or
+       -not $existingArguments.Contains($expectedStatus) -or
+       -not (Test-Path -LiteralPath $existingExecute -PathType Leaf)) {
+      throw 'Existing Recovery task is not the recognized protected launcher; no automatic takeover.'
+    }
+    Write-Host 'Existing Recovery scheduled task retained, including its independent Python executable and triggers.'
+  } else {
+    # A corrupt pending B slot must not terminate all rescue communications.
+    # The LKG check is read-only and leaves ONE rollback authority intact.
+    $probeArgs = '-I "' + $runner + '" --root "' + $recoveryRoot + '" --config "' + $configFile + '" --status "' + $statusFile + '" --diagnose-lkg-when-pending-corrupt'
+    $action = New-ScheduledTaskAction -Execute $PythonPath -Argument $probeArgs -WorkingDirectory $recoveryRoot
+    $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $periodic = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
+    Register-ScheduledTask -TaskName $recoveryTaskName -Action $action -Trigger @($logon,$periodic) -Settings $settings -Description 'Read-only independent ONE recovery A/B communication probe; no update authority' | Out-Null
+    Write-Host 'Read-only Recovery A/B ONE probe newly scheduled.'
+  }
 }
 
 try {
