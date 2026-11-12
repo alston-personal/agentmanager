@@ -5,7 +5,7 @@
   "pr_number": 2271,
   "status": "SOURCE_CI_ONLY_NOT_MERGED_NOT_RUNTIME_ACCEPTED",
   "goal": "以 main 為唯一正式主線，將既有 ONE Maintenance 與 Normal/Recovery 雙通道更新、受授權 A/B 回退及跨重啟對帳收斂為同一條可驗收閉環",
-  "next_action": "經正式工程 Intake 核准後，沿用既有 ONE Maintenance 與 Runner Window 驗證 Windows Recovery 的回滾及驗收兩條流程，均須本機寫入與讀回後才解除 ONE 持久化更新閘門；中斷時凍結並取得正式對帳 Receipt，再發布/讀回 Canonical IR。",
+  "next_action": "STOP SOURCE-ONLY CHURN：先由既有 AgentOS 治理流程明確核准 #1682 engineering intake（目前零核准標籤）；使用 main 既有 AgentOS Dispatch / Runner Window 先取得 ONE Runtime read-only 版本、Canonical IR generation、Maintenance owner / Windows 節點與 interlock 讀回 Receipt，再由受授權 Owner 在隔離 Windows Node 做壞 B→LKG A→ONE rollback、接受 B→ONE VERIFY 的實機閉環。無真實 Receipt 不得宣稱完成、不得合併 #2271。",
   "pending_tasks": [
     "PR #2271 保持 Draft；審查核心及 Windows 路徑後，核對 main 最新版並決定合併時機",
     "Reuse Before Build：在既有 Maintenance Owner/Runtime 中實作真正的簽章、信任根、時效、防重放、Node/Realm/operation_id 校驗",
@@ -72,6 +72,49 @@
     "recovery_live_receipt": false,
     "ir_published": false,
     "recovery_dedicated_interpreter_live_verified": false,
-    "recovery_runtime_provisioner_source_only": true
-  }
+    "recovery_runtime_provisioner_source_only": true,
+    "source_change_freeze_until_runtime_readback": true,
+    "dispatch_authorized": false,
+    "canonical_ir_live_readback_verified": false,
+    "windows_recovery_live_verified": false,
+    "pr_source_changes_are_merge_authority": false
+  },
+  "acceptance_sequence": [
+    {
+      "step": 1,
+      "action": "既有治理核准 #1682 engineering intake，維持 main protected approval rules",
+      "evidence": "GitHub Issue approval labels and owner authorization; no assumption from 繼續",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "step": 2,
+      "action": "使用既有 Runner Window 唯讀讀回 Oracle ONE maintenance owner、現行 runtime SHA、Canonical IR index/ir generation、Recovery Participant interlock",
+      "evidence": "Actual ONE request/receipt id, generation, source SHA, node id and observed state",
+      "status": "NO_LIVE_RECEIPT"
+    },
+    {
+      "step": 3,
+      "action": "既有授權 Maintenance Owner 在隔離 Windows Node 實機演練 Normal failure and recovery LKG",
+      "evidence": "Windows Task action/executable readback, ONE handshake, signed operation and health receipt",
+      "status": "NO_LIVE_RECEIPT"
+    },
+    {
+      "step": 4,
+      "action": "受授權 B 故障→A 還原→ONE ROLLBACK_OK；以及 B 驗收→ONE VERIFY",
+      "evidence": "Both Windows slots.json readback and ONE durable gate state/operation/generation receipt",
+      "status": "NO_LIVE_RECEIPT"
+    },
+    {
+      "step": 5,
+      "action": "Oracle Canonical IR CAS 發布、讀回及 Active Continuation selector 收斂",
+      "evidence": "Authoritative CAS publisher receipt and exact index/ir/selector IDs; use resume-selector-only after partial publish",
+      "status": "NO_LIVE_RECEIPT"
+    },
+    {
+      "step": 6,
+      "action": "完成 36-file PR 範圍審核、主線核准與 rollout decision",
+      "evidence": "Protected-main review, CI, accepted runtime receipts and rollback plan",
+      "status": "PENDING_REVIEW"
+    }
+  ]
 }
