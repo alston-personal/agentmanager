@@ -13,6 +13,18 @@ on:
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/action_relay.py'
 
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-action-runtime-migration-20261007.yml'
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/deployment_inspect_provider.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/action_relay.py'
+      - 'tests/test_deployment_inspect_one.py'
+      - 'tests/test_main_runtime_deploy_routing.py'
+
 permissions:
   contents: read
   id-token: write
@@ -38,6 +50,7 @@ jobs:
           python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_main_runtime_deploy_routing -v
   migrate:
     needs: [validate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
