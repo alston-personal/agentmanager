@@ -190,6 +190,43 @@ class RecoveryCrossStoreReconciliationTests(unittest.TestCase):
                          "GOVERNED_RECONCILIATION_REQUIRED")
         self.assertFalse(result["rollback_authorized"])
 
+    def test_reconciliation_rejects_stage_from_different_node(self):
+        self.staged(activated=True)
+        stage_path = self.root / "staged-candidate.json"
+        stage = json.loads(stage_path.read_text())
+        stage["node_id"] = "a-different-node"
+        slots.atomic_json(stage_path, stage)
+        result = self.check(phase="ACTIVATED", lane="recovery",
+                            operation=self.operation)
+        self.assertEqual(result["classification"], "GOVERNED_RECONCILIATION_REQUIRED")
+        self.assertFalse(result["new_update_permitted"])
+
+    def test_reconciliation_rejects_stage_self_authorization(self):
+        self.staged(activated=True)
+        stage_path = self.root / "staged-candidate.json"
+        for field in ("activation_authorized", "one_receipt_attested"):
+            with self.subTest(field=field):
+                stage = json.loads(stage_path.read_text())
+                stage[field] = True
+                slots.atomic_json(stage_path, stage)
+                result = self.check(phase="ACTIVATED", lane="recovery",
+                                    operation=self.operation)
+                self.assertEqual(result["classification"],
+                                 "GOVERNED_RECONCILIATION_REQUIRED")
+                stage[field] = False
+                slots.atomic_json(stage_path, stage)
+
+    def test_reconciliation_rejects_candidate_digest_divergence(self):
+        self.staged(activated=True)
+        stage_path = self.root / "staged-candidate.json"
+        stage = json.loads(stage_path.read_text())
+        stage["candidate_sha256"] = "0" * 64
+        slots.atomic_json(stage_path, stage)
+        result = self.check(phase="ACTIVATED", lane="recovery",
+                            operation=self.operation)
+        self.assertEqual(result["classification"], "GOVERNED_RECONCILIATION_REQUIRED")
+        self.assertFalse(result["one_receipt_attested"])
+
     def test_stale_operation_mismatch_blocks(self):
         self.staged()
         result = self.check(phase="STAGED", lane="recovery",
