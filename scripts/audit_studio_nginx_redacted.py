@@ -85,7 +85,7 @@ def parse_nginx(content: str) -> list[dict]:
         elif key == "alias":
             current["aliases"].append(root_class(val))
         elif key == "proxy_pass":
-            current["proxies"].append("loopback" if re.match(r"^https?://(?:127\\.0\\.0\\.1|localhost)(?::|/|$)", val) else "other")
+            current["proxies"].append("loopback" if re.match(r"^https?://(?:127\.0\.0\.1|localhost)(?::|/|$)", val) else "other")
         elif key == "try_files" and "/index.html" in val.split():
             current["index_fallback"] = True
     return blocks
@@ -141,13 +141,26 @@ def probe(path: str, kind: str) -> dict:
     pieces = result.stdout.strip().split("|", 2)
     status = int(pieces[0]) if pieces and pieces[0].isdigit() else None
     ctype = pieces[1].split(";")[0] if len(pieces) > 1 else ""
-    return {
+    observation = {
         "path": path,
         "reachable": result.returncode == 0,
         "status": status,
         "html_mime": ctype == "text/html" if kind == "html" else None,
         "redirect": bool(pieces[2]) if len(pieces) > 2 else False,
+        "content_identity_checked": kind == "marker",
     }
+    if kind == "marker" and status == 200:
+        try:
+            marker = subprocess.run([
+                "/usr/bin/curl", "--silent", "--max-time", "8", "--max-filesize", "256",
+                "--resolve", f"{SITE}:443:127.0.0.1", f"https://{SITE}{path}"
+            ], capture_output=True, timeout=10, check=False)
+            observation["canonical_marker_match"] = (
+                marker.returncode == 0 and marker.stdout.strip() == b"studio-web-production-root/v1"
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            observation["canonical_marker_match"] = False
+    return observation
 
 def main() -> int:
     report = {
