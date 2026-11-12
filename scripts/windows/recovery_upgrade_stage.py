@@ -85,6 +85,17 @@ def stage_inactive_candidate(*, root, source, manifest, trusted_one_verifier,
     if isolated_candidate_test(source, manifest) is not True:
         raise RuntimeError("isolated_recovery_candidate_test_failed")
 
+    # Persistent exclusive reservation prevents concurrent candidate staging.
+    # A failed/interrupted attempt stays BLOCKED until a governed reconciliation
+    # confirms the old active channel and explicitly clears the reservation.
+    reservation = root / "stage-reservation.lock"
+    if (root / "staged-candidate.json").exists():
+        raise ValueError("recovery_candidate_already_staged")
+    claim = os.open(reservation, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(claim, "w", encoding="utf-8") as claim_out:
+        claim_out.write(str(manifest["operation_id"])[:128] + "\n")
+        claim_out.flush()
+        os.fsync(claim_out.fileno())
     # This phase must not mutate the slot state: only the governed controller
     # can later activate after checking the durable interlock and fresh proof.
     target = _strict_slot_path(root, inactive)
