@@ -69,7 +69,7 @@ try {
   if(-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw 'RECOVERY_RUNTIME_NO_PYTHON_EXECUTABLE'
   }
-  $probeOutput=@(& $python -I -c 'import sys,ssl,urllib.request,json,hashlib; print(sys.version_info.major,sys.prefix)' 2>&1)
+  $probeOutput=@(& $python -I -c 'import sys,os,ssl,urllib.request,json,hashlib; assert os.path.normcase(os.path.abspath(sys.prefix)) == os.path.normcase(os.path.abspath(os.path.dirname(sys.executable))), "runtime is not self-contained"; print(sys.version_info.major,sys.prefix)' 2>&1)
   if($LASTEXITCODE -ne 0 -or $probeOutput.Count -eq 0) {
     throw 'RECOVERY_RUNTIME_STANDALONE_PYTHON_INVALID'
   }
