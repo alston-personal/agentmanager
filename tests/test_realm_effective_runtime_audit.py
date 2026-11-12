@@ -56,6 +56,49 @@ class RealmEffectiveRuntimeAuditTests(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(obj))
         self.assertNotIn("/secret/path", json.dumps(obj))
 
+    @patch.object(audit.pwd, "getpwuid")
+    @patch.object(Path, "resolve")
+    @patch.object(Path, "stat")
+    @patch.object(Path, "read_bytes")
+    @patch.object(Path, "iterdir")
+    def test_bounded_candidate_owner_projection_never_exposes_process_data(
+        self, iterdir, read_bytes, stat, resolve, getpwuid
+    ):
+        iterdir.return_value = [Path("/proc/777")]
+        read_bytes.return_value = (
+            b"/usr/bin/python3\\0-m\\0agent_core.realm_cli\\0serve\\0"
+            b"secret-session-token\\0"
+        )
+        stat.return_value = SimpleNamespace(st_uid=1001)
+        resolve.return_value = Path("/untrusted/runtime/location")
+        getpwuid.return_value = SimpleNamespace(pw_name="agentos-node")
+        result = audit.bounded_realm_process_candidates()
+        self.assertEqual(result["candidate_owner_class"], "agentos-node")
+        self.assertEqual(result["candidate_count_band"], "one")
+        self.assertFalse(result["candidate_owns_8780_proved"])
+        for secret in ("777", "secret-session-token", "/untrusted/runtime/location"):
+            self.assertNotIn(secret, json.dumps(result))
+
+    @patch.object(audit, "bounded_realm_process_candidates")
+    @patch.object(audit, "source_provenance", return_value=None)
+    @patch.object(audit, "current_release_commit", return_value=None)
+    @patch.object(audit, "source_state", return_value={"readable": False, "repair_carrier_oidc_present": False})
+    @patch.object(audit, "get_service_state", return_value={"available": False, "active": False, "pid_present": False})
+    def test_different_service_owner_is_classified_without_claiming_release(
+        self, _service, _source, _release, _provenance, candidates
+    ):
+        candidates.return_value = {
+            "candidate_process_detected": True,
+            "candidate_count_band": "one",
+            "candidate_owner_class": "agentos-node",
+            "candidate_workdir_class": "unknown",
+            "candidate_owns_8780_proved": False,
+        }
+        result = audit.inspect()
+        self.assertTrue(result["runner_user_service_mismatch_suspected"])
+        self.assertEqual(result["classification"], "REALM_SERVICE_UNAVAILABLE")
+        self.assertFalse(result["in_memory_module_proven"])
+
     def test_source_projection_is_only_digest_and_allowlist_bit(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
