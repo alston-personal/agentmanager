@@ -88,6 +88,18 @@ class MioSocialContractTests(unittest.TestCase):
                 {'autonomy':{'public_conversation':'guarded'}}
             ))
 
+    def test_legacy_external_intel_queue_cannot_route_to_publish(self):
+        self.assertEqual(
+            mio.legacy_proactive_parent_block_reason({
+                "outbound_discovery": True,
+                "reply_id": "3990314088932838177",
+                "source_permalink": "https://www.threads.com/@mio.milkcat/post/DdgcYW1FAsh",
+            }), "external_parent_not_attested_legacy")
+        self.assertIsNone(mio.legacy_proactive_parent_block_reason({
+            "outbound_discovery": False, "reply_id": "18445538716127069"
+        }))
+        self.assertIsNone(mio.legacy_proactive_parent_block_reason({}))
+
     def test_pdca_tag_scopes_write_intent_to_cycle_and_reply(self):
         authority={'action_id':'mio-pdca-c3-social-reply-review','cycle':3,
                    'capability':'social.reply.review'}

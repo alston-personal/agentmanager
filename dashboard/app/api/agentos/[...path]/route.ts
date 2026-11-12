@@ -18,6 +18,38 @@ const ALLOWED: Record<string, Set<string>> = {
   ]),
 };
 
+// This is the only write intent intentionally exposed through the main Dashboard
+// Realm proxy. The ONE scheduler still validates signed GitHub OIDC and source SHA.
+function hasExactKeys(input: Record<string, unknown>, expected: string[]): boolean {
+  const keys = Object.keys(input).sort();
+  return keys.length === expected.length && keys.every((key, i) => key === expected[i]);
+}
+
+async function isApprovedRainExitDispatch(request: NextRequest): Promise<boolean> {
+  if (!request.headers.get("authorization")?.startsWith("Bearer ")) return false;
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return false;
+  const length = Number(request.headers.get("content-length") || "0");
+  if (!Number.isFinite(length) || length > 4096) return false;
+  const raw = await request.clone().text();
+  if (!raw || raw.length > 4096) return false;
+  try {
+    const body: unknown = JSON.parse(raw);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+    const v = body as Record<string, unknown>;
+    if (!hasExactKeys(v, ["capability", "operation", "payload", "schema", "source_commit"])) return false;
+    if (v.schema !== "agentos.runner-window-dispatch/v1") return false;
+    if (v.capability !== "media.vision-studio" || v.operation !== "produce") return false;
+    if (typeof v.source_commit !== "string" || !/^[0-9a-f]{40}$/.test(v.source_commit)) return false;
+    if (!v.payload || typeof v.payload !== "object" || Array.isArray(v.payload)) return false;
+    const payload = v.payload as Record<string, unknown>;
+    return hasExactKeys(payload, ["project_id"]) && payload.project_id === "rain-exit-v001";
+  } catch {
+    return false;
+  }
+}
+
+const RAIN_EXIT_STATUS_PATH = /^\/v1\/dispatch\/requests\/agentos\.vision_studio\.produce-[A-Za-z0-9._:-]{1,160}$/;
+
 function safePath(parts: string[]): string {
   const path = "/" + parts.map((part) => encodeURIComponent(decodeURIComponent(part))).join("/");
   if (!path.startsWith("/v1/")) throw new Error("invalid Realm path");
@@ -32,7 +64,10 @@ async function proxy(
   const { path: parts } = await context.params;
   const rawPath = safePath(parts || []);
   const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
-  if (!ALLOWED[method]?.has(path)) {
+  const readApprovedReceipt = method === "GET" && RAIN_EXIT_STATUS_PATH.test(path);
+  const postApprovedFilm = method === "POST" && path === "/v1/dispatch" &&
+    await isApprovedRainExitDispatch(request);
+  if (!ALLOWED[method]?.has(path) && !readApprovedReceipt && !postApprovedFilm) {
     return Response.json(
       { ok: false, error: "Realm gateway route not allowlisted", method, path },
       { status: 404 },

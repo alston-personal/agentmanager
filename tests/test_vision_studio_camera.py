@@ -73,3 +73,27 @@ def test_producer_reads_same_pinned_ir_and_generator_source():
     assert '"compiled_instructions_sha256": camera_ir_sha256' in source
     assert '"source_commit": source_commit' in source
     assert "CAMERA_IR_SHOT_COUNT_MISMATCH" in source
+
+
+def test_google_flow_landing_uses_observed_cta_before_prompt_lookup():
+    # Actual Oracle ONE receipt from Rain Exit #1160 / job 130341822583:
+    # FLOW_LOADED, UI_UNRECOGNIZED, visible "Try it now!" button.
+    source = (ROOT / "scripts/generate_google_flow_user.sh").read_text(encoding="utf-8")
+    assert 'r"^try it now!?$"' in source
+    assert source.index('r"^try it now!?$"') < source.index("box=find_prompt(page)")
+    # Never choose an existing project at random as a fallback.
+    assert 'r"開啟專案"' not in source
+    assert 'google_flow_generate=UI_UNRECOGNIZED' in source
+
+
+def test_google_flow_reacquires_prompt_after_mode_switch_before_filling():
+    # Oracle Rain Exit #1160 request 1794385283-b3f5bced reached
+    # PROMPT_INPUT_BEGIN but Playwright timed out after mode toggling.
+    source = (ROOT / "scripts/generate_google_flow_user.sh").read_text(encoding="utf-8")
+    mode_index = source.index('click_text(page,[r"^video$",r"影片"]')
+    refresh_index = source.index("box=find_prompt(page)", mode_index)
+    fill_index = source.index("box.fill(prompt,timeout=8000)", refresh_index)
+    assert mode_index < refresh_index < fill_index
+    assert 'google_flow_generate=PROMPT_AFTER_MODE_SWITCH_MISSING' in source
+    assert 'google_flow_stage=PROMPT_INPUT_FAILED' in source
+    assert 'save_debug(page,"prompt-input-timeout")' in source

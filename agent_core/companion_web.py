@@ -648,6 +648,50 @@ def render_public_entry_html() -> str:
 # A separate, non-privileged post-OAuth destination. The old root is always
 # the sign-in screen; redirecting OAuth callbacks there looked like an endless
 # login loop even when the provider had accepted the user.
+
+# One site-scoped account header across the public AgentOS authenticated views.
+# It renders only verified Session fields as text; it never confers permissions.
+ACCOUNT_HEADER = """<style>
+.agentos-accountbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:12px clamp(16px,4vw,42px);border-bottom:1px solid #293244;background:#101827;color:#e5e7eb;font:14px system-ui,-apple-system,sans-serif}
+.agentos-accountbar a{color:#b5c7fa}
+.agentos-accountbar .account-identity{overflow-wrap:anywhere}
+.agentos-accountbar nav{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+</style>
+<div class="agentos-accountbar" aria-label="AgentOS 帳號列">
+<strong>AgentOS</strong>
+<span id="agentos-account-identity" class="account-identity" aria-live="polite">正在確認登入帳號…</span>
+<nav aria-label="帳號選單">
+<a href="/welcome">我的 AgentOS</a>
+<a id="agentos-admin-entry" href="/platform" hidden>平台管理</a>
+<a href="/dashboard/api/auth/logout?returnTo=%2F">切換帳號</a>
+<a href="/dashboard/api/auth/logout?returnTo=%2F">登出</a>
+</nav>
+</div>
+<script>
+(async () => {
+ const label=document.getElementById('agentos-account-identity');
+ const admin=document.getElementById('agentos-admin-entry');
+ try {
+  const response=await fetch('/dashboard/api/auth/session',{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok)throw Error('session_unavailable');
+  const session=await response.json();
+  if(session.loggedIn!==true || !session.username || !session.provider){
+   label.textContent='尚未登入';
+   return;
+  }
+  label.textContent='登入：'+session.username+' · '+session.provider+
+   ' · '+(session.role==='admin'?'平台管理員':'一般帳號');
+  admin.hidden=session.role!=='admin';
+ } catch {
+  label.textContent='無法確認帳號狀態';
+ }
+})();
+</script>"""
+
+
+def _with_account_header(html: str) -> str:
+    return html.replace("<!--agentos-account-header-->", ACCOUNT_HEADER)
+
 WELCOME_HTML = """<!doctype html>
 <html lang="zh-Hant">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -660,7 +704,7 @@ p{line-height:1.7;color:#aab6cb}a{color:#9baaff}
 button,input{font:inherit;border:1px solid #42516a;border-radius:8px;padding:10px;background:#172238;color:#f3f4f6}
 button{cursor:pointer;margin:6px 6px 6px 0}button:disabled{opacity:.5;cursor:not-allowed}
 input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
-</style></head><body><main>
+</style></head><body><!--agentos-account-header--><main>
 <h1>AgentOS</h1>
 <nav aria-label="AgentOS 主要導覽" style="display:flex;flex-wrap:wrap;gap:14px;padding:10px 0 20px">
 <a href="/welcome" aria-current="page">我的 AgentOS</a>
@@ -668,6 +712,7 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
 <a href="/">登入首頁</a>
 </nav>
 <p id="login-status" aria-live="polite">正在確認登入狀態…</p>
+<section id="platform-admin-entry" hidden aria-label="平台管理員工作區"><h2>平台管理員工作區</h2><p>此帳號具備平台治理身分。管理 Realm 申請及平台資源請進入平台治理中心；個別 Realm 的日常操作仍受各自 Owner 權限控制。</p><p><a href="/platform" id="platform-admin-link">進入平台治理中心</a></p></section>
 <section id="realm-onboarding" hidden>
 <h2>我的 Realm</h2>
 <p id="realm-status" aria-live="polite">正在讀取開通狀態…</p>
@@ -691,7 +736,12 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
     if (!response.ok) throw new Error('session_unavailable');
     const session = await response.json();
     if (session.loggedIn === true && session.provider && session.subject) {
-      status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。管理者 Console 不會自動開放。';
+      if (session.role === 'admin') {
+        status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS（平台管理者）。';
+        document.getElementById('platform-admin-entry').hidden = false;
+        return;
+      }
+      status.textContent = '已使用 ' + session.provider + ' 登入 AgentOS。此帳號尚未取得平台管理權限。';
       const onboarding = document.getElementById('realm-onboarding');
       const current = document.getElementById('realm-status');
       const actions = document.getElementById('realm-actions');
@@ -775,7 +825,7 @@ input{width:95%;box-sizing:border-box}.actions{margin-top:14px}
 
 def render_welcome_html() -> str:
     """Unprivileged post-login status; never treat a browser cookie as ONE authority."""
-    return WELCOME_HTML
+    return _with_account_header(WELCOME_HTML)
 
 PLATFORM_REVIEW_HTML = """<!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -798,7 +848,7 @@ dt{font-size:12px}dd{margin:2px 0 0;overflow-wrap:anywhere}
 button{font:inherit;color:white;background:#244477;border:1px solid #45669a;border-radius:8px;padding:10px 14px;margin:5px 8px 5px 0;cursor:pointer}
 button.danger{background:#3e2931;border-color:#8b4655}button:disabled{opacity:.45;cursor:not-allowed}
 code{overflow-wrap:anywhere;color:#c8d6f4}small,.muted{color:#90a3ba}
-</style></head><body>
+</style></head><body><!--agentos-account-header-->
 <header><h1>AgentOS 平台治理中心</h1>
 <p>平台管理員工作區 · 與各 Realm 的 Virtual ONE 分離</p>
 <nav aria-label="平台功能">
@@ -891,7 +941,7 @@ load();
 
 
 def render_platform_review_html() -> str:
-    return PLATFORM_REVIEW_HTML
+    return _with_account_header(PLATFORM_REVIEW_HTML)
 
 
 PLATFORM_LOGIN_REQUIRED_HTML = """<!doctype html>
@@ -952,7 +1002,7 @@ button,input{font:inherit;padding:10px;background:#1c2d49;color:#edf2ff;border:1
 button{cursor:pointer;margin:6px 6px 6px 0}input{min-width:170px;max-width:95%}
 article{border:1px solid #34465c;background:#142036;padding:12px;border-radius:8px;margin:10px 0}
 small{color:#9eafc5}
-</style></head><body><main>
+</style></head><body><!--agentos-account-header--><main>
 <h1>我的 Virtual ONE</h1>
 <nav aria-label="AgentOS 帳號與導覽"><a href="/welcome">我的 AgentOS</a> · <a href="/platform">平台治理（需管理權限）</a> · <a href="/dashboard/api/auth/logout?returnTo=%2F">切換使用者</a> · <a href="/dashboard/api/auth/logout?returnTo=%2F">登出</a></nav>
 <p>此頁提供獨立 Realm 的 Node Map 與 Node 加入核准。ONE 執行服務及任務派送仍須正式驗收。</p>
@@ -1043,4 +1093,4 @@ try{await refreshNodeMap();}catch(e){document.getElementById('map-status').textC
 
 
 def render_my_one_html() -> str:
-    return MY_ONE_HTML
+    return _with_account_header(MY_ONE_HTML)

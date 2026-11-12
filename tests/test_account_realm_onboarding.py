@@ -82,7 +82,9 @@ def test_welcome_has_real_action_controls_with_no_root_elevation():
     assert 'id="create-realm"' in html
     assert 'id="join-realm-submit"' in html
     assert "/v1/account/realm-request" in html
-    assert "管理者 Console 不會自動開放" in html
+    assert "session.role === 'admin'" in html
+    assert "平台管理員工作區" in html
+    assert "此帳號尚未取得平台管理權限" in html
     assert "realm-alston" not in html
 
 

@@ -7,6 +7,7 @@ import time
 import threading
 import urllib.error
 import socket
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -112,6 +113,29 @@ class ClientConfig:
             pass
 
 
+_TENANT_REALM_ID = re.compile(r"realm-u-[0-9a-f]{24}\Z")
+
+
+def device_join_base(one_url: str, realm_id: str | None = None) -> str:
+    """Route a device request to its explicitly selected Realm, not realm-alston."""
+    normalized = one_url.rstrip('/')
+    if realm_id is None:
+        return normalized + '/v1/join'
+    if not _TENANT_REALM_ID.fullmatch(realm_id):
+        raise ValueError('invalid_tenant_realm_id')
+    parsed = urllib.parse.urlsplit(normalized)
+    if parsed.scheme != 'https' or parsed.hostname != 'agentos.milkcat.org' or parsed.path not in ('', '/') or parsed.query or parsed.fragment or parsed.username or parsed.password:
+        raise ValueError('tenant_join_requires_agentos_origin')
+    return normalized + '/v1/realms/' + realm_id + '/join'
+
+
+def node_runtime_endpoint(config: ClientConfig, action: str) -> str:
+    """Tenant node runtime is isolated from legacy /v1 on the default ONE."""
+    if _TENANT_REALM_ID.fullmatch(config.realm_id):
+        return device_join_base(config.one_url, config.realm_id).rsplit('/join', 1)[0] + '/' + action
+    return config.one_url.rstrip('/') + '/v1/' + action
+
+
 class ThinClientTransport:
     def __init__(self, client: ThinClient, config: ClientConfig | None = None):
         self.client = client
@@ -154,30 +178,30 @@ class ThinClientTransport:
         return payload
 
     @classmethod
-    def request_enrollment(cls, *, one_url: str, node_id: str, policy: ThinClientPolicy, expires_minutes: int = 10) -> dict[str, Any]:
+    def request_enrollment(cls, *, one_url: str, node_id: str, policy: ThinClientPolicy, expires_minutes: int = 10, realm_id: str | None = None) -> dict[str, Any]:
         normalized = one_url.rstrip('/')
         provisional = ThinClient(NodeIdentity(realm_id='pending', node_id=node_id), policy)
         manifest = provisional.capability_manifest()
-        manifest['realm_id'] = ''
-        result = cls._request(normalized + '/v1/join/request', method='POST', body={'manifest': manifest, 'expires_minutes': max(1, min(int(expires_minutes), 30))})
+        manifest['realm_id'] = realm_id or ''
+        result = cls._request(device_join_base(normalized, realm_id) + '/request', method='POST', body={'manifest': manifest, 'expires_minutes': max(1, min(int(expires_minutes), 30))})
         if not result.get('ok'):
             raise RuntimeError(f'enrollment request failed: {result}')
         return result
 
     @classmethod
-    def wait_for_approval(cls, *, one_url: str, request_id: str, claim_secret: str, config_path: str | Path, poll_seconds: float = 2.0, timeout_seconds: int = 600, on_status: Callable[[dict[str, Any]], None] | None = None) -> ClientConfig:
+    def wait_for_approval(cls, *, one_url: str, request_id: str, claim_secret: str, config_path: str | Path, poll_seconds: float = 2.0, timeout_seconds: int = 600, on_status: Callable[[dict[str, Any]], None] | None = None, realm_id: str | None = None) -> ClientConfig:
         normalized = one_url.rstrip('/')
         deadline = time.monotonic() + max(10, int(timeout_seconds))
         last_status = None
         while time.monotonic() < deadline:
-            status = cls._request(normalized + '/v1/join/status', method='POST', body={'request_id': request_id, 'claim_secret': claim_secret})
+            status = cls._request(device_join_base(normalized, realm_id) + '/status', method='POST', body={'request_id': request_id, 'claim_secret': claim_secret})
             if status.get('status') != last_status and on_status:
                 on_status(status)
             last_status = status.get('status')
             if status.get('status') in {'denied', 'expired', 'claimed'}:
                 raise RuntimeError(f'enrollment ended with status={status.get("status")}')
             if status.get('status') == 'approved':
-                result = cls._request(normalized + '/v1/join/claim', method='POST', body={'request_id': request_id, 'claim_secret': claim_secret})
+                result = cls._request(device_join_base(normalized, realm_id) + '/claim', method='POST', body={'request_id': request_id, 'claim_secret': claim_secret})
                 if result.get('status') == 'enrolled' and result.get('node_token'):
                     config = ClientConfig(one_url=normalized, realm_id=str(result['realm_id']), node_id=str(result['node_id']), node_token=str(result['node_token']))
                     config.save(config_path)
@@ -186,11 +210,11 @@ class ThinClientTransport:
         raise TimeoutError('enrollment approval timed out')
 
     @classmethod
-    def enroll_device(cls, *, one_url: str, node_id: str, policy: ThinClientPolicy, config_path: str | Path, expires_minutes: int = 10, timeout_seconds: int = 600, on_request: Callable[[dict[str, Any]], None] | None = None, on_status: Callable[[dict[str, Any]], None] | None = None) -> ClientConfig:
-        request = cls.request_enrollment(one_url=one_url, node_id=node_id, policy=policy, expires_minutes=expires_minutes)
+    def enroll_device(cls, *, one_url: str, node_id: str, policy: ThinClientPolicy, config_path: str | Path, expires_minutes: int = 10, timeout_seconds: int = 600, on_request: Callable[[dict[str, Any]], None] | None = None, on_status: Callable[[dict[str, Any]], None] | None = None, realm_id: str | None = None) -> ClientConfig:
+        request = cls.request_enrollment(one_url=one_url, node_id=node_id, policy=policy, expires_minutes=expires_minutes, realm_id=realm_id)
         if on_request:
             on_request({k: v for k, v in request.items() if k != 'claim_secret'})
-        return cls.wait_for_approval(one_url=one_url, request_id=str(request['request_id']), claim_secret=str(request['claim_secret']), config_path=config_path, timeout_seconds=timeout_seconds, on_status=on_status)
+        return cls.wait_for_approval(one_url=one_url, request_id=str(request['request_id']), claim_secret=str(request['claim_secret']), config_path=config_path, timeout_seconds=timeout_seconds, on_status=on_status, realm_id=realm_id)
 
     @classmethod
     def enroll(cls, *, one_url: str, invite_id: str, code: str, node_id: str, policy: ThinClientPolicy, config_path: str | Path) -> ClientConfig:
@@ -208,14 +232,17 @@ class ThinClientTransport:
     def health(self) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/health', retries=2)
+        url = node_runtime_endpoint(self.config, 'health')
+        if _TENANT_REALM_ID.fullmatch(self.config.realm_id):
+            url += '?' + urllib.parse.urlencode({'node_id': self.config.node_id})
+        return self._request(url, token=self.config.node_token if _TENANT_REALM_ID.fullmatch(self.config.realm_id) else None, retries=2)
 
     def heartbeat(self) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         heartbeat = self.client.heartbeat()
         result = self._request(
-            self.config.one_url + '/v1/heartbeat',
+            node_runtime_endpoint(self.config, 'heartbeat'),
             method='POST',
             body=heartbeat,
             token=self.config.node_token,
@@ -250,7 +277,7 @@ class ThinClientTransport:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         query = urllib.parse.urlencode({'node_id': self.config.node_id})
-        return self._request(self.config.one_url + '/v1/bootstrap?' + query, token=self.config.node_token, retries=2)
+        return self._request(node_runtime_endpoint(self.config, 'bootstrap') + '?' + query, token=self.config.node_token, retries=2)
 
     def resolve(self, project: str, *, intent: str = 'continue') -> dict[str, Any]:
         """Resolve canonical project continuation state through ONE.
@@ -271,7 +298,7 @@ class ThinClientTransport:
             'project': project,
         }
         return self._request(
-            self.config.one_url + '/v1/resolve',
+            node_runtime_endpoint(self.config, 'resolve'),
             method='POST',
             body=body,
             token=self.config.node_token,
@@ -280,7 +307,7 @@ class ThinClientTransport:
     def submit_benchmark(self, report: dict[str, Any]) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/benchmark', method='POST', body=report, token=self.config.node_token)
+        return self._request(node_runtime_endpoint(self.config, 'benchmark'), method='POST', body=report, token=self.config.node_token)
 
     def _complete_regression(self, before_manifest: dict[str, Any], *, report_kind: str, completion_schema: str, lifecycle: dict[str, Any] | None = None) -> dict[str, Any]:
         if not self.config:
@@ -325,7 +352,7 @@ class ThinClientTransport:
         wait = max(0.0, min(float(wait), 25.0))
         query = urllib.parse.urlencode({'node_id': self.config.node_id, 'wait_seconds': f'{wait:.3f}'})
         result = self._request(
-            self.config.one_url + '/v1/tasks?' + query,
+            node_runtime_endpoint(self.config, 'tasks') + '?' + query,
             token=self.config.node_token,
             timeout=max(15.0, wait + 5.0),
         )
@@ -334,7 +361,7 @@ class ThinClientTransport:
     def submit_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/receipts', method='POST', body=receipt, token=self.config.node_token)
+        return self._request(node_runtime_endpoint(self.config, 'receipts'), method='POST', body=receipt, token=self.config.node_token)
 
     def _persist_and_submit_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
         spool_path = _spool_receipt(receipt)

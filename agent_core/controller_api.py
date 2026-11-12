@@ -538,6 +538,10 @@ print('agentos_source_commit='+source_commit)
         action = str(request.get('action') or '').strip()
         if action == 'realm.runtime.rollout':
             return self.rollout_runtime(request)
+        # Generic shell/process authority must never be exposed to Control API callers.
+        # Typed runtime convergence builds its own fixed, validated task separately.
+        if action in {'shell.exec', 'process.exec'}:
+            raise PermissionError(f'controller action not permitted: {action}')
 
         node = self.node(node_id)
         if node.get('status') != 'online':
@@ -581,6 +585,15 @@ print('agentos_source_commit='+source_commit)
             )
         elif action in {'desktop.window.stage', 'desktop.pointer.click', 'desktop.text.insert', 'desktop.key.press'}:
             task = self._typed_desktop_task(task_id, action, request)
+        elif action in {'node.ssh.inspect', 'node.ssh.recover', 'node.runner.inspect', 'node.runner.recover'}:
+            # Privileged maintenance actions are semantic, not remotely supplied shell or unit commands.
+            # The Node adapter owns the fixed authorized operation.
+            task = {
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': task_id,
+                'action': action,
+                'cognition_ids_used': list(request.get('cognition_ids_used') or []),
+            }
         else:
             task = {
                 'schema': 'agentos.node-task/v0.1',
