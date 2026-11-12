@@ -33,6 +33,7 @@ def inspect(expected_commit: str) -> dict:
         "process_observed": False,
         "process_cwd_matches_canonical": False,
         "installed_file_readable": False,
+        "expected_git_commit_present": False,
         "installed_matches_expected_commit": False,
         "source_allows_exact_main_repair": False,
         "authoritative_loaded_module_proved": False,
@@ -56,6 +57,7 @@ def inspect(expected_commit: str) -> dict:
         status["installed_file_readable"] = True
         fetched = _fixed(["/usr/bin/git", "-C", str(REPO), "show", f"{expected_commit}:{SOURCE}"])
         if fetched.returncode == 0:
+            status["expected_git_commit_present"] = True
             status["installed_matches_expected_commit"] = hashlib.sha256(observed).digest() == hashlib.sha256(fetched.stdout).digest()
         # Recognize the exact bounded workflow contract, not only a generic main-ref rule.
         text = observed.decode("utf-8")
@@ -75,6 +77,8 @@ def inspect(expected_commit: str) -> dict:
         status["classification"] = "REALM_PROCESS_SOURCE_ROOT_MISMATCH"
     elif not status["installed_file_readable"]:
         status["classification"] = "REALM_SOURCE_UNREADABLE"
+    elif not status["expected_git_commit_present"]:
+        status["classification"] = "REALM_EXPECTED_SOURCE_UNAVAILABLE"
     elif not status["source_allows_exact_main_repair"]:
         status["classification"] = "REALM_SOURCE_OIDC_CARRIER_STALE"
     elif not status["installed_matches_expected_commit"]:
