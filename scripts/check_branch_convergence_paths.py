@@ -14,7 +14,7 @@ RED_PREFIXES = (
     "executor/", "node/", "agentos_node/", "scripts/deploy_",
     "scripts/check_", "docs/CORE_DEPLOYMENT",
 )
-RED_EXACT = {".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS", "schedule.yaml"}
+RED_EXACT = {".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS", "schedule.yaml", "install-agentos.ps1"}
 AMBER_PREFIXES = ("tests/", "dashboard/", "scripts/", "services/", "apps/", "studio/", "docs/", "web/")
 GREEN_PREFIXES = ("content/", "stories/", "research/", "examples/")
 

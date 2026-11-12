@@ -67,6 +67,82 @@ class ActiveContinuationTests(unittest.TestCase):
                         data_root=td,
                     )
 
+    def test_selector_cas_does_not_overwrite_another_executor(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runtime = root / "runtime"
+            runtime.mkdir()
+            path = runtime / "active-continuation.json"
+            original = {
+                "schema": "agentos.active-continuation/v1",
+                "project_id": "another-project",
+                "index_id": "idx-other",
+                "ir_id": "ir-other",
+            }
+            path.write_text(json.dumps(original), encoding="utf-8")
+            with mock.patch.object(
+                active_continuation, "resolve_continuation",
+                return_value=self._resolved(index_id="idx-new", ir_id="ir-new")
+            ):
+                with self.assertRaisesRegex(ValueError, "selector_cas_conflict"):
+                    active_continuation.activate_continuation(
+                        "agentos-core", index_id="idx-new", ir_id="ir-new",
+                        reason="recovery-ir-sync", data_root=root,
+                        expected_previous=("agentos-core", "idx-old", "ir-old"),
+                    )
+            self.assertEqual(json.loads(path.read_text()), original)
+
+    def test_canonical_generation_changes_before_locked_selector_commit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runtime = root / "runtime"
+            runtime.mkdir()
+            path = runtime / "active-continuation.json"
+            original = {
+                "schema": "agentos.active-continuation/v1",
+                "project_id": "agentos-core",
+                "index_id": "idx-old",
+                "ir_id": "ir-old",
+            }
+            path.write_text(json.dumps(original), encoding="utf-8")
+            with mock.patch.object(
+                active_continuation, "resolve_continuation",
+                side_effect=[
+                    self._resolved(index_id="idx-new", ir_id="ir-new"),
+                    self._resolved(index_id="idx-other", ir_id="ir-other"),
+                ],
+            ):
+                with self.assertRaisesRegex(ValueError, "canonical_ir_changed_during_selector_cas"):
+                    active_continuation.activate_continuation(
+                        "agentos-core", index_id="idx-new", ir_id="ir-new",
+                        reason="recovery-ir-sync", data_root=root,
+                        expected_previous=("agentos-core", "idx-old", "ir-old"),
+                    )
+            self.assertEqual(json.loads(path.read_text()), original)
+
+    def test_selector_cas_updates_only_expected_old_generation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runtime = root / "runtime"
+            runtime.mkdir()
+            path = runtime / "active-continuation.json"
+            path.write_text(json.dumps({
+                "schema": "agentos.active-continuation/v1",
+                "project_id": "agentos-core", "index_id": "idx-old",
+                "ir_id": "ir-old",
+            }), encoding="utf-8")
+            with mock.patch.object(
+                active_continuation, "resolve_continuation",
+                return_value=self._resolved(index_id="idx-new", ir_id="ir-new")
+            ):
+                receipt = active_continuation.activate_continuation(
+                    "agentos-core", index_id="idx-new", ir_id="ir-new",
+                    reason="recovery-ir-sync", data_root=root,
+                    expected_previous=("agentos-core", "idx-old", "ir-old"),
+                )
+            self.assertTrue(receipt["ok"])
+            self.assertEqual(json.loads(path.read_text())["ir_id"], "ir-new")
+
     def test_resolve_active_rejects_stale_pointer(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

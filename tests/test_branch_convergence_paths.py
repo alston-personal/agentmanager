@@ -8,6 +8,10 @@ class BranchConvergencePathRiskTest(unittest.TestCase):
         self.assertEqual(classify("scripts/deploy_core.sh"), "RED")
         self.assertEqual(classify("runtime_core/canonical_ir.py"), "RED")
 
+    def test_canonical_installer_requires_red_review(self):
+        self.assertEqual(classify("install-agentos.ps1"), "RED")
+        self.assertTrue(audit(["install-agentos.ps1"])["requires_governed_review"])
+
     def test_content_continues(self):
         self.assertEqual(classify("stories/chapter.md"), "GREEN")
 

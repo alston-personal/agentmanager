@@ -62,6 +62,15 @@ class JobTypeSpec:
 
 
 JOB_TYPES: dict[str, JobTypeSpec] = {
+    "media.colab.h3.smoke": JobTypeSpec(
+        job_type="media.colab.h3.smoke",
+        capability="media.video.generate.minimax-h3.smoke",
+        authority="bounded-approved-colab-smoke",
+        executor_class="oracle-colab-smoke-dispatcher",
+        project_id="if-tv-station",
+        workload_ref="issue://3",
+        read_only=False,
+    ),
     "persona.mio.dm.resume": JobTypeSpec(
         job_type="persona.mio.dm.resume",
         capability="persona.social.dm.session.resume",

@@ -1,5 +1,6 @@
 # CI trigger: governed Action Relay bootstrap validation
 import json
+from datetime import datetime, timedelta, timezone
 import os
 import stat
 from types import SimpleNamespace
@@ -95,13 +96,21 @@ class ActionRelayTests(unittest.TestCase):
         self.assertIn("digest mismatch", receipt["error"])
 
 
+    @patch("agentos_node.action_relay._github_run_created_after", return_value=True)
     @patch("agentos_node.action_relay._run")
-    def test_github_actions_dispatch_is_allowlisted_and_uses_gh_without_shell(self, run):
+    def test_github_actions_dispatch_is_allowlisted_and_uses_gh_without_shell(self, run, _created_after):
         from agentos_node.action_relay import _github_actions_dispatch
+        # A workflow run from a past day must never be correlated to a new dispatch.
+        # Use an immediate synthetic run creation date rather than a stale hardcoded 2026 date.
+        observed_at = (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat().replace("+00:00", "Z")
         run.side_effect = [
             {"returncode": 0, "stdout": "", "stderr": ""},
             {"returncode": 0, "stdout": "", "stderr": ""},
-            {"returncode": 0, "stdout": '[{"databaseId":123,"headSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued","conclusion":"","url":"https://github.com/alston-personal/agentmanager/actions/runs/123","createdAt":"2026-10-06T00:00:00Z"}]', "stderr": ""},
+            {"returncode": 0, "stdout": json.dumps([{
+                "databaseId": 123, "headSha": "a" * 40, "status": "queued",
+                "conclusion": "", "url": "https://github.com/alston-personal/agentmanager/actions/runs/123",
+                "createdAt": observed_at,
+            }]), "stderr": ""},
         ]
         result = _github_actions_dispatch({
             "repository": "alston-personal/agentmanager",
