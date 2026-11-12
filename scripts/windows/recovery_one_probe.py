@@ -54,6 +54,13 @@ def bootstrap_url(config):
     return base + "?" + urllib.parse.urlencode({"node_id": config["node_id"]})
 
 
+class NoRecoveryRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward the recovery Bearer token to a redirect destination."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RuntimeError("recovery_redirect_denied")
+
+
 def probe_one(config, *, opener=None, timeout=8):
     """Authenticated ONE bootstrap read; never execute returned instructions."""
     config = validate_config(config)
@@ -66,7 +73,7 @@ def probe_one(config, *, opener=None, timeout=8):
         },
         method="GET",
     )
-    open_fn = opener or urllib.request.urlopen
+    open_fn = opener or urllib.request.build_opener(NoRecoveryRedirect()).open
     with open_fn(req, timeout=timeout) as response:
         if getattr(response, "status", 200) != 200:
             raise RuntimeError("recovery_bootstrap_http_failure")
