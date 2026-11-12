@@ -1,5 +1,5 @@
 name: Main Action Runtime Migration 20261007
-# trigger-v2
+# protected-main post-Gateway OIDC acceptance (Gateway release dd141cc8 verified)
 
 on:
   push:
@@ -48,6 +48,10 @@ jobs:
           set -euo pipefail
           python3 -m py_compile agent_core/executor_job_contract.py agentos_node/executor_job_adapter.py agentos_node/executor_job_action_relay.py agentos_node/deployment_inspect_provider.py
           python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_main_runtime_deploy_routing -v
+          # Realm scheduler OIDC permission must admit ONLY the exact signed
+          # protected-main repair workflow; never broaden to all main workflows.
+          python3 -m pip install --disable-pip-version-check -q pytest
+          python3 -m pytest -q tests/test_realm_scheduler_oidc.py
   migrate:
     needs: [validate]
     if: github.event_name == 'push'
