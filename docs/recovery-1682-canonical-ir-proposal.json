@@ -5,7 +5,7 @@
   "pr_number": 2271,
   "status": "SOURCE_CI_ONLY_NOT_MERGED_NOT_RUNTIME_ACCEPTED",
   "goal": "以 main 為唯一正式主線，將既有 ONE Maintenance 與 Normal/Recovery 雙通道更新、受授權 A/B 回退及跨重啟對帳收斂為同一條可驗收閉環",
-  "next_action": "工程 Intake 正式核准後由現有 ONE Runner Window 派工，在隔離 Windows Node 驗證寫入前授權→本機 LKG 還原→讀回→ONE ROLLBACK_OK 真實 Receipt 的順序；中斷後治理對帳不可自動解鎖。同時實際發布並回讀 Oracle Canonical IR。",
+  "next_action": "經正式工程 Intake 核准後，沿用既有 ONE Maintenance 與 Runner Window 驗證 Windows Recovery 的回滾及驗收兩條流程，均須本機寫入與讀回後才解除 ONE 持久化更新閘門；中斷時凍結並取得正式對帳 Receipt，再發布/讀回 Canonical IR。",
   "pending_tasks": [
     "PR #2271 保持 Draft；審查核心及 Windows 路徑後，核對 main 最新版並決定合併時機",
     "Reuse Before Build：在既有 Maintenance Owner/Runtime 中實作真正的簽章、信任根、時效、防重放、Node/Realm/operation_id 校驗",
@@ -23,7 +23,8 @@
     "按原有治理核對 #1682 Issue Intake：必須由授權者提供 agentos:approved、agentos:engineering 和 Project/Action/Acceptance；Issue 留言與 PR/CI 均不自動構成工程執行權限。",
     "沿用 main 既有 AgentOS Dispatch / Runner Window 並讀回 Oracle ONE 真正的 Canonical IR 世代、CAS receipt、Active Continuation 指標；GitHub 來源連線無 workflow_dispatch 寫入操作，不能以 CI 或 Issue 留言替代。",
     "由 ONE Maintenance 在隔離 Windows Node 故障注入 B 槽損壞與有效 LKG，查證對帳指向授權回滾、實際完成 LKG 恢復與持久化閘門 readback Receipt，對錯誤 operation_id／損壞 LKG 維持 fail-closed。",
-    "既有 ONE Maintenance Owner 要實際提供獨立 authorize_rollback callback，以及對 Windows LKG 寫入／readback 後的 ONE ROLLBACK_OK receipt 核驗；在實機故障注入檢查寫入失敗不得提前解鎖。"
+    "既有 ONE Maintenance Owner 要實際提供獨立 authorize_rollback callback，以及對 Windows LKG 寫入／readback 後的 ONE ROLLBACK_OK receipt 核驗；在實機故障注入檢查寫入失敗不得提前解鎖。",
+    "於隔離 Windows 實機演練 Recovery 驗收寫入失敗／ONE VERIFY 超時，並回讀持久化狀態；既有 ONE Maintenance Owner 必須對回滾與驗收兩類中斷都提供真實授權 Receipt／重新對帳。"
   ],
   "decisions_append": [
     "Normal 與 Recovery 不可同時更新；Recovery 更新前須確認 Normal 能獨立提供救援，且保護原 Recovery LKG",
@@ -43,7 +44,9 @@
     "不得為了觸發 ONE 工作而自行加上 agentos:approved 或變更 production main；GitHub CI 成功、PR mergeable 和 Issue 回報不代表 Runtime/IR 發布或部署授權。",
     "ONE 持久化閘門進入 ROLLBACK_REQUIRED 且 B 槽 Pending 內容損壞、LKG 完整時，Recovery 對帳應回報 AWAITING_AUTHORIZED_ROLLBACK；不要求損壞的候選 B 通過完整性校驗，也絕不將分類視為真正授權。",
     "Recovery revert_pending 必須在真正授權的 authorize_rollback 下先寫入 Windows LKG、回讀完整性後，才能向 ONE durable gate 請求 ROLLBACK_OK；否則磁碟寫入失敗會讓 ONE 提早解鎖。",
-    "Windows 本機已完成 LKG 還原而 ONE gate 仍為 ROLLBACK_REQUIRED 時，對帳列為 GOVERNED_POST_ROLLBACK_RECONCILIATION，維持更新凍結，必須有真實授權/Receipt 才可結案。"
+    "Windows 本機已完成 LKG 還原而 ONE gate 仍為 ROLLBACK_REQUIRED 時，對帳列為 GOVERNED_POST_ROLLBACK_RECONCILIATION，維持更新凍結，必須有真實授權/Receipt 才可結案。",
+    "新版 Recovery B 驗收也須先在 Windows 將 pending 清除、LKG 設為 B 並讀回，最後才呼叫 ONE gate VERIFY 解鎖；寫入失敗不得讓 ONE 提早 IDLE。",
+    "ONE gate 尚為 ACTIVATED 而 Windows 已接受 B 時，必須以 GOVERNED_POST_ACCEPTANCE_RECONCILIATION 凍結後續更新；不可僅依本機狀態宣稱 ONE Receipt 或自行重試 VERIFY。"
   ],
   "evidence": [
     {
