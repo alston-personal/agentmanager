@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 correction to ONE rollback gate completion order (PR #2271 SOURCE ONLY)
+
+Critical source review found `recovery_upgrade_promotion.revert_pending()` invoked `durable_update_gate(context, "ROLLBACK_OK")` **before** persisting the Windows LKG restoration to `slots.json`. A Windows write failure could therefore release ONE's cross-channel update lock before recovery had happened. The existing primitive now requires a separate privileged `authorize_rollback(context)` callback, then commits and reads back the local LKG restoration **before** requesting ONE `ROLLBACK_OK`. If the local write fails the gate is not called; if the later ONE completion fails, the durable stage reservation and ONE gate remain for governed reconciliation. The read-only reconciler now classifies this last state as `GOVERNED_POST_ROLLBACK_RECONCILIATION` rather than a healthy/released operation. Unit tests cover denied authority, write failure, callback ordering, ONE denial and cross-store crash recovery.
+
+This is a source API change requiring the existing ONE Maintenance integrator to implement the separately authorized callback; **no production ONE verifier or Windows rollback Receipt exists**. The PR is Draft, not merged/deployed, and this source change has not completed an actual Oracle Canonical IR CAS.
+
+---
+
 ## 2026-11-12 — #1682 Recovery damaged-pending B rollback reconciliation corrected (PR #2271 SOURCE ONLY)
 
 A concrete live-recovery blocker was found: `scripts/windows/recovery_update_reconcile.py` required `active_integrity_verified` even in ONE's `ROLLBACK_REQUIRED` phase. A damaged pending B image therefore could **never** be classified `AWAITING_AUTHORIZED_ROLLBACK`, despite a verified protected A LKG and matching gate operation. The reconciler now admits the expected pending B / verified LKG case *even when B is corrupt*, and leaves `rollback_authorized=false`, `new_update_permitted=false`, and `one_receipt_attested=false`. Operation mismatch, absent stage/reservation and damaged LKG still fail closed. Added corresponding source regression tests.
