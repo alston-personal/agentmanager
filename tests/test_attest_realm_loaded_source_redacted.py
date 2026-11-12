@@ -17,10 +17,10 @@ class RealmSourceRedactionTests(unittest.TestCase):
         self.assertNotIn("very-secret", repr(result))
 
     def test_bounded_proc_listener_match_never_leaks_argv(self):
-        fixed = b"python3\\0-m\\0agent_core.realm_cli\\0serve\\0--port\\08780\\0"
+        fixed = b"python3\0-m\0agent_core.realm_cli\0serve\0--port\08780\0"
         self.assertTrue(is_realm_8780_command(fixed))
-        self.assertFalse(is_realm_8780_command(b"python3\\0-m\\0some.other.module\\0serve\\08780\\0"))
-        self.assertFalse(is_realm_8780_command(b"python3\\0-m\\0agent_core.realm_cli\\0serve\\09999\\0"))
+        self.assertFalse(is_realm_8780_command(b"python3\0-m\0some.other.module\0serve\08780\0"))
+        self.assertFalse(is_realm_8780_command(b"python3\0-m\0agent_core.realm_cli\0serve\09999\0"))
 
     def test_file_digest_does_not_disclose_content(self):
         with TemporaryDirectory() as root:
