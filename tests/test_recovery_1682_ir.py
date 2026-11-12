@@ -83,7 +83,7 @@ class RecoveryCanonicalIRTests(unittest.TestCase):
         }
         with patch.object(sys, "argv", argv), \
              patch("agent_core.canonical_ir_handoff.advance_canonical_ir",
-                   return_value={"ok": True, "publish_receipt": {"ok": True}}), \
+                   return_value={"ok": True, "publish_receipt": {"ok": True}}) as publisher, \
              patch("agent_core.resolve_facade.resolve_continuation",
                    return_value=verified), \
              patch("agent_core.active_continuation.read_active_continuation",
@@ -95,6 +95,8 @@ class RecoveryCanonicalIRTests(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 module.main()
         result = json.loads(buf.getvalue())
+        self.assertTrue(publisher.call_args.args[0]["execution_metadata"]["ir_published"])
+        self.assertFalse(publisher.call_args.args[0]["execution_metadata"]["runtime_accepted"])
         self.assertTrue(result["canonical_ir_readback_verified"])
         self.assertFalse(result["active_selector_matches_new_ir"])
         self.assertTrue(result["active_selector_requires_reconciliation"])
