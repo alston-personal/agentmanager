@@ -96,8 +96,9 @@ class ActionRelayTests(unittest.TestCase):
         self.assertIn("digest mismatch", receipt["error"])
 
 
+    @patch("agentos_node.action_relay._github_run_created_after", return_value=True)
     @patch("agentos_node.action_relay._run")
-    def test_github_actions_dispatch_is_allowlisted_and_uses_gh_without_shell(self, run):
+    def test_github_actions_dispatch_is_allowlisted_and_uses_gh_without_shell(self, run, _created_after):
         from agentos_node.action_relay import _github_actions_dispatch
         # A workflow run from a past day must never be correlated to a new dispatch.
         # Use an immediate synthetic run creation date rather than a stale hardcoded 2026 date.

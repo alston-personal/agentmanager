@@ -1685,6 +1685,29 @@ failed jobs, verify Oracle's loaded runtime, or deliver the final six-second
 spoken IFTV leopard-cat outro. Existing ONE/Supervisor approval and original
 IFTV #3 receipt/QA requirements remain unchanged.
 
+### Governed automatic H3 smoke dispatch (source-only)
+
+The fixed `media.colab.h3.smoke` executor-job route reuses the existing Ubuntu
+Action Relay to dispatch only `oracle-colab-minimax-h3-smoke.yml` on `main`,
+with no caller-supplied inputs. The provider fails closed on GitHub read errors
+and suppresses another GPU dispatch whenever a workflow-dispatch run less than
+24 hours old already exists. A workflow dispatch or successful Actions run is
+only an intermediate acknowledgement: the job remains pending until the
+separate media-generation receipt proves the requested output.
+The provider therefore reports `ACK_ONLY` for a correlated workflow run and
+never promotes that transport acknowledgement to terminal media success.
+The convergence change also restores the relay's bounded dispatch function body
+where the action registry already referenced it, keeping import and execution
+behavior aligned with the allowlist contract.
+The same source repair restores the pre-existing Realm deployment-fence
+definitions referenced by the relay registry; it does not claim a deployment,
+lease acquisition, service restart, or Oracle runtime readback.
+
+This is source-level convergence only. It does not attest that Oracle has loaded
+the provider, that ONE delivered the job, that a GPU run occurred, or that the
+final H3 media was accepted. Those require independent runtime deployment,
+executor acknowledgement, and media receipt evidence.
+
 ## 2026-11-11 — #1682 protected-main Version Convergence source-event contract
 
 Existing PR #2269 owns the separate pre-resume stale-work safety gate; do not duplicate its `branch_resume_guard.py` or `ControllerService` integration. Draft PR #2271 adds a **source event only** after trusted protected-main push: `.github/workflows/version-convergence-signal-contract.yml` uses the existing GitHub Actions transport to record exact main/previous SHA, changed paths, affected source domains and deterministic event ID in a 30-day JSON artifact. `scripts/version_convergence_signal.py` validates event/ack schema and makes statuses `NOTIFIED`, `SOURCE_CONVERGED`, `RUNTIME_DEPLOYED`, `TASK_RESUMED`, and `BLOCKED` distinct. The unit tests reject forged event IDs, dirty-worktree-reset claims and notifications masquerading as actual deployed runtime. It does NOT connect ONE fanout or authenticate ack issuers. No Executor received an event by virtue of a CI artifact, no scheduler/daemon added, and no runtime deployment is claimed.
