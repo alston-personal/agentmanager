@@ -42,6 +42,7 @@ try {
       throw 'RECOVERY_RUNTIME_ARCHIVE_ENTRY_LIMIT'
     }
     $totalSize=[long]0
+    $seenNames=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach($entry in $zip.Entries) {
       $totalSize += [long]$entry.Length
       if($totalSize -gt 268435456) {
@@ -55,6 +56,11 @@ try {
          $name.EndsWith('.ps1') -or $name.EndsWith('.cmd') -or
          $name.EndsWith('.bat') -or $name.EndsWith('.exe.manifest')) {
         throw 'RECOVERY_RUNTIME_ARCHIVE_UNSAFE_ENTRY'
+      }
+      # NTFS is normally case-insensitive; two entries that differ only by
+      # case could cause extraction to overwrite a previously inspected file.
+      if(-not $seenNames.Add($name)) {
+        throw 'RECOVERY_RUNTIME_ARCHIVE_DUPLICATE_ENTRY'
       }
       $mode=([int]$entry.ExternalAttributes -shr 16) -band 0xF000
       if($mode -eq 0xA000) {
