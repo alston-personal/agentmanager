@@ -1581,9 +1581,6 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
             _deployment_guard.close()
 
 
-.close()
-
-
 # realm_fabric_service_attestation_v1
 def _inspect_realm_fabric_service(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({},):
