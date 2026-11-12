@@ -167,3 +167,10 @@ A healthy normal channel is a prerequisite for rescue-channel upgrade, but it is
 Simultaneous update requests; interrupted normal update; rescue update with unhealthy normal channel; rescue update with malformed artifact; rescue candidate starts but cannot authenticate ONE; rescue update loses power before/after activation; normal channel drops unexpectedly during rescue update; rescue rollback with revoked old image; recovery lease expiry and reboot; receipt loss and idempotent reconcile. Every state must result in verified active channel(s), a persisted pending recovery action or explicit HUMAN_REQUIRED; never silently report success.
 
 Implementation status: this is a stronger integration contract for existing #2271 and AgentOS maintenance/release owners, not a deployed dual-channel updater or successful live recovery receipt.
+
+
+## Existing Maintenance scheduler lock integration (2026-11-12)
+
+The existing `agentos_node/bootstrap_scheduler.py` maintenance policies for `ACTION_NODE_TRANSACTIONAL_OTA`, `ACTION_REPAIR_TRANSPORT`, and `ACTION_RUNTIME_CONVERGE` now share the `node-communication-update` host process mutex, alongside their preexisting resource locks. Read-only OTA/node inspections and fast status controls do not take the update mutex. The current scheduler sorts lock names before acquiring them, avoiding ordering deadlocks. The queue-TTL test suite covers the shared mutex and read-only noninterference.
+
+This is a **short-lived host-level process lock only**; it releases when the worker crashes. The `DurableChannelUpdateStore` state/transaction log is separate and presently not invoked from the actual executor or installer. Before permitting a real channel switch, the authorized update owner must reconcile its durable Participant state and reject stale/pending/failed updates, then use the independent verified fallback and post-switch ONE Receipt. A one-node bootstrap mutex cannot itself enforce a cross-realm, cross-host or long-running reboot-proof update barrier. No production rescue lane/dual-slot mechanism is claimed.
