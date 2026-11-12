@@ -5,7 +5,7 @@
   "pr_number": 2271,
   "status": "SOURCE_CI_ONLY_NOT_MERGED_NOT_RUNTIME_ACCEPTED",
   "goal": "以 main 為唯一正式主線，將既有 ONE Maintenance 與 Normal/Recovery 雙通道更新、受授權 A/B 回退及跨重啟對帳收斂為同一條可驗收閉環",
-  "next_action": "由正式 ONE Maintenance Owner 與隔離 Windows Node 執行 Recovery 保留執行器驗收：先讀回現有 Scheduled Task，再測 Normal Python 更新／失效，確認 Recovery 原 Python 仍可聯絡 ONE；完成回滾及 Canonical IR CAS 真實 Receipt。",
+  "next_action": "優先取得可信 Recovery embeddable Python 套件的發行者與雜湊證據，在隔離 Windows Node 執行受控首次安裝及 Normal Python 故障測試；再由原有 ONE Maintenance Owner 實作正式授權回滾、Receipt 與 Canonical IR CAS 寫入讀回。",
   "pending_tasks": [
     "PR #2271 保持 Draft；審查核心及 Windows 路徑後，核對 main 最新版並決定合併時機",
     "Reuse Before Build：在既有 Maintenance Owner/Runtime 中實作真正的簽章、信任根、時效、防重放、Node/Realm/operation_id 校驗",
@@ -17,7 +17,8 @@
     "驗證 Windows 正式排程在 B 槽損壞時仍可使用 LKG 唯讀診斷聯絡 ONE，並確認最新回應與壞槽狀態分開紀錄；再透過正式 ONE Maintenance 執行授權回滾並取得 Receipt",
     "正式 Windows Node 回讀 Recovery Scheduled Task 的執行路徑、參數、觸發器與實際 Python 版本；驗證一般 Normal 升級前後完全一致，並測試 Normal Python 不可用時 Recovery 是否真能單獨存活。",
     "在隔離 Windows Node 進行 Normal Python 更換/失效演練，確認既有 Recovery 排程與安裝器驗證使用同一保留的 Python；讀回 Action、Arguments、Triggers 與 ONE 探測結果，取得獨立受授權 Receipt。",
-    "在隔離 Windows Node 實測 LKG 診斷的健康回應、空回應、過期結果與無網路；回讀 Windows Status、ONE 端收據，確保來源程式可判別診斷與正式回滾。"
+    "在隔離 Windows Node 實測 LKG 診斷的健康回應、空回應、過期結果與無網路；回讀 Windows Status、ONE 端收據，確保來源程式可判別診斷與正式回滾。",
+    "由受授權 ONE/Windows 測試節點提供可信來源與已核對發行者的 CPython embeddable ZIP 及 SHA-256，驗證 Recovery 私有 interpreter 安裝、Runtime prefix 自包含、正常通道 Python 故障後獨立聯絡 ONE，並取得實際 Receipt；既有共用 Python 節點不得藉 Normal 重裝自動遷移。"
   ],
   "decisions_append": [
     "Normal 與 Recovery 不可同時更新；Recovery 更新前須確認 Normal 能獨立提供救援，且保護原 Recovery LKG",
@@ -30,7 +31,8 @@
     "待驗證 B 槽損壞時，獨立 Recovery 排程可使用通過 SHA-256 的受保護 LKG 只讀聯絡 ONE，但必須保留原始 active/pending/LKG 與持久化閘門，不得聲稱完成回滾、更新授權或 ONE Receipt",
     "正常 Thin Client 重裝必須保留已存在 Recovery Scheduled Task 的 Python 執行器、啟動參數與觸發設定；未知或遭修改的任務需 fail-closed，不可由一般安裝 -Force 覆蓋。",
     "Recovery 重裝驗證必須使用現有 Windows Scheduled Task 已註冊且驗證過的 Python 執行檔，不得先以新版 Normal Python 測試 Recovery，再宣稱既有 Recovery 健康。",
-    "LKG 救援診斷不得只憑 Python 子程序退出碼=0 宣稱 ONE 通訊成功；必須清除舊結果、讀回本次新生成的正確 Recovery Probe 結果，且不可帶有更新授權或 Receipt。"
+    "LKG 救援診斷不得只憑 Python 子程序退出碼=0 宣稱 ONE 通訊成功；必須清除舊結果、讀回本次新生成的正確 Recovery Probe 結果，且不可帶有更新授權或 Receipt。",
+    "Recovery 專用 Python 首裝可由事先核准的 Windows embeddable CPython 離線 ZIP 與可信 SHA-256 驗證安裝至 recovery/python-runtime；禁止 Normal 重裝自動下載、覆蓋或重綁；僅 SHA-256 防修改，不代替發行者簽章與授權。"
   ],
   "evidence": [
     {
@@ -52,6 +54,8 @@
     "source": "recovery_1682_handoff_proposal",
     "runtime_accepted": false,
     "recovery_live_receipt": false,
-    "ir_published": false
+    "ir_published": false,
+    "recovery_dedicated_interpreter_live_verified": false,
+    "recovery_runtime_provisioner_source_only": true
   }
 }
