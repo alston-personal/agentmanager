@@ -354,6 +354,14 @@ class DurableChannelUpdateStore:
                 "participant_id TEXT PRIMARY KEY, generation INTEGER NOT NULL,"
                 "state_json TEXT NOT NULL)"
             )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS dual_channel_update_audit ("
+                "participant_id TEXT NOT NULL, generation INTEGER NOT NULL,"
+                "operation_id TEXT NOT NULL, lane TEXT NOT NULL,"
+                "stage TEXT NOT NULL, from_phase TEXT NOT NULL,"
+                "to_phase TEXT NOT NULL, recorded_at TEXT NOT NULL,"
+                "PRIMARY KEY(participant_id,generation))"
+            )
 
     def _connect(self):
         conn = sqlite3.connect(self.database_path, timeout=30.0, isolation_level=None)
@@ -394,6 +402,22 @@ class DurableChannelUpdateStore:
                 conn.execute("ROLLBACK")
                 raise
 
+    def history(self, *, participant_id):
+        """Return committed transitions, never raw credentials or unchecked proofs."""
+        participant_id = self._participant(participant_id)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT generation, operation_id, lane, stage, from_phase,"
+                " to_phase, recorded_at FROM dual_channel_update_audit"
+                " WHERE participant_id=? ORDER BY generation",
+                (participant_id,),
+            ).fetchall()
+        return [
+            dict(zip(("generation", "operation_id", "lane", "stage",
+                      "from_phase", "to_phase", "recorded_at"), row))
+            for row in rows
+        ]
+
     def transition(self, *, participant_id, stage, lane, operation_id,
                    expected_generation, observed=None):
         participant_id = self._participant(participant_id)
@@ -414,6 +438,14 @@ class DurableChannelUpdateStore:
                 )
                 if conn.execute("SELECT changes()").fetchone()[0] != 1:
                     raise ValueError("stale_channel_generation")
+                conn.execute(
+                    "INSERT INTO dual_channel_update_audit "
+                    "(participant_id,generation,operation_id,lane,stage,"
+                    "from_phase,to_phase,recorded_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (participant_id, updated["generation"], operation_id, lane,
+                     stage, state["phase"], updated["phase"],
+                     datetime.now(timezone.utc).isoformat()),
+                )
                 conn.execute("COMMIT")
                 return updated
             except BaseException:
