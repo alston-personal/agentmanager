@@ -199,28 +199,34 @@ function Install-Supervisor([string]$PythonPath, [string]$RuntimeRoot) {
 
 
 function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
-  # This probe is installed outside the versioned normal runtime; a routine
-  # reinstallation must never overwrite the independent rescue candidate.
-  $source = Join-Path $RuntimeRoot 'scripts\\windows\\recovery_one_probe.py'
-  if(-not (Test-Path -LiteralPath $source)){
-    throw "Recovery probe missing from canonical pinned install: $source"
+  # The normal installer can only BOOTSTRAP recovery; it cannot modify an
+  # existing A/B launcher, active slot, protected LKG, or candidate slot.
+  $source = Join-Path $RuntimeRoot 'scripts\windows\recovery_one_probe.py'
+  $runnerSource = Join-Path $RuntimeRoot 'scripts\windows\recovery_slot_runner.py'
+  if(-not (Test-Path -LiteralPath $source) -or -not (Test-Path -LiteralPath $runnerSource)){
+    throw 'Pinned independent Recovery probe/launcher missing from canonical install'
   }
   $recoveryRoot = Join-Path $InstallRoot 'recovery'
-  $probeFile = Join-Path $recoveryRoot 'recovery_one_probe.py'
+  $runner = Join-Path $recoveryRoot 'recovery_slot_runner.py'
+  $legacyProbe = Join-Path $recoveryRoot 'recovery_one_probe.py'
   $statusFile = Join-Path $recoveryRoot 'status.json'
-  $configFile = Join-Path $InstallRoot 'state\\client.json'
+  $configFile = Join-Path $InstallRoot 'state\client.json'
   New-Item -ItemType Directory -Force -Path $recoveryRoot | Out-Null
-  if(-not (Test-Path -LiteralPath $probeFile)){
-    Copy-Item -LiteralPath $source -Destination $probeFile -ErrorAction Stop
+  if(-not (Test-Path -LiteralPath $runner)){
+    Copy-Item -LiteralPath $runnerSource -Destination $runner -ErrorAction Stop
   } else {
-    Write-Host 'Existing Recovery probe retained; normal install cannot upgrade it.'
+    Write-Host 'Existing Recovery launcher retained; normal install cannot upgrade it.'
   }
   if(-not (Test-Path -LiteralPath $configFile)){
     throw 'Recovery probe requires completed Node enrollment'
   }
-  # A successful unauthenticated health endpoint is insufficient: the probe
-  # must demonstrate an authenticated ONE bootstrap round-trip.
-  & $PythonPath $probeFile --config $configFile --status $statusFile
+  # Migrate a pre-existing single-file rescue probe without replacing its bytes.
+  $bootstrapSource = if(Test-Path -LiteralPath $legacyProbe){ $legacyProbe }else{ $source }
+  & $PythonPath -I $runner --root $recoveryRoot --bootstrap-from $bootstrapSource
+  if($LASTEXITCODE -ne 0){ throw 'Recovery A/B bootstrap refused; retained old rescue state.' }
+  # A successful unauthenticated health check is insufficient. The independent
+  # slot must itself perform authenticated ONE Bootstrap before scheduling.
+  & $PythonPath -I $runner --root $recoveryRoot --config $configFile --status $statusFile
   if($LASTEXITCODE -ne 0){
     throw 'Independent read-only Recovery ONE probe failed; no healthy recovery claimed.'
   }
@@ -231,13 +237,13 @@ function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
     throw 'Recovery probe result is not valid'
   }
   $recoveryTaskName = 'AgentOS Recovery ONE Probe'
-  $probeArgs = '"' + $probeFile + '" --config "' + $configFile + '" --status "' + $statusFile + '"'
+  $probeArgs = '-I "' + $runner + '" --root "' + $recoveryRoot + '" --config "' + $configFile + '" --status "' + $statusFile + '"'
   $action = New-ScheduledTaskAction -Execute $PythonPath -Argument $probeArgs -WorkingDirectory $recoveryRoot
   $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
   $periodic = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
-  Register-ScheduledTask -TaskName $recoveryTaskName -Action $action -Trigger @($logon,$periodic) -Settings $settings -Description 'Read-only independent ONE recovery communication probe; no update authority' -Force | Out-Null
-  Write-Host 'Read-only Recovery ONE probe verified and separately scheduled.'
+  Register-ScheduledTask -TaskName $recoveryTaskName -Action $action -Trigger @($logon,$periodic) -Settings $settings -Description 'Read-only independent ONE recovery A/B communication probe; no update authority' -Force | Out-Null
+  Write-Host 'Read-only Recovery A/B ONE probe verified and separately scheduled.'
 }
 
 try {
