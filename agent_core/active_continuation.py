@@ -170,6 +170,14 @@ def activate_continuation(
                 )
                 if observed != expected_previous:
                     raise ValueError("active_continuation_selector_cas_conflict")
+                # The canonical generation may have moved after the initial
+                # pre-lock validation. Revalidate under the selector lock,
+                # so an IR overwrite cannot leave a newly stale pointer.
+                _, locked_index, locked_ir = _current_generation(
+                    project_id, data_root=root
+                )
+                if (locked_index, locked_ir) != (index_id, ir_id):
+                    raise ValueError("canonical_ir_changed_during_selector_cas")
             fd, raw = tempfile.mkstemp(prefix=".active-continuation.", suffix=".tmp", dir=str(runtime))
             tmp = Path(raw)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
