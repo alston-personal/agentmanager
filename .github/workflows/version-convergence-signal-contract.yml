@@ -13,6 +13,8 @@ on:
       - 'scripts/windows/recovery_slot_runner.py'
       - 'scripts/windows/recovery_upgrade_stage.py'
       - 'scripts/windows/recovery_upgrade_promotion.py'
+      - 'scripts/windows/recovery_update_reconcile.py'
+      - 'tests/test_recovery_update_reconcile.py'
       - 'tests/test_recovery_upgrade_promotion.py'
       - 'tests/test_recovery_upgrade_stage.py'
       - 'tests/test_recovery_slot_runner.py'
@@ -61,6 +63,8 @@ jobs:
         run: python3 -m unittest tests.test_recovery_upgrade_stage -v
       - name: Test host-gated Recovery activation, acceptance and rollback
         run: python3 -m unittest tests.test_recovery_upgrade_promotion -v
+      - name: Test crash reconciliation across Recovery slots and ONE update state
+        run: python3 -m unittest tests.test_recovery_update_reconcile -v
       - name: Produce protected main source event (not an Executor delivery)
         if: github.event_name == 'push'
         shell: bash
