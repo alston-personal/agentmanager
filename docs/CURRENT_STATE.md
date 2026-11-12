@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 Recovery interpreter readback and probe binding fix (PR #2271; source only)
+
+Further review found normal reinstall preserved the existing Recovery task's Python executable **but** ran Recovery bootstrap and live ONE probes with the new Normal Python before reading the task action. The installer now validates the existing Recovery Scheduled Task first and uses that **actual preserved interpreter** for bootstrap/readiness; only an initial installation uses the freshly discovered Python. No existing task is rewritten. Contract tests guard ordering, interpreter selection and no Normal-Python probe.
+
+This prevents a misleading check with the wrong interpreter. It does NOT provision or demonstrate a fully independent Python runtime, recover from a missing interpreter, or produce a Windows ONE Receipt; actual Canonical IR remains uncommitted in Oracle. PR #2271 Draft/unmerged/uninstalled.
+
+---
+
 ## 2026-11-12 — #1682 Recovery scheduled task retention across Normal reinstall (#2271 source only)
 
 Source review found canonical `install-agentos.ps1` used `Register-ScheduledTask ... -Force` during **every** Normal reinstall, re-binding Recovery to the Normal install's then-current `$PythonPath` even though Recovery source/slot bytes were preserved. Reinstall now detects an existing `AgentOS Recovery ONE Probe` task, validates its recognized launcher path, root/config/status arguments and existing executable, and **preserves its original action and schedule** instead of recreating it. An unknown/missing interpreter/task action fails closed rather than silently replacing a protected task. First enrollment still creates its read-only probe task and includes LKG diagnosis on corrupt pending B.
