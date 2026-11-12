@@ -44,6 +44,40 @@ _GITHUB_HEALTH_CARRIER_WORKFLOW_REF = os.environ.get('GITHUB_HEALTH_CARRIER_WORK
 # Exact one-project main carrier; keep ordinary main workflows unauthorized.
 _GITHUB_VISION_STUDIO_REF = _DEFAULT_TARGET_REF
 _GITHUB_VISION_STUDIO_WORKFLOW_REF = f'alston-personal/agentmanager/.github/workflows/vision-studio-rain-exit.yml@{_DEFAULT_TARGET_REF}'
+# This main-only Runtime Repair workflow is a different authority from the
+# legacy integration scheduler. Give it NO generic Runner Window powers.
+_GITHUB_MAIN_RUNTIME_REPAIR_REF = _DEFAULT_TARGET_REF
+_GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF = (
+    'alston-personal/agentmanager/.github/workflows/'
+    f'main-action-runtime-migration-20261007.yml@{_DEFAULT_TARGET_REF}'
+)
+
+
+def _is_main_runtime_repair_claims(claims: dict[str, Any] | None) -> bool:
+    return (
+        isinstance(claims, dict)
+        and claims.get('ref') == _GITHUB_MAIN_RUNTIME_REPAIR_REF
+        and claims.get('workflow_ref') == _GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF
+        and claims.get('event_name') == 'push'
+    )
+
+
+def _validate_main_runtime_repair_intent(
+    claims: dict[str, Any] | None, body: dict[str, Any]
+) -> None:
+    if not _is_main_runtime_repair_claims(claims):
+        return
+    if (
+        set(body) != {'schema', 'capability', 'operation', 'source_commit', 'payload'}
+        or body.get('schema') != 'agentos.runner-window-dispatch/v1'
+        or body.get('capability') != 'agentos.runtime'
+        or body.get('operation') != 'repair'
+        or body.get('payload') != {}
+        or body.get('source_commit') != claims.get('sha')
+    ):
+        raise PermissionError('main runtime repair carrier may dispatch only its exact source repair')
+
+
 _GITHUB_JWKS_CACHE: dict[str, Any] = {'expires_at': 0.0, 'keys': {}}
 _GITHUB_JWKS_LOCK = threading.Lock()
 _SHA256_DIGEST_INFO_PREFIX = bytes.fromhex('3031300d060960864801650304020105000420')
@@ -124,7 +158,12 @@ def _validate_github_scheduler_claims(payload: dict[str, Any]) -> None:
         and workflow_ref == _GITHUB_VISION_STUDIO_WORKFLOW_REF
         and str(payload.get('event_name') or '') == 'push'
     )
-    if not (canonical_ref or health_carrier or vision_studio_carrier):
+    main_runtime_repair_carrier = (
+        ref == _GITHUB_MAIN_RUNTIME_REPAIR_REF
+        and workflow_ref == _GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF
+        and str(payload.get('event_name') or '') == 'push'
+    )
+    if not (canonical_ref or health_carrier or vision_studio_carrier or main_runtime_repair_carrier):
         raise PermissionError('github oidc ref invalid')
     event_name = str(payload.get('event_name') or '')
     allowed_events = {'push', 'workflow_dispatch', 'schedule'}
@@ -1040,6 +1079,8 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 self._send(200, {'ok': True, 'node_map': self.controller.nodes()})
                 return
             if parsed.path == '/v1/dispatch':
+                # The signed main Runtime Repair workflow may inspect the
+                # catalogue, but it has only one valid mutation in POST below.
                 self._authorize_scheduler()
                 self._send(200, {
                     'ok': True,
@@ -1050,8 +1091,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 return
             dispatch_request_prefix = '/v1/dispatch/requests/'
             if parsed.path.startswith(dispatch_request_prefix):
-                self._authorize_scheduler()
+                scheduler_claims = self._authorize_scheduler()
                 request_id = parsed.path.removeprefix(dispatch_request_prefix).strip('/')
+                if _is_main_runtime_repair_claims(scheduler_claims):
+                    # Never allow the limited runtime carrier to enumerate
+                    # unrelated product/employee receipts.
+                    if not re.fullmatch(r'agentos[.]transport[.]repair-[0-9]{9,12}-[0-9a-f]{8}', request_id):
+                        raise PermissionError('runtime repair carrier receipt scope invalid')
                 if not request_id or '/' in request_id:
                     raise KeyError(parsed.path)
                 self._send(200, self._runner_window_status(request_id))
@@ -1181,6 +1227,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == '/v1/dispatch':
                 scheduler_claims = self._authorize_scheduler()
                 dispatch_body = self._json_body()
+                _validate_main_runtime_repair_intent(scheduler_claims, dispatch_body)
                 if scheduler_claims is not None:
                     requested_commit = str(dispatch_body.get('source_commit') or '')
                     if requested_commit != str(scheduler_claims.get('sha') or ''):
