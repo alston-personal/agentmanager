@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 from typing import Any, Mapping
 
@@ -23,7 +24,9 @@ EXECUTOR_CLASS = "layoutlib-production-promoter"
 RELEASE = "v0.7.9"
 MATERIALIZED_ROOT = Path("/home/ubuntu/agent-data/releases/layoutlib") / RELEASE
 CURRENT_FILE = MATERIALIZED_ROOT / "current.json"
-PRODUCTION_TARGET = Path("/home/ubuntu/zeus-writer/website/dist/layout-lab")
+PRODUCTION_TARGET = Path("/home/ubuntu/studio-web/dist/layout-lab")
+STUDIO_ROOT_MARKER = PRODUCTION_TARGET.parent / ".well-known/studio-root-authority.txt"
+STUDIO_ROOT_IDENTITY = "studio-web-production-root/v1"
 BACKUP_ROOT = Path("/home/ubuntu/agent-data/runtime/backups/layoutlib-production")
 HTML_SOURCE = "layoutlab_v0_5.html"
 HTML_TARGET = "index.html"
@@ -134,6 +137,23 @@ def run_layoutlib_production_promote(
         return _failure("LAYOUTLIB_PRODUCTION_TARGET_INVALID", layoutlib_release=RELEASE)
     if dest.exists() and not dest.is_dir():
         return _failure("LAYOUTLIB_PRODUCTION_TARGET_INVALID", layoutlib_release=RELEASE)
+
+    # The production promoter must not silently write into an unserved new root.
+    # Unit tests with isolated injected targets retain their existing contract.
+    if dest == PRODUCTION_TARGET:
+        try:
+            if STUDIO_ROOT_MARKER.read_text(encoding="utf-8").strip() != STUDIO_ROOT_IDENTITY:
+                return _failure("LAYOUTLIB_PRODUCTION_STUDIO_ROOT_NOT_ACTIVE")
+            observation = subprocess.run(
+                ["/usr/bin/curl", "--silent", "--show-error", "--fail", "--max-time", "8",
+                 "--resolve", "studio.milkcat.org:443:127.0.0.1",
+                 "https://studio.milkcat.org/.well-known/studio-root-authority.txt"],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            if observation.returncode or observation.stdout.strip() != STUDIO_ROOT_IDENTITY:
+                return _failure("LAYOUTLIB_PRODUCTION_STUDIO_ROOT_NOT_ACTIVE")
+        except (OSError, UnicodeError, subprocess.TimeoutExpired):
+            return _failure("LAYOUTLIB_PRODUCTION_STUDIO_ROOT_NOT_ACTIVE")
 
     backups = Path(backup_root)
     backups.mkdir(parents=True, exist_ok=True)
