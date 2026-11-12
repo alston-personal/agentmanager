@@ -99,7 +99,7 @@ class RecoveryStagingTests(unittest.TestCase):
         (self.root / "slot-A" / "recovery_one_probe.py").write_text("corrupted")
         with self.assertRaisesRegex(ValueError, "active_recovery_slot_unhealthy"):
             self.call()
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(ValueError):
             self.call(authority=None)
         # Explicit invalid verifier always fails before any candidate write.
         self.assertEqual(slot.load_state(self.root), self.old_state)
