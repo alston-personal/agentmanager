@@ -225,6 +225,110 @@ def gate_adapter_install(*, plan, attestation, recovery):
     }
 
 
+
+# Deterministic update ordering guard. Durable locking, source attestation, and
+# activation are ONLY performed by the independently authorized ONE runtime.
+CHANNEL_STATE = "agentos.dual-channel-update-state/v1"
+CHANNELS = frozenset({"normal", "recovery"})
+PHASES = frozenset({"IDLE", "STAGED", "ACTIVATED", "ROLLBACK_REQUIRED", "HUMAN_REQUIRED"})
+STAGES = frozenset({"BEGIN", "STAGED", "ACTIVATE", "VERIFY", "FAIL", "ROLLBACK_OK", "ROLLBACK_FAILED"})
+
+
+def initial_channel_state(*, generation=0):
+    if type(generation) is not int or generation < 0:
+        raise ValueError("invalid_channel_generation")
+    return {"schema": CHANNEL_STATE, "generation": generation,
+            "active_lane": None, "phase": "IDLE", "operation_id": None,
+            "last_verified_lane": None}
+
+
+def reconcile_channel_update(*, state, stage, lane, operation_id, observed=None,
+                             expected_generation):
+    """Pure compare-and-swap transition for a single Participant.
+
+    Observations are verified booleans provided by the host; this cannot
+    authenticate observers, persist locks, restart a service or install code.
+    """
+    if not isinstance(state, dict) or set(state) != {
+            "schema", "generation", "active_lane", "phase", "operation_id",
+            "last_verified_lane"} or state.get("schema") != CHANNEL_STATE:
+        raise ValueError("invalid_channel_state")
+    if (type(state["generation"]) is not int or state["generation"] < 0
+            or type(expected_generation) is not int
+            or expected_generation != state["generation"]):
+        raise ValueError("stale_channel_generation")
+    if state["phase"] not in PHASES or stage not in STAGES or lane not in CHANNELS:
+        raise ValueError("invalid_channel_transition")
+    if (not isinstance(operation_id, str) or not ID.fullmatch(operation_id)):
+        raise ValueError("invalid_channel_operation")
+    if stage == "BEGIN":
+        if state["phase"] != "IDLE" or state["active_lane"] is not None:
+            raise ValueError("channel_update_busy")
+        if not isinstance(observed, dict):
+            raise ValueError("missing_channel_observations")
+        # Updating normal requires a working independent rescue path.
+        # Updating recovery requires both a working normal path AND a
+        # protected previous rescue image throughout the switch.
+        required = (
+            ("recovery_one_handshake", "recovery_signed_manifest",
+             "recovery_rollback_ready")
+            if lane == "normal" else
+            ("normal_one_handshake", "normal_recovery_download",
+             "protected_recovery_slot_ready")
+        )
+        if any(observed.get(k) is not True for k in required):
+            raise ValueError("fallback_lane_not_verified")
+        return {**state, "generation": state["generation"] + 1,
+                "active_lane": lane, "phase": "STAGED",
+                "operation_id": operation_id}
+    if state["active_lane"] != lane or state["operation_id"] != operation_id:
+        raise ValueError("channel_operation_mismatch")
+    phase = state["phase"]
+    if stage == "STAGED":
+        if phase != "STAGED" or not isinstance(observed, dict) or (
+            observed.get("preflight_passed") is not True
+            or observed.get("fallback_still_healthy") is not True):
+            raise ValueError("channel_preflight_not_proven")
+        # Stage confirmation does not give activation authority.
+        return {**state, "generation": state["generation"] + 1}
+    if stage == "ACTIVATE":
+        if phase != "STAGED" or not isinstance(observed, dict) or (
+            observed.get("preflight_passed") is not True
+            or observed.get("fallback_still_healthy") is not True
+            or observed.get("activation_separately_authorized") is not True):
+            raise ValueError("activation_not_authorized_or_safe")
+        return {**state, "generation": state["generation"] + 1,
+                "phase": "ACTIVATED"}
+    if stage == "VERIFY":
+        if phase != "ACTIVATED" or not isinstance(observed, dict) or (
+            observed.get("updated_lane_one_handshake") is not True
+            or observed.get("updated_lane_signed_manifest") is not True
+            or observed.get("fallback_still_healthy") is not True
+            or observed.get("one_receipt_attested") is not True):
+            raise ValueError("post_update_health_not_proven")
+        return {**state, "generation": state["generation"] + 1,
+                "phase": "IDLE", "active_lane": None, "operation_id": None,
+                "last_verified_lane": lane}
+    if stage == "FAIL":
+        if phase not in ("STAGED", "ACTIVATED"):
+            raise ValueError("invalid_failure_transition")
+        return {**state, "generation": state["generation"] + 1,
+                "phase": "ROLLBACK_REQUIRED"}
+    if stage == "ROLLBACK_OK":
+        if phase != "ROLLBACK_REQUIRED" or not isinstance(observed, dict) or (
+            observed.get("fallback_still_healthy") is not True
+            or observed.get("restored_lane_one_handshake") is not True
+            or observed.get("one_rollback_receipt_attested") is not True):
+            raise ValueError("rollback_not_verified")
+        return {**state, "generation": state["generation"] + 1,
+                "phase": "IDLE", "active_lane": None, "operation_id": None}
+    if stage == "ROLLBACK_FAILED":
+        if phase != "ROLLBACK_REQUIRED":
+            raise ValueError("invalid_rollback_failure")
+        return {**state, "generation": state["generation"] + 1,
+                "phase": "HUMAN_REQUIRED"}
+    raise ValueError("channel_update_blocked")
+
 def main():
     parser=argparse.ArgumentParser()
     for name in ("main-sha","previous-sha","paths-file","published-at","output"):
