@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 LKG Recovery ONE diagnostic without bypassing rollback authority (PR #2271 SOURCE ONLY)
+
+The previous scheduled Recovery probe failed closed when a pending B slot image was corrupt, correctly preserving ONE authority but losing **all Recovery-to-ONE probe liveness** even if protected A remained healthy. The existing `recovery_slot_runner.py` now provides an explicit `--diagnose-lkg-when-pending-corrupt` mode, wired into the canonical `install-agentos.ps1` scheduled Recovery task. On corrupt pending B with SHA-256 verified protected LKG, it can run the read-only A probe against ONE and record `lkg-diagnostic.json` / `lkg-rescue-diagnostic.json`, while **keeping the primary active status unsuccessful and leaving `slots.json`, pending operation and LKG completely unchanged**. A passing LKG probe never means a rollback, active Recovery recovery, authorized update or ONE Receipt. Corrupt LKG/other invalid states still fail closed. Tests verify successful and failed isolated diagnostics, no A/B state mutation and no false rollback/receipt.
+
+The existing ONE Maintenance Owner must still implement trusted staged package authorization, durable interlock transitions, protected A/B rollback and real Windows/ONE readback receipts. Canonical IR proposal/decisions updated accordingly, but **the actual Oracle Canonical IR has not been CAS-published from this GitHub-only change**. PR #2271 remains Draft, unmerged and not deployed.
+
+---
+
 ## 2026-11-12 — #1682 scheduled Recovery runner unauthorized rollback fixed (#2271 SOURCE ONLY)
 
 Identified an actual authority bypass: the independent `recovery_slot_runner.py` previously rewrote `active=A` and cleared `pending` on a corrupted pending B image during a routine scheduled health check, without a ONE durable interlock transition or authorized rollback Receipt. The code now **does not mutate A/B slot state during probe runs**; it fails closed with `recovery_pending_corrupt_rollback_authority_required`, preserving pending and the protected LKG for the existing governed `recovery_upgrade_promotion.revert_pending` operation. The slot check also refuses symlinked slot directories, and tests verify no state mutation or unauthorized process execution.
