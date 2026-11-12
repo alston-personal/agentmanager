@@ -1,6 +1,7 @@
 import json
 import unittest
-from unittest.mock import patch, SimpleNamespace
+from unittest.mock import patch
+from types import SimpleNamespace
 
 from scripts.audit_studio_nginx_redacted import parse_nginx, root_class, run_nginx
 
