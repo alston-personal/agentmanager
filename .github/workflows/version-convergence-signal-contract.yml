@@ -10,6 +10,8 @@ on:
       - 'scripts/run_realm_node_transactional_ota_user.sh'
       - 'scripts/windows/transactional_ota_finalize.ps1'
       - 'scripts/windows/recovery_one_probe.py'
+      - 'scripts/windows/recovery_slot_runner.py'
+      - 'tests/test_recovery_slot_runner.py'
       - 'tests/test_recovery_one_probe.py'
       - 'tests/test_recovery_fault_injection.py'
       - 'tests/test_recovery_one_install_contract.py'
@@ -49,6 +51,8 @@ jobs:
         run: python3 -m unittest tests.test_recovery_one_install_contract -v
       - name: Fault-inject normal runtime failure and ONE outage in isolated Recovery process
         run: python3 -m unittest tests.test_recovery_fault_injection -v
+      - name: Test Recovery A/B slots and corrupt candidate fallback
+        run: python3 -m unittest tests.test_recovery_slot_runner -v
       - name: Produce protected main source event (not an Executor delivery)
         if: github.event_name == 'push'
         shell: bash
