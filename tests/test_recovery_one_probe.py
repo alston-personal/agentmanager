@@ -60,6 +60,14 @@ class RecoveryProbeTests(unittest.TestCase):
                          "https://agentos.milkcat.org/v1/realms/" + realm +
                          "/bootstrap?node_id=windows-node")
 
+    def test_existing_studio_one_gateway_legacy_bootstrap(self):
+        conf = {**config(), "one_url": "https://studio.milkcat.org/dashboard/api/agentos"}
+        self.assertEqual(probe.bootstrap_url(conf),
+                         "https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=windows-node")
+        tenant = {**conf, "realm_id": "realm-u-" + "a"*24}
+        with self.assertRaises(ValueError):
+            probe.bootstrap_url(tenant)
+
     def test_origin_and_identity_fail_closed(self):
         invalid = [
             {**config(), "one_url": "http://agentos.milkcat.org"},
