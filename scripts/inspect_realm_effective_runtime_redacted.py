@@ -7,6 +7,8 @@ filesystem paths are emitted. This does not start/restart/modify a service.
 from __future__ import annotations
 import hashlib
 import json
+import os
+import pwd
 from pathlib import Path
 import re
 import subprocess
@@ -75,6 +77,50 @@ def get_service_state() -> dict[str, object]:
     }
 
 
+def bounded_realm_process_candidates() -> dict[str, object]:
+    """Find likely Realm process owner, never emit PID, argv or personal paths.
+
+    This is NOT authoritative port-to-process evidence. Do not declare the
+    process on 8780 identified merely because its command matches the service.
+    """
+    owners: set[str] = set()
+    roots: set[str] = set()
+    count = 0
+    try:
+        candidates = list(Path("/proc").iterdir())[:8192]
+    except OSError:
+        candidates = []
+    for entry in candidates:
+        if not entry.name.isdigit():
+            continue
+        try:
+            raw = (entry / "cmdline").read_bytes()[:4096]
+            argv = raw.split(b"\\0")
+            # A precise module + serve pair; do not match arbitrary shell
+            # snippets, process supervisors or test command arguments.
+            if not any(v == b"agent_core.realm_cli" for v in argv):
+                continue
+            if b"serve" not in argv:
+                continue
+            count += 1
+            user = pwd.getpwuid(entry.stat().st_uid).pw_name
+            owners.add(user if user in ("ubuntu", "agentos-node") else "other")
+            try:
+                roots.add(classify_path((entry / "cwd").resolve(strict=True),
+                       checkout=CHECKOUT, release=RELEASE_POINTER))
+            except (OSError, ValueError, RuntimeError):
+                roots.add("unknown")
+        except (OSError, ValueError, KeyError):
+            continue
+    return {
+        "candidate_process_detected": count > 0,
+        "candidate_count_band": "none" if count == 0 else "one" if count == 1 else "multiple",
+        "candidate_owner_class": next(iter(owners)) if len(owners) == 1 else "multiple" if owners else "unknown",
+        "candidate_workdir_class": next(iter(roots)) if len(roots) == 1 else "multiple" if roots else "unknown",
+        "candidate_owns_8780_proved": False,
+    }
+
+
 def current_release_commit() -> str | None:
     try:
         release = RELEASE_POINTER.resolve(strict=True)
@@ -98,6 +144,7 @@ def source_provenance() -> str | None:
 
 def inspect() -> dict[str, object]:
     service = get_service_state()
+    processes = bounded_realm_process_candidates()
     checkout = source_state(CHECKOUT)
     release = source_state(RELEASE_POINTER)
     active = bool(service.get("active"))
@@ -119,6 +166,11 @@ def inspect() -> dict[str, object]:
         "schema": "agentos.realm-effective-runtime-audit/v1",
         "read_only": True,
         "service": service,
+        "realm_process_candidates": processes,
+        "runner_user_service_mismatch_suspected": (
+            not service.get("available")
+            and processes["candidate_owner_class"] == "agentos-node"
+        ),
         "checkout": checkout,
         "realm_immutable_release": release,
         "checkout_release_identical": same_file,
