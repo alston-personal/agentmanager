@@ -66,8 +66,8 @@ class RealmEffectiveRuntimeAuditTests(unittest.TestCase):
     ):
         iterdir.return_value = [Path("/proc/777")]
         read_bytes.return_value = (
-            b"/usr/bin/python3\\0-m\\0agent_core.realm_cli\\0serve\\0"
-            b"secret-session-token\\0"
+            b"/usr/bin/python3\0-m\0agent_core.realm_cli\0serve\0"
+            b"secret-session-token\0"
         )
         stat.return_value = SimpleNamespace(st_uid=1001)
         resolve.return_value = Path("/untrusted/runtime/location")
