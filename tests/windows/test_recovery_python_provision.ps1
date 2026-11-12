@@ -39,6 +39,31 @@ try {
   if(Test-Path (Join-Path $root 'python-runtime')) { throw 'malicious zip installed runtime' }
   if(Test-Path (Join-Path $temp 'outside.txt')) { throw 'zip traversal escaped staging' }
 
+  # Windows file-system names are normally case-insensitive; a ZIP with
+  # duplicate effective names must fail before any extraction.
+  $duplicateArchive=Join-Path $temp 'duplicate-python.zip'
+  $duplicateStream=[IO.File]::Open($duplicateArchive,[IO.FileMode]::CreateNew)
+  try {
+    $duplicateZip=New-Object IO.Compression.ZipArchive($duplicateStream,[IO.Compression.ZipArchiveMode]::Create,$false)
+    try {
+      foreach($name in @('python.exe','PYTHON.exe')) {
+        $entry=$duplicateZip.CreateEntry($name)
+        $writer=New-Object IO.StreamWriter($entry.Open())
+        $writer.Write('not-python')
+        $writer.Dispose()
+      }
+    } finally { $duplicateZip.Dispose() }
+  } finally { $duplicateStream.Dispose() }
+  $duplicateHash=(Get-FileHash -LiteralPath $duplicateArchive -Algorithm SHA256).Hash
+  $rejected=$false
+  try {
+    & $provisioner -RecoveryRoot $root -Archive $duplicateArchive -ExpectedSha256 $duplicateHash | Out-Null
+  } catch {
+    $rejected=($_.Exception.Message -match 'RECOVERY_RUNTIME_ARCHIVE_DUPLICATE_ENTRY')
+  }
+  if(-not $rejected) { throw 'case-insensitive duplicate member was not rejected' }
+  if(Test-Path (Join-Path $root 'python-runtime')) { throw 'duplicate zip installed runtime' }
+
   New-Item -ItemType Directory -Path (Join-Path $root 'python-runtime') | Out-Null
   Set-Content -LiteralPath (Join-Path $root 'python-runtime\sentinel.txt') -Value 'protected' -Encoding ASCII
   $rejected=$false
