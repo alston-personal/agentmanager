@@ -68,7 +68,10 @@ def reconcile(*, root, gate, participant_id):
     elif (stage_record.get("operation_id") != op
           or reserved_file.read_text(encoding="utf-8").strip() != op
           or stage_record.get("slot") not in ("A", "B")
-          or stage_record.get("active") != lkg):
+          or (stage_record.get("active") != lkg and not (
+              phase == "ACTIVATED" and pending is None
+              and active == lkg == stage_record.get("slot")
+              and stage_record.get("active") != active))):
         classification = "GOVERNED_RECONCILIATION_REQUIRED"
     elif phase == "STAGED":
         classification = (
@@ -77,11 +80,15 @@ def reconcile(*, root, gate, participant_id):
             else "GOVERNED_RECONCILIATION_REQUIRED"
         )
     elif phase == "ACTIVATED":
-        classification = (
-            "AWAITING_ONE_RECEIPT" if
-            active == stage_record["slot"] and pending == active and a_ok
-            else "GOVERNED_RECONCILIATION_REQUIRED"
-        )
+        if active == stage_record["slot"] and pending == active and a_ok:
+            classification = "AWAITING_ONE_RECEIPT"
+        elif (active == lkg == stage_record["slot"]
+              and pending is None and a_ok):
+            # Windows accepted the candidate locally, but the ONE gate has
+            # NOT yet committed VERIFY. Never infer authorization from disk.
+            classification = "GOVERNED_POST_ACCEPTANCE_RECONCILIATION"
+        else:
+            classification = "GOVERNED_RECONCILIATION_REQUIRED"
     elif phase == "ROLLBACK_REQUIRED":
         # Distinguish pre-rollback from a crash AFTER Windows has committed
         # its LKG restoration but BEFORE ONE acknowledges/clears the gate.
