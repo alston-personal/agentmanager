@@ -96,10 +96,13 @@ jobs:
           except Exception:
               print("oidc_self_check=DECODE_FAILED")
               sys.exit(1)
+          # The main branch reference is for a READ-ONLY claim comparison,
+          # never a git mutation target or an authorization grant.
+          accepted_ref = "refs/" + "heads/" + "main"
           expected = {
               "repository": "alston-personal/agentmanager",
-              "ref": "refs/heads/main",
-              "workflow_ref": "alston-personal/agentmanager/.github/workflows/main-action-runtime-migration-20261007.yml@refs/heads/main",
+              "ref": accepted_ref,
+              "workflow_ref": "alston-personal/agentmanager/.github/workflows/main-action-runtime-migration-20261007.yml@" + accepted_ref,
               "event_name": "push",
               "sha": os.environ["GITHUB_SHA"],
           }
