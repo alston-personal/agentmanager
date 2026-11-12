@@ -97,7 +97,7 @@ from urllib.parse import urlsplit
 ADAPTER_HINT = "agentos.adapter-invalidation-hint/v1"
 ADAPTER_PLAN = "agentos.adapter-reconciliation-plan/v1"
 ADAPTER_ID = re.compile(r"^[a-z][a-z0-9._-]{0,95}$")
-ADAPTER_VERSION = re.compile(r"^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+ADAPTER_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
