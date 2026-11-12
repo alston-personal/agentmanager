@@ -23,7 +23,7 @@ def config(realm_id="realm-alston"):
 class FakeResponse:
     status = 200
 
-    def __init__(self, content=b'{"schema":"test"}'):
+    def __init__(self, content=b'{"schema":"agentos.node-bootstrap/v0.1"}'):
         self.content = content
 
     def __enter__(self):
@@ -86,12 +86,30 @@ class RecoveryProbeTests(unittest.TestCase):
 
     def test_no_remote_code_execution_and_reject_oversize(self):
         result = probe.probe_one(config(), opener=lambda *_args, **_kw:
-                                 FakeResponse(b'{"install":"run-me"}'))
+                                 FakeResponse(b'{"schema":"agentos.node-bootstrap/v0.1","install":"run-me"}'))
         self.assertTrue(result["one_transport_roundtrip"])
         self.assertNotIn("install", result)
         with self.assertRaises(ValueError):
             probe.probe_one(config(), opener=lambda *_args, **_kw:
                             FakeResponse(b"X" * 131073))
+
+    def test_bootstrap_schema_and_identity_must_match(self):
+        for payload in (
+            b'{"schema":"wrong"}',
+            b'{"schema":"agentos.node-bootstrap/v0.1","node_id":"other"}',
+            b'{"schema":"agentos.node-bootstrap/v0.1","realm_id":"other"}',
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                probe.probe_one(config(), opener=lambda *_a, **_k: FakeResponse(payload))
+
+    def test_recovery_probe_disallows_http_redirects(self):
+        import urllib.request
+        handler = probe.NoRecoveryRedirect()
+        req = urllib.request.Request("https://agentos.milkcat.org/v1/bootstrap",
+                                     headers={"Authorization":"Bearer secret"})
+        with self.assertRaises(RuntimeError):
+            handler.redirect_request(req, None, 302, "Moved",
+                                     {}, "https://evil.example/steal")
 
     def test_atomic_status_write_keeps_secrets_out(self):
         with tempfile.TemporaryDirectory() as tmp:
