@@ -39,7 +39,7 @@ class CanonicalRecoveryInstallationTests(unittest.TestCase):
         self.assertIn("Existing Recovery scheduled task retained", script)
         self.assertIn("$existingActions[0].Execute", script)
         self.assertIn("protected launcher; no automatic takeover", script)
-        self.assertIn("existing independent Python executable and triggers", script)
+        self.assertIn("including its independent Python executable and triggers", script)
         self.assertIn("--diagnose-lkg-when-pending-corrupt", script)
         installer = script[script.index("function Install-RecoveryProbe("):
                            script.index("\ntry {\n  if($env:OS -ne 'Windows_NT')")]
