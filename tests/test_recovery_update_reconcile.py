@@ -100,7 +100,20 @@ class RecoveryCrossStoreReconciliationTests(unittest.TestCase):
                           {**state, "last_known_good": "B", "pending": None})
         result = self.check(phase="ACTIVATED", lane="recovery",
                             operation=self.operation)
+        self.assertEqual(result["classification"], "GOVERNED_POST_ACCEPTANCE_RECONCILIATION")
+        self.assertFalse(result["new_update_permitted"])
+        self.assertFalse(result["one_receipt_attested"])
+        self.assertFalse(result["activation_authorized"])
+
+    def test_local_acceptance_with_wrong_one_operation_remains_frozen(self):
+        self.staged(activated=True)
+        state = slots.load_state(self.root)
+        slots.atomic_json(self.root / "slots.json",
+                          {**state, "last_known_good": "B", "pending": None})
+        result = self.check(phase="ACTIVATED", lane="recovery",
+                            operation="wrong-operation")
         self.assertEqual(result["classification"], "GOVERNED_RECONCILIATION_REQUIRED")
+        self.assertFalse(result["new_update_permitted"])
 
     def test_one_gate_cleared_first_and_stage_reservation_remains_freezes(self):
         self.staged()
