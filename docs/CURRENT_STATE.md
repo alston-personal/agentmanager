@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 IR CAS interrupted-selector recovery (PR #2271; source-only)
+
+Added `--resume-selector-only` to the same `scripts/publish_recovery_1682_ir.py` to recover a crash **after** a Canonical IR generation is published but **before** the Active Continuation selector is updated, without publishing another IR generation. It verifies that the authoritative `agentos-core` IR and execution head match, the IR is the #1682 handoff and has a real parent, and the selector remains on that precise parent before performing guarded selector CAS and readback. Already-current selectors are idempotent; missing/other-project/stale/concurrently updated selectors fail closed. Re-running `--from-current --apply` after a successful publication is unsafe because it creates unnecessary IR generations. Source tests and the updated IR proposal reflect this next action.
+
+**Reality:** CI pass is not a live ONE CAS Receipt. Official Canonical IR and selector have **not** been published or reconciled on Oracle by this session, PR #2271 is still Draft and not deployed, and no independent Recovery rescue Receipt exists.
+
+---
+
 ## 2026-11-12 — #1682 Canonical IR automatic generation read + guarded selector CAS (PR #2271)
 
 Source-only continuation: `scripts/publish_recovery_1682_ir.py --from-current` now reads the actual `agentos-core` Canonical IR generation from the authorized ONE data root instead of requiring manual copy of parent IDs. It refuses mismatched execution-head / IR versions and delegates the actual write to the existing `advance_canonical_ir` CAS publisher; only new child IDs are generated. `--sync-active-selector` requires `--apply` and only updates a pre-existing `agentos-core` selector that still points to the exact parent generation. `activate_continuation(expected_previous=...)` compares under the existing selector file lock to avoid overriding a different Executor's active project. Both Canonical IR and active selector require authoritative readback after publishing. `ir_published=true` describes only a successful CAS generation; `runtime_accepted=false` and `recovery_live_receipt=false` remain until separate evidence.
