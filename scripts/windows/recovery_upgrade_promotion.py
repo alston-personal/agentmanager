@@ -112,13 +112,21 @@ def accept_pending(*, root, operation_id, verify_candidate_one,
     _require(verify_candidate_one, context)
     _require(verify_normal_live, context)
     _require(verify_one_receipt, context)
-    _require(durable_update_gate, context, "VERIFY")
-    # One atomic switch marks the already verified candidate accepted.
+    # The ONE durable update gate must stay ACTIVATED until Windows has
+    # committed the accepted LKG and the host has read it back successfully.
+    # Receipt verification above is a prerequisite, not release authority.
     accepted = {**state, "pending": None, "last_known_good": candidate}
     atomic_json(root / "slots.json", accepted)
-    # Do not remove persistent reservation automatically: host controller must
-    # reconcile its durable interlock and verify accepted state first.
-    return accepted
+    committed = load_state(root)
+    if (committed["active"] != candidate
+            or committed["last_known_good"] != candidate
+            or committed["pending"] is not None
+            or not valid_slot(root, committed, candidate)):
+        raise RuntimeError("recovery_acceptance_local_readback_failed")
+    _require(durable_update_gate, context, "VERIFY")
+    # A missing ONE gate completion leaves the durable reservation intact and
+    # must be reconciled, not treated as permission to start another update.
+    return committed
 
 
 def revert_pending(*, root, operation_id, verify_lkg_one,
