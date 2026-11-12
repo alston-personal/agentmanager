@@ -125,6 +125,33 @@ class RecoveryCrossStoreReconciliationTests(unittest.TestCase):
         self.assertEqual(result["classification"], "AWAITING_AUTHORIZED_ROLLBACK")
         self.assertFalse(result["rollback_authorized"])
 
+    def test_corrupt_pending_B_still_waits_for_authorized_rollback(self):
+        self.staged(activated=True, corrupt=True)
+        result = self.check(phase="ROLLBACK_REQUIRED", lane="recovery",
+                            operation=self.operation)
+        self.assertEqual(result["classification"], "AWAITING_AUTHORIZED_ROLLBACK")
+        self.assertFalse(result["active_integrity_verified"])
+        self.assertTrue(result["lkg_integrity_verified"])
+        self.assertFalse(result["rollback_authorized"])
+        self.assertFalse(result["new_update_permitted"])
+        self.assertFalse(result["one_receipt_attested"])
+        self.assertEqual(slots.load_state(self.root)["pending"], "B")
+
+    def test_corrupt_pending_B_with_wrong_operation_stays_frozen(self):
+        self.staged(activated=True, corrupt=True)
+        result = self.check(phase="ROLLBACK_REQUIRED", lane="recovery",
+                            operation="unrelated-operation")
+        self.assertEqual(result["classification"], "GOVERNED_RECONCILIATION_REQUIRED")
+        self.assertFalse(result["rollback_authorized"])
+
+    def test_corrupt_pending_B_and_lkg_requires_human(self):
+        self.staged(activated=True, corrupt=True)
+        (self.root / "slot-A" / "recovery_one_probe.py").write_text("lkg-damaged")
+        result = self.check(phase="ROLLBACK_REQUIRED", lane="recovery",
+                            operation=self.operation)
+        self.assertEqual(result["classification"], "HUMAN_REQUIRED_LKG_CORRUPT")
+        self.assertFalse(result["rollback_authorized"])
+
     def test_stale_operation_mismatch_blocks(self):
         self.staged()
         result = self.check(phase="STAGED", lane="recovery",
