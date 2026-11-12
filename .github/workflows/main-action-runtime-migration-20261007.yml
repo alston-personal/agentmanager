@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile agent_core/executor_job_contract.py agentos_node/executor_job_adapter.py agentos_node/executor_job_action_relay.py agentos_node/deployment_inspect_provider.py
-          python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one -v
+          python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_main_runtime_deploy_routing -v
   migrate:
     needs: [validate]
     runs-on: ubuntu-latest
