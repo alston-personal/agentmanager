@@ -370,8 +370,10 @@ RestartSec=30
 TimeoutStopSec=15s
 KillMode=control-group
 SendSIGKILL=yes
-StandardOutput=append:$DATA_ROOT/logs/lobster.log
-StandardError=append:$DATA_ROOT/logs/lobster.log
+# lobster.py owns bounded rotating files; journald receives the console copy.
+# Never append stdout to the same file or every line is duplicated.
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=default.target

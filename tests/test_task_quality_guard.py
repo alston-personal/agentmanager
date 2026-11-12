@@ -83,16 +83,49 @@ class TaskQualityGuardTests(unittest.TestCase):
     def test_lobster_quota_exhaustion_opens_circuit_without_retrying(self):
         lobster = load_script("lobster")
         task = "Resolve governed provider | workspace=/repo | acceptance=governance receipt names one provider"
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
-            lobster,
-            "run_claude_task_wrapper",
-            return_value=(False, "EXIT_3: Your AI credits balance is too low; RESOURCE_EXHAUSTED"),
-        ) as executor:
-            ok, reason = lobster.run_with_inspector(Path(tmp), task)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            lobster.os.environ, {"AGENT_DATA_ROOT": tmp}
+        ), mock.patch.object(
+                lobster,
+                "run_claude_task_wrapper",
+                return_value=(False, "EXIT_3: Your AI credits balance is too low; RESOURCE_EXHAUSTED"),
+            ) as executor:
+                ok, reason = lobster.run_with_inspector(Path(tmp), task)
+                state = lobster.load_quota_circuit()
         self.assertFalse(ok)
         self.assertTrue(reason.startswith("QUOTA_EXHAUSTED:"))
         self.assertEqual(executor.call_count, 1)
         self.assertGreater(lobster.QUOTA_COOLDOWN_UNTIL, lobster.time.monotonic() + 1790)
+        self.assertEqual(state["state"], "open")
+        self.assertEqual(state["consecutive_failures"], 1)
+
+    def test_quota_circuit_persists_and_exponentially_backs_off(self):
+        lobster = load_script("lobster")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            lobster.os.environ, {"AGENT_DATA_ROOT": tmp}
+        ):
+            self.assertEqual(lobster.open_quota_circuit("quota", now=1000), 1800)
+            self.assertEqual(lobster.open_quota_circuit("quota", now=2801), 3600)
+            self.assertEqual(lobster.open_quota_circuit("quota", now=6402), 7200)
+            self.assertEqual(lobster.open_quota_circuit("quota", now=13603), 14400)
+            self.assertEqual(lobster.open_quota_circuit("quota", now=28004), 21600)
+            self.assertEqual(lobster.open_quota_circuit("quota", now=49605), 21600)
+            state = lobster.load_quota_circuit()
+            self.assertEqual(state["backoff_seconds"], 21600)
+            self.assertEqual(state["consecutive_failures"], 5)
+            self.assertGreaterEqual(lobster.quota_circuit_remaining(now=49605), 21600)
+            lobster.close_quota_circuit()
+            self.assertFalse(lobster.quota_circuit_path().exists())
+
+    def test_lobster_log_is_bounded_and_systemd_does_not_duplicate_it(self):
+        source = (ROOT / "scripts" / "lobster.py").read_text(encoding="utf-8")
+        installer = (ROOT / "scripts" / "install_systemd_user.sh").read_text(encoding="utf-8")
+        self.assertIn("RotatingFileHandler", source)
+        self.assertIn("LOBSTER_LOG_MAX_BYTES", source)
+        lobster_unit = installer[installer.index('cat > "$USER_SYSTEMD_DIR/os-lobster.service"'):]
+        lobster_unit = lobster_unit[:lobster_unit.index("\nEOF\n")]
+        self.assertIn("StandardOutput=journal", lobster_unit)
+        self.assertNotIn("append:$DATA_ROOT/logs/lobster.log", lobster_unit)
 
     def test_add_todo_rejects_before_mutating_status(self):
         module = load_script("add_todo")

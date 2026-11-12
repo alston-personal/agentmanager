@@ -19,6 +19,7 @@ import json
 import time
 import signal
 import logging
+from logging.handlers import RotatingFileHandler
 import argparse
 import subprocess
 import requests
@@ -246,6 +247,82 @@ QUOTA_EXHAUSTED_PATTERNS = (
     "credit balance is too low",
 )
 QUOTA_COOLDOWN_UNTIL = 0.0
+QUOTA_BACKOFF_BASE_SECONDS = 1800
+QUOTA_BACKOFF_MAX_SECONDS = 21600
+
+
+def quota_circuit_path() -> Path:
+    data_root = Path(
+        os.getenv("AGENT_DATA_ROOT")
+        or os.getenv("AGENT_DATA_DIR")
+        or (Path.home() / "agent-data")
+    ).expanduser()
+    return data_root / "runtime" / "lobster" / "quota-circuit.json"
+
+
+def load_quota_circuit() -> dict:
+    path = quota_circuit_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("schema") != "agentos.provider-quota-circuit/v1":
+            return {}
+        return data
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        return {}
+
+
+def quota_circuit_remaining(now: float | None = None) -> int:
+    """Return durable provider backoff remaining across restarts."""
+    wall_now = time.time() if now is None else now
+    state = load_quota_circuit()
+    persisted = max(0, int(float(state.get("retry_after_epoch") or 0) - wall_now + 0.999))
+    in_process = max(0, int(QUOTA_COOLDOWN_UNTIL - time.monotonic() + 0.999))
+    return max(persisted, in_process)
+
+
+def open_quota_circuit(output: str, now: float | None = None) -> int:
+    """Persist an exponential capacity backoff without storing provider prose."""
+    global QUOTA_COOLDOWN_UNTIL
+    wall_now = time.time() if now is None else now
+    previous = load_quota_circuit()
+    previous_failure = float(previous.get("last_failure_epoch") or 0)
+    consecutive = int(previous.get("consecutive_failures") or 0)
+    if wall_now - previous_failure > 48 * 3600:
+        consecutive = 0
+    consecutive = min(5, consecutive + 1)
+    wait_seconds = min(
+        QUOTA_BACKOFF_MAX_SECONDS,
+        QUOTA_BACKOFF_BASE_SECONDS * (2 ** (consecutive - 1)),
+    )
+    QUOTA_COOLDOWN_UNTIL = time.monotonic() + wait_seconds
+    state = {
+        "schema": "agentos.provider-quota-circuit/v1",
+        "provider": ACTIVE_ENGINE,
+        "state": "open",
+        "failure_class": "PROVIDER_CAPACITY",
+        "consecutive_failures": consecutive,
+        "last_failure_epoch": wall_now,
+        "retry_after_epoch": wall_now + wait_seconds,
+        "backoff_seconds": wait_seconds,
+        "updated_at": datetime.fromtimestamp(wall_now, timezone.utc).isoformat(),
+    }
+    path = quota_circuit_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+    return wait_seconds
+
+
+def close_quota_circuit() -> None:
+    """Clear only after the provider has returned a successful result."""
+    global QUOTA_COOLDOWN_UNTIL
+    QUOTA_COOLDOWN_UNTIL = 0.0
+    path = quota_circuit_path()
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def is_quota_exhausted_output(output: str) -> bool:
@@ -273,12 +350,17 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
     if not proj_dir.is_dir():
         return False, f"BLOCKED: 工作目錄不存在 ({proj_dir})"
 
+    remaining = quota_circuit_remaining()
+    if remaining:
+        return False, f"QUOTA_CIRCUIT_OPEN: retry_after_seconds={remaining}"
+
     failure_count = 0
     last_inspector_reason = ""
     for attempt in range(1, 4):
         logger.info(f"  任務嘗試 {attempt}/3: {task_text[:50]}")
         success, output = run_claude_task_wrapper(proj_dir, task_text)
         if success:
+            close_quota_circuit()
             wait = external_wait_directive(output)
             if wait:
                 until, reason = wait
@@ -287,8 +369,11 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
         if not success:
             logger.warning(f"  Lobster 執行失敗: {output[:100]}")
             if is_quota_exhausted_output(output):
-                QUOTA_COOLDOWN_UNTIL = time.monotonic() + 1800
-                logger.warning("  ⏸️ 偵測到 AI 額度/速率限制耗盡，啟動 1800s 斷路器且不消耗重試次數。")
+                wait_seconds = open_quota_circuit(output)
+                logger.warning(
+                    "  ⏸️ 偵測到 AI 額度/速率限制耗盡，啟動持久化 %ss 斷路器且不消耗重試次數。",
+                    wait_seconds,
+                )
                 return False, f"QUOTA_EXHAUSTED: {output[:200]}"
             # TIMEOUT 立刻 SKIP，不浪費時間重試
             if output == "TIMEOUT":
@@ -491,7 +576,12 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] (🦞 Lobster) %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(log_file, encoding="utf-8"),
+        RotatingFileHandler(
+            log_file,
+            maxBytes=int(os.getenv("LOBSTER_LOG_MAX_BYTES", str(20 * 1024 * 1024))),
+            backupCount=int(os.getenv("LOBSTER_LOG_BACKUP_COUNT", "5")),
+            encoding="utf-8",
+        ),
     ],
 )
 logger = logging.getLogger("Lobster")
@@ -1162,7 +1252,10 @@ def process_project(proj_name: str, dry_run: bool = False) -> bool:
             new_line = re.sub(r"\[[ /]\]", "[ ]", old_line, count=1)
             if old_line != new_line:
                 status_md.write_text(content.replace(old_line, new_line, 1), encoding="utf-8")
-            logger.warning(f"⏸️ [{proj_name}] AI 額度耗盡，任務重置為 [ ] 並進入 1800s 冷卻")
+            logger.warning(
+                f"⏸️ [{proj_name}] AI 額度耗盡，任務重置為 [ ] 並進入 "
+                f"{quota_circuit_remaining()}s 持久化冷卻"
+            )
         elif "BLOCKED:" in output:
             mark_task_blocked(status_md, task)
             log_activity(status_md, f"任務阻斷（{output[:120]}）")
@@ -1201,6 +1294,18 @@ def main():
     while running[0]:
         iteration += 1
         logger.info(f"━━━ 迭代 #{iteration} ━━━")
+
+        remaining_quota_wait = quota_circuit_remaining()
+        if remaining_quota_wait:
+            logger.info(
+                "⏸️ 持久化供應商斷路器仍開啟，%ss 後才允許下一次容量探測。",
+                remaining_quota_wait,
+            )
+            for _ in range(remaining_quota_wait):
+                if not running[0]:
+                    break
+                time.sleep(1)
+            continue
         
         did_work = False
         quota_cooldown = False
@@ -1244,7 +1349,10 @@ def main():
                         if output.startswith("QUOTA_EXHAUSTED:"):
                             mark_board_task(proj_name, task["text"], "todo", current_status="in_progress")
                             quota_cooldown = True
-                            logger.warning(f"⏸️ [{proj_name}] AI 額度耗盡，任務重置為 [ ] 並進入 1800s 冷卻")
+                            logger.warning(
+                                f"⏸️ [{proj_name}] AI 額度耗盡，任務重置為 [ ] 並進入 "
+                                f"{quota_circuit_remaining()}s 持久化冷卻"
+                            )
                         elif "BLOCKED:" in output:
                             # BLOCKED → 標記 [!]，跳過繼續（不停機）
                             mark_board_task(proj_name, task["text"], "blocked", current_status="in_progress")
@@ -1282,9 +1390,9 @@ def main():
         if not args.loop:
             break
         
-        remaining_quota_wait = max(0, int(QUOTA_COOLDOWN_UNTIL - time.monotonic()) + 1)
+        remaining_quota_wait = quota_circuit_remaining()
         if quota_cooldown or remaining_quota_wait:
-            sleep_sec = max(args.cool_down, 1800 if quota_cooldown else remaining_quota_wait)
+            sleep_sec = max(args.cool_down, remaining_quota_wait)
             logger.info(f"⏸️ AI 額度耗盡斷路器啟動，休眠 {sleep_sec}s 後重試...")
         elif not did_work:
             # 所有專案都沒有待辦任務，進入休眠
