@@ -171,6 +171,60 @@ def plan_adapter_reconciliation(*, hint, trusted_one_origin, authoritative_manif
     }
 
 
+
+# This pure contract cannot install or restart software.  Runtime preflight and
+# recovery evidence MUST be independently attested by a trusted host authority.
+ADAPTER_PREFLIGHT = "agentos.adapter-preflight-attestation/v1"
+ADAPTER_INSTALL_PLAN = "agentos.adapter-install-gate/v1"
+PREFLIGHT_CHECKS = frozenset({
+    "signature", "digest", "provenance", "schema_compatibility",
+    "platform_compatibility", "sandbox_smoke", "permissions",
+    "recovery_independence", "rollback_snapshot",
+})
+
+
+def gate_adapter_install(*, plan, attestation, recovery):
+    """Fail closed on missing preflight, unhealthy rescue lane, or stale plan.
+
+    Result is advisory: the authorized OTA owner must independently validate
+    the trusted attestations, install policy and live source/runtime evidence.
+    """
+    if not isinstance(plan, dict) or plan.get("schema") != ADAPTER_PLAN:
+        raise ValueError("invalid_adapter_plan")
+    if plan.get("action") != "REQUEST_GOVERNED_ADAPTER_UPDATE":
+        raise ValueError("adapter_update_not_needed")
+    if plan.get("installation_authorized") is not False:
+        raise ValueError("invalid_install_authority")
+    if not isinstance(attestation, dict) or attestation.get("schema") != ADAPTER_PREFLIGHT:
+        raise ValueError("invalid_preflight_attestation")
+    if (attestation.get("adapter_id"), attestation.get("adapter_version"),
+            attestation.get("notice_epoch")) != (
+            plan.get("adapter_id"), plan.get("target_adapter_version"),
+            plan.get("notice_epoch")):
+        raise ValueError("preflight_plan_mismatch")
+    if attestation.get("trusted_source_attested") is not True:
+        raise ValueError("preflight_untrusted_source")
+    checks = attestation.get("checks")
+    if (not isinstance(checks, dict) or set(checks) != PREFLIGHT_CHECKS
+            or any(checks[name] is not True for name in PREFLIGHT_CHECKS)):
+        raise ValueError("preflight_failed")
+    if (not isinstance(recovery, dict)
+            or recovery.get("independent_process") is not True
+            or recovery.get("protected_from_adapter_update") is not True
+            or recovery.get("one_handshake_verified") is not True
+            or recovery.get("last_known_good_verified") is not True
+            or recovery.get("rollback_ready") is not True):
+        raise ValueError("recovery_lane_unavailable")
+    return {
+        "schema": ADAPTER_INSTALL_PLAN, "adapter_id": plan["adapter_id"],
+        "adapter_version": plan["target_adapter_version"],
+        "notice_epoch": plan["notice_epoch"],
+        "action": "REQUEST_AUTHORIZED_STAGED_INSTALL",
+        "installation_authorized": False, "activation_authorized": False,
+        "recovery_preservation_required": True,
+    }
+
+
 def main():
     parser=argparse.ArgumentParser()
     for name in ("main-sha","previous-sha","paths-file","published-at","output"):
