@@ -51,7 +51,8 @@ class RealmInstallerRevisionTests(unittest.TestCase):
                     ".github/workflows/deploy-realm-fabric-core.yml").read_text()
         self.assertNotIn("git reset --hard origin/main", workflow)
         self.assertEqual(workflow.count('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"'), 2)
-        self.assertIn('test "$GITHUB_REF" = "refs/heads/main"', workflow)
+        self.assertIn('test "$GITHUB_REF_TYPE" = "branch"', workflow)
+        self.assertIn('test "$GITHUB_REF_NAME" = "main"', workflow)
 
     def test_existing_exact_realm_installer_has_effective_unit_quarantine(self):
         from pathlib import Path
