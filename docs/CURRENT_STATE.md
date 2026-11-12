@@ -1,3 +1,9 @@
+## 2026-11-12 — #1682 fresh LKG status evidence guard (PR #2271 source only)
+
+The read-only LKG fallback must not infer a successful Recovery-to-ONE roundtrip from subprocess exit code alone. The runner now clears the previous LKG status file before the test and verifies a **freshly written, schema-valid status** with `one_transport_roundtrip=true` and `recovery_update_authorized=false` / `adapter_download_verified=false`. Exit-zero without fresh result is classified failed; the active B status remains failed and A/B metadata remains unchanged. Regression tests cover stale success and valid fresh status. This is still a source-level check; it does not provide cryptographic receipt verification or a live Windows Recovery demonstration.
+
+---
+
 ## 2026-11-12 — #1682 Recovery interpreter readback and probe binding fix (PR #2271; source only)
 
 Further review found normal reinstall preserved the existing Recovery task's Python executable **but** ran Recovery bootstrap and live ONE probes with the new Normal Python before reading the task action. The installer now validates the existing Recovery Scheduled Task first and uses that **actual preserved interpreter** for bootstrap/readiness; only an initial installation uses the freshly discovered Python. No existing task is rewritten. Contract tests guard ordering, interpreter selection and no Normal-Python probe.
