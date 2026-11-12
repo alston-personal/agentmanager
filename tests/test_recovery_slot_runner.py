@@ -43,7 +43,7 @@ class RecoverySlotTests(unittest.TestCase):
             runner.run(self.root, "config.json", "status.json")
         self.assertEqual(self.state()["active"], "A")
 
-    def test_pending_corrupt_B_falls_back_to_verified_A(self):
+    def test_pending_corrupt_B_cannot_bypass_authorized_rollback(self):
         runner.bootstrap(self.root, self.initial)
         b_path = self.root / "slot-B" / "recovery_one_probe.py"
         b_path.parent.mkdir()
@@ -54,14 +54,26 @@ class RecoverySlotTests(unittest.TestCase):
             "pending": "B", "digests": {**state["digests"], "B": runner.digest(b_path)},
         })
         b_path.write_text("candidate-corrupt", encoding="utf-8")
+        prior_bytes = (self.root / "slots.json").read_bytes()
         with patch.object(runner.subprocess, "run") as execute:
-            execute.return_value.returncode = 0
-            self.assertEqual(runner.run(self.root, "config.json", "status.json"), 0)
-            self.assertIn("slot-A", execute.call_args.args[0][2])
-        recovered = self.state()
-        self.assertEqual(recovered["active"], "A")
-        self.assertIsNone(recovered["pending"])
-        self.assertEqual(recovered["last_known_good"], "A")
+            with self.assertRaisesRegex(RuntimeError, "rollback_authority_required"):
+                runner.run(self.root, "config.json", "status.json")
+            execute.assert_not_called()
+        self.assertEqual((self.root / "slots.json").read_bytes(), prior_bytes)
+        preserved = self.state()
+        self.assertEqual(preserved["active"], "B")
+        self.assertEqual(preserved["pending"], "B")
+        self.assertEqual(preserved["last_known_good"], "A")
+
+    def test_symlinked_slot_directory_does_not_count_as_healthy(self):
+        runner.bootstrap(self.root, self.initial)
+        stable = self.root / "slot-A"
+        relocated = self.root / "slot-A-relocated"
+        stable.rename(relocated)
+        stable.symlink_to(relocated, target_is_directory=True)
+        self.assertFalse(runner.valid_slot(self.root, self.state(), "A"))
+        with self.assertRaisesRegex(RuntimeError, "recovery_active_corrupt"):
+            runner.run(self.root, "config.json", "status.json")
 
     def test_pending_candidate_failure_does_not_auto_switch_on_network_error(self):
         runner.bootstrap(self.root, self.initial)
