@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-from scripts.attest_realm_loaded_source_redacted import parse_environ, sha256, source_attestation
+from scripts.attest_realm_loaded_source_redacted import parse_environ, sha256, source_attestation, is_realm_8780_command
 
 class RealmSourceRedactionTests(unittest.TestCase):
     def test_only_pythonpath_is_parsed(self):
@@ -15,6 +15,12 @@ class RealmSourceRedactionTests(unittest.TestCase):
             "/srv/release-a/agent_core/realm_server.py",
         ])
         self.assertNotIn("very-secret", repr(result))
+
+    def test_bounded_proc_listener_match_never_leaks_argv(self):
+        fixed = b"python3\0-m\0agent_core.realm_cli\0serve\0--port\08780\0"
+        self.assertTrue(is_realm_8780_command(fixed))
+        self.assertFalse(is_realm_8780_command(b"python3\0-m\0some.other.module\0serve\08780\0"))
+        self.assertFalse(is_realm_8780_command(b"python3\0-m\0agent_core.realm_cli\0serve\09999\0"))
 
     def test_file_digest_does_not_disclose_content(self):
         with TemporaryDirectory() as root:
