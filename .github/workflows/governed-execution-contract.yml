@@ -10,6 +10,8 @@ on:
       - 'agentos_node/deployment_inspect_provider.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_deployment_inspect_one.py'
+      - 'tests/test_realm_installer_revision_attestation.py'
+      - 'agentos_node/action_relay.py'
       - 'tests/test_deployment_capability.py'
       - 'scripts/fetch_governed_product_request.py'
       - 'scripts/run_governed_execution_request.py'
@@ -26,6 +28,8 @@ on:
       - 'agentos_node/deployment_inspect_provider.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_deployment_inspect_one.py'
+      - 'tests/test_realm_installer_revision_attestation.py'
+      - 'agentos_node/action_relay.py'
       - 'tests/test_deployment_capability.py'
       - 'scripts/fetch_governed_product_request.py'
       - 'scripts/run_governed_execution_request.py'
@@ -44,5 +48,5 @@ jobs:
       - name: Validate bounded execution contract
         run: |
           python3 tests/test_governed_execution_request.py
-          python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one -v
+          python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_realm_installer_revision_attestation -v
           python3 -m py_compile scripts/run_governed_execution_request.py scripts/fetch_governed_product_request.py agent_core/deployment_capability.py
