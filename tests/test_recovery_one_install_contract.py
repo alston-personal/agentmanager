@@ -41,6 +41,18 @@ class CanonicalRecoveryInstallationTests(unittest.TestCase):
         self.assertIn("protected launcher; no automatic takeover", script)
         self.assertIn("including its independent Python executable and triggers", script)
         self.assertIn("--diagnose-lkg-when-pending-corrupt", script)
+        # Existing tasks must be validated BEFORE the live probe, and the
+        # probe must use the exact executable preserved by Task Scheduler.
+        self.assertIn("$recoveryPythonPath = $PythonPath", script)
+        self.assertIn("$recoveryPythonPath = (Resolve-Path -LiteralPath $existingExecute).Path", script)
+        self.assertIn("& $recoveryPythonPath -I $runner --root $recoveryRoot --bootstrap-from", script)
+        self.assertIn("& $recoveryPythonPath -I $runner --root $recoveryRoot --config", script)
+        self.assertIn("New-ScheduledTaskAction -Execute $recoveryPythonPath", script)
+        self.assertLess(
+            script.index("$recoveryPythonPath = (Resolve-Path -LiteralPath $existingExecute).Path"),
+            script.index("& $recoveryPythonPath -I $runner --root $recoveryRoot --config")
+        )
+        self.assertNotIn("& $PythonPath -I $runner", script)
         installer = script[script.index("function Install-RecoveryProbe("):
                            script.index("\ntry {\n  if($env:OS -ne 'Windows_NT')")]
         self.assertEqual(installer.count("Register-ScheduledTask -TaskName $recoveryTaskName"), 1)
