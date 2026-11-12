@@ -5,7 +5,7 @@
   "pr_number": 2271,
   "status": "SOURCE_CI_ONLY_NOT_MERGED_NOT_RUNTIME_ACCEPTED",
   "goal": "以 main 為唯一正式主線，將既有 ONE Maintenance 與 Normal/Recovery 雙通道更新、受授權 A/B 回退及跨重啟對帳收斂為同一條可驗收閉環",
-  "next_action": "優先取得可信 Recovery embeddable Python 套件的發行者與雜湊證據，在隔離 Windows Node 執行受控首次安裝及 Normal Python 故障測試；再由原有 ONE Maintenance Owner 實作正式授權回滾、Receipt 與 Canonical IR CAS 寫入讀回。",
+  "next_action": "既有 AgentOS Approved Issue Intake 目前不會接收 #1682（原 Issue 缺少 agentos:approved + agentos:engineering 標籤及 Project/Action/Acceptance 契約）；先經原有治理明確核准工程 Intake，使用既有 Runner Window agentos-dispatch 派送受授權 ONE Runtime 檢查，取得 Canonical IR 世代及真實 Receipt；再核對 #2271 153-commit/36-file 變更和 Windows 隔離 Recovery 實機驗收，未核准不得合併部署。",
   "pending_tasks": [
     "PR #2271 保持 Draft；審查核心及 Windows 路徑後，核對 main 最新版並決定合併時機",
     "Reuse Before Build：在既有 Maintenance Owner/Runtime 中實作真正的簽章、信任根、時效、防重放、Node/Realm/operation_id 校驗",
@@ -19,7 +19,9 @@
     "在隔離 Windows Node 進行 Normal Python 更換/失效演練，確認既有 Recovery 排程與安裝器驗證使用同一保留的 Python；讀回 Action、Arguments、Triggers 與 ONE 探測結果，取得獨立受授權 Receipt。",
     "在隔離 Windows Node 實測 LKG 診斷的健康回應、空回應、過期結果與無網路；回讀 Windows Status、ONE 端收據，確保來源程式可判別診斷與正式回滾。",
     "由受授權 ONE/Windows 測試節點提供可信來源與已核對發行者的 CPython embeddable ZIP 及 SHA-256，驗證 Recovery 私有 interpreter 安裝、Runtime prefix 自包含、正常通道 Python 故障後獨立聯絡 ONE，並取得實際 Receipt；既有共用 Python 節點不得藉 Normal 重裝自動遷移。",
-    "於隔離 Windows Node 驗證孤兒 Recovery Python 目錄／失去排程後的 fail-closed 行為，確認受授權維修對帳能恢復 Task 綁定，並取得 ONE Receipt；實際獨立 Python 仍待安裝驗證。"
+    "於隔離 Windows Node 驗證孤兒 Recovery Python 目錄／失去排程後的 fail-closed 行為，確認受授權維修對帳能恢復 Task 綁定，並取得 ONE Receipt；實際獨立 Python 仍待安裝驗證。",
+    "按原有治理核對 #1682 Issue Intake：必須由授權者提供 agentos:approved、agentos:engineering 和 Project/Action/Acceptance；Issue 留言與 PR/CI 均不自動構成工程執行權限。",
+    "沿用 main 既有 AgentOS Dispatch / Runner Window 並讀回 Oracle ONE 真正的 Canonical IR 世代、CAS receipt、Active Continuation 指標；GitHub 來源連線無 workflow_dispatch 寫入操作，不能以 CI 或 Issue 留言替代。"
   ],
   "decisions_append": [
     "Normal 與 Recovery 不可同時更新；Recovery 更新前須確認 Normal 能獨立提供救援，且保護原 Recovery LKG",
@@ -35,7 +37,8 @@
     "LKG 救援診斷不得只憑 Python 子程序退出碼=0 宣稱 ONE 通訊成功；必須清除舊結果、讀回本次新生成的正確 Recovery Probe 結果，且不可帶有更新授權或 Receipt。",
     "Recovery 專用 Python 首裝可由事先核准的 Windows embeddable CPython 離線 ZIP 與可信 SHA-256 驗證安裝至 recovery/python-runtime；禁止 Normal 重裝自動下載、覆蓋或重綁；僅 SHA-256 防修改，不代替發行者簽章與授權。",
     "若 Recovery 私有 Python 檔案存在但受管理的 Scheduled Task 缺失，正常安裝不得直接採用孤兒執行器；須由授權 Recovery Owner 對帳，避免猜測發行者來源及覆蓋既有狀態。",
-    "Windows Recovery CPython 離線 ZIP 必須拒絕大小寫不敏感檔名衝突（例如 python.exe/PYTHON.exe），不可在驗證後藉解壓覆寫成員。"
+    "Windows Recovery CPython 離線 ZIP 必須拒絕大小寫不敏感檔名衝突（例如 python.exe/PYTHON.exe），不可在驗證後藉解壓覆寫成員。",
+    "不得為了觸發 ONE 工作而自行加上 agentos:approved 或變更 production main；GitHub CI 成功、PR mergeable 和 Issue 回報不代表 Runtime/IR 發布或部署授權。"
   ],
   "evidence": [
     {
