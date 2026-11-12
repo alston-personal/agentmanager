@@ -32,6 +32,28 @@ class RealmInstallerRevisionTests(unittest.TestCase):
             with self.subTest(params=params), self.assertRaises(ValueError):
                 action_relay._realm_fabric_deployment_status(params)
 
+    def test_deploy_workflow_rejects_old_live_relay_before_realm_install(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/deploy-realm-fabric-core.yml").read_text()
+        proof = workflow.split("      - name: Ensure ubuntu Action Relay runtime contains governed Core capabilities", 1)[1].split(
+            "      - name: Install exact Realm Fabric release through Action Relay", 1
+        )[0]
+        self.assertIn("receipt.get('installer_revision') != 'realm-fabric-effective-unit-fence/v1'", proof)
+        self.assertIn("realm_relay_installer_revision_not_attested", proof)
+        self.assertIn("realm_deployment_blocked=INSTALLED_RELAY_REVISION_UNVERIFIED", proof)
+        self.assertNotIn("bootstrap-action-relay-core-safe.sh", proof)
+        self.assertNotIn("READY_AFTER_REFRESH", proof)
+
+    def test_deploy_workflow_pins_checkout_and_does_not_reset_moving_main(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/deploy-realm-fabric-core.yml").read_text()
+        self.assertNotIn("git reset --hard origin/main", workflow)
+        self.assertEqual(workflow.count('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"'), 2)
+        self.assertIn('test "$GITHUB_REF_TYPE" = "branch"', workflow)
+        self.assertIn('test "$GITHUB_REF_NAME" = "main"', workflow)
+
     def test_existing_exact_realm_installer_has_effective_unit_quarantine(self):
         from pathlib import Path
         body = (Path(__file__).resolve().parents[1] / "agentos_node/action_relay.py").read_text()
