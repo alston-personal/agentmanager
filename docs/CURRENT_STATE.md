@@ -1,3 +1,117 @@
+## 2026-11-12 — #1682 bind post-crash Recovery reconciliation to node and candidate evidence (PR #2271 SOURCE ONLY)
+
+Additional audit found the read-only reconciler could classify an existing staged operation with matching operation id without checking that `staged-candidate.json.node_id` matched the actual Windows participant. It also did not reject locally self-asserted `activation_authorized` / `one_receipt_attested` flags or a changed staged candidate digest. The source now refuses those mismatches, retaining `GOVERNED_RECONCILIATION_REQUIRED` and no write authority. Three regression tests cover mismatched node, untrusted local authority flags and candidate digest change.
+
+This improves source-side classification only. The supplied ONE gate and participant identity must themselves be independently authenticated by the authorized host; this code cannot verify a real signed ONE receipt or finalize recovery.
+
+---
+
+## 2026-11-12 — #1682 prevent premature ONE unlock on Recovery acceptance AND rollback (PR #2271 SOURCE ONLY)
+
+Audited the A/B update boundary and fixed a second premature unlock: `recovery_upgrade_promotion.accept_pending()` called `durable_update_gate(..., "VERIFY")` **before** Windows persisted `last_known_good=B` and cleared `pending`. If Windows writes then failed, ONE could be IDLE while Windows still carried a pending candidate. The existing acceptance method now first checks candidate, Normal health and independently validated ONE receipt; then writes the Windows accepted state, reads it back and verifies the candidate's protected hash **before** asking ONE to commit VERIFY.
+
+The rollback path likewise now separates `authorize_rollback` from the post-local-write `ROLLBACK_OK` gate completion. Any local write failure leaves ONE interlock held; if the ONE closeout fails after local commit, the stage reservation stays intact. The read-only reconciler now identifies `GOVERNED_POST_ACCEPTANCE_RECONCILIATION` and `GOVERNED_POST_ROLLBACK_RECONCILIATION`, neither permitting new updates nor authenticating a Receipt. Source tests cover disk write failures, ordering, denied host callbacks and cross-store post-commit failures.
+
+**Source-only status:** These source callbacks still require actual ONE Maintenance signer/trust enforcement and the Windows/ONE live receipt. No official Oracle Canonical IR publish/readback and no production Recovery repair have been performed. #2271 remains unmerged Draft.
+
+---
+
+## 2026-11-12 — #1682 correction to ONE rollback gate completion order (PR #2271 SOURCE ONLY)
+
+Critical source review found `recovery_upgrade_promotion.revert_pending()` invoked `durable_update_gate(context, "ROLLBACK_OK")` **before** persisting the Windows LKG restoration to `slots.json`. A Windows write failure could therefore release ONE's cross-channel update lock before recovery had happened. The existing primitive now requires a separate privileged `authorize_rollback(context)` callback, then commits and reads back the local LKG restoration **before** requesting ONE `ROLLBACK_OK`. If the local write fails the gate is not called; if the later ONE completion fails, the durable stage reservation and ONE gate remain for governed reconciliation. The read-only reconciler now classifies this last state as `GOVERNED_POST_ROLLBACK_RECONCILIATION` rather than a healthy/released operation. Unit tests cover denied authority, write failure, callback ordering, ONE denial and cross-store crash recovery.
+
+This is a source API change requiring the existing ONE Maintenance integrator to implement the separately authorized callback; **no production ONE verifier or Windows rollback Receipt exists**. The PR is Draft, not merged/deployed, and this source change has not completed an actual Oracle Canonical IR CAS.
+
+---
+
+## 2026-11-12 — #1682 Recovery damaged-pending B rollback reconciliation corrected (PR #2271 SOURCE ONLY)
+
+A concrete live-recovery blocker was found: `scripts/windows/recovery_update_reconcile.py` required `active_integrity_verified` even in ONE's `ROLLBACK_REQUIRED` phase. A damaged pending B image therefore could **never** be classified `AWAITING_AUTHORIZED_ROLLBACK`, despite a verified protected A LKG and matching gate operation. The reconciler now admits the expected pending B / verified LKG case *even when B is corrupt*, and leaves `rollback_authorized=false`, `new_update_permitted=false`, and `one_receipt_attested=false`. Operation mismatch, absent stage/reservation and damaged LKG still fail closed. Added corresponding source regression tests.
+
+**Scope:** The classification is read-only guidance to the existing ONE Maintenance owner. This patch does not connect the privileged callback, move A/B slots, execute a rollback, or publish Oracle's Canonical IR. PR #2271 remains Draft and not deployed.
+
+---
+
+## 2026-11-12 — #1682 orphan Recovery Python and ZIP collision guards (PR #2271 SOURCE ONLY)
+
+Further audit found the first-install path could use `recovery/python-runtime/python.exe` **without a managed Recovery Scheduled Task**, silently adopting orphaned interpreter bytes instead of requiring publisher/operation reconciliation. The canonical `install-agentos.ps1` now refuses this state with `RECOVERY_PYTHON_ORPHAN_RUNTIME_REQUIRES_AUTHORIZED_RECONCILIATION`; it does not delete or replace the orphan. The offline provisioner now rejects ZIP members with case-insensitive duplicate names before extraction (Windows filesystem conflict). Contract and Windows execution tests added. Official Recovery owner still needs an independently authorized repair/reattachment workflow.
+
+**Source only:** no authorized Windows Recovery migration, runtime install or dedicated Python survivability drill performed; no Oracle ONE CAS IR publication or Recovery receipt. Draft PR #2271 remains unmerged and undeployed.
+
+---
+
+## 2026-11-12 — #1682 offline private Recovery Python bootstrap (PR #2271 SOURCE ONLY)
+
+The existing Windows one-click installer can now accept an **explicit offline** `-RecoveryPythonArchive` and `-RecoveryPythonSha256` at **first Recovery enrollment**. `scripts/windows/install_recovery_python.ps1` verifies the entire ZIP against the caller-approved hash, rejects unsafe ZIP paths and symlinks, stages the runtime separately under `recovery/python-runtime`, validates self-contained Python imports/prefix, and refuses replacing any existing private runtime. The Recovery Scheduled Task uses this interpreter if provisioned; existing Recovery scheduled tasks are never silently rebound by a Normal reinstall. Windows CI includes real PowerShell negative tests for mismatched hash, traversal and overwrite. The default without a supplied approved archive remains shared Python and **does not** satisfy independent Recovery interpreter acceptance.
+
+**Safety/Reality:** A caller-supplied SHA-256 checks only bytes against the **caller-selected** hash, not independent authenticity of the publisher. No trusted official package or hash has been approved here; no private Recovery Python has been installed on real Nodes and no actual Windows Normal-Python-loss/ONE recovery Receipt exists. Same-user filesystem access and shared Node credentials remain relevant risks. The official Canonical IR in Oracle has not been CAS-published; this is a source-side IR proposal update, not a verified live IR transition. PR #2271 remains Draft, unmerged, not deployed.
+
+---
+
+## 2026-11-12 — #1682 fresh LKG status evidence guard (PR #2271 source only)
+
+The read-only LKG fallback must not infer a successful Recovery-to-ONE roundtrip from subprocess exit code alone. The runner now clears the previous LKG status file before the test and verifies a **freshly written, schema-valid status** with `one_transport_roundtrip=true` and `recovery_update_authorized=false` / `adapter_download_verified=false`. Exit-zero without fresh result is classified failed; the active B status remains failed and A/B metadata remains unchanged. Regression tests cover stale success and valid fresh status. This is still a source-level check; it does not provide cryptographic receipt verification or a live Windows Recovery demonstration.
+
+---
+
+## 2026-11-12 — #1682 Recovery interpreter readback and probe binding fix (PR #2271; source only)
+
+Further review found normal reinstall preserved the existing Recovery task's Python executable **but** ran Recovery bootstrap and live ONE probes with the new Normal Python before reading the task action. The installer now validates the existing Recovery Scheduled Task first and uses that **actual preserved interpreter** for bootstrap/readiness; only an initial installation uses the freshly discovered Python. No existing task is rewritten. Contract tests guard ordering, interpreter selection and no Normal-Python probe.
+
+This prevents a misleading check with the wrong interpreter. It does NOT provision or demonstrate a fully independent Python runtime, recover from a missing interpreter, or produce a Windows ONE Receipt; actual Canonical IR remains uncommitted in Oracle. PR #2271 Draft/unmerged/uninstalled.
+
+---
+
+## 2026-11-12 — #1682 Recovery scheduled task retention across Normal reinstall (#2271 source only)
+
+Source review found canonical `install-agentos.ps1` used `Register-ScheduledTask ... -Force` during **every** Normal reinstall, re-binding Recovery to the Normal install's then-current `$PythonPath` even though Recovery source/slot bytes were preserved. Reinstall now detects an existing `AgentOS Recovery ONE Probe` task, validates its recognized launcher path, root/config/status arguments and existing executable, and **preserves its original action and schedule** instead of recreating it. An unknown/missing interpreter/task action fails closed rather than silently replacing a protected task. First enrollment still creates its read-only probe task and includes LKG diagnosis on corrupt pending B.
+
+This is a binding-preservation fix, not independent interpreter provisioning, protected OS ACLs or proof that recovery survives a broken Normal Python installation. Normal reinstall still performs a probe using the installer-selected Python to establish a live roundtrip, and it has not been tested on a real Windows Node. Evidence needed: read back the actual Scheduled Task action/triggers/Python executable before and after a Normal update; run a separate broken-Normal-Python Recovery probe drill and obtain a real ONE receipt. The Canonical IR proposal now tracks that validation; official Oracle IR has not been published in this session.
+
+---
+
+## 2026-11-12 — #1682 LKG Recovery ONE diagnostic without bypassing rollback authority (PR #2271 SOURCE ONLY)
+
+The previous scheduled Recovery probe failed closed when a pending B slot image was corrupt, correctly preserving ONE authority but losing **all Recovery-to-ONE probe liveness** even if protected A remained healthy. The existing `recovery_slot_runner.py` now provides an explicit `--diagnose-lkg-when-pending-corrupt` mode, wired into the canonical `install-agentos.ps1` scheduled Recovery task. On corrupt pending B with SHA-256 verified protected LKG, it can run the read-only A probe against ONE and record `lkg-diagnostic.json` / `lkg-rescue-diagnostic.json`, while **keeping the primary active status unsuccessful and leaving `slots.json`, pending operation and LKG completely unchanged**. A passing LKG probe never means a rollback, active Recovery recovery, authorized update or ONE Receipt. Corrupt LKG/other invalid states still fail closed. Tests verify successful and failed isolated diagnostics, no A/B state mutation and no false rollback/receipt.
+
+The existing ONE Maintenance Owner must still implement trusted staged package authorization, durable interlock transitions, protected A/B rollback and real Windows/ONE readback receipts. Canonical IR proposal/decisions updated accordingly, but **the actual Oracle Canonical IR has not been CAS-published from this GitHub-only change**. PR #2271 remains Draft, unmerged and not deployed.
+
+---
+
+## 2026-11-12 — #1682 scheduled Recovery runner unauthorized rollback fixed (#2271 SOURCE ONLY)
+
+Identified an actual authority bypass: the independent `recovery_slot_runner.py` previously rewrote `active=A` and cleared `pending` on a corrupted pending B image during a routine scheduled health check, without a ONE durable interlock transition or authorized rollback Receipt. The code now **does not mutate A/B slot state during probe runs**; it fails closed with `recovery_pending_corrupt_rollback_authority_required`, preserving pending and the protected LKG for the existing governed `recovery_upgrade_promotion.revert_pending` operation. The slot check also refuses symlinked slot directories, and tests verify no state mutation or unauthorized process execution.
+
+**Safety boundary:** This prevents silent state divergence but can temporarily leave the independent Recovery probe offline until the authorized host reconciles and rolls back. Real ONE authorization, maintenance binding and a Windows live rollback/Recovery Receipt are STILL outstanding, as is a real Canonical IR CAS publish/readback. The structured IR change proposal and #1682 work ledger include this deficit; this source PR remains Draft and not deployed.
+
+---
+
+## 2026-11-12 — #1682 IR CAS interrupted-selector recovery (PR #2271; source-only)
+
+Added `--resume-selector-only` to the same `scripts/publish_recovery_1682_ir.py` to recover a crash **after** a Canonical IR generation is published but **before** the Active Continuation selector is updated, without publishing another IR generation. It verifies that the authoritative `agentos-core` IR and execution head match, the IR is the #1682 handoff and has a real parent, and the selector remains on that precise parent before performing guarded selector CAS and readback. Already-current selectors are idempotent; missing/other-project/stale/concurrently updated selectors fail closed. Re-running `--from-current --apply` after a successful publication is unsafe because it creates unnecessary IR generations. Source tests and the updated IR proposal reflect this next action.
+
+**Reality:** CI pass is not a live ONE CAS Receipt. Official Canonical IR and selector have **not** been published or reconciled on Oracle by this session, PR #2271 is still Draft and not deployed, and no independent Recovery rescue Receipt exists.
+
+---
+
+## 2026-11-12 — #1682 Canonical IR automatic generation read + guarded selector CAS (PR #2271)
+
+Source-only continuation: `scripts/publish_recovery_1682_ir.py --from-current` now reads the actual `agentos-core` Canonical IR generation from the authorized ONE data root instead of requiring manual copy of parent IDs. It refuses mismatched execution-head / IR versions and delegates the actual write to the existing `advance_canonical_ir` CAS publisher; only new child IDs are generated. `--sync-active-selector` requires `--apply` and only updates a pre-existing `agentos-core` selector that still points to the exact parent generation. `activate_continuation(expected_previous=...)` compares under the existing selector file lock to avoid overriding a different Executor's active project. Both Canonical IR and active selector require authoritative readback after publishing. `ir_published=true` describes only a successful CAS generation; `runtime_accepted=false` and `recovery_live_receipt=false` remain until separate evidence.
+
+**No actual Oracle ONE publish has occurred in this GitHub-only session**. PR #2271 remains Draft, unmerged, uninstalled and without a real Recovery Receipt. Do not mark the official Canonical IR or active selector as synchronized until ONE produces the real CAS publish and exact readback.
+
+---
+
+## 2026-11-12 — #1682 / PR #2271 Recovery IR continuation checkpoint (SOURCE ONLY)
+
+**Truth boundary:** [PR #2271](https://github.com/alston-personal/agentmanager/pull/2271) remains **Draft and unmerged**. Source-level Normal/Recovery maintenance protections, independent Windows read-only ONE bootstrap probe, A/B slot integrity, staging/host-only promotion primitives, crash-persistent interlock, audit and cross-store restart reconciliation have source tests and GitHub CI. NONE of this is evidence that a trusted ONE authority callback, protected OS anti-tamper, formal B-slot updater, live Node deployment or end-to-end Recovery Receipt exists. Do not record those as DONE.
+
+**Canonical IR consistency:** Source-controlled proposed goal/decisions/evidence/pending steps live at \`docs/recovery-1682-canonical-ir-proposal.json\`. \`scripts/publish_recovery_1682_ir.py\` calls the **existing** \`agent_core.canonical_ir_handoff.advance_canonical_ir\` under explicit expected/new generation \`index_id/ir_id\` CAS; default is dry-run. The current Oracle ONE generation has NOT been observed from this session, so \`ir_published=false\` and no canonical IR CAS publication or active selector update is claimed. Pending acceptance: ONE current-generation read -> authorized CAS publish -> exact receipt/readback -> active continuation selector matches new generation. See \`docs/VERSION_CONVERGENCE_SIGNAL.md\`.
+
+**Next action:** Existing ONE Runtime/Maintenance Owner must bind real signed authority, fresh Normal rescue, exact signed candidate manifest and ONE Receipt to the existing durable gate, using #2271 rather than a parallel PR or second update system. Then run an authorized disposable Windows Node drill: normal failure -> Recovery authenticates to ONE -> trusted repair -> normal service restored -> independent Receipt. Do not disturb current live clients before this evidence exists.
+
+---
+
 ## 2026-11-11 — #2198 transactional Windows Realm cutover contract (explicit approval)
 
 After protected-main #2266 stage-only proof, a separate `scripts/windows/commit_staged_realm.ps1` is packaged into the existing Thin Client Windows installer. It requires the local operator's explicit `-CommitApproved` flag and an approved, separate `AgentOS-realm-stage-...` folder. The script validates unchanged Node identity, destination tenant ID, matching fresh staged lease (<=600s), target bearer-authenticated health and original health before touching active state. Only the *known* hidden Windows Supervisor shape is supported (current single-task installer or prior task+watchdog); unknown task actions fail closed. It stops the tasks, refuses to proceed if a Python Thin Client daemon still runs, uses Windows atomic File.Replace to swap staged credential while preserving old bytes in a local rollback file, restarts the prior Supervisor, checks the active Realm and sends a **fresh** authenticated heartbeat. A failing post-switch check triggers a reverse atomic File.Replace, Supervisor restart, and explicit distinction between `ROLLED_BACK_VERIFIED` and `ROLLBACK_UNVERIFIED`. No token or cookie is printed; staged credentials remain device-local. The script does not change the old Realm's stored node binding, migrate data, or grant authority in a new Realm.
@@ -91,6 +205,27 @@ The existing Oracle Vendor publisher workflow now targets the merged Vendor Read
 PR #2195 reuses Themis `/status-diff` manifest and `scripts/themis_status_diff.py` without introducing a ChatGPT-specific executor. `scripts/resolve_agentos_command.py` produces a declarative `agentos.command/invoke` Runner Window intent; `scripts/submit_agentos_command.sh` delegates submission and bounded Receipt polling to existing `scripts/agentos_dispatch.sh`. ONE Runner Window action `agentos.command.invoke` is admitted through `agent_core/runner_window.py`, `agentos_node/bootstrap_scheduler.py` and the trusted `bootstrap_control.py`, which **independently** allowlists only `/status-diff` paired with `themis.inventory.diff` and calls installed Themis, never a caller-provided runner or shell. Returned Receipt projects a bounded Markdown report, inventory summary, Git state, Atlas cycle and delta. Registration is not execution authorization: the general resolver can parse existing manifest names, but Runtime currently admits ONLY the exact `/status-diff` + `themis.inventory.diff` pair. Further commands require reviewed Runtime handlers and capabilities. This chat's GitHub connector is currently read-oriented rather than an authorized ONE submit tool. **NOT DEPLOYED / NOT LIVE ACCEPTED** until main merge, real installed SHA + ONE dispatch ID + oracle-origin receipt + caller readback. Existing Themis and ONE infrastructure remain authoritative; no new scheduler, role, or task engine.
 
 # AgentOS Current Architecture & Reality
+
+## Galaxy monitor child-failure redaction during branch convergence (2026-11-12)
+
+The immutable Galaxy experiment queue now persists and reports only an exact
+allowlist of child-monitor failure classifications. Arbitrary stderr is reduced
+to `UNCLASSIFIED_CHILD_FAILURE`, so credentials, account data, post text, and
+free-form trace output are not copied into queue state or logs. A later
+successful observation clears both the generic error and its bounded class.
+Focused tests cover accepted markers and reject marker lines with appended
+untrusted content.
+
+This is a source-level extraction from the legacy `core/integration` lane. The
+historical Oracle readback probes remain tied to that lane's OIDC/deployment
+carrier and are not copied as if they were a main-authorized runtime. Merge and
+CI do not prove Oracle deployment, a real Galaxy observation, or learning.
+
+## Fail-closed executable task quality contract (2026-11-11)
+
+AgentOS separates historical prose TODOs from executor-eligible work. Every new executable task written through project registration, `add_todo`, Architect, White Hat, Command Center registration, or the central board projection must use `description | workspace=<path-or-repo> | acceptance=<command-or-evidence>`; `prerequisite=` is supported when sequencing matters. Generic placeholders such as `Define objectives`, `Break work into milestones`, and `Execute and report progress` are forbidden. The shared validator is `agent_core/task_quality.py`. Lobster applies the same validation at selection and immediately before execution, so manually inserted or historical underspecified tasks fail closed rather than reaching Paw. Quota exhaustion opens a 1800-second circuit without consuming three task attempts or converting the task into a generic verification failure. This guard does not mechanically rewrite historical STATUS files; owners must refine them deliberately.
+
+Oracle completion-controller run `42955632229` installed immutable release `d3578dd7eb80f36131cd0ab6d749e80b1381e69c` and restarted `lobster-engine.service` from that exact release. A live runtime probe rejected the historical placeholder forms, accepted a fully scoped task contract, classified the observed `RESOURCE_EXHAUSTED` response on the first attempt, restored the task to pending, and entered the 1800-second cooldown. This is runtime acceptance for the task-quality/quota guard only; it does not prove Paw provider capacity or completion of the queued Vendor work.
 
 ## Vendor release Receipt governance (2026-11-10; candidate)
 
@@ -1550,137 +1685,155 @@ failed jobs, verify Oracle's loaded runtime, or deliver the final six-second
 spoken IFTV leopard-cat outro. Existing ONE/Supervisor approval and original
 IFTV #3 receipt/QA requirements remain unchanged.
 
-### #1682 Mainline freshness guard (2026-11-11; proposed, not deployed)
+### Governed automatic H3 smoke dispatch (source-only)
 
-- A source-only preflight in `scripts/branch_resume_guard.py` compares an
-  explicitly pinned Executor work commit against the current verified
-  `refs/remotes/origin/main` ancestry. Code work from a stale merge-base
-  receives `RECONCILE_REQUIRED`, not silent continuation or force-rebase.
-  The same preflight is being added to the **existing** Branch Convergence
-  Path Audit on PRs targeting protected `main`; new code PRs must contain
-  the current `main` HEAD and rerun checks if it advances.
-- Read-only inventory may continue without granting mutation authority.
-  `legacy_production` is reported as
-  `GOVERNED_LEGACY_EXCEPTION_REQUIRED`; no client-provided switch may
-  authorize the old production `core/integration` lane. Its real Oracle,
-  OIDC, rollback and Receipt dependencies must be individually accepted
-  before retirement.
-- **Not yet integrated into Runtime Executor claim/resume**, not deployed
-  to Oracle/ONE, and does not itself merge or delete branches. A successful
-  PR check is not production release evidence. The existing #1682 owns
-  tracking and the existing governance review/merge controls still apply.
+The fixed `media.colab.h3.smoke` executor-job route reuses the existing Ubuntu
+Action Relay to dispatch only `oracle-colab-minimax-h3-smoke.yml` on `main`,
+with no caller-supplied inputs. The provider fails closed on GitHub read errors
+and suppresses another GPU dispatch whenever a workflow-dispatch run less than
+24 hours old already exists. A workflow dispatch or successful Actions run is
+only an intermediate acknowledgement: the job remains pending until the
+separate media-generation receipt proves the requested output.
+The provider therefore reports `ACK_ONLY` for a correlated workflow run and
+never promotes that transport acknowledgement to terminal media success.
+The convergence change also restores the relay's bounded dispatch function body
+where the action registry already referenced it, keeping import and execution
+behavior aligned with the allowlist contract.
+The same source repair restores the pre-existing Realm deployment-fence
+definitions referenced by the relay registry; it does not claim a deployment,
+lease acquisition, service restart, or Oracle runtime readback.
+
+This is source-level convergence only. It does not attest that Oracle has loaded
+the provider, that ONE delivered the job, that a GPU run occurred, or that the
+final H3 media was accepted. Those require independent runtime deployment,
+executor acknowledgement, and media receipt evidence.
+
+## 2026-11-11 — #1682 protected-main Version Convergence source-event contract
+
+Existing PR #2269 owns the separate pre-resume stale-work safety gate; do not duplicate its `branch_resume_guard.py` or `ControllerService` integration. Draft PR #2271 adds a **source event only** after trusted protected-main push: `.github/workflows/version-convergence-signal-contract.yml` uses the existing GitHub Actions transport to record exact main/previous SHA, changed paths, affected source domains and deterministic event ID in a 30-day JSON artifact. `scripts/version_convergence_signal.py` validates event/ack schema and makes statuses `NOTIFIED`, `SOURCE_CONVERGED`, `RUNTIME_DEPLOYED`, `TASK_RESUMED`, and `BLOCKED` distinct. The unit tests reject forged event IDs, dirty-worktree-reset claims and notifications masquerading as actual deployed runtime. It does NOT connect ONE fanout or authenticate ack issuers. No Executor received an event by virtue of a CI artifact, no scheduler/daemon added, and no runtime deployment is claimed.
+
+The existing ONE Supervisor/Runner Window is the intended trusted delivery path. Subsequent owner-governed integration must verify protected-main lineage, authenticate online/offline executor identity, correlate per-executor acknowledgement with independent source and deployed runtime SHAs, and reuse #2269's stale-write gate. Current execution state: **CONTRACT_ONLY / NO_LIVE_FANOUT**. Full design/acceptance boundary: `docs/VERSION_CONVERGENCE_SIGNAL.md`. Issue: #1682.
+
+## Action Relay handler recovery — 2026-11-12 (source-only, not deployed)
+
+The current `agentmanager/main` Action Relay module had a broken action dispatch registration: `_github_actions_dispatch` plus six Realm Fabric deployment handlers were referenced but not defined, and `_verify_continuation_capsule_owner` used `pwd` without importing it. This caused CI import failure `NameError: name '_github_actions_dispatch' is not defined`, including the Studio old-root migration carrier #2257. The existing implementations and shared state/lock helpers were recovered from the separately maintained `core/integration` source into the focused repair candidate PR #2275; `pwd` was restored. This is not a new arbitrary CLI or deployment path. Workflow dispatch remains scoped to the upstream allowlist and source-CAS verification; Realm Fabric lease/release functions remain typed and bounded.
+
+**Reality boundary:** A source repair/CI pass is not a deployed Action Relay binary, a live Oracle approval, or evidence of any Studio Nginx root cutover. Do not promote the separate PR #2257 root change before the actual effective-vhost audit, staged immutable Studio release and rollback. Canonical accepted Studio public host source is `studio-web`; its route-parity source protections merged at Studio PR #151 / commit `4420214d`.
+
+## Studio real Nginx audit remediation — 2026-11-12 (read-only diagnostic)
+
+The legacy `.github/workflows/oracle-diagnose-studio-webserver.yml` previously bound its push trigger to `core/integration` and printed raw Nginx configuration and unrelated system privilege data. The replacement in this branch reuses **that same workflow** with `contents: read`, a hosted-runner pull-request redaction test, and an Oracle self-hosted **read-only** diagnostic job only after authorized merge to `main` or manual dispatch. It cannot modify the live host or write directly to protected main. Raw `nginx -T` output and stderr are captured only in memory and must never enter GitHub logs, artifacts or issue comments. The allowlisted JSON receipt exposes only matching Studio server block root classifications, routing/fallback types, safe status/MIME outcomes, a public non-secret canary equality bit and bounded known-file reference census. An unavailable or invalid Nginx configuration must fail closed.
+
+**Not a production cutover.** Live virtual host identity, old-root writers, complete route parity, exact source SHA, protected API continuity and reversible release promotion are still unresolved until a real Oracle audit Receipt is returned and reviewed. Keep AgentOS PR #2257 Draft before the effective Nginx host switch. Existing ZeusWriter writing/n8n workflow remains out of scope.
+
+### Studio Nginx read-permission reality — 2026-11-12 Oracle readback
+
+The first protected-main execution of the existing, sanitized `Diagnose Studio Web Server` workflow (run `43183463667`) reached the Oracle self-hosted runner. `nginx -T` returned a non-zero status under the runner identity; the audit artifact reported `nginx.available=false`, `reason=read_denied_or_invalid`. The public-origin `/.well-known/studio-root-authority.txt` returned HTTP 200 but did **not** match `studio-web-production-root/v1`; all checked product URLs returned 200 but were not yet content-identity verified. This does not establish a new Studio root.
+
+The source remediation retains the same read-only workflow and reads only the fixed, readable `/etc/nginx/sites-enabled/studio.milkcat.org` vhost as a **provisional** fallback when `nginx -T` is inaccessible; it never mislabels that on-disk file as effective configuration. It validates the symlink target against allowlisted paths and emits only root categories and allowlisted directives. Read-only local origin checks now compare the **actual body** of the non-secret Studio root canary plus product-specific World/WoW/Layout Lab markers, not HTTP 200. No sudo escalation, raw config export, production mutation, or route switch is authorized by these probes. PR #2257 remains gated pending the effective-config audit, all active old-root writers, cutover and rollback Receipt.
+
+## Deployment Capability extraction — source contract only (2026-11-12)
+
+Core #165 / #1672 / #175 now have a focused source-only proposal for the reusable `agentos.deployment-capability/v1` contract at `agent_core/deployment_capability.py`, `governance/deployment-capabilities.json`, `tests/test_deployment_capability.py`, and `docs/GOVERNED_DEPLOYMENT_CAPABILITY.md`. The existing governed execution workflow runs its contract tests. The API is a deterministic, non-executing lifecycle gate over existing product release carriers, not another Runner Window, dispatcher, privileged deployer or runtime permission. All resulting gate receipts state `execution_performed=false`; source-only Studio targets cannot qualify for production promotion until live authority and all writers are accepted.
+
+This is **not installed/activated as a ONE runtime deploy capability**, and not evidence of an Oracle Nginx cutover. PR #2257 remains Draft with actual production website root and legacy writers still requiring migration; any product-specific rollout remains owned by its existing adapter with exclusive lease, exact SHA, independent receipt and rollback.
+
+## AgentOS and Studio deployment capability boundary — 2026-11-12, source only
+
+The reusable Core `agentos.deployment-capability/v1` inventory now models `agentos.public-console` (AgentOS Python `agentos-control-plane.service` and `agentos.milkcat.org`), `agentos.shared-auth-dashboard` (existing shared Next Dashboard OAuth blue/green), `studio.public-site` (`studio-web` Astro served on `studio.milkcat.org`) and Studio-hosted `studio.layout-lab` as separate registered targets. This is **not** a single all-sites release or permission for one product to deploy another. Both public sites require healthy shared OAuth/API dependencies; the existing immutable AgentOS login release currently invokes a shared Dashboard blue/green deployment in its own lane and therefore must preserve separate receipts and rollback states. AgentOS Console login/Realm/session acceptance is distinct from Studio static route, Nginx root and generated Persona acceptance. See `docs/GOVERNED_DEPLOYMENT_CAPABILITY.md`.
+
+The new registrations remain `migration_state=source_only`: the pure gate always emits `execution_performed=false` and is not yet connected as a runtime ONE deployment action. Existing AgentOS source authority `agentmanager/main` and existing Studio source authority `studio-web/main` must not be conflated. Studio root migration PR #2257 remains DRAFT because the Oracle on-disk TLS 443 vhost was still pointing to legacy ZeusWriter, effective Nginx readback is incomplete, and active old-root writers remain unclassified. These facts must not be inferred to describe the independent AgentOS Console vhost.
+
+## ONE Deployment Capability inspection integration — 2026-11-12 (source-only)
+
+Core's source-only deployment lifecycle policy (merged PR #2279/#2280) is now being connected to the existing ONE `agentos.executor.job` Action Relay interface for **read-only observation only**, via `agentos_node/deployment_inspect_provider.py` and two allowlisted exact job types: `deployment.agentos.inspect` and `deployment.studio.inspect`. The first checks the AgentOS Console systemd service and fixed localhost-bound public HTTPS origin; the second inspects only the known on-disk Studio Nginx site-file identity and fixed localhost HTTPS canary. They return sanitized classifications, never raw config, content, secrets or caller-controlled shell. Both intentionally fail closed without definitive release identity/effective Nginx/independent parity proof, so availability is not reported as a successful deploy.
+
+This is a **proposed source integration**, not a deployed ONE runtime. Until approved merge plus the existing Action Relay runtime update and an independent real ONE receipt, do not describe these new job types as remotely routable or live. No new deployment scheduler, process, SSH, Nginx mutation or cross-website promotion authority is introduced. Existing Studio PR #2257 remains Draft and all legacy-writer/recovery gates remain binding.
+
+## ONE deployment inspection runtime rollout — 2026-11-12 (pending protected-main promotion)
+
+PR #2281 merged `agentmanager/main` as `88c1bc3679af062e1c4794adb01e367207e385b4` and registered two fixed read-only executor jobs `deployment.agentos.inspect` and `deployment.studio.inspect`. **Actual** Control Inbox #50 requests `deploy-inspect-agentos-20261112094859` and `deploy-inspect-studio-20261112094859` both returned `one_dispatch_http_400` (https://github.com/alston-personal/agentmanager/issues/50#issuecomment-6820301661 and #issuecomment-6820304318). The cause may be the old installed provider registry or an upstream ONE allowlist; a 400 is not sufficient to distinguish these. No job receipt was produced and no release was performed.
+
+The pre-existing protected-main workflow `.github/workflows/main-action-runtime-migration-20261007.yml` used the governed `agentos.runtime/repair` Runner Window with OIDC and exact SHA receipts but was triggered **only** when the workflow YAML itself changed. This candidate expands that same existing carrier's push path filter to the exact ONE job type/provider registry/adapter files, adds a hosted, unprivileged contract preflight and shares the existing Oracle Action Runtime rollout concurrency key. It does not create another deployer, direct SSH fallback, unapproved shell interface or public-site deployment. The existing repair adapter must still validate and return `action_relay_install=PASS` and `agentos_source_commit=<exact new SHA>` or the workflow fails closed. Do not infer deployment or repair success from merging this source change; verify actual Runner Window run, exact receipt and repeat ONE read-only requests, and distinguish controller allowlist failures from node runtime code rollout.
+
+**Studio Nginx cutover #2257 remains blocked.** This Runtime Repair updates Action Relay only; it does not grant Studio publisher/active-writer migration authority, rewrite the Nginx vhost, or change AgentOS Console/Studio front-end release generations.
+
+## Runtime Repair Gateway and OIDC authority — 2026-11-12, candidate only
+
+The protected-main Action Relay rollout [run #43195829487](https://github.com/alston-personal/agentmanager/actions/runs/43195829487) did execute after PR #2282 merged at `85ed7e9d8a7aafa895d438e5b61cb26992c07d2b`. Its hosted preflight passed, but the authorized Runner Window GET `/v1/dispatch` returned **HTTP 401** at `Confirm runtime repair catalog`; the mutation job never ran and there is **NO Runtime Repair Receipt**. Source inspection identified a two-sided permission boundary: Realm Scheduler's OIDC accepted canonical `core/integration`, one health main carrier and one Vision Studio main carrier, but not `main-action-runtime-migration-20261007.yml@refs/heads/main`. The public Dashboard gateway also allowed only a Rain Exit special POST `/v1/dispatch`, not the bounded `agentos.runtime/repair` mutation or its own receipt path; fixing the OIDC side alone would leave an HTTP 404.
+
+This candidate reuses existing `oracle-deploy-realm-gateway.yml` and **does not create another deployment service**. Only the exact signed `main` push workflow identity may obtain the new OIDC authority, and it is constrained to the exact `agentos.runner-window-dispatch/v1` body `capability=agentos.runtime`, `operation=repair`, empty payload, and exact signed source SHA. Its request-status access is scoped to `agentos.transport.repair-<timestamp>-<token>` and all generic scheduler/controller endpoints remain denied. The Gateway performs request-shape checks, while upstream Realm must cryptographically verify OIDC and exact SHA; a dummy Bearer is NOT authorization. Tests assert rejected generic actions and wrong workflow, event, payload, repo/ref or SHA. The existing Realm Gateway source-pinned Blue/Green + Core runtime restart and rollback must provide the actual release Receipt.
+
+**Not deployed yet:** This source PR cannot be treated as live Gateway permission or active Action Relay code. When accepted, deploy/verify the Gateway first via its existing lane and only then rerun the existing main Runtime Repair through its own governed exact-SHA carrier. After that, repeat ONE read-only `deployment.agentos.inspect` and `deployment.studio.inspect` and record real receipts. Do not use it to switch Studio Nginx root, to unblock Draft #2257, or to weaken the backup safe channel.
+
+## ONE Runtime Repair post-Gateway continuation — 2026-11-12
+
+Actual source acceptance: read-only ONE `deployment.agentos.inspect` and `deployment.studio.inspect` commands both returned `one_dispatch_http_400` on Control Inbox #50 (no deployment job result). The first protected-main Runtime Repair attempt, GitHub run `43195829487`, passed preflight but received HTTP 401 at the authenticated Runner Window GET catalogue, therefore **did not install** the new Action Relay. Gateway/OIDC narrow-scope fix PR #2283 subsequently merged at `dd141cc84b8a9299665aa9515c94af946a6e031c` and **Oracle Realm Gateway run `43197127808` succeeded**, with exact source SHA `dd141cc84b8a9299665aa9515c94af946a6e031c`, `realm_gateway_dashboard_bg=PASS`, `realm_core_runtime_cutover=PASS`, `realm_gateway_dispatch_public=PASS` and `realm_gateway_deploy=PASS`.
+
+This continuation uses ONLY the existing protected-main `Main Action Runtime Migration 20261007` OIDC Runner Window Runtime Repair carrier, with preflight verifying the narrowed Realm Scheduler OIDC claims and fixed executor job contracts. It does **not** alter AgentOS Console or Studio public-site release generations or cut over Studio's ZeusWriter Nginx root. Workflow success must have a separately returned Runtime Repair receipt at its **new exact merge SHA** with `action_relay_install=PASS`; do not treat a successful Gateway deploy as an Action Relay update. After Runtime acceptance, retry two independent read-only ONE inspect jobs; HTTP 400 may remain an upstream allowlist issue and must be reported distinctly. Any failure is a fail-closed blocker; no shell or second deployment lane.
+
+## Runtime Repair repeated 401 after live Gateway acceptance — 2026-11-12
+
+The read-only deployment inspection jobs remain unaccepted by ONE (Control Inbox #50 `one_dispatch_http_400`). The Gateway/OIDC scope fix was **actually deployed** in Realm Gateway run `43197127808` at `dd141cc84b8a9299665aa9515c94af946a6e031c`, with blue/green Dashboard and Realm Core runtime restart PASS. Nonetheless the old Runtime Repair run `43195829487` failed at GET Runner Window catalogue with HTTP 401 even on retry attempt 2, and the existing follow-up main PR #2284 source `6792fab845f2acc28984dba696276b6ff66126e4` also ran the existing workflow as `43197783438` and returned HTTP 401. Do NOT claim the Action Relay was installed.
+
+This focused read-only diagnostic extends the **same original** `main-action-runtime-migration-20261007.yml` failure path to log only the HTTP code, whether the response carries the fixed Gateway marker, a fixed allowlisted OIDC/scheduler rejection category and Boolean matches of signed workflow identity fields against the protected-main source. It deliberately never prints the token/JWT, raw HTTP body, headers, unrecognized error values, environment variables or private Realm data. Any non-200 remains a hard failure: it cannot dispatch, update Runtime, or weaken OIDC/Runner Window authentication. Use the resulting GitHub Actions run as the next independent evidence for rejecting the specific issuer/ref/claims/JWKS/current-live-version hypothesis before modifying authority again. Preserve the original #165 governance and #2257 Studio source-only cutover block.
+
+## Realm 8780 exact-source diagnosis — 2026-11-12 (read-only)
+
+After Oracle Realm Gateway #2283 merged, the live Gateway [run 43197127808](https://github.com/alston-personal/agentmanager/actions/runs/43197127808) returned `realm_core_runtime_source_commit=dd141cc8`, Blue/Green PASS, port 8780 restart PASS and dispatch route PASS. Nevertheless existing main Runtime Repair [run 43197783438](https://github.com/alston-personal/agentmanager/actions/runs/43197783438) still received authenticated catalog HTTP 401. An independent sanitized diagnostic from already-merged #2285 [run 43198595631](https://github.com/alston-personal/agentmanager/actions/runs/43198595631) showed six JWT claim matches for repository/ref/workflow/event/SHA/audience, but Realm replied `OIDC_REF_NOT_AUTHORIZED`. Therefore the active Realm authorization generation or process import identity must be compared to the accepted source before changing privileges. Do not broaden ref permissions based on a 401.
+
+The existing `oracle-attest-realm-fabric-process.yml` workflow was historically unsafe for this task: it printed raw unit/launcher, process arguments/environment, NODE MAP and request contents to a public CI log. The focused change reuses and hardens that **same** workflow with an unprivileged PR test and an Oracle read-only report. It observes only the fixed `agentos-realm-fabric.service` MainPID/ActiveState and `/v1/health` schema, compares candidate Python module file digests against checked-out exact source and labels them *advisory*. It emits no user paths, raw config, JWT, environment, credentials or PID. A matching file SHA cannot prove the Python interpreter already loaded those bytes, so the JSON explicitly states `loaded_module_in_memory_verified=false` and `release_accepted=false`. Do not treat this as a runtime deployment or a replacement for a real authorized ONE inspect Receipt. The Goal is to distinguish old process source / wrong unit ownership from a separate authorization implementation bug without introducing a second deployment lane.
+
+Studio public Nginx root #2257 stays a separate fail-closed migration.
+
+### Non-owner Oracle Runner observed 8780 healthy but not systemd unit — 2026-11-12
+
+The first sanitized Oracle readback [run 43199620780](https://github.com/alston-personal/agentmanager/actions/runs/43199620780) reached the existing 8780 HTTP health endpoint and verified `agentos.one-health/v0.1`, but the GitHub Oracle Runner's `systemctl --user show agentos-realm-fabric.service` returned `unit_status=unavailable` and no MainPID. Its first `process_candidate_matches_checkout=true` compared a generic checkout file, not an attributable live process: **do not claim it proved the loaded version**. The task failed closed while retaining the sanitized JSON artifact #13934013033. The hypothesis now is a **Runner user-manager identity mismatch or unreadable service namespace**, not proof that ONE itself is down.
+
+The existing read-only attestation is revised to distinguish canonical checkout file presence from a specifically identified fixed `agent_core.realm_cli serve ... 8780` process, using only bounded public `/proc` argv inspection. It reports booleans for process visibility and Ubuntu-user ownership without exposing PID/argv/environment/path. Hash checks of process-derived PYTHONPATH/CWD remain advisory; `loaded_module_in_memory_verified=false` and `release_accepted=false` must remain even if hashes match. No sudo, shell bridge, new deployment workflow or authorization expansion is allowed. The actual OIDC 401 remains open until the effective service owner can attest the runtime code.
+
+### 2026-11-12 Oracle 8780 read-only evidence: likely different service user
+
+Original sanctioned Realm attestation workflow [run #43199620780](https://github.com/alston-personal/agentmanager/actions/runs/43199620780) returned `health_schema_valid=true`, `unit_status=unavailable`, `unit_pid_present=false` for the Oracle runner's **own** `systemctl --user` bus. The current canonical checkout's candidate `realm_server.py` file hash matched the workflow source, but this is not process-source proof. The service is healthy while this user-scoped unit query is unavailable; never infer that the active owner is the runner or that OIDC is misconfigured. The prior main Runtime Repair run `43198595631` continued to reject a correctly shaped/signed identity with `OIDC_REF_NOT_AUTHORIZED`.
+
+Continue **existing PR #2288** and its previously registered `oracle-inspect-realm-fabric-endpoint.yml` audit only. A supplementary bounded read-only /proc scan may detect exact `agent_core.realm_cli serve` candidate process and classify its **owner by an allowlisted category** (`ubuntu` / `agentos-node` / `other` / `multiple`), without printing PID, argv, environment, secret, arbitrary path or user properties. These candidates are not conclusively tied to port 8780 and cannot prove an in-memory module or release; report `candidate_owns_8780_proved=false`. Source and final runtime permissions must remain scoped to the original signed main Runtime Repair workflow, not a generalized main/shell grant. Do not add a direct-Oracle job to `main-action-runtime-migration-20261007.yml`: it is prohibited by the existing Main Runner Window Guard.
+
+## Effective Realm workdir vs checkout source — 2026-11-12, read-only continuation
+
+Actual approved main-only read-only `Oracle Inspect Realm Fabric Endpoint` run [43201994715](https://github.com/alston-personal/agentmanager/actions/runs/43201994715) returned sanitized artifact `realm-effective-runtime-readonly` #13934839155. It reached Oracle; the script reported `service.active=true`, `pid_present=true`, `execstart_realm_module=true`, `working_directory_class=other`, `process_cwd_class=unknown`, one `ubuntu` Realm CLI *candidate* process (port ownership NOT proven), and `classification=REALM_EFFECTIVE_UNIT_UNKNOWN`. The canonical `/home/ubuntu/agentmanager` checkout's `realm_server.py` has the narrow main-runtime-repair OIDC symbol, but the fixed older Realm immutable-release pointer's `realm_server.py` does not; their SHA256 hashes differ. `current_immutable_release_commit` and provenance commit were unavailable. This is evidence of **multiple different code generations**, NOT proof that the process has loaded the old module.
+
+The existing (already approved) sanitized `oracle-inspect-realm-fabric-endpoint.yml` is reused to read **only** a fixed `agent_core/realm_server.py` under an allowlisted resolved systemd WorkingDirectory or candidate process CWD. The new projection returns only code-file digest, narrow OIDC-symbol presence, approved-root/readability bits and a sanitized class. It does not emit the actual runtime path, raw service config, command, credentials or journal, does not modify runtime, and cannot prove the in-memory module. A positive known OLD workdir file classifies `REALM_EFFECTIVE_SOURCE_OIDC_ABSENT` and still fails closed. Do not retry or expand OIDC authority until actual effective source and immutable release owner are identified. Studio root transition #2257 remains Draft.
+
+## Realm Fabric installer version proof before authorized repair — 2026-11-12 (source only)
+
+Actual sanitized Oracle [effective-source audit run 43202680976](https://github.com/alston-personal/agentmanager/actions/runs/43202680976) returned `REALM_EFFECTIVE_SOURCE_OIDC_ABSENT`: the **configured active** systemd WorkingDirectory contains an existing readable `agent_core/realm_server.py` with SHA256 `9b7d61a9b78a9d177f411760cae34388fa6a8e6d7e35ebd82061f4e9cdb5b21f` but lacks the exact protected-main Runtime Repair OIDC carrier. The checked-out canonical file `47414a3774d44783f957da6befc0f3d47a3931522cb54602367fe90b9bf67f48` has the correct carrier. The legacy Realm immutable pointer `3cf563f0...` also lacks it. This explains the continuing `OIDC_REF_NOT_AUTHORIZED` hypothesis at a concrete effective-unit source level, although imported in-memory Python identity remains independently unproven.
+
+Before executing any existing `Deploy Realm Fabric Core` release, the live Action Relay itself must prove that its installed installer implements `realm_fabric_effective_unit_fence_v1` (including strictly recognized `runtime-generation.conf` quarantine). Existing `agentos.realm-fabric.deployment_status` is now prepared to return fixed `installer_revision=realm-fabric-effective-unit-fence/v1`, independent of external caller parameters or mutable deployment-state fields. Historical Action Relay generations lack this revision. A source merge does **not** mean that the ubuntu Action Relay runtime has been refreshed: only an actual installed-provider receipt bearing the fixed revision may pass the next deployment preflight. Preserve the existing deployment lease, generation CAS and independent rollback; do not perform a blind service restart, widen OIDC trust, or bypass the guarded Runner Window channel. No Studio root cutover (PR #2257 remains DRAFT) is authorized by this change.
 
 
-- ONE's existing `ControllerService._dispatch_executor_job` now invokes a
-  **host-injected** freshness probe for registered `bounded-code-fix`
-  jobs, before calling the Node dispatcher. If no probe is registered,
-  or the result is stale, incomplete, truthy-but-unsigned/incorrect, or
-  raises an exception, code-writing submission fails closed. Read-only
-  executor types keep their established route. The model/request cannot
-  supply a bypass or choose a work SHA. Controller-level regression tests
-  demonstrate failure before dispatch and fresh-source acceptance.
-- A **real Oracle/ONE host probe that resolves the executor worktree HEAD
-  against the current remote main is still required**. Current source
-  adds the enforcement hook, not a production-configured provider or
-  live worker receipt. Do not deploy into a production service before
-  its trusted host resolver and recovery UX are installed; otherwise
-  code-writing job submission will block safely. This remains a
-  governed proposed change under #1682 and PR #2269.
+## 2026-11-12 — #1682 Realm deployment strict installed-Relay revision preflight (PR #2293 DRAFT; source only)
+
+Live Oracle read-only Realm audit [run 43202680976](https://github.com/alston-personal/agentmanager/actions/runs/43202680976) identified effective 8780 Realm source missing the protected-main Runtime Repair OIDC carrier, despite that carrier existing in canonical main source. The six expected workflow identity checks matched but authenticated Runner Window catalog GET still returned `OIDC_REF_NOT_AUTHORIZED`. This is live source-generation drift, not proof of which Python module bytes are imported in memory.
+
+[PR #2292](https://github.com/alston-personal/agentmanager/pull/2292) merged a fixed `installer_revision=realm-fabric-effective-unit-fence/v1` into the **source** of the existing `agentos.realm-fabric.deployment_status` Action Relay capability. That merge does not prove the installed Oracle Relay has been updated.
+
+The original `.github/workflows/deploy-realm-fabric-core.yml` previously treated any successful deployment-status receipt as sufficient proof of runtime version and might implicitly bootstrap the Relay before installing Realm. This scoped Draft PR #2293 closes that **exact acceptance gap** without adding a deployment lane: it requires a real installed Relay receipt with the exact fixed revision, checks `GITHUB_SHA` equals checked-out HEAD and that the workflow runs on main branch, removes moving `git reset --hard origin/main`, and refuses any implicit bootstrap/replacement of the old Action Relay within the Realm deployment workflow. A missing/old live revision fails closed **before** Realm installation. Full unredacted relay receipts are not printed. Existing focused regression tests verify these source guards.
+
+**Status:** SOURCE ONLY / DRAFT; no protected-main merge, no Oracle Relay refresh, no Realm Fabric mutation, no OIDC positive/negative live acceptance, no IR CAS, and no Paw/Claw autonomous-completion receipt. Existing Action Relay maintenance owner must independently update/attest the Relay via its authorized lifecycle if its installed status lacks the revision. Only then may the established exact-SHA immutable Realm release proceed under existing deployment lease, rollback and independent effective-source/OIDC readback. Do not promote based only on PR checks or this documentation.
 
 
-- A proposed **Oracle-side trusted Git host resolver** now exists at
-  `agentos_node/branch_resume_host_probe.py`. Its operator-only map binds
-  registered code-job types to their *actual* Executor worktree, checks the
-  configured origin URL and clean worktree, reads current remote main into
-  ephemeral `FETCH_HEAD`, and invokes the existing Git ancestry gate.
-  It does not change an Executor branch or write protected main. Tests
-  exercise real local/bare Git remote advancement, stale refusal, origin
-  mismatch, dirty worktree and ONE dispatch prevention.
-- **Unconfigured in production:** This resolver must be attached to the
-  live `ControllerService(code_resume_probe=...)` by the trusted Oracle
-  service composition after verifying each job's actual worker checkout.
-  A guessed local directory, model-provided worktree or token, or an
-  external GitHub CI result is not acceptable identity evidence.
-  Source tests do not establish that Oracle host resolver or deployed
-  ONE currently uses it. This guard is still in unmerged PR #2269.
+## 2026-11-13 — #1682 targeted Control Inbox no-redispatch migration (source candidate)
 
+Comparing canonical `main` against the 27 unique `core/integration` commits revealed one material, still-missing protection: the existing `agent_core/control_inbox_bridge.py` had dispatched ONE tasks without persisting their actual returned `task_id` until **after** synchronous receipt polling. If a transient ONE GET-receipt HTTP 5xx occurred immediately after a successful dispatch, the bridge could emit a terminal error and lose the durable lookup handle. This is not proof of an observed duplicate dispatch; it is a source-level at-most-once recovery defect.
 
-- **ONE server composition is now wired in source:** `RealmHTTPServer`
-  reads only the host process environment key `AGENTOS_CODE_RESUME_HOST_CONFIG`
-  at startup, loads an operator-owned 0600 absolute JSON configuration with
-  schema `agentos.branch-resume-host/v1`, and injects its trusted local Git
-  callback into `LegacyControllerService` for code-writing job submission.
-  Requests and IR cannot override worktree mappings. The source tests check
-  startup binding, actual Git provider result, world-readable config rejection,
-  symlink and malformed config rejection. With no configured host mapping,
-  code-writing task submission remains blocked; ordinary read-only jobs remain
-  unaffected.
-- **No claim of live Oracle configuration or Receipt:** the actual Oracle
-  worker checkout locations, approved upstream origin, server environment
-  setting and live task execution still require verification from that host.
-  Never guess worktree paths or switch the physical Node Realm in lieu of
-  configuring the code-resume source.
+The scoped #1682 candidate restores persistence of the returned task identity **immediately after dispatch**, before any GET-receipt attempt; on `one_receipt_http_5xx`, retain the already-queued state and rely only on the existing read-only `_flush_pending` polling path. It adds an explicit restart/5xx regression test asserting a single dispatch and a recovered terminal receipt. No new dispatcher, new privileged actions, Retry-POST, public scope expansion, or Oracle deployment is included.
 
+This is a **separate candidate** until reviewed, merged, tested and verified in the effective runtime. It must not be mistaken for a completion of Realm Fabric OIDC repair or #470 autonomous A→B receipts. The previous PR #2293 source-side deploy guard was merged at `472c4f33c7cac5bb730360447136a7883d7395a3`; post-merge push/deployment run status cannot be inferred using a PR-only GitHub workflow search.
 
-- **Queued-code time-of-check/time-of-use closure (proposed, not deployed):**
-  `agent_core/code_resume_authority.py` now supplies one shared fail-closed
-  pinned-Git proof validator. The existing ONE controller applies it before
-  dispatch; the existing Action Relay `agentos.executor.job` worker applies
-  the same validator immediately before invoking a `bounded-code-fix`
-  provider. This catches `main` advancing while a previously accepted
-  capsule waits in the queue. The worker uses the independently configured
-  `AGENTOS_CODE_RESUME_HOST_CONFIG` origin/worktree mapping, not values
-  from the capsule or ChatGPT conversation. Missing host mapping refuses
-  code execution; existing non-code jobs do not need this config.
-- Source tests exercise real Git remote advancement between two calls to the
-  same queued job, with the second invocation rejected before the provider
-  executes. This is not proof of actual Oracle-loaded systemd settings,
-  immutable release SHA, or live queued-job Receipt; both the ONE server and
-  its worker must receive vetted, real worktree mapping and be deployed
-  through the existing immutable-release process. No host path has been
-  guessed or silently configured.
+## 2026-11-13 — #1682 bounded code-resume freshness Draft #2269, reconciled to current main
 
+Existing [PR #2269](https://github.com/alston-personal/agentmanager/pull/2269) proposes a protected-main PR Git ancestry check plus trusted host-side Executor code-job claim/resume gating. Only `bounded-code-fix` work requires `MAINLINE_CURRENT` proof; read-only inspection remains separate. The intended bridge uses an operator-owned config and a source-pinned Git worktree rather than untrusted IR/job data. The queued Action Relay execution boundary must re-check freshness before running a code-writing provider, closing the check-to-use race. **This source is DRAFT; Oracle host mapping, live service reload and accepted receipts are not verified.**
 
-- **Action Relay import compatibility restored in proposed PR #2269 (not live):**
-  the canonical `action_relay.py` originally registered seven undefined
-  handlers. The allowlisted `github.actions.workflow.dispatch` handler and
-  read-only Realm Fabric commit observer were recovered from the existing
-  `core/integration` contract, while the six legacy Realm Fabric deployment
-  actions now explicitly fail closed with
-  `LEGACY_ACTION_REQUIRES_CONVERGENCE` rather than silently regaining
-  privileged deployment authority. Missing Unix `pwd` import was also
-  restored. The complete Action Relay module and normal deterministic relay
-  unit suite now import and run; the queued-code guard tests use the actual
-  imported Relay worker, not isolated AST compilation. This is a **bounded
-  compatibility repair**, not evidence that legacy Realm Fabric deployment
-  capabilities have been restored or fully retired. Before any Oracle
-  promotion, each of those six legacy action consumers requires owner,
-  functionality-equivalence and production Receipt review under #1682.
-  Existing immutable-release/OIDC authority remains unchanged. No live
-  Oracle systemd or runtime acceptance is claimed.
+A dangerous earlier draft had overwritten the canonical `main` Action Relay with an old snapshot that denied **active** Realm Fabric lease/status/install actions, and had omitted protected-main Runtime Repair OIDC and newer Executor providers. Draft repair commits `b6d1ba5333dbb1c94ea5fc0ee7777217fcd8a0c4`, `7c0cc75e5ec93584b1a46d206f447786647eb528`, and `e1621a604fff73d2f825f857a7fd331aa1c1ecb8` restore canonical-main source and preserve the exact Realm installed-revision fence, the OIDC carrier, deployment-inspection and Colab providers while layering the bounded freshness hooks. `tests/test_action_relay.py` was also restored from main to preserve the latest GitHub workflow correlation regression.
 
-
-### #1682 release-blocking legacy Relay consumers (2026-11-11)
-
-- Static source inspection confirms at least two active-in-source legacy Core
-  deployment clients: `scripts/install_realm_fabric_via_action_relay.py`
-  submits the claim/install/status/release/advance Actions, and
-  `.github/workflows/oracle-core-generation5-resume-release.yml` can submit
-  the release Action on manual dispatch. `docs/CORE_DEPLOYMENT_AUTHORITY.md`
-  documents the required fenced CAS/lease/release semantics. None of these
-  consumers can be presumed retired from source evidence alone.
-- `scripts/reconcile_action_relay_runtime.py` still declares its Action
-  Relay `SOURCE_REF` as `core/integration`, and
-  `agentos_node/runtime_converge_action_relay.py` has an explicit
-  `core/integration` source-ref requirement. The current service process
-  source/loaded release has NOT been read from Oracle in this turn.
-- The candidate #2269 safely imports and fail-closes six undefined legacy
-  mutation entries, but applying that denial to a production Relay that
-  still accepts those clients would **break old Core deployment workflows**.
-  Therefore #2269 was converted **back to DRAFT**; its green CI is not
-  deployment readiness. A pinned machine-readable consumer/release-gate
-  manifest now lives in
-  `docs/governance/branch-1682-legacy-relay-consumers.json`.
-  Preserve the original production authority until every client has a
-  verified replacement and a live Oracle acceptance/rollback Receipt;
-  do not retire `core/integration` or promote six-action denial by default.
+Do not merge #2269 solely on historical green CI: current-head tests, fresh merge-base, remaining scope, live Oracle maintenance authorization, and source/loaded-generation evidence require independent review. `main` currently includes merged #2293 Realm deployment fence and #2294 Control Inbox ONE task-id durability. These source merges **do not** prove effective Oracle Runtime generation, installed Relay revision, OIDC 401 resolution, IR CAS or Paw/Claw closure.
