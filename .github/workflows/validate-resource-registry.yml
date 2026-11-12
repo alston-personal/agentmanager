@@ -27,7 +27,13 @@ jobs:
           set -euo pipefail
           mkdir -p .agentos/evidence
           OUT=.agentos/evidence/resource-registry-validation.txt
-          DECLARED='{"domain":"studio.milkcat.org","framework":"astro","repository":"alston-personal/zeus-writer","branch":"master","repo_path":"/home/ubuntu/zeus-writer","source_path":"/home/ubuntu/zeus-writer/website","dist_path":"/home/ubuntu/zeus-writer/website/dist","web_server":"nginx","nginx_config":"/etc/nginx/sites-enabled/studio.milkcat.org"}'
+          # Register the new source authority ONLY after the exact Studio root cutover.
+          MARKER=/home/ubuntu/studio-web/dist/.well-known/studio-root-authority.txt
+          test -r "$MARKER"
+          test "$(cat "$MARKER")" = 'studio-web-production-root/v1'
+          test "$(curl -fsS --max-time 8 --resolve studio.milkcat.org:443:127.0.0.1 \
+            https://studio.milkcat.org/.well-known/studio-root-authority.txt)" = 'studio-web-production-root/v1'
+          DECLARED='{"domain":"studio.milkcat.org","framework":"astro","repository":"alston-personal/studio-web","branch":"main","repo_path":"/home/ubuntu/studio-web","source_path":"/home/ubuntu/studio-web","dist_path":"/home/ubuntu/studio-web/dist","web_server":"nginx","nginx_config":"/etc/nginx/sites-enabled/studio.milkcat.org"}'
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "hostname=$(hostname)"
@@ -47,7 +53,7 @@ jobs:
           assert e is not None
           assert e['kind']=='site'
           assert e['declared']['framework']=='astro'
-          assert e['declared']['repository']=='alston-personal/zeus-writer'
+          assert e['declared']['repository']=='alston-personal/studio-web'
           assert e['freshness']['state']=='fresh'
           assert e['verification']['status'] in ('verified','degraded')
           assert e['observed'].get('http',{}).get('status')==200
