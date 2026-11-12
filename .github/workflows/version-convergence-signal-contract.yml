@@ -8,6 +8,7 @@ on:
       - 'agent_core/runtime_ota_acceptance.py'
       - 'tests/test_runtime_ota_candidate_recheck.py'
       - 'scripts/run_realm_node_transactional_ota_user.sh'
+      - 'scripts/windows/transactional_ota_finalize.ps1'
       - 'tests/test_runtime_ota_download_integrity.py'
       - 'agentos_node/bootstrap_scheduler.py'
       - 'tests/test_bootstrap_scheduler_queue_ttl.py'
