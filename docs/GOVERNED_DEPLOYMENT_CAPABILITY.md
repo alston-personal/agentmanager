@@ -24,9 +24,28 @@ There must be only one active release writer per target/generation. Legacy and n
 
 ## First adopters and migration safety
 
-The initial registry binds **source-only** `studio.public-site` to the existing Studio static route/home publishers and diagnostic scripts, and `studio.layout-lab` to the existing LayoutLib materialize/promote/parity providers. The registry is an *inventory of named carriers*, not a declaration that their runtime execution is currently authorized. Other product publishers (Mio PDCA/persona, Threads Galaxy, Vendor, ArcanaForge, Character Blueprint and Mission Control) must be classified against the existing #175 carrier inventory first, not silently migrated.
+The registry binds four **source-only** targets to their own existing carriers: `agentos.public-console` to the immutable AgentOS Console release; `agentos.shared-auth-dashboard` to the existing shared Dashboard blue/green release; `studio.public-site` to existing Studio static route/home publishers and diagnostics; and `studio.layout-lab` to existing LayoutLib materialize/promote/parity providers. The registry is an *inventory of named carriers*, not a declaration that their runtime execution is currently authorized. Other product publishers (Mio PDCA/persona, Threads Galaxy, Vendor, ArcanaForge, Character Blueprint and Mission Control) must be classified against the existing #175 carrier inventory first, not silently migrated.
 
 Studio has confirmed provisional Oracle TLS 443 site-file root at `zeus-writer/website/dist`, public identity mismatch on Layout Lab and WoW, and outstanding old-root writer references. AgentOS PR #2257 remains **Draft**; this Core contract must NOT unblock its promotion automatically. Production cutover requires effective Nginx-vhost authority, writer classification, immutable Studio release, tested rollback, protected API and product parity, followed by a second publish generation.
+
+## AgentOS and Studio: two distinct public production domains
+
+Both sites consume **the same Core deployment lifecycle contract**, but are distinct release targets, source authorities, serving systems and rollback scopes. The registry now contains:
+
+| Target | Canonical source | Existing carrier | Runtime/acceptance | Release policy |
+| --- | --- | --- | --- | --- |
+| `agentos.public-console` | `agentmanager/main` | `oracle-agentos-login-control-plane-release.yml` → `deploy_distributed_control_plane.sh` | `agentos-control-plane.service`, public `agentos.milkcat.org`, `inspect_distributed_control_plane.py` | Independent control-plane generation, public login/session, Realm/admin, rollback |
+| `agentos.shared-auth-dashboard` | `agentmanager/main` | Existing `deploy_dashboard_blue_green_user.sh`, currently invoked inside the immutable AgentOS login release workflow | Shared Next Dashboard OAuth API, Dashboard blue/green acceptance | Separate **logical** dependency and verification identity; currently physically coupled in the existing workflow |
+| `studio.public-site` | `studio-web/main` | Existing reusable Studio static route / home release workflows | `studio.milkcat.org`, Astro origin and product markers; retain Dashboard API proxy | Isolated immutable Studio static generation and Nginx root cutover |
+| `studio.layout-lab` | `layoutlib/main` | Existing LayoutLib materialize / promote / parity providers | Studio-hosted `/layout-lab/` and seven-file SHA parity | Bounded static subroute, cannot mutate Studio homepage authority |
+
+**Dependencies, not lockstep deployment:** AgentOS public console **and** Studio public site depend on independently healthy `agentos.shared-auth-dashboard`; the Studio-hosted Layout Lab depends on the Studio serving root. This is a compatibility/acceptance graph, not an instruction to deploy both websites together. One site's update MUST NOT silently trigger or overwrite the other site's production generation. The existing AgentOS login carrier currently rolls the shared Dashboard before the AgentOS Console; therefore it is a *coupled operational carrier* requiring two phase-specific receipts and independent rollback verification. A later extraction may separate its adapters only after their actual current writer/owner state is verified, reusing the existing Blue/Green mechanism.
+
+**AgentOS critical acceptance:** `agentos.milkcat.org` must serve a public, non-operator-token login, correct Google/GitHub/Facebook/LINE callbacks and same-origin cookie/session, authenticated `/welcome` / `/my-one`, correct platform 401 vs 403, protected Realm actions, existing Runner Window/ONE routes, current `agentos-control-plane.service` source SHA and unit identity. Authorization must not be inferred from whether a page returned 200.
+
+**Studio critical acceptance:** `studio.milkcat.org` must serve the correct Studio-controlled static root, exact route-specific content for `/world/`, `/wow-addons/`, `/layout-lab/` and others, preserved generated Persona/Mio content and Vendor/Studio APIs, authenticated Dashboard/OAuth continuity, then an independent Studio SHA/root/rollback Receipt. No fallback homepage may satisfy a page identity check.
+
+**Boundary risks:** `agentos.milkcat.org` Console is NOT Studio, and `/agentos/` creative content hosted on Studio is NOT the AgentOS runtime. A shared OAuth service does not imply common domain cookies, common Nginx root, automatic admin rights, or authorization to overwrite either site's release. The registered carriers are inventory-only until actual authorized ONE/Runner Window binding and site-specific production receipts. The `dependencies_verified` input is a verified-provider evidence slot, **never an end-user attestation or approval grant**.
 
 ## Extending the same capability
 

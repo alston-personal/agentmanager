@@ -27,6 +27,7 @@ PROOF_KEYS = frozenset((
     "rollback_ready", "rollback_rehearsed", "exclusive_lease_held",
     "artifact_integrity_verified", "release_receipt_verified",
     "current_generation", "current_source_commit", "previous_release_available",
+    "dependencies_verified",
 ))
 PROOF_BOOLEAN_KEYS = PROOF_KEYS - {"current_generation", "current_source_commit"}
 
@@ -48,6 +49,7 @@ class Target:
     verification_carriers: tuple[str, ...]
     # Until promoted with runtime evidence, active is not inferred.
     migration_state: str
+    dependencies: tuple[str, ...]
 
 
 def _reject(reason: str) -> None:
@@ -68,13 +70,13 @@ def load_target(registry: Mapping[str, Any], target_id: str) -> Target:
     if not isinstance(spec, dict) or set(spec) != {
         "project_id", "repository", "source_ref", "resource_id",
         "authority_issue", "release_carriers", "verification_carriers",
-        "migration_state",
+        "migration_state", "dependencies",
     }:
         _reject("invalid_target_definition")
     for name in ("release_carriers", "verification_carriers"):
         carriers = spec[name]
         if (not isinstance(carriers, list) or not carriers
-                or not all(isinstance(x, str) and re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,99}", x) for x in carriers)
+                or not all(isinstance(x, str) and re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,99}", x) for x in carriers)
                 or len(set(carriers)) != len(carriers)):
             _reject("invalid_carrier_registry")
     for name in ("project_id", "repository", "source_ref", "resource_id"):
@@ -84,12 +86,16 @@ def load_target(registry: Mapping[str, Any], target_id: str) -> Target:
             or isinstance(spec["authority_issue"], bool)
             or spec["authority_issue"] <= 0):
         _reject("invalid_target_authority")
+    deps = spec["dependencies"]
+    if (not isinstance(deps, list) or len(set(map(str, deps))) != len(deps)
+            or any(not isinstance(item, str) or item == target_id or item not in entries for item in deps)):
+        _reject("invalid_target_dependencies")
     if spec["migration_state"] not in ("source_only", "live_verified"):
         _reject("invalid_migration_state")
     return Target(target_id, spec["project_id"], spec["repository"],
                   spec["source_ref"], spec["resource_id"], spec["authority_issue"],
                   tuple(spec["release_carriers"]), tuple(spec["verification_carriers"]),
-                  spec["migration_state"])
+                  spec["migration_state"], tuple(deps))
 
 
 def validate_deployment_intent(request: Mapping[str, Any],
@@ -161,6 +167,8 @@ def evaluate_deployment_gate(request: Mapping[str, Any],
     if op in ("stage", "promote"):
         require("source_reproducible")
     if op == "promote":
+        if target.dependencies:
+            require("dependencies_verified")
         for field in ("serving_root_verified", "writers_reconciled",
                       "critical_routes_verified", "protected_apis_verified",
                       "rollback_ready", "rollback_rehearsed"):
@@ -169,6 +177,8 @@ def evaluate_deployment_gate(request: Mapping[str, Any],
         if target.migration_state != "live_verified":
             reasons.append("live_authority_not_accepted")
     if op == "verify":
+        if target.dependencies:
+            require("dependencies_verified")
         # An older release can be healthy, but cannot verify this immutable intent.
         if observed["current_source_commit"] != request["source_commit"]:
             reasons.append("observed_release_sha_mismatch")

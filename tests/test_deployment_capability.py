@@ -41,7 +41,49 @@ class DeploymentCapabilityContractTests(unittest.TestCase):
             self.assertEqual(spec.migration_state, "source_only")
             self.assertGreater(len(spec.release_carriers), 0)
             self.assertNotIn("shell", json.dumps(entry))
-        self.assertEqual(len(REGISTRY["targets"]), 2)
+        self.assertEqual(len(REGISTRY["targets"]), 4)
+
+    def test_agentos_console_and_studio_are_distinct_authority_domains(self):
+        studio = load_target(REGISTRY, "studio.public-site")
+        console = load_target(REGISTRY, "agentos.public-console")
+        oauth = load_target(REGISTRY, "agentos.shared-auth-dashboard")
+        self.assertNotEqual(studio.resource_id, console.resource_id)
+        self.assertNotEqual(studio.repository, console.repository)
+        self.assertEqual(console.repository, oauth.repository)
+        self.assertIn("agentos.shared-auth-dashboard", console.dependencies)
+        self.assertIn("agentos.shared-auth-dashboard", studio.dependencies)
+        self.assertIn("studio.public-site", load_target(REGISTRY, "studio.layout-lab").dependencies)
+        self.assertNotIn("studio.public-site", console.dependencies)
+        for target_id in ("agentos.public-console", "agentos.shared-auth-dashboard"):
+            entry = REGISTRY["targets"][target_id]
+            self.assertEqual(entry["migration_state"], "source_only")
+            self.assertIn("oracle-agentos-login-control-plane-release.yml", entry["release_carriers"])
+
+    def test_cross_service_dependency_blocks_promotion_and_verify(self):
+        for target_id, project_id in (
+            ("studio.public-site", "studio-web"),
+            ("agentos.public-console", "agentos-core"),
+            ("studio.layout-lab", "layoutlib"),
+        ):
+            with self.subTest(target_id=target_id):
+                entry = REGISTRY["targets"][target_id]
+                req = request(
+                    target_id=target_id, project_id=project_id,
+                    source_ref=entry["source_ref"],
+                )
+                result = evaluate_deployment_gate(req, REGISTRY,
+                    proof(dependencies_verified=False))
+                self.assertIn("dependencies_verified", result["reasons"])
+                verified = evaluate_deployment_gate({**req, "operation": "verify"}, REGISTRY,
+                    proof(dependencies_verified=False))
+                self.assertIn("dependencies_verified", verified["reasons"])
+
+    def test_unregistered_and_self_dependency_rejected(self):
+        for deps in (["agentos.public-console"], ["undefined.target"]):
+            forged = json.loads(json.dumps(REGISTRY))
+            forged["targets"]["agentos.public-console"]["dependencies"] = deps
+            with self.assertRaises(DeploymentContractError):
+                load_target(forged, "agentos.public-console")
 
     def test_inspection_never_executes_and_can_pass_with_empty_auth(self):
         result = evaluate_deployment_gate(
