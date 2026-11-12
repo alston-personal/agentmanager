@@ -89,3 +89,24 @@ Current `main:agent_core/realm_fabric.py` calls `_register_node` from both invit
 Both enrollment flows atomically create one mandatory subscription; denied/expired/pending joins create no active subscription; failed subscription persistence fails admission safely without orphaning an active Node; rejoin/retry is idempotent; revocation disables push/pull while retaining audit; preexisting participants are backfilled; new Executor reads pre-Join mandatory notices; offline push-miss is recovered by pull; cross-Realm scoped notices are never leaked; mutable work cannot start until its applicable mandatory baseline is reconciled.
 
 **Implementation status:** contract only. Join integration, subscriber registry, durable ONE journal, live push, polling endpoint, migration/backfill and ACK receipts are not yet deployed or verified.
+
+## Shared notification transport, pluggable typed handlers (2026-11-12)
+
+The transport/subscription layer is universal and unaware of update-specific execution. All successfully joined Participants are mandatory subscribers. ONE publishes durable announcements, sends content-free invalidation hints, exposes authenticated pull, tracks per-recipient cursor/ACK and retries offline recipients. Neither push nor pull directly performs an update.
+
+After a Participant fetches and validates an applicable announcement, a typed dispatcher chooses an allowlisted handler by validated change_kind, schema version, capabilities, realm and authority. No handler can be selected by an untrusted free-form command or path. Unknown kinds remain visible in the journal as UNSUPPORTED/NEEDS_ADAPTER, and any mandatory unsupported update blocks only incompatible mutable operations; no arbitrary code execution or silent skip.
+
+| Change kind | Pluggable handler | Guard |
+| --- | --- | --- |
+| canonical_ir | Resolve latest ONE-approved remote commit, verify lineage and hydrate | Expected parent generation + no stale mutation |
+| policy / announcement | Read and acknowledge applicable policy | Scope and mandatory-effect attestation |
+| source_version | Fetch and reconcile source/worktree | No destructive reset or bypass of protected-main review |
+| software_ota | Delegate to existing governed installer/deployer | Device authorization, compatibility, rollback and live receipt |
+| capability / skill | Update compatible capability manifest/index | Schema compatibility and independently checked authority |
+| persona / role | Hydrate governed role state | Realm scope and role-specific permission |
+
+Handler contract: inspect(current_state, announcement), plan(), validate_authority(), apply_or_defer(), verify(), receipt(). Each stage must be idempotent and correlate journal event ID, Participant identity, expected source/IR generation, handler version and evidence. A notification ACK only proves a hint was observed; READ, VALIDATED, APPLIED and BLOCKED are separate substantiated states. Handler failure must not corrupt another handler's state or roll back already published announcement records.
+
+Design-expansion check: when a new Participant or change kind is introduced, join/subscription transport remains unchanged. Register or reuse a typed handler and test compatibility, authorization, rollback, offline replay and real receipt; do not edit every existing Executor subscriber. Preserve distinct OTA installation rights versus read-only policy/IR consumption. Prefer existing AgentOS release and Runtime adapters over a parallel OTA subsystem.
+
+Status: architecture/contract only; no claim that handler registry, journal, subscriptions, fanout or runtime dispatch is deployed.
