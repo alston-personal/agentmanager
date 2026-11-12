@@ -329,6 +329,98 @@ def reconcile_channel_update(*, state, stage, lane, operation_id, observed=None,
                 "phase": "HUMAN_REQUIRED"}
     raise ValueError("channel_update_blocked")
 
+
+# Serialized, crash-persistent gate for a single-node ONE maintenance owner.
+# This store does not authorize callers or produce trusted live observations.
+import sqlite3
+
+
+class DurableChannelUpdateStore:
+    """SQLite compare-and-swap channel transitions; a crash never clears a lock.
+
+    The ONE controller must authenticate the participant, independently verify
+    evidence, and use a single shared database path for all update writers.
+    """
+
+    def __init__(self, database_path):
+        self.database_path = str(database_path)
+        if self.database_path == ":memory:":
+            raise ValueError("durable_update_store_required")
+        parent = Path(self.database_path).parent
+        parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS dual_channel_updates ("
+                "participant_id TEXT PRIMARY KEY, generation INTEGER NOT NULL,"
+                "state_json TEXT NOT NULL)"
+            )
+
+    def _connect(self):
+        conn = sqlite3.connect(self.database_path, timeout=30.0, isolation_level=None)
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA synchronous=FULL")
+        return conn
+
+    @staticmethod
+    def _participant(participant_id):
+        if not isinstance(participant_id, str) or not ID.fullmatch(participant_id):
+            raise ValueError("invalid_participant_id")
+        return participant_id
+
+    def _get_or_initialize(self, conn, participant_id):
+        row = conn.execute(
+            "SELECT state_json FROM dual_channel_updates WHERE participant_id = ?",
+            (participant_id,),
+        ).fetchone()
+        if row is None:
+            initial = initial_channel_state()
+            conn.execute(
+                "INSERT INTO dual_channel_updates(participant_id,generation,state_json)"
+                " VALUES (?,?,?)",
+                (participant_id, 0, json.dumps(initial, sort_keys=True)),
+            )
+            return initial
+        return json.loads(row[0])
+
+    def inspect(self, *, participant_id):
+        participant_id = self._participant(participant_id)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                state = self._get_or_initialize(conn, participant_id)
+                conn.execute("COMMIT")
+                return state
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+
+    def transition(self, *, participant_id, stage, lane, operation_id,
+                   expected_generation, observed=None):
+        participant_id = self._participant(participant_id)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                state = self._get_or_initialize(conn, participant_id)
+                updated = reconcile_channel_update(
+                    state=state, stage=stage, lane=lane,
+                    operation_id=operation_id, observed=observed,
+                    expected_generation=expected_generation,
+                )
+                conn.execute(
+                    "UPDATE dual_channel_updates SET generation=?,state_json=?"
+                    " WHERE participant_id=? AND generation=?",
+                    (updated["generation"], json.dumps(updated, sort_keys=True),
+                     participant_id, expected_generation),
+                )
+                if conn.execute("SELECT changes()").fetchone()[0] != 1:
+                    raise ValueError("stale_channel_generation")
+                conn.execute("COMMIT")
+                return updated
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+
+
 def main():
     parser=argparse.ArgumentParser()
     for name in ("main-sha","previous-sha","paths-file","published-at","output"):
