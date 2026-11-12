@@ -11,6 +11,8 @@ on:
       - 'scripts/windows/transactional_ota_finalize.ps1'
       - 'scripts/windows/recovery_one_probe.py'
       - 'scripts/windows/recovery_slot_runner.py'
+      - 'scripts/windows/recovery_upgrade_stage.py'
+      - 'tests/test_recovery_upgrade_stage.py'
       - 'tests/test_recovery_slot_runner.py'
       - 'tests/test_recovery_one_probe.py'
       - 'tests/test_recovery_fault_injection.py'
@@ -53,6 +55,8 @@ jobs:
         run: python3 -m unittest tests.test_recovery_fault_injection -v
       - name: Test Recovery A/B slots and corrupt candidate fallback
         run: python3 -m unittest tests.test_recovery_slot_runner -v
+      - name: Test recovery upgrade staging authority and inactive slot invariants
+        run: python3 -m unittest tests.test_recovery_upgrade_stage -v
       - name: Produce protected main source event (not an Executor delivery)
         if: github.event_name == 'push'
         shell: bash
