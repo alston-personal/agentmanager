@@ -40,5 +40,18 @@ class OTARemoteScriptIntegrityTests(unittest.TestCase):
         self.assertIn("throw 'ota stage hash mismatch'", source)
 
 
+
+    def test_accept_finalizer_requires_same_candidate_commit(self):
+        finalizer = (SCRIPT.parent / "windows/transactional_ota_finalize.ps1").read_text(
+            encoding="utf-8"
+        )
+        wrapper = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("[string]$ExpectedCommit", finalizer)
+        self.assertIn("$current.source_commit -cne $ExpectedCommit", finalizer)
+        self.assertIn("expected immutable candidate commit required", finalizer)
+        self.assertIn("candidate commit changed before finalize acceptance", finalizer)
+        self.assertIn("-Action accept -ExpectedCommit", wrapper)
+        self.assertNotIn("-Action rollback -ExpectedCommit", wrapper)
+
 if __name__ == "__main__":
     unittest.main()
