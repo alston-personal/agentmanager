@@ -27,8 +27,8 @@ class MainRuntimeDeployRoutingTests(unittest.TestCase):
 
     def test_oidc_failure_is_classified_without_credentials(self):
         body = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("oidc_self_workflow_ref=", body)
-        self.assertIn("oidc_self_event_name=", body)
+        self.assertIn('"workflow_ref": "alston-personal/agentmanager/.github/workflows/main-action-runtime-migration-20261007.yml@refs/heads/main"', body)
+        self.assertIn('"event_name": "push"', body)
         self.assertIn("runner_window_catalog_failure_class=", body)
         self.assertIn("OIDC_REF_INVALID", body)
         self.assertIn("GATEWAY_ROUTE_BLOCKED", body)
