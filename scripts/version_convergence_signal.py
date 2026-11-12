@@ -89,6 +89,88 @@ def validate_ack(event,ack):
         raise ValueError("missing_block_reason")
     return dict(ack)
 
+# A transport hint is NOT an install instruction.  This pure contract deliberately
+# performs no network calls or code execution; ONE-owned bootstrap must validate
+# identity, catalog signatures, policy, and provenance independently.
+from urllib.parse import urlsplit
+
+ADAPTER_HINT = "agentos.adapter-invalidation-hint/v1"
+ADAPTER_PLAN = "agentos.adapter-reconciliation-plan/v1"
+ADAPTER_ID = re.compile(r"^[a-z][a-z0-9._-]{0,95}$")
+ADAPTER_VERSION = re.compile(r"^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+DIGEST = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _adapter_version(value):
+    if not isinstance(value, str) or not ADAPTER_VERSION.fullmatch(value):
+        raise ValueError("invalid_adapter_version")
+    return tuple(int(part) for part in value.split("."))
+
+
+def validate_adapter_hint(hint, *, trusted_one_origin):
+    """Validate untrusted locator shape, never grant download/install authority."""
+    if not isinstance(hint, dict) or set(hint) != {
+        "schema", "notice_epoch", "adapter_id", "adapter_url",
+        "adapter_version", "adapter_sha256",
+    } or hint.get("schema") != ADAPTER_HINT:
+        raise ValueError("invalid_adapter_hint")
+    if type(hint["notice_epoch"]) is not int or hint["notice_epoch"] < 1:
+        raise ValueError("invalid_notice_epoch")
+    if not isinstance(hint["adapter_id"], str) or not ADAPTER_ID.fullmatch(hint["adapter_id"]):
+        raise ValueError("invalid_adapter_id")
+    _adapter_version(hint["adapter_version"])
+    if not isinstance(hint["adapter_sha256"], str) or not DIGEST.fullmatch(hint["adapter_sha256"]):
+        raise ValueError("invalid_adapter_digest")
+    origin = urlsplit(trusted_one_origin)
+    target = urlsplit(str(hint["adapter_url"]))
+    if (origin.scheme != "https" or not origin.hostname or origin.username or origin.password
+            or origin.query or origin.fragment or origin.path not in ("", "/")):
+        raise ValueError("invalid_trusted_one_origin")
+    if (target.scheme != "https" or not target.hostname or target.username or target.password
+            or target.query or target.fragment or not target.path.startswith("/")):
+        raise ValueError("invalid_adapter_url")
+    if (target.scheme, target.netloc) != (origin.scheme, origin.netloc):
+        raise ValueError("untrusted_adapter_origin")
+    if "%2f" in target.path.lower() or "/../" in target.path or "/./" in target.path:
+        raise ValueError("unsafe_adapter_path")
+    return dict(hint)
+
+
+def plan_adapter_reconciliation(*, hint, trusted_one_origin, authoritative_manifest,
+                                installed_version=None, installed_sha256=None):
+    """Return a bounded plan; caller must fetch/attest ONE manifest independently.
+
+    This method cannot approve install, download, or launch an adapter.
+    """
+    hint = validate_adapter_hint(hint, trusted_one_origin=trusted_one_origin)
+    if not isinstance(authoritative_manifest, dict):
+        raise ValueError("missing_one_adapter_manifest")
+    required = {"adapter_id", "adapter_version", "adapter_url", "adapter_sha256", "approved"}
+    if set(authoritative_manifest) != required or authoritative_manifest["approved"] is not True:
+        raise ValueError("unapproved_one_adapter_manifest")
+    for key in ("adapter_id", "adapter_version", "adapter_url", "adapter_sha256"):
+        if authoritative_manifest[key] != hint[key]:
+            raise ValueError("adapter_manifest_mismatch")
+    newest = _adapter_version(hint["adapter_version"])
+    current = _adapter_version(installed_version) if installed_version is not None else None
+    if installed_sha256 is not None and (
+            not isinstance(installed_sha256, str) or not DIGEST.fullmatch(installed_sha256)):
+        raise ValueError("invalid_installed_digest")
+    if current is not None and current > newest:
+        action = "KEEP_NEWER_LOCAL_AND_VERIFY_COMPATIBILITY"
+    elif current == newest and installed_sha256 == hint["adapter_sha256"]:
+        action = "HANDLE_EVENT"
+    else:
+        action = "REQUEST_GOVERNED_ADAPTER_UPDATE"
+    return {
+        "schema": ADAPTER_PLAN, "adapter_id": hint["adapter_id"],
+        "target_adapter_version": hint["adapter_version"],
+        "notice_epoch": hint["notice_epoch"],
+        "action": action, "installation_authorized": False,
+        "handler_execution_authorized": False,
+    }
+
+
 def main():
     parser=argparse.ArgumentParser()
     for name in ("main-sha","previous-sha","paths-file","published-at","output"):
