@@ -48,6 +48,36 @@ def source_state(path: Path) -> dict[str, object]:
     }
 
 
+# Allowlisted production roots only; a systemd unit cannot make an
+# arbitrary absolute path available for introspection through this audit.
+_APPROVED_SOURCE_ROOTS = (
+    Path("/home/ubuntu/agentmanager"),
+    Path("/home/ubuntu/agent-data"),
+    Path("/home/ubuntu/.local/share/agentos/realm-fabric"),
+    Path("/home/agentos-node/.local/share/agentos/realm-fabric"),
+)
+
+def observed_workdir_source(path: Path | None) -> dict[str, object]:
+    """Return only a fixed-code-file hash and OIDC-presence bit, never path/text."""
+    failure = {"approved_root": False, "source_readable": False,
+               "oidc_repair_carrier_present": False, "source_sha256": None}
+    if path is None:
+        return failure
+    try:
+        resolved = path.resolve(strict=True)
+        approved = any(resolved == root or resolved.is_relative_to(root)
+                       for root in _APPROVED_SOURCE_ROOTS)
+        if not approved:
+            return failure
+        source = source_state(resolved)
+        return {"approved_root": True,
+                "source_readable": bool(source.get("readable")),
+                "oidc_repair_carrier_present": bool(source.get("repair_carrier_oidc_present")),
+                "source_sha256": source.get("realm_server_sha256")}
+    except (OSError, ValueError, RuntimeError):
+        return failure
+
+
 def get_service_state() -> dict[str, object]:
     try:
         p = subprocess.run([
@@ -74,6 +104,13 @@ def get_service_state() -> dict[str, object]:
         "working_directory_class": classify_path(root, checkout=CHECKOUT, release=RELEASE_POINTER),
         "process_cwd_class": classify_path(proc_cwd, checkout=CHECKOUT, release=RELEASE_POINTER),
         "execstart_realm_module": "agent_core.realm_cli" in (props.get("ExecStart") or ""),
+        "configured_workdir_source": observed_workdir_source(root),
+        "process_cwd_source": observed_workdir_source(proc_cwd),
+        "configured_process_source_agree": (
+            observed_workdir_source(root).get("source_sha256") is not None
+            and observed_workdir_source(root).get("source_sha256")
+                == observed_workdir_source(proc_cwd).get("source_sha256")
+        ),
     }
 
 
@@ -156,8 +193,17 @@ def inspect() -> dict[str, object]:
         and checkout.get("realm_server_sha256") == release.get("realm_server_sha256")
     )
     loaded_oidc = bool(loaded_candidate and loaded_candidate.get("repair_carrier_oidc_present"))
+    # A unit may legitimately load from a pinned release unrelated to either
+    # symbolic root. Compare only the approved effective WorkingDirectory and
+    # candidate process CWD sources; never infer in-memory import.
+    workdir = service.get("configured_workdir_source") or {}
+    process_workdir = service.get("process_cwd_source") or {}
+    effective_oidc = bool(workdir.get("oidc_repair_carrier_present"))
+    effective_source_readable = bool(workdir.get("source_readable"))
+
     classification = (
         "REALM_SERVICE_UNAVAILABLE" if not active else
+        "REALM_EFFECTIVE_SOURCE_OIDC_ABSENT" if effective_source_readable and not effective_oidc else
         "REALM_EFFECTIVE_UNIT_UNKNOWN" if not (effective_from_release or effective_from_checkout) else
         "REALM_LOADED_OIDC_CARRIER_ABSENT" if not loaded_oidc else
         "REALM_LOADED_SOURCE_MATCHES_EXPECTED"
@@ -177,6 +223,8 @@ def inspect() -> dict[str, object]:
         "configured_provenance_commit": source_provenance(),
         "current_immutable_release_commit": current_release_commit(),
         "loaded_oidc_carrier_visible_on_disk": loaded_oidc,
+        "effective_workdir_oidc_carrier_visible_on_disk": effective_oidc,
+        "effective_workdir_source_readable": effective_source_readable,
         "classification": classification,
         # This is an on-disk/effective-unit observation, NOT proof of the
         # exact Python objects already imported by an active process.
