@@ -94,11 +94,11 @@ if [ "$ACCEPT_RC" -eq 0 ]; then
   python3 - <<'PY'
 import os,time
 from agent_core.realm_fabric import RealmFabricStore
-node=os.environ["NODE_ID"]; tool=os.environ["TOOL_COMMIT"]
+node=os.environ["NODE_ID"]; tool=os.environ["TOOL_COMMIT"]; candidate=os.environ["CANDIDATE"]
 url=f"https://raw.githubusercontent.com/alston-personal/agentmanager/{tool}/scripts/windows/transactional_ota_finalize.ps1"
 ps=("$p=Join-Path $env:TEMP ('agentos-ota-finalize-'+[guid]::NewGuid().ToString('N')+'.ps1'); "
     "try { Invoke-WebRequest -UseBasicParsing -Uri '"+url+"' -OutFile $p; "
-    "if((Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash.ToLowerInvariant() -ne '" + os.environ["FINALIZE_SCRIPT_SHA256"] + "'){throw 'ota finalize hash mismatch'}; & $p -Action accept } "
+    "if((Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash.ToLowerInvariant() -ne '" + os.environ["FINALIZE_SCRIPT_SHA256"] + "'){throw 'ota finalize hash mismatch'}; & $p -Action accept -ExpectedCommit '"+candidate+"' } "
     "finally { Remove-Item -Force $p -ErrorAction SilentlyContinue }")
 tid=f"ota-finalize-{node}-{int(time.time())}"
 store=RealmFabricStore()
