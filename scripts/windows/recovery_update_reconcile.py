@@ -83,9 +83,15 @@ def reconcile(*, root, gate, participant_id):
             else "GOVERNED_RECONCILIATION_REQUIRED"
         )
     elif phase == "ROLLBACK_REQUIRED":
+        # An activated candidate may be corrupt: that is precisely a
+        # reason for ONE to require rollback. Do not require the damaged
+        # candidate to pass its own hash check. The protected LKG must still
+        # be valid (checked above), and the stage / reservation / operation
+        # must match. This class is diagnostic, NOT rollback permission.
         classification = (
             "AWAITING_AUTHORIZED_ROLLBACK" if
-            active == stage_record["slot"] and pending == active and a_ok
+            active == stage_record["slot"] and pending == active
+            and lkg != active and lkg_ok
             else "GOVERNED_RECONCILIATION_REQUIRED"
         )
     else:
