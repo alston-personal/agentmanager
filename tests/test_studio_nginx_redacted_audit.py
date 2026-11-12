@@ -58,7 +58,7 @@ server {
     def test_nonroot_fallback_is_labeled_provisional(self, read_text, resolve, run):
         run.return_value = SimpleNamespace(returncode=1, stdout="", stderr="CERTIFICATE SECRET")
         resolve.return_value = Path("/etc/nginx/sites-available/studio.milkcat.org")
-        read_text.return_value = "server {\\n server_name studio.milkcat.org;\\n root /home/ubuntu/zeus-writer/website/dist;\\n}\\n"
+        read_text.return_value = "server {\n server_name studio.milkcat.org;\n root /home/ubuntu/zeus-writer/website/dist;\n}\n"
         result = run_nginx()
         self.assertTrue(result["site_found"])
         self.assertFalse(result["effective"])
