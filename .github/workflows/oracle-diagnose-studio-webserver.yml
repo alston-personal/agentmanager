@@ -5,6 +5,11 @@ name: Diagnose Studio Web Server
 # Later reruns are manual and do not alter the production host.
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/oracle-diagnose-studio-webserver.yml'
+      - 'scripts/audit_studio_nginx_redacted.py'
+      - 'tests/test_studio_nginx_redacted_audit.py'
   push:
     branches: [main]
     paths:
@@ -18,15 +23,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test redaction and vhost parser in unprivileged PR CI
+        run: python3 -m unittest tests.test_studio_nginx_redacted_audit -v
+
   diagnose:
+    needs: [validate]
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Test redaction and vhost parser before inspecting production
-        run: python3 -m unittest tests.test_studio_nginx_redacted_audit -v
       - name: Inspect actual Studio vhost and known writers without exporting config
         shell: bash
         run: |
