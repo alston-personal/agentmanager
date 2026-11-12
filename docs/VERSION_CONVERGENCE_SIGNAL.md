@@ -323,3 +323,8 @@ The former host-gated Recovery \`revert_pending()\` called the ONE durable gate 
 ## Accepted B: local commit before ONE VERIFY (2026-11-12)
 
 In addition to the rollback completion ordering fix, \`accept_pending()\` must not release the ONE gate's \`VERIFY\` before Windows has atomically committed and re-read \`slots.json\` with \`pending=null\` and \`last_known_good=B\`. The code now verifies independent candidate ONE, Normal liveness, and an authoritative ONE receipt; writes and reads back the local accepted state; then calls the durable gate for VERIFY. A local write failure cannot clear ONE's update lock. If ONE completion fails afterward, the local accepted B remains and the stage reservation must be reconciled by the original authorized owner. \`recovery_update_reconcile.py\` classifies this as \`GOVERNED_POST_ACCEPTANCE_RECONCILIATION\`, with no assumed authorization, new update permission or receipt. Matching operation identity and stage reservation are required. This contract alone is not a live signed receipt.
+
+
+## Crash reconciliation identity and digest binding (2026-11-12)
+
+Post-crash \`recovery_update_reconcile.py\` now compares the staged candidate's \`node_id\` with the actual inspected participant, ensures stored candidate digest and slot metadata do not diverge after activation, and requires the stage file to retain \`activation_authorized=false\` and \`one_receipt_attested=false\`. Wrong node, forged local authorization flags or changed candidate digest classify as \`GOVERNED_RECONCILIATION_REQUIRED\`; no rollback/acceptance permission is inferred. Real host authority must still independently attest the participant identity, Realm, signatures, operation, expiry and ONE gate generation before any action.
