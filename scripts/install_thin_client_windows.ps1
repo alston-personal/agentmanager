@@ -98,6 +98,7 @@ $files = @(
   'agentos_node/session_bridge.py',
   'agentos_node/agent_surfaces.py',
   'scripts/windows/user_runtime_watchdog.ps1',
+  'scripts/windows/recovery_one_probe.py',
   'scripts/windows/commit_staged_realm.ps1'
 )
 foreach ($rel in $files) {
