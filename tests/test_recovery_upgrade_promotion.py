@@ -110,6 +110,7 @@ class RecoveryPromotionTests(unittest.TestCase):
         result = promote.revert_pending(
             root=self.root, operation_id=self.op,
             verify_lkg_one=lambda _c: True,
+            authorize_rollback=lambda _c: True,
             durable_update_gate=lambda _c, _s: True,
         )
         self.assertEqual(result["active"], "A")
@@ -123,9 +124,71 @@ class RecoveryPromotionTests(unittest.TestCase):
             promote.revert_pending(
                 root=self.root, operation_id=self.op,
                 verify_lkg_one=lambda _c: True,
+                authorize_rollback=lambda _c: True,
                 durable_update_gate=lambda _c, _s: True,
             )
         self.assertEqual(slot.load_state(self.root)["active"], "B")
+
+    def test_rollback_authority_denied_does_not_touch_slots_or_gate(self):
+        self.activate()
+        before = (self.root / "slots.json").read_bytes()
+        stages = []
+        with self.assertRaises(PermissionError):
+            promote.revert_pending(
+                root=self.root, operation_id=self.op,
+                verify_lkg_one=lambda _c: True,
+                authorize_rollback=lambda _c: False,
+                durable_update_gate=lambda _c, stage: stages.append(stage) or True,
+            )
+        self.assertEqual(stages, [])
+        self.assertEqual((self.root / "slots.json").read_bytes(), before)
+
+    def test_local_write_failure_never_clears_one_rollback_gate(self):
+        from unittest.mock import patch
+        self.activate()
+        stages = []
+        with patch.object(promote, "atomic_json",
+                          side_effect=OSError("injected_write_failure")):
+            with self.assertRaisesRegex(OSError, "injected_write_failure"):
+                promote.revert_pending(
+                    root=self.root, operation_id=self.op,
+                    verify_lkg_one=lambda _c: True,
+                    authorize_rollback=lambda _c: True,
+                    durable_update_gate=lambda _c, stage: stages.append(stage) or True,
+                )
+        self.assertEqual(stages, [])
+        self.assertEqual(slot.load_state(self.root)["pending"], "B")
+
+    def test_one_gate_completion_only_after_verified_local_restore(self):
+        self.activate()
+        observations = []
+        def gate(_context, stage):
+            state = slot.load_state(self.root)
+            observations.append((stage, state["active"], state["pending"]))
+            return True
+        result = promote.revert_pending(
+            root=self.root, operation_id=self.op,
+            verify_lkg_one=lambda _c: True,
+            authorize_rollback=lambda _c: True,
+            durable_update_gate=gate,
+        )
+        self.assertEqual(result["active"], "A")
+        self.assertIsNone(result["pending"])
+        self.assertEqual(observations, [("ROLLBACK_OK", "A", None)])
+
+    def test_one_gate_failure_preserves_local_restore_for_reconciliation(self):
+        self.activate()
+        with self.assertRaises(PermissionError):
+            promote.revert_pending(
+                root=self.root, operation_id=self.op,
+                verify_lkg_one=lambda _c: True,
+                authorize_rollback=lambda _c: True,
+                durable_update_gate=lambda _c, _stage: False,
+            )
+        after = slot.load_state(self.root)
+        self.assertEqual(after["active"], "A")
+        self.assertIsNone(after["pending"])
+        self.assertTrue((self.root / "stage-reservation.lock").exists())
 
     def test_unauthorized_json_flags_never_grant_acceptance(self):
         self.activate()
