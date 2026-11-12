@@ -82,9 +82,69 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS --max-time 15 \
+          # Never print the token or decoded JWT. Check only boolean OIDC
+          # attributes needed by the existing exact main-push claim allowlist.
+          python3 - <<'PY'
+          import base64, json, os, sys
+          token = os.environ.get("AGENTOS_CONTROLLER_TOKEN", "")
+          parts = token.split(".")
+          if len(parts) != 3:
+              print("oidc_self_check=MALFORMED")
+              sys.exit(1)
+          try:
+              claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+          except Exception:
+              print("oidc_self_check=DECODE_FAILED")
+              sys.exit(1)
+          expected = {
+              "repository": "alston-personal/agentmanager",
+              "ref": "refs/heads/main",
+              "workflow_ref": "alston-personal/agentmanager/.github/workflows/main-action-runtime-migration-20261007.yml@refs/heads/main",
+              "event_name": "push",
+              "sha": os.environ["GITHUB_SHA"],
+          }
+          checks = {name: claims.get(name) == value for name, value in expected.items()}
+          aud = claims.get("aud")
+          checks["audience"] = ("agentos-scheduler" in aud if isinstance(aud, list) else aud == "agentos-scheduler")
+          for name, ok in sorted(checks.items()):
+              print(f"oidc_self_{name}={'PASS' if ok else 'FAIL'}")
+          if not all(checks.values()):
+              sys.exit(1)
+          print("oidc_self_check=PASS")
+          PY
+          status="$(curl --silent --show-error --max-time 15 \
+            -o "$RUNNER_TEMP/catalog.json" -w '%{http_code}' \
             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
-            "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" > "$RUNNER_TEMP/catalog.json"
+            "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+          if [ "$status" != "200" ]; then
+            # Project only non-sensitive upstream failure classes, never raw
+            # response, headers, credential, config or arbitrary exception text.
+            python3 - "$RUNNER_TEMP/catalog.json" "$status" <<'PY'
+          import json, sys
+          try:
+              body = json.load(open(sys.argv[1], encoding="utf-8"))
+              error = str(body.get("error") or "")
+          except (OSError, ValueError, TypeError, AttributeError):
+              error = ""
+          patterns = (
+              ("github oidc ref invalid", "OIDC_REF_INVALID"),
+              ("github oidc audience invalid", "OIDC_AUDIENCE_INVALID"),
+              ("github oidc repository invalid", "OIDC_REPOSITORY_INVALID"),
+              ("github oidc issuer invalid", "OIDC_ISSUER_INVALID"),
+              ("github oidc signature invalid", "OIDC_SIGNATURE_INVALID"),
+              ("github oidc source commit mismatch", "OIDC_COMMIT_MISMATCH"),
+              ("github oidc key type invalid", "OIDC_KEY_INVALID"),
+              ("github oidc token", "OIDC_TOKEN_REJECTED"),
+              ("missing bearer credential", "BEARER_MISSING"),
+              ("invalid controller credential", "CONTROLLER_TOKEN_INVALID"),
+              ("Realm gateway route not allowlisted", "GATEWAY_ROUTE_BLOCKED"),
+          )
+          category = next((tag for phrase, tag in patterns if phrase in error), "UNCLASSIFIED")
+          print("runner_window_catalog_http=" + (sys.argv[2] if sys.argv[2].isdigit() else "UNKNOWN"))
+          print("runner_window_catalog_failure_class=" + category)
+          sys.exit(1)
+          PY
+          fi
           python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
           import json,sys
           d=json.load(open(sys.argv[1],encoding='utf-8'))
