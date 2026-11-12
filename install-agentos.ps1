@@ -237,7 +237,9 @@ function Install-RecoveryProbe([string]$PythonPath, [string]$RuntimeRoot) {
     throw 'Recovery probe result is not valid'
   }
   $recoveryTaskName = 'AgentOS Recovery ONE Probe'
-  $probeArgs = '-I "' + $runner + '" --root "' + $recoveryRoot + '" --config "' + $configFile + '" --status "' + $statusFile + '"'
+  # A corrupt pending B slot must not terminate all rescue communications.
+  # The LKG check is read-only and always leaves ONE rollback authority intact.
+  $probeArgs = '-I "' + $runner + '" --root "' + $recoveryRoot + '" --config "' + $configFile + '" --status "' + $statusFile + '" --diagnose-lkg-when-pending-corrupt'
   $action = New-ScheduledTaskAction -Execute $PythonPath -Argument $probeArgs -WorkingDirectory $recoveryRoot
   $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
   $periodic = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
