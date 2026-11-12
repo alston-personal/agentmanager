@@ -95,7 +95,7 @@ def bounded_realm_process_candidates() -> dict[str, object]:
             continue
         try:
             raw = (entry / "cmdline").read_bytes()[:4096]
-            argv = raw.split(b"\\0")
+            argv = raw.split(b"\0")
             # A precise module + serve pair; do not match arbitrary shell
             # snippets, process supervisors or test command arguments.
             if not any(v == b"agent_core.realm_cli" for v in argv):
