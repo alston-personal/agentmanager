@@ -1699,6 +1699,9 @@ never promotes that transport acknowledgement to terminal media success.
 The convergence change also restores the relay's bounded dispatch function body
 where the action registry already referenced it, keeping import and execution
 behavior aligned with the allowlist contract.
+The same source repair restores the pre-existing Realm deployment-fence
+definitions referenced by the relay registry; it does not claim a deployment,
+lease acquisition, service restart, or Oracle runtime readback.
 
 This is source-level convergence only. It does not attest that Oracle has loaded
 the provider, that ONE delivered the job, that a GPU run occurred, or that the
