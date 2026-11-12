@@ -66,8 +66,15 @@ def reconcile(*, root, gate, participant_id):
         # Crash could occur after BEGIN but before the stage was committed.
         classification = "GOVERNED_RECONCILIATION_REQUIRED"
     elif (stage_record.get("operation_id") != op
+          or stage_record.get("node_id") != participant_id
+          or stage_record.get("activation_authorized") is not False
+          or stage_record.get("one_receipt_attested") is not False
           or reserved_file.read_text(encoding="utf-8").strip() != op
           or stage_record.get("slot") not in ("A", "B")
+          or state["digests"].get(stage_record["slot"]) not in (
+              stage_record.get("candidate_sha256"), None)
+          or (state["digests"].get(stage_record["slot"]) is None
+              and active == stage_record["slot"])
           or (stage_record.get("active") != lkg and not (
               phase == "ACTIVATED" and pending is None
               and active == lkg == stage_record.get("slot")
