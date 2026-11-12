@@ -84,7 +84,7 @@ def probe_health() -> bool:
 
 def is_realm_8780_command(raw: bytes) -> bool:
     """Only identify the already-known Realm listener; never emit cmdline."""
-    parts = [part for part in raw.split(b"\\0") if part]
+    parts = [part for part in raw.split(b"\0") if part]
     return (
         (b"agent_core.realm_cli" in parts or
          any(part.endswith(b"/agentos-one") for part in parts))
@@ -122,6 +122,14 @@ def is_ubuntu_uid(pid: int) -> bool | None:
     except (OSError, KeyError, ValueError, IndexError):
         return None
     return None
+
+
+def runner_identity_is_ubuntu() -> bool | None:
+    try:
+        import pwd
+        return pwd.getpwnam("ubuntu").pw_uid == os.geteuid()
+    except (OSError, KeyError, AttributeError):
+        return None
 
 
 def source_attestation() -> dict:
@@ -171,10 +179,7 @@ def source_attestation() -> dict:
         "listener_process_detected": bool(listener_pids),
         "single_listener_process_identified": len(listener_pids) == 1,
         "listener_owner_is_ubuntu": is_ubuntu_uid(observed_pid) if observed_pid is not None else None,
-        "runner_identity_is_ubuntu": (
-            __import__("pwd").getpwnam("ubuntu").pw_uid == os.geteuid()
-            if hasattr(os, "geteuid") else False
-        ),
+        "runner_identity_is_ubuntu": runner_identity_is_ubuntu(),
         "canonical_checkout_matches_expected": (
             canonical_checkout == expected if canonical_checkout and expected else False
         ),
