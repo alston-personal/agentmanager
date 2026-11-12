@@ -7,9 +7,12 @@ fixed semantic actions only; no generic shell or argv surface is introduced.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
+from agent_core.code_resume_authority import require_fresh_code_resume
+from agentos_node.branch_resume_host_probe import load_trusted_code_resume_probe
 from agent_core.executor_job_contract import (
     EXECUTOR_JOB_SCHEMA,
     project_executor_job_receipt,
@@ -17,9 +20,6 @@ from agent_core.executor_job_contract import (
     validate_executor_job,
     validate_executor_job_id,
 )
-import os
-from agent_core.code_resume_authority import require_fresh_code_resume
-from agentos_node.branch_resume_host_probe import load_trusted_code_resume_probe
 from agentos_node.action_relay import ACTIONS, ActionRelayClient, main as action_relay_main
 from agentos_node.executor_job_adapter import run_registered_executor_job
 from agentos_node.issue117_experience_provider import register_issue117_provider_if_available
@@ -31,10 +31,12 @@ from agentos_node.engineering_subagent_provider import register_engineering_suba
 from agentos_node.layoutlib_parity_provider import register_layoutlib_parity_provider
 from agentos_node.layoutlib_release_materialize_provider import register_layoutlib_release_materialize_provider
 from agentos_node.layoutlib_production_promote_provider import register_layoutlib_production_promote_provider
+from agentos_node.deployment_inspect_provider import register_deployment_inspection_providers
 from agentos_node.market_master_completion_provider import register_market_master_completion_provider
 from agentos_node.completion_next_inspect_provider import register_completion_next_inspect_provider
 from agentos_node.completion_470_status_provider import register_completion_470_status_provider
 from agentos_node.mio_dm_health_provider import register_mio_dm_health_provider
+from agentos_node.colab_h3_smoke_provider import register_colab_h3_smoke_provider
 
 
 ACTION = "agentos.executor.job"
@@ -50,10 +52,12 @@ ENGINEERING_SUBAGENT_PROVIDERS_REGISTERED = register_engineering_subagent_provid
 LAYOUTLIB_RELEASE_MATERIALIZE_PROVIDER_REGISTERED = register_layoutlib_release_materialize_provider()
 LAYOUTLIB_PRODUCTION_PROMOTE_PROVIDER_REGISTERED = register_layoutlib_production_promote_provider()
 LAYOUTLIB_PARITY_PROVIDER_REGISTERED = register_layoutlib_parity_provider()
+DEPLOYMENT_INSPECT_PROVIDERS_REGISTERED = register_deployment_inspection_providers()
 MARKET_MASTER_COMPLETION_PROVIDER_REGISTERED = register_market_master_completion_provider()
 COMPLETION_NEXT_INSPECT_PROVIDER_REGISTERED = register_completion_next_inspect_provider()
 COMPLETION_470_STATUS_PROVIDER_REGISTERED = register_completion_470_status_provider()
 MIO_DM_HEALTH_PROVIDER_REGISTERED = register_mio_dm_health_provider()
+COLAB_H3_SMOKE_PROVIDER_REGISTERED = register_colab_h3_smoke_provider()
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
@@ -77,8 +81,8 @@ def _execute(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("executor-job relay accepts only a canonical request object")
     request = dict(params["request"])
     spec = validate_executor_job(request)
-    # Second fence: a queued capsule can become stale AFTER controller dispatch.
-    # The worker must re-fetch the real origin and re-check its own checkout.
+    # Re-check at the relay execution boundary: queued code can become stale.
+    # Host config is operator-provisioned, never accepted from the request.
     if spec.authority == "bounded-code-fix":
         try:
             host_probe = load_trusted_code_resume_probe(
