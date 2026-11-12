@@ -1,5 +1,8 @@
 import unittest
-from scripts.version_convergence_signal import validate_adapter_hint, plan_adapter_reconciliation, gate_adapter_install, PREFLIGHT_CHECKS, initial_channel_state, reconcile_channel_update
+import tempfile
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from scripts.version_convergence_signal import validate_adapter_hint, plan_adapter_reconciliation, gate_adapter_install, PREFLIGHT_CHECKS, initial_channel_state, reconcile_channel_update, DurableChannelUpdateStore
 from scripts.version_convergence_signal import make_event, validate_ack, affected_domains
 A="a"*40
 B="b"*40
@@ -284,5 +287,78 @@ class DualChannelInterlockTests(unittest.TestCase):
         self.assertEqual(state["phase"], "HUMAN_REQUIRED")
         with self.assertRaises(ValueError):
             self.step(state, "BEGIN", observed=self.begin_proof("normal"))
+
+
+class DurableChannelGateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / "channel.sqlite3"
+
+    def store(self):
+        return DurableChannelUpdateStore(self.path)
+
+    def test_reopen_after_crash_cannot_unlock_or_switch_lane(self):
+        store = self.store()
+        original = store.inspect(participant_id="oracle-node")
+        begun = store.transition(
+            participant_id="oracle-node", stage="BEGIN", lane="recovery",
+            operation_id="recovery-001", expected_generation=original["generation"],
+            observed={"normal_one_handshake": True,
+                      "normal_recovery_download": True,
+                      "protected_recovery_slot_ready": True})
+        reopened = self.store()
+        self.assertEqual(reopened.inspect(participant_id="oracle-node"), begun)
+        with self.assertRaises(ValueError):
+            reopened.transition(
+                participant_id="oracle-node", stage="BEGIN", lane="normal",
+                operation_id="normal-002", expected_generation=begun["generation"],
+                observed={"recovery_one_handshake": True,
+                          "recovery_signed_manifest": True,
+                          "recovery_rollback_ready": True})
+
+    def test_stale_generation_fails_without_corrupting_persistent_state(self):
+        store = self.store()
+        initial = store.inspect(participant_id="node-a")
+        begun = store.transition(
+            participant_id="node-a", stage="BEGIN", lane="normal",
+            operation_id="normal-001", expected_generation=0,
+            observed={"recovery_one_handshake": True,
+                      "recovery_signed_manifest": True,
+                      "recovery_rollback_ready": True})
+        with self.assertRaises(ValueError):
+            store.transition(
+                participant_id="node-a", stage="FAIL", lane="normal",
+                operation_id="normal-001", expected_generation=0)
+        self.assertEqual(store.inspect(participant_id="node-a"), begun)
+        self.assertEqual(initial["phase"], "IDLE")
+
+    def test_concurrent_begin_requests_only_one_wins(self):
+        store = self.store()
+        store.inspect(participant_id="shared-node")
+        proof = {"recovery_one_handshake": True,
+                 "recovery_signed_manifest": True,
+                 "recovery_rollback_ready": True}
+        def attempt(n):
+            try:
+                return store.transition(
+                    participant_id="shared-node", stage="BEGIN", lane="normal",
+                    operation_id="install-" + str(n), expected_generation=0,
+                    observed=proof)["operation_id"]
+            except ValueError:
+                return None
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(attempt, range(8)))
+        self.assertEqual(len([x for x in results if x is not None]), 1)
+        self.assertEqual(store.inspect(participant_id="shared-node")["phase"], "STAGED")
+
+    def test_participant_isolation_and_invalid_ids(self):
+        store = self.store()
+        self.assertEqual(store.inspect(participant_id="node-a")["phase"], "IDLE")
+        self.assertEqual(store.inspect(participant_id="node-b")["phase"], "IDLE")
+        with self.assertRaises(ValueError):
+            store.inspect(participant_id="../escape")
+        with self.assertRaises(ValueError):
+            DurableChannelUpdateStore(":memory:")
 
 if __name__=="__main__": unittest.main()
