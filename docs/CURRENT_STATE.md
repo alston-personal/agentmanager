@@ -1,3 +1,13 @@
+## 2026-11-12 — #1682 prevent premature ONE unlock on Recovery acceptance AND rollback (PR #2271 SOURCE ONLY)
+
+Audited the A/B update boundary and fixed a second premature unlock: `recovery_upgrade_promotion.accept_pending()` called `durable_update_gate(..., "VERIFY")` **before** Windows persisted `last_known_good=B` and cleared `pending`. If Windows writes then failed, ONE could be IDLE while Windows still carried a pending candidate. The existing acceptance method now first checks candidate, Normal health and independently validated ONE receipt; then writes the Windows accepted state, reads it back and verifies the candidate's protected hash **before** asking ONE to commit VERIFY.
+
+The rollback path likewise now separates `authorize_rollback` from the post-local-write `ROLLBACK_OK` gate completion. Any local write failure leaves ONE interlock held; if the ONE closeout fails after local commit, the stage reservation stays intact. The read-only reconciler now identifies `GOVERNED_POST_ACCEPTANCE_RECONCILIATION` and `GOVERNED_POST_ROLLBACK_RECONCILIATION`, neither permitting new updates nor authenticating a Receipt. Source tests cover disk write failures, ordering, denied host callbacks and cross-store post-commit failures.
+
+**Source-only status:** These source callbacks still require actual ONE Maintenance signer/trust enforcement and the Windows/ONE live receipt. No official Oracle Canonical IR publish/readback and no production Recovery repair have been performed. #2271 remains unmerged Draft.
+
+---
+
 ## 2026-11-12 — #1682 correction to ONE rollback gate completion order (PR #2271 SOURCE ONLY)
 
 Critical source review found `recovery_upgrade_promotion.revert_pending()` invoked `durable_update_gate(context, "ROLLBACK_OK")` **before** persisting the Windows LKG restoration to `slots.json`. A Windows write failure could therefore release ONE's cross-channel update lock before recovery had happened. The existing primitive now requires a separate privileged `authorize_rollback(context)` callback, then commits and reads back the local LKG restoration **before** requesting ONE `ROLLBACK_OK`. If the local write fails the gate is not called; if the later ONE completion fails, the durable stage reservation and ONE gate remain for governed reconciliation. The read-only reconciler now classifies this last state as `GOVERNED_POST_ROLLBACK_RECONCILIATION` rather than a healthy/released operation. Unit tests cover denied authority, write failure, callback ordering, ONE denial and cross-store crash recovery.
