@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 Recovery damaged-pending B rollback reconciliation corrected (PR #2271 SOURCE ONLY)
+
+A concrete live-recovery blocker was found: `scripts/windows/recovery_update_reconcile.py` required `active_integrity_verified` even in ONE's `ROLLBACK_REQUIRED` phase. A damaged pending B image therefore could **never** be classified `AWAITING_AUTHORIZED_ROLLBACK`, despite a verified protected A LKG and matching gate operation. The reconciler now admits the expected pending B / verified LKG case *even when B is corrupt*, and leaves `rollback_authorized=false`, `new_update_permitted=false`, and `one_receipt_attested=false`. Operation mismatch, absent stage/reservation and damaged LKG still fail closed. Added corresponding source regression tests.
+
+**Scope:** The classification is read-only guidance to the existing ONE Maintenance owner. This patch does not connect the privileged callback, move A/B slots, execute a rollback, or publish Oracle's Canonical IR. PR #2271 remains Draft and not deployed.
+
+---
+
 ## 2026-11-12 — #1682 orphan Recovery Python and ZIP collision guards (PR #2271 SOURCE ONLY)
 
 Further audit found the first-install path could use `recovery/python-runtime/python.exe` **without a managed Recovery Scheduled Task**, silently adopting orphaned interpreter bytes instead of requiring publisher/operation reconciliation. The canonical `install-agentos.ps1` now refuses this state with `RECOVERY_PYTHON_ORPHAN_RUNTIME_REQUIRES_AUTHORIZED_RECONCILIATION`; it does not delete or replace the orphan. The offline provisioner now rejects ZIP members with case-insensitive duplicate names before extraction (Windows filesystem conflict). Contract and Windows execution tests added. Official Recovery owner still needs an independently authorized repair/reattachment workflow.
