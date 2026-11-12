@@ -19,7 +19,7 @@ from pathlib import Path
 
 TENANT_REALM = re.compile(r"realm-u-[0-9a-f]{24}\Z")
 NODE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
-ONE_ORIGIN = "https://agentos.milkcat.org"
+ONE_ORIGINS = ("https://agentos.milkcat.org", "https://studio.milkcat.org/dashboard/api/agentos")
 RESULT_SCHEMA = "agentos.recovery-probe/v1"
 
 
@@ -30,9 +30,9 @@ def validate_config(config):
         if not isinstance(config.get(key), str) or not config[key]:
             raise ValueError("missing_recovery_identity")
     parsed = urllib.parse.urlsplit(config["one_url"])
-    if (parsed.scheme != "https" or parsed.netloc != "agentos.milkcat.org"
-            or parsed.path not in ("", "/") or parsed.query or parsed.fragment
-            or parsed.username or parsed.password):
+    if (parsed.scheme != "https" or parsed.username or parsed.password
+            or parsed.query or parsed.fragment
+            or config["one_url"].rstrip("/") not in ONE_ORIGINS):
         raise ValueError("recovery_one_origin_not_trusted")
     if not NODE_ID.fullmatch(config["node_id"]):
         raise ValueError("invalid_recovery_node")
@@ -46,9 +46,11 @@ def validate_config(config):
 def bootstrap_url(config):
     config = validate_config(config)
     if TENANT_REALM.fullmatch(config["realm_id"]):
-        base = ONE_ORIGIN + "/v1/realms/" + config["realm_id"] + "/bootstrap"
+        if config["one_url"].rstrip("/") != "https://agentos.milkcat.org":
+            raise ValueError("tenant_recovery_requires_agentos_origin")
+        base = "https://agentos.milkcat.org/v1/realms/" + config["realm_id"] + "/bootstrap"
     else:
-        base = ONE_ORIGIN + "/v1/bootstrap"
+        base = config["one_url"].rstrip("/") + "/v1/bootstrap"
     return base + "?" + urllib.parse.urlencode({"node_id": config["node_id"]})
 
 
