@@ -1,0 +1,39 @@
+{
+  "schema": "agentos.deployment-capability/v1",
+  "authority": "source-discovery-only-no-new-dispatch",
+  "governed_execution_contract": "agentos.execution-request/v1",
+  "one_executor_contract": "agentos.executor-job/v1",
+  "targets": {
+    "studio.public-site": {
+      "project_id": "studio-web",
+      "repository": "alston-personal/studio-web",
+      "source_ref": "main",
+      "resource_id": "site://studio.milkcat.org",
+      "authority_issue": 165,
+      "release_carriers": [
+        "reusable-studio-static-route-release.yml",
+        "oracle-cutover-milkcat-world-home.yml"
+      ],
+      "verification_carriers": [
+        "oracle-diagnose-studio-webserver.yml",
+        "check-studio-live-release.mjs"
+      ],
+      "migration_state": "source_only"
+    },
+    "studio.layout-lab": {
+      "project_id": "layoutlib",
+      "repository": "alston-personal/layoutlib",
+      "source_ref": "main",
+      "resource_id": "site://studio.milkcat.org/layout-lab",
+      "authority_issue": 165,
+      "release_carriers": [
+        "layoutlib.release.materialize",
+        "layoutlib.production.promote"
+      ],
+      "verification_carriers": [
+        "layoutlib.production.parity.inspect"
+      ],
+      "migration_state": "source_only"
+    }
+  }
+}

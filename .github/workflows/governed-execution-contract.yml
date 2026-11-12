@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'governance/execution-authority.json'
+      - 'governance/deployment-capabilities.json'
+      - 'agent_core/deployment_capability.py'
+      - 'tests/test_deployment_capability.py'
       - 'scripts/fetch_governed_product_request.py'
       - 'scripts/run_governed_execution_request.py'
       - 'tests/test_governed_execution_request.py'
@@ -13,6 +16,9 @@ on:
     branches: [core/integration]
     paths:
       - 'governance/execution-authority.json'
+      - 'governance/deployment-capabilities.json'
+      - 'agent_core/deployment_capability.py'
+      - 'tests/test_deployment_capability.py'
       - 'scripts/fetch_governed_product_request.py'
       - 'scripts/run_governed_execution_request.py'
       - 'tests/test_governed_execution_request.py'
@@ -30,4 +36,5 @@ jobs:
       - name: Validate bounded execution contract
         run: |
           python3 tests/test_governed_execution_request.py
-          python3 -m py_compile scripts/run_governed_execution_request.py scripts/fetch_governed_product_request.py
+          python3 -m unittest tests.test_deployment_capability -v
+          python3 -m py_compile scripts/run_governed_execution_request.py scripts/fetch_governed_product_request.py agent_core/deployment_capability.py
