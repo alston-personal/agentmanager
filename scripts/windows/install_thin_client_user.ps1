@@ -63,33 +63,3 @@ Register-ScheduledTask -TaskName $watchdogTaskName -Action $watchdogAction -Trig
 Start-ScheduledTask -TaskName $watchdogTaskName
 Write-Host "Installed and started AgentOS Thin Client watchdog task: $watchdogTaskName"
 
-
-
-# The recovery probe is deliberately outside the normal versioned runtime.
-# A rerun of the normal installer MUST NOT overwrite an installed rescue lane.
-# Recovery updates require a separate, governed A/B procedure.
-$recoverySource = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "recovery_one_probe.py"
-$recoveryRoot = Join-Path $env:LOCALAPPDATA "AgentOS\\recovery"
-$recoveryTarget = Join-Path $recoveryRoot "recovery_one_probe.py"
-$recoveryStatus = Join-Path $recoveryRoot "status.json"
-if (-not (Test-Path -LiteralPath $recoverySource)) {
-  throw "Missing recovery probe source: $recoverySource"
-}
-New-Item -ItemType Directory -Force -Path $recoveryRoot | Out-Null
-if (-not (Test-Path -LiteralPath $recoveryTarget)) {
-  Copy-Item -LiteralPath $recoverySource -Destination $recoveryTarget -ErrorAction Stop
-} else {
-  # Ordinary installation must not silently upgrade the safety lane.
-  Write-Host "Existing independent recovery probe retained; no overwrite."
-}
-$pythonCommand = Get-Command python.exe -CommandType Application -ErrorAction Stop
-$recoveryTaskName = "$TaskName Recovery Probe"
-$recoveryArgs = '"' + $recoveryTarget + '" --config "' + $clientConfig + '" --status "' + $recoveryStatus + '"'
-$recoveryAction = New-ScheduledTaskAction -Execute $pythonCommand.Source -Argument $recoveryArgs
-$recoveryLogonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$recoveryPeriodicTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
-$recoverySettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-$recoveryPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName $recoveryTaskName -Action $recoveryAction -Trigger @($recoveryLogonTrigger,$recoveryPeriodicTrigger) -Settings $recoverySettings -Principal $recoveryPrincipal -Force | Out-Null
-Start-ScheduledTask -TaskName $recoveryTaskName
-Write-Host "Installed separate read-only ONE recovery probe task: $recoveryTaskName"
