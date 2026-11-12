@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/version_convergence_signal.py'
+      - 'agent_core/runtime_ota_acceptance.py'
+      - 'tests/test_runtime_ota_candidate_recheck.py'
       - 'agentos_node/bootstrap_scheduler.py'
       - 'tests/test_bootstrap_scheduler_queue_ttl.py'
       - 'tests/test_version_convergence_signal.py'
@@ -28,6 +30,8 @@ jobs:
         run: python3 -m unittest tests.test_version_convergence_signal -v
       - name: Test maintenance communication update mutex
         run: python3 -m unittest tests.test_bootstrap_scheduler_queue_ttl -v
+      - name: Test active candidate recheck after OTA probe
+        run: python3 -m unittest tests.test_runtime_ota_candidate_recheck -v
       - name: Produce protected main source event (not an Executor delivery)
         if: github.event_name == 'push'
         shell: bash
