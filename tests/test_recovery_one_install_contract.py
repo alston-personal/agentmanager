@@ -32,6 +32,20 @@ class CanonicalRecoveryInstallationTests(unittest.TestCase):
         self.assertIn("Join-Path $InstallRoot 'recovery'", script)
         self.assertNotIn("Remove-Item -Recurse -Force $recoveryRoot", script)
 
+    def test_normal_reinstall_does_not_rebind_existing_recovery_scheduled_task(self):
+        script = ONE_CLICK.read_text(encoding="utf-8")
+        self.assertIn("Get-ScheduledTask -TaskName $recoveryTaskName", script)
+        self.assertIn("if($existingRecoveryTask)", script)
+        self.assertIn("Existing Recovery scheduled task retained", script)
+        self.assertIn("$existingActions[0].Execute", script)
+        self.assertIn("protected launcher; no automatic takeover", script)
+        self.assertIn("existing independent Python executable and triggers", script)
+        self.assertIn("--diagnose-lkg-when-pending-corrupt", script)
+        installer = script[script.index("function Install-RecoveryProbe("):
+                           script.index("\ntry {\n  if($env:OS -ne 'Windows_NT')")]
+        self.assertEqual(installer.count("Register-ScheduledTask -TaskName $recoveryTaskName"), 1)
+        self.assertNotIn("Register-ScheduledTask -TaskName $recoveryTaskName -Action $action -Trigger @($logon,$periodic) -Settings $settings -Force", installer)
+
     def test_canonical_installer_publishes_probe_as_source_payload(self):
         script = PINNED_PAYLOAD.read_text(encoding="utf-8")
         self.assertIn("'scripts/windows/recovery_one_probe.py'", script)
