@@ -1,3 +1,11 @@
+## 2026-11-12 — #1682 scheduled Recovery runner unauthorized rollback fixed (#2271 SOURCE ONLY)
+
+Identified an actual authority bypass: the independent `recovery_slot_runner.py` previously rewrote `active=A` and cleared `pending` on a corrupted pending B image during a routine scheduled health check, without a ONE durable interlock transition or authorized rollback Receipt. The code now **does not mutate A/B slot state during probe runs**; it fails closed with `recovery_pending_corrupt_rollback_authority_required`, preserving pending and the protected LKG for the existing governed `recovery_upgrade_promotion.revert_pending` operation. The slot check also refuses symlinked slot directories, and tests verify no state mutation or unauthorized process execution.
+
+**Safety boundary:** This prevents silent state divergence but can temporarily leave the independent Recovery probe offline until the authorized host reconciles and rolls back. Real ONE authorization, maintenance binding and a Windows live rollback/Recovery Receipt are STILL outstanding, as is a real Canonical IR CAS publish/readback. The structured IR change proposal and #1682 work ledger include this deficit; this source PR remains Draft and not deployed.
+
+---
+
 ## 2026-11-12 — #1682 IR CAS interrupted-selector recovery (PR #2271; source-only)
 
 Added `--resume-selector-only` to the same `scripts/publish_recovery_1682_ir.py` to recover a crash **after** a Canonical IR generation is published but **before** the Active Continuation selector is updated, without publishing another IR generation. It verifies that the authoritative `agentos-core` IR and execution head match, the IR is the #1682 handoff and has a real parent, and the selector remains on that precise parent before performing guarded selector CAS and readback. Already-current selectors are idempotent; missing/other-project/stale/concurrently updated selectors fail closed. Re-running `--from-current --apply` after a successful publication is unsafe because it creates unnecessary IR generations. Source tests and the updated IR proposal reflect this next action.
