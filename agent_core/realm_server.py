@@ -1220,7 +1220,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             # Privileged runtime/controller surfaces below remain separately authenticated.
             if parsed.path == '/v1/controller/dispatch':
                 body = self._json_body()
-                result = LegacyControllerService(self.fabric).dispatch(body)
+                result = LegacyControllerService(self.fabric, code_resume_probe=self.server.code_resume_probe).dispatch(body)
                 self._send(200, result)
                 return
             if parsed.path == '/v1/resolve':
@@ -1283,6 +1283,11 @@ class RealmHTTPServer(ThreadingHTTPServer):
         super().__init__(address, RealmRequestHandler)
         self.fabric = fabric
         self.controller = RuntimeControllerService(fabric)
+        # Operator-owned configuration only; HTTP/task fields cannot select it.
+        from agentos_node.branch_resume_host_probe import load_trusted_code_resume_probe
+        self.code_resume_probe = load_trusted_code_resume_probe(
+            os.environ.get("AGENTOS_CODE_RESUME_HOST_CONFIG")
+        )
         self.controller_token = controller_token if controller_token is not None else os.environ.get('AGENTOS_CONTROLLER_TOKEN', '')
 
 
