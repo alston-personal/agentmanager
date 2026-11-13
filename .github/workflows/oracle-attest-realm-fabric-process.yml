@@ -1,94 +1,63 @@
 name: Attest Realm Fabric Process Identity
 
+# Existing diagnostic workflow, now read-only and fully redacted. No printed
+# systemd unit, shell arguments, process environment or private node map.
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - '.github/workflows/oracle-attest-realm-fabric-process.yml'
+      - 'scripts/attest_realm_loaded_source_redacted.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-attest-realm-fabric-process.yml'
+      - 'scripts/attest_realm_loaded_source_redacted.py'
+      - 'tests/test_attest_realm_loaded_source_redacted.py'
 
 permissions:
   contents: read
 
+concurrency:
+  group: oracle-realm-8780-readonly-attestation
+  cancel-in-progress: false
+
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate bounded redacted runtime attestation contract
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/attest_realm_loaded_source_redacted.py
+          python3 -m unittest tests.test_attest_realm_loaded_source_redacted -v
+
   attest:
+    needs: [validate]
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - name: Read-only live process attestation
+        with:
+          persist-credentials: false
+      - name: Read only fixed live 8780 source candidates, never export raw config
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== UNIT FILE ==='
-          unit=/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service
-          test -r "$unit"
-          cat "$unit"
-          expected=$(sed -n 's/^ExecStart=//p' "$unit")
-          echo "expected_exec=$expected"
-          launcher=$(printf '%s\n' "$expected" | awk '{print $1}')
-          release=$(dirname "$(dirname "$launcher")")
-          echo "release=$release"
-
-          echo '=== RELEASE CONTENT ==='
-          test -r "$launcher"
-          cat "$launcher"
-          test -r "$release/agent_core/realm_server.py"
-          grep -n "'/v1/resolve'\|oracle-core-node\|_run_core_node_heartbeat" "$release/agent_core/realm_server.py" || true
-          PYTHONPATH="$release" /usr/bin/python3 - <<'PY'
-          import agent_core.realm_server as r
-          print('release_import_file='+str(r.__file__))
-          print('has_core_manifest='+str(hasattr(r,'_core_node_manifest')))
-          PY
-
-          echo '=== LISTENER ==='
-          ss -ltnp 2>/dev/null | grep ':8780' || true
-          echo '=== CANDIDATE PROCESSES ==='
-          pgrep -af 'agent_core.realm_cli.*serve.*8780|agentos-one.*serve.*8780|realm.*8780' || true
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import json, os
-          rows=[]
-          for proc in Path('/proc').iterdir():
-              if not proc.name.isdigit(): continue
-              try:
-                  raw=(proc/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
-              except Exception: continue
-              if 'agent_core.realm_cli' not in raw and 'agentos-one' not in raw: continue
-              if '8780' not in raw: continue
-              row={'pid':int(proc.name),'cmdline':raw}
-              for key in ('cwd','exe'):
-                  try: row[key]=os.readlink(proc/key)
-                  except Exception as exc: row[key]=f'<{type(exc).__name__}>'
-              try:
-                  env=(proc/'environ').read_bytes().split(b'\0')
-                  vals={}
-                  for item in env:
-                      if b'=' not in item: continue
-                      k,v=item.split(b'=',1)
-                      if k in (b'PYTHONPATH',b'AGENT_DATA_ROOT',b'AGENTOS_CORE_NODE_ID'):
-                          vals[k.decode()]=v.decode('utf-8','replace')
-                  row['env']=vals
-              except Exception as exc: row['env_error']=type(exc).__name__
-              rows.append(row)
-          print(json.dumps(rows,ensure_ascii=False,indent=2))
-          if not rows:
-              raise SystemExit('no Realm Fabric listener process identifiable')
-          PY
-
-          echo '=== HTTP ==='
-          curl -sS -i --max-time 3 http://127.0.0.1:8780/v1/health
-          echo
-          curl -sS -i --max-time 3 -H 'Content-Type: application/json' \
-            -d '{"schema":"agentos.resolve-request/v1","node_id":"oracle-attestation","intent":"continue","project":"agentos-core"}' \
-            http://127.0.0.1:8780/v1/resolve
-          echo
-
-          echo '=== NODE MAP AFTER SETTLE ==='
-          sleep 12
-          AGENT_DATA_ROOT=/home/ubuntu/agent-data python3 - <<'PY'
-          import json
-          from agent_core.node_registry import NodeRegistry
-          print(json.dumps(NodeRegistry().node_map(),ensure_ascii=False,indent=2))
-          PY
+          python3 scripts/attest_realm_loaded_source_redacted.py > realm-8780-attestation.json
+          python3 -m json.tool realm-8780-attestation.json > /dev/null
+          echo "realm_8780_redacted_attestation=PASS"
+      - name: Save sanitized read-only attestation receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: realm-8780-redacted-attestation
+          path: realm-8780-attestation.json
+          if-no-files-found: warn
+          retention-days: 7

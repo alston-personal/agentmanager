@@ -489,7 +489,7 @@ def test_request_submit_lock_accepts_secure_foreign_owner_in_shared_group(monkey
     monkeypatch.setattr(
         relay.os,
         "fstat",
-        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100660),
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100660, st_size=0),
     )
     monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
     monkeypatch.setattr(relay.os, "getegid", lambda: 2002)
@@ -511,7 +511,7 @@ def test_request_submit_lock_rejects_foreign_owner_outside_shared_group(monkeypa
     monkeypatch.setattr(
         relay.os,
         "fstat",
-        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100660),
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100660, st_size=0),
     )
     monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
     monkeypatch.setattr(relay.os, "getegid", lambda: 2002)
@@ -529,7 +529,7 @@ def test_request_submit_lock_rejects_world_accessible_shared_lock(monkeypatch, t
     monkeypatch.setattr(
         relay.os,
         "fstat",
-        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100666),
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100666, st_size=0),
     )
     monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
     monkeypatch.setattr(relay.os, "getegid", lambda: 2002)

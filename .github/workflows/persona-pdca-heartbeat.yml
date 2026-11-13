@@ -255,6 +255,55 @@ jobs:
           journalctl --user -u agentos-persona-social-actions.service -n 40 --no-pager || true
           REMOTE
 
+      - name: Inspect existing Trend Digest runtime (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import json,subprocess
+          from datetime import datetime,timezone
+          from pathlib import Path
+          report={"schema":"agentos.mio-trend-digest-oracle-inventory/v1",
+                  "write_performed":False,"source_dir_present":False,
+                  "morning_reading_status":"MISSING",
+                  "user_timer_matches":0,"system_timer_matches":0,
+                  "cron_matches":0}
+          report["source_dir_present"]=Path("/home/ubuntu/trend-digest").is_dir()
+          path=Path("/home/ubuntu/agent-data/personas/sunlake-milkcat/morning_reading.json")
+          if path.is_file() and not path.is_symlink() and path.stat().st_size<=128000:
+              try:
+                  data=json.loads(path.read_text(encoding="utf-8"))
+                  if data.get("subscription_id")!="mio_lifestyle":
+                      report["morning_reading_status"]="WRONG_SUBSCRIPTION"
+                  else:
+                      stamp=str(data.get("generated_at") or "")
+                      parsed=datetime.fromisoformat(stamp.replace("Z","+00:00"))
+                      if parsed.tzinfo is None:
+                          from zoneinfo import ZoneInfo
+                          parsed=parsed.replace(tzinfo=ZoneInfo("Asia/Taipei"))
+                      age=(datetime.now(timezone.utc)-parsed.astimezone(timezone.utc)).total_seconds()/3600
+                      report["morning_reading_status"]="FRESH" if 0<=age<=36 else "STALE"
+                      report["morning_reading_age_hours"]=round(age,1)
+              except (OSError,ValueError,TypeError,AttributeError):
+                  report["morning_reading_status"]="INVALID"
+          for command,key in [
+              (["systemctl","--user","list-timers","--all","--no-legend"],"user_timer_matches"),
+              (["systemctl","list-timers","--all","--no-legend"],"system_timer_matches"),
+              (["crontab","-l"],"cron_matches"),
+          ]:
+              try:
+                  output=subprocess.run(command,text=True,capture_output=True,timeout=8,check=False)
+                  if output.returncode==0:
+                      report[key]=sum(1 for line in output.stdout.splitlines()
+                                      if "trend" in line.lower() and "digest" in line.lower())
+                  else:
+                      report[key]=-1
+              except (OSError,subprocess.TimeoutExpired):
+                  report[key]=-1
+          print("mio_trend_digest_oracle_inventory="+json.dumps(report,sort_keys=True))
+          assert report["write_performed"] is False
+          PY
+
       - name: Refresh current Mio public activity snapshot
         shell: bash
         run: |

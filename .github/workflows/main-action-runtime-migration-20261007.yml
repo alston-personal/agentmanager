@@ -1,18 +1,60 @@
 name: Main Action Runtime Migration 20261007
-# trigger-v2
+# protected-main post-Gateway OIDC acceptance (Gateway release dd141cc8 verified)
 
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/main-action-runtime-migration-20261007.yml'
+      # ONE provider/dispatch source, not a generic Core website deploy trigger.
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/deployment_inspect_provider.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/action_relay.py'
+
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-action-runtime-migration-20261007.yml'
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/deployment_inspect_provider.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/action_relay.py'
+      - 'tests/test_deployment_inspect_one.py'
+      - 'tests/test_main_runtime_deploy_routing.py'
 
 permissions:
   contents: read
   id-token: write
 
+# Reuse the existing Oracle Action Runtime rollout lock; do not update two
+# incompatible generations of the same action relay simultaneously.
+concurrency:
+  group: oracle-action-runtime-rollout
+  cancel-in-progress: false
+
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate fixed ONE deployment inspection contracts
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agent_core/executor_job_contract.py agentos_node/executor_job_adapter.py agentos_node/executor_job_action_relay.py agentos_node/deployment_inspect_provider.py
+          python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_main_runtime_deploy_routing -v
+          # Realm scheduler OIDC permission must admit ONLY the exact signed
+          # protected-main repair workflow; never broaden to all main workflows.
+          python3 -m pip install --disable-pip-version-check -q pytest
+          python3 -m pytest -q tests/test_realm_scheduler_oidc.py
   migrate:
+    needs: [validate]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -40,9 +82,63 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS --max-time 15 \
+          STATUS="$(curl -sS --max-time 15 \
+            -D "$RUNNER_TEMP/catalog.headers" \
+            -o "$RUNNER_TEMP/catalog.json" \
+            -w '%{http_code}' \
             -H "Authorization: Bearer $AGENTOS_CONTROLLER_TOKEN" \
-            "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" > "$RUNNER_TEMP/catalog.json"
+            "$AGENTOS_RUNNER_WINDOW_BASE/v1/dispatch" || true)"
+          if [ "$STATUS" != 200 ]; then
+            # Only known error categories and boolean claim-matches cross the CI log.
+            # Never print bearer token, JWT bytes, full body or sensitive headers.
+            python3 - "$RUNNER_TEMP/catalog.json" "$RUNNER_TEMP/catalog.headers" "$STATUS" <<'PY'
+          import base64,json,os,sys
+          from pathlib import Path
+          raw=Path(sys.argv[1]).read_text(encoding='utf-8',errors='replace')
+          try:
+              error=str(json.loads(raw).get('error') or '').lower()
+          except (ValueError,TypeError,AttributeError):
+              error=''
+          classes={
+              'github oidc ref invalid':'OIDC_REF_NOT_AUTHORIZED',
+              'github oidc signature invalid':'OIDC_SIGNATURE_INVALID',
+              'github oidc jwks unavailable':'OIDC_JWKS_UNAVAILABLE',
+              'github oidc signing key unknown':'OIDC_SIGNING_KEY_UNKNOWN',
+              'github oidc event invalid':'OIDC_EVENT_NOT_AUTHORIZED',
+              'github oidc token outside validity window':'OIDC_EXPIRED',
+              'github oidc token lifetime invalid':'OIDC_LIFETIME_INVALID',
+              'github oidc repository invalid':'OIDC_REPOSITORY_INVALID',
+              'github oidc audience invalid':'OIDC_AUDIENCE_INVALID',
+              'github oidc issuer invalid':'OIDC_ISSUER_INVALID',
+              'missing bearer credential':'BEARER_MISSING',
+              'invalid controller credential':'CONTROLLER_CREDENTIAL_INVALID',
+          }
+          reason=next((value for key,value in classes.items() if key in error),'UNCLASSIFIED')
+          headers=Path(sys.argv[2]).read_text(encoding='utf-8',errors='replace').lower()
+          print('runtime_catalog_http_status='+sys.argv[3])
+          print('runtime_catalog_gateway_response='+str('x-agentos-realm-gateway: v0.1' in headers).lower())
+          print('runtime_catalog_rejection_category='+reason)
+          token=os.environ.get('AGENTOS_CONTROLLER_TOKEN','')
+          try:
+              payload=token.split('.')[1]
+              claims=json.loads(base64.urlsafe_b64decode(payload+'='*(-len(payload)%4)))
+              main_ref='refs/'+'heads/'+'main'  # Match the workflow's main-only trigger without git mutation syntax.
+              expected='alston-personal/agentmanager/.github/workflows/main-action-runtime-migration-20261007.yml@'+main_ref
+              checks={
+                  'repo': claims.get('repository')=='alston-personal/agentmanager',
+                  'ref': claims.get('ref')==main_ref,
+                  'workflow': claims.get('workflow_ref')==expected,
+                  'event': claims.get('event_name')=='push',
+                  'sha': claims.get('sha')==os.environ.get('GITHUB_SHA'),
+                  'audience': 'agentos-scheduler' in ([claims.get('aud')] if isinstance(claims.get('aud'),str) else (claims.get('aud') or [])),
+              }
+              for key,good in sorted(checks.items()):
+                  print('oidc_claim_'+key+'_match='+str(bool(good)).lower())
+          except (ValueError,IndexError,TypeError):
+              print('oidc_claim_decoding=FAILED')
+          raise SystemExit(1)
+          PY
+          fi
           python3 - "$RUNNER_TEMP/catalog.json" <<'PY'
           import json,sys
           d=json.load(open(sys.argv[1],encoding='utf-8'))

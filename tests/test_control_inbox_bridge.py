@@ -242,6 +242,49 @@ def test_queued_command_is_followed_to_late_receipt_without_redispatch(tmp_path:
     assert github.results[-1]['task_id'] == _task_id(command['command_id'])
 
 
+def test_receipt_5xx_preserves_dispatched_task_and_recovers_without_second_post(tmp_path: Path):
+    command = _command(command_id='receipt-transient-5xx')
+    github = FakeGitHub([_comment(111, command)])
+
+    class TransientReceiptOne(FakeOne):
+        def __init__(self):
+            super().__init__(receipt=None)
+            self.reads = 0
+
+        def receipt(self, task_id):
+            self.reads += 1
+            if self.reads == 1:
+                raise OneControllerError('one_receipt_http_503')
+            return self._receipt
+
+    one = TransientReceiptOne()
+    config = _config(tmp_path)
+    assert ControlInboxBridge(config, github=github, one=one).process_once() == 1
+    assert len(one.dispatched) == 1
+    assert github.results[-1]['status'] == 'queued'
+    state = json.loads(config.state_path.read_text())
+    entry = state['commands'][command['command_id']]
+    assert entry['phase'] == 'queued'
+    assert entry['task_id'] == _task_id(command['command_id'])
+
+    one._receipt = {
+        'schema': 'agentos.node-receipt/v0.1',
+        'node_id': 'node-a',
+        'task_id': entry['task_id'],
+        'action': 'agent.surface.inspect',
+        'ok': True,
+    }
+    assert ControlInboxBridge(config, github=github, one=one).process_once() == 0
+    assert len(one.dispatched) == 1
+    assert github.results[-1]['status'] == 'completed'
+    assert github.results[-1]['task_id'] == entry['task_id']
+    # A later scan must not dispatch or post the same result again.
+    result_count = len(github.results)
+    assert ControlInboxBridge(config, github=github, one=one).process_once() == 0
+    assert len(one.dispatched) == 1
+    assert len(github.results) == result_count
+
+
 def test_restart_after_claim_reports_unknown_and_never_redispatches(tmp_path: Path):
     command = _command(command_id='interrupted')
     github = FakeGitHub([])

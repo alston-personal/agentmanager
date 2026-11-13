@@ -14,6 +14,8 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/colab_h3_smoke_provider.py'
+      - 'tests/test_colab_h3_smoke_provider.py'
       - 'agentos_node/completion_470_status_provider.py'
       - 'agentos_node/mio_dm_health_provider.py'
       - 'scripts/probe_threads_web_dm_login_user.sh'
@@ -131,6 +133,7 @@ jobs:
             tests/test_executor_job_contract.py \
             tests/test_executor_job_adapter.py \
             tests/test_executor_job_action_relay.py \
+            tests/test_colab_h3_smoke_provider.py \
             tests/test_completion_470_status_provider.py \
             tests/test_executor_job_controller_route.py \
             tests/test_executor_job_receipt_facade.py \
@@ -158,10 +161,15 @@ jobs:
           tmp=$(mktemp -d)
           trap 'rm -rf "$tmp"' EXIT
           mkdir -p "$tmp/scripts"
-          git fetch --no-tags origin core/issue-117-experience-memory
-          dep=$(git rev-parse FETCH_HEAD)
-          git show "$dep:scripts/oracle_codex_experience_regression.py" > "$tmp/scripts/oracle_codex_experience_regression.py"
-          git show "$dep:scripts/oracle_codex_experience_regression_entry_v2.py" > "$tmp/scripts/oracle_codex_experience_regression_entry_v2.py"
+          # #1682 branch convergence has already retired the historical
+          # core/issue-117-experience-memory branch. Verify the accepted
+          # integrated scripts at this exact tested source instead of a
+          # dangling cross-branch fetch; keep the same contract assertions.
+          dep=$(git rev-parse HEAD)
+          test -f scripts/oracle_codex_experience_regression.py
+          test -f scripts/oracle_codex_experience_regression_entry_v2.py
+          cp scripts/oracle_codex_experience_regression.py "$tmp/scripts/"
+          cp scripts/oracle_codex_experience_regression_entry_v2.py "$tmp/scripts/"
           ISSUE117_ROOT="$tmp" ISSUE117_COMMIT="$dep" AGENTOS_CODEX_EXECUTABLE=/__agentos_intentionally_missing_codex__ python - <<'PY'
           import os
           from pathlib import Path
@@ -205,6 +213,7 @@ jobs:
             agentos_node/bootstrap_control.py \
             agentos_node/executor_job_adapter.py \
             agentos_node/executor_job_action_relay.py \
+            agentos_node/colab_h3_smoke_provider.py \
             agentos_node/issue117_experience_provider.py \
             agentos_node/layoutlib_release_materialize_provider.py \
             agentos_node/layoutlib_production_promote_provider.py \

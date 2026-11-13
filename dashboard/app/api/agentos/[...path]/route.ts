@@ -48,6 +48,31 @@ async function isApprovedRainExitDispatch(request: NextRequest): Promise<boolean
   }
 }
 
+// Only a signed protected-main Runtime Repair workflow may actually execute
+// this operation. The Dashboard validates shape; the ONE upstream verifies
+// GitHub OIDC claims, exact workflow ref, event, source SHA and scheduler lock.
+async function isApprovedMainRuntimeRepairDispatch(request: NextRequest): Promise<boolean> {
+  if (!request.headers.get("authorization")?.startsWith("Bearer ")) return false;
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return false;
+  const length = Number(request.headers.get("content-length") || "0");
+  if (!Number.isFinite(length) || length > 4096) return false;
+  const raw = await request.clone().text();
+  if (!raw || raw.length > 4096) return false;
+  try {
+    const obj: unknown = JSON.parse(raw);
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+    const v = obj as Record<string, unknown>;
+    if (!hasExactKeys(v, ["capability", "operation", "payload", "schema", "source_commit"])) return false;
+    if (v.schema !== "agentos.runner-window-dispatch/v1" ||
+        v.capability !== "agentos.runtime" || v.operation !== "repair") return false;
+    if (typeof v.source_commit !== "string" || !/^[0-9a-f]{40}$/.test(v.source_commit)) return false;
+    if (!v.payload || typeof v.payload !== "object" || Array.isArray(v.payload)) return false;
+    return hasExactKeys(v.payload as Record<string, unknown>, []);
+  } catch {
+    return false;
+  }
+}
+
 // This is a separate fixed migration intent, not a generic dispatch grant.
 // ONE validates signed scheduler OIDC, source SHA, allowlisted action and locks.
 async function isApprovedGalaxyMonitorMigration(request: NextRequest): Promise<boolean> {
@@ -75,6 +100,8 @@ async function isApprovedGalaxyMonitorMigration(request: NextRequest): Promise<b
 const GALAXY_MONITOR_STATUS_PATH = /^\/v1\/dispatch\/requests\/agentos\.social_threads_experiment_monitor\.migrate_runtime-[A-Za-z0-9._:-]{1,160}$/;
 
 const RAIN_EXIT_STATUS_PATH = /^\/v1\/dispatch\/requests\/agentos\.vision_studio\.produce-[A-Za-z0-9._:-]{1,160}$/;
+const GALAXY_MONITOR_STATUS_PATH = /^\/v1\/dispatch\/requests\/agentos\.social_threads_experiment_monitor\.migrate_runtime-[A-Za-z0-9._:-]{1,160}$/;
+const RUNTIME_REPAIR_STATUS_PATH = /^\/v1\/dispatch\/requests\/agentos\.transport\.repair-[0-9]{9,12}-[0-9a-f]{8}$/;
 
 function safePath(parts: string[]): string {
   const path = "/" + parts.map((part) => encodeURIComponent(decodeURIComponent(part))).join("/");
@@ -90,12 +117,16 @@ async function proxy(
   const { path: parts } = await context.params;
   const rawPath = safePath(parts || []);
   const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
-  const readApprovedReceipt = method === "GET" && (RAIN_EXIT_STATUS_PATH.test(path) || GALAXY_MONITOR_STATUS_PATH.test(path));
+  const readApprovedReceipt = method === "GET" &&
+    (RAIN_EXIT_STATUS_PATH.test(path) || RUNTIME_REPAIR_STATUS_PATH.test(path) || GALAXY_MONITOR_STATUS_PATH.test(path));
   const postApprovedFilm = method === "POST" && path === "/v1/dispatch" &&
     await isApprovedRainExitDispatch(request);
+  const postApprovedRuntimeRepair = method === "POST" && path === "/v1/dispatch" &&
+    await isApprovedMainRuntimeRepairDispatch(request);
   const postApprovedGalaxy = method === "POST" && path === "/v1/dispatch" &&
     await isApprovedGalaxyMonitorMigration(request);
-  if (!ALLOWED[method]?.has(path) && !readApprovedReceipt && !postApprovedFilm && !postApprovedGalaxy) {
+  if (!ALLOWED[method]?.has(path) && !readApprovedReceipt && !postApprovedFilm &&
+      !postApprovedRuntimeRepair && !postApprovedGalaxy) {
     return Response.json(
       { ok: false, error: "Realm gateway route not allowlisted", method, path },
       { status: 404 },

@@ -62,6 +62,15 @@ class JobTypeSpec:
 
 
 JOB_TYPES: dict[str, JobTypeSpec] = {
+    "media.colab.h3.smoke": JobTypeSpec(
+        job_type="media.colab.h3.smoke",
+        capability="media.video.generate.minimax-h3.smoke",
+        authority="bounded-approved-colab-smoke",
+        executor_class="oracle-colab-smoke-dispatcher",
+        project_id="if-tv-station",
+        workload_ref="issue://3",
+        read_only=False,
+    ),
     "persona.mio.dm.resume": JobTypeSpec(
         job_type="persona.mio.dm.resume",
         capability="persona.social.dm.session.resume",
@@ -141,6 +150,24 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         executor_class="codex-cli",
         project_id="agentos-core",
         workload_ref="surface://codex-cli",
+        read_only=True,
+    ),
+    "deployment.agentos.inspect": JobTypeSpec(
+        job_type="deployment.agentos.inspect",
+        capability="agentos.deployment.inspect",
+        authority="bounded-read-only",
+        executor_class="oracle-deployment-inspector",
+        project_id="agentos-core",
+        workload_ref="site://agentos.milkcat.org",
+        read_only=True,
+    ),
+    "deployment.studio.inspect": JobTypeSpec(
+        job_type="deployment.studio.inspect",
+        capability="studio.deployment.inspect",
+        authority="bounded-read-only",
+        executor_class="oracle-deployment-inspector",
+        project_id="studio-web",
+        workload_ref="site://studio.milkcat.org",
         read_only=True,
     ),
     "layoutlib.release.materialize": JobTypeSpec(

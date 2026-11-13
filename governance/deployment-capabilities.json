@@ -1,0 +1,81 @@
+{
+  "schema": "agentos.deployment-capability/v1",
+  "authority": "source-discovery-only-no-new-dispatch",
+  "governed_execution_contract": "agentos.execution-request/v1",
+  "one_executor_contract": "agentos.executor-job/v1",
+  "targets": {
+    "studio.public-site": {
+      "project_id": "studio-web",
+      "repository": "alston-personal/studio-web",
+      "source_ref": "main",
+      "resource_id": "site://studio.milkcat.org",
+      "authority_issue": 165,
+      "release_carriers": [
+        "reusable-studio-static-route-release.yml",
+        "oracle-cutover-milkcat-world-home.yml"
+      ],
+      "verification_carriers": [
+        "oracle-diagnose-studio-webserver.yml",
+        "check-studio-live-release.mjs"
+      ],
+      "migration_state": "source_only",
+      "dependencies": [
+        "agentos.shared-auth-dashboard"
+      ]
+    },
+    "studio.layout-lab": {
+      "project_id": "layoutlib",
+      "repository": "alston-personal/layoutlib",
+      "source_ref": "main",
+      "resource_id": "site://studio.milkcat.org/layout-lab",
+      "authority_issue": 165,
+      "release_carriers": [
+        "layoutlib.release.materialize",
+        "layoutlib.production.promote"
+      ],
+      "verification_carriers": [
+        "layoutlib.production.parity.inspect"
+      ],
+      "migration_state": "source_only",
+      "dependencies": [
+        "studio.public-site"
+      ]
+    },
+    "agentos.public-console": {
+      "project_id": "agentos-core",
+      "repository": "alston-personal/agentmanager",
+      "source_ref": "main",
+      "resource_id": "site://agentos.milkcat.org",
+      "authority_issue": 2198,
+      "release_carriers": [
+        "oracle-agentos-login-control-plane-release.yml",
+        "deploy_distributed_control_plane.sh"
+      ],
+      "verification_carriers": [
+        "inspect_distributed_control_plane.py",
+        "test_control_plane_release_acceptance.py"
+      ],
+      "migration_state": "source_only",
+      "dependencies": [
+        "agentos.shared-auth-dashboard"
+      ]
+    },
+    "agentos.shared-auth-dashboard": {
+      "project_id": "agentos-core",
+      "repository": "alston-personal/agentmanager",
+      "source_ref": "main",
+      "resource_id": "service://agentos/shared-auth-dashboard",
+      "authority_issue": 2198,
+      "release_carriers": [
+        "oracle-agentos-login-control-plane-release.yml",
+        "deploy_dashboard_blue_green_user.sh"
+      ],
+      "verification_carriers": [
+        "test_agentos_shared_auth_bridge.py",
+        "test_control_plane_release_acceptance.py"
+      ],
+      "migration_state": "source_only",
+      "dependencies": []
+    }
+  }
+}

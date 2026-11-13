@@ -92,7 +92,10 @@ class LobsterCompletionSelectionTests(unittest.TestCase):
 
     def test_claimed_task_exception_becomes_durable_blocker(self) -> None:
         with patch.object(lobster, "run_with_inspector", side_effect=RuntimeError("boom")):
-            success, output = lobster.run_with_completion_guard(Path("/tmp"), "task")
+            success, output = lobster.run_with_completion_guard(
+                Path("/tmp"),
+                "Execute bounded completion item | workspace=/tmp | acceptance=durable completion receipt exists",
+            )
         self.assertFalse(success)
         self.assertEqual(output, "BLOCKED: executor_exception:RuntimeError")
 

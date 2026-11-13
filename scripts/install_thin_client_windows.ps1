@@ -1,6 +1,7 @@
 param(
   [string]$InstallRoot = "$env:LOCALAPPDATA\AgentOS",
   [string]$WorkspaceRoot = "$HOME\AgentOS",
+  [string]$StateRoot = "",
   [string]$SourceRef = "main",
   [string]$PythonExe = "",
   [switch]$EnableAutostart
@@ -13,21 +14,94 @@ $apiHeaders = @{
   'User-Agent' = 'AgentOS-ThinClient-Installer/1.0'
   'Cache-Control' = 'no-cache'
 }
-$encodedRef = [uri]::EscapeDataString($SourceRef)
-$head = Invoke-RestMethod -UseBasicParsing -Headers $apiHeaders -Uri "https://api.github.com/repos/$Repo/commits/${encodedRef}?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-$Ref = [string]$head.sha
-if ($Ref -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve immutable main commit SHA: $Ref" }
+
+function Test-RealPython([string]$Candidate) {
+  if ([string]::IsNullOrWhiteSpace($Candidate)) { return $null }
+  if (-not (Test-Path -LiteralPath $Candidate)) { return $null }
+  try {
+    $output = @(& $Candidate -c "import sys; print('.'.join(map(str,sys.version_info[:3])))" 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $output.Count -eq 0) { return $null }
+    $versionText = ([string]$output[-1]).Trim()
+    if ($versionText -notmatch '^(?<major>[0-9]+)\.[0-9]+\.[0-9]+$') { return $null }
+    if ([int]$Matches.major -lt 3) { return $null }
+    return @{ Path = (Resolve-Path -LiteralPath $Candidate).Path; Version = $versionText }
+  } catch {
+    return $null
+  }
+}
+
+function Resolve-RealPython([string]$Explicit) {
+  if (-not [string]::IsNullOrWhiteSpace($Explicit)) {
+    $validated = Test-RealPython $Explicit
+    if ($validated) { return $validated }
+    throw "Explicit PythonExe is not a working Python 3 interpreter: $Explicit"
+  }
+
+  $candidates = New-Object System.Collections.Generic.List[string]
+  foreach ($name in @('python','python3')) {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { $candidates.Add([string]$cmd.Source) }
+  }
+  foreach ($pattern in @(
+    "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe",
+    "$env:ProgramFiles\Python3*\python.exe"
+  )) {
+    Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue |
+      Sort-Object FullName -Descending |
+      ForEach-Object { $candidates.Add($_.FullName) }
+  }
+  foreach ($candidate in ($candidates | Select-Object -Unique)) {
+    $validated = Test-RealPython $candidate
+    if ($validated) { return $validated }
+  }
+  throw 'A real Python 3 interpreter was not found. Windows Store App Execution Alias is not accepted.'
+}
+
+if ($SourceRef -match '^[0-9a-fA-F]{40}$') {
+  $Ref = $SourceRef.ToLowerInvariant()
+} else {
+  $encodedRef = [uri]::EscapeDataString($SourceRef)
+  $head = Invoke-RestMethod -UseBasicParsing -Headers $apiHeaders -Uri "https://api.github.com/repos/$Repo/commits/${encodedRef}?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+  $Ref = [string]$head.sha
+}
+if ($Ref -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve immutable source commit SHA: $Ref" }
 $Base = "https://raw.githubusercontent.com/$Repo/$Ref"
 
 $Pkg = Join-Path $InstallRoot 'agentos_node'
 $State = if([string]::IsNullOrWhiteSpace($StateRoot)){ Join-Path $InstallRoot 'state' } else { $StateRoot }
 New-Item -ItemType Directory -Force -Path $Pkg, $State, $WorkspaceRoot | Out-Null
 
+$pythonInfo = Resolve-RealPython $PythonExe
+$pythonPath = [string]$pythonInfo.Path
+$version = [string]$pythonInfo.Version
+
+$files = @(
+  'agentos_node/__init__.py',
+  'agentos_node/thin_client.py',
+  'agentos_node/interactive_desktop.py',
+  'agentos_node/semantic_preview.py',
+  'agentos_node/desktop_plan.py',
+  'agentos_node/thin_client_transport.py',
+  'agentos_node/onboarding.py',
   'agentos_node/client_cli.py',
+  'agentos_node/node_adapter.py',
+  'agentos_node/employee_wake_inbox.py',
+  'agentos_node/runtime_provenance.py',
+  'agentos_node/desktop_demo.py',
+  'agentos_node/executor_reconcile.py',
+  'agentos_node/executor_provider_registry.py',
+  'agentos_node/executor_onboarding.py',
+  'agentos_node/client_runtime_converge.py',
+  'agentos_node/social/__init__.py',
+  'agentos_node/social/threads_gui_client.py',
+  'agentos_node/social/web_dm.py',
   'agentos_node/session_bridge.py',
   'agentos_node/agent_surfaces.py',
-  'agentos_node/employee_wake_inbox.py',
-  'agentos_node/runtime_provenance.py'
+  'scripts/windows/user_runtime_watchdog.ps1',
+  'scripts/windows/recovery_one_probe.py',
+  'scripts/windows/recovery_slot_runner.py',
+  'scripts/windows/install_recovery_python.ps1',
+  'scripts/windows/commit_staged_realm.ps1'
 )
 foreach ($rel in $files) {
   $dest = Join-Path $InstallRoot ($rel -replace '/', '\')

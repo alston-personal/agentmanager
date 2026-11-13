@@ -26,6 +26,81 @@ DECISION = {"should_post": True, "human_required": False,
             "reason": "verified context", "post_text": "今天想試試哪個小改變？"}
 
 
+class MorningTrendStagingTests(unittest.TestCase):
+    def test_runtime_stages_only_fresh_local_subscription_into_temporary_checkout(self):
+        from datetime import timedelta
+        script=(REPO/"scripts/run_persona_social_actions_user.sh").read_text(encoding="utf-8")
+        segment=script.split('python3 - "$ROOT" "${AGENTOS_MIO_MORNING_READING_SOURCE',1)[1]
+        inline=segment.split("<<'PY'\n",1)[1].split("\nPY\n",1)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/"persona"
+            root.mkdir()
+            source=Path(tmp)/"oracle-morning-reading.json"
+            def execute():
+                return subprocess.run([sys.executable,"-c",inline,str(root),str(source)],
+                                      capture_output=True,text=True,check=True).stdout.strip()
+            fresh=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            source.write_text(json.dumps({"subscription_id":"mio_lifestyle",
+                                          "generated_at":fresh,"synthesized":{"highlights":[]}}))
+            self.assertIn("FRESH_LOCAL_STAGED",execute())
+            self.assertEqual(json.loads((root/"morning_reading.json").read_text())["subscription_id"],"mio_lifestyle")
+            self.assertIn("CHECKOUT_NEWER_OR_EQUAL",execute())
+            source.write_text(json.dumps({"subscription_id":"mio_lifestyle",
+                                          "generated_at":(datetime.now(timezone.utc)-timedelta(days=8)).isoformat(),
+                                          "synthesized":{"highlights":[]}}))
+            self.assertIn("SOURCE_STALE",execute())
+            self.assertEqual(json.loads((root/"morning_reading.json").read_text())["generated_at"],fresh)
+            source.write_text(json.dumps({"subscription_id":"other","generated_at":fresh}))
+            self.assertIn("SOURCE_MISSING_OR_INVALID",execute())
+
+
+class MorningTrendConsumptionTests(unittest.TestCase):
+    def test_fresh_mio_subscription_is_advisory_not_threads_post(self):
+        from datetime import timedelta
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"morning_reading.json"
+            now=datetime(2026,11,11,2,0,tzinfo=timezone.utc)
+            path.write_text(json.dumps({
+                "subscription_id":"mio_lifestyle",
+                "generated_at":"2026-11-11 08:00:00",
+                "synthesized":{
+                    "title":"晨讀：咖啡與風格",
+                    "highlights":[{"headline":"咖啡展覽",
+                                   "source_url":"https://news.google.com/rss/articles/example"}]
+                }
+            }),encoding="utf-8")
+            result=generator.read_morning_trend_context(path,now)
+            self.assertEqual(result["status"],"FRESH")
+            self.assertEqual(len(result["headlines"]),1)
+            self.assertFalse(result["reply_allowed"])
+            self.assertFalse(result["ir_adoption_allowed"])
+            self.assertEqual(result["threads_post_ids"],[])
+            self.assertEqual(len(result["source_sha256"]),64)
+            stale=generator.read_morning_trend_context(path,now+timedelta(days=2))
+            self.assertEqual(stale["status"],"STALE")
+            self.assertEqual(stale["headlines"],[])
+
+    def test_morning_subscription_missing_invalid_and_future_are_not_fresh(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/"morning_reading.json"
+            now=datetime(2026,11,11,2,0,tzinfo=timezone.utc)
+            self.assertEqual(generator.read_morning_trend_context(p,now)["status"],"MISSING")
+            for contents in [
+                {"subscription_id":"someone_else","generated_at":"2026-11-11 08:00:00"},
+                {"subscription_id":"mio_lifestyle","generated_at":"garbage"},
+                {"subscription_id":"mio_lifestyle","generated_at":"2026-11-11 08:00:00",
+                 "synthesized":{"highlights":"untrusted string"}},
+            ]:
+                p.write_text(json.dumps(contents),encoding="utf-8")
+                self.assertEqual(generator.read_morning_trend_context(p,now)["status"],"INVALID")
+            p.write_text(json.dumps({
+                "subscription_id":"mio_lifestyle",
+                "generated_at":"2026-11-12 08:00:00",
+                "synthesized":{"highlights":[]}
+            }),encoding="utf-8")
+            self.assertEqual(generator.read_morning_trend_context(p,now)["status"],"STALE")
+
+
 class PostReasoningTests(unittest.TestCase):
     def test_all_reasoning_providers_exhausted_preserves_consider_and_classifies_capacity(self):
         results=[

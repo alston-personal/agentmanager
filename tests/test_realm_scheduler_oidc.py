@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.realm_server import _validate_github_scheduler_claims
+from agent_core.realm_server import _validate_github_scheduler_claims, _validate_main_runtime_repair_intent, RealmRequestHandler
 
 
 def _claims():
@@ -107,3 +107,80 @@ def test_scheduler_oidc_vision_studio_carrier_rejects_other_authority(ref, workf
     claims.update({"ref": ref, "workflow_ref": workflow_ref, "event_name": event_name})
     with pytest.raises(PermissionError):
         _validate_github_scheduler_claims(claims)
+
+
+def test_only_signed_main_runtime_repair_workflow_can_get_scheduler_authority():
+    claims = _claims()
+    claims["ref"] = "refs/heads/main"
+    claims["workflow_ref"] = ("alston-personal/agentmanager/.github/workflows/"
+                              "main-action-runtime-migration-20261007.yml@refs/heads/main")
+    claims["event_name"] = "push"
+    _validate_github_scheduler_claims(claims)
+    for changed in (
+        {"workflow_ref": "alston-personal/agentmanager/.github/workflows/unrelated.yml@refs/heads/main"},
+        {"event_name": "pull_request"},
+        {"event_name": "workflow_dispatch"},
+        {"ref": "refs/heads/some-branch"},
+    ):
+        with pytest.raises(PermissionError):
+            _validate_github_scheduler_claims({**claims, **changed})
+
+
+def test_main_repair_oidc_can_only_submit_exact_empty_payload():
+    claims = _claims()
+    claims.update(ref="refs/heads/main", event_name="push",
+        workflow_ref=("alston-personal/agentmanager/.github/workflows/"
+                      "main-action-runtime-migration-20261007.yml@refs/heads/main"))
+    good = {
+        "schema": "agentos.runner-window-dispatch/v1",
+        "capability": "agentos.runtime",
+        "operation": "repair",
+        "source_commit": "a" * 40,
+        "payload": {},
+    }
+    _validate_main_runtime_repair_intent(claims, good)
+    candidates = [
+        {**good, "operation": "restart"},
+        {**good, "capability": "agentos.realm_gateway"},
+        {**good, "source_commit": "b" * 40},
+        {**good, "payload": {"script": "echo unsafe"}},
+        {**good, "request_id": "arbitrary-receipt"},
+        {**good, "credential": "secret"},
+    ]
+    for request in candidates:
+        with pytest.raises(PermissionError):
+            _validate_main_runtime_repair_intent(claims, request)
+
+
+
+def test_main_runtime_oidc_cannot_call_generic_scheduler_controller_endpoints(monkeypatch):
+    from types import SimpleNamespace
+    claims = _claims()
+    claims.update(ref="refs/heads/main", event_name="push",
+        workflow_ref=("alston-personal/agentmanager/.github/workflows/"
+                      "main-action-runtime-migration-20261007.yml@refs/heads/main"))
+    monkeypatch.setattr("agent_core.realm_server._verify_github_scheduler_oidc", lambda _: claims)
+    handler = object.__new__(RealmRequestHandler)
+    handler.server = SimpleNamespace(controller_token="some-other-secret")
+    handler._bearer = lambda: "signed-oidc-token"
+    for method, path in (
+        ("POST", "/v1/controller/scheduler/submit"),
+        ("GET", "/v1/controller/scheduler"),
+        ("GET", "/v1/controller/scheduler/requests/another-user-job"),
+        ("GET", "/v1/dispatch/requests/agentos.transport.repair-1111111111-aaaaaaaa-extra"),
+        ("GET", "/v1/dispatch/requests/agentos.vision_studio.produce-test123"),
+        ("POST", "/v1/monitor"),
+    ):
+        handler.command = method
+        handler.path = path
+        with pytest.raises(PermissionError):
+            handler._authorize_scheduler()
+    for method, path in (
+        ("GET", "/v1/dispatch"),
+        ("POST", "/v1/dispatch"),
+        ("GET", "/v1/dispatch/requests/agentos.transport.repair-1762967000-1234abcd"),
+    ):
+        handler.command = method
+        handler.path = path
+        assert handler._authorize_scheduler() is claims
+
