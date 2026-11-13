@@ -14,6 +14,21 @@ on:
       - 'scripts/bootstrap_clean_windows_node.ps1'
       - 'scripts/AgentOS-Join.cmd'
       - '.github/workflows/thin-client-windows-v0-1.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'agentos_node/thin_client.py'
+      - 'tests/test_thin_client_transport.py'
+      - 'tests/test_node_onboarding_lifecycle.py'
+      - 'agentos_node/node_adapter.py'
+      - 'agentos_node/onboarding.py'
+      - 'agentos_node/thin_client_transport.py'
+      - 'agentos_node/client_cli.py'
+      - 'scripts/install_thin_client_windows.ps1'
+      - 'scripts/bootstrap_clean_windows_node.ps1'
+      - 'scripts/AgentOS-Join.cmd'
+      - '.github/workflows/thin-client-windows-v0-1.yml'
   workflow_dispatch:
 
 permissions:
