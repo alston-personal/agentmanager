@@ -100,6 +100,25 @@ class BranchResumeGuardTests(unittest.TestCase):
             Path(relay.__file__).read_text(encoding="utf-8"),
         )
 
+    def test_relay_consumer_manifest_matches_live_main_source_handlers(self):
+        import json
+        from agentos_node.action_relay import ACTIONS
+        from agentos_node import action_relay as relay
+
+        root = Path(__file__).resolve().parents[1]
+        path = root / "docs/governance/branch-1682-legacy-relay-consumers.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(len(report["legacy_actions"]), 6)
+        for row in report["legacy_actions"]:
+            with self.subTest(action=row["action"]):
+                self.assertEqual(row["candidate_behavior"],
+                                 "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION")
+                self.assertIsNot(ACTIONS[row["action"]],
+                                 getattr(relay, "_legacy_action_requires_convergence", None))
+                self.assertFalse(row["allowed_for_promotion"])
+        self.assertIn("ORACLE_INSTALLED_REVISION_UNVERIFIED",
+                      report["legacy_actions"][0]["production_equivalence"])
+
     def test_main_runtime_repair_and_new_executor_providers_survive_resume_guard(self):
         from agent_core import realm_server
         from agentos_node import executor_job_action_relay as jobs
