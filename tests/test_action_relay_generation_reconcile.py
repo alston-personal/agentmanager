@@ -223,3 +223,60 @@ def test_current_marker_but_stale_consumer_forces_reinstall(monkeypatch, tmp_pat
     result = reconcile.reconcile(repo=repo, data_root=data)
     assert result["status"] == "reconciled"
     assert any(call[0] == ["bash", str(repo / "scripts" / "install_action_relay_user.sh")] for call in calls)
+
+
+def test_legacy_timer_does_not_reinstall_over_canonical_main_marker(monkeypatch, tmp_path):
+    """A historical core/integration timer cannot overwrite an accepted main release."""
+    repo, data = _repo(tmp_path)
+    _git_current(monkeypatch)
+    marker = data / "runtime" / "action-relay" / "capabilities.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({
+        "schema": reconcile.MARKER_SCHEMA,
+        "source_ref": "main",
+        "source_commit": "b" * 40,
+        "actions": sorted(reconcile.EXPECTED_ACTIONS),
+        "node_capabilities": sorted(reconcile.EXPECTED_NODE_CAPABILITIES),
+    }), encoding="utf-8")
+    seen = []
+
+    def fake_run(argv, *, cwd, env=None, timeout=120):
+        seen.append(list(argv))
+        if argv[:3] == ["git", "fetch", "--no-tags"]:
+            return Proc(returncode=0)
+        raise AssertionError("Legacy timer must not invoke an installer or service control")
+
+    monkeypatch.setattr(reconcile, "_run", fake_run)
+    with pytest.raises(RuntimeError, match="action_relay_reconcile_canonical_main_owned"):
+        reconcile.reconcile(repo=repo, data_root=data)
+    assert seen == [["git", "fetch", "--no-tags", "origin", "core/integration"]]
+
+
+def test_legacy_timer_does_not_trust_unrelated_marker_schema(monkeypatch, tmp_path):
+    """An untrusted marker format must not impersonate canonical-main ownership."""
+    repo, data = _repo(tmp_path)
+    _git_current(monkeypatch)
+    marker = data / "runtime" / "action-relay" / "capabilities.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({
+        "schema": "other-format/v1",
+        "source_ref": "main",
+    }), encoding="utf-8")
+    seen = []
+
+    def fake_run(argv, *, cwd, env=None, timeout=120):
+        seen.append(list(argv))
+        if argv[:3] == ["git", "fetch", "--no-tags"]:
+            return Proc(returncode=0)
+        if argv == ["bash", str(repo / "scripts" / "install_action_relay_user.sh")]:
+            _write_marker(data)
+            return Proc(returncode=0)
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(reconcile, "_run", fake_run)
+    monkeypatch.setattr(reconcile, "_service_active", lambda repo: True)
+    monkeypatch.setattr(reconcile, "_runtime_consumer_current", lambda **kwargs: True)
+    monkeypatch.setattr(reconcile, "_timer_enabled", lambda repo: True)
+    result = reconcile.reconcile(repo=repo, data_root=data)
+    assert result["status"] == "reconciled"
+    assert any(x[:1] == ["bash"] for x in seen)
