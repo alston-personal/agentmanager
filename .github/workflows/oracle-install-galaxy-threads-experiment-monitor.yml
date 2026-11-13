@@ -15,6 +15,8 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/bootstrap_scheduler.py'
       - 'agent_core/runner_window.py'
+  # Keep legacy integration production trigger until exact main migration
+  # receipt and live readback; do not auto-dispatch on main push.
   workflow_dispatch:
 
 permissions:
@@ -37,6 +39,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Assert exact manual main carrier or legacy integration identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          elif [[ "$GITHUB_REF" == "refs/heads/core/integration" ]]; then
+            [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "$GITHUB_EVENT_NAME" == "push" ]]
+          else
+            echo "galaxy_monitor_ref_not_authorized" >&2
+            exit 1
+          fi
+          echo "galaxy_monitor_carrier_preflight=PASS"
 
       - name: Mint GitHub OIDC Runner Window credential
         shell: bash

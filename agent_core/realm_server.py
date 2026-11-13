@@ -44,6 +44,38 @@ _GITHUB_HEALTH_CARRIER_WORKFLOW_REF = os.environ.get('GITHUB_HEALTH_CARRIER_WORK
 # Exact one-project main carrier; keep ordinary main workflows unauthorized.
 _GITHUB_VISION_STUDIO_REF = _DEFAULT_TARGET_REF
 _GITHUB_VISION_STUDIO_WORKFLOW_REF = f'alston-personal/agentmanager/.github/workflows/vision-studio-rain-exit.yml@{_DEFAULT_TARGET_REF}'
+# This is a manual, exact-workflow main migration carrier. Never inherit generic
+# scheduler authority from the historical integration branch.
+_GITHUB_MAIN_GALAXY_REF = _DEFAULT_TARGET_REF
+_GITHUB_MAIN_GALAXY_WORKFLOW_REF = (
+    'alston-personal/agentmanager/.github/workflows/'
+    f'oracle-install-galaxy-threads-experiment-monitor.yml@{_DEFAULT_TARGET_REF}'
+)
+
+
+def _is_main_galaxy_claims(claims: dict[str, Any] | None) -> bool:
+    return (
+        isinstance(claims, dict)
+        and claims.get('ref') == _GITHUB_MAIN_GALAXY_REF
+        and claims.get('workflow_ref') == _GITHUB_MAIN_GALAXY_WORKFLOW_REF
+        and claims.get('event_name') == 'workflow_dispatch'
+    )
+
+
+def _validate_main_galaxy_intent(claims: dict[str, Any] | None, body: dict[str, Any]) -> None:
+    if not _is_main_galaxy_claims(claims):
+        return
+    if (
+        set(body) != {'schema', 'capability', 'operation', 'source_commit', 'payload'}
+        or body.get('schema') != 'agentos.runner-window-dispatch/v1'
+        or body.get('capability') != 'social.monitor'
+        or body.get('operation') != 'runtime.migrate'
+        or body.get('payload') != {}
+        or body.get('source_commit') != claims.get('sha')
+    ):
+        raise PermissionError('main Galaxy carrier may dispatch only exact monitor migration')
+
+
 # This main-only Runtime Repair workflow is a different authority from the
 # legacy integration scheduler. Give it NO generic Runner Window powers.
 _GITHUB_MAIN_RUNTIME_REPAIR_REF = _DEFAULT_TARGET_REF
@@ -163,7 +195,8 @@ def _validate_github_scheduler_claims(payload: dict[str, Any]) -> None:
         and workflow_ref == _GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF
         and str(payload.get('event_name') or '') == 'push'
     )
-    if not (canonical_ref or health_carrier or vision_studio_carrier or main_runtime_repair_carrier):
+    main_galaxy_carrier = _is_main_galaxy_claims(payload)
+    if not (canonical_ref or health_carrier or vision_studio_carrier or main_runtime_repair_carrier or main_galaxy_carrier):
         raise PermissionError('github oidc ref invalid')
     event_name = str(payload.get('event_name') or '')
     allowed_events = {'push', 'workflow_dispatch', 'schedule'}
@@ -313,6 +346,17 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
         if expected and secrets.compare_digest(supplied, expected):
             return None
         claims = _verify_github_scheduler_oidc(supplied)
+        if _is_main_galaxy_claims(claims):
+            route = urlparse(self.path).path
+            method = self.command
+            allowed = (
+                (method == 'GET' and route == '/v1/dispatch')
+                or (method == 'POST' and route == '/v1/dispatch')
+                or (method == 'GET' and re.fullmatch(
+                    r'/v1/dispatch/requests/agentos[.]social_threads_experiment_monitor[.]migrate_runtime-[A-Za-z0-9._:-]{1,160}', route))
+            )
+            if not allowed:
+                raise PermissionError('main Galaxy carrier endpoint scope invalid')
         if _is_main_runtime_repair_claims(claims):
             # Never let this new signer inherit the generic Scheduler API:
             # the historical integration workflow has broad scheduling powers,
@@ -1108,6 +1152,12 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             if parsed.path.startswith(dispatch_request_prefix):
                 scheduler_claims = self._authorize_scheduler()
                 request_id = parsed.path.removeprefix(dispatch_request_prefix).strip('/')
+                if _is_main_galaxy_claims(scheduler_claims):
+                    if not re.fullmatch(
+                        r'agentos[.]social_threads_experiment_monitor[.]migrate_runtime-[A-Za-z0-9._:-]{1,160}',
+                        request_id,
+                    ):
+                        raise PermissionError('main Galaxy carrier receipt scope invalid')
                 if _is_main_runtime_repair_claims(scheduler_claims):
                     # Never allow the limited runtime carrier to enumerate
                     # unrelated product/employee receipts.
@@ -1243,6 +1293,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 scheduler_claims = self._authorize_scheduler()
                 dispatch_body = self._json_body()
                 _validate_main_runtime_repair_intent(scheduler_claims, dispatch_body)
+                _validate_main_galaxy_intent(scheduler_claims, dispatch_body)
                 if scheduler_claims is not None:
                     requested_commit = str(dispatch_body.get('source_commit') or '')
                     if requested_commit != str(scheduler_claims.get('sha') or ''):

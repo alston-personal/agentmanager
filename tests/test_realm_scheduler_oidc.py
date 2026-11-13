@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.realm_server import _validate_github_scheduler_claims, _validate_main_runtime_repair_intent, RealmRequestHandler
+from agent_core.realm_server import _validate_github_scheduler_claims, _validate_main_runtime_repair_intent, _validate_main_galaxy_intent, RealmRequestHandler
 
 
 def _claims():
@@ -184,3 +184,86 @@ def test_main_runtime_oidc_cannot_call_generic_scheduler_controller_endpoints(mo
         handler.path = path
         assert handler._authorize_scheduler() is claims
 
+
+
+def _galaxy_main_claims():
+    claims = _claims()
+    claims.update(
+        ref="refs/heads/main",
+        workflow_ref=(
+            "alston-personal/agentmanager/.github/workflows/"
+            "oracle-install-galaxy-threads-experiment-monitor.yml@refs/heads/main"
+        ),
+        event_name="workflow_dispatch",
+    )
+    return claims
+
+
+def test_main_galaxy_oidc_accepts_only_exact_manual_workflow():
+    claims = _galaxy_main_claims()
+    _validate_github_scheduler_claims(claims)
+    for changed in (
+        {"event_name": "push"},
+        {"event_name": "schedule"},
+        {"event_name": "pull_request"},
+        {"workflow_ref": "alston-personal/agentmanager/.github/workflows/other.yml@refs/heads/main"},
+        {"ref": "refs/heads/core/integration"},
+    ):
+        altered = {**claims, **changed}
+        if altered["ref"] == "refs/heads/core/integration":
+            # This remains the legacy broad carrier; assert narrow predicate
+            # does not mistake it for the new main-only Galaxy identity.
+            from agent_core.realm_server import _is_main_galaxy_claims
+            assert not _is_main_galaxy_claims(altered)
+        else:
+            with pytest.raises(PermissionError):
+                _validate_github_scheduler_claims(altered)
+
+
+def test_main_galaxy_oidc_can_only_dispatch_exact_migration():
+    claims = _galaxy_main_claims()
+    good = {
+        "schema": "agentos.runner-window-dispatch/v1",
+        "capability": "social.monitor",
+        "operation": "runtime.migrate",
+        "source_commit": "a" * 40,
+        "payload": {},
+    }
+    _validate_main_galaxy_intent(claims, good)
+    for changed in (
+        {"operation": "run"},
+        {"capability": "agentos.runtime"},
+        {"source_commit": "b" * 40},
+        {"payload": {"arbitrary": "argument"}},
+        {"request_id": "unrelated"},
+        {"shell": "true"},
+    ):
+        with pytest.raises(PermissionError):
+            _validate_main_galaxy_intent(claims, {**good, **changed})
+
+
+def test_main_galaxy_oidc_can_only_access_catalog_dispatch_and_own_receipts(monkeypatch):
+    from types import SimpleNamespace
+    claims = _galaxy_main_claims()
+    monkeypatch.setattr("agent_core.realm_server._verify_github_scheduler_oidc", lambda _: claims)
+    handler = object.__new__(RealmRequestHandler)
+    handler.server = SimpleNamespace(controller_token="different-controller-secret")
+    handler._bearer = lambda: "signed-galaxy-oidc"
+    for method, path in (
+        ("POST", "/v1/controller/scheduler/submit"),
+        ("GET", "/v1/controller/scheduler"),
+        ("GET", "/v1/controller/scheduler/requests/other"),
+        ("GET", "/v1/dispatch/requests/agentos.vision_studio.produce-test"),
+        ("GET", "/v1/dispatch/requests/agentos.social_threads_experiment_monitor.migrate_runtime-X/invalid"),
+        ("POST", "/v1/monitor"),
+    ):
+        handler.command, handler.path = method, path
+        with pytest.raises(PermissionError):
+            handler._authorize_scheduler()
+    for method, path in (
+        ("GET", "/v1/dispatch"),
+        ("POST", "/v1/dispatch"),
+        ("GET", "/v1/dispatch/requests/agentos.social_threads_experiment_monitor.migrate_runtime-example"),
+    ):
+        handler.command, handler.path = method, path
+        assert handler._authorize_scheduler() is claims
