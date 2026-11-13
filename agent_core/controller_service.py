@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from agent_core.executor_job_contract import validate_executor_job
+from agent_core.code_resume_authority import require_fresh_code_resume
 from agent_core.realm_fabric import RealmFabricStore
 from agent_core.runtime_converge_contract import SCHEMA as RUNTIME_CONVERGE_SCHEMA, validate_runtime_converge_request
 
@@ -30,10 +31,13 @@ class ControllerService:
     RUNTIME_CONVERGE_NODE = 'oracle-core-node'
 
     def __init__(self, fabric: RealmFabricStore, executor_job_dispatcher: Any | None = None,
-                 runtime_converge_dispatcher: Any | None = None):
+                 runtime_converge_dispatcher: Any | None = None,
+                 code_resume_probe: Any | None = None):
         self.fabric = fabric
         self._executor_job_dispatcher = executor_job_dispatcher
         self._runtime_converge_dispatcher = runtime_converge_dispatcher
+        # Host-registered, never accepted from model-supplied task payload.
+        self._code_resume_probe = code_resume_probe
 
     def _executor_dispatcher(self):
         if self._executor_job_dispatcher is None:
@@ -135,7 +139,12 @@ class ControllerService:
             raise ValueError(f'unexpected executor-job controller fields: {sorted(passthrough)}')
         if not isinstance(payload, dict):
             raise ValueError('executor-job payload must be an object')
-        validate_executor_job(payload)
+        spec = validate_executor_job(payload)
+        # A code-writing job must not resume from an old work branch merely
+        # because it was previously claimed. Resolve its SHA and current main
+        # via an independently trusted host probe at every dispatch attempt.
+        # No branch, SHA, or bypass flag may come from model task fields.
+        require_fresh_code_resume(spec, self._code_resume_probe)
         if node_id != self.EXECUTOR_JOB_NODE:
             raise ValueError(f'executor job is not routable to target node: {node_id}')
         submission = dict(self._executor_dispatcher().submit(node_id=node_id, request=payload))
