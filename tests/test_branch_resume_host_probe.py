@@ -169,21 +169,22 @@ def test_host_config_rejects_untrusted_schema(checkouts, tmp_path):
 
 
 
-def test_mainline_action_relay_imports_and_legacy_authority_is_refused():
-    """Canonical Action Relay may load; removed deploy powers must not revive."""
+def test_mainline_action_relay_imports_and_canonical_realm_handlers_survive():
+    """Resume freshness must not replace authorized Realm handlers with legacy denials."""
     from agentos_node import action_relay
     from agentos_node import executor_job_action_relay
+
     assert action_relay.ACTIONS["agentos.executor.job"] is executor_job_action_relay._execute
-    for key in (
-        "agentos.realm-fabric.claim_deployment",
-        "agentos.realm-fabric.deployment_status",
-        "agentos.realm-fabric.release_deployment",
-        "agentos.realm-fabric.renew_deployment",
-        "agentos.realm-fabric.advance_deployment",
-        "agentos.realm-fabric.install_release",
-    ):
-        with pytest.raises(ValueError, match="LEGACY_ACTION_REQUIRES_CONVERGENCE"):
-            action_relay.ACTIONS[key]({})
+    bindings = {
+        "agentos.realm-fabric.claim_deployment": action_relay._claim_realm_fabric_deployment,
+        "agentos.realm-fabric.deployment_status": action_relay._realm_fabric_deployment_status,
+        "agentos.realm-fabric.release_deployment": action_relay._release_realm_fabric_deployment,
+        "agentos.realm-fabric.renew_deployment": action_relay._renew_realm_fabric_deployment,
+        "agentos.realm-fabric.advance_deployment": action_relay._advance_realm_fabric_deployment,
+        "agentos.realm-fabric.install_release": action_relay._install_realm_fabric_release,
+    }
+    for key, expected_handler in bindings.items():
+        assert action_relay.ACTIONS[key] is expected_handler
     assert action_relay.ACTIONS["github.actions.workflow.dispatch"] is action_relay._github_actions_dispatch
 
 
