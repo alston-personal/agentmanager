@@ -1285,6 +1285,12 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 self.fabric.authenticate(node_id, token)
                 node_context = bootstrap_snapshot(self.fabric, node_id, token)
+                project = str(body.get('project') or '').strip()
+                if not project:
+                    raise ValueError('project is required')
+                resolution = resolve_continuation(project, node_context=node_context)
+                self._send(200, {'ok': True, **resolution})
+                return
             if parsed.path == '/v1/monitor':
                 self._authorize_controller()
                 self._send(200, self._monitor_command(self._json_body()))
