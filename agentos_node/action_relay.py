@@ -1286,7 +1286,11 @@ def _realm_fabric_deployment_status(params: dict[str, Any]) -> dict[str, Any]:
     state['observed_core_commit'] = _observed_realm_commit()
     if state.get('desired_core_commit') and state.get('desired_core_commit') == state.get('observed_core_commit'):
         state['deployment_status'] = 'converged'
-    return {'ok': True, **state}
+    # A live-provider proof, not a source-only inspection.  Old Action Relay
+    # generations deliberately lack this marker and cannot authorize a Realm
+    # immutable release with the effective-unit override quarantine.
+    return {'ok': True, **state,
+            'installer_revision': 'realm-fabric-effective-unit-fence/v1'}
 
 def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
     """Install one exact AgentOS Core commit as the ubuntu Realm Fabric service.
@@ -1872,7 +1876,11 @@ def _realm_fabric_deployment_status(params: dict[str, Any]) -> dict[str, Any]:
     state['observed_core_commit'] = _observed_realm_commit()
     if state.get('desired_core_commit') and state.get('desired_core_commit') == state.get('observed_core_commit'):
         state['deployment_status'] = 'converged'
-    return {'ok': True, **state}
+    # A live-provider proof, not a source-only inspection.  Old Action Relay
+    # generations deliberately lack this marker and cannot authorize a Realm
+    # immutable release with the effective-unit override quarantine.
+    return {'ok': True, **state,
+            'installer_revision': 'realm-fabric-effective-unit-fence/v1'}
 
 def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
     """Install one exact AgentOS Core commit as the ubuntu Realm Fabric service.

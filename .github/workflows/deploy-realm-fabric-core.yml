@@ -42,8 +42,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin main
-          git reset --hard origin/main
+          # GitHub has already checked out the workflow's exact approved commit.
+          # A moving origin/main must not change source during this job.
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 scripts/patch_action_relay_realm_fabric.py
           python3 scripts/patch_realm_fabric_current_pointer_compat.py
           python3 scripts/patch_realm_fabric_release_isolation.py
@@ -75,12 +76,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Refresh canonical source to latest main
+      - name: Verify exact workflow commit before Realm deployment
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin main
-          git reset --hard origin/main
+          test "$GITHUB_REF_TYPE" = "branch"
+          test "$GITHUB_REF_NAME" = "main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           grep -q 'agentos.realm-fabric.install_release' agentos_node/action_relay.py
           grep -q 'agentos.project.register_core' agentos_node/action_relay.py
           grep -q 'core_project_runtime_binding_v1' agentos_node/action_relay.py
@@ -117,41 +119,27 @@ jobs:
               time.sleep(0.25)
           if receipt is None:
               raise SystemExit('action_relay_capability_proof_timeout')
-          print(json.dumps(receipt,ensure_ascii=False,indent=2))
+          # Do not print arbitrary receipt fields, paths, environment, or errors.
+          print('realm_relay_status_received=true')
           if receipt.get('ok') is not True:
               raise SystemExit('action_relay_capability_proof_failed')
           if receipt.get('action') != 'agentos.realm-fabric.deployment_status':
               raise SystemExit('action_relay_capability_proof_wrong_action')
+          if receipt.get('installer_revision') != 'realm-fabric-effective-unit-fence/v1':
+              raise SystemExit('realm_relay_installer_revision_not_attested')
           print('action_relay_runtime_core=PROVEN')
+          print('realm_relay_installer_revision_attested=true')
           PY
           }
 
-          if prove_relay; then
-            echo 'action_relay_runtime_core=ALREADY_READY'
-            exit 0
-          fi
-
-          echo 'action_relay_runtime_core=REFRESH_REQUIRED'
-          tmp=/tmp/bootstrap-action-relay-core-safe.sh
-          sed \
-            -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
-            -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
-            scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
-          chmod 700 "$tmp"
-
-          # The safe bootstrap has legacy post-checks outside the Realm Fabric
-          # deploy dependency. Its process return code is therefore diagnostic;
-          # the authoritative test is an actual governed capability receipt.
-          set +e
-          bash "$tmp"
-          bootstrap_rc=$?
-          set -e
-
-          if ! prove_relay; then
-            echo "action_relay_refresh_failed bootstrap_rc=$bootstrap_rc" >&2
+          # An old/unknown installed Relay cannot safely install a new Realm
+          # generation. Refreshing Relay is a different governed maintenance
+          # operation; never do so implicitly in this Realm deployment.
+          prove_relay || {
+            echo 'realm_deployment_blocked=INSTALLED_RELAY_REVISION_UNVERIFIED' >&2
             exit 1
-          fi
-          echo "action_relay_runtime_core=READY_AFTER_REFRESH bootstrap_rc=$bootstrap_rc"
+          }
+          echo 'action_relay_runtime_core=INSTALLED_REVISION_VERIFIED'
 
       - name: Install exact Realm Fabric release through Action Relay
         shell: bash
