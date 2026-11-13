@@ -14,6 +14,21 @@ on:
       - 'scripts/bootstrap_clean_windows_node.ps1'
       - 'scripts/AgentOS-Join.cmd'
       - '.github/workflows/thin-client-windows-v0-1.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'agentos_node/thin_client.py'
+      - 'tests/test_thin_client_transport.py'
+      - 'tests/test_node_onboarding_lifecycle.py'
+      - 'agentos_node/node_adapter.py'
+      - 'agentos_node/onboarding.py'
+      - 'agentos_node/thin_client_transport.py'
+      - 'agentos_node/client_cli.py'
+      - 'scripts/install_thin_client_windows.ps1'
+      - 'scripts/bootstrap_clean_windows_node.ps1'
+      - 'scripts/AgentOS-Join.cmd'
+      - '.github/workflows/thin-client-windows-v0-1.yml'
   workflow_dispatch:
 
 permissions:
@@ -31,6 +46,28 @@ jobs:
           $text = Get-Content -Raw ./scripts/bootstrap_clean_windows_node.ps1
           [scriptblock]::Create($text) | Out-Null
           Write-Host 'clean_windows_bootstrap_syntax=PASS'
+      - name: Resolve Python without winget or alias output contamination
+        shell: powershell
+        run: |
+          $path = Resolve-Path ./scripts/bootstrap_clean_windows_node.ps1
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count -ne 0) { throw 'bootstrap script has parse errors' }
+          $wanted = @('Test-WorkingPython', 'Resolve-Python')
+          $functions = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in $wanted
+          }, $true))
+          if ($functions.Count -ne 2) { throw "expected two resolver functions, got $($functions.Count)" }
+          Invoke-Expression (($functions | ForEach-Object { $_.Extent.Text }) -join [Environment]::NewLine)
+          $resolved = @(Resolve-Python)
+          if ($resolved.Count -ne 1) { throw "expected one Python path, got $($resolved.Count) objects" }
+          if (-not (Test-Path -LiteralPath $resolved[0] -PathType Leaf)) { throw 'resolver returned non-file output' }
+          if (-not (Test-WorkingPython $resolved[0])) { throw 'resolver returned invalid interpreter' }
+          $source = Get-Content -Raw $path
+          if ($source -notmatch 'winget.Source install[^\r\n]*\| Out-Null') { throw 'winget output is not isolated' }
+          Write-Host 'clean_windows_python_resolver=PASS'
       - name: Dry-run one-click Node join launcher
         shell: cmd
         run: |

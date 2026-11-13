@@ -3,7 +3,7 @@ setlocal EnableExtensions
 title AgentOS Node Join
 
 set "AGENTOS_REPO=alston-personal/agentmanager"
-set "AGENTOS_REF=core/integration"
+set "AGENTOS_REF=main"
 set "AGENTOS_NODE_ID=%~1"
 if "%AGENTOS_NODE_ID%"=="" set "AGENTOS_NODE_ID=%COMPUTERNAME%"
 
@@ -21,6 +21,17 @@ echo.
 
 set "AGENTOS_BOOTSTRAP=%TEMP%\agentos-bootstrap-clean-windows.ps1"
 
+rem Dry-run is a local source/package check. Never spend anonymous GitHub API
+rem quota or enroll this machine just to validate the launcher in CI.
+if /I "%AGENTOS_JOIN_DRY_RUN%"=="1" (
+  if not exist "%~dp0bootstrap_clean_windows_node.ps1" goto :fail
+  copy /Y "%~dp0bootstrap_clean_windows_node.ps1" "%AGENTOS_BOOTSTRAP%" >nul
+  if errorlevel 1 goto :fail
+  echo agentos_join_dry_run=PASS
+  echo agentos_join_bootstrap=%AGENTOS_BOOTSTRAP%
+  exit /b 0
+)
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop';" ^
   "$repo='%AGENTOS_REPO%'; $ref='%AGENTOS_REF%';" ^
@@ -34,12 +45,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "Write-Host ('agentos_join_bootstrap_commit='+$sha)"
 
 if errorlevel 1 goto :fail
-
-if /I "%AGENTOS_JOIN_DRY_RUN%"=="1" (
-  echo agentos_join_dry_run=PASS
-  echo agentos_join_bootstrap=%AGENTOS_BOOTSTRAP%
-  exit /b 0
-)
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AGENTOS_BOOTSTRAP%" -NodeId "%AGENTOS_NODE_ID%" -SourceRef "%AGENTOS_REF%"
 if errorlevel 1 goto :fail
