@@ -5,7 +5,7 @@
   "verification": "static-source-only; Oracle live service/receipt not checked",
   "canonical_branch": "main",
   "legacy_branch": "core/integration",
-  "decision": "BLOCK_MAINLINE_PROMOTION_UNTIL_RUNTIME_CONSUMERS_VERIFIED",
+  "decision": "PRESERVE_CANONICAL_MAIN_REALM_HANDLERS; REQUIRE_FRESH_BASE_AND_ORACLE_ATTESTATION_BEFORE_PR_PROMOTION",
   "evidence": [
     {
       "path": "scripts/install_realm_fabric_via_action_relay.py",
@@ -17,7 +17,7 @@
         "release_deployment",
         "advance_deployment"
       ],
-      "status": "UNMIGRATED_CLIENT"
+      "status": "MAIN_SOURCE_CONSUMER; ORACLE_RUNTIME_UNVERIFIED"
     },
     {
       "path": ".github/workflows/oracle-core-generation5-resume-release.yml",
@@ -25,7 +25,7 @@
       "references": [
         "release_deployment"
       ],
-      "status": "UNMIGRATED_CLIENT"
+      "status": "MAIN_SOURCE_CONSUMER; ORACLE_RUNTIME_UNVERIFIED"
     },
     {
       "path": "docs/CORE_DEPLOYMENT_AUTHORITY.md",
@@ -56,42 +56,43 @@
   "legacy_actions": [
     {
       "action": "agentos.realm-fabric.claim_deployment",
-      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
-      "production_equivalence": "UNVERIFIED",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
       "allowed_for_promotion": false
     },
     {
       "action": "agentos.realm-fabric.deployment_status",
-      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
-      "production_equivalence": "UNVERIFIED",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
       "allowed_for_promotion": false
     },
     {
       "action": "agentos.realm-fabric.release_deployment",
-      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
-      "production_equivalence": "UNVERIFIED",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
       "allowed_for_promotion": false
     },
     {
       "action": "agentos.realm-fabric.renew_deployment",
-      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
-      "production_equivalence": "UNVERIFIED",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
       "allowed_for_promotion": false
     },
     {
       "action": "agentos.realm-fabric.advance_deployment",
-      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
-      "production_equivalence": "UNVERIFIED",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
       "allowed_for_promotion": false
     },
     {
       "action": "agentos.realm-fabric.install_release",
-      "candidate_behavior": "DENIED_LEGACY_ACTION_REQUIRES_CONVERGENCE",
-      "production_equivalence": "UNVERIFIED",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
       "allowed_for_promotion": false
     }
   ],
   "release_conditions": [
+    "Source checks confirm six Realm lease/status/install handlers remain bound to canonical main implementations",
     "Owner verifies actual Oracle deployed Action Relay / immutable service source SHA and all live consumers",
     "Equivalent approved authority/API for lease CAS, install, renew, release and receipt with rollback is demonstrated",
     "No active workflow/service relying on the six legacy actions would fail after deployment",
@@ -131,7 +132,7 @@
       "path": "scripts/reconcile_action_relay_runtime.py",
       "note": "SOURCE_REF is core/integration, separate from dynamically observed runtime service generation"
     },
-    "decision": "KEEP DRAFT: preserve live release authority until host readback, consumer receipts, and replacement parity are proven",
+    "decision": "KEEP DRAFT: canonical main handlers preserved in source; verify Oracle installed provider revision and fresh PR base before promotion",
     "next_read_only_attestation": [
       "systemd MainPID/ExecStart/WorkingDirectory/DropInPaths without environment secrets",
       "/proc/PID/exe and cwd plus resolved Python module path",
@@ -169,6 +170,6 @@
       "active lease and generation fence",
       "versioned release root, fixed service identity, observed commit readback, rollback requirements"
     ],
-    "disposition": "RECONCILE all six until actual Oracle consumer and replacement proof; do not promote fail-closed stubs over active release pipeline"
+    "disposition": "PRESERVE six canonical main handlers; Oracle installed generation and consumers independently unverified; never replace with fail-closed legacy stubs"
   }
 }
