@@ -22,6 +22,8 @@ on:
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/action_relay.py'
+      - 'scripts/repair_antigravity_relay_user.sh'
+      - 'tests/test_relay_repair_script_integrity.py'
       - 'tests/test_deployment_inspect_one.py'
       - 'tests/test_main_runtime_deploy_routing.py'
 
@@ -48,6 +50,8 @@ jobs:
           set -euo pipefail
           python3 -m py_compile agent_core/executor_job_contract.py agentos_node/executor_job_adapter.py agentos_node/executor_job_action_relay.py agentos_node/deployment_inspect_provider.py
           python3 -m unittest tests.test_deployment_capability tests.test_deployment_inspect_one tests.test_main_runtime_deploy_routing -v
+          bash -n scripts/repair_antigravity_relay_user.sh
+          python3 -m unittest tests.test_relay_repair_script_integrity -v
           # Realm scheduler OIDC permission must admit ONLY the exact signed
           # protected-main repair workflow; never broaden to all main workflows.
           python3 -m pip install --disable-pip-version-check -q pytest
