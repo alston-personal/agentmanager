@@ -23,6 +23,28 @@ on:
       - 'tests/test_realm_resolve_endpoint.py'
       - 'tests/test_project_store_canonical.py'
 
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-realm-fabric-core.yml'
+      - 'agent_core/resolve_facade.py'
+      - 'agent_core/realm_server.py'
+      - 'agent_core/realm_fabric.py'
+      - 'agent_core/project_store.py'
+      - 'agentos_node/thin_client_transport.py'
+      - 'scripts/patch_action_relay_realm_fabric.py'
+      - 'scripts/patch_realm_fabric_current_pointer_compat.py'
+      - 'scripts/patch_realm_fabric_release_isolation.py'
+      - 'scripts/patch_realm_fabric_process_attestation.py'
+      - 'scripts/patch_action_relay_core_project.py'
+      - 'scripts/patch_core_project_runtime_binding.py'
+      - 'scripts/install_realm_fabric_via_action_relay.py'
+      - 'scripts/register_agentos_core_via_action_relay.py'
+      - 'tests/test_resolve_facade.py'
+      - 'tests/test_realm_resolve_endpoint.py'
+      - 'tests/test_project_store_canonical.py'
+
+
 permissions:
   contents: write
 
@@ -64,9 +86,16 @@ jobs:
             exit 1
           fi
           echo 'generated_action_relay_drift=PASS'
+      - name: Focused Core tests before protected-main merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agent_core/resolve_facade.py agent_core/realm_server.py agent_core/project_store.py agentos_node/thin_client_transport.py
+          python3 -m unittest tests.test_resolve_facade tests.test_realm_resolve_endpoint tests.test_project_store_canonical -v
 
   deploy:
     needs: patch-capability
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 15
     env:
