@@ -109,3 +109,42 @@ def test_read_only_executor_unchanged_without_code_probe(tmp_path):
     })
     assert result["job_id"] == "action-12345678"
     assert len(worker.calls) == 1
+
+
+def test_all_registered_code_fix_jobs_share_the_freshness_gate(tmp_path):
+    """No mutable registered job may silently bypass the controller gate."""
+    code_types = {key for key, spec in JOB_TYPES.items() if spec.authority == "bounded-code-fix"}
+    assert code_types == {
+        "engineering.windows-thin-client.fix",
+        "engineering.realm-device-flow.fix",
+        "engineering.realm-node-fabric.fix",
+    }
+    for job_type in sorted(code_types):
+        spec = JOB_TYPES[job_type]
+        payload = {
+            "schema": EXECUTOR_JOB_SCHEMA,
+            "job_type": spec.job_type,
+            "project_id": spec.project_id,
+            "executor_class": spec.executor_class,
+            "workload_ref": spec.workload_ref,
+            "authority": spec.authority,
+        }
+        packet = {
+            "schema": "agentos.controller-dispatch/v0.1",
+            "node_id": "oracle-core-node",
+            "action": "agentos.executor.job",
+            "payload": payload,
+        }
+        with_probe = FakeDispatcher()
+        safe = ControllerService(
+            _fabric(tmp_path), executor_job_dispatcher=with_probe,
+            code_resume_probe=lambda _: verdict("MAINLINE_CURRENT", True),
+        )
+        assert safe.dispatch(packet)["job_id"] == "action-12345678", job_type
+        assert len(with_probe.calls) == 1, job_type
+
+        without_probe = FakeDispatcher()
+        blocked = ControllerService(_fabric(tmp_path), executor_job_dispatcher=without_probe)
+        with pytest.raises(ValueError, match="CODE_MAINLINE_PROBE_UNAVAILABLE"):
+            blocked.dispatch(packet)
+        assert not without_probe.calls, job_type
