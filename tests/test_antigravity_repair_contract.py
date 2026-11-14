@@ -140,6 +140,11 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertIn('sync -f "$TXN_DIR/state"', text)
         self.assertIn('TXN_RUNTIME_TOUCHED=1', text)
         self.assertIn('reason=service_remains_active', text)
+        self.assertLess(text.index('action_relay_prior_consumers_cleared=PASS'),
+                        text.index('# Historical Action Relay generations were materialized'))
+        self.assertLess(text.index('action_relay_managed_service_stopped=PASS'),
+                        text.index('TXN_RUNTIME_TOUCHED=1\nif [ -e "$RUNTIME_ROOT" ]'))
+        self.assertIn('action_relay_offline_interrupted_recovery=NO_EXISTING_RUNTIME', text)
         self.assertIn('> "$TXN_DIR/state"', text)
         self.assertLess(text.index('action_relay_transaction=SNAPSHOT_READY'), text.index('# Historical Action Relay generations'))
         self.assertLess(text.index('TXN_UNIT_TOUCHED=1'), text.index('cat > "$UNIT"'))
