@@ -699,7 +699,7 @@ class ActionRelayRuntimeConvergeDispatcher:
 
 
 def capability_marker_payload(*, source_ref: str, source_commit: str) -> dict[str, Any]:
-    if source_ref != "core/integration" or not re.fullmatch(r"[0-9a-f]{40}", source_commit):
+    if source_ref not in {"main", "core/integration", "feature/realm-node-fabric-readiness"} or not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise ValueError("invalid Action Relay capability provenance")
     return {
         "schema": "agentos.action-relay-capabilities/v1",

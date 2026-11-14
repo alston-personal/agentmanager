@@ -10,12 +10,20 @@ from scripts import reconcile_action_relay_runtime as reconcile
 
 
 SHA = "a" * 40
+ORIGINAL_UNIT_SOURCE_REF = reconcile._installed_unit_source_ref
 
 
 class Proc(SimpleNamespace):
     returncode: int = 0
     stdout: str = ""
     stderr: str = ""
+
+
+@pytest.fixture(autouse=True)
+def _legacy_reconciler_unit_by_default(monkeypatch):
+    # Existing legacy unit tests remain pinned to their original generation.
+    # Separate tests explicitly exercise the live-unit source classifier.
+    monkeypatch.setattr(reconcile, "_installed_unit_source_ref", lambda repo: "core/integration")
 
 
 def _repo(tmp_path: Path) -> tuple[Path, Path]:
@@ -223,3 +231,61 @@ def test_current_marker_but_stale_consumer_forces_reinstall(monkeypatch, tmp_pat
     result = reconcile.reconcile(repo=repo, data_root=data)
     assert result["status"] == "reconciled"
     assert any(call[0] == ["bash", str(repo / "scripts" / "install_action_relay_user.sh")] for call in calls)
+
+
+def test_main_capability_marker_blocks_legacy_reinstall_before_fetch(monkeypatch, tmp_path):
+    repo, data = _repo(tmp_path)
+    _write_marker(data)
+    marker = data / "runtime/action-relay/capabilities.json"
+    marker_payload = json.loads(marker.read_text(encoding="utf-8"))
+    marker_payload["source_ref"] = "main"
+    marker.write_text(json.dumps(marker_payload), encoding="utf-8")
+    monkeypatch.setattr(reconcile, "_run", lambda *a, **kw: pytest.fail("must not mutate or fetch"))
+    with pytest.raises(RuntimeError, match="foreign_generation_requires_governed_cutover"):
+        reconcile.reconcile(repo=repo, data_root=data)
+
+
+def test_main_unit_source_blocks_legacy_reinstall_even_with_legacy_marker(monkeypatch, tmp_path):
+    repo, data = _repo(tmp_path)
+    _write_marker(data)
+    monkeypatch.setattr(reconcile, "_installed_unit_source_ref", lambda repo: "main")
+    monkeypatch.setattr(reconcile, "_run", lambda *a, **kw: pytest.fail("must not mutate or fetch"))
+    with pytest.raises(RuntimeError, match="foreign_generation_requires_governed_cutover"):
+        reconcile.reconcile(repo=repo, data_root=data)
+
+
+def test_pending_transaction_blocks_reconcile_before_fetch(monkeypatch, tmp_path):
+    repo, data = _repo(tmp_path)
+    runtime = tmp_path / "action-runtime"
+    monkeypatch.setenv("AGENTOS_ACTION_RUNTIME_ROOT", str(runtime))
+    (runtime.parent / ".action-relay-install.pending").mkdir()
+    monkeypatch.setattr(reconcile, "_run", lambda *a, **kw: pytest.fail("must not mutate or fetch"))
+    with pytest.raises(RuntimeError, match="pending_transaction_requires_recovery"):
+        reconcile.reconcile(repo=repo, data_root=data)
+
+
+def test_corrupt_marker_blocks_reconcile_before_fetch(monkeypatch, tmp_path):
+    repo, data = _repo(tmp_path)
+    marker = data / "runtime/action-relay/capabilities.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("invalid json", encoding="utf-8")
+    monkeypatch.setattr(reconcile, "_run", lambda *a, **kw: pytest.fail("must not mutate or fetch"))
+    with pytest.raises(RuntimeError, match="marker_untrusted"):
+        reconcile.reconcile(repo=repo, data_root=data)
+
+
+def test_unit_source_classifier_rejects_ambiguous_unit_environment(monkeypatch, tmp_path):
+    monkeypatch.setattr(reconcile, "_installed_unit_source_ref", ORIGINAL_UNIT_SOURCE_REF)
+    repo, _ = _repo(tmp_path)
+    fake = Proc(returncode=0, stdout="AGENTOS_ACTION_RUNTIME_SOURCE_REF=main AGENTOS_ACTION_RUNTIME_SOURCE_REF=core/integration")
+    monkeypatch.setattr(reconcile, "_run", lambda *a, **kw: fake)
+    with pytest.raises(RuntimeError, match="unit_source_ambiguous"):
+        reconcile._installed_unit_source_ref(repo)
+
+
+def test_unit_source_classifier_keeps_exact_known_ref(monkeypatch, tmp_path):
+    monkeypatch.setattr(reconcile, "_installed_unit_source_ref", ORIGINAL_UNIT_SOURCE_REF)
+    repo, _ = _repo(tmp_path)
+    fake = Proc(returncode=0, stdout="OTHER=secret AGENTOS_ACTION_RUNTIME_SOURCE_REF=main")
+    monkeypatch.setattr(reconcile, "_run", lambda *a, **kw: fake)
+    assert reconcile._installed_unit_source_ref(repo) == "main"

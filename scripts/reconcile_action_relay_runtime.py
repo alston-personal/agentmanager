@@ -171,6 +171,23 @@ def _reexec_in_shared_group() -> int | None:
     return int(completed.returncode)
 
 
+def _installed_unit_source_ref(repo: Path) -> str | None:
+    observed = _run(
+        ["systemctl", "--user", "show", SERVICE, "-p", "Environment", "--value"],
+        cwd=repo, timeout=20,
+    )
+    if observed.returncode != 0:
+        return None
+    refs = [
+        token.split("=", 1)[1]
+        for token in observed.stdout.split()
+        if token.startswith("AGENTOS_ACTION_RUNTIME_SOURCE_REF=")
+    ]
+    if len(refs) > 1:
+        raise RuntimeError("action_relay_reconcile_unit_source_ambiguous")
+    return refs[0] if refs else None
+
+
 def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
     repo = repo.resolve()
     data_root = data_root.resolve()
@@ -179,6 +196,29 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
     installer = repo / "scripts" / "install_action_relay_user.sh"
     if not installer.is_file():
         raise RuntimeError("action_relay_reconcile_installer_missing")
+
+    # This timer retains its legacy owner until an explicit governed cutover.
+    # Never race a pending rollback or replace a newer/foreign installed relay
+    # with the historical core/integration generation.
+    runtime_root = Path(os.environ.get("AGENTOS_ACTION_RUNTIME_ROOT") or Path.home() / ".local/share/agentos/action-runtime")
+    pending = runtime_root.parent / ".action-relay-install.pending"
+    if pending.exists():
+        raise RuntimeError("action_relay_reconcile_pending_transaction_requires_recovery")
+    installed_marker = data_root / "runtime" / "action-relay" / "capabilities.json"
+    if installed_marker.is_symlink():
+        raise RuntimeError("action_relay_reconcile_marker_untrusted")
+    if installed_marker.exists():
+        try:
+            marker_payload = json.loads(installed_marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raise RuntimeError("action_relay_reconcile_marker_untrusted")
+        if not isinstance(marker_payload, dict) or marker_payload.get("schema") != MARKER_SCHEMA:
+            raise RuntimeError("action_relay_reconcile_marker_untrusted")
+        if marker_payload.get("source_ref") != SOURCE_REF:
+            raise RuntimeError("action_relay_reconcile_foreign_generation_requires_governed_cutover")
+    env_source = _installed_unit_source_ref(repo)
+    if env_source is not None and env_source != SOURCE_REF:
+        raise RuntimeError("action_relay_reconcile_foreign_generation_requires_governed_cutover")
 
     dirty = _git_value(repo, "status", "--porcelain", "--untracked-files=no")
     if dirty:

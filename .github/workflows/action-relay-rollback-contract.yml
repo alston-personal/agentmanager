@@ -1,0 +1,54 @@
+name: Action Relay Transactional Rollback Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/install_action_relay_user.sh'
+      - 'tests/test_action_relay_rollback_injection.py'
+      - 'tests/test_action_relay_installer_mutation_faults.py'
+      - 'tests/test_action_relay_pending_recovery_integration.py'
+      - 'tests/test_antigravity_repair_contract.py'
+      - 'scripts/attest_action_relay_readonly.py'
+      - 'tests/test_attest_action_relay_readonly.py'
+      - 'tests/test_action_relay_marker_provenance.py'
+      - 'agentos_node/runtime_converge_action_relay.py'
+      - 'scripts/reconcile_action_relay_runtime.py'
+      - 'tests/test_action_relay_generation_reconcile.py'
+      - '.github/workflows/action-relay-rollback-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rollback-fault-injection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate existing installer shell syntax
+        run: bash -n scripts/install_action_relay_user.sh
+      - name: Regression for legacy timer not downgrading a canonical main runtime
+        run: |
+          python3 -m pip install --disable-pip-version-check -q pytest
+          repo_root="$PWD"
+          (
+            cd tests
+            PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" python3 -m pytest -q -c /dev/null --import-mode=importlib --rootdir=. test_action_relay_generation_reconcile.py
+          )
+      - name: Verify installer and capability publisher provenance parity
+        run: python3 -m unittest -v tests.test_action_relay_marker_provenance
+      - name: Test bounded read-only Oracle attestation
+        run: |
+          python3 -m py_compile scripts/attest_action_relay_readonly.py
+          python3 -m unittest -v tests.test_attest_action_relay_readonly
+      - name: Execute transactional rollback and interrupted-update tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v \
+            tests.test_action_relay_rollback_injection \
+            tests.test_action_relay_installer_mutation_faults \
+            tests.test_action_relay_pending_recovery_integration \
+            tests.test_antigravity_repair_contract
+
