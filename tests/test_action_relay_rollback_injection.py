@@ -92,6 +92,23 @@ systemctl() {{
                 "commands": log.read_text(encoding="utf-8"),
             }
 
+    def test_persisted_transaction_metadata_is_parseable_newline_record(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        line = next(line for line in source.splitlines()
+                    if line.startswith('printf "prior_kind='))
+        fmt = line.split('"')[1]
+        self.assertIn(r"\n", fmt)
+        self.assertNotIn(r"\\n", fmt)
+        rendered = subprocess.run(
+            ["bash", "-c", 'printf "' + fmt + '" worktree '
+             + '1111111111111111111111111111111111111111 1 1 1 1'],
+            check=True, capture_output=True, text=True,
+        ).stdout
+        self.assertTrue(rendered.endswith("\n"))
+        self.assertNotIn(r"\n", rendered)
+        self.assertEqual(len(rendered.splitlines()), 1)
+        self.assertIn("prior_kind=worktree prior_head=", rendered)
+
     def test_injected_failure_restores_unit_marker_and_old_generation(self):
         r = self._run_rollback()
         self.assertEqual(r["returncode"], 15)
