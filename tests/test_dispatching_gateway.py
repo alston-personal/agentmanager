@@ -46,7 +46,7 @@ def test_dispatching_gateway_wakes_initial_and_continuation_tasks(tmp_path: Path
     runtime_result = worker.execute(lease.ir)
     completed = service.complete(
         lease.task_id,
-        {"runtime_result": runtime_result.to_dict()},
+        {"runtime_result": runtime_result.to_dict(), "lease_epoch": lease.lease_epoch},
     )
 
     assert completed["enqueuedTask"] is not None
