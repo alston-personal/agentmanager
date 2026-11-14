@@ -171,6 +171,23 @@ def _reexec_in_shared_group() -> int | None:
     return int(completed.returncode)
 
 
+def _installed_unit_source_ref(repo: Path) -> str | None:
+    observed = _run(
+        ["systemctl", "--user", "show", SERVICE, "-p", "Environment", "--value"],
+        cwd=repo, timeout=20,
+    )
+    if observed.returncode != 0:
+        return None
+    refs = [
+        token.split("=", 1)[1]
+        for token in observed.stdout.split()
+        if token.startswith("AGENTOS_ACTION_RUNTIME_SOURCE_REF=")
+    ]
+    if len(refs) > 1:
+        raise RuntimeError("action_relay_reconcile_unit_source_ambiguous")
+    return refs[0] if refs else None
+
+
 def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
     repo = repo.resolve()
     data_root = data_root.resolve()
@@ -199,18 +216,9 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
             raise RuntimeError("action_relay_reconcile_marker_untrusted")
         if marker_payload.get("source_ref") != SOURCE_REF:
             raise RuntimeError("action_relay_reconcile_foreign_generation_requires_governed_cutover")
-    unit_env = _run(
-        ["systemctl", "--user", "show", SERVICE, "-p", "Environment", "--value"],
-        cwd=repo, timeout=20,
-    )
-    if unit_env.returncode == 0:
-        env_source = next((
-            token.split("=", 1)[1]
-            for token in unit_env.stdout.split()
-            if token.startswith("AGENTOS_ACTION_RUNTIME_SOURCE_REF=")
-        ), None)
-        if env_source is not None and env_source != SOURCE_REF:
-            raise RuntimeError("action_relay_reconcile_foreign_generation_requires_governed_cutover")
+    env_source = _installed_unit_source_ref(repo)
+    if env_source is not None and env_source != SOURCE_REF:
+        raise RuntimeError("action_relay_reconcile_foreign_generation_requires_governed_cutover")
 
     dirty = _git_value(repo, "status", "--porcelain", "--untracked-files=no")
     if dirty:
