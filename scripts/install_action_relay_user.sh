@@ -182,10 +182,12 @@ rollback_action_relay_install() {
   # Stop a possibly-new consumer before reverting its source or unit.
   if [ "$TXN_UNIT_TOUCHED" = 1 ] || [ "$TXN_RUNTIME_TOUCHED" = 1 ]; then
     if ! systemctl --user stop agentos-action-relay.service; then
+      rm -f "$CAPABILITY_MARKER" || true
       echo "action_relay_transaction=ROLLBACK_FAILED reason=service_stop snapshot=$TXN_DIR" >&2
       exit 74
     fi
     if systemctl --user is-active --quiet agentos-action-relay.service; then
+      rm -f "$CAPABILITY_MARKER" || true
       echo "action_relay_transaction=ROLLBACK_FAILED reason=service_remains_active snapshot=$TXN_DIR" >&2
       exit 74
     fi
