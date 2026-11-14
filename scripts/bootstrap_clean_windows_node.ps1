@@ -11,7 +11,24 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+# Preserve custom enrolled Node identity during a staged Realm transfer.
+if ($SwitchRealm -and [string]::IsNullOrWhiteSpace($NodeId)) {
+  $existingConfig = Join-Path (Join-Path $InstallRoot 'state') 'client.json'
+  if (-not (Test-Path -LiteralPath $existingConfig)) {
+    throw 'SwitchRealm requires an existing Node enrollment.'
+  }
+  try {
+    $existingBinding = Get-Content -Raw -LiteralPath $existingConfig | ConvertFrom-Json
+    $NodeId = [string]$existingBinding.node_id
+  } catch {
+    throw 'SwitchRealm cannot read the original Node identity.'
+  }
+  if ([string]::IsNullOrWhiteSpace($NodeId)) { throw 'SwitchRealm existing NodeId is invalid.' }
+}
 if ([string]::IsNullOrWhiteSpace($NodeId)) { $NodeId = $env:COMPUTERNAME.ToLowerInvariant() }
+if ($SwitchRealm -and [string]::IsNullOrWhiteSpace($RealmId)) {
+  throw 'SwitchRealm requires an explicit target RealmId.'
+}
 if ($NodeId -notmatch '^[A-Za-z0-9._-]{1,64}$') { throw "Invalid NodeId: $NodeId" }
 
 if (-not [string]::IsNullOrWhiteSpace($RealmId)) {
@@ -83,6 +100,9 @@ if (Test-Path -LiteralPath $originalConfig) {
   }
   $targetDifferent = ($boundOne -ne $OneUrl) -or (
     -not [string]::IsNullOrWhiteSpace($RealmId) -and $boundRealm -ne $RealmId)
+  if ($SwitchRealm -and $boundRealm -eq $RealmId) {
+    throw 'SwitchRealm target matches current Realm; no transfer staged.'
+  }
   if ($targetDifferent) {
     if (-not $SwitchRealm) {
       throw 'Existing Node targets a different Realm. Add -SwitchRealm to stage a new binding without altering the active one.'

@@ -1,3 +1,12 @@
+## 2026-11-14 — Windows Node Realm transfer preflight identity preservation (#2302; source only)
+
+Inventory correction: `scripts/windows/commit_staged_realm.ps1` already exists on `main` and implements an explicitly gated, local transactional stage-to-active cutover with backup/rollback checks. The separate `scripts/bootstrap_clean_windows_node.ps1 -SwitchRealm` intentionally only stages and validates a prospective target Realm, preserving active enrollment. Source existence does not prove full Windows/ONE live transfer, independent cutover authorization, crash recovery, or official Node Management UI.
+
+Preflight fix under #2302: when the operator requests `-SwitchRealm` without `-NodeId`, read the existing installed identity rather than substituting the machine hostname; reject missing source enrollment, unspecified target Realm and self-target transfers before creating staging work. The active Node remains untouched by this stage-only path. Static regressions and Windows PowerShell parsing are checked in the existing `windows-one-click-installer-ci.yml`.
+
+**Status:** source-only change pending CI/PR merge. Actual A→B transfer remains unverified without independent ONE authorization, source/target Realm receipts, crash/rollback evidence, and readback from a real Windows Node. Do not claim `-CommitApproved` alone is a governance approval.
+
+---
 ## 2026-11-14 — project registration repository verification gate (PR #2300; source only)
 
 The existing `scripts/register_project.py` previously reported a project as registered after STATUS/Dashboard creation, even without a verified GitHub repository. The proposed gate now records `repository_state=blocked` if the exact canonical repository URL, local checkout, origin or matching remote `main` commit cannot be established; it preserves existing project metadata and returns a nonzero exit code on blocked registration. Mock-backed CI tests cover missing remote, SHA mismatch and metadata preservation. The runbook `.agent/workflows/register-project.md` now states explicitly that this script verifies rather than creates GitHub repositories.
