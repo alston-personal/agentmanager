@@ -88,8 +88,9 @@ class RealmTransferReadOnlyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "untrusted_pending"):
             self.check()
         self.make_pending(activation_authorized=True)
-        # Locally asserted flags must not affect the output or grant rights.
-        self.assert_frozen(self.check())
+        # Locally asserted authorization is not a trusted ONE receipt.
+        with self.assertRaisesRegex(ValueError, "untrusted_pending"):
+            self.check()
 
     def test_bad_record_rejected_without_mutation(self):
         self.make_pending(source_sha256="not-a-digest")
