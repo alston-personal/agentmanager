@@ -50,3 +50,24 @@ permissions, maintain durable replay handling, and validate the Addon's
 actual load-on-demand refresh behavior on the pinned game client. Atomic
 replacement is not itself cross-process synchronization or an end-to-end
 Receipt; do not mark MVP ready on code/CI alone.
+
+## Read-only Node heartbeat Bridge seam (source-only, 2026-11-14)
+
+`agentos_node/wow_bridge_once.py` now composes the existing bounded RGB
+status decoder, trusted Node-bound gateway and preinstalled reply-slot
+publisher into one *opt-in, single-request* host entry. A trusted Windows
+host supplies the installed Node config/policy and exact AddOn reply-slot
+path. The entry requires a **fresh authenticated ONE heartbeat response**
+(`heartbeat_recorded is True`) before publishing `NODE_ONLINE` with
+`paw=unverified` and no Receipt. Denied/missing/failed heartbeats never
+change the Lua reply file. No payload or reply includes the host Node
+credential, session secret, OAuth cookie or Realm selector.
+
+**Not a deployable resident Bridge:** there is still no persistent process
+capturing WoW screen frames, no production Node callback attestation, no
+signed installer including this helper, no verified Load-on-Demand game reply,
+no task summary or read-only ONE status Reader, and no general question/answer
+path. Do not equate `NODE_ONLINE` with completion of the game-to-ONE MVP.
+Use this source seam as the minimal next Windows live test boundary; keep
+work on existing #2134/#2135, with backend account pairing #2264.
+
