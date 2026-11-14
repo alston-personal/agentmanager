@@ -1,3 +1,11 @@
+## 2026-11-14 — #1682 Windows Node bootstrap canonical source default (PR #2309; source-only)
+
+The existing `scripts/bootstrap_clean_windows_node.ps1` previously defaulted `SourceRef` to `core/integration` for installs without an explicit tenant Realm ID, even though `scripts/install_thin_client_windows.ps1` defaults to `main`. The bootstrap now defaults to canonical `main`; both entrypoints retain immutable SHA resolution and installed-source readback, while the existing Realm staging, enrollment and health checks remain unchanged. `tests/test_windows_bootstrap_mainline_contract.py` checks the default-source contracts. Explicit compatibility overrides are still possible, but require separate release governance.
+
+**Evidence boundary:** this is a candidate source change only; CI, protected-main review/merge and real Windows Node installation/ONE receipt remain separate gates. It does not migrate existing Oracle consumers of `core/integration` or prove whole-system version convergence.
+
+---
+
 ## 2026-11-14 — #2302 read-only Realm transfer post-crash classification (source only)
 
 A source-side read-only companion was added to the existing `scripts/windows/recovery_update_reconcile.py`: `reconcile_realm_transfer(install_root, participant_id)`. It inspects the local transfer pending marker written by `commit_staged_realm.ps1`, hashes the actual active client credentials, and compares the hash with the recorded source/target digests. It distinguishes source intact, target present, missing active state and diverged active state, and reports whether an exact source backup file is present. It never reads credentials into an outbound Receipt, writes files, changes Windows services, executes a switch, or claims an authenticated ONE result. Local self-asserted authorization fields are rejected.
