@@ -104,11 +104,17 @@ if ! flock -n 9; then
   echo "ERROR: another Action Relay installer holds the transaction lock" >&2
   exit 71
 fi
-if [ -e "$TXN_DIR" ] || [ -L "$TXN_DIR" ]; then
-  echo "ERROR: prior interrupted/failed Action Relay transaction needs recovery: $TXN_DIR" >&2
+TXN_PENDING_AT_START=0
+if [ -L "$TXN_DIR" ]; then
+  echo "ERROR: symlink transaction state is forbidden" >&2
   exit 72
 fi
-( umask 077; mkdir "$TXN_DIR" )
+if [ -e "$TXN_DIR" ]; then
+  TXN_PENDING_AT_START=1
+else
+  ( umask 077; mkdir "$TXN_DIR" )
+fi
+if [ "$TXN_PENDING_AT_START" = 0 ]; then
 TXN_COMMITTED=0
 TXN_UNIT_TOUCHED=0
 TXN_RUNTIME_TOUCHED=0
@@ -156,6 +162,8 @@ elif [ -e "$RUNTIME_ROOT" ]; then
   exit 70
 fi
 
+fi
+
 rollback_action_relay_install() {
   local original_status="$1" rollback_failed=0
   trap - EXIT
@@ -166,7 +174,14 @@ rollback_action_relay_install() {
   echo "action_relay_transaction=ROLLBACK_STARTED" >&2
   # Stop a possibly-new consumer before reverting its source or unit.
   if [ "$TXN_UNIT_TOUCHED" = 1 ] || [ "$TXN_RUNTIME_TOUCHED" = 1 ]; then
-    systemctl --user stop agentos-action-relay.service || rollback_failed=1
+    if ! systemctl --user stop agentos-action-relay.service; then
+      echo "action_relay_transaction=ROLLBACK_FAILED reason=service_stop snapshot=$TXN_DIR" >&2
+      exit 74
+    fi
+    if systemctl --user is-active --quiet agentos-action-relay.service; then
+      echo "action_relay_transaction=ROLLBACK_FAILED reason=service_remains_active snapshot=$TXN_DIR" >&2
+      exit 74
+    fi
   fi
   case "$TXN_RUNTIME_KIND" in
     worktree)
@@ -220,9 +235,56 @@ rollback_action_relay_install() {
   if [ "$original_status" -eq 0 ]; then original_status=1; fi
   exit "$original_status"
 }
+# The only recovery route is this canonical installer, under the same
+# exclusive lock. Never source a persisted file as shell code.
+if [ "$TXN_PENDING_AT_START" = 1 ]; then
+  test -d "$TXN_DIR" || { echo "ERROR: invalid pending transaction inode" >&2; exit 72; }
+  test "$(stat -c '%U:%a' "$TXN_DIR")" = "ubuntu:700" || {
+    echo "ERROR: pending transaction ownership/mode mismatch" >&2; exit 72;
+  }
+  test ! -L "$TXN_DIR/state" && test -f "$TXN_DIR/state" || {
+    echo "ERROR: incomplete transaction snapshot; manual rescue required" >&2; exit 72;
+  }
+  state=$(cat "$TXN_DIR/state")
+  # Fixed literal metadata, never evaluated. Reject additions and malformed SHAs.
+  if ! [[ "$state" =~ ^prior_kind=(worktree|directory|absent)[[:space:]]prior_head=([0-9a-f]*)[[:space:]]unit_present=([01])[[:space:]]marker_present=([01])[[:space:]]was_active=([01])[[:space:]]was_enabled=([01])$ ]]; then
+    echo "ERROR: invalid transaction metadata; manual rescue required" >&2; exit 72
+  fi
+  TXN_RUNTIME_KIND="${BASH_REMATCH[1]}"
+  TXN_OLD_HEAD="${BASH_REMATCH[2]}"
+  TXN_UNIT_PRESENT="${BASH_REMATCH[3]}"
+  TXN_MARKER_PRESENT="${BASH_REMATCH[4]}"
+  TXN_OLD_ACTIVE="${BASH_REMATCH[5]}"
+  TXN_OLD_ENABLED="${BASH_REMATCH[6]}"
+  if [ "$TXN_RUNTIME_KIND" = worktree ] && ! [[ "$TXN_OLD_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: invalid previous worktree SHA" >&2; exit 72
+  fi
+  if [ "$TXN_RUNTIME_KIND" != worktree ] && [ -n "$TXN_OLD_HEAD" ]; then
+    echo "ERROR: unexpected previous SHA" >&2; exit 72
+  fi
+  if [ "$TXN_UNIT_PRESENT" = 1 ]; then
+    test ! -L "$TXN_DIR/unit" && test -f "$TXN_DIR/unit" || {
+      echo "ERROR: missing unit backup; manual rescue required" >&2; exit 72;
+    }
+  fi
+  if [ "$TXN_MARKER_PRESENT" = 1 ]; then
+    test ! -L "$TXN_DIR/capabilities" && test -f "$TXN_DIR/capabilities" || {
+      echo "ERROR: missing capability backup; manual rescue required" >&2; exit 72;
+    }
+  fi
+  TXN_COMMITTED=0
+  TXN_RUNTIME_TOUCHED=1
+  TXN_UNIT_TOUCHED=1
+  echo "action_relay_transaction=INTERRUPTED_RECOVERY_STARTED" >&2
+  # A successful rollback exits 73 to force a fresh governed install and
+  # exact-source revalidation, rather than falling through into an update.
+  rollback_action_relay_install 73
+fi
+
 trap 'rollback_action_relay_install "$?"' EXIT
 printf "prior_kind=%s prior_head=%s unit_present=%s marker_present=%s was_active=%s was_enabled=%s\\n" \
   "$TXN_RUNTIME_KIND" "$TXN_OLD_HEAD" "$TXN_UNIT_PRESENT" "$TXN_MARKER_PRESENT" "$TXN_OLD_ACTIVE" "$TXN_OLD_ENABLED" > "$TXN_DIR/state"
+sync -f "$TXN_DIR/state"
 echo "action_relay_transaction=SNAPSHOT_READY"
 
 # Historical Action Relay generations were materialized as a plain directory.
