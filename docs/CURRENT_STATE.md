@@ -1,3 +1,10 @@
+## 2026-11-14 — #2302 staged Realm cutover rejects redirected inputs (source-only)
+
+The pre-existing `scripts/windows/commit_staged_realm.ps1` performs a local, explicitly flagged staged Realm cutover, but source review identified possible filesystem-indirection risks: a redirected `client.json`, stage credential, lease, launcher, or state directory might cause the atomic credential swap to operate on untrusted locations. The proposed guard rejects reparse points before any health probing or supervisor stop and rejects invalid or missing original Node credentials.
+
+Windows negative tests under `tests/windows/test_realm_cutover_preflight.ps1`, wired into the existing one-click installer CI, assert missing opt-in, expired evidence, invalid original/staged identities and optional reparse-point refusal all preserve active credential bytes. This is source/hosted CI verification only: a local `-CommitApproved` flag alone does not attest independent ONE approval; no crash-recovery proof, live Windows transfer, Realm owner approval or accepted ONE Receipt exists in this work.
+
+---
 ## 2026-11-14 — Windows Node Realm transfer preflight identity preservation (#2302; source only)
 
 Inventory correction: `scripts/windows/commit_staged_realm.ps1` already exists on `main` and implements an explicitly gated, local transactional stage-to-active cutover with backup/rollback checks. The separate `scripts/bootstrap_clean_windows_node.ps1 -SwitchRealm` intentionally only stages and validates a prospective target Realm, preserving active enrollment. Source existence does not prove full Windows/ONE live transfer, independent cutover authorization, crash recovery, or official Node Management UI.
