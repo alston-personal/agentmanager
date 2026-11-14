@@ -32,7 +32,11 @@ jobs:
       - name: Regression for legacy timer not downgrading a canonical main runtime
         run: |
           python3 -m pip install --disable-pip-version-check -q pytest
-          python3 -m pytest -q -c /dev/null --import-mode=importlib --rootdir=tests tests/test_action_relay_generation_reconcile.py
+          repo_root="$PWD"
+          (
+            cd tests
+            PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" python3 -m pytest -q -c /dev/null --import-mode=importlib --rootdir=. test_action_relay_generation_reconcile.py
+          )
       - name: Verify installer and capability publisher provenance parity
         run: python3 -m unittest -v tests.test_action_relay_marker_provenance
       - name: Test bounded read-only Oracle attestation
