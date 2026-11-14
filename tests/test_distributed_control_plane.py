@@ -226,3 +226,53 @@ def test_context_checkpoint_and_terminal_cas_rollback_together(tmp_path: Path, m
     after_success = context.load("agentmanager")
     assert after_success is not None
     assert after_success["active_work"]["next_actions"] == ["deploy"]
+
+
+def test_continuation_insert_failure_rolls_back_parent_and_context(tmp_path: Path, monkeypatch):
+    path = tmp_path / "continuation-atomic.sqlite3"
+    store = DistributedControlPlane(path)
+    context = CanonicalContextStore(path)
+    context.seed("agentmanager", {
+        "active_work": {"next_actions": ["verify"], "current_findings": []},
+    })
+    ir = CanonicalIR(
+        goal="checkpoint and continue atomically",
+        project_id="agentmanager", capability="agentos.context.checkpoint",
+    )
+    store.submit_ir(ir)
+    lease = store.lease_next_ir("worker-a", ["agentos.context.checkpoint"])
+    assert lease
+    worker = RemoteRuntimeWorker("worker-a")
+    worker.register(
+        "agentos.context.checkpoint",
+        lambda current: ExecutionOutcome(
+            result={"context_checkpoint": {
+                "completed_action": "verify",
+                "finding": "checked",
+                "next_action": "deploy",
+            }},
+            next_capability="next.step",
+            auto_continue=True,
+        ),
+    )
+    result = worker.execute(ir)
+    original = store.submit_ir
+
+    def broken_child(child_ir, **kwargs):
+        if kwargs.get("connection") is not None:
+            raise ValueError("synthetic_continuation_failure")
+        return original(child_ir, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "submit_ir", broken_child)
+        with pytest.raises(ValueError, match="synthetic_continuation_failure"):
+            store.complete_ir(lease.task_id, result, lease_epoch=lease.lease_epoch)
+
+    assert store.get_task(lease.task_id)["status"] == "leased"
+    snapshot = context.load("agentmanager")
+    assert snapshot["_runtime_context"]["revision"] == 1
+    assert snapshot["active_work"]["next_actions"] == ["verify"]
+    completed = store.complete_ir(lease.task_id, result, lease_epoch=lease.lease_epoch)
+    assert completed["task"]["status"] == "succeeded"
+    assert completed["enqueuedTask"] is not None
+    assert context.load("agentmanager")["_runtime_context"]["revision"] == 2
