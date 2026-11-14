@@ -164,6 +164,9 @@ def test_chronos_bridge_pins_script_and_installer_to_exact_main_sha():
     assert "git show origin/main:scripts/repair_antigravity_relay_user.sh" not in script
     assert "assert 'action_relay_source_commit='+sys.argv[2] in text" in script
     assert "trap restore_target EXIT" in script
+    assert "'agentos.realm-fabric.deployment_status'" in script
+    assert "installed_relay_effective_unit_fence_revision=PASS" in script
+    assert "realm-fabric-effective-unit-fence/v1" in script
     assert "restore_target" in script
 
 def test_safe_chronos_script_parses_and_compiles_bridge_generator():
