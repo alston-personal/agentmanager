@@ -66,10 +66,12 @@ try {
 
   # The journal contains only identifiers and hashes, never bearer secrets.
   $source = Get-Content -Raw -LiteralPath $script
-  if ($source -notmatch "one_receipt_attested=\\`\$false" -and $source -notmatch 'one_receipt_attested=\\$false') {
+  if (-not $source.Contains('one_receipt_attested=$false')) {
     throw 'Local result could be mistaken for an authenticated ONE receipt'
   }
-  if ($source -notmatch 'FileMode\\]::CreateNew') { throw 'Pending transaction lacks exclusive creation' }
+  if (-not $source.Contains('[IO.FileMode]::CreateNew')) {
+    throw 'Pending transaction lacks exclusive creation'
+  }
   # An indirect credential file must not pass the preflight; skip link construction
   # only if this runner account is explicitly denied link privileges.
   $target | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding UTF8
