@@ -144,6 +144,12 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertIn('sha256sum -c capabilities.sha256 --status', text)
         self.assertIn('TXN_RUNTIME_TOUCHED=1', text)
         self.assertIn('reason=service_remains_active', text)
+        self.assertIn('observed_head=$(git -C "$RUNTIME_ROOT" rev-parse HEAD', text)
+        self.assertIn('cmp -s "$TXN_DIR/unit" "$UNIT"', text)
+        self.assertIn('cmp -s "$TXN_DIR/capabilities" "$CAPABILITY_MARKER"', text)
+        self.assertLess(text.index('TXN_PENDING_AT_START=0'), text.index('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"'))
+        self.assertLess(text.index('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"'),
+                        text.index('( umask 077; mkdir "$TXN_DIR" )'))
         self.assertLess(text.index('action_relay_prior_consumers_cleared=PASS'),
                         text.index('# Historical Action Relay generations were materialized'))
         self.assertLess(text.index('action_relay_managed_service_stopped=PASS'),
