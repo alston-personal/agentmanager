@@ -163,6 +163,8 @@ rollback_action_relay_install() {
       fi
       if [ -d "$LEGACY_RUNTIME_ROOT" ]; then
         mv "$LEGACY_RUNTIME_ROOT" "$RUNTIME_ROOT" || rollback_failed=1
+      else
+        mkdir -p "$RUNTIME_ROOT" || rollback_failed=1
       fi
       ;;
     absent)
@@ -190,6 +192,7 @@ rollback_action_relay_install() {
     fi
     if [ "$TXN_OLD_ACTIVE" = 1 ]; then
       systemctl --user start agentos-action-relay.service || rollback_failed=1
+      systemctl --user is-active --quiet agentos-action-relay.service || rollback_failed=1
     fi
   fi
   if [ "$rollback_failed" = 0 ]; then
