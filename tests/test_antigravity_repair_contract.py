@@ -118,6 +118,24 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertLess(text.index(marker), text.index('systemctl --user restart agentos-antigravity-relay.service'))
         self.assertIn('show_source experience/agentos-core-oracle.seed.json > "$TMPDIR/experience-seed.json"', text)
 
+    def test_action_relay_install_transaction_preserves_prior_generation(self):
+        text = _text(ACTION_INSTALLER)
+        self.assertIn('action_relay_transaction=SNAPSHOT_READY', text)
+        self.assertIn('action_relay_transaction=ROLLED_BACK', text)
+        self.assertIn('action_relay_transaction=ROLLBACK_FAILED', text)
+        self.assertIn('action_relay_transaction=COMMITTED', text)
+        self.assertIn('trap \'rollback_action_relay_install "$?"\' EXIT', text)
+        self.assertIn('TXN_OLD_HEAD=$(git -C "$RUNTIME_ROOT" rev-parse --verify HEAD)', text)
+        self.assertIn('git -C "$RUNTIME_ROOT" reset --hard "$TXN_OLD_HEAD"', text)
+        self.assertIn('cp -p "$TXN_DIR/unit" "$UNIT"', text)
+        self.assertIn('cp -p "$TXN_DIR/capabilities" "$CAPABILITY_MARKER"', text)
+        self.assertIn('systemctl --user daemon-reload', text)
+        self.assertIn('TXN_OLD_ACTIVE', text)
+        self.assertIn('TXN_OLD_ENABLED', text)
+        self.assertLess(text.index('action_relay_transaction=SNAPSHOT_READY'), text.index('# Historical Action Relay generations'))
+        self.assertLess(text.index('TXN_UNIT_TOUCHED=1'), text.index('cat > "$UNIT"'))
+        self.assertNotIn('if [ -n "$LEGACY_BACKUP" ]', text)
+
     def test_action_relay_installer_preserves_correct_foreign_owned_shared_boundary(self):
         text = _text(ACTION_INSTALLER)
         self.assertIn('ensure_shared_dir()', text)
