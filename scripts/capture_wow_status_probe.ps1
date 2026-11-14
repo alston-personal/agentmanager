@@ -3,7 +3,8 @@ param(
   [string]$Python = "python",
   [string]$TestImage = "",
   [string]$ProcessName = "Wow",
-  [string]$ExpectedExe = ""
+  [string]$ExpectedExe = "",
+  [switch]$OutputCellsJson
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -52,10 +53,15 @@ try {
    if ($pixel.B -ge 128) { $v += 1 }
    $cells.Add($v)
  }
- # Invoke only a fixed module path; no game-origin text becomes shell arguments.
+ # The host-only Bridge may consume the raw cells through stdin. No
+ # game-origin string ever becomes a shell argument, authority, or token.
  $json = ConvertTo-Json -Compress -InputObject $cells.ToArray()
- $json | & $Python -m agentos_node.wow_capture_probe
- if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+ if ($OutputCellsJson) {
+   Write-Output $json
+ } else {
+   $json | & $Python -m agentos_node.wow_capture_probe
+   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+ }
 } catch {
  Write-Error 'WoW capture unavailable or invalid; no request was dispatched.'
  exit 2
