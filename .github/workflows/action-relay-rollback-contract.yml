@@ -13,6 +13,8 @@ on:
       - 'tests/test_attest_action_relay_readonly.py'
       - 'tests/test_action_relay_marker_provenance.py'
       - 'agentos_node/runtime_converge_action_relay.py'
+      - 'scripts/reconcile_action_relay_runtime.py'
+      - 'tests/test_action_relay_generation_reconcile.py'
       - '.github/workflows/action-relay-rollback-contract.yml'
   workflow_dispatch:
 
@@ -27,6 +29,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate existing installer shell syntax
         run: bash -n scripts/install_action_relay_user.sh
+      - name: Regression for legacy timer not downgrading a canonical main runtime
+        run: |
+          python3 -m pip install --disable-pip-version-check -q pytest
+          python3 -m pytest -q -c /dev/null --import-mode=importlib --rootdir=tests tests/test_action_relay_generation_reconcile.py
       - name: Verify installer and capability publisher provenance parity
         run: python3 -m unittest -v tests.test_action_relay_marker_provenance
       - name: Test bounded read-only Oracle attestation
