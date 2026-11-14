@@ -248,39 +248,47 @@ class ControlPlaneStore:
         *,
         expected_lease_epoch: int | None = None,
         expected_lease_owner: str | None = None,
+        connection: sqlite3.Connection | None = None,
     ) -> dict[str, Any]:
         if status not in TASK_STATES:
             raise ValueError(f"unsupported task state: {status}")
         now = _timestamp(_now())
-        with self._connect() as connection:
-            if expected_lease_epoch is not None:
-                if (type(expected_lease_epoch) is not int or expected_lease_epoch < 1
-                        or not expected_lease_owner):
-                    raise ValueError("invalid_lease_fence")
-                # Terminal writes must belong to the exact live lease attempt.
-                # A stale worker with the same node ID must not replace new work.
-                cursor = connection.execute(
-                    """
-                    UPDATE tasks SET status=?, result_json=?, updated_at=?
-                    WHERE task_id=? AND lease_epoch=? AND target_node_id=?
-                      AND status IN ('leased', 'running') AND lease_until>=?
-                    """,
-                    (status, json.dumps(result or {}, sort_keys=True), now,
-                     task_id, expected_lease_epoch, expected_lease_owner, now),
+        if connection is None:
+            with self._connect() as owned:
+                return self.update_task(
+                    task_id, status, result,
+                    expected_lease_epoch=expected_lease_epoch,
+                    expected_lease_owner=expected_lease_owner,
+                    connection=owned,
                 )
-                if cursor.rowcount != 1:
-                    raise ValueError("STALE_LEASE_EPOCH")
-            else:
-                cursor = connection.execute(
-                    """
-                    UPDATE tasks SET status=?, result_json=?, updated_at=?
-                    WHERE task_id=?
-                    """,
-                    (status, json.dumps(result or {}, sort_keys=True), now, task_id),
-                )
-                if cursor.rowcount != 1:
-                    raise KeyError(f"unknown task: {task_id}")
-            row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        if expected_lease_epoch is not None:
+            if (type(expected_lease_epoch) is not int or expected_lease_epoch < 1
+                    or not expected_lease_owner):
+                raise ValueError("invalid_lease_fence")
+            # Terminal writes must belong to the exact live lease attempt.
+            # A stale worker with the same node ID must not replace new work.
+            cursor = connection.execute(
+                """
+                UPDATE tasks SET status=?, result_json=?, updated_at=?
+                WHERE task_id=? AND lease_epoch=? AND target_node_id=?
+                  AND status IN ('leased', 'running') AND lease_until>=?
+                """,
+                (status, json.dumps(result or {}, sort_keys=True), now,
+                 task_id, expected_lease_epoch, expected_lease_owner, now),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("STALE_LEASE_EPOCH")
+        else:
+            cursor = connection.execute(
+                """
+                UPDATE tasks SET status=?, result_json=?, updated_at=?
+                WHERE task_id=?
+                """,
+                (status, json.dumps(result or {}, sort_keys=True), now, task_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"unknown task: {task_id}")
+        row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         return self._task_from_row(row)
 
     @staticmethod
