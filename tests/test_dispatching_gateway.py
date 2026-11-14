@@ -150,3 +150,48 @@ def test_committed_continuation_recovers_after_push_crash(tmp_path: Path):
         assert db.execute(
             "SELECT COUNT(*) FROM tasks WHERE task_id<>?", (parent["taskId"],)
         ).fetchone()[0] == 1
+
+
+def test_gateway_entrypoint_starts_existing_sweep_for_enabled_push_target(
+    tmp_path: Path, monkeypatch,
+):
+    """Exercise the real gateway entrypoint, not just dispatcher methods."""
+    import sys
+    import threading
+    from scripts import distributed_gateway as entrypoint
+    from agent_core.push_dispatch import ResilientRuntimeDispatcher
+
+    started = threading.Event()
+
+    def observed_sweep(self, stop_event, *, interval_seconds, limit):
+        assert interval_seconds == 0.01
+        assert limit == 7
+        assert "bridge-a" in self.targets
+        assert "webhook" in self.transports
+        started.set()
+
+    class LocalOnlyServer:
+        def __init__(self, address, service, token=None):
+            assert isinstance(service, DispatchingGatewayService)
+            assert address == ("127.0.0.1", 8765)
+
+        def serve_forever(self):
+            assert started.wait(3), "the configured gateway never started its sweep"
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(ResilientRuntimeDispatcher, "run_sweep_loop", observed_sweep)
+    monkeypatch.setattr(entrypoint, "DistributedGatewayServer", LocalOnlyServer)
+    monkeypatch.setenv("AGENTOS_CONTROL_PLANE_DB", str(tmp_path / "gateway.sqlite3"))
+    monkeypatch.setenv("AGENTOS_PROVIDER_DISPATCH_ENABLED", "true")
+    monkeypatch.setenv("AGENTOS_PROVIDER_BRIDGE_ENDPOINT", "https://bridge.example.test/wake")
+    monkeypatch.setenv("AGENTOS_PROVIDER_CAPABILITIES", "agent.step")
+    monkeypatch.setenv("AGENTOS_CONTROL_PLANE_PUBLIC_URL", "https://one.example.test")
+    monkeypatch.setenv("AGENTOS_PROVIDER_RUNTIME_ID", "bridge-a")
+    monkeypatch.setenv("AGENTOS_DISPATCH_INTERVAL_SECONDS", "0.01")
+    monkeypatch.setenv("AGENTOS_DISPATCH_LIMIT", "7")
+    monkeypatch.delenv("AGENTOS_CONTINUITY_MIRROR_ENABLED", raising=False)
+    monkeypatch.setattr(sys, "argv", ["distributed_gateway"])
+    assert entrypoint.main() == 0
+    assert started.is_set()
