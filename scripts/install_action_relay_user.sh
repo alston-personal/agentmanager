@@ -111,6 +111,7 @@ fi
 ( umask 077; mkdir "$TXN_DIR" )
 TXN_COMMITTED=0
 TXN_UNIT_TOUCHED=0
+TXN_RUNTIME_TOUCHED=0
 TXN_RUNTIME_KIND=absent
 TXN_OLD_HEAD=
 TXN_UNIT_PRESENT=0
@@ -164,7 +165,7 @@ rollback_action_relay_install() {
   fi
   echo "action_relay_transaction=ROLLBACK_STARTED" >&2
   # Stop a possibly-new consumer before reverting its source or unit.
-  if [ "$TXN_UNIT_TOUCHED" = 1 ]; then
+  if [ "$TXN_UNIT_TOUCHED" = 1 ] || [ "$TXN_RUNTIME_TOUCHED" = 1 ]; then
     systemctl --user stop agentos-action-relay.service || rollback_failed=1
   fi
   case "$TXN_RUNTIME_KIND" in
@@ -197,7 +198,7 @@ rollback_action_relay_install() {
   else
     rm -f "$CAPABILITY_MARKER" || rollback_failed=1
   fi
-  if [ "$TXN_UNIT_TOUCHED" = 1 ]; then
+  if [ "$TXN_UNIT_TOUCHED" = 1 ] || [ "$TXN_RUNTIME_TOUCHED" = 1 ]; then
     systemctl --user daemon-reload || rollback_failed=1
     if [ "$TXN_OLD_ENABLED" = 1 ]; then
       systemctl --user enable agentos-action-relay.service || rollback_failed=1
@@ -229,6 +230,9 @@ echo "action_relay_transaction=SNAPSHOT_READY"
 # is deliberately narrow: only an ubuntu-owned, non-symlink directory may move,
 # and an existing deterministic backup makes the operation fail closed rather
 # than overwriting prior evidence.
+# Set before the first possible runtime mutation. EXIT rollback must stop the
+# running consumer even if a reset/add/migration fails before the unit stop.
+TXN_RUNTIME_TOUCHED=1
 if [ -e "$RUNTIME_ROOT" ] && [ ! -e "$RUNTIME_ROOT/.git" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
   test -d "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root is not a directory: $RUNTIME_ROOT" >&2; exit 2; }
   test ! -L "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root must not be a symlink: $RUNTIME_ROOT" >&2; exit 2; }
