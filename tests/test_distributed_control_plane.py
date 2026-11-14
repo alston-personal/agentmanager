@@ -276,3 +276,48 @@ def test_continuation_insert_failure_rolls_back_parent_and_context(tmp_path: Pat
     assert completed["task"]["status"] == "succeeded"
     assert completed["enqueuedTask"] is not None
     assert context.load("agentmanager")["_runtime_context"]["revision"] == 2
+
+
+def test_lease_epoch_readonly_preflight_never_migrates_legacy_db(tmp_path: Path):
+    """Source inventory is strictly read-only, including on pre-upgrade DBs."""
+    import sqlite3
+
+    from scripts.inspect_control_plane_lease_readonly import inspect
+
+    db_path = tmp_path / "preupgrade.sqlite3"
+    with sqlite3.connect(db_path) as db:
+        db.execute("CREATE TABLE tasks (task_id TEXT PRIMARY KEY, status TEXT, lease_until TEXT)")
+        db.execute(
+            "INSERT INTO tasks VALUES ('legacy-task', 'leased', '2000-01-01T00:00:00Z')"
+        )
+    result = inspect(db_path)
+    assert result["database_exists"] is True
+    assert result["schema_ready"] is False
+    assert result["migration_required"] is True
+    assert result["expired_in_flight"] == 1
+    assert result["loaded_process_proven"] is False
+    with sqlite3.connect(db_path) as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(tasks)")}
+        assert "lease_epoch" not in columns
+        assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+
+
+def test_lease_epoch_readonly_preflight_aggregates_without_task_identifiers(tmp_path: Path):
+    from scripts.inspect_control_plane_lease_readonly import inspect
+
+    db_path = tmp_path / "postupgrade.sqlite3"
+    store = DistributedControlPlane(db_path)
+    task = store.submit_ir(CanonicalIR(
+        goal="private-goal-that-must-not-leak",
+        project_id="private-project",
+        capability="agent.step",
+    ))
+    lease = store.lease_next_ir("private-worker", ["agent.step"])
+    assert lease is not None and lease.lease_epoch == 1
+    observed = inspect(db_path)
+    assert observed["schema_ready"] is True
+    assert observed["tasks_by_status"] == {"leased": 1}
+    assert observed["active_missing_epoch_or_invalid_deadline"] == 0
+    assert observed["rollback_fencing_proven"] is False
+    assert "private-" not in str(observed)
+    assert store.get_task(task["taskId"])["status"] == "leased"
