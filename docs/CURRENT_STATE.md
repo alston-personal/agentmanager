@@ -1095,6 +1095,11 @@ A successful process start, health endpoint, or workflow status is not enough to
 
 ## Memory and Cognitive IR boundary
 
+See [IR origin, authoring contract and drift inventory](COGNITIVE_IR_ORIGIN_AND_CONTRACT.md)
+for dated source provenance, the distinction between transport/continuation/reasoning/governance
+representations, and observed field-preservation gaps. Its unified semantic contract and
+migration checklist are **proposed**, not a deployed schema or proven cross-model continuity.
+
 Historical three-layer memory remains a useful conceptual model: L1 immediate/working state, L2 project/continuation state, and L3 stable cross-project knowledge and learned patterns. Current AgentOS separates canonical project state, continuation/work state, governance state, runtime state, receipts/evidence, and validated knowledge.
 
 Model-independent Cognitive IR remains a research hypothesis until repeatable cross-model continuity benchmarks demonstrate preservation of active goal, decisions/constraints, rejected paths, open questions, and next direction.
