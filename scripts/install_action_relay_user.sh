@@ -93,8 +93,22 @@ fi
 # The installer owns this transaction: a repair caller must not have to guess
 # which unit, runtime generation or capability marker survived a partial update.
 # Snapshot before the first worktree mutation; never overwrite a prior backup.
-TXN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/agentos-action-relay-txn.XXXXXXXX")
-chmod 700 "$TXN_DIR"
+# Keep an exclusive installer lock and durable snapshot beside the runtime.
+# A SIGKILL/power-loss cannot run EXIT traps: refuse any subsequent update
+# rather than silently overwriting the interrupted transaction's evidence.
+TXN_PARENT=$(dirname "$RUNTIME_ROOT")
+TXN_LOCK="$TXN_PARENT/.action-relay-install.lock"
+TXN_DIR="$TXN_PARENT/.action-relay-install.pending"
+exec 9>"$TXN_LOCK"
+if ! flock -n 9; then
+  echo "ERROR: another Action Relay installer holds the transaction lock" >&2
+  exit 71
+fi
+if [ -e "$TXN_DIR" ] || [ -L "$TXN_DIR" ]; then
+  echo "ERROR: prior interrupted/failed Action Relay transaction needs recovery: $TXN_DIR" >&2
+  exit 72
+fi
+( umask 077; mkdir "$TXN_DIR" )
 TXN_COMMITTED=0
 TXN_UNIT_TOUCHED=0
 TXN_RUNTIME_KIND=absent
@@ -206,6 +220,8 @@ rollback_action_relay_install() {
   exit "$original_status"
 }
 trap 'rollback_action_relay_install "$?"' EXIT
+printf "prior_kind=%s prior_head=%s unit_present=%s marker_present=%s was_active=%s was_enabled=%s\\n" \
+  "$TXN_RUNTIME_KIND" "$TXN_OLD_HEAD" "$TXN_UNIT_PRESENT" "$TXN_MARKER_PRESENT" "$TXN_OLD_ACTIVE" "$TXN_OLD_ENABLED" > "$TXN_DIR/state"
 echo "action_relay_transaction=SNAPSHOT_READY"
 
 # Historical Action Relay generations were materialized as a plain directory.
