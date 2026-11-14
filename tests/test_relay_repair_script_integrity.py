@@ -32,6 +32,16 @@ class RelayRepairSourceIntegrity(unittest.TestCase):
         self.assertIn('merge-base --is-ancestor', script)
         self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', script)
 
+    def test_experience_predecessor_must_be_verified_before_relay_mutation(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        preflight = 'REPAIR_STAGE="preflight_experience_predecessor"'
+        self.assertIn(preflight, script)
+        self.assertIn("experience_preflight=BLOCKED_PREDECESSOR_MISMATCH", script)
+        self.assertIn("current_digest not in (expected, incoming_digest)", script)
+        self.assertLess(script.index(preflight), script.index('REPAIR_STAGE="materialize_relay_runtime"'))
+        self.assertLess(script.index(preflight), script.index('REPAIR_STAGE="install_action_runtime"'))
+        self.assertLess(script.index(preflight), script.index("systemctl --user restart agentos-antigravity-relay.service"))
+
     def test_repair_must_not_mutate_realm(self):
         script = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("realm_fabric_deploy_authority_separation_v1", script)

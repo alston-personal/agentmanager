@@ -88,6 +88,33 @@ show_source() {
   git -C "$REPO" show "$SOURCE_COMMIT:$1"
 }
 
+# Fail closed BEFORE modifying the existing Action Relay worktree or user units
+# if the immutable main Experience predecessor no longer matches production.
+# This was previously checked only after the Action Relay installer had restarted.
+REPAIR_STAGE="preflight_experience_predecessor"
+show_source experience/agentos-core-oracle.seed.json > "$TMPDIR/experience-seed.json"
+PYTHONPATH="$REPO" AGENT_DATA_ROOT="$DATA_ROOT" python3 - "$TMPDIR/experience-seed.json" "$DATA_ROOT" "$ONE_EXPERIENCE_EXPECTED_PREDECESSOR" <<'PY'
+import json
+import sys
+from pathlib import Path
+from agent_core.experience_store import (
+    digest_set, experience_path, read_experience_set, validate_set
+)
+
+seed = validate_set(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")))
+root = Path(sys.argv[2])
+expected = sys.argv[3]
+target = experience_path(seed["project_id"], data_root=root)
+if target.is_symlink() or not target.is_file():
+    raise SystemExit("experience_preflight=BLOCKED_MISSING_OR_SYMLINK")
+current_digest = digest_set(read_experience_set(seed["project_id"], data_root=root))
+incoming_digest = digest_set(seed)
+if current_digest not in (expected, incoming_digest):
+    raise SystemExit("experience_preflight=BLOCKED_PREDECESSOR_MISMATCH")
+print("experience_preflight=PASS")
+print("experience_preflight_predecessor=" + ("already_current" if current_digest == incoming_digest else "fenced"))
+PY
+
 # Bounded convergence diagnostic: expose no paths or diff content. This is
 # intentionally emitted through the already-public antigravity_repair_stage
 # marker so transport repair can diagnose why node.runtime/converge failed

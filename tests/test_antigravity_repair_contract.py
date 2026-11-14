@@ -106,6 +106,18 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertNotIn('AGENTOS_EXPERIENCE_MCP_ALLOW_OVERWRITE', text)
         self.assertNotIn('--force', text)
 
+    def test_experience_digest_is_checked_before_action_relay_mutation(self):
+        text = _text(SCRIPT)
+        marker = 'REPAIR_STAGE="preflight_experience_predecessor"'
+        self.assertIn(marker, text)
+        self.assertIn('experience_preflight=BLOCKED_PREDECESSOR_MISMATCH', text)
+        self.assertIn('experience_preflight=PASS', text)
+        self.assertIn('current_digest not in (expected, incoming_digest)', text)
+        self.assertLess(text.index(marker), text.index('REPAIR_STAGE="materialize_relay_runtime"'))
+        self.assertLess(text.index(marker), text.index('REPAIR_STAGE="install_action_runtime"'))
+        self.assertLess(text.index(marker), text.index('systemctl --user restart agentos-antigravity-relay.service'))
+        self.assertIn('show_source experience/agentos-core-oracle.seed.json > "$TMPDIR/experience-seed.json"', text)
+
     def test_action_relay_installer_preserves_correct_foreign_owned_shared_boundary(self):
         text = _text(ACTION_INSTALLER)
         self.assertIn('ensure_shared_dir()', text)
