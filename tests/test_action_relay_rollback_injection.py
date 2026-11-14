@@ -54,7 +54,7 @@ git() {{
   printf "git %s\\n" "$*" >> "$LOG"
   if [ "${{INJECT_GIT_FAILURE:-0}}" = 1 ]; then return 40; fi
   if [ "$3" = "rev-parse" ]; then
-    if [ "${INJECT_BAD_READBACK:-0}" = 1 ]; then printf '%040d\\n' 0
+    if [ "${{INJECT_BAD_READBACK:-0}}" = 1 ]; then printf '%040d\\n' 0
     else printf '%s\\n' "$TXN_OLD_HEAD"; fi
   fi
   return 0
@@ -63,7 +63,7 @@ systemctl() {{
   printf "systemctl %s\\n" "$*" >> "$LOG"
   case "$*" in
     "--user stop agentos-action-relay.service")
-      if [ "${INJECT_STUCK_RUNNING:-0}" != 1 ]; then ACTIVE=0; fi ;;
+      if [ "${{INJECT_STUCK_RUNNING:-0}}" != 1 ]; then ACTIVE=0; fi ;;
     "--user start agentos-action-relay.service") ACTIVE=1 ;;
     "--user enable agentos-action-relay.service") ENABLED=1 ;;
     "--user disable agentos-action-relay.service") ENABLED=0 ;;
