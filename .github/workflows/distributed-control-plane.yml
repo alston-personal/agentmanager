@@ -21,7 +21,7 @@ jobs:
           python-version: '3.10'
       - run: python -m pip install pytest pyyaml
       - run: >-
-          python -m pytest -q
+          python -m pytest -q --ignore=CLAUDE.md
           tests/test_control_plane_convergence.py
           tests/test_agentos_public_entry.py tests/test_agentos_shared_auth_bridge.py
           tests/test_account_realm_onboarding.py
