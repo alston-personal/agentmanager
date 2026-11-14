@@ -167,36 +167,38 @@ class ControlPlaneStore:
         idempotency_key: str,
         project_id: str | None = None,
         target_node_id: str | None = None,
+        *,
+        connection: sqlite3.Connection | None = None,
     ) -> dict[str, Any]:
         if not capability or not idempotency_key:
             raise ValueError("capability and idempotency_key are required")
+        if connection is None:
+            with self._connect() as owned:
+                return self.submit_task(
+                    capability, payload, idempotency_key, project_id,
+                    target_node_id, connection=owned,
+                )
         now = _timestamp(_now())
+        existing = connection.execute(
+            "SELECT * FROM tasks WHERE idempotency_key=?", (idempotency_key,)
+        ).fetchone()
+        if existing:
+            return self._task_from_row(existing)
         task_id = f"task_{uuid.uuid4().hex}"
-        with self._connect() as connection:
-            existing = connection.execute(
-                "SELECT * FROM tasks WHERE idempotency_key=?", (idempotency_key,)
-            ).fetchone()
-            if existing:
-                return self._task_from_row(existing)
-            connection.execute(
-                """
-                INSERT INTO tasks(
-                    task_id, idempotency_key, capability, payload_json,
-                    project_id, target_node_id, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?)
-                """,
-                (
-                    task_id,
-                    idempotency_key,
-                    capability,
-                    json.dumps(payload, sort_keys=True),
-                    project_id,
-                    target_node_id,
-                    now,
-                    now,
-                ),
-            )
-            row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        connection.execute(
+            """
+            INSERT INTO tasks(
+                task_id, idempotency_key, capability, payload_json,
+                project_id, target_node_id, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?)
+            """,
+            (
+                task_id, idempotency_key, capability,
+                json.dumps(payload, sort_keys=True), project_id,
+                target_node_id, now, now,
+            ),
+        )
+        row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         return self._task_from_row(row)
 
     def lease_next_task(
