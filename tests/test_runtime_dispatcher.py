@@ -220,3 +220,43 @@ def test_failed_dispatch_uses_retry_backoff(tmp_path: Path):
     assert second["status"] == "retry_wait"
     assert second["dispatchId"] == first["dispatchId"]
     assert transport.calls == 1
+
+
+def test_dispatch_sweep_survives_transient_store_error_without_leaking_details(
+    tmp_path, caplog, monkeypatch,
+):
+    """A one-off DB failure cannot permanently strand pending continuations."""
+    import logging
+
+    from agent_core.distributed_control_plane import DistributedControlPlane
+    from agent_core.runtime_dispatcher import RuntimeDispatcher
+
+    dispatcher = RuntimeDispatcher(DistributedControlPlane(tmp_path / "sweep.sqlite3"))
+    calls = []
+
+    def flaky_dispatch(*, limit):
+        calls.append(limit)
+        if len(calls) == 1:
+            raise RuntimeError("private-webhook-token-do-not-log")
+        return []
+
+    monkeypatch.setattr(dispatcher, "dispatch_pending", flaky_dispatch)
+
+    class ThreeCycles:
+        def __init__(self):
+            self.waits = 0
+
+        def is_set(self):
+            return self.waits >= 3
+
+        def wait(self, interval):
+            assert interval == 0.01
+            self.waits += 1
+
+    with caplog.at_level(logging.INFO):
+        dispatcher.run_sweep_loop(ThreeCycles(), interval_seconds=0.01, limit=9)
+
+    assert calls == [9, 9, 9]
+    assert "runtime dispatch sweep failed (RuntimeError); retrying" in caplog.text
+    assert "runtime dispatch sweep recovered" in caplog.text
+    assert "private-webhook-token-do-not-log" not in caplog.text
