@@ -76,6 +76,7 @@ class DistributedControlPlane(ControlPlaneStore):
         *,
         idempotency_key: str | None = None,
         target_node_id: str | None = None,
+        connection: Any | None = None,
     ) -> dict[str, Any]:
         digest = ir.digest()
         return self.submit_task(
@@ -88,6 +89,7 @@ class DistributedControlPlane(ControlPlaneStore):
             idempotency_key=idempotency_key or f"canonical-ir:{ir.ir_id}:{digest}",
             project_id=ir.project_id,
             target_node_id=target_node_id,
+            connection=connection,
         )
 
     def _ir_from_task(self, task: dict[str, Any]) -> CanonicalIR:
@@ -306,9 +308,8 @@ class DistributedControlPlane(ControlPlaneStore):
         else:
             task_state = "failed"
 
-        # Prepare the existing context schema before the write transaction.
-        # Claim, checkpoint, and terminal task commit use ONE SQLite transaction:
-        # an expired/reclaimed lease cannot advance canonical context alone.
+        # Build the checkpoint and child task in the same durable transaction
+        # as the fenced parent completion: no orphan terminal state on crash.
         context_store = (
             CanonicalContextStore(self.db_path)
             if task_state == "succeeded" and input_ir.capability == "agentos.context.checkpoint"
@@ -318,6 +319,16 @@ class DistributedControlPlane(ControlPlaneStore):
             "protocol": RESULT_PROTOCOL,
             **runtime_result.to_dict(),
         }
+        should_enqueue = (
+            task_state == "succeeded"
+            and continuation is not None
+            and (
+                bool(continuation.continuation.get("auto_continue"))
+                if enqueue_continuation is None else enqueue_continuation
+            )
+        )
+        enqueued_task = None
+        continuation_blocked = None
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             current_row = connection.execute(
@@ -345,22 +356,14 @@ class DistributedControlPlane(ControlPlaneStore):
                 expected_lease_owner=runtime_result.runtime_id,
                 connection=connection,
             )
-
-        enqueued_task = None
-        continuation_blocked = None
-        if task_state == "succeeded" and continuation is not None:
-            should_enqueue = (
-                bool(continuation.continuation.get("auto_continue"))
-                if enqueue_continuation is None
-                else enqueue_continuation
-            )
-            if should_enqueue:
+            if should_enqueue and continuation is not None:
                 if continuation.hop_count > self.max_auto_continuation_hops:
                     continuation_blocked = "hop_limit"
                 else:
                     enqueued_task = self.submit_ir(
                         continuation,
                         idempotency_key=f"continuation:{task_id}:{continuation.digest()}",
+                        connection=connection,
                     )
 
         return {
