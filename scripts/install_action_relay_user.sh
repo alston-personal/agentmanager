@@ -326,7 +326,7 @@ if [ "$TXN_PENDING_AT_START" = 1 ]; then
 fi
 
 trap 'rollback_action_relay_install "$?"' EXIT
-printf "prior_kind=%s prior_head=%s unit_present=%s marker_present=%s was_active=%s was_enabled=%s\\n" \
+printf "prior_kind=%s prior_head=%s unit_present=%s marker_present=%s was_active=%s was_enabled=%s\n" \
   "$TXN_RUNTIME_KIND" "$TXN_OLD_HEAD" "$TXN_UNIT_PRESENT" "$TXN_MARKER_PRESENT" "$TXN_OLD_ACTIVE" "$TXN_OLD_ENABLED" > "$TXN_DIR/state"
 sync -f "$TXN_DIR/state"
 echo "action_relay_transaction=SNAPSHOT_READY"
