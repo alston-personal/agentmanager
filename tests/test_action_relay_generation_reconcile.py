@@ -10,6 +10,7 @@ from scripts import reconcile_action_relay_runtime as reconcile
 
 
 SHA = "a" * 40
+ORIGINAL_UNIT_SOURCE_REF = reconcile._installed_unit_source_ref
 
 
 class Proc(SimpleNamespace):
@@ -274,6 +275,7 @@ def test_corrupt_marker_blocks_reconcile_before_fetch(monkeypatch, tmp_path):
 
 
 def test_unit_source_classifier_rejects_ambiguous_unit_environment(monkeypatch, tmp_path):
+    monkeypatch.setattr(reconcile, "_installed_unit_source_ref", ORIGINAL_UNIT_SOURCE_REF)
     repo, _ = _repo(tmp_path)
     fake = Proc(returncode=0, stdout="AGENTOS_ACTION_RUNTIME_SOURCE_REF=main AGENTOS_ACTION_RUNTIME_SOURCE_REF=core/integration")
     monkeypatch.setattr(reconcile, "_run", lambda *a, **kw: fake)
@@ -282,6 +284,7 @@ def test_unit_source_classifier_rejects_ambiguous_unit_environment(monkeypatch, 
 
 
 def test_unit_source_classifier_keeps_exact_known_ref(monkeypatch, tmp_path):
+    monkeypatch.setattr(reconcile, "_installed_unit_source_ref", ORIGINAL_UNIT_SOURCE_REF)
     repo, _ = _repo(tmp_path)
     fake = Proc(returncode=0, stdout="OTHER=secret AGENTOS_ACTION_RUNTIME_SOURCE_REF=main")
     monkeypatch.setattr(reconcile, "_run", lambda *a, **kw: fake)
