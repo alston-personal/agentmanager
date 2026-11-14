@@ -17,7 +17,7 @@ OLD_SHA = "1" * 40
 
 
 class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
-    def _run(self, corrupt=False, stuck=False, fail_reset=False):
+    def _run(self, corrupt=False, stuck=False, fail_reset=False, real_git=False):
         source = SCRIPT.read_text(encoding="utf-8")
         start = source.index('TXN_PARENT=$(dirname "$RUNTIME_ROOT")')
         end = source.index("# Converge to exactly one governed consumer for this spool.", start)
@@ -33,6 +33,19 @@ class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
             data = root / "data"
             runtime = root / "runtime" / "action-runtime"
             runtime.parent.mkdir(parents=True)
+            old_sha = OLD_SHA
+            if real_git:
+                repo_path = root / "repo"
+                subprocess.run(["git", "init", "-q", str(repo_path)], check=True)
+                subprocess.run(["git", "-C", str(repo_path), "config", "user.email", "test@example.invalid"], check=True)
+                subprocess.run(["git", "-C", str(repo_path), "config", "user.name", "Isolated Test"], check=True)
+                (repo_path / "generation.txt").write_text("old", encoding="utf-8")
+                subprocess.run(["git", "-C", str(repo_path), "add", "generation.txt"], check=True)
+                subprocess.run(["git", "-C", str(repo_path), "commit", "-qm", "old"], check=True)
+                old_sha = subprocess.check_output(["git", "-C", str(repo_path), "rev-parse", "HEAD"], text=True).strip()
+                (repo_path / "generation.txt").write_text("new", encoding="utf-8")
+                subprocess.run(["git", "-C", str(repo_path), "commit", "-qam", "new"], check=True)
+                subprocess.run(["git", "-C", str(repo_path), "worktree", "add", "-q", "--detach", str(runtime)], check=True)
             unit = home / ".config/systemd/user/agentos-action-relay.service"
             marker = data / "runtime/action-relay/capabilities.json"
             unit.parent.mkdir(parents=True)
@@ -49,7 +62,7 @@ class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
                     digest + "  " + name + "\\n", encoding="utf-8"
                 )
             (pending / "state").write_text(
-                f"prior_kind=worktree prior_head={OLD_SHA} "
+                f"prior_kind=worktree prior_head={old_sha} "
                 "unit_present=1 marker_present=1 was_active=1 was_enabled=1\\n",
                 encoding="utf-8"
             )
@@ -85,13 +98,16 @@ systemctl() {{
   esac
   return 0
 }}
-git() {{
+${git_mock}
+"""
+            git_mock = "" if real_git else f"""git() {{
   printf 'git %s\\n' "$*" >> "$LOG"
   if [ "$3" = "reset" ] && [ "${{FAIL_RESET:-0}}" = 1 ]; then return 40; fi
-  if [ "$3" = "rev-parse" ]; then printf '%s\\n' "{OLD_SHA}"; fi
+  if [ "$3" = "rev-parse" ]; then printf '%s\\n' "{old_sha}"; fi
   return 0
 }}
 """
+            prefix = prefix.replace("${git_mock}", git_mock)
             result = subprocess.run(
                 ["bash", "-c", prefix + transaction],
                 text=True, capture_output=True, check=False, timeout=20,
@@ -105,6 +121,8 @@ git() {{
                 "pending": pending.exists(),
                 "log": command_log.read_text(encoding="utf-8") if command_log.exists() else "",
                 "old_unit": old_unit, "old_marker": old_marker,
+                "old_sha": old_sha,
+                "runtime_generation": (runtime / "generation.txt").read_text(encoding="utf-8") if real_git else None,
             }
 
     def test_valid_pending_snapshot_recovers_and_exits_without_new_install(self):
@@ -117,6 +135,14 @@ git() {{
         self.assertFalse(r["pending"])
         self.assertIn("reset --hard " + OLD_SHA, r["log"])
         self.assertNotIn("fetch", r["log"])
+
+    def test_pending_recovery_resets_real_git_worktree_to_prior_commit(self):
+        r = self._run(real_git=True)
+        self.assertEqual(r["code"], 73, r["stderr"])
+        self.assertEqual(r["runtime_generation"], "old")
+        self.assertEqual(r["unit"], r["old_unit"])
+        self.assertEqual(r["marker"], r["old_marker"])
+        self.assertFalse(r["pending"])
 
     def test_corrupt_backup_refuses_recovery_before_service_stop(self):
         r = self._run(corrupt=True)
