@@ -16,7 +16,7 @@ SCRIPT = ROOT / "scripts" / "install_action_relay_user.sh"
 
 
 class ActionRelayRollbackInjectionTest(unittest.TestCase):
-    def _run_rollback(self, fail_git=False, incorrect_readback=False, stuck_running=False):
+    def _run_rollback(self, fail_git=False, incorrect_readback=False, stuck_running=False,\n                      missing_legacy_backup=False):
         script = SCRIPT.read_text(encoding="utf-8")
         start = script.index("rollback_action_relay_install() {")
         end = script.index("\n}\n# The only recovery route", start) + 2
@@ -31,6 +31,8 @@ class ActionRelayRollbackInjectionTest(unittest.TestCase):
             (snapshot / "capabilities").write_text("old capability", encoding="utf-8")
             unit.write_text("new unit", encoding="utf-8")
             marker.write_text("new capability", encoding="utf-8")
+            if missing_legacy_backup:
+                (root / "runtime").mkdir()
             log = root / "commands.log"
             prelude = f"""
 TXN_DIR={shlex.quote(str(snapshot))}
@@ -41,7 +43,7 @@ REPO={shlex.quote(str(root / "repo"))}
 LEGACY_RUNTIME_ROOT={shlex.quote(str(root / "legacy"))}
 TXN_COMMITTED=0
 TXN_UNIT_TOUCHED=1
-TXN_RUNTIME_KIND=worktree
+TXN_RUNTIME_KIND={"directory" if missing_legacy_backup else "worktree"}
 TXN_OLD_HEAD=1111111111111111111111111111111111111111
 TXN_UNIT_PRESENT=1
 TXN_MARKER_PRESENT=1
@@ -119,6 +121,14 @@ systemctl() {{
         self.assertIn("reset --hard 1111111111111111111111111111111111111111", r["commands"])
         self.assertIn("systemctl --user daemon-reload", r["commands"])
         self.assertIn("systemctl --user start agentos-action-relay.service", r["commands"])
+
+    def test_missing_legacy_directory_backup_fails_closed(self):
+        r = self._run_rollback(missing_legacy_backup=True)
+        self.assertEqual(r["returncode"], 74)
+        self.assertIn("action_relay_transaction=ROLLBACK_FAILED", r["stderr"])
+        self.assertNotIn("action_relay_transaction=ROLLED_BACK", r["stderr"])
+        self.assertTrue(r["snapshot_exists"])
+        self.assertIsNone(r["marker"])
 
     def test_generation_readback_mismatch_never_claims_rollback_success(self):
         r = self._run_rollback(incorrect_readback=True)
