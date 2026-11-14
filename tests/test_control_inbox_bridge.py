@@ -648,6 +648,27 @@ def test_action_not_in_local_allowlist_is_rejected(tmp_path: Path):
     assert github.results[0]['error'] == 'unauthorized_action'
 
 
+def test_runner_window_relay_status_does_not_grant_control_inbox_authority(tmp_path: Path):
+    """A Runner Window catalog entry is not the Control Inbox operator allowlist."""
+    from agent_core.runner_window import resolve_intent
+
+    intent, params = resolve_intent("agentos.relay", "status", source_commit="a" * 40)
+    assert intent.action == "agentos.relay.status"
+    assert params["source_commit"] == "a" * 40
+
+    command = _command(command_id="relay_status_acl_isolation", action=intent.action)
+    github = FakeGitHub([_comment(109, command)])
+    one = FakeOne()
+    bridge = ControlInboxBridge(
+        _config(tmp_path, actions={"agent.surface.inspect"}), github=github, one=one
+    )
+    assert bridge.process_once() == 1
+    assert one.dispatched == []
+    assert github.results[0]["status"] == "rejected"
+    assert github.results[0]["error"] == "unauthorized_action"
+
+
+
 def _identity():
     return {
         'schema': 'agentos.continuation-identity/v1', 'source': 'ONE_ACTIVE_CONTINUATION',
