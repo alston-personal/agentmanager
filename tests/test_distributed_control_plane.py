@@ -88,7 +88,7 @@ def test_auto_continuation_has_hop_limit(tmp_path: Path):
         "loop.step",
         lambda current: ExecutionOutcome(result={"ok": True}, auto_continue=True),
     )
-    completed = store.complete_ir(lease.task_id, worker.execute(lease.ir, lease_epoch=lease.lease_epoch))
+    completed = store.complete_ir(lease.task_id, worker.execute(lease.ir), lease_epoch=lease.lease_epoch)
 
     assert completed["task"]["status"] == "succeeded"
     assert completed["enqueuedTask"] is None
@@ -114,7 +114,7 @@ def test_expired_lease_is_requeued_and_stale_worker_is_fenced(tmp_path: Path):
 
     old_worker = RemoteRuntimeWorker("worker-old")
     old_worker.register("recover.step", lambda current: {"worker": "old"})
-    with pytest.raises(ValueError, match="lease owner"):
+    with pytest.raises(ValueError, match="STALE_LEASE_EPOCH"):
         store.complete_ir(first_lease.task_id, old_worker.execute(first_lease.ir), lease_epoch=first_lease.lease_epoch)
 
     new_worker = RemoteRuntimeWorker("worker-new")
