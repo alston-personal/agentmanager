@@ -139,6 +139,24 @@ assert r.get('executor_user') == 'ubuntu', r
 print('antigravity_restart=PASS')
 PY
 
+  # Live read-only installed revision, not the checkout's module or artifact.
+  STATUS_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
+from agentos_node.action_relay import ActionRelayClient
+print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('agentos.realm-fabric.deployment_status', {})['capsule_id'])
+PY
+  )
+  STATUS_RECEIPT="$ACTION_ROOT/receipts/$STATUS_ID.json"
+  for i in $(seq 1 60); do [ -f "$STATUS_RECEIPT" ] && break; sleep 1; done
+  test -f "$STATUS_RECEIPT" || { echo 'realm_relay_revision_receipt=TIMEOUT'; exit 7; }
+  python3 - "$STATUS_RECEIPT" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r.get('ok') is True, 'installed Relay status failed'
+assert r.get('action') == 'agentos.realm-fabric.deployment_status', 'wrong Relay status action'
+assert r.get('installer_revision') == 'realm-fabric-effective-unit-fence/v1', 'installed Relay revision unverified'
+print('installed_relay_effective_unit_fence_revision=PASS')
+PY
+
   sleep 2
   grep -q '/usr/bin/sg agentos -c' /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service
   grep -q '/usr/bin/sg agentos -c' /home/ubuntu/.config/systemd/user/agentos-action-relay.service
