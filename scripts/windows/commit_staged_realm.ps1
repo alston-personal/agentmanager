@@ -26,10 +26,23 @@ $stageLauncher = Join-Path $stage 'agentos-client.cmd'
 foreach($file in @($originalFile,$stageFile,$stageLease,$launcher,$stageLauncher)) {
   if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Required binding or launcher missing: $file" }
 }
+# Reject filesystem indirection before reading credentials or stopping services.
+# A symlink/junction in either state path could redirect the atomic swap.
+foreach($candidate in @($root,$state,$stage,(Join-Path $stage 'state'),
+                      $originalFile,$stageFile,$stageLease,$launcher,$stageLauncher)) {
+  $item = Get-Item -LiteralPath $candidate -Force -ErrorAction Stop
+  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw 'Realm cutover refuses reparse-point credentials, roots, or launchers'
+  }
+}
+
 $original = Get-Content -Raw -LiteralPath $originalFile | ConvertFrom-Json
 $target = Get-Content -Raw -LiteralPath $stageFile | ConvertFrom-Json
 $lease = Get-Content -Raw -LiteralPath $stageLease | ConvertFrom-Json
-if ([string]$original.node_id -ne [string]$target.node_id -or
+if ([string]::IsNullOrWhiteSpace([string]$original.node_token) -or
+    [string]::IsNullOrWhiteSpace([string]$original.realm_id) -or
+    [string]::IsNullOrWhiteSpace([string]$original.node_id) -or
+    [string]$original.node_id -ne [string]$target.node_id -or
     [string]$original.realm_id -eq [string]$target.realm_id -or
     [string]::IsNullOrWhiteSpace([string]$target.node_token) -or
     [string]$target.realm_id -notmatch '^realm-u-[0-9a-f]{24}$' -or
