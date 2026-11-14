@@ -203,7 +203,9 @@ rollback_action_relay_install() {
       if [ -d "$LEGACY_RUNTIME_ROOT" ]; then
         mv "$LEGACY_RUNTIME_ROOT" "$RUNTIME_ROOT" || rollback_failed=1
       else
-        mkdir -p "$RUNTIME_ROOT" || rollback_failed=1
+        # Missing the original directory backup is not a successful restore.
+        # Keep the pending snapshot and invalidate the capability marker.
+        rollback_failed=1
       fi
       ;;
     absent)
