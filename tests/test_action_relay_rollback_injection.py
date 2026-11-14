@@ -87,7 +87,7 @@ systemctl() {{
                 "returncode": completed.returncode,
                 "stderr": completed.stderr,
                 "unit": unit.read_text(encoding="utf-8"),
-                "marker": marker.read_text(encoding="utf-8"),
+                "marker": marker.read_text(encoding="utf-8") if marker.exists() else None,
                 "snapshot_exists": snapshot.exists(),
                 "commands": log.read_text(encoding="utf-8"),
             }
@@ -107,19 +107,23 @@ systemctl() {{
         r = self._run_rollback(incorrect_readback=True)
         self.assertIn("action_relay_transaction=ROLLBACK_FAILED", r["stderr"])
         self.assertTrue(r["snapshot_exists"])
+        self.assertEqual(r["returncode"], 74)
+        self.assertIsNone(r["marker"])
 
     def test_running_consumer_blocks_worktree_restore(self):
         r = self._run_rollback(stuck_running=True)
         self.assertIn("reason=service_remains_active", r["stderr"])
         self.assertTrue(r["snapshot_exists"])
         self.assertNotIn("reset --hard", r["commands"])
+        self.assertIsNone(r["marker"])
 
     def test_injected_rollback_failure_keeps_snapshot_and_reports_failure(self):
         r = self._run_rollback(fail_git=True)
-        self.assertEqual(r["returncode"], 15)
+        self.assertEqual(r["returncode"], 74)
         self.assertIn("action_relay_transaction=ROLLBACK_FAILED", r["stderr"])
         self.assertTrue(r["snapshot_exists"])
         self.assertNotIn("action_relay_transaction=ROLLED_BACK", r["stderr"])
+        self.assertIsNone(r["marker"])
 
 
 if __name__ == "__main__":
