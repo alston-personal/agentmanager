@@ -55,6 +55,7 @@ git() {{
 }}
 systemctl() {{
   printf "systemctl %s\\n" "$*" >> "$LOG"
+  if [ "$*" = "--user is-active --quiet agentos-action-relay.service" ]; then return 1; fi
   return 0
 }}
 """
