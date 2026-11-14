@@ -75,7 +75,7 @@ class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
   printf 'git %s\\n' "$*" >> "$LOG"
   command git "$@" || return $?
   if [ "$3" = reset ] && [ "${KILL_AFTER_RESET:-0}" = 1 ]; then
-    kill -KILL "$"
+    kill -KILL "$$"
   fi
 } 
 """ if real_git else f"""git() {{
