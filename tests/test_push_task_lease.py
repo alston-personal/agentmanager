@@ -117,3 +117,60 @@ def test_http_completion_requires_current_lease_epoch(tmp_path: Path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_dispatch_sweep_recovers_expired_push_lease_without_client_poll(tmp_path: Path):
+    """A crashed push Executor must be reawakened by the normal sweep alone."""
+    import pytest
+    from agent_core.runtime_dispatcher import DispatchTransport
+    from agent_core.push_dispatch import ResilientRuntimeDispatcher
+
+    class RecordingTransport(DispatchTransport):
+        kind = "webhook"
+
+        def __init__(self):
+            self.sent = []
+
+        def dispatch(self, *, target, task, ir, dispatch_id):
+            self.sent.append((task["taskId"], dispatch_id))
+            return {"external_ref": f"test:{dispatch_id}"}
+
+    store = DistributedControlPlane(tmp_path / "expired-push-sweep.sqlite3")
+    dispatcher = ResilientRuntimeDispatcher(store, dispatch_timeout_seconds=1)
+    dispatcher.register_target(RuntimeTarget(
+        target_id="provider-bridge",
+        kind="webhook",
+        capabilities=("agentos.ir.validate",),
+        config={"endpoint": "https://bridge.example.test/wake"},
+    ))
+    transport = RecordingTransport()
+    dispatcher.register_transport(transport)
+    task = store.submit_ir(_ir(42), target_node_id="provider-bridge")
+    old = store.lease_ir_task(task["taskId"], "provider-bridge", lease_seconds=60)
+    assert old is not None and old.lease_epoch == 1
+
+    with store._connect() as connection:
+        connection.execute(
+            "UPDATE tasks SET lease_until='2000-01-01T00:00:00Z' WHERE task_id=?",
+            (task["taskId"],),
+        )
+
+    # No HTTP lease request or explicit requeue helper is invoked by the test.
+    sweep = dispatcher.dispatch_pending()
+    assert any(x["taskId"] == task["taskId"] and x["status"] == "dispatched" for x in sweep)
+    assert transport.sent and len(transport.sent) == 1
+    assert store.get_task(task["taskId"])["status"] == "submitted"
+
+    fresh = store.lease_ir_task(task["taskId"], "provider-bridge")
+    assert fresh is not None and fresh.lease_epoch == old.lease_epoch + 1
+    worker = RemoteRuntimeWorker("provider-bridge")
+    worker.register("agentos.ir.validate", lambda ir: {"ok": True})
+    result = worker.execute(fresh.ir)
+
+    with pytest.raises(ValueError, match="STALE_LEASE_EPOCH"):
+        store.complete_ir(task["taskId"], result, lease_epoch=old.lease_epoch)
+    assert store.complete_ir(
+        task["taskId"], result, lease_epoch=fresh.lease_epoch,
+    )["task"]["status"] == "succeeded"
+    assert dispatcher.dispatch_pending() == []
+    assert len(transport.sent) == 1
