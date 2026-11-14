@@ -1,0 +1,33 @@
+name: Action Relay Transactional Rollback Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/install_action_relay_user.sh'
+      - 'tests/test_action_relay_rollback_injection.py'
+      - 'tests/test_action_relay_installer_mutation_faults.py'
+      - 'tests/test_action_relay_pending_recovery_integration.py'
+      - 'tests/test_antigravity_repair_contract.py'
+      - '.github/workflows/action-relay-rollback-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rollback-fault-injection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate existing installer shell syntax
+        run: bash -n scripts/install_action_relay_user.sh
+      - name: Execute transactional rollback and interrupted-update tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v \
+            tests.test_action_relay_rollback_injection \
+            tests.test_action_relay_installer_mutation_faults \
+            tests.test_action_relay_pending_recovery_integration \
+            tests.test_antigravity_repair_contract
