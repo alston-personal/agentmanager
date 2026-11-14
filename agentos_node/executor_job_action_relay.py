@@ -7,9 +7,12 @@ fixed semantic actions only; no generic shell or argv surface is introduced.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
+from agent_core.code_resume_authority import require_fresh_code_resume
+from agentos_node.branch_resume_host_probe import load_trusted_code_resume_probe
 from agent_core.executor_job_contract import (
     EXECUTOR_JOB_SCHEMA,
     project_executor_job_receipt,
@@ -77,7 +80,17 @@ def _execute(params: dict[str, Any]) -> dict[str, Any]:
     if set(params) != {"request"} or not isinstance(params.get("request"), dict):
         raise ValueError("executor-job relay accepts only a canonical request object")
     request = dict(params["request"])
-    validate_executor_job(request)
+    spec = validate_executor_job(request)
+    # Re-check at the relay execution boundary: queued code can become stale.
+    # Host config is operator-provisioned, never accepted from the request.
+    if spec.authority == "bounded-code-fix":
+        try:
+            host_probe = load_trusted_code_resume_probe(
+                os.environ.get("AGENTOS_CODE_RESUME_HOST_CONFIG")
+            )
+        except Exception as exc:
+            raise ValueError("CODE_MAINLINE_EVIDENCE_UNAVAILABLE") from exc
+        require_fresh_code_resume(spec, host_probe)
     return {**_request_projection(request), **run_registered_executor_job(request=request)}
 
 
