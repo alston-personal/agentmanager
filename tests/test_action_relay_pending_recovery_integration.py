@@ -105,7 +105,7 @@ systemctl() {{
   esac
   return 0
 }}
-${git_mock}
+{git_mock}
 """
             result = subprocess.run(
                 ["bash", "-c", prefix + transaction],
