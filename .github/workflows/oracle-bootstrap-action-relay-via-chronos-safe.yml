@@ -1,13 +1,12 @@
 name: Oracle Safe Chronos Transport Bootstrap
 
-# Emergency/manual fallback only. The canonical deterministic Chronos bootstrap
-# and Action Relay path is now proven end-to-end, so normal source changes must
-# not launch this legacy bridge injector.
+# Existing emergency/manual-only transport rescue. Never auto-update a service
+# or mutate protected main through evidence commits.
 on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   bootstrap:
@@ -15,6 +14,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Repair AgentOS transport through existing ubuntu Chronos
         shell: bash
@@ -23,44 +24,5 @@ jobs:
           echo 'emergency_manual_invocation=YES'
           test "$GITHUB_REF_NAME" = "main"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}
-
-      - name: Commit safe bootstrap evidence
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          E=.agentos/evidence/action-relay-chronos-safe-bootstrap-v2.txt
-          test -f "$E" || exit 0
-          cp "$E" /tmp/action-relay-chronos-safe-bootstrap-v2.txt
-          git fetch origin main
-          git reset --hard origin/main
-          mkdir -p .agentos/evidence
-          cp /tmp/action-relay-chronos-safe-bootstrap-v2.txt "$E"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$E"
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): safe Chronos transport bootstrap v2'
-          git push origin HEAD:main
-
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
           AGENTOS_SOURCE_COMMIT="$GITHUB_SHA" bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
-
-      - name: Commit safe bootstrap evidence
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          E=.agentos/evidence/action-relay-chronos-safe-bootstrap-v2.txt
-          test -f "$E" || exit 0
-          cp "$E" /tmp/action-relay-chronos-safe-bootstrap-v2.txt
-          git fetch origin main
-          git reset --hard origin/main
-          mkdir -p .agentos/evidence
-          cp /tmp/action-relay-chronos-safe-bootstrap-v2.txt "$E"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$E"
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): safe Chronos transport bootstrap v2'
-          git push origin HEAD:main
