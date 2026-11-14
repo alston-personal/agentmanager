@@ -21,7 +21,30 @@ jobs:
         run: |
           set -euo pipefail
           echo 'emergency_manual_invocation=YES'
-          bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
+          test "$GITHUB_REF_NAME" = "main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}
+
+      - name: Commit safe bootstrap evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/action-relay-chronos-safe-bootstrap-v2.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/action-relay-chronos-safe-bootstrap-v2.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/action-relay-chronos-safe-bootstrap-v2.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): safe Chronos transport bootstrap v2'
+          git push origin HEAD:main
+
+          AGENTOS_SOURCE_COMMIT="$GITHUB_SHA" bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
 
       - name: Commit safe bootstrap evidence
         if: always()
