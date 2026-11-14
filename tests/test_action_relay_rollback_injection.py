@@ -48,14 +48,26 @@ TXN_MARKER_PRESENT=1
 TXN_OLD_ACTIVE=1
 TXN_OLD_ENABLED=1
 LOG={shlex.quote(str(log))}
+ACTIVE=1
+ENABLED=1
 git() {{
   printf "git %s\\n" "$*" >> "$LOG"
   if [ "${{INJECT_GIT_FAILURE:-0}}" = 1 ]; then return 40; fi
+  if [ "$3" = "rev-parse" ]; then printf '%s\\n' "$TXN_OLD_HEAD"; fi
   return 0
 }}
 systemctl() {{
   printf "systemctl %s\\n" "$*" >> "$LOG"
-  if [ "$*" = "--user is-active --quiet agentos-action-relay.service" ]; then return 1; fi
+  case "$*" in
+    "--user stop agentos-action-relay.service") ACTIVE=0 ;;
+    "--user start agentos-action-relay.service") ACTIVE=1 ;;
+    "--user enable agentos-action-relay.service") ENABLED=1 ;;
+    "--user disable agentos-action-relay.service") ENABLED=0 ;;
+    "--user is-active --quiet agentos-action-relay.service")
+      [ "$ACTIVE" = 1 ]; return ;;
+    "--user is-enabled --quiet agentos-action-relay.service")
+      [ "$ENABLED" = 1 ]; return ;;
+  esac
   return 0
 }}
 """
