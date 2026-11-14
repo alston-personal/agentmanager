@@ -127,6 +127,12 @@ function Complete-LocalRealmTransfer([string]$Outcome) {
                     outcome=$Outcome; recorded_at_utc=[DateTimeOffset]::UtcNow.ToString('o');
                     one_receipt_attested=$false }
   $resultFile = Join-Path $state 'realm-transfer-last-local-result.json'
+  if (Test-Path -LiteralPath $resultFile) {
+    $previous = Get-Item -LiteralPath $resultFile -Force -ErrorAction Stop
+    if (($previous.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw 'Realm cutover refuses redirected local result path'
+    }
+  }
   $resultTemp = Join-Path $state ('realm-transfer-local-result-' + $transferId + '.tmp')
   try {
     [IO.File]::WriteAllText($resultTemp, ($localResult | ConvertTo-Json -Compress), [Text.Encoding]::UTF8)
