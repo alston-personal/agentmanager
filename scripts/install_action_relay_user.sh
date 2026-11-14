@@ -132,10 +132,14 @@ if [ -L "$UNIT" ] || [ -L "$CAPABILITY_MARKER" ] || [ -L "$RUNTIME_ROOT" ]; then
 fi
 if [ -f "$UNIT" ]; then
   cp -p "$UNIT" "$TXN_DIR/unit"
+  (cd "$TXN_DIR" && sha256sum unit > unit.sha256)
+  sync -f "$TXN_DIR/unit"
   TXN_UNIT_PRESENT=1
 fi
 if [ -f "$CAPABILITY_MARKER" ]; then
   cp -p "$CAPABILITY_MARKER" "$TXN_DIR/capabilities"
+  (cd "$TXN_DIR" && sha256sum capabilities > capabilities.sha256)
+  sync -f "$TXN_DIR/capabilities"
   TXN_MARKER_PRESENT=1
 fi
 if systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; then TXN_OLD_ACTIVE=1; fi
@@ -266,11 +270,17 @@ if [ "$TXN_PENDING_AT_START" = 1 ]; then
     test ! -L "$TXN_DIR/unit" && test -f "$TXN_DIR/unit" || {
       echo "ERROR: missing unit backup; manual rescue required" >&2; exit 72;
     }
+    if ! (cd "$TXN_DIR" && sha256sum -c unit.sha256 --status); then
+      echo "ERROR: unit backup checksum mismatch; manual rescue required" >&2; exit 72
+    fi
   fi
   if [ "$TXN_MARKER_PRESENT" = 1 ]; then
     test ! -L "$TXN_DIR/capabilities" && test -f "$TXN_DIR/capabilities" || {
       echo "ERROR: missing capability backup; manual rescue required" >&2; exit 72;
     }
+    if ! (cd "$TXN_DIR" && sha256sum -c capabilities.sha256 --status); then
+      echo "ERROR: capability backup checksum mismatch; manual rescue required" >&2; exit 72
+    fi
   fi
   TXN_COMMITTED=0
   TXN_RUNTIME_TOUCHED=1
