@@ -262,8 +262,11 @@ rollback_action_relay_install() {
     echo "action_relay_transaction=ROLLED_BACK" >&2
     rm -rf "$TXN_DIR"
   else
-    # Preserve forensic snapshots when rollback itself fails.
+    # Do not advertise an unverified runtime generation to ONE consumers.
+    # Keep forensic snapshots, but invalidate the public capability marker.
+    rm -f "$CAPABILITY_MARKER" || true
     echo "action_relay_transaction=ROLLBACK_FAILED snapshot=$TXN_DIR" >&2
+    original_status=74
   fi
   if [ "$original_status" -eq 0 ]; then original_status=1; fi
   exit "$original_status"
