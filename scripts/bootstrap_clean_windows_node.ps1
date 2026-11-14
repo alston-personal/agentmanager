@@ -2,7 +2,7 @@ param(
   [string]$NodeId = "",
   [string]$OneUrl = "https://studio.milkcat.org/dashboard/api/agentos",
   [string]$RealmId = "",
-  [string]$SourceRef = "core/integration",
+  [string]$SourceRef = "main",
   [string]$InstallRoot = "$env:LOCALAPPDATA\AgentOS",
   [string]$WorkspaceRoot = "$HOME\AgentOS",
   [switch]$SwitchRealm
