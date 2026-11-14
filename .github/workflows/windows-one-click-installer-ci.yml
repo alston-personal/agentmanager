@@ -14,6 +14,7 @@ on:
       - 'agentos_node/thin_client_transport.py'
       - 'agentos_node/client_cli.py'
       - 'tests/test_thin_client.py'
+      - 'tests/test_node_realm_transfer_preflight.py'
       - '.github/workflows/windows-one-click-installer-ci.yml'
   push:
     branches:
@@ -53,6 +54,10 @@ jobs:
             }
             Write-Host "powershell_parse=PASS file=$file"
           }
+
+      - name: Verify staged Realm transfer preflight contracts
+        shell: powershell
+        run: python -m unittest -v tests.test_node_realm_transfer_preflight
 
       - name: Test Recovery-only offline Python provisioner rejects unsafe archives
         shell: powershell
