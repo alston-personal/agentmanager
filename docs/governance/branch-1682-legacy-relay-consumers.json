@@ -1,0 +1,175 @@
+{
+  "schema": "agentos.branch-convergence.legacy-relay-consumers/v1",
+  "issue": 1682,
+  "candidate_pr": 2269,
+  "verification": "static-source-only; Oracle live service/receipt not checked",
+  "canonical_branch": "main",
+  "legacy_branch": "core/integration",
+  "decision": "PRESERVE_CANONICAL_MAIN_REALM_HANDLERS; REQUIRE_FRESH_BASE_AND_ORACLE_ATTESTATION_BEFORE_PR_PROMOTION",
+  "evidence": [
+    {
+      "path": "scripts/install_realm_fabric_via_action_relay.py",
+      "role": "direct-client",
+      "references": [
+        "claim_deployment",
+        "install_release",
+        "deployment_status",
+        "release_deployment",
+        "advance_deployment"
+      ],
+      "status": "MAIN_SOURCE_CONSUMER; ORACLE_RUNTIME_UNVERIFIED"
+    },
+    {
+      "path": ".github/workflows/oracle-core-generation5-resume-release.yml",
+      "role": "manual-workflow-client",
+      "references": [
+        "release_deployment"
+      ],
+      "status": "MAIN_SOURCE_CONSUMER; ORACLE_RUNTIME_UNVERIFIED"
+    },
+    {
+      "path": "docs/CORE_DEPLOYMENT_AUTHORITY.md",
+      "role": "documented-contract",
+      "references": [
+        "claim_deployment",
+        "install_release"
+      ],
+      "status": "MUST_PRESERVE_AUTHORITY_INVARIANTS"
+    },
+    {
+      "path": "scripts/reconcile_action_relay_runtime.py",
+      "role": "running-source-selector",
+      "references": [
+        "core/integration"
+      ],
+      "status": "LEGACY_BRANCH_STILL_PINNED_IN_SOURCE"
+    },
+    {
+      "path": "agentos_node/runtime_converge_action_relay.py",
+      "role": "release-source-contract",
+      "references": [
+        "core/integration"
+      ],
+      "status": "LEGACY_BRANCH_STILL_PINNED_IN_SOURCE"
+    }
+  ],
+  "legacy_actions": [
+    {
+      "action": "agentos.realm-fabric.claim_deployment",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.deployment_status",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.release_deployment",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.renew_deployment",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.advance_deployment",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
+      "allowed_for_promotion": false
+    },
+    {
+      "action": "agentos.realm-fabric.install_release",
+      "candidate_behavior": "PRESERVE_CANONICAL_MAIN_IMPLEMENTATION",
+      "production_equivalence": "SOURCE_HANDLER_MATCHES_MAIN; ORACLE_INSTALLED_REVISION_UNVERIFIED",
+      "allowed_for_promotion": false
+    }
+  ],
+  "release_conditions": [
+    "Source checks confirm six Realm lease/status/install handlers remain bound to canonical main implementations",
+    "Owner verifies actual Oracle deployed Action Relay / immutable service source SHA and all live consumers",
+    "Equivalent approved authority/API for lease CAS, install, renew, release and receipt with rollback is demonstrated",
+    "No active workflow/service relying on the six legacy actions would fail after deployment",
+    "GitHub CI and Oracle real task execution receipt confirm new controller+worker version gate",
+    "Human PR-specific approval authorizes promotion and rollout"
+  ],
+  "static_contract_findings": {
+    "evidence_scope": "GitHub main source only; NOT Oracle loaded runtime",
+    "installer_contract": {
+      "path": "scripts/install_realm_fabric_via_action_relay.py",
+      "direct_actions": [
+        "claim_deployment",
+        "install_release",
+        "deployment_status",
+        "release_deployment",
+        "advance_deployment"
+      ],
+      "lease_seconds": 900,
+      "checks": [
+        "claimed deployment generation/owner/commit",
+        "receipt completion",
+        "converged status"
+      ],
+      "renew_deployment": "not referenced by this installer; global consumer usage UNKNOWN"
+    },
+    "generation5_release_workflow": {
+      "path": ".github/workflows/oracle-core-generation5-resume-release.yml",
+      "direct_action": "release_deployment",
+      "contract": "checks generation 5 converged lease and receipt before declaring PASS",
+      "operational_usage": "UNKNOWN"
+    },
+    "runtime_source_guard": {
+      "path": "agentos_node/runtime_converge_action_relay.py",
+      "note": "line 702 explicitly rejects source_ref other than core/integration; this is source-contract dependence, not evidence of loaded Oracle ref"
+    },
+    "reconciliation_source_selector": {
+      "path": "scripts/reconcile_action_relay_runtime.py",
+      "note": "SOURCE_REF is core/integration, separate from dynamically observed runtime service generation"
+    },
+    "decision": "KEEP DRAFT: canonical main handlers preserved in source; verify Oracle installed provider revision and fresh PR base before promotion",
+    "next_read_only_attestation": [
+      "systemd MainPID/ExecStart/WorkingDirectory/DropInPaths without environment secrets",
+      "/proc/PID/exe and cwd plus resolved Python module path",
+      "loaded source SHA and exact Realm Fabric symlink/immutable version",
+      "redacted recent action names, caller identities, and correlated receipt IDs for all six operations"
+    ]
+  },
+  "legacy_contract_obligations": {
+    "verification": "source contract from core/integration Action Relay and main deployment clients; not live runtime",
+    "claim_deployment": [
+      "expected_generation CAS",
+      "active lease fences generation, even same owner except identical idempotent claim",
+      "desired commit 40-hex; lease 60..3600 seconds"
+    ],
+    "deployment_status": [
+      "read-only observed release commit",
+      "converged only when desired equals observed"
+    ],
+    "release_deployment": [
+      "exact generation, desired commit, and lease owner match",
+      "reject until observed release converged",
+      "write released lease status"
+    ],
+    "renew_deployment": [
+      "fence exact generation/owner/desired commit",
+      "renew TTL without changing desired commit or generation"
+    ],
+    "advance_deployment": [
+      "reject active lease including same-owner",
+      "fence expected generation and previous desired commit",
+      "new desired generation only after release or expiry"
+    ],
+    "install_release": [
+      "exact immutable source commit must match claimed desired",
+      "active lease and generation fence",
+      "versioned release root, fixed service identity, observed commit readback, rollback requirements"
+    ],
+    "disposition": "PRESERVE six canonical main handlers; Oracle installed generation and consumers independently unverified; never replace with fail-closed legacy stubs"
+  }
+}
