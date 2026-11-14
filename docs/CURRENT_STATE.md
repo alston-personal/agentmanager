@@ -1,3 +1,11 @@
+## 2026-11-14 — project registration repository verification gate (PR #2300; source only)
+
+The existing `scripts/register_project.py` previously reported a project as registered after STATUS/Dashboard creation, even without a verified GitHub repository. The proposed gate now records `repository_state=blocked` if the exact canonical repository URL, local checkout, origin or matching remote `main` commit cannot be established; it preserves existing project metadata and returns a nonzero exit code on blocked registration. Mock-backed CI tests cover missing remote, SHA mismatch and metadata preservation. The runbook `.agent/workflows/register-project.md` now states explicitly that this script verifies rather than creates GitHub repositories.
+
+**Status:** source-only PR, not merged or deployed to Oracle. This gate does not create repositories, write an authoritative ONE Project Registry record, or produce an execution Receipt. Dedicated `wow-nav-assist` and `wow-agentos-addon` repositories remain unverified/uncreated as of the check. Project intake #2297 is distinct from execution authorization.
+
+---
+
 ## 2026-11-12 — #1682 bind post-crash Recovery reconciliation to node and candidate evidence (PR #2271 SOURCE ONLY)
 
 Additional audit found the read-only reconciler could classify an existing staged operation with matching operation id without checking that `staged-candidate.json.node_id` matched the actual Windows participant. It also did not reject locally self-asserted `activation_authorized` / `one_receipt_attested` flags or a changed staged candidate digest. The source now refuses those mismatches, retaining `GOVERNED_RECONCILIATION_REQUIRED` and no write authority. Three regression tests cover mismatched node, untrusted local authority flags and candidate digest change.
