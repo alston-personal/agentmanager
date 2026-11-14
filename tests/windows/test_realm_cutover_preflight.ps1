@@ -58,6 +58,18 @@ try {
   $target | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding UTF8
   Assert-Blocked 'Staged identity does not match'
 
+  # Simulate an interrupted previous transaction: new transfers must fail closed.
+  $pendingPath = Join-Path $state 'realm-transfer-pending.json'
+  Set-Content -LiteralPath $pendingPath -Encoding UTF8 -Value '{"schema":"agentos.node-realm-transfer-local-pending/v1","state":"CUTOVER_UNRESOLVED"}'
+  Assert-Blocked 'Pending Realm transfer requires governed reconciliation'
+  Remove-Item -LiteralPath $pendingPath -Force
+
+  # The journal contains only identifiers and hashes, never bearer secrets.
+  $source = Get-Content -Raw -LiteralPath $script
+  if ($source -notmatch "one_receipt_attested=\\`\$false" -and $source -notmatch 'one_receipt_attested=\\$false') {
+    throw 'Local result could be mistaken for an authenticated ONE receipt'
+  }
+  if ($source -notmatch 'FileMode\\]::CreateNew') { throw 'Pending transaction lacks exclusive creation' }
   # An indirect credential file must not pass the preflight; skip link construction
   # only if this runner account is explicitly denied link privileges.
   $target | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding UTF8
