@@ -31,7 +31,7 @@ def test_project_state_exposes_trusted_continuation(tmp_path: Path):
     worker = RemoteRuntimeWorker("worker")
     worker.register("reason", lambda _: {"answer": 42})
     result = worker.execute(lease.ir)
-    store.complete_ir(task["taskId"], result, enqueue_continuation=False)
+    store.complete_ir(task["taskId"], result, lease_epoch=lease.lease_epoch, enqueue_continuation=False)
 
     state = read_project_state(store, "demo")
     assert state["latestTask"]["status"] == "succeeded"
