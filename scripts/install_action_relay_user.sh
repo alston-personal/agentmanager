@@ -241,6 +241,14 @@ rollback_action_relay_install() {
   if [ "$TXN_RUNTIME_KIND" = worktree ]; then
     observed_head=$(git -C "$RUNTIME_ROOT" rev-parse HEAD 2>/dev/null) || rollback_failed=1
     if [ "$observed_head" != "$TXN_OLD_HEAD" ]; then rollback_failed=1; fi
+    # A matching HEAD alone is insufficient: reset --hard leaves untracked
+    # files behind. Never advertise an exact prior generation with residue.
+    # Do not auto-delete untracked state; keep the snapshot for manual recovery.
+    if ! observed_status=$(git -C "$RUNTIME_ROOT" status --porcelain --untracked-files=all 2>/dev/null); then
+      rollback_failed=1
+    elif [ -n "$observed_status" ]; then
+      rollback_failed=1
+    fi
   fi
   if [ "$TXN_UNIT_PRESENT" = 1 ]; then
     cmp -s "$TXN_DIR/unit" "$UNIT" || rollback_failed=1
