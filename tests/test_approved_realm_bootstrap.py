@@ -166,6 +166,9 @@ def test_chronos_bridge_pins_script_and_installer_to_exact_main_sha():
     assert "trap restore_target EXIT" in script
     assert "'agentos.realm-fabric.deployment_status'" in script
     assert "installed_relay_effective_unit_fence_revision=PASS" in script
+    assert "action_relay_transport_mutation=EXECUTED" in script
+    assert "production_website_mutation=NONE" in script
+    assert "production_mutation=NONE" not in script
     assert "realm-fabric-effective-unit-fence/v1" in script
     assert "restore_target" in script
 
