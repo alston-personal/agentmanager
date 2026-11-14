@@ -192,6 +192,18 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
         raise RuntimeError("action_relay_reconcile_checkout_not_current_core_integration")
 
     marker = data_root / "runtime" / "action-relay" / "capabilities.json"
+    # A valid main-generation marker belongs to the canonical Runtime owner.
+    # The historical core/integration timer must not reinstall over it.
+    try:
+        active_marker = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        active_marker = None
+    if (
+        isinstance(active_marker, dict)
+        and active_marker.get("schema") == MARKER_SCHEMA
+        and active_marker.get("source_ref") == "main"
+    ):
+        raise RuntimeError("action_relay_reconcile_canonical_main_owned")
     if (
         _marker_current(marker, source_commit=current)
         and _service_active(repo)
