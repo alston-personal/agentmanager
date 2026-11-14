@@ -75,11 +75,17 @@ LOG={shlex.quote(str(log))}
 ACTIVE=1
 ENABLED=1
 RELOAD_FAILED_ONCE=0
+START_FAILED_ONCE=0
 systemctl() {{
   printf '%s\n' "$*" >> "$LOG"
   case "$*" in
     "--user stop agentos-action-relay.service") ACTIVE=0 ;;
-    "--user start agentos-action-relay.service") ACTIVE=1 ;;
+    "--user start agentos-action-relay.service")
+      if [ "$FAULT_STAGE" = start ] && [ "${{NEW_UNIT_PHASE:-0}}" = 1 ] && [ "$START_FAILED_ONCE" = 0 ]; then
+        START_FAILED_ONCE=1
+        return 89
+      fi
+      ACTIVE=1 ;;
     "--user enable agentos-action-relay.service") ENABLED=1 ;;
     "--user disable agentos-action-relay.service") ENABLED=0 ;;
     "--user is-active --quiet agentos-action-relay.service")
@@ -111,6 +117,10 @@ systemctl() {{
                         stages.append("exit 85\n")
                     elif failure_stage == "reload":
                         stages.append("exit 86\n")
+                    elif failure_stage == "start":
+                        stages.append("exit 89\n")
+                    elif failure_stage == "capability":
+                        stages.append("printf '%s\\n' new-marker > \"$CAPABILITY_MARKER\"\nexit 90\n")
                     else:
                         raise ValueError(failure_stage)
             result = subprocess.run(
@@ -145,6 +155,14 @@ systemctl() {{
 
     def test_failed_systemd_reload_restores_prior_generation(self):
         result = self._scenario("reload")
+        self._assert_restored(result)
+
+    def test_failed_new_service_start_restores_previous_generation(self):
+        result = self._scenario("start")
+        self._assert_restored(result)
+
+    def test_failure_after_capability_write_restores_previous_marker(self):
+        result = self._scenario("capability")
         self._assert_restored(result)
 
     def _assert_restored(self, result):
