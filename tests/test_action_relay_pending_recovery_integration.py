@@ -1,0 +1,146 @@
+"""Exercise the real installer transaction/recovery section in an isolated shell.
+
+This verifies the actual pending-state parse/restore path, with mocked systemd
+and Git interfaces and temporary paths. It does NOT install to Oracle or run the
+entire Action Relay installer.
+"""
+import hashlib
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import tempfile
+import unittest
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/install_action_relay_user.sh"
+OLD_SHA = "1" * 40
+
+
+class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
+    def _run(self, corrupt=False, stuck=False, fail_reset=False):
+        source = SCRIPT.read_text(encoding="utf-8")
+        start = source.index('TXN_PARENT=$(dirname "$RUNTIME_ROOT")')
+        end = source.index("# Converge to exactly one governed consumer for this spool.", start)
+        transaction = source[start:end]
+        # The real installer runs as ubuntu. In the isolated temporary fixture
+        # validate against the current test user without weakening production.
+        transaction = transaction.replace(
+            '"ubuntu:700"', '"$(id -un):700"'
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            home = root / "home"
+            data = root / "data"
+            runtime = root / "runtime" / "action-runtime"
+            runtime.parent.mkdir(parents=True)
+            unit = home / ".config/systemd/user/agentos-action-relay.service"
+            marker = data / "runtime/action-relay/capabilities.json"
+            unit.parent.mkdir(parents=True)
+            marker.parent.mkdir(parents=True)
+            pending = runtime.parent / ".action-relay-install.pending"
+            pending.mkdir(mode=0o700)
+            old_unit = b"[Service]\\nDescription=old\\n"
+            old_marker = b'{"source":"old"}\\n'
+            (pending / "unit").write_bytes(old_unit)
+            (pending / "capabilities").write_bytes(old_marker)
+            for name in ("unit", "capabilities"):
+                digest = hashlib.sha256((pending / name).read_bytes()).hexdigest()
+                (pending / (name + ".sha256")).write_text(
+                    digest + "  " + name + "\\n", encoding="utf-8"
+                )
+            (pending / "state").write_text(
+                f"prior_kind=worktree prior_head={OLD_SHA} "
+                "unit_present=1 marker_present=1 was_active=1 was_enabled=1\\n",
+                encoding="utf-8"
+            )
+            if corrupt:
+                (pending / "unit").write_bytes(b"CORRUPTED")
+            unit.write_text("new unit", encoding="utf-8")
+            marker.write_text("new capability", encoding="utf-8")
+            command_log = root / "commands.log"
+            prefix = f"""
+set -euo pipefail
+RUNTIME_ROOT={shlex.quote(str(runtime))}
+LEGACY_RUNTIME_ROOT={shlex.quote(str(runtime) + ".legacy-pre-worktree")}
+REPO={shlex.quote(str(root / "repo"))}
+UNIT={shlex.quote(str(unit))}
+CAPABILITY_MARKER={shlex.quote(str(marker))}
+SOURCE_REF=main
+EXPECTED_SOURCE_COMMIT=
+LOG={shlex.quote(str(command_log))}
+ACTIVE=1
+ENABLED=1
+systemctl() {{
+  printf 'systemctl %s\\n' "$*" >> "$LOG"
+  case "$*" in
+    "--user stop agentos-action-relay.service")
+      if [ "${{STUCK:-0}}" != 1 ]; then ACTIVE=0; fi ;;
+    "--user start agentos-action-relay.service") ACTIVE=1 ;;
+    "--user enable agentos-action-relay.service") ENABLED=1 ;;
+    "--user disable agentos-action-relay.service") ENABLED=0 ;;
+    "--user is-active --quiet agentos-action-relay.service")
+      [ "$ACTIVE" = 1 ]; return ;;
+    "--user is-enabled --quiet agentos-action-relay.service")
+      [ "$ENABLED" = 1 ]; return ;;
+  esac
+  return 0
+}}
+git() {{
+  printf 'git %s\\n' "$*" >> "$LOG"
+  if [ "$3" = "reset" ] && [ "${{FAIL_RESET:-0}}" = 1 ]; then return 40; fi
+  if [ "$3" = "rev-parse" ]; then printf '%s\\n' "{OLD_SHA}"; fi
+  return 0
+}}
+"""
+            result = subprocess.run(
+                ["bash", "-c", prefix + transaction],
+                text=True, capture_output=True, check=False, timeout=20,
+                env={**os.environ, "STUCK": str(int(stuck)),
+                     "FAIL_RESET": str(int(fail_reset))},
+            )
+            return {
+                "code": result.returncode, "stderr": result.stderr,
+                "unit": unit.read_bytes(),
+                "marker": marker.read_bytes() if marker.exists() else None,
+                "pending": pending.exists(),
+                "log": command_log.read_text(encoding="utf-8") if command_log.exists() else "",
+                "old_unit": old_unit, "old_marker": old_marker,
+            }
+
+    def test_valid_pending_snapshot_recovers_and_exits_without_new_install(self):
+        r = self._run()
+        self.assertEqual(r["code"], 73, r["stderr"])
+        self.assertIn("INTERRUPTED_RECOVERY_STARTED", r["stderr"])
+        self.assertIn("action_relay_transaction=ROLLED_BACK", r["stderr"])
+        self.assertEqual(r["unit"], r["old_unit"])
+        self.assertEqual(r["marker"], r["old_marker"])
+        self.assertFalse(r["pending"])
+        self.assertIn("reset --hard " + OLD_SHA, r["log"])
+        self.assertNotIn("fetch", r["log"])
+
+    def test_corrupt_backup_refuses_recovery_before_service_stop(self):
+        r = self._run(corrupt=True)
+        self.assertEqual(r["code"], 72, r["stderr"])
+        self.assertIn("checksum mismatch", r["stderr"])
+        self.assertTrue(r["pending"])
+        self.assertEqual(r["unit"], b"new unit")
+        self.assertNotIn("systemctl --user stop", r["log"])
+
+    def test_still_running_service_blocks_restore_and_preserves_snapshot(self):
+        r = self._run(stuck=True)
+        self.assertEqual(r["code"], 74, r["stderr"])
+        self.assertIn("reason=service_remains_active", r["stderr"])
+        self.assertTrue(r["pending"])
+        self.assertIsNone(r["marker"])
+        self.assertNotIn("reset --hard", r["log"])
+
+    def test_failed_git_restore_preserves_snapshot_and_invalidates_marker(self):
+        r = self._run(fail_reset=True)
+        self.assertEqual(r["code"], 74, r["stderr"])
+        self.assertIn("ROLLBACK_FAILED", r["stderr"])
+        self.assertTrue(r["pending"])
+        self.assertIsNone(r["marker"])
+
+
+if __name__ == "__main__":
+    unittest.main()
