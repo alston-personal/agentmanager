@@ -9,6 +9,8 @@ on:
       - 'tests/test_action_relay_installer_mutation_faults.py'
       - 'tests/test_action_relay_pending_recovery_integration.py'
       - 'tests/test_antigravity_repair_contract.py'
+      - 'scripts/attest_action_relay_readonly.py'
+      - 'tests/test_attest_action_relay_readonly.py'
       - '.github/workflows/action-relay-rollback-contract.yml'
   workflow_dispatch:
 
@@ -23,6 +25,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate existing installer shell syntax
         run: bash -n scripts/install_action_relay_user.sh
+      - name: Test bounded read-only Oracle attestation
+        run: |
+          python3 -m py_compile scripts/attest_action_relay_readonly.py
+          python3 -m unittest -v tests.test_attest_action_relay_readonly
       - name: Execute transactional rollback and interrupted-update tests
         run: |
           set -euo pipefail
@@ -31,3 +37,30 @@ jobs:
             tests.test_action_relay_installer_mutation_faults \
             tests.test_action_relay_pending_recovery_integration \
             tests.test_antigravity_repair_contract
+
+  attest-installed-generation:
+    needs: [rollback-fault-injection]
+    # Never execute PR-provided code on Oracle. Manual invocation on canonical
+    # protected main only; this job performs no installer/service mutation.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read only fixed Action Relay unit, worktree and capability state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/attest_action_relay_readonly.py > "$RUNNER_TEMP/action-relay-readback.json"
+          python3 -m json.tool "$RUNNER_TEMP/action-relay-readback.json" > /dev/null
+          echo 'action_relay_redacted_readback=PASS'
+      - name: Retain sanitized attestation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: action-relay-redacted-readback
+          path: ${{ runner.temp }}/action-relay-readback.json
+          if-no-files-found: warn
+          retention-days: 7
