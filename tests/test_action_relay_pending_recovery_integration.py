@@ -71,6 +71,13 @@ class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
             unit.write_text("new unit", encoding="utf-8")
             marker.write_text("new capability", encoding="utf-8")
             command_log = root / "commands.log"
+            git_mock = "" if real_git else f"""git() {{
+  printf 'git %s\\n' "$*" >> "$LOG"
+  if [ "$3" = "reset" ] && [ "${{FAIL_RESET:-0}}" = 1 ]; then return 40; fi
+  if [ "$3" = "rev-parse" ]; then printf '%s\\n' "{old_sha}"; fi
+  return 0
+}}
+"""
             prefix = f"""
 set -euo pipefail
 RUNTIME_ROOT={shlex.quote(str(runtime))}
@@ -100,14 +107,6 @@ systemctl() {{
 }}
 ${git_mock}
 """
-            git_mock = "" if real_git else f"""git() {{
-  printf 'git %s\\n' "$*" >> "$LOG"
-  if [ "$3" = "reset" ] && [ "${{FAIL_RESET:-0}}" = 1 ]; then return 40; fi
-  if [ "$3" = "rev-parse" ]; then printf '%s\\n' "{old_sha}"; fi
-  return 0
-}}
-"""
-            prefix = prefix.replace("${git_mock}", git_mock)
             result = subprocess.run(
                 ["bash", "-c", prefix + transaction],
                 text=True, capture_output=True, check=False, timeout=20,
