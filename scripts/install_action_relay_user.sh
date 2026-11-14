@@ -72,23 +72,6 @@ else
   ensure_shared_dir "$RELAY_ROOT/quarantine"
 fi
 
-if [ -n "$EXPECTED_SOURCE_COMMIT" ]; then
-  git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
-  SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)
-  git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"
-  SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
-  if [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
-    echo "ERROR: Action Relay exact source fetch mismatch: expected=$EXPECTED_SOURCE_COMMIT observed=$SOURCE_COMMIT" >&2
-    exit 4
-  fi
-  if ! git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"; then
-    echo "ERROR: Action Relay source commit is not in governed ref: ref=$SOURCE_REF ref_head=$SOURCE_REF_HEAD commit=$SOURCE_COMMIT" >&2
-    exit 4
-  fi
-else
-  git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
-  SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
-fi
 
 # The installer owns this transaction: a repair caller must not have to guess
 # which unit, runtime generation or capability marker survived a partial update.
@@ -112,6 +95,26 @@ fi
 if [ -e "$TXN_DIR" ]; then
   TXN_PENDING_AT_START=1
 else
+  # New installs fetch their governed source, but interrupted rollback must
+  # work without network, GitHub access or new source-authority discovery.
+  if [ -n "$EXPECTED_SOURCE_COMMIT" ]; then
+    git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+    SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)
+    git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"
+    SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
+    if [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
+      echo "ERROR: Action Relay exact source fetch mismatch: expected=$EXPECTED_SOURCE_COMMIT observed=$SOURCE_COMMIT" >&2
+      exit 4
+    fi
+    if ! git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"; then
+      echo "ERROR: Action Relay source commit is not in governed ref: ref=$SOURCE_REF ref_head=$SOURCE_REF_HEAD commit=$SOURCE_COMMIT" >&2
+      exit 4
+    fi
+  else
+    git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+    SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
+  fi
+
   ( umask 077; mkdir "$TXN_DIR" )
 fi
 if [ "$TXN_PENDING_AT_START" = 0 ]; then
@@ -228,6 +231,32 @@ rollback_action_relay_install() {
       systemctl --user start agentos-action-relay.service || rollback_failed=1
       systemctl --user is-active --quiet agentos-action-relay.service || rollback_failed=1
     fi
+  fi
+  # A successful command is not proof that the prior generation is restored.
+  # Verify bytes and state before deleting the only recovery snapshot.
+  if [ "$TXN_RUNTIME_KIND" = worktree ]; then
+    observed_head=$(git -C "$RUNTIME_ROOT" rev-parse HEAD 2>/dev/null) || rollback_failed=1
+    if [ "$observed_head" != "$TXN_OLD_HEAD" ]; then rollback_failed=1; fi
+  fi
+  if [ "$TXN_UNIT_PRESENT" = 1 ]; then
+    cmp -s "$TXN_DIR/unit" "$UNIT" || rollback_failed=1
+  elif [ -e "$UNIT" ]; then
+    rollback_failed=1
+  fi
+  if [ "$TXN_MARKER_PRESENT" = 1 ]; then
+    cmp -s "$TXN_DIR/capabilities" "$CAPABILITY_MARKER" || rollback_failed=1
+  elif [ -e "$CAPABILITY_MARKER" ]; then
+    rollback_failed=1
+  fi
+  if [ "$TXN_OLD_ACTIVE" = 1 ]; then
+    systemctl --user is-active --quiet agentos-action-relay.service || rollback_failed=1
+  elif systemctl --user is-active --quiet agentos-action-relay.service; then
+    rollback_failed=1
+  fi
+  if [ "$TXN_OLD_ENABLED" = 1 ]; then
+    systemctl --user is-enabled --quiet agentos-action-relay.service || rollback_failed=1
+  elif systemctl --user is-enabled --quiet agentos-action-relay.service; then
+    rollback_failed=1
   fi
   if [ "$rollback_failed" = 0 ]; then
     echo "action_relay_transaction=ROLLED_BACK" >&2
