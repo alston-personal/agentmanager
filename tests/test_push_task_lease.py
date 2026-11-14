@@ -6,6 +6,7 @@ from agent_core.distributed_gateway import DistributedGatewayServer, Distributed
 from agent_core.runtime_dispatcher import RuntimeDispatcher, RuntimeTarget
 from agentos_node.control_plane_client import ControlPlaneClient
 from runtime_core.canonical_ir import CanonicalIR
+from runtime_core.remote_runtime import RemoteRuntimeWorker
 
 
 def _ir(step: int) -> CanonicalIR:
@@ -76,6 +77,42 @@ def test_exact_lease_over_http(tmp_path: Path):
         assert lease["taskId"] == second["taskId"]
         assert lease["canonicalIR"]["payload"]["step"] == 2
         assert client.get_task(first["taskId"])["task"]["status"] == "submitted"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_http_completion_requires_current_lease_epoch(tmp_path: Path):
+    store = DistributedControlPlane(tmp_path / "http-fenced.sqlite3")
+    server = DistributedGatewayServer(
+        ("127.0.0.1", 0), DistributedGatewayService(store), token="test-token",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        client = ControlPlaneClient(f"http://{host}:{port}", token="test-token")
+        ir = _ir(3)
+        task = client.submit_ir(ir, target_node_id="push-runtime")["task"]
+        old = client.lease_task(task["taskId"], "push-runtime")
+        assert old and old["leaseEpoch"] == 1
+        with store._connect() as db:
+            db.execute(
+                "UPDATE tasks SET lease_until='2000-01-01T00:00:00Z' WHERE task_id=?",
+                (task["taskId"],),
+            )
+        new = client.lease_task(task["taskId"], "push-runtime")
+        assert new and new["leaseEpoch"] == 2
+        worker = RemoteRuntimeWorker("push-runtime")
+        worker.register("agentos.ir.validate", lambda current: {"ok": True})
+        result = worker.execute(ir)
+        from agentos_node.control_plane_client import ControlPlaneClientError
+        import pytest
+        with pytest.raises(ControlPlaneClientError):
+            client.complete(task["taskId"], result, lease_epoch=old["leaseEpoch"])
+        completed = client.complete(task["taskId"], result, lease_epoch=new["leaseEpoch"])
+        assert completed["task"]["status"] == "succeeded"
     finally:
         server.shutdown()
         server.server_close()
