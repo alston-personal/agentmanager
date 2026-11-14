@@ -16,10 +16,10 @@ SCRIPT = ROOT / "scripts" / "install_action_relay_user.sh"
 
 
 class ActionRelayRollbackInjectionTest(unittest.TestCase):
-    def _run_rollback(self, fail_git=False):
+    def _run_rollback(self, fail_git=False, incorrect_readback=False, stuck_running=False):
         script = SCRIPT.read_text(encoding="utf-8")
         start = script.index("rollback_action_relay_install() {")
-        end = script.index("\ntrap 'rollback_action_relay_install", start)
+        end = script.index("\n}\n# The only recovery route", start) + 2
         function = script[start:end]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -53,13 +53,17 @@ ENABLED=1
 git() {{
   printf "git %s\\n" "$*" >> "$LOG"
   if [ "${{INJECT_GIT_FAILURE:-0}}" = 1 ]; then return 40; fi
-  if [ "$3" = "rev-parse" ]; then printf '%s\\n' "$TXN_OLD_HEAD"; fi
+  if [ "$3" = "rev-parse" ]; then
+    if [ "${INJECT_BAD_READBACK:-0}" = 1 ]; then printf '%040d\\n' 0
+    else printf '%s\\n' "$TXN_OLD_HEAD"; fi
+  fi
   return 0
 }}
 systemctl() {{
   printf "systemctl %s\\n" "$*" >> "$LOG"
   case "$*" in
-    "--user stop agentos-action-relay.service") ACTIVE=0 ;;
+    "--user stop agentos-action-relay.service")
+      if [ "${INJECT_STUCK_RUNNING:-0}" != 1 ]; then ACTIVE=0; fi ;;
     "--user start agentos-action-relay.service") ACTIVE=1 ;;
     "--user enable agentos-action-relay.service") ENABLED=1 ;;
     "--user disable agentos-action-relay.service") ENABLED=0 ;;
@@ -71,7 +75,9 @@ systemctl() {{
   return 0
 }}
 """
-            env = dict(os.environ, INJECT_GIT_FAILURE="1" if fail_git else "0")
+            env = dict(os.environ, INJECT_GIT_FAILURE="1" if fail_git else "0",
+                       INJECT_BAD_READBACK="1" if incorrect_readback else "0",
+                       INJECT_STUCK_RUNNING="1" if stuck_running else "0")
             completed = subprocess.run(
                 ["bash", "-c", "set -euo pipefail\n" + prelude + function + "\nrollback_action_relay_install 15\n"],
                 env=env, text=True, capture_output=True, check=False,
@@ -96,6 +102,17 @@ systemctl() {{
         self.assertIn("reset --hard 1111111111111111111111111111111111111111", r["commands"])
         self.assertIn("systemctl --user daemon-reload", r["commands"])
         self.assertIn("systemctl --user start agentos-action-relay.service", r["commands"])
+
+    def test_generation_readback_mismatch_never_claims_rollback_success(self):
+        r = self._run_rollback(incorrect_readback=True)
+        self.assertIn("action_relay_transaction=ROLLBACK_FAILED", r["stderr"])
+        self.assertTrue(r["snapshot_exists"])
+
+    def test_running_consumer_blocks_worktree_restore(self):
+        r = self._run_rollback(stuck_running=True)
+        self.assertIn("reason=service_remains_active", r["stderr"])
+        self.assertTrue(r["snapshot_exists"])
+        self.assertNotIn("reset --hard", r["commands"])
 
     def test_injected_rollback_failure_keeps_snapshot_and_reports_failure(self):
         r = self._run_rollback(fail_git=True)
