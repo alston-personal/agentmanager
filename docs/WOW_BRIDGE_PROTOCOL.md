@@ -71,3 +71,22 @@ path. Do not equate `NODE_ONLINE` with completion of the game-to-ONE MVP.
 Use this source seam as the minimal next Windows live test boundary; keep
 work on existing #2134/#2135, with backend account pairing #2264.
 
+
+### Single-shot real Windows path (source candidate, NOT official installed Bridge)
+
+The host-only wrapper `scripts/wow_agentos_bridge_once.ps1` connects the
+existing pixel capture (`-OutputCellsJson`) to `wow_bridge_once.py`, using
+the existing Node config/policy. It insists on the expected WoW Forever game
+executable, existing installed status Reply slot, real game window and fresh
+authenticated ONE Node heartbeat. It may publish a single correlated,
+data-only status reply showing **Node ONLINE only**; it does not publish a Paw
+state, work receipt, user account, full Runtime status or chat. The Lua
+`Read reply slot (once)` is still needed, with one-shot reload constraints.
+
+This is a **source-only integration harness** for the authorized Windows
+acceptance owner, not a signed installer component, resident Windows service,
+background poller or a publicly usable update. The official one-click installer
+must include verified Bridge installation, managed process lifecycle,
+account/Realm pairing, durable replay and genuine ONE task/receipt readback
+before this can be promoted. Do not advise the player to run this from random
+ZIPs or claim the previous screenshot represents a verified Bridge.
