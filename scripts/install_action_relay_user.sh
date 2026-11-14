@@ -90,6 +90,121 @@ else
   SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
 fi
 
+# The installer owns this transaction: a repair caller must not have to guess
+# which unit, runtime generation or capability marker survived a partial update.
+# Snapshot before the first worktree mutation; never overwrite a prior backup.
+TXN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/agentos-action-relay-txn.XXXXXXXX")
+chmod 700 "$TXN_DIR"
+TXN_COMMITTED=0
+TXN_UNIT_TOUCHED=0
+TXN_RUNTIME_KIND=absent
+TXN_OLD_HEAD=
+TXN_UNIT_PRESENT=0
+TXN_MARKER_PRESENT=0
+TXN_OLD_ACTIVE=0
+TXN_OLD_ENABLED=0
+
+if [ -L "$UNIT" ] || [ -L "$CAPABILITY_MARKER" ] || [ -L "$RUNTIME_ROOT" ]; then
+  echo "ERROR: transaction snapshot refuses symlink boundary" >&2
+  rm -rf "$TXN_DIR"
+  exit 70
+fi
+if [ -f "$UNIT" ]; then
+  cp -p "$UNIT" "$TXN_DIR/unit"
+  TXN_UNIT_PRESENT=1
+fi
+if [ -f "$CAPABILITY_MARKER" ]; then
+  cp -p "$CAPABILITY_MARKER" "$TXN_DIR/capabilities"
+  TXN_MARKER_PRESENT=1
+fi
+if systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; then TXN_OLD_ACTIVE=1; fi
+if systemctl --user is-enabled --quiet agentos-action-relay.service 2>/dev/null; then TXN_OLD_ENABLED=1; fi
+if [ -e "$RUNTIME_ROOT/.git" ]; then
+  TXN_RUNTIME_KIND=worktree
+  TXN_OLD_HEAD=$(git -C "$RUNTIME_ROOT" rev-parse --verify HEAD)
+  if [ -n "$(git -C "$RUNTIME_ROOT" status --porcelain)" ]; then
+    echo "ERROR: transaction refuses dirty prior Action Relay worktree" >&2
+    rm -rf "$TXN_DIR"
+    exit 70
+  fi
+elif [ -d "$RUNTIME_ROOT" ]; then
+  TXN_RUNTIME_KIND=directory
+  # Only the existing narrowly governed legacy-directory migration may move this.
+  if [ -e "$LEGACY_RUNTIME_ROOT" ]; then
+    echo "ERROR: pre-existing legacy backup blocks transactional install" >&2
+    rm -rf "$TXN_DIR"
+    exit 70
+  fi
+elif [ -e "$RUNTIME_ROOT" ]; then
+  echo "ERROR: transaction refuses unexpected runtime inode" >&2
+  rm -rf "$TXN_DIR"
+  exit 70
+fi
+
+rollback_action_relay_install() {
+  local original_status="$1" rollback_failed=0
+  trap - EXIT
+  if [ "$TXN_COMMITTED" = 1 ]; then
+    rm -rf "$TXN_DIR"
+    exit "$original_status"
+  fi
+  echo "action_relay_transaction=ROLLBACK_STARTED" >&2
+  # Stop a possibly-new consumer before reverting its source or unit.
+  if [ "$TXN_UNIT_TOUCHED" = 1 ]; then
+    systemctl --user stop agentos-action-relay.service || rollback_failed=1
+  fi
+  case "$TXN_RUNTIME_KIND" in
+    worktree)
+      git -C "$RUNTIME_ROOT" reset --hard "$TXN_OLD_HEAD" || rollback_failed=1
+      ;;
+    directory)
+      if [ -e "$RUNTIME_ROOT/.git" ]; then
+        git -C "$REPO" worktree remove --force "$RUNTIME_ROOT" || rollback_failed=1
+      fi
+      if [ -d "$LEGACY_RUNTIME_ROOT" ]; then
+        mv "$LEGACY_RUNTIME_ROOT" "$RUNTIME_ROOT" || rollback_failed=1
+      fi
+      ;;
+    absent)
+      if [ -e "$RUNTIME_ROOT/.git" ]; then
+        git -C "$REPO" worktree remove --force "$RUNTIME_ROOT" || rollback_failed=1
+      fi
+      ;;
+  esac
+  if [ "$TXN_UNIT_PRESENT" = 1 ]; then
+    cp -p "$TXN_DIR/unit" "$UNIT" || rollback_failed=1
+  else
+    rm -f "$UNIT" || rollback_failed=1
+  fi
+  if [ "$TXN_MARKER_PRESENT" = 1 ]; then
+    cp -p "$TXN_DIR/capabilities" "$CAPABILITY_MARKER" || rollback_failed=1
+  else
+    rm -f "$CAPABILITY_MARKER" || rollback_failed=1
+  fi
+  if [ "$TXN_UNIT_TOUCHED" = 1 ]; then
+    systemctl --user daemon-reload || rollback_failed=1
+    if [ "$TXN_OLD_ENABLED" = 1 ]; then
+      systemctl --user enable agentos-action-relay.service || rollback_failed=1
+    else
+      systemctl --user disable agentos-action-relay.service || rollback_failed=1
+    fi
+    if [ "$TXN_OLD_ACTIVE" = 1 ]; then
+      systemctl --user start agentos-action-relay.service || rollback_failed=1
+    fi
+  fi
+  if [ "$rollback_failed" = 0 ]; then
+    echo "action_relay_transaction=ROLLED_BACK" >&2
+    rm -rf "$TXN_DIR"
+  else
+    # Preserve forensic snapshots when rollback itself fails.
+    echo "action_relay_transaction=ROLLBACK_FAILED snapshot=$TXN_DIR" >&2
+  fi
+  if [ "$original_status" -eq 0 ]; then original_status=1; fi
+  exit "$original_status"
+}
+trap 'rollback_action_relay_install "$?"' EXIT
+echo "action_relay_transaction=SNAPSHOT_READY"
+
 # Historical Action Relay generations were materialized as a plain directory.
 # Migrate that legitimate pre-worktree layout without deleting it. The migration
 # is deliberately narrow: only an ubuntu-owned, non-symlink directory may move,
@@ -173,6 +288,7 @@ if [ "$processing_clear" -ne 1 ]; then
 fi
 echo "action_relay_processing_drain=PASS"
 
+TXN_UNIT_TOUCHED=1
 if [ -f "$UNIT" ]; then
   if ! systemctl --user stop agentos-action-relay.service; then
     echo "ERROR: unable to stop managed Action Relay service" >&2
@@ -290,8 +406,8 @@ if [ "$stable" -lt 3 ]; then
   rm -f "$CAPABILITY_MARKER"
   echo '=== ACTION RELAY STARTUP JOURNAL ===' >&2
   journalctl --user -u agentos-action-relay.service -n 80 --no-pager >&2 || true
-  if [ -n "$LEGACY_BACKUP" ]; then
-    echo "action_runtime_legacy_backup_preserved=$LEGACY_BACKUP" >&2
+  if [ -d "$LEGACY_RUNTIME_ROOT" ]; then
+    echo "action_runtime_legacy_backup_preserved=$LEGACY_RUNTIME_ROOT" >&2
   fi
   echo 'action_relay_install=FAIL' >&2
   exit 4
@@ -347,6 +463,10 @@ test -f "$PUBLISHER" || { echo "ERROR: capability publisher missing from exact r
 grep -Fq 'capability_marker_payload' "$PUBLISHER" || { echo "ERROR: capability publisher is not bound to canonical capability_marker_payload" >&2; exit 4; }
 /usr/bin/sg agentos -c "PYTHONPATH='$RUNTIME_ROOT' /usr/bin/python3 '$PUBLISHER' --marker '$CAPABILITY_MARKER' --source-ref '$SOURCE_REF' --source-commit '$SOURCE_COMMIT'"
 
+TXN_COMMITTED=1
+rm -rf "$TXN_DIR"
+trap - EXIT
+echo "action_relay_transaction=COMMITTED"
 echo "action_relay_install=PASS"
 echo "action_relay_executor_job_extension=PASS"
 echo "action_relay_runtime_converge_extension=PASS"
