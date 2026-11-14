@@ -38,6 +38,7 @@ class IRTaskLease:
     task_id: str
     node_id: str
     lease_until: str | None
+    lease_epoch: int
     idempotency_key: str
     ir: CanonicalIR
 
@@ -46,6 +47,7 @@ class IRTaskLease:
             "taskId": self.task_id,
             "nodeId": self.node_id,
             "leaseUntil": self.lease_until,
+            "leaseEpoch": self.lease_epoch,
             "idempotencyKey": self.idempotency_key,
             "canonicalIR": self.ir.to_dict(),
             "inputDigest": self.ir.digest(),
@@ -169,6 +171,7 @@ class DistributedControlPlane(ControlPlaneStore):
             task_id=task["taskId"],
             node_id=node_id,
             lease_until=task["leaseUntil"],
+            lease_epoch=task["leaseEpoch"],
             idempotency_key=task["idempotencyKey"],
             ir=ir,
         )
@@ -213,7 +216,8 @@ class DistributedControlPlane(ControlPlaneStore):
             cursor = connection.execute(
                 """
                 UPDATE tasks
-                SET status='leased', target_node_id=?, lease_until=?, updated_at=?
+                SET status='leased', target_node_id=?, lease_until=?,
+                    lease_epoch=lease_epoch+1, updated_at=?
                 WHERE task_id=? AND status='submitted'
                   AND (target_node_id IS NULL OR target_node_id=?)
                 """,
@@ -230,6 +234,7 @@ class DistributedControlPlane(ControlPlaneStore):
             task_id=leased["taskId"],
             node_id=node_id,
             lease_until=leased["leaseUntil"],
+            lease_epoch=leased["leaseEpoch"],
             idempotency_key=leased["idempotencyKey"],
             ir=ir,
         )
@@ -240,6 +245,8 @@ class DistributedControlPlane(ControlPlaneStore):
         task_id: str,
         input_ir: CanonicalIR,
         runtime_result: RemoteRuntimeResult,
+        context_store: CanonicalContextStore | None = None,
+        connection: Any | None = None,
     ) -> dict[str, Any] | None:
         if input_ir.capability != "agentos.context.checkpoint" or runtime_result.status != "succeeded":
             return None
@@ -249,13 +256,15 @@ class DistributedControlPlane(ControlPlaneStore):
         completed_action = str(raw.get("completed_action") or "").strip()
         finding = str(raw.get("finding") or "").strip()
         next_action = str(raw.get("next_action") or "").strip() or None
-        return CanonicalContextStore(self.db_path).checkpoint(
+        store = context_store or CanonicalContextStore(self.db_path)
+        return store.checkpoint(
             input_ir.project_id,
             checkpoint_id=f"receipt:{task_id}:{runtime_result.input_digest}",
             task_id=task_id,
             completed_action=completed_action,
             finding=finding,
             next_action=next_action,
+            connection=connection,
         )
 
     def complete_ir(
@@ -263,11 +272,18 @@ class DistributedControlPlane(ControlPlaneStore):
         task_id: str,
         runtime_result: RemoteRuntimeResult,
         *,
+        lease_epoch: int | None = None,
         enqueue_continuation: bool | None = None,
     ) -> dict[str, Any]:
+        if type(lease_epoch) is not int or lease_epoch < 1:
+            raise ValueError("LEASE_EPOCH_REQUIRED")
         task = self.get_task(task_id)
         if task["status"] not in {"leased", "running"}:
             raise ValueError(f"task {task_id} is not completable from state {task['status']}")
+        if task["leaseEpoch"] != lease_epoch:
+            raise ValueError("STALE_LEASE_EPOCH")
+        if not task["leaseUntil"] or task["leaseUntil"] < _utc_now():
+            raise ValueError("LEASE_EXPIRED")
         input_ir = self._ir_from_task(task)
 
         lease_owner = task.get("targetNodeId")
@@ -290,23 +306,45 @@ class DistributedControlPlane(ControlPlaneStore):
         else:
             task_state = "failed"
 
-        # A successful context-checkpoint receipt is a state transition, not
-        # merely metadata. Apply its idempotent transition before marking the
-        # task succeeded. If validation fails, the task remains leased/running
-        # and can be retried; if the process crashes after this checkpoint but
-        # before task persistence, the deterministic checkpoint id replays
-        # safely on retry without advancing context twice.
-        context_checkpoint = self._reconcile_context_checkpoint(
-            task_id=task_id,
-            input_ir=input_ir,
-            runtime_result=runtime_result,
-        ) if task_state == "succeeded" else None
-
+        # Prepare the existing context schema before the write transaction.
+        # Claim, checkpoint, and terminal task commit use ONE SQLite transaction:
+        # an expired/reclaimed lease cannot advance canonical context alone.
+        context_store = (
+            CanonicalContextStore(self.db_path)
+            if task_state == "succeeded" and input_ir.capability == "agentos.context.checkpoint"
+            else None
+        )
         persisted_result = {
             "protocol": RESULT_PROTOCOL,
             **runtime_result.to_dict(),
         }
-        updated_task = self.update_task(task_id, task_state, persisted_result)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current_row = connection.execute(
+                "SELECT * FROM tasks WHERE task_id=?", (task_id,),
+            ).fetchone()
+            if current_row is None:
+                raise KeyError(f"unknown task: {task_id}")
+            current = self._task_from_row(current_row)
+            if (current["leaseEpoch"] != lease_epoch
+                    or current["targetNodeId"] != runtime_result.runtime_id
+                    or current["status"] not in {"leased", "running"}):
+                raise ValueError("STALE_LEASE_EPOCH")
+            if not current["leaseUntil"] or current["leaseUntil"] < _utc_now():
+                raise ValueError("LEASE_EXPIRED")
+            context_checkpoint = self._reconcile_context_checkpoint(
+                task_id=task_id,
+                input_ir=input_ir,
+                runtime_result=runtime_result,
+                context_store=context_store,
+                connection=connection,
+            ) if task_state == "succeeded" else None
+            updated_task = self.update_task(
+                task_id, task_state, persisted_result,
+                expected_lease_epoch=lease_epoch,
+                expected_lease_owner=runtime_result.runtime_id,
+                connection=connection,
+            )
 
         enqueued_task = None
         continuation_blocked = None

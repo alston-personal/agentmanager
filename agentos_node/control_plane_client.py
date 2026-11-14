@@ -179,9 +179,12 @@ class ControlPlaneClient:
         task_id: str,
         result: RemoteRuntimeResult,
         *,
+        lease_epoch: int,
         enqueue_continuation: bool | None = None,
     ) -> dict[str, Any]:
-        payload: dict[str, Any] = {"runtime_result": result.to_dict()}
+        if type(lease_epoch) is not int or lease_epoch < 1:
+            raise ValueError("LEASE_EPOCH_REQUIRED")
+        payload: dict[str, Any] = {"runtime_result": result.to_dict(), "lease_epoch": lease_epoch}
         if enqueue_continuation is not None:
             payload["enqueue_continuation"] = enqueue_continuation
         return self._request("POST", f"/v1/tasks/{task_id}/complete", payload)

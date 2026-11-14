@@ -100,6 +100,7 @@ class CanonicalContextStore:
         completed_action: str,
         finding: str,
         next_action: str | None = None,
+        connection: sqlite3.Connection | None = None,
     ) -> dict[str, Any]:
         if not project_id or not checkpoint_id:
             raise ValueError("project_id and checkpoint_id are required")
@@ -109,77 +110,81 @@ class CanonicalContextStore:
         if not completed_action or not finding:
             raise ValueError("completed_action and finding are required")
 
+        # A caller completing a leased IR task can supply its existing SQLite
+        # transaction so the context checkpoint and terminal task CAS commit
+        # together, or roll back together. Standalone checkpoints own the txn.
+        if connection is None:
+            with self._connect() as owned:
+                owned.execute("BEGIN IMMEDIATE")
+                return self.checkpoint(
+                    project_id,
+                    checkpoint_id=checkpoint_id, task_id=task_id,
+                    completed_action=completed_action, finding=finding,
+                    next_action=next_action, connection=owned,
+                )
         now = _now()
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            replay = connection.execute(
-                "SELECT checkpoint_json FROM canonical_context_checkpoints WHERE checkpoint_id=?",
-                (checkpoint_id,),
-            ).fetchone()
-            if replay is not None:
-                connection.commit()
-                return json.loads(replay["checkpoint_json"])
+        replay = connection.execute(
+            "SELECT checkpoint_json FROM canonical_context_checkpoints WHERE checkpoint_id=?",
+            (checkpoint_id,),
+        ).fetchone()
+        if replay is not None:
+            return json.loads(replay["checkpoint_json"])
 
-            row = connection.execute(
-                "SELECT document_json, revision FROM canonical_contexts WHERE project_id=?",
-                (project_id,),
-            ).fetchone()
-            if row is None:
-                connection.rollback()
-                raise KeyError(f"canonical context is not seeded: {project_id}")
-            document = json.loads(row["document_json"])
-            active = document.get("active_work")
-            if not isinstance(active, dict):
-                connection.rollback()
-                raise ValueError("canonical context active_work must be an object")
+        row = connection.execute(
+            "SELECT document_json, revision FROM canonical_contexts WHERE project_id=?",
+            (project_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"canonical context is not seeded: {project_id}")
+        document = json.loads(row["document_json"])
+        active = document.get("active_work")
+        if not isinstance(active, dict):
+            raise ValueError("canonical context active_work must be an object")
 
-            actions = active.get("next_actions")
-            if not isinstance(actions, list) or not all(isinstance(x, str) for x in actions):
-                connection.rollback()
-                raise ValueError("canonical context next_actions must be an array of strings")
-            if completed_action not in actions:
-                connection.rollback()
-                raise ValueError("completed_action is not an active next_action")
-            actions = [x for x in actions if x != completed_action]
-            if next_action and next_action not in actions:
-                actions.insert(0, next_action)
+        actions = active.get("next_actions")
+        if not isinstance(actions, list) or not all(isinstance(x, str) for x in actions):
+            raise ValueError("canonical context next_actions must be an array of strings")
+        if completed_action not in actions:
+            raise ValueError("completed_action is not an active next_action")
+        actions = [x for x in actions if x != completed_action]
+        if next_action and next_action not in actions:
+            actions.insert(0, next_action)
 
-            findings = active.get("current_findings")
-            if not isinstance(findings, list):
-                findings = []
-            if finding not in findings:
-                findings.append(finding)
+        findings = active.get("current_findings")
+        if not isinstance(findings, list):
+            findings = []
+        if finding not in findings:
+            findings.append(finding)
 
-            active = dict(active)
-            active["next_actions"] = actions
-            active["current_findings"] = findings
-            document = dict(document)
-            document["active_work"] = active
-            document["updated_at"] = now
-            document.pop("_runtime_context", None)
-            revision = int(row["revision"]) + 1
-            result = {
-                "schema": "agentos.context-checkpoint/v0.1",
-                "project_id": project_id,
-                "checkpoint_id": checkpoint_id,
-                "task_id": task_id,
-                "revision": revision,
-                "completed_action": completed_action,
-                "finding": finding,
-                "next_action": actions[0] if actions else None,
-                "updated_at": now,
-            }
-            connection.execute(
-                "UPDATE canonical_contexts SET document_json=?, revision=?, updated_at=? WHERE project_id=?",
-                (json.dumps(document, ensure_ascii=False, sort_keys=True), revision, now, project_id),
-            )
-            connection.execute(
-                """
-                INSERT INTO canonical_context_checkpoints(
-                    checkpoint_id, project_id, task_id, revision, checkpoint_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (checkpoint_id, project_id, task_id, revision, json.dumps(result, ensure_ascii=False, sort_keys=True), now),
-            )
-            connection.commit()
+        active = dict(active)
+        active["next_actions"] = actions
+        active["current_findings"] = findings
+        document = dict(document)
+        document["active_work"] = active
+        document["updated_at"] = now
+        document.pop("_runtime_context", None)
+        revision = int(row["revision"]) + 1
+        result = {
+            "schema": "agentos.context-checkpoint/v0.1",
+            "project_id": project_id,
+            "checkpoint_id": checkpoint_id,
+            "task_id": task_id,
+            "revision": revision,
+            "completed_action": completed_action,
+            "finding": finding,
+            "next_action": actions[0] if actions else None,
+            "updated_at": now,
+        }
+        connection.execute(
+            "UPDATE canonical_contexts SET document_json=?, revision=?, updated_at=? WHERE project_id=?",
+            (json.dumps(document, ensure_ascii=False, sort_keys=True), revision, now, project_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO canonical_context_checkpoints(
+                checkpoint_id, project_id, task_id, revision, checkpoint_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (checkpoint_id, project_id, task_id, revision, json.dumps(result, ensure_ascii=False, sort_keys=True), now),
+        )
         return result

@@ -33,7 +33,7 @@ def test_gateway_service_submit_lease_complete(tmp_path: Path):
     worker.register("agentos.ir.validate", lambda current: {"ok": True})
     result = worker.execute(CanonicalIR.from_dict(leased["canonicalIR"]))
 
-    completed = service.complete(task_id, {"runtime_result": result.to_dict()})
+    completed = service.complete(task_id, {"runtime_result": result.to_dict(), "lease_epoch": leased["leaseEpoch"]})
     assert completed["task"]["status"] == "succeeded"
     assert completed["continuationIR"]["parent_ir_id"] == ir.ir_id
 
