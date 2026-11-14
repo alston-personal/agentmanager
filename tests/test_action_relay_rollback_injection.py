@@ -16,7 +16,8 @@ SCRIPT = ROOT / "scripts" / "install_action_relay_user.sh"
 
 
 class ActionRelayRollbackInjectionTest(unittest.TestCase):
-    def _run_rollback(self, fail_git=False, incorrect_readback=False, stuck_running=False,\n                      missing_legacy_backup=False, dirty_restored_worktree=False):
+    def _run_rollback(self, fail_git=False, incorrect_readback=False, stuck_running=False,
+                      missing_legacy_backup=False, dirty_restored_worktree=False):
         script = SCRIPT.read_text(encoding="utf-8")
         start = script.index("rollback_action_relay_install() {")
         end = script.index("\n}\n# The only recovery route", start) + 2
