@@ -124,3 +124,18 @@ def test_anonymous_my_one_page_follows_api_denial_reason_source_contract():
     source = inspect.getsource(DistributedGatewayHandler.do_GET)
     assert 'result.get("error", "realm_membership_required")' in source
     assert "account_virtual_one" in source
+
+
+@pytest.mark.parametrize("source_commit", [None, "a" * 40])
+def test_bootstrap_transport_repair_does_not_reinstall_legacy_integration(source_commit):
+    """The existing control-plane PR suite exercises the canonical repair path."""
+    from agentos_node import bootstrap_control
+    with patch.object(bootstrap_control, "_run_canonical_script", return_value={"ok": True}) as run:
+        receipt = bootstrap_control._execute(bootstrap_control.ACTION_REPAIR_TRANSPORT, source_commit)
+    assert receipt == {"ok": True}
+    run.assert_called_once_with(
+        "scripts/repair_antigravity_relay_user.sh",
+        timeout=180,
+        source_commit=source_commit,
+        env_extra={"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1", "AGENTOS_REF": "main"},
+    )
