@@ -57,7 +57,7 @@ git() {{
   printf "git %s\\n" "$*" >> "$LOG"
   if [ "${{INJECT_GIT_FAILURE:-0}}" = 1 ]; then return 40; fi
   if [ "$3" = "status" ]; then
-    if [ "${INJECT_DIRTY_WORKTREE:-0}" = 1 ]; then printf '?? new-generation-residue.py\\n'; fi
+    if [ "${{INJECT_DIRTY_WORKTREE:-0}}" = 1 ]; then printf '?? new-generation-residue.py\\n'; fi
   fi
   if [ "$3" = "rev-parse" ]; then
     if [ "${{INJECT_BAD_READBACK:-0}}" = 1 ]; then printf '%040d\\n' 0
