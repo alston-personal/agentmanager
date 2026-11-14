@@ -29,8 +29,17 @@ try {
   function Assert-Blocked([string]$expected, [bool]$approved=$true) {
     $args = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script,'-InstallRoot',$root,'-StageRoot',$stage)
     if ($approved) { $args += '-CommitApproved' }
-    $result = & powershell.exe @args 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0) { throw "Cutover unexpectedly passed preflight: $expected" }
+    $savedPreference = $ErrorActionPreference
+    try {
+      # Windows PowerShell 5 treats stderr of a failing native subprocess as a
+      # terminating NativeCommandError when the caller uses Stop.
+      $ErrorActionPreference = 'Continue'
+      $result = & powershell.exe @args 2>&1 | Out-String
+      $exitCode = $LASTEXITCODE
+    } finally {
+      $ErrorActionPreference = $savedPreference
+    }
+    if ($exitCode -eq 0) { throw "Cutover unexpectedly passed preflight: $expected" }
     if ($result -notlike "*$expected*") { throw "Missing expected rejection: $expected; output=$result" }
     if ((Get-FileHash -LiteralPath $originalPath -Algorithm SHA256).Hash -ne $baseline) {
       throw 'Guard changed active credential bytes'
