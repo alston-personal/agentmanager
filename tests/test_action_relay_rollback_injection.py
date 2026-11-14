@@ -16,7 +16,7 @@ SCRIPT = ROOT / "scripts" / "install_action_relay_user.sh"
 
 
 class ActionRelayRollbackInjectionTest(unittest.TestCase):
-    def _run_rollback(self, fail_git=False, incorrect_readback=False, stuck_running=False,\n                      missing_legacy_backup=False):
+    def _run_rollback(self, fail_git=False, incorrect_readback=False, stuck_running=False,\n                      missing_legacy_backup=False, dirty_restored_worktree=False):
         script = SCRIPT.read_text(encoding="utf-8")
         start = script.index("rollback_action_relay_install() {")
         end = script.index("\n}\n# The only recovery route", start) + 2
@@ -55,6 +55,9 @@ ENABLED=1
 git() {{
   printf "git %s\\n" "$*" >> "$LOG"
   if [ "${{INJECT_GIT_FAILURE:-0}}" = 1 ]; then return 40; fi
+  if [ "$3" = "status" ]; then
+    if [ "${INJECT_DIRTY_WORKTREE:-0}" = 1 ]; then printf '?? new-generation-residue.py\\n'; fi
+  fi
   if [ "$3" = "rev-parse" ]; then
     if [ "${{INJECT_BAD_READBACK:-0}}" = 1 ]; then printf '%040d\\n' 0
     else printf '%s\\n' "$TXN_OLD_HEAD"; fi
@@ -79,7 +82,8 @@ systemctl() {{
 """
             env = dict(os.environ, INJECT_GIT_FAILURE="1" if fail_git else "0",
                        INJECT_BAD_READBACK="1" if incorrect_readback else "0",
-                       INJECT_STUCK_RUNNING="1" if stuck_running else "0")
+                       INJECT_STUCK_RUNNING="1" if stuck_running else "0",
+                       INJECT_DIRTY_WORKTREE="1" if dirty_restored_worktree else "0")
             completed = subprocess.run(
                 ["bash", "-c", "set -euo pipefail\n" + prelude + function + "\nrollback_action_relay_install 15\n"],
                 env=env, text=True, capture_output=True, check=False,
@@ -129,6 +133,15 @@ systemctl() {{
         self.assertNotIn("action_relay_transaction=ROLLED_BACK", r["stderr"])
         self.assertTrue(r["snapshot_exists"])
         self.assertIsNone(r["marker"])
+
+    def test_untracked_worktree_residue_never_claims_rollback_success(self):
+        r = self._run_rollback(dirty_restored_worktree=True)
+        self.assertEqual(r["returncode"], 74)
+        self.assertIn("action_relay_transaction=ROLLBACK_FAILED", r["stderr"])
+        self.assertNotIn("action_relay_transaction=ROLLED_BACK", r["stderr"])
+        self.assertTrue(r["snapshot_exists"])
+        self.assertIsNone(r["marker"])
+        self.assertIn("status --porcelain --untracked-files=all", r["commands"])
 
     def test_generation_readback_mismatch_never_claims_rollback_success(self):
         r = self._run_rollback(incorrect_readback=True)
