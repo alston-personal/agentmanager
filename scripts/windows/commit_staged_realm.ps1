@@ -36,6 +36,13 @@ foreach($candidate in @($root,$state,$stage,(Join-Path $stage 'state'),
   }
 }
 
+# A previous interrupted transfer must be reconciled before any new cutover.
+# The journal is only a local crash marker, NOT ONE approval or a signed Receipt.
+$pendingJournal = Join-Path $state 'realm-transfer-pending.json'
+if (Test-Path -LiteralPath $pendingJournal) {
+  throw 'Pending Realm transfer requires governed reconciliation before another cutover'
+}
+
 $original = Get-Content -Raw -LiteralPath $originalFile | ConvertFrom-Json
 $target = Get-Content -Raw -LiteralPath $stageFile | ConvertFrom-Json
 $lease = Get-Content -Raw -LiteralPath $stageLease | ConvertFrom-Json
@@ -84,6 +91,62 @@ if (@($primary.Actions).Count -ne 1 -or
   throw 'Unknown Windows supervisor action; refusing to replace an active Node'
 }
 $hasWatchdog = ($null -ne $watchdog)
+
+# Durable, redacted intent marker is persisted before stopping the original Node.
+# CreateNew refuses a concurrent transfer; a crash leaves this marker for inspection.
+$transferId = [guid]::NewGuid().ToString('N')
+$sourceHash = (Get-FileHash -LiteralPath $originalFile -Algorithm SHA256).Hash
+$targetHash = (Get-FileHash -LiteralPath $stageFile -Algorithm SHA256).Hash
+$pending = @{
+  schema = 'agentos.node-realm-transfer-local-pending/v1'
+  transfer_id = $transferId
+  node_id = [string]$original.node_id
+  source_realm_id = [string]$original.realm_id
+  target_realm_id = [string]$target.realm_id
+  source_sha256 = $sourceHash
+  target_sha256 = $targetHash
+  created_at_utc = [DateTimeOffset]::UtcNow.ToString('o')
+  state = 'CUTOVER_UNRESOLVED'
+}
+$journalBytes = [Text.Encoding]::UTF8.GetBytes(($pending | ConvertTo-Json -Compress))
+$journalStream = [IO.File]::Open($pendingJournal, [IO.FileMode]::CreateNew,
+                                 [IO.FileAccess]::Write, [IO.FileShare]::None)
+try {
+  $journalStream.Write($journalBytes, 0, $journalBytes.Length)
+  $journalStream.Flush($true)
+} finally {
+  $journalStream.Dispose()
+}
+
+function Complete-LocalRealmTransfer([string]$Outcome) {
+  # A local outcome never attests ONE cross-Realm governance approval.
+  $localResult = @{ schema='agentos.node-realm-transfer-local-result/v1';
+                    transfer_id=$transferId; node_id=[string]$original.node_id;
+                    source_realm_id=[string]$original.realm_id;
+                    target_realm_id=[string]$target.realm_id;
+                    outcome=$Outcome; recorded_at_utc=[DateTimeOffset]::UtcNow.ToString('o');
+                    one_receipt_attested=$false }
+  $resultFile = Join-Path $state 'realm-transfer-last-local-result.json'
+  if (Test-Path -LiteralPath $resultFile) {
+    $previous = Get-Item -LiteralPath $resultFile -Force -ErrorAction Stop
+    if (($previous.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw 'Realm cutover refuses redirected local result path'
+    }
+  }
+  $resultTemp = Join-Path $state ('realm-transfer-local-result-' + $transferId + '.tmp')
+  try {
+    [IO.File]::WriteAllText($resultTemp, ($localResult | ConvertTo-Json -Compress), [Text.Encoding]::UTF8)
+    if (Test-Path -LiteralPath $resultFile) {
+      $resultBackup = Join-Path $state ('realm-transfer-previous-result-' + $transferId + '.bak')
+      [IO.File]::Replace($resultTemp, $resultFile, $resultBackup)
+    } else {
+      [IO.File]::Move($resultTemp, $resultFile)
+    }
+    Remove-Item -LiteralPath $pendingJournal -Force -ErrorAction Stop
+  } finally {
+    Remove-Item -LiteralPath $resultTemp -Force -ErrorAction SilentlyContinue
+  }
+}
 
 $backup = Join-Path $state ('client.realm-rollback-' + [guid]::NewGuid().ToString('N') + '.json')
 $temp = Join-Path $state ('client.stage-swap-' + [guid]::NewGuid().ToString('N') + '.tmp')
@@ -141,6 +204,7 @@ try {
     $env:PYTHONPATH = $oldPythonPath
     $env:AGENTOS_CLIENT_HOME = $oldHome
   }
+  Complete-LocalRealmTransfer 'COMMITTED_LOCAL_HEARTBEAT_VERIFIED'
   Write-Host 'agentos_realm_switch=COMMITTED_VERIFIED'
   Write-Host "agentos_node_id=$($target.node_id)"
   Write-Host "agentos_realm_id=$($target.realm_id)"
@@ -175,6 +239,7 @@ try {
     }
   } catch { $restored = $false }
   if ($restored) {
+    Complete-LocalRealmTransfer 'ROLLED_BACK_LOCAL_HEALTH_VERIFIED'
     Write-Host 'agentos_realm_switch=ROLLED_BACK_VERIFIED'
     Write-Host 'agentos_active_binding=ORIGINAL'
   } else {

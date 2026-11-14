@@ -1,3 +1,12 @@
+## 2026-11-14 — #2302 Windows Realm cutover crash journal (PR pending; source-only)
+
+The existing Windows `scripts/windows/commit_staged_realm.ps1` has rollback inside an exception handler, but abrupt process termination or reboot between atomic credential replacement and the post-cutover heartbeat can bypass that handler. This source change adds an **exclusive, locally durable, redacted `state/realm-transfer-pending.json`** written before stopping the original Node. Any subsequent cutover refuses a remaining pending journal; the two local terminal paths write `realm-transfer-last-local-result.json` and clear pending only after a verified local destination heartbeat or locally verified original-state rollback. The journal carries source/target Realm and Node identifiers plus source/target credential-file SHA256, but **never copies the bearer token** into the journal.
+
+The pending journal is a crash detection and handoff primitive, not an automatic rollback or a ONE receipt. `one_receipt_attested=false` in local results is deliberate. If Windows crashes, a human or a separately governed Recovery agent must inspect this local pending record, reconcile against **authoritative** ONE/Realm state and then explicitly authorize either completion or rollback. Current source has not implemented the independent remote authority callback, a reboot-resuming reconciler, former Realm retirement, or the site Node Management UI. No live Windows transfer/ONE Receipt was obtained; do not claim that a local `-CommitApproved` flag authorizes cross-Realm cutover.
+
+Windows CI covers a previous unresolved pending marker refusing new changes while preserving active credentials, alongside the existing negative tests.
+
+---
 ## 2026-11-14 — #2302 staged Realm cutover rejects redirected inputs (source-only)
 
 The pre-existing `scripts/windows/commit_staged_realm.ps1` performs a local, explicitly flagged staged Realm cutover, but source review identified possible filesystem-indirection risks: a redirected `client.json`, stage credential, lease, launcher, or state directory might cause the atomic credential swap to operate on untrusted locations. The proposed guard rejects reparse points before any health probing or supervisor stop and rejects invalid or missing original Node credentials.
