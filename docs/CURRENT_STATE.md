@@ -1869,3 +1869,8 @@ The existing `agentos.transport.repair` action in `agentos_node/bootstrap_contro
 ### 2026-11-14 — #1682 existing manual Safe Chronos recovery exact-source fence
 
 The emergency-only `oracle-bootstrap-action-relay-via-chronos-safe.yml` already uses a one-time Chronos transport bridge and temporary restoration, but the nested recovery command fetched the floating `origin/main` script and installed a moving `main` Action Relay. The script is a separately governed manual-only route, not a normal deployment owner. Its candidate hardening requires a 40-hex `GITHUB_SHA` checked out on `main`, passes the pinned commit into the one-time bridge, checks that exact commit is an ancestor of `origin/main`, extracts the exact commit's original repair script, invokes it with `AGENTOS_REF=main` and `AGENTOS_SOURCE_COMMIT`, and matches the resulting `action_relay_source_commit` in the original ubuntu repair receipt. It neither runs on push nor broadens the control-plane identity. No manual operation is authorized by a source-only PR; installed Relay revision and effective Realm listener still require separate live acceptance and rollback checks.
+
+
+### 2026-11-14 — emergency Relay receipt mutation semantics
+
+The manual Safe Chronos bootstrap materially changes the Action Relay transport and Antigravity Relay services; it must never claim the whole production environment was untouched. The receipt marker is `action_relay_transport_mutation=EXECUTED`, while only the website is covered by `production_website_mutation=NONE` and `site_sync_build=SKIPPED`. Installed Relay capability and source still require actual Oracle receipt verification before Realm Fabric is authorized.
