@@ -180,6 +180,9 @@ def reconcile_realm_transfer(*, install_root, participant_id):
         raise ValueError("invalid_pending_realm_transfer_record") from exc
     if not isinstance(pending, dict) or pending.get("schema") != REALM_TRANSFER_PENDING_SCHEMA:
         raise ValueError("invalid_pending_realm_transfer_record")
+    if (any(pending.get(flag) is not None for flag in
+            ("activation_authorized", "rollback_authorized", "one_receipt_attested"))):
+        raise ValueError("untrusted_pending_realm_transfer_authority")
     if (pending.get("state") != "CUTOVER_UNRESOLVED"
             or not isinstance(pending.get("transfer_id"), str)
             or not re.fullmatch(r"[0-9a-f]{32}", pending["transfer_id"])
