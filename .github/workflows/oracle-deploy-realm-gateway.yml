@@ -49,7 +49,13 @@ jobs:
           python3 -m unittest tests.test_realm_gateway_deploy_preflight -v
           python3 -m unittest tests.test_realm_gateway_receipt_contract -v
           python3 -m pip install --disable-pip-version-check pytest
-          python3 -m pytest -q --import-mode=importlib --rootdir=tests tests/test_realm_scheduler_oidc.py
+          # Isolate pytest collection from the repository root, where a guarded
+          # CLAUDE.md entry is intentionally unreadable on hosted runners.
+          # Keep CWD and PYTHONPATH at the checkout root for path-based assertions.
+          gateway_pytests="$(mktemp -d)"
+          trap 'rm -rf "$gateway_pytests"' EXIT
+          cp tests/test_realm_scheduler_oidc.py "$gateway_pytests/test_realm_scheduler_oidc.py"
+          PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}" python3 -m pytest -q -c /dev/null --import-mode=importlib --rootdir="$gateway_pytests" "$gateway_pytests/test_realm_scheduler_oidc.py"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
