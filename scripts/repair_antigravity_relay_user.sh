@@ -17,6 +17,51 @@ fi
 # materialized, have its unit rewritten, or be restarted from this script.
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 RUNTIME="${AGENTOS_RUNTIME_VNEXT:-/home/ubuntu/.local/share/agentos/runtime-vnext}"
+ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-/home/ubuntu/.local/share/agentos/action-runtime}"
+DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
+SOURCE_REF="${AGENTOS_REF:-main}"
+EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
+PROVIDER="${AGENTOS_ANTIGRAVITY_PROVIDER:-claude}"
+SPOOL="$DATA_ROOT/runtime/antigravity-relay"
+UNIT_DIR="/home/ubuntu/.config/systemd/user"
+UNIT="$UNIT_DIR/agentos-antigravity-relay.service"
+MANIFEST="$RUNTIME/runtime-provenance.json"
+CODEX_CONFIG="/home/ubuntu/.codex/config.toml"
+ONE_EXPERIENCE_EXPECTED_PREDECESSOR="sha256:f0fcb879fef89117084b4730aa0e74d0a78c1a61a02b63a47bbe825f5d70a959"
+
+case "$SOURCE_REF" in
+  main|core/integration|feature/realm-node-fabric-readiness) ;;
+  *) echo "ERROR: AGENTOS_REF is not allowlisted: $SOURCE_REF" >&2; exit 4 ;;
+esac
+
+if [ -n "$EXPECTED_SOURCE_COMMIT" ] && ! printf '%s' "$EXPECTED_SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "ERROR: AGENTOS_SOURCE_COMMIT must be an exact lowercase 40-hex commit SHA" >&2
+  exit 6
+fi
+
+case "$PROVIDER" in
+  claude|agy) ;;
+  *) echo "ERROR: AGENTOS_ANTIGRAVITY_PROVIDER is not allowlisted: $PROVIDER" >&2; exit 5 ;;
+esac
+
+for user in ubuntu agentos-node; do
+  id -Gn "$user" | tr ' ' '\n' | grep -qx agentos || { echo "ERROR: $user must belong to agentos group" >&2; exit 3; }
+done
+
+test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
+mkdir -p "$RUNTIME/agentos_node" "$UNIT_DIR"
+TMPDIR=$(mktemp -d)
+cleanup() {
+  rc=$?
+  rm -rf "$TMPDIR"
+  if [ "$rc" -ne 0 ]; then
+    echo "antigravity_repair_stage=$REPAIR_STAGE"
+    echo "antigravity_repair_exit=${REPAIR_FAILURE_RC:-$rc}"
+    echo "antigravity_repair_line=${REPAIR_FAILURE_LINE:-unknown}"
+  fi
+}
+trap cleanup EXIT
+
 # The governed ref proves lane membership; the exact commit determines bytes.
 # Snapshot the ref first, then fetch the requested generation itself. A parallel
 # merge may advance SOURCE_REF after the rollout starts without invalidating a
@@ -162,7 +207,6 @@ PrivateTmp=true
 WantedBy=default.target
 EOF
 
->>>>>>> dev/oracle-local-wip
 (
   cd "$RUNTIME"
   PYTHONPATH="$RUNTIME" AGENTOS_ANTIGRAVITY_PROVIDER="$PROVIDER" python3 - <<'PY'
@@ -265,15 +309,9 @@ echo "antigravity_worker_sha256=$WORKER_SHA256"
 echo "antigravity_runtime_manifest=$MANIFEST"
 echo "antigravity_restart_converged=PASS"
 echo "action_relay_install=PASS"
-<<<<<<< HEAD
 echo "realm_fabric_install=SKIPPED_FENCED_AUTHORITY"
 echo "realm_fabric_mutation=NONE"
 echo "realm_fabric_deploy_authority_separation=PASS"
-echo "runtime=$RUNTIME"
-echo "spool=$SPOOL"
-echo "unit=$UNIT"
-echo "realm_unit=$REALM_UNIT"
-=======
 echo "action_relay_source_generation_pinned=PASS"
 echo "one_experience_seed=PASS"
 echo "one_experience_digest_convergence=PASS"
