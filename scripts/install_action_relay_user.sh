@@ -287,66 +287,12 @@ printf "prior_kind=%s prior_head=%s unit_present=%s marker_present=%s was_active
 sync -f "$TXN_DIR/state"
 echo "action_relay_transaction=SNAPSHOT_READY"
 
-# Historical Action Relay generations were materialized as a plain directory.
-# Migrate that legitimate pre-worktree layout without deleting it. The migration
-# is deliberately narrow: only an ubuntu-owned, non-symlink directory may move,
-# and an existing deterministic backup makes the operation fail closed rather
-# than overwriting prior evidence.
-# Set before the first possible runtime mutation. EXIT rollback must stop the
-# running consumer even if a reset/add/migration fails before the unit stop.
-TXN_RUNTIME_TOUCHED=1
-if [ -e "$RUNTIME_ROOT" ] && [ ! -e "$RUNTIME_ROOT/.git" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-  test -d "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root is not a directory: $RUNTIME_ROOT" >&2; exit 2; }
-  test ! -L "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root must not be a symlink: $RUNTIME_ROOT" >&2; exit 2; }
-  owner=$(stat -c '%U' "$RUNTIME_ROOT")
-  test "$owner" = ubuntu || { echo "ERROR: legacy runtime root must be ubuntu-owned: path=$RUNTIME_ROOT owner=$owner" >&2; exit 5; }
-  test ! -e "$LEGACY_RUNTIME_ROOT" || { echo "ERROR: legacy runtime backup already exists: $LEGACY_RUNTIME_ROOT" >&2; exit 2; }
-  mv "$RUNTIME_ROOT" "$LEGACY_RUNTIME_ROOT"
-  echo "action_relay_legacy_runtime_migrated=PASS backup=$LEGACY_RUNTIME_ROOT"
-fi
-
-if [ -e "$RUNTIME_ROOT/.git" ]; then
-  git -C "$RUNTIME_ROOT" reset --hard "$SOURCE_COMMIT"
-else
-  rmdir "$RUNTIME_ROOT" 2>/dev/null || true
-  git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" "$SOURCE_COMMIT"
-fi
-
-test "$(git -C "$RUNTIME_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT"
-echo "action_relay_runtime_worktree=PASS"
-
-(
-  cd "$RUNTIME_ROOT"
-  PYTHONPATH="$RUNTIME_ROOT" python3 - <<'PY'
-from agentos_node.executor_job_action_relay import ACTION, ACTIONS
-from agentos_node.runtime_converge_action_relay import ACTION as CONVERGE_ACTION
-from agentos_node.content_publish_action_relay import ACTION as X_AUTH_ACTION
-from agentos_node.content_publish_social_action_relay import BOOTSTRAP_ACTION, INSPECT_ACTION
-assert ACTION == 'agentos.executor.job'
-assert CONVERGE_ACTION == 'agentos.runtime.converge'
-assert X_AUTH_ACTION == 'agentos.content.x.auth.inspect'
-assert BOOTSTRAP_ACTION == 'agentos.content.social.bootstrap'
-assert INSPECT_ACTION == 'agentos.content.social.inspect'
-assert ACTION in ACTIONS
-assert CONVERGE_ACTION in ACTIONS
-assert X_AUTH_ACTION in ACTIONS
-assert BOOTSTRAP_ACTION in ACTIONS
-assert INSPECT_ACTION in ACTIONS
-print('action_runtime_import=ok')
-print('executor_job_action_loaded=PASS')
-print('runtime_converge_action_loaded=PASS')
-print('content_publish_x_auth_action_loaded=PASS')
-print('content_publish_social_actions_loaded=PASS')
-print('actions='+','.join(sorted(ACTIONS)))
-PY
-)
-
 # Converge to exactly one governed consumer for this spool.
 # Never terminate a live consumer while a capsule may have unknown side effects.
 # If the managed worker is already inactive, any leftover processing capsule is
 # by definition interrupted. Reuse ActionRelayWorker's native at-most-once
 # recovery: emit outcome=unknown, replayed=false, then quarantine.
-if ! systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; then
+if ! systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null && [ -e "$RUNTIME_ROOT/.git" ]; then
   PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - "$RELAY_ROOT" <<'PY'
 from pathlib import Path
 import sys
@@ -356,6 +302,12 @@ recovered = ActionRelayWorker(Path(sys.argv[1])).recover_interrupted()
 print("action_relay_interrupted_recovered=" + str(len(recovered)))
 PY
   echo "action_relay_offline_interrupted_recovery=PASS"
+elif ! systemctl --user is-active --quiet agentos-action-relay.service 2>/dev/null; then
+  if find "$RELAY_ROOT/processing" -maxdepth 1 -type f -name 'action-*.json' -print -quit | grep -q .; then
+    echo "ERROR: interrupted processing exists without a canonical runtime to recover it" >&2
+    exit 75
+  fi
+  echo "action_relay_offline_interrupted_recovery=NO_EXISTING_RUNTIME"
 fi
 
 # With a live managed worker, allow fresh processing to finish normally.
@@ -447,6 +399,64 @@ if [ "${#remaining_relay_pids[@]}" -ne 0 ]; then
   exit 63
 fi
 echo "action_relay_prior_consumers_cleared=PASS"
+
+# Live consumer has now drained, stopped and been verified absent. Only now
+# may the transaction replace the production worktree and import new actions.
+# Historical Action Relay generations were materialized as a plain directory.
+# Migrate that legitimate pre-worktree layout without deleting it. The migration
+# is deliberately narrow: only an ubuntu-owned, non-symlink directory may move,
+# and an existing deterministic backup makes the operation fail closed rather
+# than overwriting prior evidence.
+# Set before the first possible runtime mutation. EXIT rollback must stop the
+# running consumer even if a reset/add/migration fails before the unit stop.
+TXN_RUNTIME_TOUCHED=1
+if [ -e "$RUNTIME_ROOT" ] && [ ! -e "$RUNTIME_ROOT/.git" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+  test -d "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root is not a directory: $RUNTIME_ROOT" >&2; exit 2; }
+  test ! -L "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root must not be a symlink: $RUNTIME_ROOT" >&2; exit 2; }
+  owner=$(stat -c '%U' "$RUNTIME_ROOT")
+  test "$owner" = ubuntu || { echo "ERROR: legacy runtime root must be ubuntu-owned: path=$RUNTIME_ROOT owner=$owner" >&2; exit 5; }
+  test ! -e "$LEGACY_RUNTIME_ROOT" || { echo "ERROR: legacy runtime backup already exists: $LEGACY_RUNTIME_ROOT" >&2; exit 2; }
+  mv "$RUNTIME_ROOT" "$LEGACY_RUNTIME_ROOT"
+  echo "action_relay_legacy_runtime_migrated=PASS backup=$LEGACY_RUNTIME_ROOT"
+fi
+
+if [ -e "$RUNTIME_ROOT/.git" ]; then
+  git -C "$RUNTIME_ROOT" reset --hard "$SOURCE_COMMIT"
+else
+  rmdir "$RUNTIME_ROOT" 2>/dev/null || true
+  git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" "$SOURCE_COMMIT"
+fi
+
+test "$(git -C "$RUNTIME_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT"
+echo "action_relay_runtime_worktree=PASS"
+
+(
+  cd "$RUNTIME_ROOT"
+  PYTHONPATH="$RUNTIME_ROOT" python3 - <<'PY'
+from agentos_node.executor_job_action_relay import ACTION, ACTIONS
+from agentos_node.runtime_converge_action_relay import ACTION as CONVERGE_ACTION
+from agentos_node.content_publish_action_relay import ACTION as X_AUTH_ACTION
+from agentos_node.content_publish_social_action_relay import BOOTSTRAP_ACTION, INSPECT_ACTION
+assert ACTION == 'agentos.executor.job'
+assert CONVERGE_ACTION == 'agentos.runtime.converge'
+assert X_AUTH_ACTION == 'agentos.content.x.auth.inspect'
+assert BOOTSTRAP_ACTION == 'agentos.content.social.bootstrap'
+assert INSPECT_ACTION == 'agentos.content.social.inspect'
+assert ACTION in ACTIONS
+assert CONVERGE_ACTION in ACTIONS
+assert X_AUTH_ACTION in ACTIONS
+assert BOOTSTRAP_ACTION in ACTIONS
+assert INSPECT_ACTION in ACTIONS
+print('action_runtime_import=ok')
+print('executor_job_action_loaded=PASS')
+print('runtime_converge_action_loaded=PASS')
+print('content_publish_x_auth_action_loaded=PASS')
+print('content_publish_social_actions_loaded=PASS')
+print('actions='+','.join(sorted(ACTIONS)))
+PY
+)
+
+
 
 cat > "$UNIT" <<EOF
 [Unit]
