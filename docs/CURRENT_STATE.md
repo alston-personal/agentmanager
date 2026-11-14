@@ -1944,3 +1944,10 @@ The existing Action Relay installer candidate now reads only fixed-format pendin
 ### 2026-11-14 — #2308 snapshot checksum hardening
 
 The interrupted-transaction candidate now records SHA-256 checksums for the prior systemd unit and capabilities marker alongside the immutable transaction snapshot. Recovery runs checksum verification before touching the old service or runtime, and refuses to restore absent or altered backups. This detects accidental corruption, not an attacker able to modify both snapshot and digest under the same OS identity. Independent Oracle trial, end-to-end process-kill/power-loss testing, prior rollback restoration, and alternate rescue access remain required before main merge/live use.
+
+
+### 2026-11-14 — #2308 further rollback acceptance corrections
+
+Review identified a rescue liveness dependency: the existing installer fetched the governed Git source **before** inspecting a prior pending rollback. The source fetch now occurs only on fresh installs under the same exclusive lock, before a new snapshot is created, so an interrupted rollback can proceed without GitHub/network availability. A rollback now independently reads back prior worktree HEAD, unit/capability byte equality, service active state and enablement before declaring `ROLLED_BACK` or deleting the pending snapshot. On failed readback/rollback it preserves the transaction snapshot, removes the advertised capability marker and returns distinct exit code `74`. Source/injection tests exercise generation mismatch, a still-running consumer and failed reset. A separate test executes the metadata `printf` to prevent a literal backslash-n from rendering the interrupted-state record unparseable (a real defect found during review).
+
+**Boundary remains unchanged:** this code and CI are not a real installer end-to-end failure matrix or Oracle systemd acceptance. Source branch remains Draft; emergency Safe Chronos is not authorized by this work. Offline fallback does not establish independent SSH rescue availability; fault injection and readback must be evidenced separately.
