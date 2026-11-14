@@ -138,6 +138,10 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertIn('action_relay_transaction=INTERRUPTED_RECOVERY_STARTED', text)
         self.assertIn('rollback_action_relay_install 73', text)
         self.assertIn('sync -f "$TXN_DIR/state"', text)
+        self.assertIn('sha256sum unit > unit.sha256', text)
+        self.assertIn('sha256sum capabilities > capabilities.sha256', text)
+        self.assertIn('sha256sum -c unit.sha256 --status', text)
+        self.assertIn('sha256sum -c capabilities.sha256 --status', text)
         self.assertIn('TXN_RUNTIME_TOUCHED=1', text)
         self.assertIn('reason=service_remains_active', text)
         self.assertLess(text.index('action_relay_prior_consumers_cleared=PASS'),
