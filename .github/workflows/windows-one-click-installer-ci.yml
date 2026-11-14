@@ -10,6 +10,7 @@ on:
       - 'scripts/install_thin_client_windows.ps1'
       - 'scripts/bootstrap_clean_windows_node.ps1'
       - 'scripts/windows/commit_staged_realm.ps1'
+      - 'tests/windows/test_realm_cutover_preflight.ps1'
       - 'scripts/windows/thin_client_watchdog.ps1'
       - 'agentos_node/thin_client_transport.py'
       - 'agentos_node/client_cli.py'
@@ -39,7 +40,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/bootstrap_clean_windows_node.ps1','scripts/windows/commit_staged_realm.ps1','scripts/windows/install_recovery_python.ps1','tests/windows/test_recovery_python_provision.ps1')
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1','scripts/bootstrap_clean_windows_node.ps1','scripts/windows/commit_staged_realm.ps1','tests/windows/test_realm_cutover_preflight.ps1','scripts/windows/install_recovery_python.ps1','tests/windows/test_recovery_python_provision.ps1')
           foreach($file in $files) {
             $tokens = $null
             $errors = $null
@@ -58,6 +59,11 @@ jobs:
       - name: Verify staged Realm transfer preflight contracts
         shell: powershell
         run: python -m unittest -v tests.test_node_realm_transfer_preflight
+
+      - name: Reject unsafe staged Realm cutover without mutating Node
+        shell: powershell
+        run: |
+          & .\tests\windows\test_realm_cutover_preflight.ps1
 
       - name: Test Recovery-only offline Python provisioner rejects unsafe archives
         shell: powershell
