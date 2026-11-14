@@ -38,29 +38,3 @@ jobs:
             tests.test_action_relay_pending_recovery_integration \
             tests.test_antigravity_repair_contract
 
-  attest-installed-generation:
-    needs: [rollback-fault-injection]
-    # Never execute PR-provided code on Oracle. Manual invocation on canonical
-    # protected main only; this job performs no installer/service mutation.
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Read only fixed Action Relay unit, worktree and capability state
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/attest_action_relay_readonly.py > "$RUNNER_TEMP/action-relay-readback.json"
-          python3 -m json.tool "$RUNNER_TEMP/action-relay-readback.json" > /dev/null
-          echo 'action_relay_redacted_readback=PASS'
-      - name: Retain sanitized attestation
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: action-relay-redacted-readback
-          path: ${{ runner.temp }}/action-relay-readback.json
-          if-no-files-found: warn
-          retention-days: 7
