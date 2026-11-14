@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Emergency recovery may only install the exact approved main generation.
+PINNED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
+[[ "$PINNED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+  echo 'safe_chronos_pinned_main_commit_required' >&2
+  exit 6
+}
 OUT=.agentos/evidence/action-relay-chronos-safe-bootstrap-v2.txt
 mkdir -p .agentos/evidence
 LOCAL=/home/ubuntu/agentmanager
@@ -71,16 +77,16 @@ PY
 
   cat "$TARGET" > "$BACKUP"
 
-  python3 - "$TARGET" "$REQUEST_ID" "$RECEIPT" <<'PY'
+  python3 - "$TARGET" "$REQUEST_ID" "$RECEIPT" "$PINNED_SOURCE_COMMIT" <<'PY'
 from pathlib import Path
 import sys
 
-target=Path(sys.argv[1]); request_id=sys.argv[2]; receipt=sys.argv[3]
+target=Path(sys.argv[1]); request_id=sys.argv[2]; receipt=sys.argv[3]; expected_commit=sys.argv[4]
 original=target.read_text(encoding='utf-8')
 marker='# AGENTOS_ONE_TIME_CHRONOS_SAFE_BOOTSTRAP_V2\n'
 if marker in original:
     raise SystemExit('v2 bridge already present')
-bridge=f'''{marker}import json as _a_json\nimport os as _a_os\nfrom pathlib import Path as _APath\nimport subprocess as _a_subprocess\nimport traceback as _a_traceback\nimport datetime as _a_datetime\n\n_A_ID={request_id!r}\n_A_RECEIPT=_APath({receipt!r})\nif not _A_RECEIPT.exists():\n    _a_started=_a_datetime.datetime.now(_a_datetime.timezone.utc).isoformat()\n    _a_payload={{\n        "schema":"agentos.one-time-chronos-safe-bootstrap/v2",\n        "request_id":_A_ID,\n        "executor_user":_a_os.environ.get("USER") or str(_a_os.getuid()),\n        "executor_uid":_a_os.getuid(),\n        "started_at":_a_started,\n        "ok":False,\n    }}\n    try:\n        _a_cmd=["/bin/bash","-lc", "cd /home/ubuntu/agentmanager && git fetch origin main && git show origin/main:scripts/repair_antigravity_relay_user.sh > /tmp/agentos-repair-antigravity-safe-v2.sh && chmod 700 /tmp/agentos-repair-antigravity-safe-v2.sh && AGENTOS_ACTION_SPOOL_PREPROVISIONED=1 AGENTOS_REPO=/home/ubuntu/agentmanager bash /tmp/agentos-repair-antigravity-safe-v2.sh"]\n        _a_p=_a_subprocess.run(_a_cmd,text=True,capture_output=True,timeout=240)\n        _a_payload.update({{"returncode":_a_p.returncode,"ok":_a_p.returncode==0,"stdout":(_a_p.stdout or "")[-30000:],"stderr":(_a_p.stderr or "")[-12000:]}})\n    except _a_subprocess.TimeoutExpired as _a_e:\n        _a_payload.update({{"error":"TimeoutExpired","timeout":240,"stdout":((_a_e.stdout or "") if isinstance(_a_e.stdout,str) else "")[-30000:],"stderr":((_a_e.stderr or "") if isinstance(_a_e.stderr,str) else "")[-12000:]}})\n    except BaseException as _a_e:\n        _a_payload.update({{"error":type(_a_e).__name__+": "+str(_a_e),"traceback":_a_traceback.format_exc()[-12000:]}})\n    _a_payload["completed_at"]=_a_datetime.datetime.now(_a_datetime.timezone.utc).isoformat()\n    try:\n        _a_tmp=_A_RECEIPT.with_suffix(_A_RECEIPT.suffix+".tmp")\n        _a_tmp.write_text(_a_json.dumps(_a_payload,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")\n        _a_os.chmod(_a_tmp,0o660)\n        _a_tmp.replace(_A_RECEIPT)\n    except BaseException:\n        pass\n\n'''
+bridge=f'''{marker}import json as _a_json\nimport os as _a_os\nfrom pathlib import Path as _APath\nimport subprocess as _a_subprocess\nimport traceback as _a_traceback\nimport datetime as _a_datetime\n\n_A_ID={request_id!r}\n_A_RECEIPT=_APath({receipt!r})\nif not _A_RECEIPT.exists():\n    _a_started=_a_datetime.datetime.now(_a_datetime.timezone.utc).isoformat()\n    _a_payload={{\n        "schema":"agentos.one-time-chronos-safe-bootstrap/v2",\n        "request_id":_A_ID,\n        "executor_user":_a_os.environ.get("USER") or str(_a_os.getuid()),\n        "executor_uid":_a_os.getuid(),\n        "started_at":_a_started,\n        "ok":False,\n    }}\n    try:\n        _a_cmd=["/bin/bash","-lc", "cd /home/ubuntu/agentmanager && git fetch --no-tags origin main && git fetch --no-tags origin {expected_commit} && git merge-base --is-ancestor {expected_commit} origin/main && git show {expected_commit}:scripts/repair_antigravity_relay_user.sh > /tmp/agentos-repair-antigravity-safe-v2.sh && chmod 700 /tmp/agentos-repair-antigravity-safe-v2.sh && AGENTOS_ACTION_SPOOL_PREPROVISIONED=1 AGENTOS_REF=main AGENTOS_SOURCE_COMMIT={expected_commit} AGENTOS_REPO=/home/ubuntu/agentmanager bash /tmp/agentos-repair-antigravity-safe-v2.sh"]\n        _a_p=_a_subprocess.run(_a_cmd,text=True,capture_output=True,timeout=240)\n        _a_payload.update({{"returncode":_a_p.returncode,"ok":_a_p.returncode==0,"stdout":(_a_p.stdout or "")[-30000:],"stderr":(_a_p.stderr or "")[-12000:]}})\n    except _a_subprocess.TimeoutExpired as _a_e:\n        _a_payload.update({{"error":"TimeoutExpired","timeout":240,"stdout":((_a_e.stdout or "") if isinstance(_a_e.stdout,str) else "")[-30000:],"stderr":((_a_e.stderr or "") if isinstance(_a_e.stderr,str) else "")[-12000:]}})\n    except BaseException as _a_e:\n        _a_payload.update({{"error":type(_a_e).__name__+": "+str(_a_e),"traceback":_a_traceback.format_exc()[-12000:]}})\n    _a_payload["completed_at"]=_a_datetime.datetime.now(_a_datetime.timezone.utc).isoformat()\n    try:\n        _a_tmp=_A_RECEIPT.with_suffix(_A_RECEIPT.suffix+".tmp")\n        _a_tmp.write_text(_a_json.dumps(_a_payload,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")\n        _a_os.chmod(_a_tmp,0o660)\n        _a_tmp.replace(_A_RECEIPT)\n    except BaseException:\n        pass\n\n'''
 target.write_text(bridge+original,encoding='utf-8')
 compile(target.read_text(encoding='utf-8'),str(target),'exec')
 PY
@@ -94,7 +100,7 @@ PY
   echo "chronos_receipt=$(stat -c '%U:%G %a' "$RECEIPT")"
   cat "$RECEIPT"
 
-  python3 - "$RECEIPT" <<'PY'
+  python3 - "$RECEIPT" "$PINNED_SOURCE_COMMIT" <<'PY'
 import json,sys
 r=json.load(open(sys.argv[1]))
 assert r.get('executor_user') == 'ubuntu', r
@@ -104,6 +110,7 @@ if not r.get('ok'):
 text=(r.get('stdout','')+'\n'+r.get('stderr',''))
 assert 'antigravity_repair=PASS' in text, text[-12000:]
 assert 'action_relay_install=PASS' in text, text[-12000:]
+assert 'action_relay_source_commit='+sys.argv[2] in text, 'source commit mismatch in installer receipt'
 print('chronos_safe_bootstrap_v2=PASS')
 PY
 
@@ -130,6 +137,24 @@ assert r.get('ok') is True, r
 assert r.get('action') == 'agentos.antigravity.restart', r
 assert r.get('executor_user') == 'ubuntu', r
 print('antigravity_restart=PASS')
+PY
+
+  # Live read-only installed revision, not the checkout's module or artifact.
+  STATUS_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
+from agentos_node.action_relay import ActionRelayClient
+print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('agentos.realm-fabric.deployment_status', {})['capsule_id'])
+PY
+  )
+  STATUS_RECEIPT="$ACTION_ROOT/receipts/$STATUS_ID.json"
+  for i in $(seq 1 60); do [ -f "$STATUS_RECEIPT" ] && break; sleep 1; done
+  test -f "$STATUS_RECEIPT" || { echo 'realm_relay_revision_receipt=TIMEOUT'; exit 7; }
+  python3 - "$STATUS_RECEIPT" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r.get('ok') is True, 'installed Relay status failed'
+assert r.get('action') == 'agentos.realm-fabric.deployment_status', 'wrong Relay status action'
+assert r.get('installer_revision') == 'realm-fabric-effective-unit-fence/v1', 'installed Relay revision unverified'
+print('installed_relay_effective_unit_fence_revision=PASS')
 PY
 
   sleep 2
@@ -159,7 +184,9 @@ PY
     echo "public_path=${path} http_code=${code}"
     test "$code" = 200
   done
-  echo 'production_mutation=NONE'
+  # Transport/service mutation DID occur. Only website build/sync was skipped.
+  echo 'action_relay_transport_mutation=EXECUTED'
+  echo 'production_website_mutation=NONE'
   echo 'site_sync_build=SKIPPED'
   echo 'safe_transport_recovery_v2=PASS'
 } 2>&1 | tee "$OUT"
