@@ -180,6 +180,38 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
     if not installer.is_file():
         raise RuntimeError("action_relay_reconcile_installer_missing")
 
+    # This timer retains its legacy owner until an explicit governed cutover.
+    # Never race a pending rollback or replace a newer/foreign installed relay
+    # with the historical core/integration generation.
+    runtime_root = Path(os.environ.get("AGENTOS_ACTION_RUNTIME_ROOT") or Path.home() / ".local/share/agentos/action-runtime")
+    pending = runtime_root.parent / ".action-relay-install.pending"
+    if pending.exists():
+        raise RuntimeError("action_relay_reconcile_pending_transaction_requires_recovery")
+    installed_marker = data_root / "runtime" / "action-relay" / "capabilities.json"
+    if installed_marker.is_symlink():
+        raise RuntimeError("action_relay_reconcile_marker_untrusted")
+    if installed_marker.exists():
+        try:
+            marker_payload = json.loads(installed_marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raise RuntimeError("action_relay_reconcile_marker_untrusted")
+        if not isinstance(marker_payload, dict) or marker_payload.get("schema") != MARKER_SCHEMA:
+            raise RuntimeError("action_relay_reconcile_marker_untrusted")
+        if marker_payload.get("source_ref") != SOURCE_REF:
+            raise RuntimeError("action_relay_reconcile_foreign_generation_requires_governed_cutover")
+    unit_env = _run(
+        ["systemctl", "--user", "show", SERVICE, "-p", "Environment", "--value"],
+        cwd=repo, timeout=20,
+    )
+    if unit_env.returncode == 0:
+        env_source = next((
+            token.split("=", 1)[1]
+            for token in unit_env.stdout.split()
+            if token.startswith("AGENTOS_ACTION_RUNTIME_SOURCE_REF=")
+        ), None)
+        if env_source is not None and env_source != SOURCE_REF:
+            raise RuntimeError("action_relay_reconcile_foreign_generation_requires_governed_cutover")
+
     dirty = _git_value(repo, "status", "--porcelain", "--untracked-files=no")
     if dirty:
         raise RuntimeError("action_relay_reconcile_tracked_checkout_dirty")
