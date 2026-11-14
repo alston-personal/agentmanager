@@ -18,6 +18,15 @@ class ProjectRepoGateTests(unittest.TestCase):
         state = mod.verify_project_repository("wow-nav-assist", None)
         self.assertEqual(state["repository_state"], "blocked")
 
+    def test_wrong_owner_is_blocked_before_network(self):
+        with tempfile.TemporaryDirectory() as td:
+            with patch.object(mod, "PHYSICAL_PROJECTS_ROOT", Path(td)):
+                state = mod.verify_project_repository(
+                    "wow-nav-assist", "https://github.com/another-owner/wow-nav-assist"
+                )
+        self.assertEqual(state["repository_state"], "blocked")
+        self.assertEqual(state["blocker"], "repo_url_missing_or_invalid")
+
     def test_missing_checkout_is_blocked(self):
         with tempfile.TemporaryDirectory() as td:
             with patch.object(mod, "PHYSICAL_PROJECTS_ROOT", Path(td)):
