@@ -87,7 +87,7 @@ systemctl() {{
     "--user is-enabled --quiet agentos-action-relay.service")
       [ "$ENABLED" = 1 ]; return ;;
     "--user daemon-reload")
-      if [ "$FAULT_STAGE" = reload ] && [ "${NEW_UNIT_PHASE:-0}" = 1 ] && [ "$RELOAD_FAILED_ONCE" = 0 ]; then
+      if [ "$FAULT_STAGE" = reload ] && [ "${{NEW_UNIT_PHASE:-0}}" = 1 ] && [ "$RELOAD_FAILED_ONCE" = 0 ]; then
         RELOAD_FAILED_ONCE=1
         return 88
       fi ;;
