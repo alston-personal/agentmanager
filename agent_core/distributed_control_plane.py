@@ -38,6 +38,7 @@ class IRTaskLease:
     task_id: str
     node_id: str
     lease_until: str | None
+    lease_epoch: int
     idempotency_key: str
     ir: CanonicalIR
 
@@ -46,6 +47,7 @@ class IRTaskLease:
             "taskId": self.task_id,
             "nodeId": self.node_id,
             "leaseUntil": self.lease_until,
+            "leaseEpoch": self.lease_epoch,
             "idempotencyKey": self.idempotency_key,
             "canonicalIR": self.ir.to_dict(),
             "inputDigest": self.ir.digest(),
@@ -169,6 +171,7 @@ class DistributedControlPlane(ControlPlaneStore):
             task_id=task["taskId"],
             node_id=node_id,
             lease_until=task["leaseUntil"],
+            lease_epoch=task["leaseEpoch"],
             idempotency_key=task["idempotencyKey"],
             ir=ir,
         )
@@ -213,7 +216,8 @@ class DistributedControlPlane(ControlPlaneStore):
             cursor = connection.execute(
                 """
                 UPDATE tasks
-                SET status='leased', target_node_id=?, lease_until=?, updated_at=?
+                SET status='leased', target_node_id=?, lease_until=?,
+                    lease_epoch=lease_epoch+1, updated_at=?
                 WHERE task_id=? AND status='submitted'
                   AND (target_node_id IS NULL OR target_node_id=?)
                 """,
@@ -230,6 +234,7 @@ class DistributedControlPlane(ControlPlaneStore):
             task_id=leased["taskId"],
             node_id=node_id,
             lease_until=leased["leaseUntil"],
+            lease_epoch=leased["leaseEpoch"],
             idempotency_key=leased["idempotencyKey"],
             ir=ir,
         )
@@ -263,11 +268,18 @@ class DistributedControlPlane(ControlPlaneStore):
         task_id: str,
         runtime_result: RemoteRuntimeResult,
         *,
+        lease_epoch: int | None = None,
         enqueue_continuation: bool | None = None,
     ) -> dict[str, Any]:
+        if type(lease_epoch) is not int or lease_epoch < 1:
+            raise ValueError("LEASE_EPOCH_REQUIRED")
         task = self.get_task(task_id)
         if task["status"] not in {"leased", "running"}:
             raise ValueError(f"task {task_id} is not completable from state {task['status']}")
+        if task["leaseEpoch"] != lease_epoch:
+            raise ValueError("STALE_LEASE_EPOCH")
+        if not task["leaseUntil"] or task["leaseUntil"] < _utc_now():
+            raise ValueError("LEASE_EXPIRED")
         input_ir = self._ir_from_task(task)
 
         lease_owner = task.get("targetNodeId")
@@ -306,7 +318,11 @@ class DistributedControlPlane(ControlPlaneStore):
             "protocol": RESULT_PROTOCOL,
             **runtime_result.to_dict(),
         }
-        updated_task = self.update_task(task_id, task_state, persisted_result)
+        updated_task = self.update_task(
+            task_id, task_state, persisted_result,
+            expected_lease_epoch=lease_epoch,
+            expected_lease_owner=runtime_result.runtime_id,
+        )
 
         enqueued_task = None
         continuation_blocked = None
