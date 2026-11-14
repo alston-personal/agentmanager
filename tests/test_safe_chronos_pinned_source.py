@@ -33,7 +33,7 @@ def test_safe_chronos_script_parses_and_compiles_bridge_generator():
     result = subprocess.run(["bash", "-n", str(script_path)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     text = script_path.read_text()
-    marker = 'python3 - "$TARGET" "$REQUEST_ID" "$RECEIPT" "$PINNED_SOURCE_COMMIT" <<\'PY\'\\n'
+    marker = """python3 - "$TARGET" "$REQUEST_ID" "$RECEIPT" "$PINNED_SOURCE_COMMIT" <<'PY'""" + chr(10)
     assert marker in text
-    generator = text.split(marker, 1)[1].split("\\nPY\\n", 1)[0]
+    generator = text.split(marker, 1)[1].split(chr(10) + "PY" + chr(10), 1)[0]
     compile(generator, str(script_path) + ":bridge-generator", "exec")
