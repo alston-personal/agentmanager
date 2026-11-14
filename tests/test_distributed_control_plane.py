@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from agent_core.distributed_control_plane import DistributedControlPlane
+from agent_core.canonical_context import CanonicalContextStore
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import ExecutionOutcome, RemoteRuntimeWorker
 
@@ -179,3 +180,49 @@ def test_existing_sqlite_tasks_gain_lease_epoch_without_reset(tmp_path: Path):
     assert reopened.get_task(task["taskId"])["leaseEpoch"] == 0
     lease = reopened.lease_next_ir("worker-a", ["migrate"])
     assert lease is not None and lease.lease_epoch == 1
+
+
+def test_context_checkpoint_and_terminal_cas_rollback_together(tmp_path: Path, monkeypatch):
+    path = tmp_path / "checkpoint-atomic.sqlite3"
+    store = DistributedControlPlane(path)
+    context = CanonicalContextStore(path)
+    context.seed("agentmanager", {
+        "active_work": {"next_actions": ["verify"], "current_findings": []},
+    })
+    ir = CanonicalIR(
+        goal="checkpoint only after fenced completion",
+        project_id="agentmanager", capability="agentos.context.checkpoint",
+    )
+    store.submit_ir(ir)
+    lease = store.lease_next_ir("worker-a", ["agentos.context.checkpoint"])
+    assert lease is not None
+    worker = RemoteRuntimeWorker("worker-a")
+    worker.register("agentos.context.checkpoint", lambda current: {
+        "context_checkpoint": {
+            "completed_action": "verify",
+            "finding": "verified",
+            "next_action": "deploy",
+        },
+    })
+    receipt = worker.execute(ir)
+
+    def fail_final_cas(*args, **kwargs):
+        raise ValueError("synthetic_terminal_cas_failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "update_task", fail_final_cas)
+        with pytest.raises(ValueError, match="synthetic_terminal_cas_failure"):
+            store.complete_ir(lease.task_id, receipt, lease_epoch=lease.lease_epoch)
+
+    after_failure = context.load("agentmanager")
+    assert after_failure is not None
+    assert after_failure["_runtime_context"]["revision"] == 1
+    assert after_failure["active_work"]["next_actions"] == ["verify"]
+    assert store.get_task(lease.task_id)["status"] == "leased"
+
+    completed = store.complete_ir(lease.task_id, receipt, lease_epoch=lease.lease_epoch)
+    assert completed["task"]["status"] == "succeeded"
+    assert completed["contextCheckpoint"]["revision"] == 2
+    after_success = context.load("agentmanager")
+    assert after_success is not None
+    assert after_success["active_work"]["next_actions"] == ["deploy"]
