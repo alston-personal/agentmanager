@@ -1206,9 +1206,13 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             },
         }
     if action == ACTION_REPAIR_TRANSPORT:
-        env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
-        if source_commit:
-            env_extra["AGENTOS_REF"] = "core/integration"
+        # The old integration ref lacks the main-only Realm installer revision
+        # and cannot be an authority for canonical Action Relay recovery.
+        # The repair script enforces exact SHA ancestry in this protected lane.
+        env_extra = {
+            "AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1",
+            "AGENTOS_REF": "main",
+        }
         return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, source_commit=source_commit, env_extra=env_extra)
     if action == ACTION_RECONCILE_CONTROL_INBOX:
         return _run_canonical_script(
