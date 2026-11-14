@@ -1907,3 +1907,8 @@ The emergency-only `oracle-bootstrap-action-relay-via-chronos-safe.yml` already 
 ### 2026-11-14 — emergency Relay receipt mutation semantics
 
 The manual Safe Chronos bootstrap materially changes the Action Relay transport and Antigravity Relay services; it must never claim the whole production environment was untouched. The receipt marker is `action_relay_transport_mutation=EXECUTED`, while only the website is covered by `production_website_mutation=NONE` and `site_sync_build=SKIPPED`. Installed Relay capability and source still require actual Oracle receipt verification before Realm Fabric is authorized.
+
+
+### 2026-11-14 — #1682 fail-closed Experience predecessor probe before Relay mutation
+
+The existing canonical `scripts/repair_antigravity_relay_user.sh` combined Action Relay replacement with a digest-fenced ONE Experience convergence, but checked the hard-coded `ONE_EXPERIENCE_EXPECTED_PREDECESSOR` only **after** the Relay worktree/service could be modified. If the accepted Experience set had evolved independently, the repair could fail late and leave an already-mutated Relay. The bounded source correction first reads the exact pinned seed from the governed Git commit, compares its canonical digest to the existing accepted record (must equal either the expected predecessor or the already-converged seed), and fails before touching the Relay worktree, systemd unit or listener on any missing, symlink, malformed or unexpected predecessor. This does **not** provide comprehensive transactional rollback of the Action Relay installer, which remains a separate acceptance requirement before invoking emergency Safe Chronos. No automatic production invocation occurs from this source PR.
