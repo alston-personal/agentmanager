@@ -139,3 +139,8 @@ AgentOS is an active research and engineering project. Some subsystems are produ
 ## Mio external public discovery (experimental)
 
 `#1825` introduces a standalone, no-write public candidate receipt projection (`scripts/persona_public_discovery_contract.py`). It is **not** a live Threads feed connector or external reply executor. The existing owned-post `post.read` response cannot authorize external discovery. Actual public-source adapter, Oracle receipt, independent account validation, and optional exact-parent replies remain unimplemented pending tests and governance. See `docs/mio-public-discovery-contract.md`.
+
+
+## Public website boundary (source candidate, 2026-11-06)
+
+Studio owns user-facing fiction, personas' public life and products. AgentOS public pages describe the system and responsibilities; operator data and actions require separate authorization. The source candidate pages are `dashboard/app/about/page.tsx` and `dashboard/app/agents/page.tsx`, using a vetted public-only role description allowlist. They are not evidence that the AgentOS origin routes are live. Do not move the existing dashboard root to a public route or redirect Studio `/dashboard/api/*`. Production indexing must use the shared `capability://web.static-index.render` and Oracle-authoritative acceptance. See [AgentOS public site boundary](docs/AGENTOS_PUBLIC_SITE_BOUNDARY.md).
