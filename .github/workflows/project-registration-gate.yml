@@ -1,0 +1,31 @@
+name: Project Repository Registration Gate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/register_project.py'
+      - 'tests/test_register_project_repository_gate.py'
+      - '.github/workflows/project-registration-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/register_project.py'
+      - 'tests/test_register_project_repository_gate.py'
+      - '.github/workflows/project-registration-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify registration script syntax
+        run: python3 -m py_compile scripts/register_project.py
+      - name: Verify repository readback and fail-closed behavior
+        run: python3 -m unittest -v tests.test_register_project_repository_gate

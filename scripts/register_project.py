@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -219,9 +221,65 @@ def ensure_workspace_entry(project_slug: str, pretty_name: str, type_icon: str):
         print(f"⚠️ Warning: Failed to update workspace files: {e}")
 
 
-def register_project(project_name: str, display_name: str | None, status: str, type_icon: str, summary: str | None) -> str:
+
+def verify_project_repository(project_slug: str, repo_url: str | None) -> dict:
+    """Fail closed unless origin/main equals local HEAD."""
+    folder = PHYSICAL_PROJECTS_ROOT / project_slug
+    if not repo_url or not re.fullmatch(r"https://github[.]com/alston-personal/[a-z0-9-]+", repo_url):
+        return {"repository_state": "blocked", "repo_url": repo_url, "blocker": "repo_url_missing_or_invalid"}
+    if not (folder / ".git").exists():
+        return {"repository_state": "blocked", "repo_url": repo_url, "blocker": "code_checkout_missing"}
+    try:
+        def git(*args):
+            return subprocess.run(["git", "-C", str(folder), *args], check=True,
+                                  capture_output=True, text=True, timeout=20).stdout.strip()
+        origin = git("remote", "get-url", "origin").rstrip("/").removesuffix(".git")
+        branch = git("branch", "--show-current")
+        head = git("rev-parse", "HEAD")
+        lines = git("ls-remote", "--heads", "origin", "main").split()
+        if origin != repo_url or branch != "main" or not lines or head != lines[0]:
+            return {"repository_state": "blocked", "repo_url": repo_url, "blocker": "remote_main_mismatch"}
+        return {"repository_state": "provisioned", "repo_url": repo_url,
+                "source_commit": head, "blocker": None}
+    except (OSError, subprocess.SubprocessError):
+        return {"repository_state": "blocked", "repo_url": repo_url, "blocker": "remote_probe_failed"}
+
+
+def save_repo_registration(project_slug: str, display_name: str, state: dict) -> Path:
+    path = DATA_PROJECTS_DIR / project_slug / "project.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = {}
+    if path.exists():
+        raw = path.read_text(encoding="utf-8")
+        try:
+            import yaml
+            loaded = yaml.safe_load(raw)
+            if not isinstance(loaded, dict):
+                raise ValueError("project_yaml_not_mapping")
+            existing = loaded
+        except ImportError:
+            try:
+                loaded = json.loads(raw)
+                if not isinstance(loaded, dict):
+                    raise ValueError("project_yaml_not_mapping")
+                existing = loaded
+            except ValueError as exc:
+                raise RuntimeError("existing_project_yaml_requires_yaml_parser") from exc
+    # JSON is a YAML 1.2 subset; preserve prior project metadata keys.
+    existing.update({"project_id": project_slug, "display_name": display_name,
+                     "actual_code_path": str(PHYSICAL_PROJECTS_ROOT / project_slug), **state})
+    tmp = path.with_suffix(".yaml.tmp")
+    tmp.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+def register_project(project_name: str, display_name: str | None, status: str, type_icon: str, summary: str | None, repo_url: str | None = None) -> str:
     project_slug = slugify(project_name)
     pretty_name = display_name.strip() if display_name else titleize(project_slug)
+    repo_state = verify_project_repository(project_slug, repo_url)
+    metadata_path = save_repo_registration(project_slug, pretty_name, repo_state)
+    if repo_state["repository_state"] == "blocked":
+        status = "BLOCKED: repository verification pending"
     status_path = ensure_status_file(project_slug, pretty_name, status, summary)
     ensure_dashboard_entry(project_slug, pretty_name, status, type_icon)
     ensure_local_mounts(project_slug, status_path)
@@ -235,7 +293,8 @@ def register_project(project_name: str, display_name: str | None, status: str, t
         print(f"⚠️ Warning: Failed to propagate AI rules: {e}")
         
     return "\n".join([
-        f"Registered project: {pretty_name}",
+        f"Registration state: {repo_state['repository_state']}",
+        f"Metadata: {metadata_path}",
         f"Slug: {project_slug}",
         f"STATUS: {status_path}",
         f"Workspace: {WORKSPACE_ROOT / project_slug}",
@@ -250,10 +309,11 @@ def main() -> int:
     parser.add_argument("--status", default="🆕 Registered", help="Initial project status")
     parser.add_argument("--type-icon", default="🖥️", help="Dashboard type icon")
     parser.add_argument("--summary", help="Initial working summary")
+    parser.add_argument("--repo-url", help="Verified canonical GitHub URL")
     args = parser.parse_args()
-
-    print(register_project(args.project_name, args.display_name, args.status, args.type_icon, args.summary))
-    return 0
+    result = register_project(args.project_name, args.display_name, args.status, args.type_icon, args.summary, args.repo_url)
+    print(result)
+    return 2 if "Registration state: blocked" in result else 0
 
 
 if __name__ == "__main__":
