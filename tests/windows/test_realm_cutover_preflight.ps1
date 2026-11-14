@@ -77,3 +77,7 @@ try {
   $env:LOCALAPPDATA = $oldLocal
   Remove-Item -LiteralPath $temp -Force -Recurse -ErrorAction SilentlyContinue
 }
+
+# Expected rejected child processes leave LASTEXITCODE nonzero in the caller.
+# The negative assertions above all passed; do not propagate the last reject code.
+$global:LASTEXITCODE = 0
