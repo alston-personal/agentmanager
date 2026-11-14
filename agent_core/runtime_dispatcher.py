@@ -650,6 +650,9 @@ class RuntimeDispatcher:
     def dispatch_pending(self, *, limit: int = 20) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be >= 1")
+        # Recover push leases even when no Executor is polling for another
+        # lease. The store serializes expiry against concurrent fresh claims.
+        self.store.requeue_expired_ir_leases()
         results = []
         for task_id in self._submitted_task_ids(limit):
             try:
