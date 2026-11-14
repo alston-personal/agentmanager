@@ -184,7 +184,9 @@ PY
     echo "public_path=${path} http_code=${code}"
     test "$code" = 200
   done
-  echo 'production_mutation=NONE'
+  # Transport/service mutation DID occur. Only website build/sync was skipped.
+  echo 'action_relay_transport_mutation=EXECUTED'
+  echo 'production_website_mutation=NONE'
   echo 'site_sync_build=SKIPPED'
   echo 'safe_transport_recovery_v2=PASS'
 } 2>&1 | tee "$OUT"
