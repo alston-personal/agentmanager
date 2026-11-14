@@ -52,18 +52,18 @@ class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
             marker.parent.mkdir(parents=True)
             pending = runtime.parent / ".action-relay-install.pending"
             pending.mkdir(mode=0o700)
-            old_unit = b"[Service]\\nDescription=old\\n"
-            old_marker = b'{"source":"old"}\\n'
+            old_unit = b"[Service]\nDescription=old\n"
+            old_marker = b'{"source":"old"}\n'
             (pending / "unit").write_bytes(old_unit)
             (pending / "capabilities").write_bytes(old_marker)
             for name in ("unit", "capabilities"):
                 digest = hashlib.sha256((pending / name).read_bytes()).hexdigest()
                 (pending / (name + ".sha256")).write_text(
-                    digest + "  " + name + "\\n", encoding="utf-8"
+                    digest + "  " + name + "\n", encoding="utf-8"
                 )
             (pending / "state").write_text(
                 f"prior_kind=worktree prior_head={old_sha} "
-                "unit_present=1 marker_present=1 was_active=1 was_enabled=1\\n",
+                "unit_present=1 marker_present=1 was_active=1 was_enabled=1\n",
                 encoding="utf-8"
             )
             if corrupt:
