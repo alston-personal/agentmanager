@@ -17,7 +17,7 @@ OLD_SHA = "1" * 40
 
 
 class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
-    def _run(self, corrupt=False, stuck=False, fail_reset=False, real_git=False):
+    def _run(self, corrupt=False, stuck=False, fail_reset=False, real_git=False, kill_after_reset=False):
         source = SCRIPT.read_text(encoding="utf-8")
         start = source.index('TXN_PARENT=$(dirname "$RUNTIME_ROOT")')
         end = source.index("# Converge to exactly one governed consumer for this spool.", start)
@@ -71,7 +71,14 @@ class PendingActionRelayRecoveryIntegrationTest(unittest.TestCase):
             unit.write_text("new unit", encoding="utf-8")
             marker.write_text("new capability", encoding="utf-8")
             command_log = root / "commands.log"
-            git_mock = "" if real_git else f"""git() {{
+            git_mock = """git() {
+  printf 'git %s\\n' "$*" >> "$LOG"
+  command git "$@" || return $?
+  if [ "$3" = reset ] && [ "${KILL_AFTER_RESET:-0}" = 1 ]; then
+    kill -KILL "$"
+  fi
+} 
+""" if real_git else f"""git() {{
   printf 'git %s\\n' "$*" >> "$LOG"
   if [ "$3" = "reset" ] && [ "${{FAIL_RESET:-0}}" = 1 ]; then return 40; fi
   if [ "$3" = "rev-parse" ]; then printf '%s\\n' "{old_sha}"; fi
@@ -107,14 +114,26 @@ systemctl() {{
 }}
 {git_mock}
 """
+            command = ["bash", "-c", prefix + transaction]
+            env = {**os.environ, "STUCK": str(int(stuck)),
+                   "FAIL_RESET": str(int(fail_reset))}
+            first_code = None
+            if kill_after_reset:
+                self.assertTrue(real_git)
+                killed = subprocess.run(
+                    command, text=True, capture_output=True, check=False,
+                    timeout=20, env={**env, "KILL_AFTER_RESET": "1"},
+                )
+                first_code = killed.returncode
+                self.assertEqual(first_code, -9, killed.stderr)
+                self.assertTrue(pending.exists(), "SIGKILL must leave pending snapshot")
             result = subprocess.run(
-                ["bash", "-c", prefix + transaction],
-                text=True, capture_output=True, check=False, timeout=20,
-                env={**os.environ, "STUCK": str(int(stuck)),
-                     "FAIL_RESET": str(int(fail_reset))},
+                command, text=True, capture_output=True, check=False,
+                timeout=20, env={**env, "KILL_AFTER_RESET": "0"},
             )
             return {
                 "code": result.returncode, "stderr": result.stderr,
+                "first_code": first_code,
                 "unit": unit.read_bytes(),
                 "marker": marker.read_bytes() if marker.exists() else None,
                 "pending": pending.exists(),
@@ -137,6 +156,15 @@ systemctl() {{
 
     def test_pending_recovery_resets_real_git_worktree_to_prior_commit(self):
         r = self._run(real_git=True)
+        self.assertEqual(r["code"], 73, r["stderr"])
+        self.assertEqual(r["runtime_generation"], "old")
+        self.assertEqual(r["unit"], r["old_unit"])
+        self.assertEqual(r["marker"], r["old_marker"])
+        self.assertFalse(r["pending"])
+
+    def test_sigkill_during_real_git_restore_then_next_run_recovers(self):
+        r = self._run(real_git=True, kill_after_reset=True)
+        self.assertEqual(r["first_code"], -9)
         self.assertEqual(r["code"], 73, r["stderr"])
         self.assertEqual(r["runtime_generation"], "old")
         self.assertEqual(r["unit"], r["old_unit"])
