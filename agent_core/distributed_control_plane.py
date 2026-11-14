@@ -124,6 +124,9 @@ class DistributedControlPlane(ControlPlaneStore):
         now = _utc_now()
         requeued = 0
         with self._connect() as connection:
+            # Serialize expiry recovery with new claims so a stale sweep cannot
+            # requeue a lease that was renewed by a concurrent Executor.
+            connection.execute("BEGIN IMMEDIATE")
             push_targets = self._durable_push_targets(connection)
             rows = connection.execute(
                 """
@@ -146,8 +149,9 @@ class DistributedControlPlane(ControlPlaneStore):
                     UPDATE tasks
                     SET status='submitted', target_node_id=?, lease_until=NULL, updated_at=?
                     WHERE task_id=? AND status='leased'
+                      AND lease_until IS NOT NULL AND lease_until < ?
                     """,
-                    (row["target_node_id"] if keep_target else None, now, row["task_id"]),
+                    (row["target_node_id"] if keep_target else None, now, row["task_id"], now),
                 )
                 requeued += cursor.rowcount
         return requeued
