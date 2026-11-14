@@ -14,7 +14,23 @@ jobs:
         with:
           fetch-depth: 0
       - name: Unit tests
-        run: python3 -m unittest discover -s tests -p test_branch_convergence_paths.py -v
+        run: python3 -m unittest discover -s tests -p 'test_branch_convergence_paths.py' -v && python3 -m unittest discover -s tests -p 'test_branch_resume_guard.py' -v
+      - name: Verify Executor job freshness before dispatch
+        run: |
+          python3 -m venv /tmp/agentos-resume-guard-venv
+          /tmp/agentos-resume-guard-venv/bin/python -m pip install --disable-pip-version-check pytest
+          /tmp/agentos-resume-guard-venv/bin/python -m pytest --import-mode=importlib --rootdir=tests tests/test_branch_resume_controller.py tests/test_branch_resume_host_probe.py -q
+          /tmp/agentos-resume-guard-venv/bin/python -m pytest --import-mode=importlib --rootdir=tests tests/test_action_relay_generation_reconcile.py -q
+      - name: Reject stale mainline on resumed code PR
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          WORK_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          python3 scripts/branch_resume_guard.py --work-sha "$WORK_SHA" --kind code
+
       - name: Audit all changed paths including rename and deletion
         shell: bash
         env:
