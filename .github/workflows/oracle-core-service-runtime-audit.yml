@@ -254,6 +254,11 @@ jobs:
                                   )))
                           except (TypeError, ValueError):
                               pass
+                      missing_runtime_reasons = {
+                          "no_registered_push_capability": 0,
+                          "excluded_by_runtime_policy": 0,
+                      }
+                      submitted_capabilities = set()
                       dispatch_classes = {
                           "waiting_for_online_pull": 0,
                           "eligible_push_by_capability": 0,
@@ -283,6 +288,7 @@ jobs:
                               policy = (context.get("runtime_policy")
                                         if isinstance(context, dict) else None)
                               policy = policy if isinstance(policy, dict) else {}
+                              submitted_capabilities.add(capability)
                               prefer_push = bool(policy.get("prefer_push"))
                               if capability in online_caps and not prefer_push:
                                   dispatch_classes["waiting_for_online_pull"] += 1
@@ -300,8 +306,17 @@ jobs:
                                   dispatch_classes["eligible_push_by_capability"] += 1
                               else:
                                   dispatch_classes["no_matching_runtime"] += 1
+                                  reason = (
+                                      "excluded_by_runtime_policy"
+                                      if any(capability in caps
+                                             for _, _, caps in push_target_caps)
+                                      else "no_registered_push_capability"
+                                  )
+                                  missing_runtime_reasons[reason] += 1
                           except (ValueError, TypeError, AttributeError):
                               dispatch_classes["malformed_ir"] += 1
+                      observed["submitted_distinct_capability_count"] = len(submitted_capabilities)
+                      observed["missing_runtime_reasons"] = missing_runtime_reasons
                       observed["dispatch_choice_classes"] = dispatch_classes
                       observed["dispatch_choice_reconciles"] = (
                           sum(dispatch_classes.values()) == observed["submitted_count"]
