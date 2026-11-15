@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-from scripts.attest_realm_loaded_source_redacted import parse_environ, sha256, source_attestation, is_realm_8780_command
+from scripts.attest_realm_loaded_source_redacted import parse_environ, sha256, source_attestation, is_realm_8780_command, has_main_runtime_repair_policy
 
 class RealmSourceRedactionTests(unittest.TestCase):
     def test_only_pythonpath_is_parsed(self):
@@ -21,6 +21,19 @@ class RealmSourceRedactionTests(unittest.TestCase):
         self.assertTrue(is_realm_8780_command(fixed))
         self.assertFalse(is_realm_8780_command(b"python3\0-m\0some.other.module\0serve\08780\0"))
         self.assertFalse(is_realm_8780_command(b"python3\0-m\0agent_core.realm_cli\0serve\09999\0"))
+
+    def test_oidc_policy_probe_only_exposes_boolean(self):
+        with TemporaryDirectory() as root:
+            candidate = Path(root) / "realm_server.py"
+            candidate.write_text(
+                "_GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF\n"
+                "main-action-runtime-migration-20261007.yml\n"
+                "_validate_main_runtime_repair_intent\n"
+                "private-secret-is-never-returned",
+                encoding="utf-8",
+            )
+            self.assertIs(has_main_runtime_repair_policy(candidate), True)
+            self.assertIs(has_main_runtime_repair_policy(Path(root) / "absent.py"), False)
 
     def test_file_digest_does_not_disclose_content(self):
         with TemporaryDirectory() as root:
@@ -41,6 +54,9 @@ class RealmSourceRedactionTests(unittest.TestCase):
         self.assertFalse(result["loaded_module_in_memory_verified"])
         self.assertFalse(result["conclusive_8780_origin_verified"])
         self.assertFalse(result["credential_exposed"])
+        self.assertIn("unit_mainpid_is_listener", result)
+        self.assertIn("checkout_main_runtime_oidc_policy_present", result)
+        self.assertIn("process_candidate_main_runtime_oidc_policy_present", result)
         self.assertNotIn("pid", result)
         self.assertNotIn("environment", result)
         self.assertNotIn("source_path", result)
