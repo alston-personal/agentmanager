@@ -82,6 +82,81 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Teams owner and process provenance without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          import json, subprocess, time
+          from pathlib import Path
+          unit = "teams-commander.service"
+          def prop(name):
+              try:
+                  return subprocess.check_output(
+                      ["systemctl", "--user", "show", unit, "-p", name, "--value"],
+                      text=True, timeout=5, stderr=subprocess.DEVNULL,
+                  ).strip()
+              except (OSError, subprocess.SubprocessError):
+                  return ""
+          def category(path):
+              if path.startswith("/home/ubuntu/agent-data/releases/core/"):
+                  return "immutable_core_release"
+              if path.startswith("/home/ubuntu/agentmanager"):
+                  return "mutable_checkout"
+              return "other_or_missing"
+          pid_raw = prop("MainPID")
+          try:
+              pid = int(pid_raw)
+          except ValueError:
+              pid = 0
+          cwd = ""
+          if pid > 0:
+              try:
+                  cwd = str(Path(f"/proc/{pid}/cwd").resolve(strict=True))
+              except (OSError, RuntimeError):
+                  pass
+          unit_wd = prop("WorkingDirectory")
+          unit_file = prop("FragmentPath")
+          script_present = False
+          if cwd:
+              script_present = (Path(cwd) / "scripts" / "teams_bridge.py").is_file()
+          observed = {
+              "schema": "agentos.teams-immutable-owner-readonly/v1",
+              "service_state": prop("ActiveState"),
+              "substate": prop("SubState"),
+              "pid_present": pid > 0,
+              "unit_workdir_class": category(unit_wd),
+              "process_cwd_class": category(cwd),
+              "unit_vs_process_cwd_equal": bool(cwd) and cwd == unit_wd,
+              "unit_file_under_user_systemd": unit_file.startswith(
+                  "/home/ubuntu/.config/systemd/user/"
+              ),
+              "teams_script_in_process_cwd": script_present,
+              "unit_fragment_mtime": (
+                  int(Path(unit_file).stat().st_mtime)
+                  if unit_file and Path(unit_file).is_file() else None
+              ),
+              "mainpid_start_timestamp": None,
+              "read_only": True,
+          }
+          if pid > 0:
+              try:
+                  uptime = float(Path("/proc/uptime").read_text().split()[0])
+                  boot_seconds = time.time() - uptime
+                  clock_ticks = float(subprocess.check_output(
+                      ["getconf", "CLK_TCK"], text=True
+                  ).strip())
+                  raw = Path(f"/proc/{pid}/stat").read_text()
+                  after_comm = raw.rsplit(")", 1)[1].split()
+                  start_ticks = int(after_comm[19])
+                  observed["mainpid_start_timestamp"] = int(
+                      boot_seconds + start_ticks / clock_ticks
+                  )
+              except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+                  pass
+          print(json.dumps(observed, sort_keys=True))
+          PY
       - name: Attest effective Control Plane without mutation
         shell: bash
         run: |
