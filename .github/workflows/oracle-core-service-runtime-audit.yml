@@ -65,3 +65,123 @@ jobs:
             exit 1
           fi
           REMOTE
+
+  realm-oidc-loaded-runtime-readonly:
+    # Verify the actual Realm Fabric process independently of an installer receipt.
+    # Never restart services, read token values or print process argv/environment.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Compare live Realm PID, loaded cwd and OIDC policy bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_HASH="$(sha256sum agent_core/realm_server.py | awk '{print $1}')"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            python3 - "$EXPECTED_HASH" <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import time
+          from pathlib import Path
+
+          expected = __import__("sys").argv[1]
+          assert re.fullmatch(r"[0-9a-f]{64}", expected)
+          unit = "agentos-realm-fabric.service"
+          def prop(name):
+              try:
+                  return subprocess.check_output(
+                      ["systemctl", "--user", "show", unit, "-p", name, "--value"],
+                      text=True, stderr=subprocess.DEVNULL, timeout=5
+                  ).strip()
+              except (subprocess.SubprocessError, OSError):
+                  return ""
+
+          active = prop("ActiveState")
+          pid_txt = prop("MainPID")
+          pid = int(pid_txt) if pid_txt.isdigit() else 0
+          proc_cwd = None
+          if pid > 0:
+              try:
+                  proc_cwd = Path(os.readlink(f"/proc/{pid}/cwd"))
+              except OSError:
+                  pass
+          unit_wd = Path(prop("WorkingDirectory") or "/nonexistent")
+          repo = Path("/home/ubuntu/agentmanager")
+
+          def policy(path):
+              try:
+                  content = path.read_bytes()
+                  text = content.decode("utf-8", errors="replace")
+                  return {
+                      "exists": True,
+                      "matches_expected_source": hashlib.sha256(content).hexdigest() == expected,
+                      "contains_main_runtime_oidc_policy": (
+                          "main-action-runtime-migration-20261007.yml" in text
+                          and "_GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF" in text
+                      ),
+                      "mtime": int(path.stat().st_mtime),
+                  }
+              except OSError:
+                  return {"exists": False, "matches_expected_source": False,
+                          "contains_main_runtime_oidc_policy": False,
+                          "mtime": None}
+
+          disk = policy(repo / "agent_core/realm_server.py")
+          running = policy(proc_cwd / "agent_core/realm_server.py") if proc_cwd else {
+              "exists": False, "matches_expected_source": False,
+              "contains_main_runtime_oidc_policy": False, "mtime": None
+          }
+          start = None
+          if pid > 0:
+              try:
+                  raw = Path(f"/proc/{pid}/stat").read_text()
+                  ticks = int(raw.rsplit(")", 1)[1].split()[19])
+                  frequency = os.sysconf("SC_CLK_TCK")
+                  start = int(time.time() - float(Path("/proc/uptime").read_text().split()[0])
+                              + ticks / frequency)
+              except (OSError, ValueError, IndexError):
+                  pass
+          observed = {
+              "schema": "agentos.realm-oidc-source-runtime-readonly/v1",
+              "read_only": True,
+              "unit_active": active == "active",
+              "pid_present": pid > 0,
+              "unit_cwd_equals_process_cwd": (
+                  proc_cwd is not None and str(proc_cwd) == str(unit_wd)
+              ),
+              "process_cwd_is_mutable_repo": proc_cwd == repo,
+              "process_cwd_is_immutable_core_release": (
+                  proc_cwd is not None and str(proc_cwd).startswith(
+                      "/home/ubuntu/agent-data/releases/core/"
+                  )
+              ),
+              "repo_disk_matches_expected_source": disk["matches_expected_source"],
+              "repo_disk_oidc_main_repair_present": disk["contains_main_runtime_oidc_policy"],
+              "running_cwd_file_matches_expected_source": running["matches_expected_source"],
+              "running_cwd_file_oidc_main_repair_present": running["contains_main_runtime_oidc_policy"],
+              "process_started_after_running_cwd_file_mtime": (
+                  start is not None and running["mtime"] is not None
+                  and start >= running["mtime"]
+              ),
+              "mainpid_start_timestamp": start,
+              "running_cwd_file_mtime": running["mtime"],
+          }
+          print(json.dumps(observed, sort_keys=True))
+          PY
