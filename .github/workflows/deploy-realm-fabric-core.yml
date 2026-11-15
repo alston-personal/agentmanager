@@ -279,3 +279,59 @@ jobs:
           path: /tmp/agentos-core-evidence
           if-no-files-found: ignore
           retention-days: 14
+
+  attest-oidc-source:
+    needs: [deploy]
+    if: github.event_name != 'pull_request'
+    # Independent owner-boundary readback AFTER the existing Relay CAS release.
+    # No new installer, alternate deployment authority or service mutation.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Attest actual Realm release policy against this exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${DEPLOY_USER:-}" = ubuntu
+          EXPECTED_SHA="$(sha256sum agent_core/realm_server.py | awk '{print $1}')"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            "AGENTOS_REALM_ATTEST_ROOT=/home/ubuntu/agentmanager AGENTOS_REALM_ATTEST_EXPECTED_SHA256=$EXPECTED_SHA python3 -" \
+            < scripts/attest_realm_loaded_source_redacted.py > "$RUNNER_TEMP/realm-oidc-policy-attestation.json"
+          python3 - "$RUNNER_TEMP/realm-oidc-policy-attestation.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          data=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          required={
+              "read_only": True,
+              "unit_active": True,
+              "listener_owner_is_ubuntu": True,
+              "health_schema_valid": True,
+              "runner_identity_is_ubuntu": True,
+              "unit_source_candidate_available": True,
+              "unit_source_candidate_matches_expected": True,
+              "unit_source_candidate_has_main_runtime_oidc_policy": True,
+              "checkout_main_runtime_oidc_policy_present": True,
+          }
+          print("realm_oidc_source_attestation_schema="+str(data.get("schema")))
+          for key, expected in required.items():
+              actual=data.get(key)
+              print("realm_oidc_"+key+"="+str(actual).lower())
+              if actual is not expected:
+                  raise SystemExit("realm_oidc_acceptance=FAIL_"+key)
+          # Disk source equality is not equivalent to live in-memory proof.
+          print("realm_oidc_source_disk=PASS")
+          print("realm_oidc_in_memory_verified=false")
+          PY
