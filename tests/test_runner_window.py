@@ -769,3 +769,51 @@ def test_teams_cutover_action_relay_rejects_unsafe_targets_without_gh(
             "inputs": inputs,
             "expected_head_sha": "a" * 40,
         })
+
+
+def test_teams_cutover_relay_rejects_stale_main_before_workflow_dispatch(monkeypatch):
+    from agentos_node import action_relay
+    calls = []
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "api", "repos/alston-personal/agentmanager/git/ref/heads/main"]:
+            return {"returncode": 0, "stdout": '{"object":{"sha":"' + "b" * 40 + '"}}', "stderr": ""}
+        raise AssertionError("workflow triggered despite wrong protected main SHA")
+    monkeypatch.setattr(action_relay, "_run", fake_run)
+    result = action_relay._github_actions_dispatch({
+        "repository": "alston-personal/agentmanager",
+        "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+        "ref": "main",
+        "inputs": {"teams_only": "true"},
+        "expected_head_sha": "a" * 40,
+    })
+    assert result["ok"] is False
+    assert result["dispatched"] is False
+    assert "head differs" in result["error"]
+    assert len(calls) == 2
+
+
+def test_teams_cutover_relay_must_verify_main_before_gh_run(monkeypatch):
+    from agentos_node import action_relay
+    calls = []
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "api", "repos/alston-personal/agentmanager/git/ref/heads/main"]:
+            return {"returncode": 1, "stdout": "", "stderr": "private reason"}
+        raise AssertionError("workflow triggered without verified main SHA")
+    monkeypatch.setattr(action_relay, "_run", fake_run)
+    result = action_relay._github_actions_dispatch({
+        "repository": "alston-personal/agentmanager",
+        "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+        "ref": "main",
+        "inputs": {"teams_only": "true"},
+        "expected_head_sha": "a" * 40,
+    })
+    assert result["ok"] is False
+    assert result["dispatched"] is False
+    assert result["error"] == "protected main head verification unavailable"
+    assert len(calls) == 2
