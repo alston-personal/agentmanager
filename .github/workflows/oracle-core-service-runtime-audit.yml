@@ -226,6 +226,86 @@ jobs:
                       observed["submitted_inventory_reconciles"] = (
                           sum(categories.values()) == observed["submitted_count"]
                       )
+                      # Mirror the non-mutating *choice* criteria in the
+                      # installed RuntimeDispatcher; do not wake any target.
+                      online_caps = set()
+                      if conn.execute(
+                          "SELECT 1 FROM sqlite_master WHERE name='nodes'"
+                      ).fetchone():
+                          for (manifest_raw,) in conn.execute(
+                              "SELECT manifest_json FROM nodes WHERE status='online'"
+                          ):
+                              try:
+                                  manifest = json.loads(manifest_raw)
+                                  for item in manifest.get("spec", {}).get("capabilities", []):
+                                      if isinstance(item, dict) and isinstance(item.get("name"), str):
+                                          online_caps.add(item["name"])
+                              except (TypeError, ValueError, AttributeError):
+                                  pass
+                      push_target_caps = []
+                      for _, kind, caps_raw, enabled in target_rows:
+                          if not enabled or kind not in ("github_actions", "webhook"):
+                              continue
+                          try:
+                              caps = json.loads(caps_raw)
+                              if isinstance(caps, list):
+                                  push_target_caps.append((kind, set(
+                                      c for c in caps if isinstance(c, str)
+                                  )))
+                          except (TypeError, ValueError):
+                              pass
+                      dispatch_classes = {
+                          "waiting_for_online_pull": 0,
+                          "eligible_push_by_capability": 0,
+                          "no_matching_runtime": 0,
+                          "targeted_or_non_ir_excluded": 0,
+                          "malformed_ir": 0,
+                      }
+                      for target_id, capability, raw in conn.execute(
+                          "SELECT target_node_id, capability, payload_json "
+                          "FROM tasks WHERE status='submitted'"
+                      ):
+                          try:
+                              payload = json.loads(raw)
+                              if not isinstance(payload, dict) or (
+                                  payload.get("protocol") != "agentos.distributed-task/v1"
+                              ):
+                                  dispatch_classes["targeted_or_non_ir_excluded"] += 1
+                                  continue
+                              if target_id:
+                                  dispatch_classes["targeted_or_non_ir_excluded"] += 1
+                                  continue
+                              ir = payload.get("canonical_ir")
+                              if not isinstance(ir, dict):
+                                  dispatch_classes["malformed_ir"] += 1
+                                  continue
+                              context = ir.get("context")
+                              policy = (context.get("runtime_policy")
+                                        if isinstance(context, dict) else None)
+                              policy = policy if isinstance(policy, dict) else {}
+                              prefer_push = bool(policy.get("prefer_push"))
+                              if capability in online_caps and not prefer_push:
+                                  dispatch_classes["waiting_for_online_pull"] += 1
+                                  continue
+                              deny = policy.get("deny_targets") or []
+                              allowed = policy.get("allowed_kinds")
+                              # Names of denied targets intentionally never leave host.
+                              choices = [
+                                  kind for kind, caps in push_target_caps
+                                  if capability in caps
+                                  and (not isinstance(allowed, list) or kind in allowed)
+                              ]
+                              if choices:
+                                  dispatch_classes["eligible_push_by_capability"] += 1
+                              else:
+                                  dispatch_classes["no_matching_runtime"] += 1
+                          except (ValueError, TypeError, AttributeError):
+                              dispatch_classes["malformed_ir"] += 1
+                      observed["dispatch_choice_classes"] = dispatch_classes
+                      observed["dispatch_choice_reconciles"] = (
+                          sum(dispatch_classes.values()) == observed["submitted_count"]
+                      )
+                      observed["dispatch_choice_is_static_inference"] = True
                       observed["dispatch_state_counts"] = {}
                       if conn.execute(
                           "SELECT 1 FROM sqlite_master WHERE name='runtime_dispatches'"
