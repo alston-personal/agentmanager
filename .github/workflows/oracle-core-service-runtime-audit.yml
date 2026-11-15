@@ -133,6 +133,9 @@ jobs:
                   "/home/ubuntu/.config/systemd/user/"
               ),
               "teams_script_in_process_cwd": script_present,
+              "systemd_execstart_has_teams_bridge": "teams_bridge.py" in prop("ExecStart"),
+              "systemd_unit_type": prop("Type"),
+              "environment_files_configured": bool(prop("EnvironmentFiles")),
               "unit_fragment_mtime": (
                   int(Path(unit_file).stat().st_mtime)
                   if unit_file and Path(unit_file).is_file() else None
