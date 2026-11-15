@@ -694,3 +694,78 @@ def test_golden_path_refuses_ambiguous_same_sha_runs(monkeypatch):
     assert result["ok"] is False
     assert result["run_id"] is None
     assert result["error"] == "ambiguous workflow run correlation"
+
+
+def test_teams_only_dispatch_reuses_registered_intent_and_exact_inputs():
+    from agentos_node import bootstrap_control as bc
+    intent, params = resolve_intent(
+        "github.actions", "workflow.dispatch",
+        source_commit="a" * 40,
+        payload={
+            "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+            "ref": "main",
+            "inputs": {"teams_only": "true"},
+        },
+    )
+    assert intent.action == bc.ACTION_GITHUB_ACTIONS_DISPATCH
+    assert params["inputs"] == {"teams_only": "true"}
+
+
+@pytest.mark.parametrize("ref,inputs", [
+    ("core/integration", {"teams_only": "true"}),
+    ("main", {}),
+    ("main", {"teams_only": "false"}),
+    ("main", {"teams_only": "True"}),
+    ("main", {"teams_only": True}),
+    ("main", {"teams_only": "true", "extra": "1"}),
+])
+def test_teams_cutover_bootstrap_rejects_any_other_dispatch_before_side_effects(
+    tmp_path, monkeypatch, ref, inputs,
+):
+    from agentos_node import bootstrap_control as bc, action_relay
+    monkeypatch.setattr(
+        action_relay.ActionRelayClient, "submit",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("relay was invoked before allowlist")
+        ),
+    )
+    req = {
+        "schema": bc.SCHEMA,
+        "request_id": "teams-cutover-test",
+        "action": bc.ACTION_GITHUB_ACTIONS_DISPATCH,
+        "params": {
+            "source_commit": "a" * 40,
+            "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+            "ref": ref,
+            "inputs": inputs,
+        },
+    }
+    with pytest.raises(ValueError, match="not allowlisted|only allows exact"):
+        bc._validate_request(tmp_path / "teams-cutover.request.json", req)
+
+
+@pytest.mark.parametrize("workflow,ref,inputs", [
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "core/integration", {"teams_only": "true"}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "false"}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": True}),
+    ("oracle-core-bundle-immutable-runtime-convergence.yml", "main", {"teams_only": "true", "extra": "yes"}),
+])
+def test_teams_cutover_action_relay_rejects_unsafe_targets_without_gh(
+    monkeypatch, workflow, ref, inputs,
+):
+    from agentos_node import action_relay
+    monkeypatch.setattr(
+        action_relay, "_run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("gh called before exact allowlist")
+        ),
+    )
+    with pytest.raises(ValueError, match="not allowlisted|Teams cutover"):
+        action_relay._github_actions_dispatch({
+            "repository": "alston-personal/agentmanager",
+            "workflow": workflow,
+            "ref": ref,
+            "inputs": inputs,
+            "expected_head_sha": "a" * 40,
+        })
