@@ -10,19 +10,63 @@ permissions:
 
 jobs:
   bootstrap:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    # The existing recovery script mutates ubuntu-owned Chronos and spool
+    # directories. Running it as the agentos-node hosted runner fails on
+    # /home/ubuntu/agent-data and cannot be used as a recovery authority.
+    # Reuse the already-authorized Oracle ubuntu SSH lane, without making
+    # this emergency-only workflow automatic or weakening its SHA fence.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Repair AgentOS transport through existing ubuntu Chronos
+      - name: Verify exact manual main release and Oracle ubuntu identity
         shell: bash
         run: |
           set -euo pipefail
           echo 'emergency_manual_invocation=YES'
-          test "$GITHUB_REF_NAME" = "main"
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF_NAME" = main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
-          AGENTOS_SOURCE_COMMIT="$GITHUB_SHA" bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "${DEPLOY_USER:-}" = ubuntu
+          bash -n scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          expected="$1"
+          test "$(id -un)" = ubuntu
+          test -d /home/ubuntu/agentmanager/.git
+          test -f /home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+          git -C /home/ubuntu/agentmanager fetch --no-tags origin main >/dev/null
+          test "$(git -C /home/ubuntu/agentmanager rev-parse origin/main)" = "$expected"
+          test -w /home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+          test -d /home/ubuntu/agent-data/runtime
+          test -d /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe
+          test -w /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe
+          echo "safe_chronos_ubuntu_owner_preflight=PASS"
+          REMOTE
+
+      - name: Repair transport via existing ubuntu Chronos rescue script
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Stream the EXACT approved checkout's script; the remote execution
+          # user and working directory are fixed, with no injected payload.
+          # A disconnected session must be treated as an unknown outcome,
+          # not permission to dispatch a second rescue unconditionally.
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            "cd /home/ubuntu/agentmanager && AGENTOS_SOURCE_COMMIT=$GITHUB_SHA GITHUB_RUN_ID=$GITHUB_RUN_ID bash -s" \
+            < scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
