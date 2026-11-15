@@ -82,6 +82,31 @@ def active_unit_state() -> tuple[str, int | None]:
     return status if status in ("active", "inactive", "failed") else "unknown", pid
 
 
+def unit_source_candidate() -> tuple[Path | None, str]:
+    """Read only effective systemd working directory; never expose its path."""
+    try:
+        wd = subprocess.check_output(
+            ["/usr/bin/systemctl", "--user", "show", UNIT,
+             "-p", "WorkingDirectory", "--value"],
+            text=True, stderr=subprocess.DEVNULL, timeout=6,
+        ).strip()
+        root = Path(wd)
+        if not root.is_absolute():
+            return None, "unavailable"
+        normalized = str(root)
+        if normalized == "/home/ubuntu/agentmanager":
+            category = "mutable_source_checkout"
+        elif normalized.startswith("/home/ubuntu/.local/share/agentos/realm-fabric/"):
+            category = "realm_immutable_or_current"
+        elif normalized.startswith("/home/ubuntu/agent-data/releases/core/"):
+            category = "core_release"
+        else:
+            category = "other"
+        return root / MODULE, category
+    except (OSError, subprocess.SubprocessError):
+        return None, "unavailable"
+
+
 def probe_health() -> bool:
     try:
         with urllib.request.urlopen(
@@ -179,6 +204,8 @@ def source_attestation() -> dict:
     candidate_hashes = [h for h in candidate_hashes if h is not None]
     selected = candidate_hashes[0] if candidate_hashes else None
     canonical_checkout = sha256(Path("/home/ubuntu/agentmanager") / MODULE)
+    unit_candidate, unit_wd_class = unit_source_candidate()
+    unit_candidate_hash = sha256(unit_candidate) if unit_candidate is not None else None
 
     # Imported interpreter state cannot be conclusively recovered from a file
     # on disk. Report source identity as advisory only, never promotion PASS.
@@ -188,6 +215,7 @@ def source_attestation() -> dict:
         unit_contains_approved_path = (
             "/home/ubuntu/agentmanager" in raw_unit
             or "/home/ubuntu/agent-data/releases/" in raw_unit
+            or "/home/ubuntu/.local/share/agentos/realm-fabric/" in raw_unit
         )
     except (OSError, UnicodeError):
         unit_contains_approved_path = False
@@ -207,6 +235,15 @@ def source_attestation() -> dict:
             canonical_checkout == expected if canonical_checkout and expected else False
         ),
         "approved_unit_source_hint": unit_contains_approved_path,
+        "unit_working_directory_class": unit_wd_class,
+        "unit_source_candidate_available": unit_candidate_hash is not None,
+        "unit_source_candidate_matches_expected": (
+            unit_candidate_hash == expected if unit_candidate_hash and expected else False
+        ),
+        "unit_source_candidate_has_main_runtime_oidc_policy": (
+            has_main_runtime_repair_policy(unit_candidate)
+            if unit_candidate is not None else False
+        ),
         "expected_source_available": expected is not None,
         "process_candidate_source_available": bool(candidate_hashes),
         "process_candidate_matches_checkout": selected == expected if selected and expected else False,
