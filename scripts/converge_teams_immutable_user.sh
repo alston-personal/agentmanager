@@ -83,10 +83,20 @@ finish() {
     cp -a -- "$BACKUP/teams-commander.service" "$UNIT" || true
     systemctl --user daemon-reload || true
     systemctl --user restart "$SERVICE" || true
-    if systemctl --user is-active --quiet "$SERVICE"; then
-      echo "teams_cutover_rollback=RESTARTED_PREVIOUS_OWNER"
+    # A momentarily active systemd unit is not enough: confirm that both
+    # the effective unit and the live PID returned to the original owner.
+    rollback_pid="$(systemctl --user show "$SERVICE" -p MainPID --value 2>/dev/null || true)"
+    rollback_wd="$(systemctl --user show "$SERVICE" -p WorkingDirectory --value 2>/dev/null || true)"
+    rollback_cwd=""
+    if [[ "$rollback_pid" =~ ^[1-9][0-9]*$ ]]; then
+      rollback_cwd="$(readlink -f "/proc/$rollback_pid/cwd" 2>/dev/null || true)"
+    fi
+    if systemctl --user is-active --quiet "$SERVICE" &&
+       [ "$rollback_wd" = "$ORIGINAL_WD" ] &&
+       [ "$rollback_cwd" = "$ORIGINAL_WD" ]; then
+      echo "teams_cutover_rollback=RESTORED_PREVIOUS_OWNER"
     else
-      echo "teams_cutover_rollback=FAILED"
+      echo "teams_cutover_rollback=FAILED_TO_VERIFY_PREVIOUS_OWNER"
     fi
   fi
   rm -rf -- "$BACKUP"
@@ -94,6 +104,10 @@ finish() {
 }
 trap finish EXIT
 
+# Fence rollback BEFORE entering the atomic unit rewrite: a failure after
+# os.replace but before Python exits must not leave an untracked mutated unit.
+# A conservative restore is safe even if rewrite fails before os.replace.
+changed=1
 # Change only the single unit's WorkingDirectory; retain its previously
 # accepted Python executable, EnvironmentFile, restart policy and port.
 python3 - "$UNIT" "$ORIGINAL_WD" "$RELEASE" <<'PY'
@@ -116,7 +130,6 @@ finally:
     if os.path.exists(path):
         os.unlink(path)
 PY
-changed=1
 systemctl --user daemon-reload
 test "$(systemctl --user show "$SERVICE" -p WorkingDirectory --value)" = "$RELEASE"
 systemctl --user restart "$SERVICE"
