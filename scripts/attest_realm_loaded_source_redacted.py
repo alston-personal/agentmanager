@@ -31,6 +31,21 @@ def sha256(path: Path) -> str | None:
         return None
 
 
+def has_main_runtime_repair_policy(path: Path) -> bool:
+    """Inspect only on-disk policy presence; never expose code or token bytes."""
+    try:
+        if not path.is_file() or path.stat().st_size > 2_000_000:
+            return False
+        raw = path.read_bytes()
+        return (
+            b"_GITHUB_MAIN_RUNTIME_REPAIR_WORKFLOW_REF" in raw
+            and b"main-action-runtime-migration-20261007.yml" in raw
+            and b"_validate_main_runtime_repair_intent" in raw
+        )
+    except (OSError, ValueError):
+        return False
+
+
 def parse_environ(raw: bytes) -> list[Path]:
     # Extract only PYTHONPATH candidates. Never expose any environment value.
     paths: list[Path] = []
@@ -176,6 +191,7 @@ def source_attestation() -> dict:
         "unit_active": state == "active",
         "unit_status": state,
         "unit_pid_present": pid is not None,
+        "unit_mainpid_is_listener": pid is not None and pid in listener_pids,
         "listener_process_detected": bool(listener_pids),
         "single_listener_process_identified": len(listener_pids) == 1,
         "listener_owner_is_ubuntu": is_ubuntu_uid(observed_pid) if observed_pid is not None else None,
@@ -187,6 +203,10 @@ def source_attestation() -> dict:
         "expected_source_available": expected is not None,
         "process_candidate_source_available": bool(candidate_hashes),
         "process_candidate_matches_checkout": selected == expected if selected and expected else False,
+        "checkout_main_runtime_oidc_policy_present": has_main_runtime_repair_policy(EXPECTED),
+        "process_candidate_main_runtime_oidc_policy_present": any(
+            has_main_runtime_repair_policy(p) for p in module_candidates
+        ),
         "multiple_candidate_generations": len(set(candidate_hashes)) > 1,
         "health_schema_valid": probe_health(),
         "loaded_module_in_memory_verified": False,
