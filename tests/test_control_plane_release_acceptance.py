@@ -245,3 +245,19 @@ def test_teams_live_cutover_requires_explicit_existing_operator_dispatch():
     assert "bash -s -- \"$GITHUB_SHA\" <<'REMOTE'" in workflow
     assert "governance/release-intents/teams-immutable-20261115.json" not in workflow
     assert "teams-release-intent:" not in workflow
+
+
+def test_teams_rollback_is_armed_before_atomic_unit_replacement():
+    from pathlib import Path
+    import subprocess
+
+    source = (Path(__file__).resolve().parents[1] /
+              "scripts/converge_teams_immutable_user.sh")
+    text = source.read_text(encoding="utf-8")
+    assert subprocess.run(["bash", "-n", str(source)], capture_output=True).returncode == 0
+    assert text.index("trap finish EXIT") < text.index("changed=1")
+    assert text.index("changed=1") < text.index('python3 - "$UNIT" "$ORIGINAL_WD" "$RELEASE"')
+    assert 'teams_cutover_rollback=RESTORED_PREVIOUS_OWNER' in text
+    assert 'teams_cutover_rollback=FAILED_TO_VERIFY_PREVIOUS_OWNER' in text
+    assert '[ "$rollback_wd" = "$ORIGINAL_WD" ]' in text
+    assert '[ "$rollback_cwd" = "$ORIGINAL_WD" ]' in text
