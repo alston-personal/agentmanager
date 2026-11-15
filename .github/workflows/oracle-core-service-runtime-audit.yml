@@ -243,13 +243,13 @@ jobs:
                               except (TypeError, ValueError, AttributeError):
                                   pass
                       push_target_caps = []
-                      for _, kind, caps_raw, enabled in target_rows:
+                      for target_name, kind, caps_raw, enabled in target_rows:
                           if not enabled or kind not in ("github_actions", "webhook"):
                               continue
                           try:
                               caps = json.loads(caps_raw)
                               if isinstance(caps, list):
-                                  push_target_caps.append((kind, set(
+                                  push_target_caps.append((target_name, kind, set(
                                       c for c in caps if isinstance(c, str)
                                   )))
                           except (TypeError, ValueError):
@@ -291,8 +291,9 @@ jobs:
                               allowed = policy.get("allowed_kinds")
                               # Names of denied targets intentionally never leave host.
                               choices = [
-                                  kind for kind, caps in push_target_caps
+                                  kind for target_name, kind, caps in push_target_caps
                                   if capability in caps
+                                  and target_name not in deny
                                   and (not isinstance(allowed, list) or kind in allowed)
                               ]
                               if choices:
