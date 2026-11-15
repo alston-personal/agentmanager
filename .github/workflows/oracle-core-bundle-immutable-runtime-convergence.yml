@@ -122,7 +122,7 @@ jobs:
           test -n "${DEPLOY_USER:-}"
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
             -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
-            'bash -s -- "$GITHUB_SHA"' <<'REMOTE'
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
           set -euo pipefail
           SHA="$1"
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -142,7 +142,7 @@ jobs:
           echo "teams_cutover_other_core_units=UNTOUCHED"
 
   converge:
-    if: github.event_name != 'pull_request' && github.ref != 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
