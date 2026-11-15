@@ -16,6 +16,21 @@ class RealmSourceRedactionTests(unittest.TestCase):
         ])
         self.assertNotIn("very-secret", repr(result))
 
+    @patch.dict("os.environ", {"AGENTOS_REALM_ATTEST_EXPECTED_SHA256": "invalid"})
+    def test_trusted_baseline_rejects_invalid_source_digest(self):
+        with self.assertRaisesRegex(ValueError, "exact lowercase SHA256"):
+            source_attestation()
+
+    def test_canonical_attestation_uses_actual_ubuntu_service_identity(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/oracle-attest-realm-fabric-process.yml").read_text(encoding="utf-8")
+        assert "runs-on: ubuntu-latest" in workflow
+        assert 'test "${DEPLOY_USER:-}" = ubuntu' in workflow
+        assert "AGENTOS_REALM_ATTEST_ROOT=/home/ubuntu/agentmanager" in workflow
+        assert "AGENTOS_REALM_ATTEST_EXPECTED_SHA256=$EXPECTED_SHA" in workflow
+        assert "< scripts/attest_realm_loaded_source_redacted.py" in workflow
+        assert "systemctl --user restart" not in workflow
+
     def test_bounded_proc_listener_match_never_leaks_argv(self):
         fixed = b"python3\0-m\0agent_core.realm_cli\0serve\0--port\08780\0"
         self.assertTrue(is_realm_8780_command(fixed))
