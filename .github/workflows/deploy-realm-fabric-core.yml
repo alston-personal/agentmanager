@@ -92,6 +92,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile agent_core/resolve_facade.py agent_core/realm_server.py agent_core/project_store.py agentos_node/thin_client_transport.py
           python3 -m unittest tests.test_resolve_facade tests.test_realm_resolve_endpoint tests.test_project_store_canonical -v
+          python3 -m unittest tests.test_attest_realm_loaded_source_redacted -v
 
   deploy:
     needs: patch-capability
