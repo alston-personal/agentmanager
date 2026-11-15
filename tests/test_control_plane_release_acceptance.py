@@ -209,3 +209,39 @@ def test_teams_immutable_core_install_contract_fail_closed():
     assert 'FAIL_MISSING_BRIDGE' in convergence
     assert 'teams-commander.service cat-ink-syncer.service agentos-core-supervisor.service' in convergence
     assert 'core_bundle_teams_workdir=EXACT_IMMUTABLE_RELEASE' in convergence
+
+
+def test_teams_live_cutover_is_scoped_fail_closed_and_shell_valid():
+    from pathlib import Path
+    import subprocess
+
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts/converge_teams_immutable_user.sh"
+    assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0
+    content = script.read_text(encoding="utf-8")
+    assert 'test "$(id -un)" = ubuntu' in content
+    assert 'SOURCE_SHA' in content
+    assert 'test "$pid_after" != "$pid_before"' in content
+    assert 'teams_cutover_pid_cwd=EXACT_IMMUTABLE_RELEASE' in content
+    assert 'teams_cutover_rollback=BEGIN' in content
+    assert 'teams_cutover_other_core_units=UNTOUCHED' in content
+    assert 'git -C "$REPO" worktree add --detach "$RELEASE" "$SOURCE_SHA"' in content
+    assert 'systemctl --user restart "$SERVICE"' in content
+    assert 'systemctl --user restart os-chronos.service' not in content
+    assert 'ln -sfn "$RELEASE" "$CURRENT"' not in content
+
+
+def test_teams_live_cutover_requires_explicit_existing_operator_dispatch():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml").read_text(encoding="utf-8")
+    assert "branches: [core/integration]" in workflow
+    assert "teams_only:" in workflow
+    assert "teams-immutable-cutover:" in workflow
+    assert "inputs.teams_only == true" in workflow
+    assert "github.ref_name == 'main'" in workflow
+    assert "github.event_name == 'workflow_dispatch'" in workflow
+    assert "bash -s -- \"$GITHUB_SHA\" <<'REMOTE'" in workflow
+    assert "governance/release-intents/teams-immutable-20261115.json" not in workflow
+    assert "teams-release-intent:" not in workflow

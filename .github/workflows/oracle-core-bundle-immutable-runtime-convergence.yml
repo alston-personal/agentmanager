@@ -42,6 +42,16 @@ on:
       - 'governance/paw-employee.json'
       - 'scripts/bootstrap_product_employees.py'
   workflow_dispatch:
+    inputs:
+      teams_only:
+        description: "Operator-approved exact-main Teams-only cutover (never broad Core)"
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
 
 permissions:
   contents: read
@@ -52,7 +62,105 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  teams-readonly-preflight:
+    # PR CI checks the *live* current unit shape before a protected-main
+    # release intent can be accepted; this stage never changes Oracle state.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify live Teams unit can be safely migrated without a rewrite
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'python3 -' <<'PY'
+          import json, re, subprocess
+          from pathlib import Path
+          def prop(key):
+              return subprocess.check_output(
+                  ["systemctl", "--user", "show", "teams-commander.service",
+                   "-p", key, "--value"], text=True, timeout=5
+              ).strip()
+          unit = Path("/home/ubuntu/.config/systemd/user/teams-commander.service")
+          source = unit.read_text(encoding="utf-8")
+          checks = {
+              "active": prop("ActiveState") == "active",
+              "expected_unit_fragment": prop("FragmentPath") == str(unit),
+              "unit_file_not_symlink": not unit.is_symlink(),
+              "unit_workdir_mutable": prop("WorkingDirectory") == "/home/ubuntu/agentmanager",
+              "unit_text_exact_workdir": source.count(
+                  "WorkingDirectory=" + prop("WorkingDirectory")
+              ) == 1,
+              "relative_teams_script_in_exec": bool(re.search(
+                  r"(?m)^ExecStart=/[^\s]+[\s]+scripts/teams_bridge\.py[\s]*$", source
+              )),
+              "environmentfile_present": any(
+                  line.startswith("EnvironmentFile=")
+                  for line in source.splitlines()
+              ),
+              "no_dropins": not prop("DropInPaths"),
+          }
+          print(json.dumps({"schema": "agentos.teams-single-unit-preflight/v1",
+                            "checks": checks}, sort_keys=True))
+          if not all(checks.values()):
+              raise SystemExit(2)
+          PY
+
+  teams-immutable-cutover:
+    # An explicit operator workflow_dispatch, from the accepted main ref only.
+    # This cannot be triggered by a main push or an arbitrary PR.
+    if: github.event_name == 'workflow_dispatch' && inputs.teams_only == true && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    permissions:
+      contents: read
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Apply source-pinned one-service Teams immutable repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$SHA" >/dev/null
+          DEPLOY="$(mktemp /tmp/agentos-teams-immutable.XXXXXXXX.sh)"
+          trap 'rm -f -- "$DEPLOY"' EXIT
+          git -C "$REPO" show "$SHA:scripts/converge_teams_immutable_user.sh" > "$DEPLOY"
+          bash -n "$DEPLOY"
+          bash "$DEPLOY" "$SHA"
+          REMOTE
+      - name: State exact accepted source for receipt
+        run: |
+          echo "teams_cutover_workflow=PASS"
+          echo "teams_cutover_expected_source=$GITHUB_SHA"
+          echo "teams_cutover_scope=teams-commander.service"
+          echo "teams_cutover_other_core_units=UNTOUCHED"
+
   converge:
+    if: (github.event_name == 'workflow_dispatch' && inputs.teams_only != true) || (github.event_name == 'push' && github.ref_name == 'core/integration')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
