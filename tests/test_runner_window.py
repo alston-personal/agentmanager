@@ -817,3 +817,46 @@ def test_teams_cutover_relay_must_verify_main_before_gh_run(monkeypatch):
     assert result["dispatched"] is False
     assert result["error"] == "protected main head verification unavailable"
     assert len(calls) == 2
+
+
+def test_teams_only_dispatch_sends_only_fixed_fields_with_verified_main(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    import json
+    from agentos_node import action_relay
+
+    sha = "a" * 40
+    commands = []
+    def fake_run(argv, **kwargs):
+        commands.append(argv)
+        if argv[:3] == ["/usr/bin/gh", "auth", "status"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "api", "repos/alston-personal/agentmanager/git/ref/heads/main"]:
+            return {"returncode": 0, "stdout": json.dumps({"object": {"sha": sha}}), "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "workflow", "run"]:
+            assert argv == [
+                "/usr/bin/gh", "workflow", "run",
+                "oracle-core-bundle-immutable-runtime-convergence.yml",
+                "--repo", "alston-personal/agentmanager",
+                "--ref", "main", "-f", "teams_only=true",
+            ]
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if argv[:3] == ["/usr/bin/gh", "run", "list"]:
+            created = (datetime.now(timezone.utc) + timedelta(seconds=5)).isoformat()
+            return {"returncode": 0, "stdout": json.dumps([{
+                "headSha": sha, "createdAt": created, "databaseId": 123456,
+                "status": "queued", "conclusion": None, "url": "https://github.com/alston-personal/agentmanager/actions/runs/123456",
+            }]), "stderr": ""}
+        raise AssertionError(argv)
+    monkeypatch.setattr(action_relay, "_run", fake_run)
+    result = action_relay._github_actions_dispatch({
+        "repository": "alston-personal/agentmanager",
+        "workflow": "oracle-core-bundle-immutable-runtime-convergence.yml",
+        "ref": "main",
+        "inputs": {"teams_only": "true"},
+        "expected_head_sha": sha,
+    })
+    assert result["ok"] is True
+    assert result["run_id"] == 123456
+    assert result["dispatch_ack_only"] is True
+    assert result["workflow_terminal_verified"] is False
+    assert len(commands) == 4
