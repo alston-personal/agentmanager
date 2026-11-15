@@ -8,12 +8,13 @@ name: Oracle Core Bundle Immutable Runtime Convergence
 
 on:
   push:
-    branches: [core/integration]
+    branches: [core/integration, main]
     paths:
       - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
       - '.agent/scripts/agentos-employee-worker-host.service'
       - '.agent/scripts/agentos-employee-worker-host-system.service'
       - 'scripts/install_systemd_user.sh'
+      - 'governance/release-intents/teams-immutable-20261115.json'
       - 'scripts/install_services.py'
       - 'scripts/work_completion.py'
       - 'scripts/issue_work_intake.py'
@@ -42,6 +43,10 @@ on:
       - 'governance/paw-employee.json'
       - 'scripts/bootstrap_product_employees.py'
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-core-bundle-immutable-runtime-convergence.yml'
 
 permissions:
   contents: read
@@ -52,7 +57,92 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  teams-release-intent:
+    # Reuse the existing Core release workflow. Main pushes do not run the
+    # legacy whole-bundle controller; only an explicit, single-use intent file
+    # change can authorize the isolated Teams repair.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deploy: ${{ steps.intent.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact Teams release-intent changed in this push
+        id: intent
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          intent=governance/release-intents/teams-immutable-20261115.json
+          test -n "$BEFORE_SHA"
+          git cat-file -e "$BEFORE_SHA^{commit}"
+          test -f "$intent"
+          if git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | grep -Fxq "$intent"; then
+            python3 - "$intent" <<'PY'
+          import json, sys
+          data=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert data == {
+              "schema": "agentos.core-teams-immutable-intent/v1",
+              "unit": "teams-commander.service",
+              "scope": "existing-active-service-only",
+              "rollback": "original-unit-and-single-service-restart",
+          }, "unapproved Teams release intent"
+          PY
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "teams_release_intent=ACCEPTED_EXACT_FILE"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "teams_release_intent=NOT_CHANGED"
+          fi
+
+  teams-immutable-cutover:
+    needs: teams-release-intent
+    if: needs.teams-release-intent.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    permissions:
+      contents: read
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Apply source-pinned one-service Teams immutable repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+            -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'bash -s -- "$GITHUB_SHA"' <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$SHA" >/dev/null
+          DEPLOY="$(mktemp /tmp/agentos-teams-immutable.XXXXXXXX.sh)"
+          trap 'rm -f -- "$DEPLOY"' EXIT
+          git -C "$REPO" show "$SHA:scripts/converge_teams_immutable_user.sh" > "$DEPLOY"
+          bash -n "$DEPLOY"
+          bash "$DEPLOY" "$SHA"
+          REMOTE
+      - name: State exact accepted source for receipt
+        run: |
+          echo "teams_cutover_workflow=PASS"
+          echo "teams_cutover_expected_source=$GITHUB_SHA"
+          echo "teams_cutover_scope=teams-commander.service"
+          echo "teams_cutover_other_core_units=UNTOUCHED"
+
   converge:
+    if: github.event_name != 'pull_request' && github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
