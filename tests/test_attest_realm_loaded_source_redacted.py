@@ -59,7 +59,7 @@ class RealmSourceRedactionTests(unittest.TestCase):
         self.assertNotIn("secret", repr(category))
 
     @patch("scripts.attest_realm_loaded_source_redacted.subprocess.check_output",
-           return_value="/home/ubuntu/agentmanager\\n")
+           return_value="/home/ubuntu/agentmanager")
     def test_legacy_mutable_unit_workdir_is_not_mislabeled_immutable(self, check):
         _, category = unit_source_candidate()
         self.assertEqual(category, "mutable_source_checkout")
