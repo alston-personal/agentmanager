@@ -190,3 +190,18 @@ def test_active_blue_green_admin_attestation_is_read_only_and_not_a_login_proof(
     assert "session role not attested" in wf.lower()
     assert "git -C \"$REPO\" show \"$SOURCE_SHA:scripts/inspect_dashboard_admin_identity_user.py\"" in wf
     assert "needs: [deploy]" in wf
+
+
+def test_oracle_readonly_control_plane_audit_parses_proc_nul_and_redacts_owners():
+    """Prevent the earlier escaped-NUL bug that misclassified push switches."""
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] /
+              ".github/workflows/oracle-core-service-runtime-audit.yml"
+              ).read_text(encoding="utf-8")
+    assert 'replace(bytes([0]), b" ")' in source
+    assert '.split(chr(0))' in source
+    assert 'target_kind_counts' in source
+    assert 'submitted_task_classes' in source
+    assert 'submitted_inventory_reconciles' in source
+    assert 'PRAGMA query_only=ON' in source
+    assert 'service restart' not in source.split("  control-plane-readonly:", 1)[1].lower()
