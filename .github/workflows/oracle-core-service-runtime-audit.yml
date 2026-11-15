@@ -118,10 +118,10 @@ jobs:
               if pid <= 0:
                   raise ValueError("no-main-pid")
               cwd = Path(f"/proc/{pid}/cwd").resolve(strict=True)
-              cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\\0", b" ").decode("utf-8", "replace")
+              cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(bytes([0]), b" ").decode("utf-8", "replace")
               env = dict(
                   item.split("=", 1) for item in
-                  Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "replace").split("\\0")
+                  Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "replace").split(chr(0))
                   if "=" in item
               )
               observed["entrypoint_matches"] = "scripts.distributed_gateway" in cmdline
